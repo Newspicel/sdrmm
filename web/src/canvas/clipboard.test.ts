@@ -179,14 +179,14 @@ describe("pasteRuns", () => {
   it("applies a paste that brings wires or a node that runs unwired", () => {
     expect(pasteRuns({ nodes: graph.nodes, edges: graph.edges ?? [] })).toBe(true);
     expect(pasteRuns({ nodes: [node("spk", { kind: "speaker" })], edges: [] })).toBe(false);
-    expect(pasteRuns({ nodes: [node("gen", { kind: "signal_gen" })], edges: [] })).toBe(true);
-    expect(pasteRuns({ nodes: [node("take", { kind: "recording", data: {} })], edges: [] })).toBe(
-      true,
-    );
+    expect(pasteRuns({ nodes: [node("gen", { kind: "device" })], edges: [] })).toBe(true);
   });
 
   it("gives every radio-opening copy its own radio", () => {
-    const gen = node("gen", { kind: "signal_gen", data: { running: false } } as never);
+    const gen = node("gen", {
+      kind: "device",
+      data: { device: { backend: "virtual", key: "gen-gen" }, stopped: true },
+    } as never);
     const pasted = pasteNodes(
       { nodes: [gen], edges: [] },
       { nodes: [gen], edges: [] },
@@ -197,6 +197,6 @@ describe("pasteRuns", () => {
       ["gen2"],
     );
     expect(pasted.nodes[1]).toMatchObject({ id: "gen2", data: {} });
-    expect(pasted.nodes[1]).not.toHaveProperty("data.running");
+    expect(pasted.nodes[1]).not.toHaveProperty("data.device");
   });
 });

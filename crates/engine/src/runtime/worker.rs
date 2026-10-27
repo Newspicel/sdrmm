@@ -10,7 +10,7 @@ use std::{
 use arc_swap::ArcSwap;
 
 use super::{
-    ChannelHost, DspCommand, DspMeta, dsp_block_len,
+    ChannelHost, DspCommand, DspMeta, MAX_LANE_CHANNELS, MAX_LANE_MONITORS, dsp_block_len,
     frontend::Frontend,
     retire::Reclaimer,
     spectrum::{average::FrameAverage, history::SpectrumHistory},
@@ -70,12 +70,33 @@ impl Retired {
             Self::Subbands(bands) => drop(bands),
             Self::Monitor(tap) => drop(tap),
             Self::Channel(host) => drop(host),
-            Self::Recording(tap, publisher) => drop((tap, publisher)),
+            Self::Recording(tap, publisher) => release_recording(tap, publisher),
             Self::Network(tap) => drop(tap),
             Self::History(tap) => drop(tap),
             Self::AudioTaps(taps) => drop(taps),
         }
     }
+}
+
+fn release_recording(tap: Option<RecorderTap>, publisher: Option<RecordingPublisher>) {
+    if publisher.is_none() {
+        drop(tap);
+        return;
+    }
+    let handed = std::thread::Builder::new()
+        .name("sdrmm-iq-retire".to_owned())
+        .spawn(move || drop((publisher, tap)));
+    if let Err(error) = handed {
+        tracing::error!(%error, "recording teardown had no thread and closed here");
+    }
+}
+
+fn hosted_channels() -> Vec<(u32, Box<ChannelHost>)> {
+    Vec::with_capacity(MAX_LANE_CHANNELS)
+}
+
+fn hosted_monitors() -> Vec<(u64, Box<crate::monitor::MonitorTap>)> {
+    Vec::with_capacity(MAX_LANE_MONITORS)
 }
 
 pub(super) fn dsp_loop(
@@ -99,8 +120,8 @@ pub(super) fn dsp_loop(
     let mut db = vec![0.0f32; size];
     let mut frame_average = FrameAverage::new(size);
     let mut averaged = vec![0.0f32; size];
-    let mut channels: Vec<(u32, Box<ChannelHost>)> = Vec::new();
-    let mut monitors = Vec::with_capacity(128);
+    let mut channels = hosted_channels();
+    let mut monitors = hosted_monitors();
     let mut tap: Option<RecorderTap> = None;
     let mut recording_publisher: Option<RecordingPublisher> = None;
     let mut network_tap: Option<NetworkExportTap> = None;
@@ -150,25 +171,25 @@ pub(super) fn dsp_loop(
                 recording_publisher
                     .as_mut()
                     .is_none_or(|publisher| !publisher.publish(t, slice, total, snapshot.center_hz))
-            }) && retirement.available()
+            }) && let Some(slot) = retirement.slot()
             {
-                retirement.retire(Retired::Recording(tap.take(), recording_publisher.take()));
+                slot.retire(Retired::Recording(tap.take(), recording_publisher.take()));
             }
             if network_tap
                 .as_mut()
                 .is_some_and(|network| !network.push(slice))
-                && retirement.available()
+                && let Some(slot) = retirement.slot()
                 && let Some(network) = network_tap.take()
             {
-                retirement.retire(Retired::Network(network));
+                slot.retire(Retired::Network(network));
             }
             if history
                 .as_mut()
                 .is_some_and(|keeper| !keeper.push(slice, snapshot.center_hz))
-                && retirement.available()
+                && let Some(slot) = retirement.slot()
                 && let Some(keeper) = history.take()
             {
-                retirement.retire(Retired::History(keeper));
+                slot.retire(Retired::History(keeper));
             }
             for (_, host) in &mut channels {
                 let selected = host
@@ -204,6 +225,7 @@ pub(super) fn dsp_loop(
             std::thread::park_timeout(IDLE_PARK);
         }
     }
+    release_recording(tap.take(), recording_publisher.take());
 }
 
 fn spectrum_cadence(sample_rate: f64, size: usize) -> (usize, u32) {
@@ -243,24 +265,33 @@ fn drain_commands(
         recording_publisher,
     } = sinks;
     for _ in 0..64 {
-        if !retirement.available() {
+        let Some(slot) = retirement.slot() else {
             break;
-        }
+        };
         let Ok(cmd) = commands.try_recv() else {
             break;
         };
         match cmd {
             DspCommand::AddMonitor { id, tap } => {
-                monitors.push((id, tap));
+                if monitors.len() < MAX_LANE_MONITORS {
+                    monitors.push((id, tap));
+                } else {
+                    tracing::error!(
+                        id,
+                        held = MAX_LANE_MONITORS,
+                        "this lane holds no more monitors"
+                    );
+                    slot.retire(Retired::Monitor(tap));
+                }
             }
             DspCommand::RemoveMonitor { id } => {
                 if let Some(index) = monitors.iter().position(|(held, _)| *held == id) {
                     let (_, tap) = monitors.remove(index);
-                    retirement.retire(Retired::Monitor(tap));
+                    slot.retire(Retired::Monitor(tap));
                 }
             }
             DspCommand::SetSubbands(bands) => {
-                retirement.retire(Retired::Subbands(std::mem::replace(subbands, bands)));
+                slot.retire(Retired::Subbands(std::mem::replace(subbands, bands)));
             }
             DspCommand::AddChannel {
                 id,
@@ -276,14 +307,21 @@ fn drain_commands(
                         host.inherit(previous);
                     }
                     std::mem::swap(previous, &mut host);
-                    retirement.retire(Retired::Channel(host));
-                } else {
+                    slot.retire(Retired::Channel(host));
+                } else if channels.len() < MAX_LANE_CHANNELS {
                     channels.push((id, host));
+                } else {
+                    tracing::error!(
+                        id,
+                        held = MAX_LANE_CHANNELS,
+                        "this lane holds no more channels"
+                    );
+                    slot.retire(Retired::Channel(host));
                 }
             }
             DspCommand::RemoveChannel { id } => {
                 if let Some(index) = channels.iter().position(|(existing, _)| *existing == id) {
-                    retirement.retire(Retired::Channel(channels.remove(index).1));
+                    slot.retire(Retired::Channel(channels.remove(index).1));
                 }
             }
             DspCommand::RetuneChannel { id, frequency_hz } => {
@@ -311,22 +349,22 @@ fn drain_commands(
                 tap: armed,
                 publisher,
             } => {
-                retirement.retire(Retired::Recording(
+                slot.retire(Retired::Recording(
                     tap.replace(armed),
                     recording_publisher.replace(publisher),
                 ));
             }
             DspCommand::StopRecording => {
-                retirement.retire(Retired::Recording(tap.take(), recording_publisher.take()));
+                slot.retire(Retired::Recording(tap.take(), recording_publisher.take()));
             }
             DspCommand::SetChannelRecordings { id, taps } => {
                 match channels.iter_mut().find(|(existing, _)| *existing == id) {
                     Some((_, host)) => {
-                        retirement.retire(Retired::AudioTaps(host.set_audio_recordings(taps)));
+                        slot.retire(Retired::AudioTaps(host.set_audio_recordings(taps)));
                     }
                     None => {
                         tracing::debug!(id, "audio recording for a channel no longer hosted");
-                        retirement.retire(Retired::AudioTaps(taps));
+                        slot.retire(Retired::AudioTaps(taps));
                     }
                 }
             }
@@ -356,22 +394,22 @@ fn drain_commands(
             }
             DspCommand::StartNetworkExport { tap: armed } => {
                 if let Some(old) = network_tap.replace(armed) {
-                    retirement.retire(Retired::Network(old));
+                    slot.retire(Retired::Network(old));
                 }
             }
             DspCommand::StopNetworkExport => {
                 if let Some(old) = network_tap.take() {
-                    retirement.retire(Retired::Network(old));
+                    slot.retire(Retired::Network(old));
                 }
             }
             DspCommand::StartTimeMachine { tap: armed } => {
                 if let Some(old) = history.replace(*armed) {
-                    retirement.retire(Retired::History(old));
+                    slot.retire(Retired::History(old));
                 }
             }
             DspCommand::StopTimeMachine => {
                 if let Some(old) = history.take() {
-                    retirement.retire(Retired::History(old));
+                    slot.retire(Retired::History(old));
                 }
             }
             #[cfg(test)]
@@ -397,6 +435,84 @@ mod tests {
         }
         assert_eq!(spectrum_cadence(48_000.0, 4_096), (1_024, 2));
         assert_eq!(spectrum_cadence(8_000.0, 4_096).1, 1);
+    }
+
+    #[test]
+    fn taking_in_a_channel_allocates_nothing_on_the_dsp_thread() {
+        use sdrmm_test_support::assert_no_alloc;
+
+        let (orders, commands) = mpsc::channel();
+        let mut channels = hosted_channels();
+        let mut monitors = hosted_monitors();
+        let mut subbands = Box::new(Subbands::new(48_000.0));
+        let mut tap = None;
+        let mut network_tap = None;
+        let mut history = None;
+        let mut recording_publisher = None;
+        let mut retirement = Reclaimer::new(Retired::release).expect("a reclaimer");
+        let (host, _pcm) = crate::runtime::channel::tests::nfm_host();
+        orders
+            .send(DspCommand::AddChannel {
+                id: 1,
+                host,
+                reset_state: false,
+            })
+            .expect("queued");
+        assert_no_alloc("taking in a channel", || {
+            drain_commands(
+                &commands,
+                &mut channels,
+                &mut subbands,
+                CommandSinks {
+                    monitors: &mut monitors,
+                    tap: &mut tap,
+                    network_tap: &mut network_tap,
+                    history: &mut history,
+                    recording_publisher: &mut recording_publisher,
+                },
+                &mut retirement,
+            );
+        });
+        assert_eq!(channels.len(), 1);
+    }
+
+    #[test]
+    fn retiring_a_stalled_recording_never_waits_on_the_thread_that_retires_it() {
+        use num_complex::Complex;
+        use sdrmm_recorder::SigmfWriter;
+
+        use crate::{
+            recording::{create_tap, queue_depth, spawn_writer},
+            runtime::DSP_BLOCK,
+        };
+
+        let rate = 48_000.0;
+        let depth = queue_depth(rate);
+        let directory = tempfile::tempdir().expect("scratch");
+        let stem = directory.path().join("stalled");
+        let writer = SigmfWriter::create(&stem, rate, 100e6, "test").expect("a writer");
+        let (tap, position, messages, shared) = create_tap(rate);
+        let samples = vec![Complex::new(0.5, -0.25); DSP_BLOCK];
+        for index in 0..depth {
+            assert!(tap.push(&samples, (index * DSP_BLOCK) as u64, 100e6));
+        }
+        let mut publisher = RecordingPublisher::new(rate).expect("a publisher");
+        assert!(publisher.publish(&tap, &samples, (depth * DSP_BLOCK) as u64, 100e6));
+        let retired = tap.clone();
+        let (done, finished) = mpsc::channel();
+        let retirement = std::thread::spawn(move || {
+            Retired::Recording(Some(retired), Some(publisher)).release();
+            let _ = done.send(());
+        });
+        let released = finished.recv_timeout(Duration::from_millis(500)).is_ok();
+        let handle = spawn_writer(writer, messages, shared.clone()).expect("a writer thread");
+        retirement.join().expect("retirement");
+        drop(tap);
+        drop(position);
+        handle.join().expect("the writer finishes");
+        assert!(released, "retirement waited on the stalled writer");
+        assert_eq!(shared.error(), None);
+        assert_eq!(shared.samples(), ((depth + 1) * DSP_BLOCK) as u64);
     }
 
     #[test]

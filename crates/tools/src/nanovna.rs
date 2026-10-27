@@ -31,18 +31,18 @@ struct SystemBackend;
 
 impl Backend for SystemBackend {
     fn devices(&self) -> Result<(Vec<NanoVnaDevice>, Vec<String>), String> {
-        serialport::available_ports()
+        sdrmm_serial::ports()
             .map(discovery::partition)
             .map_err(|error| error.to_string())
     }
 
     fn connect(&self, port: &str) -> Result<Box<dyn Connection>, String> {
-        let connection = serialport::new(port, BAUD_RATE)
+        let connection = sdrmm_serial::new(port, BAUD_RATE)
             .timeout(READ_TIMEOUT)
             .open()
             .map_err(|error| error.to_string())?;
         connection
-            .clear(serialport::ClearBuffer::Input)
+            .clear(sdrmm_serial::ClearBuffer::Input)
             .map_err(|error| error.to_string())?;
         Ok(Box::new(connection))
     }

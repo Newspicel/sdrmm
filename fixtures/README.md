@@ -43,9 +43,9 @@ Generated pairs are ignored by Git. Commit generator and expected-output changes
 
 ## Committed fixtures
 
-These forty pairs are not regenerated: twenty-six are recordings, two are frozen synthetic waveforms,
-and twelve are reference waveforms from generators that are independent of the Rust modulators.
-They retain cases that the current generators do not reproduce.
+These pairs are not regenerated. They retain cases that the current generators do not reproduce.
+Provenance and regression coverage below says which are recordings, which are frozen synthetic
+waveforms, and which come from generators independent of the Rust modulators.
 
 `cargo xtask excerpt` trims a SigMF pair, WAV, or raw `cu8`/`cs8`/`cs16`/`cf32` capture. It shifts
 and resamples through the engine's `Ddc`, writes the requested window, and records the source

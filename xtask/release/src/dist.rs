@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use crate::bundled;
 use crate::media::{ensure_target, host_triple, media_dir, run_against_media};
 use crate::pack::{archive, copy_tree};
-use crate::proc::run;
-use crate::web::{assert_web_dist, web_build};
+use crate::proc::{run, utf8};
+use crate::web::web_build;
 
 pub fn release_features() -> [String; 3] {
     [
@@ -19,7 +19,6 @@ pub fn release_features() -> [String; 3] {
 
 pub fn dist(root: &Path, target: Option<&str>) -> Result<()> {
     web_build(root)?;
-    assert_web_dist(root)?;
     ensure_target(root, target)?;
 
     let features = release_features();
@@ -69,11 +68,7 @@ pub fn dist(root: &Path, target: Option<&str>) -> Result<()> {
     }
 
     if triple.contains("linux") {
-        run(
-            "strip",
-            &[staged.join(exe).to_str().expect("utf8 path")],
-            root,
-        )?;
+        run("strip", &[utf8(&staged.join(exe))?], root)?;
     }
 
     let archive = archive(root, &out, &name, windows)?;
@@ -81,9 +76,18 @@ pub fn dist(root: &Path, target: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// The stamped manifests name the release and the built UI is embedded by `crates/server` at
+/// compile time, so neither can come out of the commit `git archive` wrote.
+fn stage_what_the_commit_cannot_carry(root: &Path, staged: &Path) -> Result<()> {
+    for manifest in ["Cargo.toml", "Cargo.lock"] {
+        std::fs::copy(root.join(manifest), staged.join(manifest))
+            .with_context(|| format!("cannot stage {manifest}"))?;
+    }
+    copy_tree(&root.join("web/dist"), &staged.join("web/dist"))
+}
+
 pub fn source_dist(root: &Path) -> Result<()> {
     web_build(root)?;
-    assert_web_dist(root)?;
 
     let out = root.join("dist");
     let name = format!("sdrmm-{}-src", env!("CARGO_PKG_VERSION"));
@@ -98,34 +102,13 @@ pub fn source_dist(root: &Path) -> Result<()> {
     let tar = out.join(format!("{name}.tar"));
     run(
         "git",
-        &[
-            "archive",
-            "--format=tar",
-            "--output",
-            tar.to_str().expect("utf8 path"),
-            "HEAD",
-        ],
+        &["archive", "--format=tar", "--output", utf8(&tar)?, "HEAD"],
         root,
     )?;
-    run(
-        "tar",
-        &[
-            "-xf",
-            tar.to_str().expect("utf8 path"),
-            "-C",
-            staged.to_str().expect("utf8 path"),
-        ],
-        root,
-    )?;
+    run("tar", &["-xf", utf8(&tar)?, "-C", utf8(&staged)?], root)?;
     std::fs::remove_file(&tar).with_context(|| format!("cannot clear {}", tar.display()))?;
 
-    // The stamped manifests and the built UI are what the commit cannot carry: one names the
-    // release, the other is embedded by `crates/server` at compile time.
-    for manifest in ["Cargo.toml", "Cargo.lock"] {
-        std::fs::copy(root.join(manifest), staged.join(manifest))
-            .with_context(|| format!("cannot stage {manifest}"))?;
-    }
-    copy_tree(&root.join("web/dist"), &staged.join("web/dist"))?;
+    stage_what_the_commit_cannot_carry(root, &staged)?;
 
     let archive = archive(root, &out, &name, false)?;
     println!("source dist: {}", archive.display());

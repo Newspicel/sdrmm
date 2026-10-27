@@ -5,6 +5,7 @@ use std::{
     sync::{
         OnceLock,
         atomic::{AtomicBool, Ordering},
+        mpsc::{Receiver, channel},
     },
     time::{Duration, Instant},
 };
@@ -18,8 +19,10 @@ const CHILD_MARKER: &str = "SDRMM_SOAPY_PROBE_CHILD";
 const MODE: &str = "SDRMM_SOAPY_PROBE";
 const IN_PROCESS: &str = "in-process";
 const TIMEOUT: Duration = Duration::from_secs(20);
+const REPLY_WAIT: Duration = Duration::from_secs(2);
 const POLL: Duration = Duration::from_millis(10);
 const STDERR_TAIL: usize = 400;
+const FARM_PREFIX: &str = "sdrmm-soapy-";
 const ROOT_ENV: &str = "SOAPY_SDR_ROOT";
 const PLUGIN_PATH_ENV: &str = "SOAPY_SDR_PLUGIN_PATH";
 
@@ -40,17 +43,37 @@ fn link_allowed(modules: &[PathBuf], hidden: &[String], dir: &Path) -> std::io::
     if allowed.len() == modules.len() {
         return Ok(false);
     }
-    std::fs::create_dir_all(dir)?;
+    create_private(dir)?;
     for module in allowed {
         let Some(name) = module.file_name() else {
             continue;
         };
-        match link(module, &dir.join(name)) {
-            Err(error) if error.kind() != std::io::ErrorKind::AlreadyExists => return Err(error),
-            _ => {}
-        }
+        link(module, &dir.join(name))?;
     }
     Ok(true)
+}
+
+fn create_private(dir: &Path) -> std::io::Result<()> {
+    private_builder().create(dir)
+}
+
+#[cfg(unix)]
+fn private_builder() -> std::fs::DirBuilder {
+    use std::os::unix::fs::DirBuilderExt;
+
+    let mut builder = std::fs::DirBuilder::new();
+    builder.mode(0o700);
+    builder
+}
+
+#[cfg(not(unix))]
+fn private_builder() -> std::fs::DirBuilder {
+    std::fs::DirBuilder::new()
+}
+
+fn farm_path() -> std::io::Result<PathBuf> {
+    let drawn = getrandom::u64().map_err(std::io::Error::other)?;
+    Ok(std::env::temp_dir().join(format!("{FARM_PREFIX}{drawn:016x}")))
 }
 
 #[cfg(unix)]
@@ -63,20 +86,6 @@ fn link(module: &Path, at: &Path) -> std::io::Result<()> {
     std::fs::copy(module, at).map(|_| ())
 }
 
-fn fingerprint(modules: &[PathBuf], hidden: &[String]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    let parts = modules
-        .iter()
-        .map(|module| module.to_string_lossy().into_owned())
-        .chain(hidden.iter().cloned());
-    for part in parts {
-        for byte in part.bytes().chain(std::iter::once(0)) {
-            hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
-        }
-    }
-    hash
-}
-
 pub(crate) fn allowed_modules(hidden: &[String]) -> Option<&'static Path> {
     MODULES
         .get_or_init(|| {
@@ -84,10 +93,11 @@ pub(crate) fn allowed_modules(hidden: &[String]) -> Option<&'static Path> {
                 .into_iter()
                 .map(PathBuf::from)
                 .collect();
-            let dir = std::env::temp_dir().join(format!("sdrmm-soapy-{:016x}", fingerprint(&modules, hidden)));
-            match link_allowed(&modules, hidden, &dir) {
-                Ok(true) => Some(dir),
-                Ok(false) => None,
+            let farm = farm_path().and_then(|dir| {
+                link_allowed(&modules, hidden, &dir).map(|linked| linked.then_some(dir))
+            });
+            match farm {
+                Ok(dir) => dir,
                 Err(error) => {
                     tracing::warn!(%error, "soapy probe: native radios stay visible to SoapySDR modules");
                     None
@@ -250,15 +260,15 @@ fn run(
 
     let stdout = child.stdout.take().map(drain);
     let stderr = child.stderr.take().map(drain);
-    // A killed helper can leave a grandchild holding the pipes open, so its output is only
-    // collected once the helper is known to have exited.
     let Some(status) = wait(&mut child, timeout)? else {
         return Err(DeviceError::Io(format!(
             "soapy probe helper timed out after {timeout:?} and was killed"
         )));
     };
-    let stdout = stdout.map(join).unwrap_or_default();
-    let stderr = stderr.map(join).unwrap_or_default();
+    let waited = timeout.min(REPLY_WAIT);
+    let stderr = stderr
+        .and_then(|pipe| pipe.text(waited))
+        .unwrap_or_default();
 
     if !status.success() {
         return Err(DeviceError::Io(format!(
@@ -266,6 +276,11 @@ fn run(
             tail(&stderr)
         )));
     }
+    let Some(stdout) = stdout.and_then(|pipe| pipe.text(waited)) else {
+        return Err(DeviceError::Io(format!(
+            "soapy probe: the helper exited but its reply was still held after {waited:?}"
+        )));
+    };
     serde_json::from_str(stdout.trim())
         .map_err(|error| DeviceError::Io(format!("soapy probe: unreadable reply: {error}")))
 }
@@ -291,16 +306,25 @@ fn wait(
     }
 }
 
-fn drain(mut pipe: impl Read + Send + 'static) -> std::thread::JoinHandle<String> {
-    std::thread::spawn(move || {
-        let mut text = String::new();
-        let _ = pipe.read_to_string(&mut text);
-        text
-    })
+struct Drained(Receiver<String>);
+
+impl Drained {
+    fn text(self, within: Duration) -> Option<String> {
+        self.0.recv_timeout(within).ok()
+    }
 }
 
-fn join(handle: std::thread::JoinHandle<String>) -> String {
-    handle.join().unwrap_or_default()
+fn drain(mut pipe: impl Read + Send + 'static) -> Drained {
+    let (collected, waiting) = channel();
+    std::thread::spawn(move || {
+        let mut text = String::new();
+        let read = pipe.read_to_string(&mut text);
+        if let Err(error) = read {
+            text.push_str(&format!("\nsoapy probe: reading the helper pipe: {error}"));
+        }
+        drop(collected.send(text));
+    });
+    Drained(waiting)
 }
 
 fn tail(stderr: &str) -> String {
@@ -313,6 +337,8 @@ fn tail(stderr: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_wire::DeviceBackend;
+
     use super::*;
 
     #[test]
@@ -359,6 +385,49 @@ mod tests {
             .collect();
         kept.sort();
         assert_eq!(kept, ["libairspySupport.so", "libuhdSupport.so"]);
+    }
+
+    #[test]
+    fn a_module_farm_is_private_and_never_reuses_a_path() {
+        let installed = tempfile::tempdir().expect("tempdir");
+        let modules: Vec<PathBuf> = ["librtlsdrSupport.so", "libuhdSupport.so"]
+            .iter()
+            .map(|name| {
+                let path = installed.path().join(name);
+                std::fs::write(&path, b"").expect("module");
+                path
+            })
+            .collect();
+        let hidden = vec!["rtlsdr".to_owned()];
+        let farm = farm_path().expect("path");
+        assert_ne!(farm, farm_path().expect("path"), "the name is drawn fresh");
+        assert!(farm.starts_with(std::env::temp_dir()));
+        assert!(link_allowed(&modules, &hidden, &farm).expect("farm"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&farm).expect("farm").permissions().mode();
+            assert_eq!(mode & 0o777, 0o700, "the farm is this process's own");
+        }
+        assert!(
+            link_allowed(&modules, &hidden, &farm).is_err(),
+            "a farm somebody got in first is refused"
+        );
+        std::fs::remove_dir_all(&farm).expect("clean up");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_grandchild_holding_the_pipes_does_not_wedge_the_probe() {
+        let (_dir, path) = helper("sleep 30 &\necho '[]'");
+        let start = Instant::now();
+        let error = run(&path, "", Scope::Fast, None, Duration::from_millis(200))
+            .expect_err("the reply never arrives whole");
+        assert!(error.to_string().contains("still held"), "{error}");
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "the join was bounded"
+        );
     }
 
     #[test]
@@ -437,7 +506,7 @@ mod tests {
     fn a_helper_reply_carries_the_device_and_the_arguments_that_reopen_it() {
         let reply = serde_json::to_string(&vec![Found {
             info: DeviceInfo {
-                driver: "soapy".to_string(),
+                driver: DeviceBackend::Soapy,
                 key: "00000001".to_string(),
                 label: "NESDR SMArt v5".to_string(),
                 serial: Some("00000001".to_string()),
@@ -504,7 +573,7 @@ mod tests {
     fn a_reply_round_trips_through_the_child_encoding() {
         let found = vec![Found {
             info: DeviceInfo {
-                driver: "soapy".to_string(),
+                driver: DeviceBackend::Soapy,
                 key: "00000001".to_string(),
                 label: "Generic RTL2832U".to_string(),
                 serial: Some("00000001".to_string()),

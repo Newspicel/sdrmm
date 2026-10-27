@@ -831,6 +831,79 @@ mod tests {
         );
     }
 
+    const DAYTON_LEADER_HZ: f64 = 1_900.0;
+    const DAYTON_FRAMING_HZ: f64 = 1_200.0;
+    const DAYTON_ONE_HZ: f64 = 1_100.0;
+    const DAYTON_ZERO_HZ: f64 = 1_300.0;
+    const DAYTON_LEADER_MS: f64 = 300.0;
+    const DAYTON_BREAK_MS: f64 = 10.0;
+    const DAYTON_BIT_MS: f64 = 30.0;
+
+    fn dayton_tone(iq: &mut Vec<Complex<f32>>, phase: &mut f64, hz: f64, ms: f64) {
+        let step = std::f64::consts::TAU * hz / RATE;
+        for _ in 0..samples(ms, RATE).round() as usize {
+            iq.push(Complex::from_polar(1.0, *phase as f32));
+            *phase = (*phase + step) % std::f64::consts::TAU;
+        }
+    }
+
+    fn dayton_vis_bits(vis: u8) -> [bool; 8] {
+        let mut bits = [false; 8];
+        for (index, bit) in bits.iter_mut().enumerate().take(7) {
+            *bit = vis & (1 << index) != 0;
+        }
+        bits[7] = bits[..7].iter().filter(|&&bit| bit).count() % 2 == 1;
+        bits
+    }
+
+    fn dayton_calibration_header(bits: [bool; 8]) -> Vec<Complex<f32>> {
+        let mut iq = Vec::new();
+        let mut phase = 0.0;
+        dayton_tone(&mut iq, &mut phase, DAYTON_LEADER_HZ, DAYTON_LEADER_MS);
+        dayton_tone(&mut iq, &mut phase, DAYTON_FRAMING_HZ, DAYTON_BREAK_MS);
+        dayton_tone(&mut iq, &mut phase, DAYTON_LEADER_HZ, DAYTON_LEADER_MS);
+        dayton_tone(&mut iq, &mut phase, DAYTON_FRAMING_HZ, DAYTON_BIT_MS);
+        for bit in bits {
+            let hz = if bit { DAYTON_ONE_HZ } else { DAYTON_ZERO_HZ };
+            dayton_tone(&mut iq, &mut phase, hz, DAYTON_BIT_MS);
+        }
+        dayton_tone(&mut iq, &mut phase, DAYTON_FRAMING_HZ, DAYTON_BIT_MS);
+        iq.extend_from_slice(&tail(50.0));
+        iq
+    }
+
+    fn started_mode(iq: &[Complex<f32>]) -> Option<SstvMode> {
+        let mut chan = channel(SstvParams::default());
+        let mut out = ChannelOutputs::default();
+        chan.process(iq, &mut out);
+        chan.picture.active.then_some(chan.picture.timing.mode)
+    }
+
+    #[test]
+    fn a_header_built_from_the_published_calibration_spec_names_its_mode() {
+        for &mode in &SstvMode::ALL {
+            let iq = dayton_calibration_header(dayton_vis_bits(mode.vis()));
+            assert_eq!(started_mode(&iq), Some(mode), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn a_vis_code_sent_most_significant_bit_first_names_no_mode() {
+        let mut bits = dayton_vis_bits(SstvMode::MartinM1.vis());
+        bits[..7].reverse();
+        assert_eq!(started_mode(&dayton_calibration_header(bits)), None);
+    }
+
+    #[test]
+    fn a_vis_code_with_the_two_bit_tones_swapped_names_no_mode() {
+        let mut bits = dayton_vis_bits(SstvMode::MartinM1.vis());
+        for bit in &mut bits[..7] {
+            *bit = !*bit;
+        }
+        bits[7] = bits[..7].iter().filter(|&&bit| bit).count() % 2 == 1;
+        assert_eq!(started_mode(&dayton_calibration_header(bits)), None);
+    }
+
     #[test]
     fn a_vis_header_names_its_mode() {
         for &mode in &SstvMode::ALL {

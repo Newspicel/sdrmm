@@ -188,6 +188,10 @@ impl ChannelRx for NavtexChannel {
         self.reset();
     }
 
+    fn rejected(&self) -> u32 {
+        self.decoder.characters_lost
+    }
+
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.demod.process(iq, &mut self.demod_buf);
         for s in &mut self.demod_buf {
@@ -208,8 +212,10 @@ impl ChannelRx for NavtexChannel {
 
 impl NavtexChannel {
     fn reset(&mut self) {
+        let characters_lost = self.decoder.characters_lost;
         self.sync.reset();
         self.decoder = Decoder::new();
+        self.decoder.characters_lost = characters_lost;
     }
 }
 
@@ -231,6 +237,7 @@ struct Decoder {
     newline: bool,
     tail: [char; 4],
     errors_corrected: u32,
+    characters_lost: u32,
 }
 
 impl Decoder {
@@ -248,6 +255,7 @@ impl Decoder {
             newline: false,
             tail: ['\0'; 4],
             errors_corrected: 0,
+            characters_lost: 0,
         }
     }
 
@@ -320,6 +328,7 @@ impl Decoder {
                 self.emit_char(code, out);
             }
             None => {
+                self.characters_lost = self.characters_lost.saturating_add(1);
                 self.error_run += 2;
                 if self.error_run > MAX_ERROR_RUN {
                     self.emit_message(false, out);
@@ -337,6 +346,7 @@ impl Decoder {
             return;
         }
         let Some(ita2) = ita2_for(code) else {
+            self.characters_lost = self.characters_lost.saturating_add(1);
             return;
         };
         self.since_char = 0;
@@ -586,6 +596,28 @@ mod tests {
             "the burst should have been repaired from the repeat copy, not gone unnoticed"
         );
         assert!(messages[0].complete);
+    }
+
+    #[test]
+    fn characters_lost_in_every_copy_are_counted() {
+        let mut clean = channel(NavtexParams::default());
+        let messages = decode_blocks(&mut clean, &transmission(BROADCAST, RATE), &BLOCKS);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert_eq!(clean.rejected(), 0);
+
+        let mut iq = transmission(BROADCAST, RATE);
+        let blank = (0.5 * RATE) as usize;
+        let start = iq.len() / 2;
+        let end = (start + blank).min(iq.len());
+        for sample in &mut iq[start..end] {
+            *sample = Complex::new(0.0, 0.0);
+        }
+        let mut damaged = channel(NavtexParams::default());
+        decode_blocks(&mut damaged, &iq, &BLOCKS);
+        assert!(
+            damaged.rejected() > 0,
+            "a character lost in the DX copy, the RX copy and the combination must surface"
+        );
     }
 
     #[test]

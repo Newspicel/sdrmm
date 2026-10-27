@@ -105,6 +105,52 @@ impl ScanSettings {
             margin_db: default_margin_db(),
         }
     }
+
+    #[must_use]
+    pub fn problem(&self) -> Option<&'static str> {
+        if !self.margin_db.is_finite() {
+            return Some("Margin must be a number");
+        }
+        if self
+            .measure_bw_hz
+            .is_some_and(|hz| !hz.is_finite() || hz <= 0.0)
+        {
+            return Some("Measured bandwidth must be positive");
+        }
+        for list in [&self.frequencies, &self.lockouts, &self.priority] {
+            if list.len() > MAX_SCAN_TARGETS {
+                return Some("Too many frequencies");
+            }
+            if list.iter().any(|hz| !hz.is_finite() || *hz <= 0.0) {
+                return Some("A frequency must be a positive number of Hz");
+            }
+        }
+        self.range_problem()
+    }
+
+    fn range_problem(&self) -> Option<&'static str> {
+        let mut steps = self.frequencies.len() + self.priority.len();
+        for range in &self.ranges {
+            if !range.start_hz.is_finite() || !range.stop_hz.is_finite() {
+                return Some("A range needs two finite bounds");
+            }
+            if !range.step_hz.is_finite() || range.step_hz <= 0.0 {
+                return Some("A range step must be positive");
+            }
+            if range.stop_hz < range.start_hz {
+                return Some("A range ends before it starts");
+            }
+            let count = (range.stop_hz - range.start_hz) / range.step_hz;
+            if !count.is_finite() || count >= MAX_SCAN_TARGETS as f64 {
+                return Some("Too many targets; widen the step or narrow the range");
+            }
+            steps += count as usize + 1;
+            if steps > MAX_SCAN_TARGETS {
+                return Some("Too many targets; widen the step or narrow the range");
+            }
+        }
+        None
+    }
 }
 
 impl Default for ScanSettings {
@@ -157,4 +203,54 @@ pub enum ScanAction {
     Stop,
     /// Leaves the frequency the scan is holding on and locks it out.
     Skip,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with(edit: impl FnOnce(&mut ScanSettings)) -> Option<&'static str> {
+        let mut settings = ScanSettings::default();
+        edit(&mut settings);
+        settings.problem()
+    }
+
+    #[test]
+    fn a_fresh_scan_is_savable() {
+        assert_eq!(ScanSettings::default().problem(), None);
+        assert_eq!(ScanSettings::for_channel(1).problem(), None);
+    }
+
+    #[test]
+    fn a_zero_step_is_refused_by_name() {
+        let problem = with(|s| s.ranges[0].step_hz = 0.0).expect("a zero step");
+        assert!(problem.contains("step"), "{problem}");
+    }
+
+    #[test]
+    fn a_range_wider_than_the_target_cap_is_refused() {
+        let problem = with(|s| {
+            s.ranges[0].start_hz = 0.0;
+            s.ranges[0].stop_hz = 1e9;
+            s.ranges[0].step_hz = 1.0;
+        })
+        .expect("too many targets");
+        assert!(problem.contains("targets"), "{problem}");
+    }
+
+    #[test]
+    fn a_backwards_range_and_an_unusable_frequency_are_refused() {
+        assert!(
+            with(|s| {
+                s.ranges[0].start_hz = 200.0;
+                s.ranges[0].stop_hz = 100.0;
+            })
+            .is_some()
+        );
+        assert!(with(|s| s.frequencies = vec![-1.0]).is_some());
+        assert!(with(|s| s.frequencies = vec![f64::NAN]).is_some());
+        assert!(with(|s| s.margin_db = f32::NAN).is_some());
+        assert!(with(|s| s.measure_bw_hz = Some(0.0)).is_some());
+        assert!(with(|s| s.frequencies = vec![1.0; MAX_SCAN_TARGETS + 1]).is_some());
+    }
 }

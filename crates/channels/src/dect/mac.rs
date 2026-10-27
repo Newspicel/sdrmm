@@ -183,3 +183,58 @@ pub(crate) fn encryption(a: u64) -> Encryption {
 pub(crate) fn multiframe_number(a: u64) -> u32 {
     field(a, 24, 24) as u32
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EN_300_175_3_R_CRC_GENERATOR: u64 = 0o202_611;
+    const EN_300_175_3_R_CRC_DEGREE: usize = 16;
+
+    const A_FIELDS: [u64; 4] = [
+        0x4E12_3456_789A_0000,
+        0x0000_0000_0000_0000,
+        0xFFFF_FFFF_FFFF_0000,
+        0xA5C3_0F1E_2D4B_0000,
+    ];
+
+    fn published_remainder(word: u64) -> u64 {
+        let mut remainder = word;
+        for shift in (EN_300_175_3_R_CRC_DEGREE..A_FIELD_BITS).rev() {
+            if remainder >> shift & 1 == 1 {
+                remainder ^= EN_300_175_3_R_CRC_GENERATOR << (shift - EN_300_175_3_R_CRC_DEGREE);
+            }
+        }
+        remainder
+    }
+
+    #[test]
+    fn the_r_crc_uses_the_published_generator_polynomial() {
+        assert_eq!(
+            u64::from(R_CRC_POLY) | 1 << EN_300_175_3_R_CRC_DEGREE,
+            EN_300_175_3_R_CRC_GENERATOR
+        );
+        assert_eq!(R_CRC_RESIDUE, 1);
+    }
+
+    #[test]
+    fn a_checked_a_field_divides_by_the_published_generator() {
+        for head in A_FIELDS {
+            let a = append_r_crc(head);
+            assert!(a_field_crc_ok(a), "{a:016X}");
+            assert_eq!(published_remainder(a ^ 1), 0, "{a:016X}");
+        }
+    }
+
+    #[test]
+    fn a_flip_of_any_single_a_field_bit_fails_the_r_crc() {
+        for head in A_FIELDS {
+            let a = append_r_crc(head);
+            for bit in 0..A_FIELD_BITS {
+                let flipped = a ^ (1 << bit);
+                assert!(!a_field_crc_ok(flipped), "{a:016X} bit {bit}");
+                assert_ne!(published_remainder(flipped ^ 1), 0, "{a:016X} bit {bit}");
+            }
+        }
+    }
+}

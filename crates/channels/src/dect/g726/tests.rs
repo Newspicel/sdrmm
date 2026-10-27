@@ -92,8 +92,9 @@ impl G726 {
 }
 
 fn vector(dir: &Path, name: &str) -> Vec<u16> {
-    let text = std::fs::read_to_string(dir.join(name)).expect("ITU test vector");
-    text.split_whitespace()
+    let text = crate::reference_data::text(dir, name);
+    let words: Vec<u16> = text
+        .split_whitespace()
         .filter(|line| line.len() == 64)
         .flat_map(|line| {
             line.as_bytes()
@@ -103,7 +104,9 @@ fn vector(dir: &Path, name: &str) -> Vec<u16> {
                 })
                 .collect::<Vec<_>>()
         })
-        .collect()
+        .collect();
+    assert!(!words.is_empty(), "{name} holds no 64 digit vector lines");
+    words
 }
 
 fn tone(freq: f64, amplitude: f64, len: usize) -> Vec<i16> {
@@ -179,14 +182,12 @@ const KNOWN_ALAW: [u16; 32] = [
     0x85, 0x03, 0xE3, 0xB1, 0x09, 0xFE, 0xBD, 0x31, 0xFC, 0xB8, 0x32, 0x7E, 0xA5, 0x3F, 0x6C, 0xBB,
 ];
 
-fn itu_dir() -> std::path::PathBuf {
-    std::path::PathBuf::from(std::env::var_os("G726_VECTORS").expect("G726_VECTORS"))
-}
-
 #[test]
 #[ignore = "needs G726_VECTORS=<ITU-T G.726 Appendix II DISK2 directory>"]
 fn reproduces_the_itu_reset_vectors_bit_for_bit() {
-    let dir = itu_dir();
+    let Some(dir) = crate::reference_data::g726_vectors() else {
+        return;
+    };
     for (input, expected) in [
         ("RESET/32/RN32FA.I", "RESET/32/RN32FA.O"),
         ("RESET/32/RV32FA.I", "RESET/32/RV32FA.O"),

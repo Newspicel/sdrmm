@@ -184,6 +184,39 @@ mod tests {
     }
 
     #[test]
+    fn an_uploaded_lane_whose_captures_step_backwards_leaves_nothing_behind() {
+        let source = TempDir::new().expect("temp");
+        let stem = collection(source.path(), "bank", 1, 16);
+        let library = TempDir::new().expect("temp");
+        let mut backwards = unpacked(&stem);
+        let mut meta: serde_json::Value =
+            serde_json::from_slice(&backwards.lanes[0].meta).expect("meta");
+        meta["captures"] = serde_json::json!([
+            { "core:sample_start": 8 },
+            { "core:sample_start": 0, "core:global_index": 0 },
+        ]);
+        backwards.lanes[0].meta = serde_json::to_vec(&meta).expect("meta");
+        let mut file: serde_json::Value =
+            serde_json::from_slice(&backwards.collection).expect("collection");
+        file["collection"]["core:streams"][0]["hash"] =
+            serde_json::json!(hex(&backwards.lanes[0].meta));
+        backwards.collection = serde_json::to_vec(&file).expect("collection");
+
+        let err = import_collection(library.path(), backwards).expect_err("captures go backwards");
+
+        assert!(matches!(err, SigmfError::Malformed(_)), "{err}");
+        assert_eq!(files(library.path()), 0);
+    }
+
+    fn hex(bytes: &[u8]) -> String {
+        use sha2::Digest;
+        sha2::Sha512::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    #[test]
     fn a_lane_that_fails_its_hash_leaves_nothing_behind() {
         let source = TempDir::new().expect("temp");
         let stem = collection(source.path(), "bank", 2, 16);

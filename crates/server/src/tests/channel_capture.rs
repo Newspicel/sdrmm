@@ -141,14 +141,26 @@ async fn exported(app: &Router, node: &str, action: &str) -> NetworkExportStatus
     status
 }
 
-async fn history(app: &Router, node: &str, action: &str) -> TimeMachineStatus {
-    let (status, body) = time_machine(app, node, action).await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    let sdrmm_wire::NodeActed::TimeMachine(status) = serde_json::from_slice(&body).expect("json")
-    else {
-        panic!("a time machine reports its status");
-    };
-    status
+async fn pre_roll_of(app: &Router, ds: u32) -> Option<PreRollStatus> {
+    get_state(app)
+        .await
+        .device_sets
+        .iter()
+        .find(|set| set.id == ds)
+        .and_then(|set| set.pre_roll.clone())
+}
+
+async fn wait_for_capture(app: &Router, ds: u32, capturing: bool) -> PreRollStatus {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(held) = pre_roll_of(app, ds).await
+            && held.capture.is_some() == capturing
+        {
+            return held;
+        }
+        assert!(Instant::now() < deadline, "the capture never settled");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 #[tokio::test]
@@ -228,18 +240,18 @@ async fn the_time_machine_arms_captures_and_files_its_window_over_http() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let app = recording_router(dir.path());
     let ds = open_virtual_radio(&app).await;
-    let node = "time_machine:test";
+    let node = "recorder:test";
     draw(
         &app,
         node,
-        history_node(true),
+        pre_roll_node(1, false),
         &[["radio:band", "iq", node, "iq"]],
     )
     .await;
 
     let armed = wait_for_history(&app, ds).await;
     assert_eq!(armed.node, node);
-    assert_eq!(armed.history_seconds, 1);
+    assert_eq!(armed.pre_roll_s, 1);
     assert_eq!(armed.capacity_samples, 2_048_000);
     assert!(armed.capture.is_none());
 
@@ -251,7 +263,7 @@ async fn the_time_machine_arms_captures_and_files_its_window_over_http() {
             .iter()
             .find(|set| set.id == ds)
             .expect("set listed")
-            .time_machine
+            .pre_roll
             .clone()
             .expect("armed")
             .held_samples;
@@ -262,27 +274,38 @@ async fn the_time_machine_arms_captures_and_files_its_window_over_http() {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
-    let capturing = history(&app, node, "capture").await;
+    edit_node(&app, node, pre_roll_node(1, true)).await;
+    let capturing = wait_for_capture(&app, ds, true).await;
     let file = capturing.capture.expect("a capture is running").file;
 
-    let stopped = history(&app, node, "stop").await;
-    let written = stopped.capture.expect("the stop reports what it wrote");
+    edit_node(&app, node, pre_roll_node(1, false)).await;
+    wait_for_capture(&app, ds, false).await;
+
+    let entry = wait_for_recording(&app, &file).await;
+    assert_eq!(entry.sample_rate, 2_048_000.0);
     assert!(
-        written.samples >= 1_024_000,
+        entry.samples >= 1_024_000,
         "the past never reached the file"
     );
 
-    let listed = list_recordings(&app).await;
-    let entry = listed
-        .iter()
-        .find(|entry| entry.file == file)
-        .expect("the captured window is in the library");
-    assert_eq!(entry.sample_rate, 2_048_000.0);
-
-    edit_node(&app, node, history_node(false)).await;
+    edit_node(&app, node, pre_roll_node(0, false)).await;
     wait_for_no_history(&app, ds).await;
+}
 
-    let (status, body) = time_machine(&app, node, "capture").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(String::from_utf8_lossy(&body).contains("Arm it first"));
+async fn wait_for_recording(app: &Router, file: &str) -> sdrmm_wire::RecordingInfo {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(entry) = list_recordings(app)
+            .await
+            .into_iter()
+            .find(|entry| entry.file == file)
+        {
+            return entry;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{file} never reached the library"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }

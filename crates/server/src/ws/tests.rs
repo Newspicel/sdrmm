@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_wire::{ChannelParams, ChannelSettings, NfmParams};
+use sdrmm_wire::{ChannelParams, ChannelSettings, DeviceBackend, NfmParams};
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite;
 
@@ -75,6 +75,15 @@ async fn next_event_by(ws: &mut WsClient, deadline: Instant) -> ServerEvent {
     }
 }
 
+async fn next_error(ws: &mut WsClient) -> String {
+    let deadline = Instant::now() + WAIT;
+    loop {
+        if let ServerEvent::Error { message } = next_event_by(ws, deadline).await {
+            return message;
+        }
+    }
+}
+
 async fn next_event(ws: &mut WsClient) -> ServerEvent {
     next_event_by(ws, Instant::now() + WAIT).await
 }
@@ -125,12 +134,12 @@ fn wire(from: (&str, &str), to: (&str, &str)) -> sdrmm_wire::PatchEdge {
     }
 }
 
-fn radio_of(backend: &str, key: &str) -> sdrmm_wire::PatchNode {
+fn radio_of(backend: DeviceBackend, key: &str) -> sdrmm_wire::PatchNode {
     node(
         "radio",
         sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
             device: Some(sdrmm_wire::DeviceRef {
-                backend: backend.to_owned(),
+                backend,
                 serial: None,
                 key: Some(key.to_owned()),
             }),
@@ -140,7 +149,7 @@ fn radio_of(backend: &str, key: &str) -> sdrmm_wire::PatchNode {
 }
 
 fn radio(key: &str) -> sdrmm_wire::PatchNode {
-    radio_of("virtual", key)
+    radio_of(DeviceBackend::Virtual, key)
 }
 
 fn channel(id: &str, channel_type: &str) -> sdrmm_wire::PatchNode {
@@ -747,7 +756,7 @@ async fn spectrum_resumes_after_a_reconnect_without_a_resubscribe() {
         engine,
         graph(
             vec![
-                radio_of("mock", "faulting"),
+                radio_of(DeviceBackend::Rtlsdr, "faulting"),
                 of("scope", sdrmm_wire::NodeKind::Scope),
             ],
             vec![wire(("radio", "iq"), ("scope", "iq"))],
@@ -817,13 +826,13 @@ struct FaultingDriver {
 }
 
 impl sdrmm_device::DeviceDriver for FaultingDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<sdrmm_wire::DeviceInfo> {
         vec![sdrmm_wire::DeviceInfo {
-            driver: "mock".to_string(),
+            driver: DeviceBackend::Rtlsdr,
             key: "faulting".to_string(),
             label: "Faulting mock".to_string(),
             serial: None,
@@ -861,6 +870,7 @@ impl sdrmm_device::DeviceDriver for FaultingDriver {
                 retune_keeps_phase: false,
                 rx_inputs: Vec::new(),
                 clean_fraction: None,
+                bank: None,
             },
             settings: sdrmm_wire::DeviceSettings {
                 sample_rate: Some(2_048_000.0),
@@ -1148,6 +1158,90 @@ async fn watching_a_node_that_is_no_sink_is_refused() {
             break;
         }
     }
+}
+
+#[test]
+fn draining_to_the_newest_counts_what_the_channel_lost() {
+    let (tx, mut rx) = broadcast::channel::<u8>(2);
+    for value in 1..=5u8 {
+        tx.send(value).expect("send");
+    }
+    let mut held = 0u8;
+    assert_eq!(newest(&mut rx, &mut held), 5);
+    assert_eq!(held, 5);
+    assert_eq!(newest(&mut rx, &mut held), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn one_client_too_many_is_turned_away() {
+    let (addr, state) = serve_ws(test_engine()).await;
+    state.clients.store(MAX_SOCKETS, atomic::Ordering::Relaxed);
+    let refused = tokio_tungstenite::connect_async(format!("ws://{addr}/api/ws"))
+        .await
+        .expect_err("the upgrade is refused");
+    assert!(format!("{refused}").contains("503"), "{refused}");
+    state.clients.store(0, atomic::Ordering::Relaxed);
+    let mut ws = dial(addr).await;
+    assert!(matches!(
+        next_event(&mut ws).await,
+        ServerEvent::Hello { .. }
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_oversized_message_closes_the_socket() {
+    let mut ws = connect(test_engine()).await;
+    assert!(matches!(
+        next_event(&mut ws).await,
+        ServerEvent::Hello { .. }
+    ));
+    let huge = "x".repeat(2 * 1024 * 1024);
+    let ended = timeout(WAIT, async {
+        if ws.send(tungstenite::Message::text(huge)).await.is_err() {
+            return;
+        }
+        while let Some(Ok(message)) = ws.next().await {
+            if matches!(message, tungstenite::Message::Close(_)) {
+                return;
+            }
+        }
+    })
+    .await;
+    assert!(ended.is_ok(), "the socket took a 2 MiB message");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_watches_only_so_many_sinks_and_reaps_the_finished_ones() {
+    let (addr, state) = serve_ws(test_engine()).await;
+    map_workspace(&state);
+    wait_for_sink(&state, "map").await;
+    let mut ws = dial(addr).await;
+    send(
+        &mut ws,
+        &ClientCommand::SubscribeSink {
+            node: "adsb".to_owned(),
+        },
+    )
+    .await;
+    assert_eq!(next_error(&mut ws).await, "Not a sink");
+
+    for pending in 0..sinks::MAX_WATCHED {
+        send(
+            &mut ws,
+            &ClientCommand::SubscribeSink {
+                node: format!("waiting{pending}"),
+            },
+        )
+        .await;
+    }
+    send(
+        &mut ws,
+        &ClientCommand::SubscribeSink {
+            node: "one too many".to_owned(),
+        },
+    )
+    .await;
+    assert_eq!(next_error(&mut ws).await, "Too many sinks watched");
 }
 
 #[tokio::test(flavor = "multi_thread")]

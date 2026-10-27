@@ -1,13 +1,16 @@
-use sdrmm_device::lock;
+use std::{collections::BTreeMap, sync::Arc};
+
+use sdrmm_device::{DeviceError, LaneMark, lock};
 use sdrmm_wire::{
     ArrayOrientation, ArrayTuningMode, LaneKey, NoiseSource, ServerEvent, StateScope,
 };
 
-use super::{Lease, find, find_mut, members};
+use super::{ArrayState, Lease, find, find_mut, members};
 use crate::{
-    Engine, EngineError,
-    array::{Command, ControlCommand, ControlConfig, LiveFrame, SyncContext},
+    Engine, EngineError, Inner,
+    array::{Command, ControlCommand, ControlConfig, LiveFrame, StatusBoard, SyncContext},
     lock_runtime,
+    runtime::DeviceRuntime,
 };
 
 impl Engine {
@@ -17,9 +20,17 @@ impl Engine {
         ds: u32,
         on: bool,
     ) -> Result<(), EngineError> {
-        let runtime = {
+        let (runtime, bank, board) = {
             let inner = self.lock();
-            if on && !find(&inner, node)?.uses(ds) {
+            let array = match find(&inner, node) {
+                Ok(array) => Some(array),
+                Err(error) if on => return Err(error),
+                Err(_) => None,
+            };
+            if on
+                && let Some(array) = array
+                && !array.uses(ds)
+            {
                 return Err(EngineError::Array(sdrmm_wire::ArrayFailure::NoNoiseSource));
             }
             let source = inner
@@ -29,11 +40,21 @@ impl Engine {
             if source.capabilities.noise_source == NoiseSource::None {
                 return Err(EngineError::Array(sdrmm_wire::ArrayFailure::NoNoiseSource));
             }
-            source.runtime.clone()
+            let bank = match (array, source.capabilities.bank.as_ref()) {
+                (Some(array), Some(bank)) => bank_lanes(&inner, array, &bank.id),
+                _ => BankLanes::default(),
+            };
+            (
+                source.runtime.clone(),
+                bank,
+                array.map(|array| array.board.clone()),
+            )
         };
-        lock_runtime(&runtime)
-            .set_noise_source(on)
-            .map_err(EngineError::from)
+        lock_runtime(&runtime).set_noise_source(on)?;
+        if let Some(board) = board {
+            mark_noise(&bank, on, &board);
+        }
+        Ok(())
     }
 
     pub(crate) fn arrays_lanes_lost(&self, ds: u32) {
@@ -258,6 +279,11 @@ impl Engine {
         state.configure(config);
         state.reframe(frame)?;
         state.switch_noise(survey.noise());
+        let restarted = survey.restarted(&state.leases);
+        if !restarted.is_empty() {
+            let leased = survey.lease_where(|slot| restarted.contains(&slot))?;
+            state.swap_lanes(&restarted, leased)?;
+        }
         inner.revision += 1;
         Ok(())
     }
@@ -318,5 +344,48 @@ impl Engine {
             });
         }
         Ok(())
+    }
+}
+
+type BankLanes = Vec<(Arc<DeviceRuntime>, Vec<u32>)>;
+
+fn bank_lanes(inner: &Inner, array: &ArrayState, id: &str) -> BankLanes {
+    let mut held: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for lane in array.spec.lanes.iter().flatten() {
+        let on_bank = inner.device_sets.get(&lane.device_set).is_some_and(|set| {
+            set.capabilities
+                .bank
+                .as_ref()
+                .is_some_and(|bank| bank.id == id)
+        });
+        if on_bank {
+            held.entry(lane.device_set).or_default().push(lane.stream);
+        }
+    }
+    held.into_iter()
+        .filter_map(|(ds, streams)| {
+            let set = inner.device_sets.get(&ds)?;
+            Some((set.runtime.clone(), streams))
+        })
+        .collect()
+}
+
+fn mark_noise(bank: &BankLanes, on: bool, board: &StatusBoard) {
+    for (runtime, streams) in bank {
+        let (posters, in_flight) = {
+            let runtime = lock_runtime(runtime);
+            (runtime.mark_posters(), runtime.in_flight_samples())
+        };
+        let mark = LaneMark::NoiseSource { on, in_flight };
+        for stream in streams {
+            let posted = posters
+                .get(*stream as usize)
+                .ok_or_else(|| DeviceError::Io("lane has no mark queue".to_owned()))
+                .and_then(|poster| poster.post(mark));
+            if let Err(error) = posted {
+                tracing::warn!(stream, %error, "a noise mark was lost");
+                board.add_events_lost(1);
+            }
+        }
     }
 }

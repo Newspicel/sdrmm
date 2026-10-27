@@ -252,6 +252,22 @@ impl Survey {
         }
     }
 
+    pub(super) fn restarted(&self, leases: &[Option<Lease>]) -> Vec<usize> {
+        self.members
+            .iter()
+            .filter(|member| {
+                let held = leases.get(member.slot).and_then(Option::as_ref);
+                let port = member.port.as_ref().filter(|_| self.usable(member));
+                match (held, port) {
+                    (Some(held), Some(port)) => !held.holds(port),
+                    (None, None) => false,
+                    _ => true,
+                }
+            })
+            .map(|member| member.slot)
+            .collect()
+    }
+
     pub(super) fn lease(&self) -> Result<Leased, EngineError> {
         self.lease_where(|_| true)
     }
@@ -343,16 +359,147 @@ impl Survey {
             .members
             .iter()
             .find(|member| member.caps.noise_source != NoiseSource::None)?;
-        let ds = source.lane.device_set;
-        let held = self
-            .members
-            .iter()
-            .filter(|member| member.lane.device_set == ds)
-            .count();
+        let (held, reached) = match &source.caps.bank {
+            Some(bank) => (self.on_bank(&bank.id), bank.lanes as usize),
+            None => (
+                self.on_device(source.lane.device_set),
+                source.streams as usize,
+            ),
+        };
         Some(NoiseSwitch {
-            device_set: ds,
+            device_set: source.lane.device_set,
             kind: source.caps.noise_source,
-            all_lanes_held: held == source.streams as usize,
+            all_lanes_held: held == reached,
         })
+    }
+
+    fn on_bank(&self, id: &str) -> usize {
+        self.members
+            .iter()
+            .filter(|member| member.caps.bank.as_ref().is_some_and(|bank| bank.id == id))
+            .count()
+    }
+
+    fn on_device(&self, device_set: u32) -> usize {
+        self.members
+            .iter()
+            .filter(|member| member.lane.device_set == device_set)
+            .count()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sdrmm_device::DeviceDriver;
+    use sdrmm_device_virtual::VirtualDriver;
+    use sdrmm_wire::{ClockBank, NoiseSource};
+
+    use super::*;
+
+    const BANK: &str = "001/4";
+    const RATE: f64 = 2_400_000.0;
+
+    fn dongle_caps() -> Capabilities {
+        let driver = VirtualDriver::new();
+        let info = driver
+            .probe()
+            .into_iter()
+            .find(|info| info.key == "dongle1")
+            .expect("the bench dongle");
+        let device = driver.open(&info).expect("the bench dongle opens");
+        device.capabilities().clone()
+    }
+
+    fn lane_caps(loose: &Capabilities, lane: u32, lanes: u32, source: NoiseSource) -> Capabilities {
+        Capabilities {
+            noise_source: source,
+            bank: Some(ClockBank {
+                id: BANK.to_owned(),
+                lane,
+                lanes,
+            }),
+            ..loose.clone()
+        }
+    }
+
+    fn settled() -> DeviceSettings {
+        DeviceSettings {
+            center_hz: Some(433.92e6),
+            sample_rate: Some(RATE),
+            ..DeviceSettings::default()
+        }
+    }
+
+    fn survey(held: u32, in_bank: u32) -> Survey {
+        let loose = dongle_caps();
+        let members: Vec<Member> = (0..held)
+            .map(|lane| Member {
+                slot: lane as usize,
+                lane: LaneRef {
+                    device_set: lane + 1,
+                    stream: 0,
+                },
+                caps: lane_caps(
+                    &loose,
+                    lane,
+                    in_bank,
+                    if lane == 0 {
+                        NoiseSource::Isolated
+                    } else {
+                        NoiseSource::None
+                    },
+                ),
+                settings: settled(),
+                running: true,
+                port: None,
+                in_flight: 0,
+                streams: 1,
+            })
+            .collect();
+        Survey {
+            lanes: members.iter().map(|member| Some(member.lane)).collect(),
+            members,
+            positions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn dongles_on_one_bank_clock_make_a_coherent_array_without_being_declared() {
+        let survey = survey(5, 5);
+        let tier = survey.tier(Coherence::None, false);
+        assert_eq!(tier.tier, Coherence::TimeSync);
+        assert_eq!(tier.devices, 5);
+        assert!(survey.failure(Coherence::None).is_none());
+        let switch = survey.noise().expect("the bank's own noise source");
+        assert_eq!(switch.device_set, 1);
+        assert_eq!(switch.kind, NoiseSource::Isolated);
+        assert!(
+            switch.all_lanes_held,
+            "the array holds every lane the source reaches"
+        );
+    }
+
+    #[test]
+    fn a_bank_lane_the_array_does_not_hold_leaves_the_noise_source_shared() {
+        let switch = survey(4, 5).noise().expect("the bank's own noise source");
+        assert!(
+            !switch.all_lanes_held,
+            "the fifth lane hears the source and is not in this array"
+        );
+    }
+
+    #[test]
+    fn a_lane_whose_radio_never_opened_takes_the_array_down() {
+        let mut survey = survey(5, 5);
+        survey.members.pop();
+        assert_eq!(
+            survey.failure(Coherence::None),
+            Some(ArrayFailure::DeviceDown { lane: 4 })
+        );
+        survey.members.truncate(1);
+        assert_eq!(
+            survey.failure(Coherence::None),
+            Some(ArrayFailure::DeviceDown { lane: 1 })
+        );
     }
 }

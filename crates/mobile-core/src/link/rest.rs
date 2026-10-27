@@ -23,6 +23,7 @@ pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const PAIR_TIMEOUT: Duration = Duration::from_secs(15);
 const NO_ERROR_BODY: &str = "no error body";
+const MAX_BODY: u64 = 8 << 20;
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum RestError {
@@ -151,7 +152,7 @@ impl RestClient {
     async fn send<T: DeserializeOwned>(&self, request: RequestBuilder) -> Result<T, RestError> {
         let response = request.send().await.map_err(|error| classify(&error))?;
         let status = response.status();
-        let body = response.bytes().await.map_err(|error| classify(&error))?;
+        let body = bounded_body(response).await?;
         if !status.is_success() {
             return Err(status_error(status.as_u16(), &body));
         }
@@ -169,9 +170,27 @@ impl RestClient {
         if status.is_success() {
             return Ok(());
         }
-        let body = response.bytes().await.map_err(|error| classify(&error))?;
+        let body = bounded_body(response).await?;
         Err(status_error(status.as_u16(), &body))
     }
+}
+
+async fn bounded_body(mut response: reqwest::Response) -> Result<Vec<u8>, RestError> {
+    if response.content_length().is_some_and(|len| len > MAX_BODY) {
+        return Err(too_long());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|error| classify(&error))? {
+        if body.len() + chunk.len() > MAX_BODY as usize {
+            return Err(too_long());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+fn too_long() -> RestError {
+    RestError::Decode(format!("the reply is longer than {MAX_BODY} bytes"))
 }
 
 impl Api for RestClient {
@@ -296,6 +315,24 @@ mod tests {
             serde_json::json!({"action": "calibrate"})
         );
         assert!(seen.iter().all(|request| !request.target.contains('?')));
+    }
+
+    #[tokio::test]
+    async fn a_reply_past_the_size_limit_is_refused_instead_of_buffered() {
+        let stub = StubServer::start(|_: &StubRequest| StubResponse {
+            status: 200,
+            headers: vec![("content-type".to_owned(), "application/json".to_owned())],
+            body: vec![b' '; MAX_BODY as usize + 1],
+            delay: Duration::ZERO,
+        })
+        .await;
+        let configs = tls::pinned(&stub.pin).expect("tls");
+        let client = RestClient::new(&stub.host(), &configs, None).expect("client");
+        let refused = client.about().await.expect_err("too long");
+        let RestError::Decode(message) = refused else {
+            panic!("an oversized reply is refused, got {refused:?}");
+        };
+        assert!(message.contains("longer than"), "{message}");
     }
 
     #[tokio::test]

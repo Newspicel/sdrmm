@@ -27,10 +27,15 @@ pub struct Prbs {
 impl Prbs {
     #[must_use]
     pub fn new(spec: PrbsSpec) -> Self {
+        assert!(
+            (1..=u32::BITS).contains(&spec.stages),
+            "a {} stage register does not fit a u32",
+            spec.stages
+        );
         Self {
             spec,
             register: spec.seed,
-            mask: (1 << spec.stages) - 1,
+            mask: u32::MAX >> (u32::BITS - spec.stages),
         }
     }
 
@@ -104,6 +109,28 @@ mod tests {
     fn the_dab_sequence_starts_with_the_bits_the_all_ones_seed_implies() {
         let bits = sequence(DAB_DISPERSAL, 6);
         assert_eq!(bits, [false, false, false, false, false, true]);
+    }
+
+    #[test]
+    fn a_register_filling_the_word_keeps_its_whole_mask() {
+        let spec = PrbsSpec {
+            stages: 32,
+            taps: 0x8020_0003,
+            seed: 0x1,
+        };
+        let mut prbs = Prbs::new(spec);
+        let bits: Vec<bool> = (0..64).map(|_| prbs.next_bit()).collect();
+        assert!(bits.iter().any(|&bit| bit), "a full mask produced no ones");
+    }
+
+    #[test]
+    #[should_panic(expected = "does not fit a u32")]
+    fn a_register_wider_than_the_word_is_refused() {
+        let _ = Prbs::new(PrbsSpec {
+            stages: 33,
+            taps: 0x3,
+            seed: 0x1,
+        });
     }
 
     #[test]

@@ -5,7 +5,7 @@ use sdrmm_device::{
     net::{Adopted, Endpoint},
     single_rx_sink,
 };
-use sdrmm_wire::{Capabilities, DeviceInfo, DeviceSettings};
+use sdrmm_wire::{Capabilities, DeviceBackend, DeviceInfo, DeviceSettings};
 
 pub use crate::ethernet::EspSdrNetDevice;
 use crate::{
@@ -24,7 +24,7 @@ mod proto;
 mod radio;
 mod session;
 
-const DRIVER_ID: &str = "espsdr";
+const DRIVER_ID: DeviceBackend = DeviceBackend::Espsdr;
 const OPEN_BAUD: u32 = 115_200;
 const ESPRESSIF_VID: u16 = 0x303A;
 const BRIDGES: [(u16, u16); 4] = [
@@ -57,7 +57,7 @@ fn is_serial(key: &str) -> bool {
 
 fn net_info(endpoint: &Endpoint) -> DeviceInfo {
     DeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: endpoint.to_string(),
         label: format!("ESP-SDR {endpoint}"),
         serial: None,
@@ -68,7 +68,7 @@ fn net_info(endpoint: &Endpoint) -> DeviceInfo {
 fn device_info(port: &str) -> DeviceInfo {
     let short = port.rsplit('/').next().unwrap_or(port);
     DeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: port.to_string(),
         label: format!("ESP-SDR {}", short.trim_start_matches("cu.")),
         serial: None,
@@ -76,55 +76,26 @@ fn device_info(port: &str) -> DeviceInfo {
     }
 }
 
-fn may_be_esp(info: &serialport::SerialPortInfo) -> bool {
-    let serialport::SerialPortType::UsbPort(usb) = &info.port_type else {
+fn may_be_esp(info: &sdrmm_serial::SerialPortInfo) -> bool {
+    let sdrmm_serial::SerialPortType::UsbPort(usb) = &info.port_type else {
         return false;
     };
     usb.vid == ESPRESSIF_VID || BRIDGES.contains(&(usb.vid, usb.pid))
 }
 
-fn usb_identity(info: &serialport::SerialPortInfo) -> Option<(u16, u16, Option<&str>)> {
-    match &info.port_type {
-        serialport::SerialPortType::UsbPort(usb) => {
-            Some((usb.vid, usb.pid, usb.serial_number.as_deref()))
-        }
-        _ => None,
-    }
-}
-
-fn shadowed(info: &serialport::SerialPortInfo, ports: &[serialport::SerialPortInfo]) -> bool {
-    if let Some(name) = info.port_name.strip_prefix("/dev/tty.") {
-        let callout = format!("/dev/cu.{name}");
-        return ports.iter().any(|other| other.port_name == callout);
-    }
-    info.port_name.starts_with("/dev/cu.SLAB_USBtoUART")
-        && ports.iter().any(|other| {
-            other.port_name.starts_with("/dev/cu.usbserial-")
-                && usb_identity(other) == usb_identity(info)
-        })
-}
-
-fn distinct_nodes(ports: Vec<serialport::SerialPortInfo>) -> Vec<serialport::SerialPortInfo> {
-    ports
-        .iter()
-        .filter(|info| !shadowed(info, &ports))
-        .cloned()
-        .collect()
-}
-
-fn system_ports() -> Vec<serialport::SerialPortInfo> {
-    serialport::available_ports()
+fn system_ports() -> Vec<sdrmm_serial::SerialPortInfo> {
+    sdrmm_serial::ports()
         .inspect_err(|e| tracing::debug!("serial ports: {e}"))
         .unwrap_or_default()
 }
 
 impl DeviceDriver for EspSdrDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
-        distinct_nodes(system_ports())
+        system_ports()
             .iter()
             .filter(|info| may_be_esp(info))
             .map(|info| device_info(&info.port_name))
@@ -211,7 +182,7 @@ impl SdrDevice for EspSdrDevice {
             self.radio.clone(),
             Converter::new(self.radio.0.profile.max_burst().unwrap_or(0)),
             single_rx_sink(sinks)?,
-            CaptureConfig::new("sdrmm-espsdr-rx", DRIVER_ID)
+            CaptureConfig::new("sdrmm-espsdr-rx", DRIVER_ID.as_str())
                 .with_sample_rate(self.settings.sample_rate),
         )
     }
@@ -238,10 +209,10 @@ mod tests {
         EspSdrDevice::open("/dev/cu.fake", Box::new(link.clone())).expect("opens")
     }
 
-    fn usb(vid: u16, pid: u16, name: &str) -> serialport::SerialPortInfo {
-        serialport::SerialPortInfo {
+    fn usb(vid: u16, pid: u16, name: &str) -> sdrmm_serial::SerialPortInfo {
+        sdrmm_serial::SerialPortInfo {
             port_name: name.to_string(),
-            port_type: serialport::SerialPortType::UsbPort(serialport::UsbPortInfo {
+            port_type: sdrmm_serial::SerialPortType::UsbPort(sdrmm_serial::UsbPortInfo {
                 vid,
                 pid,
                 serial_number: Some("0001".to_string()),
@@ -260,7 +231,7 @@ mod tests {
             usb(0x303A, 0x1001, "/dev/cu.usbmodem1101"),
             usb(0x0483, 0x5740, "/dev/cu.usbmodem400"),
         ];
-        let found: Vec<String> = distinct_nodes(ports)
+        let found: Vec<String> = sdrmm_serial::usable(ports)
             .iter()
             .filter(|info| may_be_esp(info))
             .map(|info| device_info(&info.port_name).label)

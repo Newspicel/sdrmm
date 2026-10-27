@@ -5,6 +5,7 @@ import type { ChannelParamsOf } from "./channelSettings";
 import { BTN_SM } from "./controls";
 import { SettingChip } from "./face/Chips";
 import { Icon } from "./Icon";
+import { rowKeys } from "./rowKeys";
 import { TextField } from "./TextField";
 
 export type WmbusKey = NonNullable<ChannelParamsOf<"wmbus">["keys"]>[number];
@@ -47,6 +48,7 @@ function WmbusKeysEditor({
   keys: readonly WmbusKey[];
   onChange: (keys: WmbusKey[]) => void;
 }) {
+  const rows = rowKeys(keys);
   const [draft, setDraft] = useState<WmbusKey | null>(null);
   const editDraft = (next: WmbusKey) => {
     if (wmbusKeyComplete(next)) {
@@ -60,7 +62,7 @@ function WmbusKeysEditor({
     <div className="flex flex-col gap-2">
       {keys.map((entry, index) => (
         <WmbusKeyRow
-          key={index}
+          key={rows[index]}
           entry={entry}
           name={`Key ${index + 1}`}
           onEdit={(next) => onChange(keys.with(index, next))}

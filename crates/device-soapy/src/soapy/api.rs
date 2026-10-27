@@ -189,6 +189,9 @@ pub fn library_candidates() -> Vec<PathBuf> {
     )
 }
 
+/// The bare leaf names at the end reach the loader's own search, which on Linux includes the
+/// `DT_RUNPATH` a packager set on this binary. macOS searches `LC_RPATH` only for a path that
+/// asks for it, so an `@rpath` spelling is what lets a Homebrew-style rpath answer there too.
 fn candidates(override_path: Option<OsString>, root: Option<OsString>) -> Vec<PathBuf> {
     if let Some(override_path) = override_path {
         return vec![PathBuf::from(override_path)];
@@ -204,9 +207,6 @@ fn candidates(override_path: Option<OsString>, root: Option<OsString>) -> Vec<Pa
         let lib = Path::new(prefix).join(library_dir());
         names.extend(versioned_names().map(|name| lib.join(name)));
     }
-    // A leaf name reaches the loader's own search, which on Linux includes the `DT_RUNPATH` a
-    // packager set on this binary. macOS searches `LC_RPATH` only for a path that asks for it,
-    // so an `@rpath` spelling is what lets a Homebrew-style rpath answer there too.
     if cfg!(target_os = "macos") {
         names.extend(versioned_names().map(|name| PathBuf::from(format!("@rpath/{name}"))));
         names.push(PathBuf::from(format!("@rpath/{}", bare_name())));

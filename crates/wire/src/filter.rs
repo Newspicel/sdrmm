@@ -6,7 +6,7 @@ use crate::{
     present::{Presentation, VoiceFacts},
 };
 
-pub const MAX_FILTER_KINDS: usize = 64;
+pub const MAX_FILTER_KINDS: usize = EventKind::ALL.len();
 pub const MAX_FILTER_IDS: usize = 256;
 pub const MAX_FILTER_DURATION_MS: u32 = 600_000;
 pub const MAX_FILTER_TEXT_LEN: usize = 128;
@@ -67,11 +67,10 @@ impl EventFilterNode {
             && self
                 .contains
                 .as_ref()
-                .is_none_or(|text| text.len() <= MAX_FILTER_TEXT_LEN)
-            && self
-                .stations
-                .iter()
-                .all(|station| !station.is_empty() && station.len() <= MAX_FILTER_TEXT_LEN)
+                .is_none_or(|text| text.chars().count() <= MAX_FILTER_TEXT_LEN)
+            && self.stations.iter().all(|station| {
+                !station.is_empty() && station.chars().count() <= MAX_FILTER_TEXT_LEN
+            })
     }
 
     #[must_use]
@@ -549,6 +548,40 @@ mod tests {
         assert!(
             !EventFilterNode {
                 min_duration_ms: MAX_FILTER_DURATION_MS + 1,
+                ..EventFilterNode::default()
+            }
+            .valid()
+        );
+    }
+
+    #[test]
+    fn every_kind_can_be_ticked_at_once() {
+        assert_eq!(MAX_FILTER_KINDS, EventKind::ALL.len());
+        assert!(
+            EventFilterNode {
+                kinds: EventKind::ALL.to_vec(),
+                ..EventFilterNode::default()
+            }
+            .valid()
+        );
+    }
+
+    #[test]
+    fn filter_text_is_measured_in_characters_at_both_ends() {
+        let wide = "\u{8def}".repeat(MAX_FILTER_TEXT_LEN);
+        assert!(wide.len() > MAX_FILTER_TEXT_LEN, "a wide word is wide");
+        assert!(
+            EventFilterNode {
+                contains: Some(wide.clone()),
+                stations: vec![wide],
+                ..EventFilterNode::default()
+            }
+            .valid()
+        );
+        let over = "\u{8def}".repeat(MAX_FILTER_TEXT_LEN + 1);
+        assert!(
+            !EventFilterNode {
+                contains: Some(over),
                 ..EventFilterNode::default()
             }
             .valid()

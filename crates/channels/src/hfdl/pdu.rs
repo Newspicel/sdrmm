@@ -199,10 +199,24 @@ fn event(kind: &str, details: Value, raw: &[u8]) -> HfdlEvent {
     }
 }
 
+struct Lpdu {
+    size: usize,
+    aircraft: Option<Value>,
+}
+
 struct MpduHeader {
     len: usize,
-    lpdu_sizes: Vec<usize>,
+    lpdus: Vec<Lpdu>,
     who: Value,
+}
+
+fn addressed(who: &Value, aircraft: Option<&Value>) -> Value {
+    let Some(aircraft) = aircraft else {
+        return who.clone();
+    };
+    let mut only = who.clone();
+    only["aircraft"] = json!([aircraft]);
+    only
 }
 
 fn downlink_header(p: &[u8]) -> Option<MpduHeader> {
@@ -213,9 +227,12 @@ fn downlink_header(p: &[u8]) -> Option<MpduHeader> {
     }
     Some(MpduHeader {
         len,
-        lpdu_sizes: p[6..len]
+        lpdus: p[6..len]
             .iter()
-            .map(|&size| usize::from(size) + 1)
+            .map(|&size| Lpdu {
+                size: usize::from(size) + 1,
+                aircraft: None,
+            })
             .collect(),
         who: json!({
             "dir": "downlink",
@@ -228,7 +245,7 @@ fn downlink_header(p: &[u8]) -> Option<MpduHeader> {
 
 fn uplink_header(p: &[u8]) -> Option<MpduHeader> {
     let aircraft_count = usize::from((p[0] >> 4) & 0x7) + 1;
-    let mut lpdu_sizes = Vec::new();
+    let mut lpdus = Vec::new();
     let mut index = 2;
     let mut aircraft = Vec::new();
     for _ in 0..aircraft_count {
@@ -239,13 +256,17 @@ fn uplink_header(p: &[u8]) -> Option<MpduHeader> {
         let count = usize::from(p[index + 1] >> 4);
         index += 2;
         let sizes = p.get(index..index + count)?;
-        lpdu_sizes.extend(sizes.iter().map(|&size| usize::from(size) + 1));
+        let entry = json!({ "aircraft_id": ac_id, "lpdus": count });
+        lpdus.extend(sizes.iter().map(|&size| Lpdu {
+            size: usize::from(size) + 1,
+            aircraft: Some(entry.clone()),
+        }));
         index += count;
-        aircraft.push(json!({ "aircraft_id": ac_id, "lpdus": count }));
+        aircraft.push(entry);
     }
     Some(MpduHeader {
         len: index,
-        lpdu_sizes,
+        lpdus,
         who: json!({
             "dir": "uplink",
             "gs_id": p[1] & 0x7F,
@@ -305,12 +326,13 @@ impl PduParser {
             return;
         }
         let mut offset = header.len + 2;
-        for size in header.lpdu_sizes {
-            let Some(lpdu) = p.get(offset..offset + size) else {
+        for lpdu in &header.lpdus {
+            let Some(frame) = p.get(offset..offset + lpdu.size) else {
                 break;
             };
-            self.parse_lpdu(lpdu, &header.who, bps, out);
-            offset += size;
+            let who = addressed(&header.who, lpdu.aircraft.as_ref());
+            self.parse_lpdu(frame, &who, bps, out);
+            offset += lpdu.size;
         }
     }
 
@@ -447,8 +469,11 @@ fn parse_spdu(p: &[u8], out: &mut Vec<HfdlEvent>) {
     if p.len() < SPDU_LEN || !fcs_ok(&p[..SPDU_BODY], &p[SPDU_BODY..SPDU_LEN]) {
         return;
     }
-    let freq_bitmap =
+    let freqs_from_nibble =
         |a: u8, b: u8, c: u8| -> u32 { u32::from(a >> 4) | u32::from(b) << 4 | u32::from(c) << 12 };
+    let freqs_from_byte = |a: u8, b: u8, c: u8| -> u32 {
+        u32::from(a) | u32::from(b) << 8 | u32::from(c & 0x0F) << 16
+    };
     out.push(event(
         "squitter",
         json!({
@@ -464,10 +489,10 @@ fn parse_spdu(p: &[u8], out: &mut Vec<HfdlEvent>) {
             "slot_assignment_hex": hex(&p[4..52]),
             "min_priority": p[52] & 0x0F,
             "systable_version": u16::from(p[53]) | ((u16::from(p[54]) & 0x0F) << 8),
-            "freqs_in_use": freq_bitmap(p[54], p[55], p[56]),
+            "freqs_in_use": freqs_from_nibble(p[54], p[55], p[56]),
             "neighbor2": {
                 "gs_id": p[57] & 0x7F,
-                "freqs": freq_bitmap(p[58].rotate_right(4), p[59], p[60]),
+                "freqs": freqs_from_byte(p[58], p[59], p[60]),
             },
             "neighbor3_gs_id": u16::from(p[60] >> 4) | ((u16::from(p[61]) & 0x7) << 4),
         }),

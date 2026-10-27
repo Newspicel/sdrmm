@@ -6,7 +6,7 @@ use sdrmm_wire::processor::PROCESSOR_TYPE_IDS;
 use sdrmm_wire::{
     ArrayElement, ArrayGeometry, BeamformerParams, DfParams, NodeBody, NodeKind,
     PassiveRadarParams, PatchCatalog, PolarimeterParams, PortDirection, ProcessorParams,
-    STEER_PORT, StitchParams, Winding,
+    STEER_PORT, SpatialSpectrumOwned, StitchParams, Winding,
 };
 
 use super::bench::{Bench, Sink, block};
@@ -180,8 +180,27 @@ fn output_slots_report_an_empty_pool() {
     let tally = out.tally();
     assert!(!tally.report && !tally.surface);
     assert_eq!(tally.events, 0);
-    assert_eq!(tally.dropped_reports, 2);
+    assert_eq!(tally.dropped_reports, 1);
+    assert_eq!(tally.dropped_surfaces, 1);
     assert_eq!(tally.dropped_events, 1);
+}
+
+#[test]
+fn a_missing_surface_slot_counts_as_a_surface_and_not_as_a_report() {
+    let mut sink = Sink::new("spatial_spectrum", &[]);
+    sink.surface = Some(SurfaceFrame::SpatialSpectrum(
+        SpatialSpectrumOwned::default(),
+    ));
+    let tally = sink.run(|out| {
+        assert!(out.surface().is_some());
+        out.publish_surface();
+        assert!(out.surface().is_none());
+        assert!(out.report().is_some());
+        out.publish_report();
+    });
+    assert!(tally.report && tally.surface);
+    assert_eq!(tally.dropped_surfaces, 1);
+    assert_eq!(tally.dropped_reports, 0);
 }
 
 #[test]

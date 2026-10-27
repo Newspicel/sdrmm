@@ -8,7 +8,7 @@ use std::{
 };
 
 use sdrmm_device::{DeviceDriver, DeviceRegistry};
-use sdrmm_device_rtlsdr::KrakenDriver;
+use sdrmm_device_rtlsdr::RtlSdrDriver;
 use sdrmm_engine::{ArraySpec, Engine, LaneRef};
 use sdrmm_wire::{
     ArrayCal, ArrayGain, ArrayGeometry, ArrayNode, ArrayTune, DeviceInfo, DeviceSettings, Winding,
@@ -24,20 +24,31 @@ const FIND_POLL: Duration = Duration::from_millis(250);
 
 pub struct Kraken {
     pub engine: Arc<Engine>,
-    pub ds: u32,
-    info: DeviceInfo,
+    pub sets: Vec<u32>,
+    first: DeviceInfo,
 }
 
-fn find() -> DeviceInfo {
+fn bank_lanes(probed: Vec<DeviceInfo>) -> Option<Vec<DeviceInfo>> {
+    let mut lanes: Vec<(u32, DeviceInfo)> = probed
+        .into_iter()
+        .filter_map(|info| {
+            let bank = info.profile.as_ref()?.bank.clone()?;
+            (bank.lanes == LANES).then_some((bank.lane, info))
+        })
+        .collect();
+    lanes.sort_by_key(|(lane, _)| *lane);
+    lanes
+        .iter()
+        .map(|(lane, _)| *lane)
+        .eq(0..LANES)
+        .then(|| lanes.into_iter().map(|(_, info)| info).collect())
+}
+
+fn find() -> Vec<DeviceInfo> {
     let started = Instant::now();
     loop {
-        if let Some(info) = KrakenDriver::new().probe().into_iter().find(|info| {
-            info.profile
-                .as_ref()
-                .is_some_and(|profile| profile.rx_streams == LANES)
-                && !info.label.contains("missing")
-        }) {
-            return info;
+        if let Some(lanes) = bank_lanes(RtlSdrDriver::new().probe()) {
+            return lanes;
         }
         assert!(
             started.elapsed() < FIND_WAIT,
@@ -49,31 +60,44 @@ fn find() -> DeviceInfo {
 
 impl Kraken {
     pub fn open() -> Self {
-        let info = find();
+        let lanes = find();
         let mut registry = DeviceRegistry::new();
-        registry.register(REGISTRY_PRIORITY, Box::new(KrakenDriver::new()));
+        registry.register(REGISTRY_PRIORITY, Box::new(RtlSdrDriver::new()));
         let engine = Engine::with_registry(registry, None);
-        let ds = engine
-            .create_device_set(&info.id())
-            .unwrap_or_else(|error| panic!("{} opens: {error}", info.label));
-        engine
-            .patch_device(
-                ds,
-                DeviceSettings {
-                    sample_rate: Some(RATE),
-                    ..DeviceSettings::default()
-                },
-            )
-            .unwrap_or_else(|error| panic!("{} runs at {RATE}: {error}", info.label));
-        Self { engine, ds, info }
+        let mut sets = Vec::with_capacity(lanes.len());
+        for lane in &lanes {
+            let ds = engine
+                .create_device_set(&lane.id())
+                .unwrap_or_else(|error| panic!("{} opens: {error}", lane.label));
+            engine
+                .patch_device(
+                    ds,
+                    DeviceSettings {
+                        sample_rate: Some(RATE),
+                        ..DeviceSettings::default()
+                    },
+                )
+                .unwrap_or_else(|error| panic!("{} runs at {RATE}: {error}", lane.label));
+            sets.push(ds);
+        }
+        let first = lanes
+            .into_iter()
+            .next()
+            .expect("the lane that holds the switches");
+        Self {
+            engine,
+            sets,
+            first,
+        }
     }
 
     pub fn lanes(&self) -> Vec<Option<LaneRef>> {
-        (0..LANES)
-            .map(|stream| {
+        self.sets
+            .iter()
+            .map(|ds| {
                 Some(LaneRef {
-                    device_set: self.ds,
-                    stream,
+                    device_set: *ds,
+                    stream: 0,
                 })
             })
             .collect()
@@ -110,11 +134,11 @@ impl Kraken {
 impl Drop for Kraken {
     fn drop(&mut self) {
         self.engine.shutdown();
-        match KrakenDriver::new().open(&self.info) {
+        match RtlSdrDriver::new().open(&self.first) {
             Ok(device) => drop(device),
             Err(error) => eprintln!(
                 "{} did not reopen to switch its noise source off: {error}",
-                self.info.label
+                self.first.label
             ),
         }
     }

@@ -45,6 +45,8 @@ const VFR_INTERLEAVE: [usize; 144] = [
     94, 118, 142, 47, 23, 95, 71, 143, 119,
 ];
 
+const VFR_CODE_WIDTHS: [usize; 8] = [23, 23, 23, 23, 15, 15, 15, 7];
+
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "ysf".to_owned(),
     name: "System Fusion".to_owned(),
@@ -115,6 +117,10 @@ impl ChannelRx for YsfChannel {
             self.decoder.push(symbol, out);
         }
     }
+
+    fn rejected(&self) -> u32 {
+        self.decoder.rejected()
+    }
 }
 
 struct Decoder {
@@ -131,6 +137,7 @@ struct Decoder {
     bits: Vec<bool>,
     half_vocoder: MbeDecoder,
     full_vocoder: MbeDecoder,
+    rejected: u32,
 }
 
 impl Decoder {
@@ -149,7 +156,16 @@ impl Decoder {
             bits: Vec::with_capacity(PAYLOAD_SYMBOLS * 2),
             half_vocoder: MbeDecoder::half_rate(),
             full_vocoder: MbeDecoder::full_rate(),
+            rejected: 0,
         }
+    }
+
+    fn rejected(&self) -> u32 {
+        self.rejected
+    }
+
+    fn reject(&mut self) {
+        self.rejected = self.rejected.saturating_add(1);
     }
 
     fn reset(&mut self) {
@@ -214,7 +230,10 @@ impl Decoder {
             let word = self.info[block * 24..(block + 1) * 24]
                 .iter()
                 .fold(0u64, |acc, &b| acc << 1 | u64::from(b));
-            let (info, repaired) = CyclicCode::GOLAY_24_12.decode(word)?;
+            let Some((info, repaired)) = CyclicCode::GOLAY_24_12.decode(word) else {
+                self.reject();
+                return None;
+            };
             errors += repaired;
             value = value << 12 | u64::from(info);
         }
@@ -223,6 +242,7 @@ impl Decoder {
         }
         let crc = !crc16_msb(0x1021, 0, &fich[..4]);
         if crc != u16::from_be_bytes([fich[4], fich[5]]) {
+            self.reject();
             return None;
         }
 
@@ -310,6 +330,7 @@ impl Decoder {
         let encoded = pack::<22>(&self.info)?;
         let expected = !crc16_msb(0x1021, 0, &encoded[..20]);
         if expected != u16::from_be_bytes([encoded[20], encoded[21]]) {
+            self.reject();
             return None;
         }
         Some(std::array::from_fn(|i| encoded[i] ^ WHITENING[i]))
@@ -331,6 +352,7 @@ impl Decoder {
         let encoded = pack::<12>(&self.info)?;
         let expected = !crc16_msb(0x1021, 0, &encoded[..10]);
         if expected != u16::from_be_bytes([encoded[10], encoded[11]]) {
+            self.reject();
             return None;
         }
         Some(std::array::from_fn(|i| encoded[i] ^ WHITENING[i]))
@@ -401,28 +423,7 @@ impl Decoder {
     }
 
     fn voice_fr(&mut self, start: usize, out: &mut ChannelOutputs) {
-        let transmitted = &self.bits[start..start + 144];
-        let mut raw = [false; 144];
-        for (i, &bit) in transmitted.iter().enumerate() {
-            raw[VFR_INTERLEAVE[i]] = bit;
-        }
-        let seed = raw[..12]
-            .iter()
-            .fold(0u16, |acc, &bit| acc << 1 | u16::from(bit));
-        let mut state = seed << 4;
-        for bit in &mut raw[23..137] {
-            state = state.wrapping_mul(173).wrapping_add(13_849);
-            *bit ^= state >> 15 != 0;
-        }
-        let widths = [23usize, 23, 23, 23, 15, 15, 15, 7];
-        let mut code = [0u32; 8];
-        let mut offset = 0;
-        for (word, width) in code.iter_mut().zip(widths) {
-            *word = raw[offset..offset + width]
-                .iter()
-                .fold(0u32, |acc, &bit| acc << 1 | u32::from(bit));
-            offset += width;
-        }
+        let code = voice_fr_code_vectors(&self.bits[start..start + 144]);
         self.full_vocoder.decode_full_code_vectors(code, false, out);
     }
 }
@@ -467,6 +468,22 @@ impl Callsigns {
     }
 }
 
+fn voice_fr_code_vectors(transmitted: &[bool]) -> [u32; 8] {
+    let mut raw = [false; 144];
+    for (i, &bit) in transmitted.iter().enumerate() {
+        raw[VFR_INTERLEAVE[i]] = bit;
+    }
+    let mut code = [0u32; 8];
+    let mut offset = 0;
+    for (word, width) in code.iter_mut().zip(VFR_CODE_WIDTHS) {
+        *word = raw[offset..offset + width]
+            .iter()
+            .fold(0u32, |acc, &bit| acc << 1 | u32::from(bit));
+        offset += width;
+    }
+    code
+}
+
 fn pack<const N: usize>(bits: &[bool]) -> Option<[u8; N]> {
     if bits.len() < N * 8 {
         return None;
@@ -503,6 +520,8 @@ fn data_mode_name(dt: u8) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use blip25_vocoder::fullrate;
+
     use super::*;
     use crate::{
         dv::{
@@ -655,6 +674,22 @@ mod tests {
         let iq = tx::transmission_with_voice(&fich, tx::Voice::FullRate(&voice), INPUT_RATE_HZ);
         let (_, audio) = decode_with_audio(&mut channel(), &iq);
         assert_tone_audio(&audio, 17);
+    }
+
+    #[test]
+    fn a_conformant_voice_fr_frame_reaches_the_vocoder_still_pn_modulated() {
+        let info = [0x0ABu16, 0x123, 0x456, 0x789, 0x2AB, 0x155, 0x3C0, 0x55];
+        let standard = fullrate::fec::deinterleave(&fullrate::frame::encode_frame(&info));
+        let mut raw = [false; 144];
+        let mut offset = 0;
+        for (&word, width) in standard.iter().zip(VFR_CODE_WIDTHS) {
+            for bit in 0..width {
+                raw[offset + bit] = word >> (width - 1 - bit) & 1 == 1;
+            }
+            offset += width;
+        }
+        let transmitted: [bool; 144] = std::array::from_fn(|i| raw[VFR_INTERLEAVE[i]]);
+        assert_eq!(voice_fr_code_vectors(&transmitted), standard);
     }
 
     #[test]

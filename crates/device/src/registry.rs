@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use sdrmm_wire::DeviceInfo;
+use sdrmm_wire::{DeviceBackend, DeviceInfo, DoctorCheck};
 
 use crate::{DeviceDriver, DeviceError, SdrDevice};
 
@@ -20,8 +20,16 @@ impl DeviceRegistry {
     }
 
     #[must_use]
-    pub fn driver_ids(&self) -> Vec<(u8, &'static str)> {
+    pub fn driver_ids(&self) -> Vec<(u8, DeviceBackend)> {
         self.drivers.iter().map(|(p, d)| (*p, d.id())).collect()
+    }
+
+    #[must_use]
+    pub fn health(&self) -> Vec<DoctorCheck> {
+        self.drivers
+            .iter()
+            .filter_map(|(_, driver)| driver.health())
+            .collect()
     }
 
     #[must_use]
@@ -37,7 +45,7 @@ impl DeviceRegistry {
 
     /// What each driver finds and how long it takes, for reporting where a slow search goes.
     #[must_use]
-    pub fn probe_timings(&self) -> Vec<(&'static str, usize, std::time::Duration)> {
+    pub fn probe_timings(&self) -> Vec<(DeviceBackend, usize, std::time::Duration)> {
         self.drivers
             .iter()
             .map(|(_, driver)| {
@@ -49,7 +57,7 @@ impl DeviceRegistry {
     }
 
     fn collect(&self, probe: impl Fn(&dyn DeviceDriver) -> Vec<DeviceInfo>) -> Vec<DeviceInfo> {
-        let mut by_serial: HashMap<String, (u8, &'static str, Vec<DeviceInfo>)> = HashMap::new();
+        let mut by_serial: HashMap<String, (u8, DeviceBackend, Vec<DeviceInfo>)> = HashMap::new();
         let mut serialless: Vec<DeviceInfo> = Vec::new();
 
         for (priority, driver) in &self.drivers {
@@ -101,7 +109,7 @@ impl DeviceRegistry {
 
     #[must_use]
     pub fn resolve(&self, device_id: &str) -> Option<DeviceInfo> {
-        let (driver_id, key) = device_id.split_once(':')?;
+        let (driver_id, key) = split_device_id(device_id)?;
         self.drivers
             .iter()
             .filter(|(_, driver)| driver.id() == driver_id)
@@ -114,7 +122,7 @@ impl DeviceRegistry {
         serial: Option<&str>,
     ) -> Result<String, DeviceError> {
         let not_found = || DeviceError::NotFound(device_id.to_string());
-        let (driver_id, key) = device_id.split_once(':').ok_or_else(not_found)?;
+        let (driver_id, key) = split_device_id(device_id).ok_or_else(not_found)?;
         self.drivers
             .iter()
             .find(|(_, driver)| driver.id() == driver_id)
@@ -124,7 +132,7 @@ impl DeviceRegistry {
     }
 
     fn find(&self, device_id: &str) -> Option<(&dyn DeviceDriver, DeviceInfo)> {
-        let (driver_id, key) = device_id.split_once(':')?;
+        let (driver_id, key) = split_device_id(device_id)?;
         let matching = || {
             self.drivers
                 .iter()
@@ -143,6 +151,11 @@ impl DeviceRegistry {
     }
 }
 
+fn split_device_id(device_id: &str) -> Option<(DeviceBackend, &str)> {
+    let (driver, key) = device_id.split_once(':')?;
+    Some((DeviceBackend::parse(driver)?, key))
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
@@ -153,13 +166,13 @@ mod tests {
     use crate::{RxSink, lock};
 
     struct Fake {
-        id: &'static str,
+        id: DeviceBackend,
         probed: Mutex<Vec<DeviceInfo>>,
         adopts: bool,
     }
 
     impl Fake {
-        fn new(id: &'static str, keys: &[&str]) -> Self {
+        fn new(id: DeviceBackend, keys: &[&str]) -> Self {
             Self {
                 id,
                 probed: Mutex::new(keys.iter().map(|key| info(id, key)).collect()),
@@ -167,7 +180,7 @@ mod tests {
             }
         }
 
-        fn adopting(id: &'static str) -> Self {
+        fn adopting(id: DeviceBackend) -> Self {
             Self {
                 id,
                 probed: Mutex::new(Vec::new()),
@@ -176,9 +189,9 @@ mod tests {
         }
     }
 
-    fn info(driver: &str, key: &str) -> DeviceInfo {
+    fn info(driver: DeviceBackend, key: &str) -> DeviceInfo {
         DeviceInfo {
-            driver: driver.to_string(),
+            driver,
             key: key.to_string(),
             label: format!("{driver} {key}"),
             serial: None,
@@ -187,7 +200,7 @@ mod tests {
     }
 
     impl DeviceDriver for Fake {
-        fn id(&self) -> &'static str {
+        fn id(&self) -> DeviceBackend {
             self.id
         }
 
@@ -242,6 +255,7 @@ mod tests {
                 retune_keeps_phase: false,
                 rx_inputs: Vec::new(),
                 clean_fraction: None,
+                bank: None,
             })
         }
 
@@ -269,7 +283,7 @@ mod tests {
         registry
     }
 
-    fn serial_info(driver: &str, key: &str, serial: &str) -> DeviceInfo {
+    fn serial_info(driver: DeviceBackend, key: &str, serial: &str) -> DeviceInfo {
         DeviceInfo {
             serial: Some(serial.to_string()),
             ..info(driver, key)
@@ -278,12 +292,13 @@ mod tests {
 
     #[test]
     fn a_serial_goes_to_the_named_driver_which_may_refuse_it() {
-        let registry = registry([Fake::new("mock", &["one"])]);
+        let registry = registry([Fake::new(DeviceBackend::Rtlsdr, &["one"])]);
         assert!(matches!(
-            registry.write_serial("mock:one", None),
-            Err(DeviceError::Unsupported(text)) if text == "mock radios keep their factory serial"
+            registry.write_serial("rtlsdr:one", None),
+            Err(DeviceError::Unsupported(text))
+                if text == "rtlsdr radios keep their factory serial"
         ));
-        for missing in ["other:one", "no-colon"] {
+        for missing in ["hackrf:one", "no-colon", "nosuch:one"] {
             assert!(matches!(
                 registry.write_serial(missing, Some("7")),
                 Err(DeviceError::NotFound(_))
@@ -292,63 +307,110 @@ mod tests {
     }
 
     #[test]
+    fn health_gathers_what_the_drivers_report_and_skips_the_quiet_ones() {
+        struct Ailing;
+
+        impl DeviceDriver for Ailing {
+            fn id(&self) -> DeviceBackend {
+                DeviceBackend::Sdrplay
+            }
+
+            fn probe(&self) -> Vec<DeviceInfo> {
+                Vec::new()
+            }
+
+            fn open(&self, _info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+                Err(DeviceError::NotFound("ailing".to_string()))
+            }
+
+            fn health(&self) -> Option<DoctorCheck> {
+                Some(DoctorCheck {
+                    id: "ailing.library".to_string(),
+                    name: "Ailing SDK".to_string(),
+                    status: sdrmm_wire::CheckStatus::Warn,
+                    detail: "not installed".to_string(),
+                    hint: None,
+                })
+            }
+        }
+
+        let mut registry = DeviceRegistry::new();
+        registry.register(1, Box::new(Fake::new(DeviceBackend::Rtlsdr, &["one"])));
+        registry.register(2, Box::new(Ailing));
+        let reported: Vec<String> = registry
+            .health()
+            .into_iter()
+            .map(|check| check.id)
+            .collect();
+        assert_eq!(reported, ["ailing.library"]);
+    }
+
+    #[test]
     fn open_finds_a_probed_device() {
-        let registry = registry([Fake::new("mock", &["one", "two"])]);
-        let (info, _) = registry.open("mock:two").expect("probed device");
-        assert_eq!(info.id(), "mock:two");
+        let registry = registry([Fake::new(DeviceBackend::Rtlsdr, &["one", "two"])]);
+        let (info, _) = registry.open("rtlsdr:two").expect("probed device");
+        assert_eq!(info.id(), "rtlsdr:two");
     }
 
     #[test]
     fn a_key_no_probe_reports_is_not_found_unless_the_driver_adopts_it() {
-        let registry = registry([Fake::new("mock", &["one"])]);
+        let registry = registry([Fake::new(DeviceBackend::Rtlsdr, &["one"])]);
         assert!(matches!(
-            registry.open("mock:missing"),
+            registry.open("rtlsdr:missing"),
             Err(DeviceError::NotFound(_))
         ));
-        assert!(registry.resolve("mock:missing").is_none());
+        assert!(registry.resolve("rtlsdr:missing").is_none());
     }
 
     #[test]
     fn an_adopted_key_opens_and_then_appears_in_the_probe() {
-        let registry = registry([Fake::adopting("net")]);
+        let registry = registry([Fake::adopting(DeviceBackend::Rtltcp)]);
         assert!(registry.probe_all().is_empty());
-        let (info, _) = registry.open("net:Host:1234").expect("adopted endpoint");
-        assert_eq!(info.id(), "net:host:1234", "the canonical key comes back");
+        let (info, _) = registry.open("rtltcp:Host:1234").expect("adopted endpoint");
+        assert_eq!(
+            info.id(),
+            "rtltcp:host:1234",
+            "the canonical key comes back"
+        );
         assert_eq!(
             registry
                 .probe_all()
                 .iter()
                 .map(DeviceInfo::id)
                 .collect::<Vec<_>>(),
-            vec!["net:host:1234".to_string()]
+            vec!["rtltcp:host:1234".to_string()]
         );
-        registry.open("net:host:1234").expect("now probed");
+        registry.open("rtltcp:host:1234").expect("now probed");
     }
 
     #[test]
     fn resolve_adopts_without_opening() {
-        let registry = registry([Fake::adopting("net")]);
-        let info = registry.resolve("net:HOST:1234").expect("adopted");
-        assert_eq!(info.id(), "net:host:1234");
+        let registry = registry([Fake::adopting(DeviceBackend::Rtltcp)]);
+        let info = registry.resolve("rtltcp:HOST:1234").expect("adopted");
+        assert_eq!(info.id(), "rtltcp:host:1234");
         assert_eq!(registry.probe_all().len(), 1);
-        assert!(registry.resolve("other:host:1234").is_none());
+        assert!(registry.resolve("hackrf:host:1234").is_none());
         assert!(registry.resolve("no-colon").is_none());
+        assert!(registry.resolve("nosuch:host").is_none());
     }
 
     #[test]
     fn a_probed_device_wins_over_an_adopting_driver_with_the_same_id() {
-        let registry = registry([Fake::adopting("mock"), Fake::new("mock", &["real"])]);
-        let (info, _) = registry.open("mock:real").expect("the probed one");
-        assert_eq!(info.label, "mock real");
+        let registry = registry([
+            Fake::adopting(DeviceBackend::Rtlsdr),
+            Fake::new(DeviceBackend::Rtlsdr, &["real"]),
+        ]);
+        let (info, _) = registry.open("rtlsdr:real").expect("the probed one");
+        assert_eq!(info.label, "rtlsdr real");
     }
 
     #[test]
     fn one_driver_can_expose_multiple_addresses_for_a_serial() {
         let variants = Fake {
-            id: "soapy",
+            id: DeviceBackend::Soapy,
             probed: Mutex::new(vec![
-                serial_info("soapy", "123456@ST", "123456"),
-                serial_info("soapy", "123456@DT", "123456"),
+                serial_info(DeviceBackend::Soapy, "123456@ST", "123456"),
+                serial_info(DeviceBackend::Soapy, "123456@DT", "123456"),
             ]),
             adopts: false,
         };
@@ -367,16 +429,16 @@ mod tests {
     #[test]
     fn a_higher_priority_backend_still_wins_a_shared_serial() {
         let soapy = Fake {
-            id: "soapy",
+            id: DeviceBackend::Soapy,
             probed: Mutex::new(vec![
-                serial_info("soapy", "123456@ST", "123456"),
-                serial_info("soapy", "123456@DT", "123456"),
+                serial_info(DeviceBackend::Soapy, "123456@ST", "123456"),
+                serial_info(DeviceBackend::Soapy, "123456@DT", "123456"),
             ]),
             adopts: false,
         };
         let native = Fake {
-            id: "native",
-            probed: Mutex::new(vec![serial_info("native", "123456", "123456")]),
+            id: DeviceBackend::Hackrf,
+            probed: Mutex::new(vec![serial_info(DeviceBackend::Hackrf, "123456", "123456")]),
             adopts: false,
         };
         let mut registry = DeviceRegistry::new();
@@ -389,7 +451,7 @@ mod tests {
                 .iter()
                 .map(DeviceInfo::id)
                 .collect::<Vec<_>>(),
-            vec!["native:123456"]
+            vec!["hackrf:123456"]
         );
     }
 }

@@ -2,10 +2,9 @@
 
 | Node | Records | Wire from | Format |
 |---|---|---|---|
-| Recorder | The Device's full IQ | Device `iq` | SigMF |
+| Recorder | The Device's full IQ, with an optional pre-roll | Device `iq` | SigMF |
 | Baseband recorder | One channel's filtered IQ | Channel `baseband` | SigMF |
 | Audio recorder | One channel's audio | Channel `audio` | 48 kHz 16-bit WAV |
-| Time machine | IQ from before you pressed the button | Device `iq` | SigMF |
 | Event output, Recordings | One WAV per call | Channel `events` | 8 kHz 16-bit WAV |
 
 A SigMF recording is two files: samples in `.sigmf-data`, frequency, rate, and time in
@@ -25,20 +24,20 @@ while recording.
 
 A clean server shutdown finishes open recordings. Killing the process can leave one incomplete.
 
-## Time machine
+## Pre-roll
 
-Capture a signal after it happened:
+Catch a signal after it happened:
 
-1. Wire Device `iq` to **Time machine**, and GPS `position` if you have one.
-2. Set **History**, 1 to 120 seconds (default 10), and press **Arm**.
-3. Press **Capture** to save the buffer and keep recording live.
-4. **Stop** ends the file and stays armed. **Disarm** frees the memory.
+1. Turn **Pre-roll** on and set **Keep**, 1 to 120 seconds (default 10).
+2. The recorder holds that much IQ in memory from then on.
+3. **Record** writes the held seconds first, then keeps going live.
+4. **Stop** ends the file. The pre-roll keeps running.
 
-Arming belongs to the workspace: switching away lets the radio go, switching back arms it
+The pre-roll belongs to the workspace: switching away lets the radio go, switching back holds it
 again.
 
 The buffer uses `seconds × sample rate × 8` bytes, up to 1 GiB. **Memory** shows it. The sample
-rate is locked while armed. Retuning starts a new segment in the same recording.
+rate is locked while a pre-roll is held. Retuning starts a new segment in the same recording.
 
 ## Record a channel
 
@@ -89,16 +88,17 @@ Press **Calibrate** while recording. Playback calibrates from the recorded noise
 
 ## Play a recording
 
-In **Library → Recordings**, press **Open as source**. A **Recording** node appears. Wire it to
-channels and displays like a Device, then use play, pause, and seek to decode the same samples
-again with different settings.
+In **Library → Recordings**, press **Open as source**. A **Device** node appears pinned to that
+recording. Wire it to channels and displays like any other Device, then use play, pause, and seek
+to decode the same samples again with different settings. A Device node also offers the library
+itself, under **Recording**.
 
 **Upload SigMF** adds a recording from your computer, as a `.sigmf` archive or a
 `.sigmf-meta` and `.sigmf-data` pair. A downloaded array collection uploads whole.
 
 ## Play an array recording
 
-Open a collection as a source. The **Recording** node gets one output per lane, `iq1` to `iq5` for
+Open a collection as a source. The Device node gets one output per lane, `iq1` to `iq5` for
 a five-lane array. Press **Make array**, or wire the outputs to an Array's lanes in order. Set the
 Array's geometry as it was when recording. Wire a GPS to the Array's `position` and add a
 processor, such as a [Direction finder](direction-finding.md). Each lane keeps its recorded

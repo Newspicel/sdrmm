@@ -95,13 +95,14 @@ pub fn reassemble(
     burst: &DemodBurst,
     heard: &Heard,
     out: &mut Vec<IridiumFrame>,
-) {
+) -> bool {
     let first = out.len();
     reassembly.handle(&burst.bits, &burst.reliability, heard.time, heard.freq, out);
     let offset = Some((heard.center_hz + burst.cfo_hz) as f32);
     for frame in &mut out[first..] {
         frame.offset_hz = offset;
     }
+    out.len() > first
 }
 
 pub struct ChannelDecoder {
@@ -112,6 +113,7 @@ pub struct ChannelDecoder {
     windows: Vec<Window>,
     reassembly: Reassembly,
     bursts: Vec<DemodBurst>,
+    rejected: u32,
 }
 
 impl ChannelDecoder {
@@ -124,7 +126,12 @@ impl ChannelDecoder {
             windows: Vec::new(),
             reassembly: Reassembly::new(),
             bursts: Vec::new(),
+            rejected: 0,
         }
+    }
+
+    pub fn rejected(&self) -> u32 {
+        self.rejected
     }
 
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<IridiumFrame>) {
@@ -139,7 +146,9 @@ impl ChannelDecoder {
             center_hz: 0.0,
         };
         for burst in &bursts {
-            reassemble(&mut self.reassembly, burst, &heard, out);
+            if !reassemble(&mut self.reassembly, burst, &heard, out) {
+                self.rejected = self.rejected.saturating_add(1);
+            }
         }
         self.bursts = bursts;
     }

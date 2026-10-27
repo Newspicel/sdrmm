@@ -19,7 +19,7 @@ use crate::{
     audio_recording::AudioTaps,
     iq::IqBlock,
     network_export::NetworkExportTap,
-    publishing::channel::{ChannelPublisher, IQ_WANTED, SYMBOLS_WANTED},
+    publishing::channel::{ChannelPublisher, IQ_WANTED, SYMBOLS_WANTED, iq_capacity},
     recording::RecorderTap,
     symbols::SymbolBlock,
     video::VideoPacket,
@@ -215,6 +215,7 @@ impl ChannelHost {
                 .map_err(|error| {
                     ChannelError::InvalidSettings(format!("start publisher: {error}"))
                 })?;
+        let block = iq_capacity(input_rate, device_rate);
         Ok(Box::new(Self {
             ddc,
             filter,
@@ -226,8 +227,8 @@ impl ChannelHost {
             blanker: (descriptor.has_audio && settings.blanker.enabled)
                 .then(|| NoiseBlanker::new(input_rate, settings.blanker.threshold)),
             outputs: ChannelOutputs::default(),
-            scratch: Vec::new(),
-            filtered: Vec::new(),
+            scratch: Vec::with_capacity(block),
+            filtered: Vec::with_capacity(block),
             pcm_per_input: f64::from(AUDIO_RATE) / input_rate,
             zero_carry: 0.0,
             audio_channels,
@@ -240,7 +241,7 @@ impl ChannelHost {
             band_high_hz,
             in_band: reaches(offset_hz, band_low_hz, band_high_hz, device_rate),
             emits_events,
-            gated: Vec::new(),
+            gated: Vec::with_capacity(block),
             publisher,
             baseband_rec: None,
             baseband_export: None,
@@ -608,7 +609,7 @@ impl ChannelHost {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::f64::consts::TAU;
 
     use sdrmm_wire::{
@@ -675,6 +676,10 @@ mod tests {
         (host, iq_rx)
     }
 
+    pub(crate) fn nfm_host() -> (Box<ChannelHost>, broadcast::Receiver<PcmBlock>) {
+        host(&nfm_settings(sdrmm_wire::Squelch::Off))
+    }
+
     fn tone(freq_hz: f64, amp: f32, len: usize) -> Vec<Complex<f32>> {
         (0..len)
             .map(|k| {
@@ -727,6 +732,38 @@ mod tests {
             );
         }
         assert!(seen > 0, "no settled blocks to judge");
+    }
+
+    #[test]
+    fn the_block_buffers_are_reserved_before_the_first_sample_arrives() {
+        let (mut host, _rx) = host(&nfm_settings(sdrmm_wire::Squelch::Off));
+        let room = iq_capacity(host.input_rate, host.device_rate);
+        let reserved = |host: &ChannelHost| {
+            (
+                host.scratch.capacity(),
+                host.filtered.capacity(),
+                host.gated.capacity(),
+            )
+        };
+        assert!(reserved(&host).0 >= room);
+        assert!(reserved(&host).1 >= room);
+        assert!(reserved(&host).2 >= room);
+        let before = reserved(&host);
+        host.process_and_flush(&tone(1200.0, 0.5, BLOCK), CENTER);
+        let full = tone(1200.0, 0.5, dsp_block_len(RATE));
+        host.process_at(&full, BLOCK as u64, CENTER);
+        assert_eq!(reserved(&host), before, "a full block regrew a dsp buffer");
+    }
+
+    #[test]
+    fn a_settled_channel_block_allocates_nothing_on_the_dsp_thread() {
+        let (mut host, _rx) = host(&nfm_settings(sdrmm_wire::Squelch::Off));
+        let block = tone(1200.0, 0.5, dsp_block_len(RATE));
+        host.process_and_flush(&block, CENTER);
+        sdrmm_test_support::assert_no_alloc("channel block on the dsp thread", || {
+            host.process_at(&block, dsp_block_len(RATE) as u64, CENTER);
+        });
+        host.publisher.queue.flush();
     }
 
     #[test]

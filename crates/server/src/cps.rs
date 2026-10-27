@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard, TryLockError,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
@@ -93,7 +93,7 @@ impl CpsHub {
 
     pub(crate) fn identify(&self, model_id: &str, port: &str) -> Result<RadioIdent, CpsJobError> {
         let radio = self.model(model_id)?;
-        let _busy = self.port_gate.try_lock().map_err(|_| CpsJobError::Busy)?;
+        let _busy = self.hold_port()?;
         let link = self
             .backend
             .open(port, radio.baud())
@@ -137,6 +137,14 @@ impl CpsHub {
 
     fn model(&self, id: &str) -> Result<&'static dyn RadioModel, CpsJobError> {
         model(id).ok_or_else(|| CpsJobError::Radio(CpsError::UnknownModel(id.to_owned())))
+    }
+
+    fn hold_port(&self) -> Result<MutexGuard<'_, ()>, CpsJobError> {
+        match self.port_gate.try_lock() {
+            Ok(held) => Ok(held),
+            Err(TryLockError::Poisoned(poisoned)) => Ok(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) => Err(CpsJobError::Busy),
+        }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<u64, Arc<Entry>>> {
@@ -232,7 +240,7 @@ impl CpsHub {
         user_id: Option<i64>,
         entry: &Arc<Entry>,
     ) -> Result<(), CpsJobError> {
-        let _busy = self.port_gate.try_lock().map_err(|_| CpsJobError::Busy)?;
+        let _busy = self.hold_port()?;
         let link = self
             .backend
             .open(port, radio.baud())
@@ -319,7 +327,7 @@ impl CpsHub {
         backup: Option<Image>,
         entry: &Arc<Entry>,
     ) -> Result<(), CpsJobError> {
-        let _busy = self.port_gate.try_lock().map_err(|_| CpsJobError::Busy)?;
+        let _busy = self.hold_port()?;
         let link = self
             .backend
             .open(port, radio.baud())
@@ -407,5 +415,25 @@ fn rename_radio_id(codeplug: &mut Codeplug, old: &str, new: &str) {
         {
             dmr.radio_id = Some(new.to_owned());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_poisoned_port_gate_is_recovered_rather_than_reported_busy() {
+        let hub = CpsHub::default();
+        let dead = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _held = hub.port_gate.lock().expect("a fresh gate");
+            panic!("a transfer died holding the port");
+        }));
+        assert!(dead.is_err());
+        assert!(hub.port_gate.is_poisoned());
+        let held = hub.hold_port().expect("the gate is recovered, not refused");
+        assert!(matches!(hub.hold_port(), Err(CpsJobError::Busy)));
+        drop(held);
+        drop(hub.hold_port().expect("free again"));
     }
 }

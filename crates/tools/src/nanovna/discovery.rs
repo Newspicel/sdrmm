@@ -9,10 +9,10 @@ const KNOWN_IDS: &[(u16, u16)] = &[
 
 const NAME_MARKERS: &[&str] = &["nanovna", "litevna", "deepvna", "sysjoint", "vna"];
 
-pub fn partition(ports: Vec<serialport::SerialPortInfo>) -> (Vec<NanoVnaDevice>, Vec<String>) {
+pub fn partition(ports: Vec<sdrmm_serial::SerialPortInfo>) -> (Vec<NanoVnaDevice>, Vec<String>) {
     let mut devices = Vec::new();
     let mut ignored = Vec::new();
-    for info in callout_nodes(ports) {
+    for info in ports {
         match identify(&info) {
             Some(device) => devices.push(device),
             None => ignored.push(info.port_name),
@@ -27,23 +27,8 @@ pub fn partition(ports: Vec<serialport::SerialPortInfo>) -> (Vec<NanoVnaDevice>,
     (devices, ignored)
 }
 
-fn callout_nodes(ports: Vec<serialport::SerialPortInfo>) -> Vec<serialport::SerialPortInfo> {
-    let callouts: Vec<String> = ports
-        .iter()
-        .filter_map(|info| info.port_name.strip_prefix("/dev/cu.").map(str::to_owned))
-        .collect();
-    ports
-        .into_iter()
-        .filter(|info| {
-            info.port_name
-                .strip_prefix("/dev/tty.")
-                .is_none_or(|name| !callouts.iter().any(|callout| callout == name))
-        })
-        .collect()
-}
-
-fn identify(info: &serialport::SerialPortInfo) -> Option<NanoVnaDevice> {
-    let serialport::SerialPortType::UsbPort(usb) = &info.port_type else {
+fn identify(info: &sdrmm_serial::SerialPortInfo) -> Option<NanoVnaDevice> {
+    let sdrmm_serial::SerialPortType::UsbPort(usb) = &info.port_type else {
         return None;
     };
     let named = names_a_vna(usb.product.as_deref()) || names_a_vna(usb.manufacturer.as_deref());
@@ -93,10 +78,10 @@ mod tests {
         pid: u16,
         product: Option<&str>,
         manufacturer: Option<&str>,
-    ) -> serialport::SerialPortInfo {
-        serialport::SerialPortInfo {
+    ) -> sdrmm_serial::SerialPortInfo {
+        sdrmm_serial::SerialPortInfo {
             port_name: "/dev/cu.usbmodem4001".to_owned(),
-            port_type: serialport::SerialPortType::UsbPort(serialport::UsbPortInfo {
+            port_type: sdrmm_serial::SerialPortType::UsbPort(sdrmm_serial::UsbPortInfo {
                 vid,
                 pid,
                 serial_number: Some("400".to_owned()),
@@ -131,30 +116,12 @@ mod tests {
     fn unrelated_serial_hardware_is_left_out_of_the_list() {
         assert!(identify(&usb(0x1546, 0x01a8, Some("u-blox GNSS receiver"), None)).is_none());
         assert!(
-            identify(&serialport::SerialPortInfo {
-                port_name: "/dev/cu.Bluetooth-Incoming-Port".to_owned(),
-                port_type: serialport::SerialPortType::BluetoothPort,
+            identify(&sdrmm_serial::SerialPortInfo {
+                port_name: "/dev/cu.GlobalSat-SPPslave".to_owned(),
+                port_type: sdrmm_serial::SerialPortType::BluetoothPort,
             })
             .is_none()
         );
-    }
-
-    #[test]
-    fn the_dial_in_twin_of_a_call_out_node_is_dropped() {
-        let (devices, ignored) = partition(vec![
-            serialport::SerialPortInfo {
-                port_name: "/dev/tty.usbmodem4001".to_owned(),
-                ..usb(0x0483, 0x5740, Some("NanoVNA_H4"), Some("nanovna.com"))
-            },
-            usb(0x0483, 0x5740, Some("NanoVNA_H4"), Some("nanovna.com")),
-            serialport::SerialPortInfo {
-                port_name: "/dev/tty.usbserial-lonely".to_owned(),
-                ..usb(0x1546, 0x01a8, Some("u-blox GNSS receiver"), None)
-            },
-        ]);
-        assert_eq!(devices.len(), 1);
-        assert_eq!(devices[0].port, "/dev/cu.usbmodem4001");
-        assert_eq!(ignored, vec!["/dev/tty.usbserial-lonely".to_owned()]);
     }
 
     #[test]
@@ -162,7 +129,7 @@ mod tests {
         let (devices, ignored) = partition(vec![
             usb(0x1546, 0x01a8, Some("u-blox GNSS receiver"), None),
             usb(0x0483, 0x5740, Some("STM32 Virtual ComPort"), None),
-            serialport::SerialPortInfo {
+            sdrmm_serial::SerialPortInfo {
                 port_name: "/dev/cu.usbmodem4001".to_owned(),
                 ..usb(0x0483, 0x5740, Some("NanoVNA_H4"), Some("nanovna.com"))
             },

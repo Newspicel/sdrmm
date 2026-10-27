@@ -1,0 +1,443 @@
+{
+  "acars": {
+    "type": "acars",
+    "settings": {
+      "bandwidth_hz": 12500.0
+    }
+  },
+  "adsb": {
+    "type": "adsb",
+    "settings": {
+      "crc_fix": true
+    }
+  },
+  "ais": {
+    "type": "ais",
+    "settings": {
+      "ais_channel": "a"
+    }
+  },
+  "am": {
+    "type": "am",
+    "settings": {
+      "bandwidth_hz": 10000.0,
+      "sync": false
+    }
+  },
+  "aprs": {
+    "type": "aprs",
+    "settings": {
+      "mode": "afsk1200",
+      "bandwidth_hz": 12500.0
+    }
+  },
+  "apt": {
+    "type": "apt",
+    "settings": {
+      "keep_partial": true
+    }
+  },
+  "atv": {
+    "type": "atv",
+    "settings": {
+      "modulation": "am",
+      "standard": "ccir625",
+      "bandwidth_hz": 1500000.0,
+      "invert": false,
+      "interlace": true,
+      "color": "monochrome"
+    }
+  },
+  "ble": {
+    "type": "ble",
+    "settings": {
+      "link": "channel"
+    }
+  },
+  "cw_skimmer": {
+    "type": "cw_skimmer",
+    "settings": {
+      "bandwidth_hz": 24000.0,
+      "threshold_db": 10.0,
+      "max_signals": 32
+    }
+  },
+  "dab": {
+    "type": "dab",
+    "settings": {
+      "transmission_mode": "i",
+      "mode": "auto"
+    }
+  },
+  "datv": {
+    "type": "datv",
+    "settings": {
+      "superframes": false,
+      "superframe_reference": 0,
+      "superframe_payload": 0,
+      "superframe_search": false,
+      "standard": "dvb_s",
+      "symbol_rate": 333000.0,
+      "code_rate": "auto",
+      "roll_off": "pct35"
+    }
+  },
+  "dect": {
+    "type": "dect",
+    "settings": {
+      "band": "eu",
+      "sides": "both",
+      "span": "carrier"
+    }
+  },
+  "dmr": {
+    "type": "dmr",
+    "settings": {
+      "slots": "both",
+      "ignore_crc": false
+    }
+  },
+  "dpmr": {
+    "type": "dpmr",
+    "settings": {}
+  },
+  "drm": {
+    "type": "drm",
+    "settings": {
+      "mode": "auto",
+      "bandwidth_hz": 100000.0
+    }
+  },
+  "dsc": {
+    "type": "dsc",
+    "settings": {}
+  },
+  "dstar": {
+    "type": "dstar",
+    "settings": {}
+  },
+  "dvbt": {
+    "type": "dvbt",
+    "settings": {
+      "standard": "dvb_t",
+      "bandwidth": "mhz8",
+      "low_priority": false
+    }
+  },
+  "eot": {
+    "type": "eot",
+    "settings": {
+      "bandwidth_hz": 12500.0
+    }
+  },
+  "ermes": {
+    "type": "ermes",
+    "settings": {
+      "bandwidth_hz": 12500.0,
+      "invert": false
+    }
+  },
+  "flex": {
+    "type": "flex",
+    "settings": {
+      "bandwidth_hz": 12500.0,
+      "invert": false
+    }
+  },
+  "freedv": {
+    "type": "freedv",
+    "settings": {
+      "mode": "mode1600",
+      "sideband": "usb"
+    }
+  },
+  "ft4": {
+    "type": "ft4",
+    "settings": {
+      "audio_low_hz": 200.0,
+      "audio_high_hz": 3000.0,
+      "max_candidates": 200
+    }
+  },
+  "ft8": {
+    "type": "ft8",
+    "settings": {
+      "audio_low_hz": 200.0,
+      "audio_high_hz": 3000.0,
+      "max_candidates": 200
+    }
+  },
+  "gnss": {
+    "type": "gnss",
+    "settings": {
+      "prn": 1,
+      "doppler_hz": 10000,
+      "threshold": 4.0
+    }
+  },
+  "gsm": {
+    "type": "gsm",
+    "settings": {
+      "paging": true,
+      "follow": true
+    }
+  },
+  "hfdl": {
+    "type": "hfdl",
+    "settings": {}
+  },
+  "ident": {
+    "type": "ident",
+    "settings": {
+      "bandwidth_hz": 192000.0,
+      "interval_ms": 1000,
+      "threshold_db": 8.0
+    }
+  },
+  "ils": {
+    "type": "ils",
+    "settings": {
+      "component": "localizer",
+      "report_ms": 500
+    }
+  },
+  "inmarsat_aero": {
+    "type": "inmarsat_aero",
+    "settings": {
+      "channel": "p"
+    }
+  },
+  "inmarsat_stdc": {
+    "type": "inmarsat_stdc",
+    "settings": {}
+  },
+  "iridium": {
+    "type": "iridium",
+    "settings": {
+      "span": "channel"
+    }
+  },
+  "ism": {
+    "type": "ism",
+    "settings": {
+      "unknown": true
+    }
+  },
+  "ism_survey": {
+    "type": "ism_survey",
+    "settings": {
+      "span": "mhz20",
+      "margin_db": 10.0
+    }
+  },
+  "lora": {
+    "type": "lora",
+    "settings": {
+      "bandwidth": "khz125",
+      "spreading_factor": "all",
+      "iq": "normal",
+      "protocol": "auto"
+    }
+  },
+  "lrpt": {
+    "type": "lrpt",
+    "settings": {
+      "mode": "oqpsk72"
+    }
+  },
+  "m17": {
+    "type": "m17",
+    "settings": {}
+  },
+  "morse": {
+    "type": "morse",
+    "settings": {
+      "bandwidth_hz": 400.0
+    }
+  },
+  "navtex": {
+    "type": "navtex",
+    "settings": {
+      "invert": false
+    }
+  },
+  "nfm": {
+    "type": "nfm",
+    "settings": {
+      "bandwidth_hz": 12500.0,
+      "tone_mode": "off",
+      "scrambler_mode": "off",
+      "compander": false
+    }
+  },
+  "noise_figure": {
+    "type": "noise_figure",
+    "settings": {
+      "enr_db": 15.0
+    }
+  },
+  "nxdn": {
+    "type": "nxdn",
+    "settings": {
+      "bandwidth": "narrow"
+    }
+  },
+  "p25": {
+    "type": "p25",
+    "settings": {}
+  },
+  "per": {
+    "type": "per",
+    "settings": {
+      "baud": "baud9600",
+      "payload_bytes": 32
+    }
+  },
+  "pocsag": {
+    "type": "pocsag",
+    "settings": {
+      "baud": "auto",
+      "bandwidth_hz": 12500.0,
+      "invert": false
+    }
+  },
+  "psk": {
+    "type": "psk",
+    "settings": {
+      "baud": "psk31",
+      "invert": false
+    }
+  },
+  "radio_clock": {
+    "type": "radio_clock",
+    "settings": {
+      "standard": "dcf77",
+      "invert": false
+    }
+  },
+  "radiosonde": {
+    "type": "radiosonde",
+    "settings": {}
+  },
+  "remote_id": {
+    "type": "remote_id",
+    "settings": {
+      "link": "bluetooth"
+    }
+  },
+  "rtty": {
+    "type": "rtty",
+    "settings": {
+      "baud": 45.45,
+      "shift_hz": 170.0,
+      "stop_bits": "one_and_half",
+      "invert": false,
+      "unshift_on_space": true
+    }
+  },
+  "same": {
+    "type": "same",
+    "settings": {
+      "bandwidth_hz": 12500.0
+    }
+  },
+  "sarsat": {
+    "type": "sarsat",
+    "settings": {
+      "bandwidth_hz": 20000.0
+    }
+  },
+  "selcall": {
+    "type": "selcall",
+    "settings": {
+      "system": "ccir1"
+    }
+  },
+  "sid": {
+    "type": "sid",
+    "settings": {
+      "report_s": 5,
+      "threshold_db": 3.0
+    }
+  },
+  "ssb": {
+    "type": "ssb",
+    "settings": {
+      "sideband": "usb",
+      "bandwidth_hz": 2700.0
+    }
+  },
+  "sstv": {
+    "type": "sstv",
+    "settings": {
+      "modulation": "usb",
+      "slant_correction": true,
+      "keep_partial": true
+    }
+  },
+  "stanag": {
+    "type": "stanag",
+    "settings": {
+      "window_s": 2
+    }
+  },
+  "tetra": {
+    "type": "tetra",
+    "settings": {}
+  },
+  "tetrapol": {
+    "type": "tetrapol",
+    "settings": {
+      "band": "uhf"
+    }
+  },
+  "vdl2": {
+    "type": "vdl2",
+    "settings": {}
+  },
+  "vor": {
+    "type": "vor",
+    "settings": {
+      "magnetic_declination_deg": 0.0,
+      "report_ms": 500
+    }
+  },
+  "wefax": {
+    "type": "wefax",
+    "settings": {
+      "ioc": "ioc576",
+      "lpm": "lpm120",
+      "keep_partial": true
+    }
+  },
+  "wfm": {
+    "type": "wfm",
+    "settings": {
+      "deemphasis_us": 50.0,
+      "stereo": true
+    }
+  },
+  "wifi_occupancy": {
+    "type": "wifi_occupancy",
+    "settings": {
+      "span": "mhz20",
+      "margin_db": 6.0
+    }
+  },
+  "wmbus": {
+    "type": "wmbus",
+    "settings": {}
+  },
+  "wspr": {
+    "type": "wspr",
+    "settings": {
+      "audio_low_hz": 1400.0,
+      "audio_high_hz": 1600.0,
+      "max_candidates": 200
+    }
+  },
+  "ysf": {
+    "type": "ysf",
+    "settings": {}
+  }
+}

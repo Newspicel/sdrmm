@@ -335,6 +335,31 @@ impl LayerTwoAudio {
     }
 }
 
+#[cfg(feature = "fuzzing")]
+pub fn decode_layer_two(bytes: &[u8]) {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static AUDIO: RefCell<Option<LayerTwoAudio>> = const { RefCell::new(None) };
+    }
+    AUDIO.with_borrow_mut(|slot| {
+        if slot.is_none() {
+            *slot = LayerTwoAudio::new().ok();
+        }
+        let Some(audio) = slot.as_mut() else {
+            return;
+        };
+        audio.reset();
+        audio.push(bytes);
+        let mut out = ChannelOutputs::default();
+        audio.drain(&mut out);
+        assert!(
+            out.audio_pcm.iter().all(|sample| sample.is_finite()),
+            "MPEG Layer II produced a non-finite sample"
+        );
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

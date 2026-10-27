@@ -1,4 +1,5 @@
 import type { SpectrumFrame } from "./frame";
+import { AUDIO_RATE_HZ } from "./limits";
 import type { Listener, Unsubscribe } from "./listeners";
 import { type PortHub, portHub, portKey, sourceKey } from "./ports";
 
@@ -13,7 +14,6 @@ export const SPECTRUM_MAX_BINS = 4096;
 
 export const SPECTRUM_HISTORY_ROWS = 1024;
 
-export const AUDIO_RATE_HZ = 48_000;
 export const AUDIO_SPECTRUM_BINS = 256;
 export const AUDIO_SPECTRUM_FPS = 15;
 

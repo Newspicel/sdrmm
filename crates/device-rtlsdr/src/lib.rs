@@ -1,50 +1,38 @@
 use std::{
-    sync::{Arc, Mutex, MutexGuard, atomic::AtomicBool},
+    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
+use bank::{Lane, Pins};
 use caps::{GainMode, Plan};
-use dongle::{Catalog, Dongle, Listing};
+use dongle::{Catalog, Dongle, IN_FLIGHT_SAMPLES, Listing, Radio, Transport};
 use sdrmm_device::{
     Capture, CaptureConfig, CaptureRadio, DeviceDriver, DeviceError, RxSink, SdrDevice, lock,
     single_rx_sink,
 };
-use sdrmm_usb_stream::{Pauser, RxStream};
+use sdrmm_usb_stream::{Paused, RxStream};
 use sdrmm_wire::{
-    AgcSetting, BandwidthSetting, Capabilities, DeviceInfo, DeviceSettings, ExtraValue,
+    AgcSetting, BandwidthSetting, Capabilities, DeviceBackend, DeviceInfo, DeviceSettings,
+    ExtraValue, GainKind, GainValue,
 };
 
+mod bank;
 mod caps;
 mod convert;
 mod dongle;
-mod kraken;
 mod pausing;
 
-pub use kraken::KrakenDriver;
-
-pub(crate) const DRIVER_ID: &str = "rtlsdr";
+pub(crate) const DRIVER_ID: DeviceBackend = DeviceBackend::Rtlsdr;
 
 const DEFAULT_SAMPLE_RATE_HZ: u32 = 2_048_000;
+const LANE_SAMPLE_RATE_HZ: u32 = 2_400_000;
+const LANE_GAIN_TENTHS: i32 = 297;
 pub(crate) const DEFAULT_CENTER_HZ: u32 = 100_000_000;
 const PAUSE_TIMEOUT: Duration = Duration::from_secs(1);
 const BYTES_PER_SAMPLE: f64 = 2.0;
 
 fn enumerate() -> Result<Vec<Listing>, dongle::Error> {
     Ok(Catalog::scan()?.listings().cloned().collect())
-}
-
-fn standalone() -> Result<Vec<Listing>, dongle::Error> {
-    Ok(without_banks(enumerate()?))
-}
-
-fn without_banks(attached: Vec<Listing>) -> Vec<Listing> {
-    let claimed = kraken::claimed(&attached);
-    attached
-        .into_iter()
-        .enumerate()
-        .filter(|(position, _)| !claimed.contains(position))
-        .map(|(_, listing)| listing)
-        .collect()
 }
 
 #[derive(Default)]
@@ -60,12 +48,12 @@ impl RtlSdrDriver {
 }
 
 impl DeviceDriver for RtlSdrDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
-        match standalone() {
+        match enumerate() {
             Ok(descriptors) => caps::device_infos(&descriptors),
             Err(e) => {
                 tracing::warn!("rtlsdr enumerate failed: {e}");
@@ -75,36 +63,57 @@ impl DeviceDriver for RtlSdrDriver {
     }
 
     fn open(&self, info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
-        let descriptors = without_banks(scanned()?);
-        let index = located(&descriptors, &info.key)
-            .ok_or_else(|| DeviceError::NotFound(info.id()))?
-            .index;
-        let dongle = Dongle::open(index)?;
-        Ok(Box::new(RtlSdrDevice::from_dongle(dongle)?))
+        let catalog = scanned()?;
+        let attached = listings(&catalog);
+        let index = resolved(&attached, &info.key)?;
+        let lane = lane_at(&attached, index);
+        Ok(Box::new(RtlSdrDevice::from_dongle(
+            catalog.open(index)?,
+            lane,
+        )?))
     }
 
     fn write_serial(&self, key: &str, serial: Option<&str>) -> Result<String, DeviceError> {
-        let attached = scanned()?;
-        let descriptors = without_banks(attached.clone());
-        let target = located(&descriptors, key)
-            .ok_or_else(|| DeviceError::NotFound(format!("{DRIVER_ID}:{key}")))?;
+        let catalog = scanned()?;
+        let attached = listings(&catalog);
+        let index = resolved(&attached, key)?;
+        if let Some(lane) = lane_at(&attached, index) {
+            return Err(DeviceError::Unsupported(format!(
+                "{} knows its lanes by their serials",
+                lane.model.name()
+            )));
+        }
         let mut written = lock(&self.written);
         let taken: Vec<&str> = attached
             .iter()
-            .filter(|listing| listing.index != target.index)
+            .filter(|listing| listing.index != index)
             .filter_map(|listing| listing.serial.as_deref())
             .chain(written.iter().map(String::as_str))
             .collect();
         let serial = chosen_serial(serial, &taken)?;
-        Dongle::open(target.index)?.write_serial(&serial)?;
+        catalog.open(index)?.write_serial(&serial)?;
         tracing::info!(key, serial, "wrote RTL-SDR serial");
         written.push(serial.clone());
         Ok(serial)
     }
 }
 
-fn scanned() -> Result<Vec<Listing>, DeviceError> {
-    enumerate().map_err(|e| DeviceError::Io(format!("rtlsdr enumerate: {e}")))
+fn scanned() -> Result<Catalog, DeviceError> {
+    Catalog::scan().map_err(|e| DeviceError::Io(format!("rtlsdr enumerate: {e}")))
+}
+
+fn listings(catalog: &Catalog) -> Vec<Listing> {
+    catalog.listings().cloned().collect()
+}
+
+fn lane_at(attached: &[Listing], index: usize) -> Option<Lane> {
+    bank::lanes(attached).into_iter().nth(index).flatten()
+}
+
+fn resolved(attached: &[Listing], key: &str) -> Result<usize, DeviceError> {
+    located(attached, key)
+        .map(|listing| listing.index)
+        .ok_or_else(|| DeviceError::NotFound(format!("{DRIVER_ID}:{key}")))
 }
 
 fn located<'a>(descriptors: &'a [Listing], key: &str) -> Option<&'a Listing> {
@@ -145,36 +154,19 @@ fn random_serial(
     Err(DeviceError::Io("no free random serial".to_owned()))
 }
 
-struct RtlRadio {
+pub(crate) struct RtlRadio {
     dongle: Mutex<Dongle>,
-    pauser: Mutex<Option<Pauser>>,
-    pause_for_control: AtomicBool,
 }
 
 impl RtlRadio {
     fn new(dongle: Dongle) -> Self {
         Self {
             dongle: Mutex::new(dongle),
-            pauser: Mutex::new(None),
-            pause_for_control: AtomicBool::new(false),
         }
     }
 
     fn lock(&self) -> MutexGuard<'_, Dongle> {
         lock(&self.dongle)
-    }
-
-    fn reshape(&self, dongle: &mut Dongle, plan: &Plan) -> Result<(), dongle::Error> {
-        let pauser = lock(&self.pauser).clone();
-        let Some(pauser) = pauser else {
-            return apply_to_hardware(dongle, plan);
-        };
-        let bytes_per_second = f64::from(dongle.sample_rate()) * BYTES_PER_SAMPLE;
-        pausing::apply_pausing(
-            &self.pause_for_control,
-            || apply_to_hardware(dongle, plan),
-            || Ok(pauser.hold(bytes_per_second, PAUSE_TIMEOUT)?),
-        )
     }
 }
 
@@ -182,72 +174,156 @@ impl CaptureRadio for RtlRadio {
     type Stream = RxStream;
 
     fn arm(&self) -> Result<RxStream, DeviceError> {
-        let stream = self.lock().start_stream()?;
-        *lock(&self.pauser) = Some(stream.pauser());
-        Ok(stream)
+        Ok(self.lock().start_stream()?)
     }
 
     fn disarm(&self) {
-        *lock(&self.pauser) = None;
+        self.lock().set_pauser(None);
+    }
+}
+
+impl Pins for RtlRadio {
+    fn drive(&self, pin: u8, high: bool) -> Result<(), DeviceError> {
+        Ok(self.lock().set_pin(pin, high)?)
     }
 }
 
 pub struct RtlSdrDevice {
     radio: Arc<RtlRadio>,
+    lane: Option<Lane>,
     capabilities: Capabilities,
     settings: DeviceSettings,
     gain_table: Vec<i32>,
     capture: Capture<RtlRadio>,
 }
 
+fn loose_start(dongle: &mut Dongle) -> Result<DeviceSettings, DeviceError> {
+    dongle.set_sample_rate(DEFAULT_SAMPLE_RATE_HZ)?;
+    dongle.set_center(DEFAULT_CENTER_HZ)?;
+    dongle.set_auto_gain()?;
+    let bias_tee = dongle.bias_tee_at_start();
+    dongle.set_bias_tee(bias_tee)?;
+    let extra = (!dongle.board().has_upconverter())
+        .then(|| ExtraValue {
+            name: caps::DIRECT_SAMPLING.to_string(),
+            value: dongle.direct_sampling().wire_name().into(),
+        })
+        .into_iter()
+        .collect();
+    Ok(DeviceSettings {
+        center_hz: dongle.center_hz().map(f64::from),
+        sample_rate: Some(f64::from(dongle.sample_rate())),
+        ppm: Some(f64::from(dongle.ppm())),
+        antenna: Some("RX".to_string()),
+        bandwidth: Some(BandwidthSetting::Auto),
+        bias_tee: Some(bias_tee),
+        agc: Some(AgcSetting::switched(true)),
+        extra,
+        ..DeviceSettings::default()
+    })
+}
+
+fn lane_start(dongle: &mut Dongle, lane: &Lane) -> Result<DeviceSettings, DeviceError> {
+    dongle.set_dither(false)?;
+    dongle.set_sample_rate(LANE_SAMPLE_RATE_HZ)?;
+    dongle.set_center(DEFAULT_CENTER_HZ)?;
+    dongle.set_manual_gain(LANE_GAIN_TENTHS)?;
+    Ok(DeviceSettings {
+        center_hz: dongle.center_hz().map(f64::from),
+        sample_rate: Some(f64::from(dongle.sample_rate())),
+        ppm: Some(f64::from(dongle.ppm())),
+        antenna: Some("RX".to_string()),
+        bandwidth: Some(BandwidthSetting::Auto),
+        bias_tee: lane.model.has_bias_tees().then_some(false),
+        agc: Some(AgcSetting::switched(false)),
+        gains: vec![GainValue::new(
+            GainKind::Tuner,
+            f64::from(LANE_GAIN_TENTHS) / 10.0,
+        )],
+        ..DeviceSettings::default()
+    })
+}
+
+fn switch_off(lane: &Lane, pins: &dyn Pins) -> Result<(), DeviceError> {
+    pins.drive(bank::NOISE_SOURCE_PIN, false)?;
+    if lane.model.has_bias_tees() {
+        for fed in 0..lane.model.lanes() {
+            pins.drive(bank::bias_tee_pin(fed), false)?;
+        }
+    }
+    Ok(())
+}
+
 impl RtlSdrDevice {
-    fn from_dongle(mut dongle: Dongle) -> Result<Self, DeviceError> {
-        let capabilities = caps::capabilities(dongle.board(), dongle.gain_table());
+    fn from_dongle(mut dongle: Dongle, lane: Option<Lane>) -> Result<Self, DeviceError> {
+        let capabilities =
+            caps::capabilities_of(dongle.board(), lane.as_ref(), dongle.gain_table());
         let gain_table = dongle.gain_table().to_vec();
         tracing::info!(
             tuner = ?dongle.tuner_kind(),
             board = ?dongle.board(),
             gain_steps = gain_table.len(),
+            lane = ?lane.as_ref().map(Lane::label),
             "opened rtlsdr device"
         );
-
-        dongle.set_sample_rate(DEFAULT_SAMPLE_RATE_HZ)?;
-        dongle.set_center(DEFAULT_CENTER_HZ)?;
-        dongle.set_auto_gain()?;
-        let bias_tee = dongle.bias_tee_at_start();
-        dongle.set_bias_tee(bias_tee)?;
-
-        let extra = (!dongle.board().has_upconverter())
-            .then(|| ExtraValue {
-                name: caps::DIRECT_SAMPLING.to_string(),
-                value: dongle.direct_sampling().wire_name().into(),
-            })
-            .into_iter()
-            .collect();
-
-        let settings = DeviceSettings {
-            center_hz: dongle.center_hz().map(f64::from),
-            sample_rate: Some(f64::from(dongle.sample_rate())),
-            ppm: Some(f64::from(dongle.ppm())),
-            antenna: Some("RX".to_string()),
-            bandwidth: Some(BandwidthSetting::Auto),
-            bias_tee: Some(bias_tee),
-            agc: Some(AgcSetting::switched(true)),
-            extra,
-            ..DeviceSettings::default()
+        let settings = match &lane {
+            Some(lane) => lane_start(&mut dongle, lane)?,
+            None => loose_start(&mut dongle)?,
         };
-
+        let radio = Arc::new(RtlRadio::new(dongle));
+        if let Some(lane) = lane.as_ref().filter(|lane| lane.controls()) {
+            switch_off(lane, radio.as_ref())?;
+            let pins: Arc<dyn Pins> = radio.clone();
+            bank::hold_control(&lane.id, &pins);
+        }
         Ok(Self {
-            radio: Arc::new(RtlRadio::new(dongle)),
+            radio,
+            lane,
             capabilities,
             settings,
             gain_table,
             capture: Capture::new(),
         })
     }
+
+    fn pins(&self, lane: &Lane) -> Result<Arc<dyn Pins>, DeviceError> {
+        if lane.controls() {
+            return Ok(self.radio.clone());
+        }
+        bank::control(&lane.id).ok_or_else(|| {
+            DeviceError::Unsupported(format!("{} lane 1 is not open", lane.model.name()))
+        })
+    }
+
+    fn switch_bias_tee(&self, lane: &Lane, on: bool) -> Result<(), DeviceError> {
+        self.pins(lane)?.drive(bank::bias_tee_pin(lane.lane), on)
+    }
 }
 
-fn apply_to_hardware(dongle: &mut Dongle, plan: &Plan) -> Result<(), dongle::Error> {
+pub(crate) fn apply_settings<T: Transport>(
+    radio: &mut Radio<T>,
+    plan: &Plan,
+) -> Result<(), dongle::Error> {
+    let pause_first = radio.pause_flag();
+    let pauser = radio.pauser();
+    let bytes_per_second = f64::from(radio.sample_rate()) * BYTES_PER_SAMPLE;
+    pausing::apply_pausing(
+        &pause_first,
+        || apply_to_hardware(radio, plan),
+        || match &pauser {
+            Some(pauser) => pauser
+                .hold(bytes_per_second, PAUSE_TIMEOUT)
+                .map(Some)
+                .map_err(dongle::Error::from),
+            None => Ok(None::<Paused>),
+        },
+    )
+}
+
+fn apply_to_hardware<T: Transport>(
+    dongle: &mut Radio<T>,
+    plan: &Plan,
+) -> Result<(), dongle::Error> {
     if let Some(mode) = plan.direct_sampling {
         dongle.set_direct_sampling(mode)?;
     }
@@ -283,16 +359,21 @@ impl SdrDevice for RtlSdrDevice {
         &self.settings
     }
 
+    fn in_flight_samples(&self) -> u64 {
+        IN_FLIGHT_SAMPLES
+    }
+
     fn apply(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
-        let plan = caps::validate(
+        let mut plan = caps::validate(
             settings,
             &self.capabilities,
             &self.settings,
             &self.gain_table,
         )?;
+        let on_the_bank = self.lane.is_some().then(|| plan.bias_tee.take()).flatten();
         let (result, center_hz, sample_rate, ppm) = {
             let mut dongle = self.radio.lock();
-            let result = self.radio.reshape(&mut dongle, &plan);
+            let result = apply_settings(&mut dongle, &plan);
             (
                 result,
                 dongle.center_hz(),
@@ -304,8 +385,22 @@ impl SdrDevice for RtlSdrDevice {
         self.settings.sample_rate = Some(f64::from(sample_rate));
         self.settings.ppm = Some(f64::from(ppm));
         result.map_err(DeviceError::from)?;
+        if let Some(on) = on_the_bank
+            && let Some(lane) = self.lane.as_ref()
+        {
+            self.switch_bias_tee(lane, on)?;
+        }
         self.settings.merge_from(&plan.applied);
         Ok(())
+    }
+
+    fn set_noise_source(&mut self, on: bool) -> Result<(), DeviceError> {
+        if !self.lane.as_ref().is_some_and(Lane::controls) {
+            return Err(DeviceError::Unsupported(
+                "this radio carries no calibration noise source".to_owned(),
+            ));
+        }
+        self.radio.drive(bank::NOISE_SOURCE_PIN, on)
     }
 
     fn rx_start(&mut self, sinks: Vec<RxSink>) -> Result<(), DeviceError> {
@@ -313,7 +408,7 @@ impl SdrDevice for RtlSdrDevice {
             self.radio.clone(),
             convert::converter(),
             single_rx_sink(sinks)?,
-            CaptureConfig::new("sdrmm-rtlsdr-rx", DRIVER_ID)
+            CaptureConfig::new("sdrmm-rtlsdr-rx", DRIVER_ID.as_str())
                 .with_sample_rate(self.settings.sample_rate),
         )
     }
@@ -323,10 +418,22 @@ impl SdrDevice for RtlSdrDevice {
     }
 }
 
+impl Drop for RtlSdrDevice {
+    fn drop(&mut self) {
+        self.capture.stop();
+        let Some(lane) = self.lane.as_ref().filter(|lane| lane.controls()) else {
+            return;
+        };
+        if let Err(error) = switch_off(lane, self.radio.as_ref()) {
+            tracing::warn!(%error, "the bank's noise source and bias tees may still be on");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dongle::Board;
+    use crate::dongle::{Board, Fake};
 
     fn dongle(serial: &str, port: u8, hub: Option<u8>) -> Listing {
         Listing {
@@ -342,21 +449,61 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_banks_dongles_are_not_offered_as_radios_of_their_own() {
+    fn attached_bank() -> Vec<Listing> {
         let mut attached: Vec<Listing> = (0..5)
             .map(|lane| dongle(&(1000 + lane).to_string(), lane as u8 + 1, Some(4)))
             .collect();
         attached.push(dongle("00000123", 9, None));
-        let standalone = without_banks(attached);
-        assert_eq!(standalone.len(), 1);
-        assert_eq!(standalone[0].serial.as_deref(), Some("00000123"));
+        attached
+    }
+
+    #[test]
+    fn every_dongle_of_a_bank_is_a_radio_of_its_own() {
+        let infos = caps::device_infos(&attached_bank());
+        assert_eq!(infos.len(), 6);
+        let banks: Vec<_> = infos
+            .iter()
+            .filter_map(|info| info.profile.as_ref()?.bank.clone())
+            .collect();
+        assert_eq!(banks.len(), 5);
+        assert!(
+            banks
+                .iter()
+                .all(|bank| bank.id == "001/4" && bank.lanes == 5)
+        );
+        assert_eq!(
+            banks.iter().map(|bank| bank.lane).collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4]
+        );
+        assert_eq!(infos[0].label, "KrakenSDR 001/4 lane 1");
+        assert_eq!(infos[0].key, "1000");
+        assert_eq!(infos[5].key, "00000123");
+        assert!(
+            infos[5]
+                .profile
+                .as_ref()
+                .is_some_and(|profile| profile.bank.is_none())
+        );
+    }
+
+    #[test]
+    fn a_lane_declares_the_shared_clock_and_only_the_first_its_noise_source() {
+        let infos = caps::device_infos(&attached_bank());
+        let profile = |index: usize| infos[index].profile.clone().expect("a profile");
+        assert_eq!(profile(0).coherence, sdrmm_wire::Coherence::TimeSync);
+        assert_eq!(profile(0).rx_streams, 1);
+        assert_eq!(profile(0).noise_source, sdrmm_wire::NoiseSource::Isolated);
+        for lane in 1..5 {
+            assert_eq!(profile(lane).coherence, sdrmm_wire::Coherence::TimeSync);
+            assert_eq!(profile(lane).noise_source, sdrmm_wire::NoiseSource::None);
+        }
+        assert_eq!(profile(5).coherence, sdrmm_wire::Coherence::None);
     }
 
     #[test]
     fn ordinary_dongles_are_all_offered() {
         let attached = vec![dongle("00000123", 1, None), dongle("00000124", 2, None)];
-        assert_eq!(without_banks(attached).len(), 2);
+        assert_eq!(caps::device_infos(&attached).len(), 2);
     }
 
     fn draws(values: &[u32]) -> impl FnMut() -> Result<u32, DeviceError> + '_ {
@@ -409,8 +556,53 @@ mod tests {
         assert!(located(&attached, "001/9").is_none());
     }
 
+    fn numbered(mut listed: Vec<Listing>) -> Vec<Listing> {
+        for (index, listing) in listed.iter_mut().enumerate() {
+            listing.index = index;
+        }
+        listed
+    }
+
+    #[test]
+    fn a_dongle_is_opened_at_its_place_in_the_scan_that_found_it() {
+        let attached = numbered(attached_bank());
+        assert_eq!(resolved(&attached, "00000123").unwrap(), 5);
+        assert_eq!(resolved(&attached, "1002").unwrap(), 2);
+        assert_eq!(lane_at(&attached, 2).map(|lane| lane.lane), Some(2));
+        assert!(lane_at(&attached, 5).is_none());
+        let alone = numbered(vec![dongle("00000123", 9, None)]);
+        assert_eq!(
+            resolved(&alone, "00000123").unwrap(),
+            0,
+            "an index only means anything in the scan it came from"
+        );
+    }
+
+    fn tuned(hz: u32) -> Plan {
+        Plan {
+            center_hz: Some(hz),
+            ..Plan::default()
+        }
+    }
+
+    #[test]
+    fn a_stall_while_applying_remembers_to_pause_the_stream() {
+        let fake = Fake::default();
+        let mut radio = Radio::start(fake.clone(), Board::Generic).expect("start");
+        assert!(apply_settings(&mut radio, &tuned(100_000_000)).is_ok());
+        assert!(!radio.pauses_control());
+        fake.fail_writes(0x0120, 0x0011);
+        assert!(
+            apply_settings(&mut radio, &tuned(101_000_000)).is_err_and(|error| error.is_stall())
+        );
+        assert!(
+            radio.pauses_control(),
+            "settings go through the pausing wrapper, so the stall is remembered"
+        );
+    }
+
     #[test]
     fn driver_id_is_the_wire_id() {
-        assert_eq!(RtlSdrDriver::new().id(), "rtlsdr");
+        assert_eq!(RtlSdrDriver::new().id(), DeviceBackend::Rtlsdr);
     }
 }

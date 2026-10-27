@@ -20,15 +20,15 @@ pub(crate) trait Link: Send {
 }
 
 pub(crate) struct SystemLink {
-    port: Box<dyn serialport::SerialPort>,
+    port: Box<dyn sdrmm_serial::SerialPort>,
     name: String,
 }
 
 impl SystemLink {
     pub(crate) fn open(name: &str, baud: u32) -> Result<Self, DeviceError> {
-        let mut port = serialport::new(name, baud)
+        let mut port = sdrmm_serial::new(name, baud)
             .timeout(POLL)
-            .flow_control(serialport::FlowControl::None)
+            .flow_control(sdrmm_serial::FlowControl::None)
             .open()
             .map_err(|e| open_error(name, &e))?;
         port.write_data_terminal_ready(false)
@@ -50,14 +50,16 @@ impl SystemLink {
     }
 }
 
-fn open_error(name: &str, error: &serialport::Error) -> DeviceError {
+fn open_error(name: &str, error: &sdrmm_serial::Error) -> DeviceError {
     let message = format!("{name}: {error}");
     match error.kind() {
-        serialport::ErrorKind::NoDevice => DeviceError::NotFound(message),
-        serialport::ErrorKind::Io(std::io::ErrorKind::PermissionDenied) => {
+        sdrmm_serial::ErrorKind::NoDevice => DeviceError::NotFound(message),
+        sdrmm_serial::ErrorKind::Io(std::io::ErrorKind::PermissionDenied) => {
             DeviceError::PermissionDenied(message)
         }
-        serialport::ErrorKind::Io(std::io::ErrorKind::ResourceBusy) => DeviceError::InUse(message),
+        sdrmm_serial::ErrorKind::Io(std::io::ErrorKind::ResourceBusy) => {
+            DeviceError::InUse(message)
+        }
         _ => DeviceError::Io(message),
     }
 }
@@ -140,12 +142,17 @@ impl Port {
     }
 
     pub(crate) fn send(&mut self, line: &str) -> Result<(), DeviceError> {
-        let mut bytes = [0u8; MAX_LINE];
         let text = line.as_bytes();
-        let len = text.len().min(MAX_LINE - 1);
-        bytes[..len].copy_from_slice(&text[..len]);
-        bytes[len] = b'\n';
-        self.link.write(&bytes[..=len])
+        if text.len() >= MAX_LINE {
+            return Err(DeviceError::Unsupported(format!(
+                "a {}-byte command is longer than the {MAX_LINE}-byte line the ESP-SDR reads",
+                text.len()
+            )));
+        }
+        let mut bytes = [0u8; MAX_LINE];
+        bytes[..text.len()].copy_from_slice(text);
+        bytes[text.len()] = b'\n';
+        self.link.write(&bytes[..=text.len()])
     }
 
     pub(crate) fn set_baud(&mut self, baud: u32) -> Result<(), DeviceError> {
@@ -305,6 +312,21 @@ mod tests {
         assert_eq!(port.line(soon()).expect("line"), "OK");
         assert_eq!(port.line(soon()).expect("line"), "SYNC 7");
         assert!(matches!(port.line(soon()), Err(Wait::TimedOut)));
+    }
+
+    #[test]
+    fn a_command_longer_than_the_line_is_refused_not_cut_short() {
+        let link = FakeLink::new(|_, _| Vec::new());
+        let mut port = port(&link);
+        let long = "X".repeat(MAX_LINE);
+        assert!(matches!(port.send(&long), Err(DeviceError::Unsupported(_))));
+        assert!(
+            link.sent().is_empty(),
+            "nothing half a command reaches the board"
+        );
+        let fits = "Y".repeat(MAX_LINE - 1);
+        port.send(&fits).expect("a line that fits");
+        assert_eq!(link.sent(), vec![fits]);
     }
 
     #[test]

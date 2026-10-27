@@ -1,0 +1,54 @@
+{
+  "name": "bcd7e224e83dec53",
+  "test": "RecordingFace > offers Make array for a playing collection and wires every lane",
+  "graph": {
+    "nodes": [
+      {
+        "id": "rec",
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "recording",
+            "key": "take"
+          }
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 7,
+        "device": {
+          "driver": "recording",
+          "key": "take",
+          "label": "take"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [
+            2400000
+          ],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "extra": [],
+          "duplex": "rx_only",
+          "rx_streams": 5,
+          "coherence": "time_sync",
+          "noise_source": "replayed"
+        },
+        "settings": {},
+        "status": "running",
+        "channels": [],
+        "overruns": 0
+      }
+    ],
+    "revision": 0
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "dc0d153f3cd9df0d",
+  "test": "RecordingFace > draws the iq outputs the server resolved for the recording",
+  "graph": {
+    "nodes": [
+      {
+        "id": "rec",
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "recording",
+            "key": "take"
+          }
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

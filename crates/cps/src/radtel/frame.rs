@@ -20,7 +20,7 @@ pub enum Command<'a> {
     WritePage {
         segment: u8,
         page: u16,
-        data: &'a [u8],
+        data: &'a [u8; PAGE_BYTES],
     },
 }
 
@@ -58,12 +58,11 @@ fn session_body(code: u8) -> Vec<u8> {
     body
 }
 
-fn write_body(segment: u8, page: u16, data: &[u8]) -> Vec<u8> {
+fn write_body(segment: u8, page: u16, data: &[u8; PAGE_BYTES]) -> Vec<u8> {
     let [hi, lo] = page.to_be_bytes();
     let mut body = Vec::with_capacity(PAGE_BYTES + 5);
     body.extend_from_slice(&[WRITE_CODE, segment, hi, lo]);
-    body.extend(data.iter().copied().take(PAGE_BYTES));
-    body.resize(PAGE_BYTES + 4, 0);
+    body.extend_from_slice(data);
     body
 }
 
@@ -99,17 +98,19 @@ mod tests {
     }
 
     #[test]
-    fn a_short_write_is_padded_to_a_full_page() {
+    fn a_write_carries_the_whole_page_it_was_given() {
+        let mut page = [0xffu8; PAGE_BYTES];
+        page[0] = 0xaa;
         let frame = Command::WritePage {
             segment: 3,
             page: 1,
-            data: &[0xaa],
+            data: &page,
         }
         .to_bytes();
         assert_eq!(frame.len(), PAGE_BYTES + 5);
         assert_eq!(&frame[..5], &[0x09, 0x03, 0x00, 0x01, 0xaa]);
-        assert!(frame[5..PAGE_BYTES + 4].iter().all(|byte| *byte == 0));
-        assert_eq!(frame[PAGE_BYTES + 4], 0xb7);
+        assert!(frame[5..PAGE_BYTES + 4].iter().all(|byte| *byte == 0xff));
+        assert_eq!(frame[PAGE_BYTES + 4], sum8(&frame[..PAGE_BYTES + 4]));
     }
 
     #[test]

@@ -373,12 +373,35 @@ impl SigmfWriter {
         &self.stem
     }
 
-    pub fn finalize(mut self) -> Result<SigmfMeta, SigmfError> {
+    pub fn finalize(self) -> Result<SigmfMeta, SigmfError> {
+        self.stage()?.publish()
+    }
+
+    pub fn stage(mut self) -> Result<StagedMeta, SigmfError> {
         self.data.flush()?;
         self.data.get_ref().sync_all()?;
-        let tmp = tmp_meta_path(&self.stem);
-        write_meta_synced(File::create(&tmp)?, &self.meta)?;
-        fs::rename(&tmp, meta_path(&self.stem))?;
+        write_meta_synced(File::create(tmp_meta_path(&self.stem))?, &self.meta)?;
+        Ok(StagedMeta {
+            stem: self.stem,
+            meta: self.meta,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct StagedMeta {
+    stem: PathBuf,
+    meta: SigmfMeta,
+}
+
+impl StagedMeta {
+    #[must_use]
+    pub fn stem(&self) -> &Path {
+        &self.stem
+    }
+
+    pub fn publish(self) -> Result<SigmfMeta, SigmfError> {
+        fs::rename(tmp_meta_path(&self.stem), meta_path(&self.stem))?;
         Ok(self.meta)
     }
 }
@@ -398,6 +421,12 @@ fn claim_error(stem: &Path, err: std::io::Error) -> SigmfError {
 fn write_meta_synced(mut file: File, meta: &SigmfMeta) -> Result<(), SigmfError> {
     file.write_all(serde_json::to_string_pretty(meta)?.as_bytes())?;
     file.sync_all()?;
+    Ok(())
+}
+
+pub(crate) fn publish_meta(stem: &Path, meta: &SigmfMeta) -> Result<(), SigmfError> {
+    write_meta_synced(File::create(tmp_meta_path(stem))?, meta)?;
+    fs::rename(tmp_meta_path(stem), meta_path(stem))?;
     Ok(())
 }
 
@@ -423,10 +452,7 @@ fn annotate_pair(stem: &Path, notes: RecordingNotes) -> Result<(), SigmfError> {
     meta.global.name = notes.name;
     meta.global.tags = notes.tags;
     meta.global.description = notes.note;
-    let tmp = tmp_meta_path(stem);
-    write_meta_synced(File::create(&tmp)?, &meta)?;
-    fs::rename(&tmp, meta_path(stem))?;
-    Ok(())
+    publish_meta(stem, &meta)
 }
 
 #[derive(Debug)]

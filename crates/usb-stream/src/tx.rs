@@ -174,10 +174,10 @@ impl<B: BulkOut> TxQueue<B> {
         Ok(true)
     }
 
+    /// Bounded by the queue depth, because a timeout out of `complete_one` leaves the transfer
+    /// pending: an endpoint that stalls or leaves the bus mid-drain would otherwise spin here
+    /// forever, and this runs on the caller's thread inside `TxStream::stop`.
     pub fn drain(&mut self) -> Result<()> {
-        // Bounded, because a timeout out of `complete_one` leaves the transfer pending: an
-        // endpoint that stalls or leaves the bus mid-drain would otherwise spin here forever,
-        // and this runs on the caller's thread inside `TxStream::stop`.
         for _ in 0..self.config.queue_depth {
             if self.bulk_out.pending() == 0 {
                 return Ok(());

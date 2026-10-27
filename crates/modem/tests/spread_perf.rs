@@ -16,8 +16,8 @@ use sdrmm_modem_test_support::ber::{
     },
     impair::{ClockError, Impairment},
     perf::{
-        CountingAlloc, PerfBaseline, REGRESSION_FRACTION, assert_no_alloc, compare_perf, host_id,
-        load_baselines, measure_throughput, save_baselines,
+        CountingAlloc, PerfBaseline, REGRESSION_FRACTION, assert_no_alloc, committed_for_host,
+        compare_perf, host_id, load_baselines, measure_throughput, save_baselines,
     },
     rng::Rng,
 };
@@ -350,11 +350,11 @@ fn compare_spread_perf_baseline() {
         eprintln!("skipping the perf gate: throughput is only comparable in release");
         return;
     }
-    let committed = load_baselines(&path(spread::PERF)).unwrap();
-    if committed.iter().any(|b| b.host != host_id()) {
-        eprintln!("skipping the perf gate: baseline host is not {}", host_id());
-        return;
-    }
+    let committed = committed_for_host(
+        &load_baselines(&path(spread::PERF)).unwrap(),
+        spread::PERF,
+        "cargo test -p sdrmm-modem --release --test spread_perf write_spread_perf_baseline -- --ignored",
+    );
     match compare_perf(&measured(), &committed, REGRESSION_FRACTION) {
         Ok(changes) => {
             for c in changes {

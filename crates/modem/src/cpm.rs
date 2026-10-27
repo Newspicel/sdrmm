@@ -10,7 +10,9 @@ mod msk;
 mod params;
 mod stream;
 
-pub use demod::{CpmDemod, RealDetector, TIMING_BW_BURST, TIMING_BW_CONTINUOUS};
+pub use demod::{
+    CpmDemod, IqFront, RealDetector, RealFront, TIMING_BW_BURST, TIMING_BW_CONTINUOUS,
+};
 pub use laurent::{CoherentCpmDemod, LaurentError, laurent_main_pulse};
 pub use levels::KnownSymbols;
 pub use mlse::{MlseDetector, SymbolResponse};

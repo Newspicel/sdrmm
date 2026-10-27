@@ -32,37 +32,59 @@ runs:
         sudo apt-get install -y --no-install-recommends \
           libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev \
           file patchelf xdg-utils gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-alsa
+    - if: runner.os == 'macOS'
+      shell: bash
+      run: brew list nasm > /dev/null 2>&1 || brew install nasm
     - if: runner.os == 'Windows'
-      uses: ilammy/msvc-dev-cmd@v1
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
       with:
         arch: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
     - if: runner.os == 'Windows'
       id: msys2
-      uses: msys2/setup-msys2@v2
+      uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
       with:
-        install: make diffutils
+        install: make diffutils nasm
         path-type: inherit
-    - if: runner.os == 'Windows'
-      id: llvm
-      uses: actions/cache@v6
-      with:
-        path: .llvm
-        key: libclang-23.1.2-${{ runner.arch }}
-    - if: runner.os == 'Windows' && steps.llvm.outputs.cache-hit != 'true'
+    - name: Pin libclang
+      id: libclang
+      if: runner.os == 'Windows'
       shell: bash
       env:
-        NAME: clang+llvm-23.1.2-${{ runner.arch == 'ARM64' && 'aarch64' || 'x86_64' }}-pc-windows-msvc
+        LLVM_ARCH: ${{ runner.arch == 'ARM64' && 'aarch64' || 'x86_64' }}
       run: |
-        curl -fsSL -o llvm.tar.xz "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.2/$NAME.tar.xz"
+        version=23.1.4
+        case "$LLVM_ARCH" in
+          aarch64) sha256=f0d2e32424850ffb9b6aef190587a8298353d858a8a7260f490c173fe98d6811 ;;
+          x86_64) sha256=854bffcfc84528e0ee92490ff5c178920abd358a79c3e98f053e41e3e8e4c6d2 ;;
+          *) echo "no pinned libclang for $LLVM_ARCH" >&2; exit 1 ;;
+        esac
+        {
+          echo "LLVM_VERSION=$version"
+          echo "LLVM_ARCH=$LLVM_ARCH"
+          echo "LLVM_SHA256=$sha256"
+        } >> "$GITHUB_ENV"
+        echo "key=libclang-$version-$LLVM_ARCH-$sha256" >> "$GITHUB_OUTPUT"
+    - if: runner.os == 'Windows'
+      id: llvm
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .llvm
+        key: ${{ steps.libclang.outputs.key }}
+    - if: runner.os == 'Windows' && steps.llvm.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        name="clang+llvm-$LLVM_VERSION-$LLVM_ARCH-pc-windows-msvc"
+        curl -fsSL -o llvm.tar.xz "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$name.tar.xz"
+        echo "$LLVM_SHA256  llvm.tar.xz" | sha256sum --check --strict
         mkdir -p .llvm
-        tar -xJf llvm.tar.xz -C .llvm --strip-components 1 "$NAME/bin/libclang.dll" "$NAME/lib/clang"
+        tar -xJf llvm.tar.xz -C .llvm --strip-components 1 "$name/bin/libclang.dll" "$name/lib/clang"
         rm llvm.tar.xz
     - if: runner.os == 'Windows'
       shell: pwsh
       run: |
         "MEDIA_SHELL_BIN=${{ steps.msys2.outputs.msys2-location }}\usr\bin;C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
         "LIBCLANG_PATH=$env:GITHUB_WORKSPACE\.llvm\bin" >> $env:GITHUB_ENV
-    - uses: actions/cache@v6
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .media
         key: media-${{ runner.os }}-${{ runner.arch }}-${{ inputs.target }}-${{ hashFiles('scripts/build-media.py') }}
@@ -80,7 +102,7 @@ runs:
           macOS) echo "DYLD_LIBRARY_PATH=$FFMPEG_DIR/lib" >> "$GITHUB_ENV" ;;
           Windows) echo "$FFMPEG_DIR/bin" >> "$GITHUB_PATH" ;;
         esac
-    - uses: Swatinem/rust-cache@v2
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         shared-key: ${{ inputs.cache }}
         save-if: ${{ inputs.save }}

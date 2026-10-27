@@ -1,4 +1,5 @@
 use super::*;
+use sdrmm_wire::DeviceBackend;
 
 #[tokio::test]
 async fn probes_virtual_device() {
@@ -36,8 +37,8 @@ struct GatedDriver {
 }
 
 impl DeviceDriver for GatedDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -73,16 +74,16 @@ fn a_radio_opened_from_two_places_at_once_is_only_dialled_once() {
 
     let opening = {
         let engine = engine.clone();
-        std::thread::spawn(move || engine.create_device_set("mock:gated"))
+        std::thread::spawn(move || engine.create_device_set("rtlsdr:gated"))
     };
     waiting
         .recv_timeout(Duration::from_secs(5))
         .expect("the driver is inside open");
     let refused = engine
-        .create_device_set("mock:gated")
+        .create_device_set("rtlsdr:gated")
         .expect_err("one radio, one open");
     assert!(
-        matches!(&refused, EngineError::DeviceOpening(device) if device == "mock:gated"),
+        matches!(&refused, EngineError::DeviceOpening(device) if device == "rtlsdr:gated"),
         "expected a refusal while it is being opened, got {refused}"
     );
     assert!(refused.is_conflict());
@@ -159,25 +160,25 @@ async fn a_wider_rate_resizes_the_spectrum_to_keep_its_bins_narrow() {
 
 #[test]
 fn the_builtin_registry_carries_every_backend_this_build_compiled_in() {
-    let ids: Vec<&str> = builtin_registry(None)
+    let ids: Vec<DeviceBackend> = builtin_registry(None)
         .driver_ids()
         .into_iter()
         .map(|(_, id)| id)
         .collect();
-    assert!(ids.contains(&"virtual"), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::Virtual), "{ids:?}");
     #[cfg(feature = "rtlsdr")]
-    assert!(ids.contains(&"rtlsdr"), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::Rtlsdr), "{ids:?}");
     #[cfg(feature = "hackrf")]
-    assert!(ids.contains(&"hackrf"), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::Hackrf), "{ids:?}");
     #[cfg(feature = "ad936x")]
-    assert!(ids.contains(&"ad936x"), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::Ad936x), "{ids:?}");
     #[cfg(all(
         feature = "funcube",
         any(target_os = "macos", target_os = "linux", target_os = "windows")
     ))]
-    assert!(ids.contains(&"funcube"), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::Funcube), "{ids:?}");
     #[cfg(feature = "soapy")]
-    assert!(ids.contains(&"soapy"), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::Soapy), "{ids:?}");
 }
 
 #[test]
@@ -207,6 +208,27 @@ fn soapy_hides_exactly_the_radios_this_build_drives_over_usb() {
     );
 }
 
+#[test]
+fn every_native_backend_is_registered_and_names_itself_once() {
+    let registered: Vec<DeviceBackend> = builtin_registry(None)
+        .driver_ids()
+        .into_iter()
+        .map(|(_, id)| id)
+        .collect();
+    for backend in native_backends() {
+        assert!(registered.contains(&backend), "{backend} is not registered");
+        assert!(backend.is_radio(), "{backend} is not a radio");
+    }
+    for backend in registered {
+        if backend.soapy_module().is_some() && backend != DeviceBackend::Soapy {
+            assert!(
+                native_backends().contains(&backend),
+                "{backend} shadows a Soapy module but is not listed as native"
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn a_radio_the_network_search_adopts_announces_itself() {
     let mut registry = DeviceRegistry::new();
@@ -232,6 +254,6 @@ async fn a_radio_the_network_search_adopts_announces_itself() {
         engine
             .probe_devices()
             .iter()
-            .any(|device| device.id() == "mock:adopted")
+            .any(|device| device.id() == "rtlsdr:adopted")
     );
 }

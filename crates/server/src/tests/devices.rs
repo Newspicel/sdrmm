@@ -11,12 +11,46 @@ async fn get_state_returns_empty_snapshot() {
 async fn nmea_device_catalog_is_available_over_http() {
     let (status, body) = request(test_router(), "GET", "/api/position/nmea-devices", None).await;
     assert_eq!(status, StatusCode::OK);
-    let response: NmeaDevicesResponse = serde_json::from_slice(&body).expect("NMEA devices");
+    let response: SerialDevicesResponse = serde_json::from_slice(&body).expect("NMEA devices");
     assert!(
         response
             .devices
             .iter()
             .all(|device| !device.path.is_empty())
+    );
+}
+
+#[tokio::test]
+async fn the_serial_port_list_is_not_narrowed_to_receivers() {
+    let (status, body) = request(test_router(), "GET", "/api/serial/ports", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let ports: SerialDevicesResponse = serde_json::from_slice(&body).expect("serial ports");
+    assert!(ports.devices.iter().all(|port| !port.path.is_empty()));
+    let (status, body) = request(test_router(), "GET", "/api/position/nmea-devices", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let receivers: SerialDevicesResponse = serde_json::from_slice(&body).expect("NMEA devices");
+    assert!(
+        receivers.devices.len() <= ports.devices.len(),
+        "the receiver list is a narrowing of the port list, {receivers:?} against {ports:?}"
+    );
+}
+
+#[tokio::test]
+async fn the_device_list_states_whether_synthetic_radios_are_offered() {
+    let (status, body) = request(test_router(), "GET", "/api/devices", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let response: DevicesResponse = serde_json::from_slice(&body).expect("devices");
+    assert_eq!(
+        response.synthetic,
+        sdrmm_engine::synthetic_devices_offered()
+    );
+    assert_eq!(
+        response.synthetic,
+        response
+            .devices
+            .iter()
+            .any(|device| device.driver == DeviceBackend::Virtual),
+        "the flag and the list agree on synthetic radios"
     );
 }
 

@@ -557,6 +557,8 @@ pub(crate) fn channel_settings(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use sdrmm_wire::DeviceBackend;
+
     use sdrmm_device::{DeviceDriver, DeviceError, DeviceRegistry, SdrDevice};
     use sdrmm_wire::{
         DeviceInfo, DeviceNode, DeviceRef, NodeBody, PatchNode, Position, TrunkChannelSource,
@@ -571,8 +573,8 @@ pub(crate) mod tests {
     }
 
     impl DeviceDriver for NamedOnly {
-        fn id(&self) -> &'static str {
-            "named"
+        fn id(&self) -> DeviceBackend {
+            DeviceBackend::Hackrf
         }
 
         fn probe(&self) -> Vec<DeviceInfo> {
@@ -599,7 +601,7 @@ pub(crate) mod tests {
 
     fn info(key: &str) -> DeviceInfo {
         DeviceInfo {
-            driver: "named".to_string(),
+            driver: DeviceBackend::Hackrf,
             key: key.to_string(),
             label: format!("named {key}"),
             serial: None,
@@ -610,8 +612,8 @@ pub(crate) mod tests {
     struct HardwareOnly;
 
     impl DeviceDriver for HardwareOnly {
-        fn id(&self) -> &'static str {
-            "hardware"
+        fn id(&self) -> DeviceBackend {
+            DeviceBackend::Airspy
         }
 
         fn probe(&self) -> Vec<DeviceInfo> {
@@ -652,7 +654,7 @@ pub(crate) mod tests {
             .create_workspace(
                 "remote",
                 &workspace_naming(DeviceRef {
-                    backend: "named".to_string(),
+                    backend: DeviceBackend::Hackrf,
                     serial: None,
                     key: Some("10.0.0.5:1234".to_string()),
                 }),
@@ -668,7 +670,7 @@ pub(crate) mod tests {
                 .iter()
                 .map(DeviceInfo::id)
                 .collect::<Vec<_>>(),
-            vec!["named:10.0.0.5:1234".to_string()]
+            vec!["hackrf:10.0.0.5:1234".to_string()]
         );
     }
 
@@ -679,7 +681,7 @@ pub(crate) mod tests {
             .create_workspace(
                 "bench",
                 &workspace_naming(DeviceRef {
-                    backend: "hardware".to_string(),
+                    backend: DeviceBackend::Airspy,
                     serial: None,
                     key: Some("00000001".to_string()),
                 }),
@@ -689,7 +691,7 @@ pub(crate) mod tests {
             .create_workspace(
                 "serial",
                 &workspace_naming(DeviceRef {
-                    backend: "named".to_string(),
+                    backend: DeviceBackend::Hackrf,
                     serial: Some("00000001".to_string()),
                     key: None,
                 }),

@@ -149,7 +149,13 @@ impl<R: CaptureRadio> Capture<R> {
         if self.is_running() {
             return Err(DeviceError::AlreadyStreaming);
         }
-        let stream = radio.arm()?;
+        let stream = match radio.arm() {
+            Ok(stream) => stream,
+            Err(error) => {
+                radio.disarm();
+                return Err(error);
+            }
+        };
         *lock(&self.stop) = Some(stream.stop_handle());
         let stop = self.stop.clone();
         let armed = radio.clone();
@@ -1100,5 +1106,10 @@ mod tests {
         assert!(matches!(error, DeviceError::Io(_)));
         assert!(!capture.is_running());
         assert!(!radio.is_armed());
+        assert_eq!(
+            radio.disarms(),
+            1,
+            "an arm that failed half way is still taken back"
+        );
     }
 }

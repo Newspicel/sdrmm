@@ -94,9 +94,9 @@ adb wait-for-device
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-`./gradlew assembleRelease bundleRelease` signs release outputs when `SDRMM_KEYSTORE`,
-`SDRMM_KEYSTORE_PASSWORD`, `SDRMM_KEY_ALIAS`, and `SDRMM_KEY_PASSWORD` are set, and leaves them
-unsigned otherwise.
+`./gradlew assembleRelease bundleRelease` needs `SDRMM_KEYSTORE`, `SDRMM_KEYSTORE_PASSWORD`,
+`SDRMM_KEY_ALIAS`, and `SDRMM_KEY_PASSWORD`, and fails without them rather than writing an
+unsigned APK.
 
 On the emulator, the server on your computer is `10.0.2.2`. Move the phone with
 `adb emu geo fix 13.4050 52.5200`.

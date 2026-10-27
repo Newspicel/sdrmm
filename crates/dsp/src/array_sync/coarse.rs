@@ -340,7 +340,7 @@ impl CoarseSearch {
         }
         self.fft.forward(&mut self.b);
         let size = self.b.len() as isize;
-        let reach = ((reach_cycles * size as f64).ceil() as isize).clamp(1, size / 2 - 1);
+        let reach = ((reach_cycles * size as f64).ceil() as isize).clamp(1, (size / 2 - 1).max(1));
         let magnitude = |bin: isize| f64::from(self.b[bin.rem_euclid(size) as usize].norm());
         let best = (-reach..=reach)
             .max_by(|a, b| magnitude(*a).total_cmp(&magnitude(*b)))
@@ -456,6 +456,16 @@ mod tests {
             lane,
             factor,
         }
+    }
+
+    #[test]
+    fn the_smallest_transform_still_searches_for_an_offset() {
+        let mut search = CoarseSearch::new(1, 0);
+        let flat = [Complex::new(0.0f32, 0.0); 4];
+        assert_eq!(
+            search.lag_across_clocks(&flat, &flat, 48_000.0),
+            Err(CoarseError::NoPeak)
+        );
     }
 
     #[test]

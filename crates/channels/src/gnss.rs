@@ -16,6 +16,9 @@ const DOPPLER_STEP_HZ: i32 = 500;
 const ACQUIRE_MS: usize = 16;
 const ACQUIRE_GAP_MS: u8 = 16;
 const CONFIRM_SAMPLES: usize = 2;
+const PEAK_GUARD_CHIPS: usize = 2;
+const PEAK_GUARD_SAMPLES: usize = PEAK_GUARD_CHIPS * SAMPLES_PER_MS / CHIPS;
+const CROSS_CORRELATION_MARGIN: f32 = 2.0;
 const _: () = assert!(RATE as usize / SAMPLES_PER_MS == 2 * DOPPLER_STEP_HZ as usize);
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
@@ -243,6 +246,18 @@ impl GnssChannel {
         self.summed_ms += 1;
     }
 
+    fn strongest_away_from(&self, phase: usize) -> f32 {
+        self.powers
+            .iter()
+            .enumerate()
+            .filter(|&(index, _)| {
+                let gap = (index % SAMPLES_PER_MS).abs_diff(phase);
+                gap.min(SAMPLES_PER_MS - gap) > PEAK_GUARD_SAMPLES
+            })
+            .map(|(_, &power)| power)
+            .fold(0.0f32, f32::max)
+    }
+
     fn acquire(&mut self) -> Option<Lock> {
         let floor = self.powers.iter().map(|&p| f64::from(p)).sum::<f64>()
             / self.powers.len().max(1) as f64;
@@ -251,10 +266,11 @@ impl GnssChannel {
             .iter()
             .enumerate()
             .max_by(|a, b| a.1.total_cmp(b.1))?;
+        let runner_up = self.strongest_away_from(best % SAMPLES_PER_MS);
         self.summed_ms = 0;
         self.powers.fill(0.0);
         let ratio = best_power / (floor as f32).max(f32::MIN_POSITIVE);
-        if ratio < self.params.threshold {
+        if ratio < self.params.threshold || best_power < CROSS_CORRELATION_MARGIN * runner_up {
             return None;
         }
         let row = best / SAMPLES_PER_MS;
@@ -538,6 +554,130 @@ fn check_word(raw: u32, previous_d29: bool, previous_d30: bool) -> Option<u32> {
 mod tests {
     use super::*;
     use crate::testutil::realtime_budget;
+
+    const GPS_SPS_TABLE_2_1_FIRST_TEN_CHIPS_OCTAL: [u16; 32] = [
+        0o1440, 0o1620, 0o1710, 0o1744, 0o1133, 0o1455, 0o1131, 0o1454, 0o1626, 0o1504, 0o1642,
+        0o1750, 0o1764, 0o1772, 0o1775, 0o1776, 0o1156, 0o1467, 0o1633, 0o1715, 0o1746, 0o1763,
+        0o1063, 0o1706, 0o1743, 0o1761, 0o1770, 0o1774, 0o1127, 0o1453, 0o1625, 0o1712,
+    ];
+
+    const GPS_SPS_TABLE_2_14_PARITY_TERMS: [&[u8]; 6] = [
+        &[1, 2, 3, 5, 6, 10, 11, 12, 13, 14, 17, 18, 20, 23],
+        &[2, 3, 4, 6, 7, 11, 12, 13, 14, 15, 18, 19, 21, 24],
+        &[1, 3, 4, 5, 7, 8, 12, 13, 14, 15, 16, 19, 20, 22],
+        &[2, 4, 5, 6, 8, 9, 13, 14, 15, 16, 17, 20, 21, 23],
+        &[1, 3, 5, 6, 7, 9, 10, 14, 15, 16, 17, 18, 21, 22, 24],
+        &[3, 5, 6, 8, 9, 10, 11, 13, 15, 19, 22, 23, 24],
+    ];
+
+    const GPS_SPS_TABLE_2_14_TAKES_PREVIOUS_D29: [bool; 6] =
+        [true, false, true, false, false, true];
+
+    fn published_parity(data: u32, previous_d29: bool, previous_d30: bool) -> u32 {
+        GPS_SPS_TABLE_2_14_PARITY_TERMS
+            .iter()
+            .zip(GPS_SPS_TABLE_2_14_TAKES_PREVIOUS_D29)
+            .fold(0, |word, (terms, takes_d29)| {
+                let seed = if takes_d29 {
+                    previous_d29
+                } else {
+                    previous_d30
+                };
+                let bit = terms
+                    .iter()
+                    .fold(seed, |value, &n| value ^ (data >> (24 - n) & 1 != 0));
+                (word << 1) | u32::from(bit)
+            })
+    }
+
+    #[test]
+    fn every_prn_reproduces_the_published_first_ten_chips_octal() {
+        for (index, &octal) in GPS_SPS_TABLE_2_1_FIRST_TEN_CHIPS_OCTAL.iter().enumerate() {
+            let prn = index as u8 + 1;
+            let chips = ca_code(prn);
+            let first_ten = chips[..10]
+                .iter()
+                .fold(0u16, |value, &chip| (value << 1) | u16::from(chip < 0.0));
+            assert_eq!(first_ten, octal, "PRN {prn} starts {first_ten:04o}");
+        }
+    }
+
+    #[test]
+    fn word_parity_follows_the_published_parity_encoding_equations() {
+        let mut data = 0x5A_3C7Fu32;
+        for round in 0..64 {
+            data = data.rotate_left(7) ^ 0x0A_C3B1;
+            data &= 0xFF_FFFF;
+            let previous_d29 = round & 1 == 1;
+            let previous_d30 = round & 2 == 2;
+            let parity = published_parity(data, previous_d29, previous_d30);
+            let transmitted = if previous_d30 { data ^ 0xFF_FFFF } else { data };
+            let raw = transmitted << 6 | parity;
+            assert_eq!(
+                check_word(raw, previous_d29, previous_d30),
+                Some(data),
+                "{data:06X} parity {parity:02X}"
+            );
+            for bit in 0..30 {
+                let flipped = raw ^ (1 << bit);
+                assert!(
+                    check_word(flipped, previous_d29, previous_d30).is_none(),
+                    "{data:06X} survived a flip of bit {bit}"
+                );
+            }
+        }
+    }
+
+    const GOLD_CORRELATION_VALUES: [i32; 3] = [-65, -1, 63];
+
+    fn periodic_correlation(one: &[f32; CHIPS], two: &[f32; CHIPS], shift: usize) -> i32 {
+        one.iter()
+            .enumerate()
+            .map(|(index, &chip)| chip * two[(index + shift) % CHIPS])
+            .sum::<f32>() as i32
+    }
+
+    #[test]
+    fn code_correlation_only_ever_takes_the_three_published_gold_values() {
+        for (a, b) in [(1u8, 2u8), (7, 19), (12, 25), (31, 32)] {
+            let one = ca_code(a);
+            let two = ca_code(b);
+            assert_eq!(periodic_correlation(&one, &one, 0), CHIPS as i32);
+            for shift in 0..CHIPS {
+                let cross = periodic_correlation(&one, &two, shift);
+                assert!(
+                    GOLD_CORRELATION_VALUES.contains(&cross),
+                    "PRN {a} against {b} at shift {shift} is {cross}"
+                );
+                if shift > 0 {
+                    let sidelobe = periodic_correlation(&one, &one, shift);
+                    assert!(
+                        GOLD_CORRELATION_VALUES.contains(&sidelobe),
+                        "PRN {a} sidelobe at shift {shift} is {sidelobe}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_clean_signal_from_another_satellite_acquires_nothing() {
+        let iq = crate::synth::gnss::acquisition(7, 1_000.0, 317, 64);
+        for prn in [1, 2, 12, 19] {
+            let mut channel = GnssChannel::build(GnssParams {
+                prn,
+                ..GnssParams::default()
+            });
+            let mut out = ChannelOutputs::default();
+            channel.process(&iq, &mut out);
+            assert!(
+                out.events.is_empty(),
+                "PRN {prn} locked onto a PRN 7 signal: {:?}",
+                out.events.first()
+            );
+            assert!(channel.lock.is_none(), "PRN {prn} holds a lock");
+        }
+    }
 
     #[test]
     fn ca_codes_have_the_gold_code_balance_and_distinct_prns() {

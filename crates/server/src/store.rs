@@ -6,11 +6,11 @@ use std::{
 
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter, types::Value};
 use sdrmm_wire::{
-    Bookmark, CreateBookmarkRequest, DecoderLogEntry, DecoderLogQuery, DeviceSettings, LogScope,
-    PatchGraph, PresetInfo, PresetSnapshot, RecordingInfo, SaveRadioRequest, SavedRadio,
-    UpdateWorkspaceRequest, WORKSPACE_SNAPSHOT_VERSION, WorkspaceDetail, WorkspaceError,
-    WorkspaceExport, WorkspaceInfo, WorkspaceNoticeKind, WorkspaceSnapshot, WorkspaceState,
-    WorkspacesResponse,
+    Bookmark, CreateBookmarkRequest, DecoderLogEntry, DecoderLogQuery, DeviceBackend,
+    DeviceSettings, LogScope, NodeKind, PatchGraph, PresetInfo, PresetSnapshot, RecordingInfo,
+    SaveRadioRequest, SavedRadio, UpdateWorkspaceRequest, WORKSPACE_SNAPSHOT_VERSION,
+    WorkspaceDetail, WorkspaceError, WorkspaceExport, WorkspaceInfo, WorkspaceNoticeKind,
+    WorkspaceSnapshot, WorkspaceState, WorkspacesResponse,
 };
 
 use history::{RecordedSettings, Step};
@@ -82,6 +82,8 @@ pub const DECODER_LOG_LIMIT_MAX: u32 = 2_000;
 pub const DECODER_LOG_EXPORT_MAX: u32 = 100_000;
 
 const IMPORT_COPY_LIMIT: u32 = 999;
+
+const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 const MIGRATIONS: &[&str] = &[
     "
@@ -422,9 +424,25 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX nanovna_measurements_antenna ON nanovna_measurements (antenna_id, created_at DESC);
     ",
+    "
+    -- Foreign keys are enforced from now on, so the rows that outlived their parent while the
+    -- pragma was off are cleared before anything tries to write them again.
+    UPDATE cps_devices SET owner_id = NULL
+        WHERE owner_id NOT IN (SELECT id FROM cps_users);
+    UPDATE cps_codeplugs SET device_id = NULL
+        WHERE device_id NOT IN (SELECT id FROM cps_devices);
+    UPDATE cps_codeplugs SET user_id = NULL
+        WHERE user_id NOT IN (SELECT id FROM cps_users);
+    DELETE FROM nanovna_measurements
+        WHERE antenna_id NOT IN (SELECT id FROM nanovna_antennas);
+    ",
 ];
 
 const SERVER_ID_KEY: &str = "server_id";
+
+const LEGACY_CHAT_OUTPUT: &str = "chat_output";
+const LEGACY_CALL_BUFFER: &str = "call_buffer";
+const LEGACY_SIGNAL_FINDER: &str = "signal_finder";
 
 /// A settings change as the history records it: whose dial moved, and where the workspace stood
 /// on either side of the move.
@@ -467,6 +485,7 @@ impl Store {
             Some(path) => Connection::open(path)?,
             None => Connection::open_in_memory()?,
         };
+        share_with_other_processes(&conn)?;
         migrate(&conn)?;
         audio_fx_lift::lift_audio_chains(&conn)?;
         coherent_break::break_old_snapshots(&conn)?;
@@ -523,7 +542,9 @@ impl Store {
             .ok_or(StoreError::PresetNotFound(id))?;
         let mut snapshot: PresetSnapshot = serde_json::from_str(&json)?;
         for device in &mut snapshot.devices {
-            if let Some(migrated) = migrated_recording_device_id(&device.device_id) {
+            if let Some(migrated) = migrated_recording_device_id(&device.device_id)
+                .or_else(|| steps::migrated_generator_device_id(&device.device_id))
+            {
                 device.device_id = migrated;
             }
         }
@@ -680,7 +701,7 @@ impl Store {
             let samples = row.get::<_, i64>(6)? as u64;
             Ok(RecordingInfo {
                 id: row.get(0)?,
-                device_id: format!("{}:{stem}", sdrmm_wire::RECORDING_DRIVER_ID),
+                device_id: format!("{}:{stem}", DeviceBackend::Recording),
                 file: stem,
                 name: row.get(10)?,
                 created_at: row.get(2)?,
@@ -1223,6 +1244,11 @@ impl Store {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
+
+    #[cfg(test)]
+    pub(crate) fn hold(&self) -> MutexGuard<'_, Connection> {
+        self.lock()
+    }
 }
 
 fn validate_name(name: &str) -> Result<(), StoreError> {
@@ -1438,7 +1464,7 @@ fn drop_retired_channels(snapshot: &mut serde_json::Value) {
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|node| node_kind(node) == Some("channel"))
+        .filter(|node| node_kind(node) == Some(NodeKind::Channel.as_str()))
         .filter(|node| {
             node.get("data")
                 .and_then(|data| data.get("channel_type"))
@@ -1516,18 +1542,18 @@ fn migrate_baseband_scopes(snapshot: &mut serde_json::Value) {
         let Some(id) = node.get("id").and_then(serde_json::Value::as_str) else {
             continue;
         };
-        if node_kind(node) != Some("scope") || !tapped.contains(id) {
+        if node_kind(node) != Some(NodeKind::Scope.as_str()) || !tapped.contains(id) {
             continue;
         }
         if !fed.contains(id) {
-            node["kind"] = serde_json::json!("baseband_scope");
+            node["kind"] = serde_json::json!(NodeKind::BasebandScope.as_str());
             continue;
         }
         let twin = format!("baseband_scope:{id}");
         let x = node["position"]["x"].as_f64().unwrap_or_default();
         let y = node["position"]["y"].as_f64().unwrap_or_default() + SPLIT_SCOPE_OFFSET_Y;
         added.push(serde_json::json!({
-            "id": twin, "kind": "baseband_scope", "position": {"x": x, "y": y}
+            "id": twin, "kind": NodeKind::BasebandScope.as_str(), "position": {"x": x, "y": y}
         }));
         split.insert(id.to_owned(), twin);
     }
@@ -1564,10 +1590,18 @@ fn migrate_dataless_nodes(snapshot: &mut serde_json::Value) {
         .into_iter()
         .flatten()
     {
-        let gained_data = matches!(
-            node_kind(node),
-            Some("recorder" | "audio_recorder" | "baseband_recorder" | "scanner" | "decoder_log")
-        );
+        let gained_data = node_kind(node)
+            .and_then(NodeKind::parse)
+            .is_some_and(|kind| {
+                matches!(
+                    kind,
+                    NodeKind::Recorder
+                        | NodeKind::AudioRecorder
+                        | NodeKind::BasebandRecorder
+                        | NodeKind::Scanner
+                        | NodeKind::DecoderLog
+                )
+            });
         if gained_data && node.get("data").is_none() {
             node["data"] = serde_json::json!({});
         }
@@ -1583,10 +1617,10 @@ fn migrate_signal_finders(snapshot: &mut serde_json::Value) {
         return;
     };
     for node in nodes {
-        if node_kind(node) != Some("signal_finder") {
+        if node_kind(node) != Some(LEGACY_SIGNAL_FINDER) {
             continue;
         }
-        node["kind"] = serde_json::json!("spectrum_monitor");
+        node["kind"] = serde_json::json!(NodeKind::SpectrumMonitor.as_str());
         if let Some(data) = node
             .get_mut("data")
             .and_then(serde_json::Value::as_object_mut)
@@ -1606,7 +1640,7 @@ fn migrate_device_locks(snapshot: &mut serde_json::Value) {
         return;
     };
     for node in nodes {
-        if node_kind(node) != Some("device") {
+        if node_kind(node) != Some(NodeKind::Device.as_str()) {
             continue;
         }
         let Some(data) = node
@@ -1664,11 +1698,12 @@ fn migrate_control_wires(snapshot: &mut serde_json::Value) {
         let Some(id) = node.get("id").and_then(serde_json::Value::as_str) else {
             continue;
         };
-        match node_kind(node) {
-            Some("device") => radios.insert(id.to_owned()),
-            Some("channel") => decoders.insert(id.to_owned()),
-            _ => false,
-        };
+        let kind = node_kind(node);
+        if kind == Some(NodeKind::Device.as_str()) {
+            radios.insert(id.to_owned());
+        } else if kind == Some(NodeKind::Channel.as_str()) {
+            decoders.insert(id.to_owned());
+        }
     }
     if radios.is_empty() {
         return;
@@ -1734,7 +1769,7 @@ fn migrate_recording_devices(snapshot: &mut serde_json::Value) {
         return;
     };
     for node in nodes {
-        if node.get("kind").and_then(serde_json::Value::as_str) != Some("device") {
+        if node_kind(node) != Some(NodeKind::Device.as_str()) {
             continue;
         }
         let Some(device) = node.get("data").and_then(|data| data.get("device")) else {
@@ -1751,14 +1786,15 @@ fn migrate_recording_devices(snapshot: &mut serde_json::Value) {
         else {
             continue;
         };
-        node["kind"] = serde_json::Value::String("recording".to_owned());
-        node["data"] = serde_json::json!({ "recording": stem });
+        node["data"] = serde_json::json!({
+            "device": { "backend": DeviceBackend::Recording.as_str(), "key": stem }
+        });
     }
 }
 
 fn migrated_recording_device_id(device_id: &str) -> Option<String> {
     let stem = legacy_recording_stem(device_id.strip_prefix("virtual:file:")?)?;
-    Some(format!("{}:{stem}", sdrmm_wire::RECORDING_DRIVER_ID))
+    Some(format!("{}:{stem}", DeviceBackend::Recording))
 }
 
 fn legacy_recording_stem(path: &str) -> Option<String> {
@@ -1777,10 +1813,10 @@ fn migrate_event_outputs(snapshot: &mut serde_json::Value) {
         return;
     };
     for node in nodes {
-        if node.get("kind").and_then(serde_json::Value::as_str) != Some("chat_output") {
+        if node_kind(node) != Some(LEGACY_CHAT_OUTPUT) {
             continue;
         }
-        node["kind"] = serde_json::Value::String("event_output".to_owned());
+        node["kind"] = serde_json::json!(NodeKind::EventOutput.as_str());
         let Some(target) = node.get_mut("data").and_then(|data| data.get_mut("target")) else {
             continue;
         };
@@ -1806,7 +1842,7 @@ fn migrate_trunk_carriers(snapshot: &mut serde_json::Value) {
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|node| node.get("kind").and_then(serde_json::Value::as_str) == Some("dmr_trunk"))
+        .filter(|node| node_kind(node) == Some(NodeKind::DmrTrunk.as_str()))
         .filter_map(|node| node.get("id")?.as_str().map(str::to_owned))
         .collect();
     if systems.is_empty() {
@@ -1840,7 +1876,7 @@ fn migrate_call_buffers(snapshot: &mut serde_json::Value) {
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|node| node.get("kind").and_then(serde_json::Value::as_str) == Some("call_buffer"))
+        .filter(|node| node_kind(node) == Some(LEGACY_CALL_BUFFER))
         .filter_map(|node| node.get("id")?.as_str().map(str::to_owned))
         .collect();
     if legacy_ids.is_empty() {
@@ -1851,7 +1887,7 @@ fn migrate_call_buffers(snapshot: &mut serde_json::Value) {
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|node| node.get("kind").and_then(serde_json::Value::as_str) == Some("dmr_trunk"))
+        .filter(|node| node_kind(node) == Some(NodeKind::DmrTrunk.as_str()))
         .filter_map(|node| node.get("id")?.as_str().map(str::to_owned))
         .collect();
     if let Some(nodes) = graph
@@ -2153,6 +2189,13 @@ fn normalize_timestamp(at: &str) -> Result<String, StoreError> {
 
 pub(crate) fn rfc3339(ts: jiff::Timestamp) -> String {
     format!("{ts:.9}")
+}
+
+fn share_with_other_processes(conn: &Connection) -> Result<(), StoreError> {
+    conn.busy_timeout(BUSY_TIMEOUT)?;
+    conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
+    conn.pragma_update(None, "foreign_keys", true)?;
+    Ok(())
 }
 
 fn migrate(conn: &Connection) -> Result<(), StoreError> {

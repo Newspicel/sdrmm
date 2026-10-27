@@ -5,8 +5,8 @@ use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_modem_test_support::ber::{
     catalog::mfsk::{PERF, RATE, mfsk4_burst, modulate},
     perf::{
-        PerfBaseline, REGRESSION_FRACTION, compare_perf, host_id, load_baselines,
-        measure_throughput, save_baselines, test_dibits,
+        PerfBaseline, REGRESSION_FRACTION, committed_for_host, compare_perf, host_id,
+        load_baselines, measure_throughput, save_baselines, test_dibits,
     },
 };
 
@@ -59,11 +59,11 @@ fn compare_cpm_perf_baseline() {
         eprintln!("skipping the perf gate: throughput is only comparable in release");
         return;
     }
-    let committed = load_baselines(&committed_path()).unwrap();
-    if committed.iter().any(|b| b.host != host_id()) {
-        eprintln!("skipping the perf gate: baseline host is not {}", host_id());
-        return;
-    }
+    let committed = committed_for_host(
+        &load_baselines(&committed_path()).unwrap(),
+        "cpm throughput",
+        "cargo test -p sdrmm-modem --release --test mfsk_perf write_cpm_perf_baseline -- --ignored",
+    );
     match compare_perf(&measured_baselines(), &committed, REGRESSION_FRACTION) {
         Ok(changes) => {
             for c in changes {

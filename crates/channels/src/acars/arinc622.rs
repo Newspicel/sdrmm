@@ -50,6 +50,8 @@ pub struct Envelope {
     pub air_reg: String,
     pub imi: Imi,
     pub crc_ok: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hex_damaged: bool,
 }
 
 fn arinc_crc(parts: &[&[u8]]) -> u16 {
@@ -67,14 +69,18 @@ fn hex_nibble(c: u8) -> Option<u8> {
     }
 }
 
-fn decode_hex(s: &str) -> Vec<u8> {
+struct HexPayload {
+    bytes: Vec<u8>,
+    damaged: bool,
+}
+
+fn decode_hex(s: &str) -> HexPayload {
     let nibbles: Vec<u8> = s.bytes().map_while(hex_nibble).collect();
-    nibbles
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| (pair[0] << 4) | pair[1])
-        .collect()
+    let (pairs, odd) = nibbles.as_chunks::<2>();
+    HexPayload {
+        bytes: pairs.iter().map(|pair| (pair[0] << 4) | pair[1]).collect(),
+        damaged: nibbles.len() != s.len() || !odd.is_empty(),
+    }
 }
 
 pub fn parse(text: &str, downlink: bool) -> Option<AcarsApp> {
@@ -100,7 +106,8 @@ pub fn parse(text: &str, downlink: bool) -> Option<AcarsApp> {
     }
     let imi_str = payload.get(..IMI_LEN)?;
     let air_reg = payload.get(IMI_LEN..IMI_LEN + AIR_REG_LEN)?;
-    let bytes = decode_hex(payload.get(IMI_LEN + AIR_REG_LEN..)?);
+    let payload_hex = decode_hex(payload.get(IMI_LEN + AIR_REG_LEN..)?);
+    let bytes = payload_hex.bytes;
     let body_len = bytes.len().checked_sub(2)?;
 
     let crc_ok = arinc_crc(&[imi_str.as_bytes(), air_reg.as_bytes(), &bytes]) == ARINC_CRC_GOOD;
@@ -109,6 +116,7 @@ pub fn parse(text: &str, downlink: bool) -> Option<AcarsApp> {
         air_reg: air_reg.to_owned(),
         imi,
         crc_ok,
+        hex_damaged: payload_hex.damaged,
     };
     let body = &bytes[..body_len];
 
@@ -188,6 +196,30 @@ mod tests {
             panic!("expected ADS-C");
         };
         assert!(!envelope.crc_ok);
+    }
+
+    #[test]
+    fn a_truncated_hex_payload_is_recorded_not_passed_off_as_whole() {
+        let clean = decode_hex("0a1B");
+        assert_eq!(clean.bytes, vec![0x0A, 0x1B]);
+        assert!(!clean.damaged);
+        assert!(
+            decode_hex("0a1").damaged,
+            "a trailing nibble must not vanish"
+        );
+        let cut = decode_hex("0aZZ1b");
+        assert!(
+            cut.damaged,
+            "a non-hex character must not truncate silently"
+        );
+        assert_eq!(cut.bytes, vec![0x0A]);
+        assert!(!decode_hex("").damaged);
+
+        let app = parse("/MSTEC7X.AT1.N123AB0280004A2C:junk", false).expect("envelope");
+        let AcarsApp::Cpdlc { envelope, .. } = &app else {
+            panic!("expected CPDLC");
+        };
+        assert!(envelope.hex_damaged);
     }
 
     #[test]

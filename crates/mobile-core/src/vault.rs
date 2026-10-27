@@ -271,11 +271,17 @@ pub(crate) mod testing {
     #[derive(Default)]
     pub(crate) struct MemoryVault {
         items: Mutex<BTreeMap<String, Result<Vec<u8>, VaultError>>>,
+        refuse_stores: std::sync::atomic::AtomicBool,
     }
 
     impl MemoryVault {
         pub(crate) fn put(&self, key: &str, item: Result<Vec<u8>, VaultError>) {
             self.lock().insert(key.to_owned(), item);
+        }
+
+        pub(crate) fn refuse_stores(&self) {
+            self.refuse_stores
+                .store(true, std::sync::atomic::Ordering::SeqCst);
         }
 
         pub(crate) fn raw(&self, key: &str) -> Option<Vec<u8>> {
@@ -293,6 +299,9 @@ pub(crate) mod testing {
         }
 
         fn store(&self, key: String, value: Vec<u8>) -> Result<(), VaultError> {
+            if self.refuse_stores.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(VaultError::Os { status: 1 });
+            }
             self.lock().insert(key, Ok(value));
             Ok(())
         }

@@ -9,8 +9,8 @@ use sdrmm_device::{
 };
 use sdrmm_device_ad936x::Ad936xDriver;
 use sdrmm_wire::{
-    Agc, AgcSetting, BandwidthSetting, Coherence, DcArtifact, DeviceInfo, DeviceSettings, Duplex,
-    ExtraValue, GainKind, GainValue, ReadoutValue, StreamSettings,
+    Agc, AgcSetting, BandwidthSetting, Coherence, DcArtifact, DeviceBackend, DeviceInfo,
+    DeviceSettings, Duplex, ExtraValue, GainKind, GainValue, ReadoutValue, StreamSettings,
 };
 use serde_json::json;
 
@@ -737,6 +737,8 @@ fn stopping_gives_the_buffer_back_so_the_next_start_gets_one() {
     );
 }
 
+/// Four scan elements repeat the pattern, so lane 0 takes the first pair of every four counts
+/// and lane 1 the second.
 #[test]
 fn two_lanes_arrive_split_apart_and_sample_aligned() {
     let server = FakeIiod::spawn(2);
@@ -751,8 +753,6 @@ fn two_lanes_arrive_split_apart_and_sample_aligned() {
     let right = collected(&second, 4);
     device.rx_stop();
 
-    // Four scan elements repeat the pattern, so lane 0 takes the first pair of every four counts
-    // and lane 1 the second.
     assert!((left[0].re - 0.0).abs() < 1e-6);
     assert!((left[0].im - 1.0 / 2048.0).abs() < 1e-6);
     assert!((right[0].re + 1.0 / 2048.0).abs() < 1e-6);
@@ -891,7 +891,7 @@ fn a_radio_at_an_address_it_was_told_about_is_listed_without_a_search() {
     let driver = Ad936xDriver::searching([]);
     assert!(networked(driver.probe()).is_empty());
     let info = driver.resolve(&server.endpoint()).expect("addressable");
-    assert_eq!(info.driver, "ad936x");
+    assert_eq!(info.driver, DeviceBackend::Ad936x);
     assert!(driver.probe().contains(&info));
     assert!(driver.probe_deep().contains(&info));
 }

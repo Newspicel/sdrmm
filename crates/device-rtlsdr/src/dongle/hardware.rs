@@ -16,10 +16,13 @@ fn env_or(name: &str, default: u64) -> u64 {
 
 fn chosen(listings: &[Listing]) -> Option<&Listing> {
     let wanted = std::env::var("SDRMM_RTL_TEST_SERIAL").ok();
-    let banked = crate::kraken::claimed(listings);
-    listings.iter().find(|listing| match &wanted {
-        Some(serial) => listing.serial.as_ref() == Some(serial),
-        None => !banked.contains(&listing.index),
+    let banked = crate::bank::lanes(listings);
+    listings.iter().zip(banked).find_map(|(listing, lane)| {
+        let picked = match &wanted {
+            Some(serial) => listing.serial.as_ref() == Some(serial),
+            None => lane.is_none(),
+        };
+        picked.then_some(listing)
     })
 }
 

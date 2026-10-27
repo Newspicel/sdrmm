@@ -88,22 +88,18 @@ pub fn parse(text: &str) -> Option<MiamFrame> {
     }
 }
 
-#[cfg(test)]
 pub struct FileReassembler {
     pending: std::collections::HashMap<(String, u16), FileEntry>,
 }
 
-#[cfg(test)]
 struct FileEntry {
     expected: usize,
     parts: std::collections::BTreeMap<u16, String>,
     time: f64,
 }
 
-#[cfg(test)]
 const FILE_TIMEOUT_SECS: f64 = 600.0;
 
-#[cfg(test)]
 impl FileReassembler {
     pub fn new() -> Self {
         Self {
@@ -159,7 +155,6 @@ impl FileReassembler {
     }
 }
 
-#[cfg(test)]
 impl Default for FileReassembler {
     fn default() -> Self {
         Self::new()
@@ -187,7 +182,7 @@ fn base85_decode(s: &str) -> Option<Vec<u8>> {
             }
             v = v * 85 + (d - 0x21) as u64;
         }
-        out.extend_from_slice(&(v as u32).to_be_bytes());
+        out.extend_from_slice(&u32::try_from(v).ok()?.to_be_bytes());
         i += 5;
     }
     Some(out)
@@ -372,6 +367,16 @@ mod tests {
         let enc = base85_encode(data);
         assert_eq!(base85_decode(&enc).unwrap(), data);
         assert_eq!(base85_decode("z").unwrap(), vec![0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn a_base85_group_above_the_u32_range_is_rejected() {
+        assert_eq!(
+            base85_decode("s8W-!"),
+            Some(0xFFFF_FFFFu32.to_be_bytes().to_vec())
+        );
+        assert_eq!(base85_decode("s8W-\""), None, "85^5-1 wraps past u32");
+        assert_eq!(base85_decode("uuuuu"), None);
     }
 
     #[test]

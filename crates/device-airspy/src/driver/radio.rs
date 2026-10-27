@@ -78,13 +78,7 @@ impl Airspy {
             version,
             serial,
         };
-        // Packing halves the bytes each sample costs on the bus. It is left off because the
-        // unpacked codes are what this build reads, and a firmware that silently kept packing on
-        // would hand back sixteen bits of three different samples.
-        opened.control.control_in_accepted(
-            &VendorControlRequest::set_packing(false),
-            "disable sample packing",
-        )?;
+        opened.disable_sample_packing()?;
 
         let defaults = Config::default();
         let rate = opened
@@ -205,13 +199,14 @@ impl Airspy {
         config.on_thread_start = Some(|| {
             sdrmm_device::schedule::claim(sdrmm_device::Latency::Critical);
         });
-        self.set_mode(ReceiverMode::Rx)?;
-        sdrmm_usb_stream::start(endpoint, config).map_err(|e| {
+        let stream = sdrmm_usb_stream::start(endpoint, config)?;
+        if let Err(error) = self.set_mode(ReceiverMode::Rx) {
             if let Err(off) = self.set_mode_off() {
                 debug!("airspy stop after a failed start: {off}");
             }
-            e.into()
-        })
+            return Err(error);
+        }
+        Ok(stream)
     }
 
     pub(crate) fn set_mode_off(&self) -> Result<()> {
@@ -223,6 +218,16 @@ impl Airspy {
         debug!(?mode, "airspy receiver mode");
         self.control
             .control_out(&VendorControlRequest::receiver_mode(mode))
+    }
+
+    /// Packing halves the bytes each sample costs on the bus. It stays off because the unpacked
+    /// codes are what this build reads, and a firmware that silently kept packing on would hand
+    /// back sixteen bits of three different samples.
+    fn disable_sample_packing(&self) -> Result<()> {
+        self.control.control_in_accepted(
+            &VendorControlRequest::set_packing(false),
+            "disable sample packing",
+        )
     }
 }
 

@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     EventOutputNode, EventOutputTarget, KindSet, WebhookFormat,
-    patch::{DmrTrunkNode, Keeps, ScannerNode, SignalGenNode},
+    patch::{DmrTrunkNode, Keeps, ScannerNode},
 };
 
 fn decoders() -> Vec<ChannelDescriptor> {
@@ -123,7 +123,17 @@ fn a_radio_and_a_generator_share_a_decoder_but_a_beam_stands_alone() {
     let shared = PatchGraph {
         nodes: vec![
             radio("dev", "band"),
-            node("gen", NodeBody::SignalGen(SignalGenNode::default())),
+            node(
+                "gen",
+                NodeBody::Device(DeviceNode {
+                    device: Some(DeviceRef {
+                        backend: crate::DeviceBackend::Virtual,
+                        serial: None,
+                        key: Some("gen-".to_owned()),
+                    }),
+                    ..DeviceNode::default()
+                }),
+            ),
             channel("voice", "nfm"),
         ],
         edges: vec![

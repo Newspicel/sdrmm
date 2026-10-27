@@ -84,6 +84,7 @@ pub fn capabilities() -> Capabilities {
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
         clean_fraction: None,
+        bank: None,
     }
 }
 
@@ -100,5 +101,6 @@ pub fn profile() -> DeviceProfile {
         per_stream: capabilities.per_stream,
         coherence: capabilities.coherence,
         noise_source: capabilities.noise_source,
+        bank: None,
     }
 }

@@ -48,6 +48,7 @@ const TIME_SLOT_BIT: u8 = 0;
 
 const CUSTOM_CTCSS_INDEX: u8 = 0x33;
 const NO_INDEX: u8 = 0xff;
+const NO_CONTACT: u32 = u32::MAX;
 
 #[must_use]
 pub fn is_valid(data: &[u8]) -> bool {
@@ -179,10 +180,7 @@ pub fn decode(data: &[u8], catalog: &Catalog, names: &mut UniqueNames) -> Option
                 .name_at(get_u32_le(data, CONTACT_INDEX))
                 .map(str::to_owned),
             group_list: index_name(get_u8(data, GROUP_LIST_INDEX), &catalog.group_lists),
-            radio_id: Some(get_u8(data, RADIO_ID_INDEX))
-                .filter(|index| *index != 0)
-                .and_then(|index| catalog.radio_ids.name_at(u32::from(index)))
-                .map(str::to_owned),
+            radio_id: index_name(get_u8(data, RADIO_ID_INDEX), &catalog.radio_ids),
             admit: dmr_admit_from(get_bits(data, ADMIT_FLAGS, ADMIT_BIT, 2)),
         })
     } else {
@@ -279,7 +277,8 @@ pub fn encode(data: &mut [u8], channel: &Channel, catalog: &Catalog) {
                 dmr.contact
                     .as_deref()
                     .and_then(|name| catalog.contacts.index_of(name))
-                    .unwrap_or(0),
+                    .filter(|index| *index != NO_CONTACT)
+                    .unwrap_or(NO_CONTACT),
             );
             if let Some(index) = dmr
                 .group_list
@@ -296,7 +295,8 @@ pub fn encode(data: &mut [u8], channel: &Channel, catalog: &Catalog) {
                     .as_deref()
                     .and_then(|name| catalog.radio_ids.index_of(name))
                     .and_then(|index| u8::try_from(index).ok())
-                    .unwrap_or(0),
+                    .filter(|index| *index != NO_INDEX)
+                    .unwrap_or(NO_INDEX),
             );
             set_bits(data, ADMIT_FLAGS, ADMIT_BIT, 2, dmr_admit_to(dmr.admit));
         }
@@ -400,6 +400,32 @@ mod tests {
         encode(&mut data, &channel, &catalog());
         let decoded = decode(&data, &catalog(), &mut UniqueNames::default()).expect("valid");
         assert_eq!(decoded, channel);
+    }
+
+    #[test]
+    fn the_first_radio_id_and_no_radio_id_are_told_apart() {
+        let mut channel = Channel {
+            name: "TG Home".to_owned(),
+            rx_hz: 439_012_500,
+            tx_hz: 439_012_500,
+            mode: ChannelMode::Dmr(DmrChannel {
+                radio_id: Some("Home".to_owned()),
+                ..DmrChannel::default()
+            }),
+            ..Default::default()
+        };
+        let mut data = [0u8; CHANNEL_SIZE];
+        encode(&mut data, &channel, &catalog());
+        assert_eq!(get_u8(&data, RADIO_ID_INDEX), 0);
+        assert_eq!(get_u32_le(&data, CONTACT_INDEX), NO_CONTACT);
+        let decoded = decode(&data, &catalog(), &mut UniqueNames::default()).expect("valid");
+        assert_eq!(decoded.mode, channel.mode);
+
+        channel.mode = ChannelMode::Dmr(DmrChannel::default());
+        encode(&mut data, &channel, &catalog());
+        assert_eq!(get_u8(&data, RADIO_ID_INDEX), NO_INDEX);
+        let decoded = decode(&data, &catalog(), &mut UniqueNames::default()).expect("valid");
+        assert_eq!(decoded.mode, channel.mode);
     }
 
     #[test]

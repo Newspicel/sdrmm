@@ -28,6 +28,7 @@ const PAIR_PATH: &str = "/api/phones/pair";
 const KEYS_UNREADABLE: &str = "Phone keys unreadable, try again";
 const LOCAL_NAME: &str = "localhost";
 const LOCAL_SUFFIX: &str = ".localhost";
+const MDNS_SUFFIX: &str = ".local";
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Auth {
@@ -88,31 +89,29 @@ pub(crate) struct AuthGate {
     shared: Option<Arc<str>>,
     phones: Arc<Phones>,
     dev_cors: bool,
-    local_hosts_only: bool,
+    allowed_hosts: Option<Arc<[String]>>,
 }
 
 impl AuthGate {
     pub(crate) fn new(state: &AppState, role: ListenerRole, tls: bool) -> Self {
         let shared = state.auth.token.clone();
-        let local_hosts_only = role == ListenerRole::Main
-            && shared.is_none()
-            && state
-                .gate
-                .main_bound()
-                .is_some_and(|bound| bound.is_loopback());
+        let allowed_hosts = (role == ListenerRole::Main && shared.is_none())
+            .then(|| Arc::from(state.gate.main_names()));
         Self {
             role,
             tls,
             shared,
             phones: state.phones.clone(),
             dev_cors: state.dev_cors,
-            local_hosts_only,
+            allowed_hosts,
         }
     }
 
     fn admits(&self, request: &Request) -> Result<(), Refusal> {
         let (headers, uri) = (request.headers(), request.uri());
-        if self.local_hosts_only && !local_host(headers, uri) {
+        if let Some(allowed) = &self.allowed_hosts
+            && !addressed_here(headers, uri, allowed)
+        {
             return Err(forbidden("Host not allowed"));
         }
         if !self.dev_cors && !same_origin(headers, uri) {
@@ -142,15 +141,27 @@ fn same_origin(headers: &HeaderMap, uri: &Uri) -> bool {
     matches!((host, authority), (Some(host), Some(authority)) if host.eq_ignore_ascii_case(authority))
 }
 
-fn local_host(headers: &HeaderMap, uri: &Uri) -> bool {
+fn addressed_here(headers: &HeaderMap, uri: &Uri, allowed: &[String]) -> bool {
     if headers.get(header::HOST).is_none() && uri.authority().is_none() {
         return true;
     }
-    host(headers, uri).and_then(host_name).is_some_and(|name| {
-        name.eq_ignore_ascii_case(LOCAL_NAME)
-            || name.to_ascii_lowercase().ends_with(LOCAL_SUFFIX)
-            || name.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
-    })
+    host(headers, uri)
+        .and_then(host_name)
+        .is_some_and(|name| unrebindable(name) || configured(allowed, name))
+}
+
+fn unrebindable(name: &str) -> bool {
+    let lowered = name.to_ascii_lowercase();
+    name.parse::<IpAddr>().is_ok()
+        || lowered == LOCAL_NAME
+        || lowered.ends_with(LOCAL_SUFFIX)
+        || lowered.ends_with(MDNS_SUFFIX)
+}
+
+fn configured(allowed: &[String], name: &str) -> bool {
+    allowed
+        .iter()
+        .any(|expected| expected.eq_ignore_ascii_case(name))
 }
 
 fn host_name(host: &str) -> Option<&str> {

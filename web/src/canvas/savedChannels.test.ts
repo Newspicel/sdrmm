@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import limits from "../generated/limits.json";
 import type { ChannelSettings, WorkspaceDetail } from "../lib/types";
 import { savedChannelsOf, withSavedChannel } from "./savedChannels";
 
@@ -54,5 +55,13 @@ describe("withSavedChannel", () => {
     const before = detail([]);
     const after = withSavedChannel(before, "voice", settings(433_920_000));
     expect(savedChannelsOf(after).get("voice")?.frequency_hz).toBe(433_920_000);
+  });
+});
+
+describe("a workspace without node state", () => {
+  it("is seeded at the version the server writes", () => {
+    const bare = { ...detail([]), state: undefined };
+    const seeded = withSavedChannel(bare, "ch1", settings(145_500_000));
+    expect(seeded.state?.version).toBe(limits.workspace_state_version);
   });
 });

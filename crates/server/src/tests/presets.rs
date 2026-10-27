@@ -1,9 +1,10 @@
 use super::*;
+use sdrmm_wire::DeviceBackend;
 
 #[tokio::test]
 async fn preset_capture_apply_delete_roundtrip() {
     let app = test_router();
-    let workspace = store_siggen_workspace(&app).await;
+    let workspace = store_band_workspace(&app).await;
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
 
@@ -121,7 +122,7 @@ async fn a_preset_carries_every_radio_the_workspace_draws() {
         id: "second".to_string(),
         body: sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
             device: Some(sdrmm_wire::DeviceRef {
-                backend: "virtual".to_string(),
+                backend: DeviceBackend::Virtual,
                 serial: None,
                 key: Some("array4".to_string()),
             }),

@@ -5,7 +5,10 @@ use sdrmm_wire::{
 
 use super::{
     dfm::{self, DfmFrames},
-    fields::{Motion, ecef_to_geodetic, ecef_velocity_to_enu, gps_time},
+    fields::{
+        GPS_WEEK_CYCLE, Motion, current_gps_week, ecef_to_geodetic, ecef_velocity_to_enu, gps_time,
+        unrolled_gps_week,
+    },
     imet::{self, ImetPackets},
     m10,
     meteomodem::{Accept, MeteomodemFrames},
@@ -209,6 +212,7 @@ fn dfm_round_trip_assembles_serial_and_decodes_gps() {
     let frames = decode(Some(SondeType::Dfm), &transmission(SondeType::Dfm, 7, RATE));
     assert!(frames.len() >= 3, "decoded {} frames", frames.len());
     for frame in &frames {
+        assert_eq!(frame.serial, truth.serial);
         check_fix(&truth, frame, 1e-7, 0.01);
         check_motion(&truth, frame, 0.01);
         assert_eq!(frame.satellites, Some(truth.satellites));
@@ -550,4 +554,30 @@ fn gps_week_and_tow_become_utc() {
         gps_time(2_386, 304_514, 18).as_deref(),
         Some("2025-10-01T12:34:56Z")
     );
+}
+
+#[test]
+fn gps_weeks_unroll_to_the_epoch_around_the_reference() {
+    const REFERENCE: i64 = 2_386;
+    for raw in [338u16, 1_362, 2_386] {
+        assert_eq!(unrolled_gps_week(raw, REFERENCE), REFERENCE, "raw {raw}");
+    }
+    assert_eq!(unrolled_gps_week(2_000, REFERENCE), 2_000);
+    assert_eq!(unrolled_gps_week(2_800, REFERENCE), 2_800);
+    let later = REFERENCE + 4 * GPS_WEEK_CYCLE;
+    assert_eq!(unrolled_gps_week(338, later), later);
+}
+
+#[test]
+fn an_m10_week_lands_near_today_on_both_sides_of_a_rollover() {
+    let now = current_gps_week();
+    let rolled = u16::try_from(now - GPS_WEEK_CYCLE).expect("a week number fits");
+    for raw in [u16::try_from(now).expect("a week number fits"), rolled] {
+        let week = m10::gps_week(raw).expect("a plausible week");
+        assert!(
+            (week - now).abs() <= GPS_WEEK_CYCLE / 2,
+            "raw {raw} became week {week}"
+        );
+    }
+    assert_eq!(m10::gps_week(5_000), None);
 }

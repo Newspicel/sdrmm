@@ -1,7 +1,7 @@
 use sdrmm_dsp::crc16_ccitt;
 use serde::Serialize;
 
-use crate::acars::AcarsCore;
+use crate::acars::{AcarsCore, met::Met, oooi::Oooi, position::Position};
 
 const SOH: u8 = 0x01;
 const STX: u8 = 0x02;
@@ -19,6 +19,12 @@ pub struct AcarsBlock {
     pub parity_errors: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min: Option<crate::acars::min::DownlinkMin>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oooi: Option<Oooi>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<Position>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub met: Option<Met>,
 }
 
 pub fn parse(octets: &[u8]) -> Option<AcarsBlock> {
@@ -91,6 +97,9 @@ pub fn parse(octets: &[u8]) -> Option<AcarsBlock> {
         .and_then(crate::acars::min::split_downlink);
     Some(AcarsBlock {
         min,
+        oooi: appdec.oooi,
+        position: appdec.position,
+        met: appdec.met,
         core: AcarsCore {
             mode,
             tail,

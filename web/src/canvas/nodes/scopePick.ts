@@ -1,11 +1,15 @@
 import { identify, suggestedAt } from "../../components/bandPlan";
+import { channelFrequencyHz } from "../../components/channelSettings";
 import { formatMhz } from "../../components/format";
 import {
+  offsetToSpan,
   type SpectrumView,
   spanToOffset,
+  spanToView,
   viewToSpan,
   viewWidth,
 } from "../../components/spectrumView";
+import { heardHz, type SetLevels } from "../../lib/levels";
 import type { BandPlan, ChannelInfo, ChannelParams } from "../../lib/types";
 
 export function streamChannels(
@@ -79,4 +83,41 @@ export function takeCreationTune(node: string): number | undefined {
   const frequencyHz = awaitingCreation.get(node);
   awaitingCreation.delete(node);
   return frequencyHz;
+}
+
+export function markerAt(
+  channels: readonly ChannelInfo[],
+  levels: SetLevels | undefined,
+  view: SpectrumView,
+  centerHz: number,
+  spanHz: number,
+  at: number,
+  tolerance: number,
+): ChannelInfo | null {
+  let best: ChannelInfo | null = null;
+  let bestDistance = tolerance;
+  for (const channel of channels) {
+    const offsetHz = heardHz(channelFrequencyHz(channel.settings), levels?.[channel.id]) - centerHz;
+    const position = spanToView(view, offsetToSpan(offsetHz, spanHz));
+    const distance = Math.abs(position - at);
+    if (distance <= bestDistance) {
+      best = channel;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+export function markerFrom(
+  target: EventTarget | null,
+  channels: readonly ChannelInfo[],
+): ChannelInfo | null {
+  if (!(target instanceof Element)) {
+    return null;
+  }
+  const id = target.closest("[data-marker]")?.getAttribute("data-marker");
+  if (id == null) {
+    return null;
+  }
+  return channels.find((channel) => String(channel.id) === id) ?? null;
 }

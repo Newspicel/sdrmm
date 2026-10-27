@@ -126,6 +126,8 @@ fn own_radio(
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_wire::DeviceBackend;
+
     use sdrmm_device::DeviceRegistry;
     use sdrmm_wire::{
         DeviceRef, DmrTrunkNode, DmrTrunkProtocol, PatchEdge, PatchNode, PortRef, Position,
@@ -189,7 +191,7 @@ mod tests {
             panic!("the starter's radio is a device node");
         };
         device.device = Some(DeviceRef {
-            backend: "virtual".to_owned(),
+            backend: DeviceBackend::Virtual,
             serial: None,
             key: Some("band".to_owned()),
         });

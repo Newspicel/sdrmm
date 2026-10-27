@@ -13,6 +13,7 @@ pub mod quality;
 pub mod soft;
 pub mod spread;
 pub mod symbolcode;
+pub mod synth;
 pub mod wifi;
 
 #[cfg(test)]

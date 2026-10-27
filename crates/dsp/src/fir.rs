@@ -34,9 +34,13 @@ pub fn design_lowpass(taps: usize, cutoff: f64) -> Vec<f32> {
 const KAISER_OFFSET_DB: f64 = 7.95;
 const KAISER_SLOPE: f64 = 14.36;
 
+pub const MIN_TAPS: usize = 3;
+
 #[must_use]
 pub fn kaiser_taps(transition: f64, attenuation_db: f64) -> usize {
-    (((attenuation_db - KAISER_OFFSET_DB) / (KAISER_SLOPE * transition)).ceil() as usize + 1) | 1
+    let wanted = ((attenuation_db - KAISER_OFFSET_DB) / (KAISER_SLOPE * transition)).ceil();
+    let taps = (wanted.max(0.0) as usize).saturating_add(1) | 1;
+    taps.max(MIN_TAPS)
 }
 
 #[must_use]
@@ -239,6 +243,17 @@ mod tests {
                 .fold(f64::NEG_INFINITY, f64::max);
             assert!(worst < 3.0 - attenuation_db, "{taps} taps: {worst:.1} dB");
             assert!(kaiser_taps(width, attenuation_db) <= taps + 2);
+        }
+    }
+
+    #[test]
+    fn an_attenuation_below_the_window_floor_still_designs() {
+        for attenuation_db in [0.0, 3.0, 7.0, f64::NAN] {
+            let taps = kaiser_taps(0.1, attenuation_db);
+            assert!(taps >= MIN_TAPS, "{attenuation_db} dB gave {taps} taps");
+            assert_eq!(taps % 2, 1);
+            let h = design_lowpass_kaiser(taps, 0.2, attenuation_db);
+            assert_eq!(h.len(), taps);
         }
     }
 

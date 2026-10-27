@@ -926,6 +926,15 @@ impl Controller {
                     self.gain.last_clip = Some(now);
                 }
             }
+            AggregatorEvent::LaneStopped { lane } => {
+                self.tracker.reset();
+                self.abort_run();
+                self.want = self.want.max(Want::Coarse);
+                self.cooling = None;
+                self.set_failure(Some(ArrayFailure::DeviceDown {
+                    lane: u32::try_from(lane).unwrap_or(u32::MAX),
+                }));
+            }
             AggregatorEvent::Ended => self.stream_ended(),
             AggregatorEvent::Resumed => {
                 self.ended = false;

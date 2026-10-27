@@ -103,8 +103,9 @@ impl Response {
 /// The server answers a refusal with the errno its own call returned, which is the only place a
 /// reason for it exists, so it is translated here rather than reported as a bare number.
 pub(crate) fn refusal(what: &str, errno: i32) -> DeviceError {
-    let text = format!("{what}: {}", errno_text(errno));
-    match -errno {
+    let code = errno.unsigned_abs();
+    let text = format!("{what}: {}", errno_text(code));
+    match code {
         2 | 19 => DeviceError::NotFound(text),
         16 => DeviceError::InUse(text),
         22 | 25 | 38 | 95 => DeviceError::Unsupported(text),
@@ -112,8 +113,8 @@ pub(crate) fn refusal(what: &str, errno: i32) -> DeviceError {
     }
 }
 
-fn errno_text(errno: i32) -> String {
-    let name = match -errno {
+fn errno_text(code: u32) -> String {
+    let name = match code {
         1 => "operation not permitted",
         2 => "no such attribute or device",
         5 => "input/output error",
@@ -127,7 +128,7 @@ fn errno_text(errno: i32) -> String {
         32 => "the connection broke",
         38 | 95 => "this firmware does not implement that",
         110 => "the radio did not answer in time",
-        _ => return format!("iiod returned errno {}", -errno),
+        _ => return format!("iiod returned errno {code}"),
     };
     name.to_string()
 }
@@ -204,6 +205,19 @@ mod tests {
         assert_eq!(Response::parse("-22"), Some(Response::Refused(-22)));
         assert_eq!(Response::parse("not a number"), None);
         assert_eq!(Response::parse(""), None);
+    }
+
+    #[test]
+    fn the_most_negative_errno_is_reported_rather_than_negated() {
+        assert_eq!(
+            Response::parse("-2147483648"),
+            Some(Response::Refused(i32::MIN))
+        );
+        let error = Response::Refused(i32::MIN)
+            .bytes("refill")
+            .expect_err("a refusal");
+        assert!(matches!(error, DeviceError::Io(_)));
+        assert!(error.to_string().contains("2147483648"), "{error}");
     }
 
     #[test]

@@ -212,6 +212,8 @@ fn start(
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_wire::DeviceBackend;
+
     use sdrmm_device::DeviceRegistry;
     use sdrmm_wire::{DeviceRef, PatchEdge, PatchNode, PortRef, Position, WorkspaceSnapshot};
 
@@ -279,7 +281,7 @@ mod tests {
             .map(|node| &mut node.body)
         {
             device.device = Some(DeviceRef {
-                backend: "virtual".to_owned(),
+                backend: DeviceBackend::Virtual,
                 serial: None,
                 key: Some("band".to_owned()),
             });

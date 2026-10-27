@@ -1,13 +1,14 @@
 ## Non-negotiables
 1. One source of truth for wire types.
 2. Tests are part of the work.
-3. Never ever write a comment, code should be self explanatory!!!
+3. Never explain code with a `//` comment; code explains itself. A `///` doc comment on an
+   item is the one place for rationale a name cannot carry.
 4. Fix problems directly if you find them, without asking
-6. Prefer self-written pure Rust. Use compatible open-source code or translate C/C++ only when necessary.
+5. Prefer self-written pure Rust. Use compatible open-source code or translate C/C++ only when necessary.
 
 ## Coding structure
 - Respect crate boundaries: `dsp` has no I/O and no internal deps; `modem` builds reusable
-  modulation algorithms on `dsp`; `channels` depends on `dsp`, `modem`, `wire`, and `codec2`.
+  modulation algorithms on `dsp`; `channels` pulls no internal crates beyond `dsp`, `modem` and `wire`.
 - Adding a decoder should touch: one module in `channels`, one settings struct in `wire`,
   optionally one React panel. If it needs more, reconsider the design.
 - One job, one node. Never two nodes, or a node and a device kind, that do the same thing: a radio

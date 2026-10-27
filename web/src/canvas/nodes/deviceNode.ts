@@ -15,6 +15,30 @@ import type {
 import { forStream } from "../../lib/useDevicePatch";
 import { rxStreamCount, streamLabel } from "../graph";
 
+export const GENERATOR_PREFIX = "gen-";
+
+export function pinnedRef(node: PatchNode): DeviceRef | null {
+  return node.kind === "device" ? (node.data.device ?? null) : null;
+}
+
+export function isRecordingRef(reference: DeviceRef): boolean {
+  return reference.backend === "recording";
+}
+
+export function isGeneratorRef(reference: DeviceRef): boolean {
+  return (
+    reference.backend === "virtual" && (reference.key?.startsWith(GENERATOR_PREFIX) ?? false)
+  );
+}
+
+export function recordingRef(stem: string): DeviceRef {
+  return { backend: "recording", key: stem };
+}
+
+export function generatorRef(nodeId: string): DeviceRef {
+  return { backend: "virtual", key: `${GENERATOR_PREFIX}${nodeId.replaceAll(":", "-")}` };
+}
+
 export function deviceRefOf(info: DeviceInfo): DeviceRef {
   return {
     backend: info.driver,
@@ -251,7 +275,7 @@ export function capturesOn(set: DeviceSet): string[] {
   return [
     set.recording == null ? null : "a baseband recording",
     set.network_export == null ? null : "a network export",
-    set.time_machine == null ? null : "its time machine",
+    set.pre_roll == null ? null : "its pre-roll",
   ].filter((name): name is string => name !== null);
 }
 

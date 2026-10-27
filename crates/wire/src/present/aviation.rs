@@ -57,6 +57,7 @@ impl EventPayload for AcarsMessage {
         Presentation {
             label: trimmed(self.flight.as_deref()),
             entity: Some(self.registration.clone()),
+            place: lat_lon(self.lat, self.lon).map(Place::at),
             fields: acars_fields(self),
             ..Presentation::of(acars_summary(self))
         }
@@ -69,12 +70,16 @@ fn acars_fields(a: &AcarsMessage) -> Vec<Field> {
         ("Registration", text(Some(&a.registration))),
         ("Flight", text(a.flight.as_deref())),
         ("Label", text(Some(&a.label))),
+        ("Sublabel", text(a.sublabel.as_deref())),
+        ("MFI", text(a.mfi.as_deref())),
         ("Mode", text_of(a.mode)),
         ("Block", text_of(a.block_id)),
         ("Direction", text_of(direction)),
         ("Sequence", text(a.seq_no.as_deref())),
         ("Ack", a.ack.map_or_else(|| text_of("NAK"), text_of)),
         ("Continues", only_if(a.more)),
+        ("Reassembly", text(a.assstat.as_deref())),
+        ("Position", position(a.lat, a.lon)),
         ("Text", text(Some(&a.text))),
     ])
 }

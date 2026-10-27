@@ -328,6 +328,122 @@ mod tests {
     use super::*;
     use crate::{synth, testutil::settings};
 
+    const CCIR_PUBLISHED_TONE_HZ: [(char, f64); 11] = [
+        ('0', 1_981.0),
+        ('1', 1_124.0),
+        ('2', 1_197.0),
+        ('3', 1_275.0),
+        ('4', 1_358.0),
+        ('5', 1_446.0),
+        ('6', 1_540.0),
+        ('7', 1_640.0),
+        ('8', 1_747.0),
+        ('9', 1_860.0),
+        ('E', 2_110.0),
+    ];
+
+    const ZVEI1_PUBLISHED_TONE_HZ: [(char, f64); 15] = [
+        ('0', 2_400.0),
+        ('1', 1_060.0),
+        ('2', 1_160.0),
+        ('3', 1_270.0),
+        ('4', 1_400.0),
+        ('5', 1_530.0),
+        ('6', 1_670.0),
+        ('7', 1_830.0),
+        ('8', 2_000.0),
+        ('9', 2_200.0),
+        ('A', 2_800.0),
+        ('B', 810.0),
+        ('C', 970.0),
+        ('D', 885.0),
+        ('E', 2_600.0),
+    ];
+
+    const PUBLISHED_REPEAT_SYMBOL: char = 'E';
+
+    fn published_hz(plan: &[(char, f64)], symbol: char) -> f64 {
+        plan.iter()
+            .find(|&&(name, _)| name == symbol)
+            .map(|&(_, hz)| hz)
+            .unwrap_or_else(|| panic!("the published plan has no tone for {symbol}"))
+    }
+
+    fn audio_at_published_tones(plan: &[(char, f64)], code: &str, tone_ms: u32) -> Vec<f32> {
+        let per_tone = (INPUT_RATE_HZ * f64::from(tone_ms) / 1_000.0) as usize;
+        let lead_in = (INPUT_RATE_HZ * 0.1) as usize;
+        let mut audio = vec![0.0; lead_in];
+        let mut previous_on_air = None;
+        for symbol in code.chars() {
+            let on_air = if previous_on_air == Some(symbol) {
+                PUBLISHED_REPEAT_SYMBOL
+            } else {
+                symbol
+            };
+            let hz = published_hz(plan, on_air);
+            let start = audio.len();
+            audio.resize(start + per_tone, 0.0);
+            for (index, sample) in audio[start..].iter_mut().enumerate() {
+                let phase = std::f64::consts::TAU * hz * index as f64 / INPUT_RATE_HZ;
+                *sample = 0.8 * phase.sin() as f32;
+            }
+            previous_on_air = Some(on_air);
+        }
+        audio.resize(audio.len() + (INPUT_RATE_HZ * 0.2) as usize, 0.0);
+        audio
+    }
+
+    #[test]
+    fn the_tone_plans_hold_the_published_ccir_and_zvei_frequencies() {
+        for (system, published) in [
+            (SelcallSystem::Ccir1, CCIR_PUBLISHED_TONE_HZ.as_slice()),
+            (SelcallSystem::Zvei1, ZVEI1_PUBLISHED_TONE_HZ.as_slice()),
+        ] {
+            for tone in tones(system) {
+                let symbol = if tone.repeat {
+                    PUBLISHED_REPEAT_SYMBOL
+                } else {
+                    tone.symbol
+                };
+                let expected = published_hz(published, symbol);
+                assert!(
+                    (tone.hz - expected).abs() < 0.5,
+                    "{system:?} {symbol} sits at {} against a published {expected}",
+                    tone.hz
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tones_at_the_published_frequencies_decode_to_their_call() {
+        for (system, published, tone_ms, code) in [
+            (
+                SelcallSystem::Ccir1,
+                CCIR_PUBLISHED_TONE_HZ.as_slice(),
+                100,
+                "12234",
+            ),
+            (
+                SelcallSystem::Zvei1,
+                ZVEI1_PUBLISHED_TONE_HZ.as_slice(),
+                70,
+                "A11D0",
+            ),
+        ] {
+            let mut decoder = Decoder::new(system);
+            let mut out = ChannelOutputs::default();
+            for sample in audio_at_published_tones(published, code, tone_ms) {
+                decoder.push(sample, &mut out);
+            }
+            assert!(
+                matches!(out.events.as_slice(), [DecoderEvent::Selcall(call)] if call.code == code),
+                "{system:?} {code} produced {:?}",
+                out.events
+            );
+        }
+    }
+
     fn decode(system: SelcallSystem, code: &str) -> Vec<DecoderEvent> {
         let params = SelcallParams { system };
         let iq = synth::selcall::transmission(system, code, INPUT_RATE_HZ).unwrap();

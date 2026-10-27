@@ -236,7 +236,8 @@ decoder_events! {
     (Navtex, "navtex", NavtexMessage,
         info("NAVTEX", "Stations", Hue::Muted).caps(&[Log, Station]).sighting()),
     (Acars, "acars", AcarsMessage,
-        info("ACARS", "Aircraft", Hue::Teal).caps(&[Log, Station]).sighting()),
+        info("ACARS", "Aircraft", Hue::Teal)
+            .caps(&[Log, Station, Geo]).symbol(Symbol::Plane).sighting()),
     (Tone, "tone", ToneSquelchStatus, info("Tone", "Tones", Hue::Muted).caps(&[Log])),
     (Scrambler, "scrambler", ScramblerStatus,
         info("Scrambler", "Scramblers", Hue::Muted).caps(&[Log])),

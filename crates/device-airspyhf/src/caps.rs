@@ -82,6 +82,7 @@ pub(crate) fn capabilities(sample_rates: &[u32], low_if: bool) -> Capabilities {
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
         clean_fraction: None,
+        bank: None,
     }
 }
 

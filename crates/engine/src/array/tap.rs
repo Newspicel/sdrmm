@@ -288,6 +288,10 @@ impl LaneFeed {
         self.events_lost.load(Ordering::Relaxed)
     }
 
+    pub(crate) fn lost(&self) -> bool {
+        self.samples.is_abandoned() && self.ready() == 0
+    }
+
     pub(crate) fn settle(&mut self, notes: &mut AlignNotes, lane: usize, offset: i64) {
         self.visible = self.samples.slots();
         loop {

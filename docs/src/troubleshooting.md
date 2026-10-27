@@ -12,8 +12,8 @@ It checks drivers, libraries, radio discovery, USB permissions, and storage path
 
 - Check the port in the `SDR-- ready` line of the server log.
 - On the server itself, try <http://127.0.0.1:8080>.
-- The desktop app only accepts its own computer. For other machines, run the `sdrmm` server. It
-  listens on `0.0.0.0:8080` unless `--bind` says otherwise.
+- The desktop app only accepts its own computer. For other machines, run the `sdrmm` server with
+  `--bind 0.0.0.0:8080` and a token; it stays on `127.0.0.1:8080` otherwise.
 - Check the firewall and any container port mapping.
 - Behind a reverse proxy, serve SDR-- at the root. Path prefixes do not work.
 - With TLS on, use `https://`.

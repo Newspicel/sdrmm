@@ -16,7 +16,7 @@ pub fn run(root: &Path) -> Result<()> {
             .with_context(|| format!("read {}", fixture.file()))?;
         let outcome = identify(fixture, &samples(&bytes));
         let verdict = match (&fixture.expect, judge(fixture, &outcome)) {
-            (Expect::Beyond(why), _) => format!("beyond reach: {why}"),
+            (Expect::Beyond(why), Ok(())) => format!("beyond reach: {why}"),
             (_, Ok(())) => "ok".to_owned(),
             (_, Err(miss)) => {
                 misses.push(miss);

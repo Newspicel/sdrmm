@@ -32,6 +32,10 @@ impl Tracker {
         self.rejected = 0;
     }
 
+    pub(crate) fn refuse(&mut self) {
+        self.rejected = self.rejected.saturating_add(1);
+    }
+
     pub(crate) fn frame(&mut self, heard: Heard<'_>) -> Option<RemoteIdFrame> {
         let Ok(messages) = odid::parse(heard.payload) else {
             self.rejected = self.rejected.saturating_add(1);

@@ -1,7 +1,4 @@
 # Supply-chain gate for `cargo xtask audit` (CI mirrors it verbatim).
-#
-# Advisories only. License and duplicate-version policing are separate problems, and every
-# answer they would produce here is about somebody else's dependency tree.
 
 [advisories]
 # Unsound advisories default to workspace-direct crates, which hides RUSTSEC-2024-0429:
@@ -35,3 +32,49 @@ ignore = [
     { id = "RUSTSEC-2026-0368", reason = "zip reaches us only through the Windows updater, which extracts nothing it has not verified, and no fixed version exists below zip 9" },
     { id = "RUSTSEC-2026-0369", reason = "zip reaches us only through the Windows updater, which extracts nothing it has not verified, and no fixed version exists below zip 9" },
 ]
+
+[licenses]
+# Everything the AGPL-3.0-or-later binaries may carry. GPL-3.0-only, LGPL-2.1-or-later and the
+# proprietary licenses are absent on purpose: a crate that offers nothing else fails here.
+allow = [
+    "0BSD",
+    "AGPL-3.0-or-later",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "BlueOak-1.0.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "LGPL-2.1-only",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "WTFPL",
+    "Zlib",
+]
+
+[bans]
+# Duplicate versions are somebody else's dependency tree: tauri alone brings four `windows-sys`.
+# `cargo xtask check` pins the pair that actually breaks a build (gpu-allocator vs wgpu-hal).
+multiple-versions = "allow"
+wildcards = "deny"
+# The internal crates are path dependencies of unpublished crates, declared without a version.
+allow-wildcard-paths = true
+
+deny = [
+    { crate = "openssl-sys", reason = "TLS is rustls everywhere; linking OpenSSL would break the portable archives and the Nix build" },
+    { crate = "openssl", reason = "TLS is rustls everywhere; linking OpenSSL would break the portable archives and the Nix build" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# The nine `xng-*` decoders are vendored from one pinned revision and nothing else is fetched
+# from a git host. A new entry here is a supply-chain decision, not a dependency bump.
+allow-git = ["https://github.com/airframesio/xng"]

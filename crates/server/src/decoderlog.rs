@@ -157,8 +157,8 @@ async fn prune(store: &Arc<Store>, engine: &Weak<Engine>, max_rows: u64) {
 mod tests {
     use sdrmm_wire::{
         AdsbMessage, ChannelNode, ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent,
-        DecoderLogQuery, DeviceRef, NodeBody, PatchEdge, PatchNode, PortRef, Position, ServerEvent,
-        WorkspaceSnapshot,
+        DecoderLogQuery, DeviceBackend, DeviceRef, NodeBody, PatchEdge, PatchNode, PortRef,
+        Position, ServerEvent, WorkspaceSnapshot,
     };
     use tokio::sync::broadcast;
 
@@ -317,7 +317,7 @@ mod tests {
             panic!("the starter's radio is a device node");
         };
         device.device = Some(DeviceRef {
-            backend: "virtual".to_owned(),
+            backend: DeviceBackend::Virtual,
             serial: None,
             key: Some("band".to_owned()),
         });

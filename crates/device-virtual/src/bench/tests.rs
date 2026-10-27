@@ -8,16 +8,16 @@ use num_complex::Complex;
 use sdrmm_device::{
     DeviceDriver, GapScope, LaneEvent, LaneMark, RxSink, SdrDevice, SinkItem, Uncertainty,
 };
-use sdrmm_dsp::manifold::{Direction, Geometry, LIGHT_SPEED_M_S, Winding, steer};
+use sdrmm_dsp::{
+    manifold::{Direction, Geometry, LIGHT_SPEED_M_S, Winding, steer},
+    scene::{LaneRenderer, LaneSetup},
+};
 use sdrmm_wire::{
     Coherence, DcArtifact, DeviceSettings, ExtraValue, GainKind, GainValue, NoiseSource,
     StreamScope,
 };
 
-use super::{
-    render::{LaneRenderer, LaneSetup},
-    *,
-};
+use super::*;
 use crate::VirtualDriver;
 
 type C32 = Complex<f32>;

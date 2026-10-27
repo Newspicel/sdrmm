@@ -11,7 +11,7 @@ import {
   filterNmeaDevices,
   type GpsTab,
   gpsTabs,
-  nmeaDetail,
+  serialDetail,
   nmeaSource,
   validHostPort,
 } from "./gpsSource";
@@ -57,7 +57,7 @@ function ReceiverChoices({ onChoose }: { onChoose: Choose }) {
 
       <div className="flex flex-col gap-1">
         {found.map((device) => {
-          const detail = nmeaDetail(device);
+          const detail = serialDetail(device);
           return (
             <Button
               key={device.path}

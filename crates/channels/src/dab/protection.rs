@@ -174,8 +174,8 @@ const UEP_PROFILES: [(u16, u8, [u16; 4], [u8; 4]); 64] = [
     (384, 1, [12, 28, 245, 3], [24, 20, 14, 23]),
 ];
 
+/// Rows of (subchannel size in capacity units, protection level, bit rate in kbit/s).
 const UEP_TABLE: [(u16, u8, u16); 64] = [
-    // (subchannel size in capacity units, protection level, bit rate in kbit/s)
     (16, 5, 32),
     (21, 4, 32),
     (24, 3, 32),
@@ -413,6 +413,7 @@ pub fn eep_bitrate_kbps(size_cu: u16, profile: Eep, level: u8) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dab::msc::{CU_BITS, PADDING_BITS};
 
     #[test]
     fn the_puncturing_vectors_grow_monotonically() {
@@ -500,12 +501,36 @@ mod tests {
                 protection.mask().filter(|&keep| keep).count(),
                 protection.coded_bits()
             );
-            let capacity = 64 * usize::from(uep_size_cu(index).unwrap_or(0));
-            let spare = capacity - protection.coded_bits();
+            let capacity = CU_BITS * usize::from(uep_size_cu(index).unwrap_or(0));
+            let padding = capacity.checked_sub(protection.coded_bits());
             assert!(
-                spare <= TAIL,
-                "UEP index {index} leaves {spare} bits unused"
+                padding.is_some_and(|padding| padding <= PADDING_BITS),
+                "UEP index {index} codes {} bits into {capacity}",
+                protection.coded_bits()
             );
+        }
+    }
+
+    #[test]
+    fn every_equal_error_profile_fills_the_capacity_units_of_its_size() {
+        for profile in [Eep::A, Eep::B] {
+            for level in 1..=4u8 {
+                for size_cu in 1..=864u16 {
+                    let Some(bitrate) = eep_bitrate_kbps(size_cu, profile, level) else {
+                        continue;
+                    };
+                    if eep_bitrate_kbps(size_cu - 1, profile, level) == Some(bitrate) {
+                        continue;
+                    }
+                    let protection = Protection::eep(bitrate, profile, level)
+                        .unwrap_or_else(|| panic!("{profile:?} {level} at {bitrate} kbit/s"));
+                    assert_eq!(
+                        protection.coded_bits(),
+                        CU_BITS * usize::from(size_cu),
+                        "{profile:?} {level}: {bitrate} kbit/s in {size_cu} CU"
+                    );
+                }
+            }
         }
     }
 

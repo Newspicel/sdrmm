@@ -11,8 +11,8 @@ use sdrmm_modem_test_support::ber::{
         ppm::{self as ppm_catalog, RATE as PPM_RATE, SLOT_SPS},
     },
     perf::{
-        CountingAlloc, PerfBaseline, REGRESSION_FRACTION, assert_no_alloc, compare_perf, host_id,
-        load_baselines, measure_throughput, save_baselines,
+        CountingAlloc, PerfBaseline, REGRESSION_FRACTION, assert_no_alloc, committed_for_host,
+        compare_perf, host_id, load_baselines, measure_throughput, save_baselines,
     },
 };
 
@@ -96,12 +96,12 @@ fn the_filterbank_hot_path_allocates_nothing() {
     let mut energies = [0.0f32; 4];
     for _ in 0..2 {
         for symbol in 0..MFSK_SYMBOLS {
-            demod.energies(&iq, 0, symbol, &mut energies);
+            assert!(demod.energies(&iq, 0, symbol, &mut energies));
         }
     }
     assert_no_alloc("MfskDemod::energies", || {
         for symbol in 0..MFSK_SYMBOLS {
-            demod.energies(&iq, 0, symbol, &mut energies);
+            assert!(demod.energies(&iq, 0, symbol, &mut energies));
         }
     });
     let mut symbols = Vec::with_capacity(MFSK_SYMBOLS);
@@ -186,11 +186,11 @@ fn compare_phase5_perf_baselines() {
         (orthogonal::PERF, measured_mfsk()),
         (ppm_catalog::PERF, measured_ppm()),
     ] {
-        let committed = load_baselines(&path(stem)).unwrap();
-        if committed.iter().any(|b| b.host != host_id()) {
-            eprintln!("skipping {stem}: baseline host is not {}", host_id());
-            continue;
-        }
+        let committed = committed_for_host(
+            &load_baselines(&path(stem)).unwrap(),
+            stem,
+            "cargo test -p sdrmm-modem --release --test orthogonal_ppm_perf write_phase5_perf_baselines -- --ignored",
+        );
         match compare_perf(&measured, &committed, REGRESSION_FRACTION) {
             Ok(changes) => {
                 for c in changes {

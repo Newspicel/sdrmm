@@ -6,6 +6,7 @@ use crate::{
 
 const MEAN_EARTH_RADIUS_KM: f64 = 6_371.0;
 const LATITUDE_ITERATIONS: usize = 6;
+const MAX_TRACK_STEPS: usize = 100_000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Subpoint {
@@ -40,10 +41,19 @@ impl Satellite {
         to_unix: f64,
         step_s: f64,
     ) -> Result<Vec<Subpoint>, OrbitError> {
-        if step_s.is_nan() || step_s <= 0.0 || to_unix < from_unix {
+        if !step_s.is_finite()
+            || step_s <= 0.0
+            || !from_unix.is_finite()
+            || !to_unix.is_finite()
+            || to_unix < from_unix
+        {
             return Err(OrbitError::Elements("an empty or reversed ground track"));
         }
-        let steps = ((to_unix - from_unix) / step_s).ceil() as usize;
+        let span = ((to_unix - from_unix) / step_s).ceil();
+        if span >= MAX_TRACK_STEPS as f64 {
+            return Err(OrbitError::Elements("a ground track of too many points"));
+        }
+        let steps = span as usize;
         (0..=steps)
             .map(|step| self.subpoint((from_unix + step as f64 * step_s).min(to_unix)))
             .collect()
@@ -152,5 +162,23 @@ mod tests {
         let iss = iss();
         assert!(iss.ground_track(10.0, 0.0, 60.0).is_err());
         assert!(iss.ground_track(0.0, 10.0, 0.0).is_err());
+    }
+
+    #[test]
+    fn a_track_that_would_never_end_is_refused() {
+        let iss = iss();
+        let start = unix_seconds(iss.tle.epoch_jd);
+        for (from, to, step) in [
+            (start, f64::INFINITY, 60.0),
+            (f64::NEG_INFINITY, start, 60.0),
+            (start, f64::NAN, 60.0),
+            (start, start + 1e12, 60.0),
+            (start, start + 60.0, f64::INFINITY),
+        ] {
+            assert!(
+                iss.ground_track(from, to, step).is_err(),
+                "{from} {to} {step}"
+            );
+        }
     }
 }

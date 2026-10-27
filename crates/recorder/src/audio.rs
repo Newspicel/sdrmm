@@ -7,6 +7,9 @@ use std::{
 pub const AUDIO_SUFFIX: &str = ".wav";
 pub const AUDIO_BYTES_PER_SAMPLE: u64 = 2;
 const HEADER_LEN: u64 = 44;
+const RIFF_HEADER_LEN: u64 = 12;
+const CHUNK_HEADER_LEN: u64 = 8;
+const FMT_BODY_LEN: usize = 16;
 const FORMAT_PCM: u16 = 1;
 const BITS_PER_SAMPLE: u16 = 16;
 const HEADER_REFRESH_FRAMES: u64 = 48_000;
@@ -245,36 +248,83 @@ pub fn scan_audio(dir: &Path) -> io::Result<Vec<PathBuf>> {
 
 pub fn read_audio_info(path: &Path) -> io::Result<AudioInfo> {
     let mut file = File::open(path)?;
-    let mut head = [0u8; HEADER_LEN as usize];
-    file.read_exact(&mut head)?;
     let invalid = |what: &str| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("{}: {what}", path.display()),
         )
     };
-    if &head[..4] != b"RIFF" || &head[8..12] != b"WAVE" || &head[12..16] != b"fmt " {
-        return Err(invalid("not a canonical PCM WAV"));
+    let mut riff = [0u8; RIFF_HEADER_LEN as usize];
+    file.read_exact(&mut riff)?;
+    if &riff[..4] != b"RIFF" || &riff[8..12] != b"WAVE" {
+        return Err(invalid("not a RIFF WAVE file"));
     }
-    let format = u16::from_le_bytes([head[20], head[21]]);
-    let bits = u16::from_le_bytes([head[34], head[35]]);
-    if format != FORMAT_PCM || bits != BITS_PER_SAMPLE {
-        return Err(invalid("only 16-bit PCM audio is read here"));
+    let total = file.metadata()?.len();
+    let mut format = None;
+    let mut at = RIFF_HEADER_LEN;
+    while at + CHUNK_HEADER_LEN <= total {
+        let mut head = [0u8; CHUNK_HEADER_LEN as usize];
+        file.read_exact(&mut head)?;
+        let declared = u64::from(u32::from_le_bytes([head[4], head[5], head[6], head[7]]));
+        let body = at + CHUNK_HEADER_LEN;
+        match &head[..4] {
+            b"fmt " => format = read_format(&mut file, declared)?,
+            b"data" => {
+                let Some(format) = format else {
+                    return Err(invalid("only 16-bit PCM audio is read here"));
+                };
+                return Ok(info_of(format, data_bytes(declared, total - body)));
+            }
+            _ => {}
+        }
+        at = body + declared + declared % 2;
+        file.seek(SeekFrom::Start(at))?;
     }
-    let channels = u16::from_le_bytes([head[22], head[23]]);
-    let sample_rate = u32::from_le_bytes([head[24], head[25], head[26], head[27]]);
-    let channels = u8::try_from(channels).ok().filter(|&c| c > 0);
-    let Some(channels) = channels else {
-        return Err(invalid("no channel count"));
-    };
-    let bytes = file.metadata()?.len().saturating_sub(HEADER_LEN);
-    let frame_bytes = u64::from(channels) * AUDIO_BYTES_PER_SAMPLE;
-    Ok(AudioInfo {
-        channels,
-        sample_rate,
+    Err(invalid("no audio data"))
+}
+
+#[derive(Clone, Copy)]
+struct WavFormat {
+    channels: u8,
+    sample_rate: u32,
+}
+
+fn read_format(file: &mut File, declared: u64) -> io::Result<Option<WavFormat>> {
+    if declared < FMT_BODY_LEN as u64 {
+        return Ok(None);
+    }
+    let mut body = [0u8; FMT_BODY_LEN];
+    file.read_exact(&mut body)?;
+    let coding = u16::from_le_bytes([body[0], body[1]]);
+    let bits = u16::from_le_bytes([body[14], body[15]]);
+    if coding != FORMAT_PCM || bits != BITS_PER_SAMPLE {
+        return Ok(None);
+    }
+    Ok(u8::try_from(u16::from_le_bytes([body[2], body[3]]))
+        .ok()
+        .filter(|channels| *channels > 0)
+        .map(|channels| WavFormat {
+            channels,
+            sample_rate: u32::from_le_bytes([body[4], body[5], body[6], body[7]]),
+        }))
+}
+
+fn data_bytes(declared: u64, available: u64) -> u64 {
+    if declared == 0 || declared > available {
+        available
+    } else {
+        declared
+    }
+}
+
+fn info_of(format: WavFormat, bytes: u64) -> AudioInfo {
+    let frame_bytes = u64::from(format.channels) * AUDIO_BYTES_PER_SAMPLE;
+    AudioInfo {
+        channels: format.channels,
+        sample_rate: format.sample_rate,
         frames: bytes / frame_bytes,
         bytes: bytes - bytes % frame_bytes,
-    })
+    }
 }
 
 fn header(sample_rate: u32, channels: u8, data_len: u32) -> Vec<u8> {
@@ -539,6 +589,34 @@ mod tests {
             .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_owned))
             .collect();
         assert_eq!(listed, ["a.wav", "b.wav"]);
+    }
+
+    #[test]
+    fn a_wav_with_a_chunk_before_its_data_is_counted_from_the_data_chunk() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("tagged.wav");
+        let pcm = [1i16, -1, 2, -2, 3, -3];
+        let mut bytes = header(RATE, 2, (pcm.len() * 2) as u32);
+        let tag = b"LIST\x08\x00\x00\x00INFOIART";
+        bytes.splice(
+            HEADER_LEN as usize - 8..HEADER_LEN as usize - 8,
+            tag.iter().copied(),
+        );
+        for sample in pcm {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        fs::write(&path, &bytes).expect("write");
+
+        let info = read_audio_info(&path).expect("info");
+        assert_eq!(
+            info,
+            AudioInfo {
+                channels: 2,
+                sample_rate: RATE,
+                frames: 3,
+                bytes: 12,
+            }
+        );
     }
 
     #[test]

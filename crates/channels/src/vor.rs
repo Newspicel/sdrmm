@@ -25,18 +25,36 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     ..ChannelDescriptor::default()
 });
 
+#[derive(Clone, Copy, Default)]
+struct ToneSum {
+    i: f64,
+    q: f64,
+    signal: f64,
+}
+
+impl ToneSum {
+    fn add(&mut self, signal: f64, cos_30: f64, sin_30: f64) {
+        self.i += signal * cos_30;
+        self.q += signal * sin_30;
+        self.signal += signal;
+    }
+
+    fn phasor(&self, basis: Complex<f64>, count: f64) -> Complex<f64> {
+        let mean = self.signal / count;
+        Complex::new(self.i - mean * basis.re, self.q - mean * basis.im)
+    }
+}
+
 pub struct VorChannel {
     params: VorParams,
     phase_30: f64,
     phase_subcarrier: f64,
-    dc: f64,
     power: f64,
     subcarrier: [Complex<f64>; 4],
     previous_subcarrier: Complex<f64>,
-    variable_i: f64,
-    variable_q: f64,
-    reference_i: f64,
-    reference_q: f64,
+    basis_30: Complex<f64>,
+    variable: ToneSum,
+    reference: ToneSum,
     subcarrier_level: f64,
     samples: usize,
     settled: bool,
@@ -53,6 +71,7 @@ fn params(settings: &ChannelSettings) -> Result<&VorParams, ChannelError> {
 }
 
 fn check_params(params: &VorParams) -> Result<(), ChannelError> {
+    datalink::check_navaid_report_ms(params.report_ms)?;
     match (params.station_lat, params.station_lon) {
         (None, None) | (Some(_), Some(_)) => Ok(()),
         _ => Err(ChannelError::InvalidSettings(
@@ -100,11 +119,10 @@ impl ChannelRx for VorChannel {
         let step_subcarrier = TAU * 9_960.0 / RATE;
         for sample in iq {
             let envelope = f64::from(sample.norm());
-            self.dc += alpha_dc * (envelope - self.dc);
             self.power += alpha_dc * (envelope * envelope - self.power);
             let (sin_30, cos_30) = self.phase_30.sin_cos();
-            self.variable_i += envelope * cos_30;
-            self.variable_q += envelope * sin_30;
+            self.basis_30 += Complex::new(cos_30, sin_30);
+            self.variable.add(envelope, cos_30, sin_30);
             let (sin_subcarrier, cos_subcarrier) = self.phase_subcarrier.sin_cos();
             let mut filtered = Complex::new(envelope * cos_subcarrier, -envelope * sin_subcarrier);
             for stage in &mut self.subcarrier {
@@ -113,8 +131,7 @@ impl ChannelRx for VorChannel {
             }
             let discriminator = (filtered * self.previous_subcarrier.conj()).arg() * RATE / TAU;
             self.previous_subcarrier = filtered;
-            self.reference_i += discriminator * cos_30;
-            self.reference_q += discriminator * sin_30;
+            self.reference.add(discriminator, cos_30, sin_30);
             self.subcarrier_level += filtered.norm();
             self.phase_30 = (self.phase_30 + step_30) % TAU;
             self.phase_subcarrier = (self.phase_subcarrier + step_subcarrier) % TAU;
@@ -136,14 +153,12 @@ impl VorChannel {
             params,
             phase_30: 0.0,
             phase_subcarrier: 0.0,
-            dc: 0.0,
             power: 0.0,
             subcarrier: [Complex::default(); 4],
             previous_subcarrier: Complex::default(),
-            variable_i: 0.0,
-            variable_q: 0.0,
-            reference_i: 0.0,
-            reference_q: 0.0,
+            basis_30: Complex::default(),
+            variable: ToneSum::default(),
+            reference: ToneSum::default(),
             subcarrier_level: 0.0,
             samples: 0,
             settled: false,
@@ -156,10 +171,13 @@ impl VorChannel {
 
     fn report(&self, out: &mut ChannelOutputs) {
         let count = self.samples as f64;
-        let variable_amplitude = 2.0 * self.variable_i.hypot(self.variable_q) / count;
-        let reference_deviation = 2.0 * self.reference_i.hypot(self.reference_q) / count;
-        let modulation = variable_amplitude / self.dc.max(1e-9);
-        let subcarrier = self.subcarrier_level / count / self.dc.max(1e-9);
+        let variable = self.variable.phasor(self.basis_30, count);
+        let reference = self.reference.phasor(self.basis_30, count);
+        let mean_envelope = (self.variable.signal / count).max(1e-9);
+        let variable_amplitude = 2.0 * variable.norm() / count;
+        let reference_deviation = 2.0 * reference.norm() / count;
+        let modulation = variable_amplitude / mean_envelope;
+        let subcarrier = self.subcarrier_level / count / mean_envelope;
         let confidence = (modulation / 0.3)
             .min(1.0)
             .min((reference_deviation / 480.0).min(1.0))
@@ -168,8 +186,8 @@ impl VorChannel {
         if confidence < 0.15 {
             return;
         }
-        let variable_phase = self.variable_q.atan2(self.variable_i).to_degrees();
-        let reference_phase = self.reference_q.atan2(self.reference_i).to_degrees();
+        let variable_phase = variable.arg().to_degrees();
+        let reference_phase = reference.arg().to_degrees();
         let alpha = 1.0 - (-TAU * 1_200.0 / RATE).exp();
         let omega = TAU * 30.0 / RATE;
         let pole = 1.0 - alpha;
@@ -192,10 +210,9 @@ impl VorChannel {
     }
 
     fn clear_window(&mut self) {
-        self.variable_i = 0.0;
-        self.variable_q = 0.0;
-        self.reference_i = 0.0;
-        self.reference_q = 0.0;
+        self.basis_30 = Complex::default();
+        self.variable = ToneSum::default();
+        self.reference = ToneSum::default();
         self.subcarrier_level = 0.0;
         self.samples = 0;
     }
@@ -206,7 +223,92 @@ mod tests {
     use std::time::Instant;
 
     use super::*;
-    use crate::testutil::{realtime_budget, run_events, settings};
+    use crate::testutil::{
+        THROUGHPUT_ATTEMPTS, fastest_seconds, realtime_budget, run_events, settings,
+    };
+
+    const ANNEX_10_TONE_HZ: f64 = 30.0;
+    const ANNEX_10_SUBCARRIER_HZ: f64 = 9_960.0;
+    const ANNEX_10_MODULATION_DEPTH: f64 = 0.30;
+    const ANNEX_10_DEVIATION_RATIO: f64 = 16.0;
+    const ANNEX_10_DEVIATION_RATIO_LIMITS: [f64; 3] = [15.0, 16.0, 17.0];
+    const PATTERN_LAGS: f64 = -1.0;
+    const PATTERN_LEADS: f64 = 1.0;
+    const PERF_SECONDS: f64 = 5.0;
+    const MIN_REALTIME_SPEEDUP: f64 = 320.0;
+
+    fn annex_10_conventional_vor(
+        bearing_deg: f64,
+        deviation_ratio: f64,
+        rotation: f64,
+        seconds: usize,
+    ) -> Vec<Complex<f32>> {
+        (0..RATE as usize * seconds)
+            .map(|index| {
+                let time = index as f64 / RATE;
+                let reference = TAU * ANNEX_10_TONE_HZ * time;
+                let variable = reference + rotation * bearing_deg.to_radians();
+                let subcarrier =
+                    TAU * ANNEX_10_SUBCARRIER_HZ * time + deviation_ratio * reference.sin();
+                let envelope = 1.0
+                    + ANNEX_10_MODULATION_DEPTH * variable.cos()
+                    + ANNEX_10_MODULATION_DEPTH * subcarrier.cos();
+                Complex::new(envelope as f32, 0.0)
+            })
+            .collect()
+    }
+
+    fn last_reading(iq: &[Complex<f32>]) -> VorReading {
+        let mut channel = VorChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(ChannelParams::Vor(VorParams::default())),
+        )
+        .expect("channel");
+        run_events(&mut channel, iq)
+            .into_iter()
+            .filter_map(|event| match event {
+                DecoderEvent::Vor(reading) => Some(reading),
+                _ => None,
+            })
+            .next_back()
+            .expect("VOR reading")
+    }
+
+    fn bearing_error(reading: &VorReading, expected_deg: f64) -> f64 {
+        (reading.radial_deg - expected_deg + 180.0).rem_euclid(360.0) - 180.0
+    }
+
+    #[test]
+    fn an_annex_10_conventional_vor_signal_reads_its_own_bearing() {
+        for bearing in [0.0, 17.0, 90.0, 213.0, 345.0] {
+            let iq = annex_10_conventional_vor(bearing, ANNEX_10_DEVIATION_RATIO, PATTERN_LAGS, 2);
+            let reading = last_reading(&iq);
+            let error = bearing_error(&reading, bearing);
+            assert!(error.abs() < 0.5, "{bearing} => {}", reading.radial_deg);
+            assert!(reading.confidence > 0.8, "{bearing} => {reading:?}");
+        }
+    }
+
+    #[test]
+    fn a_pattern_turning_the_other_way_reads_the_reciprocal_bearing() {
+        for bearing in [37.0, 120.0, 250.0] {
+            let iq = annex_10_conventional_vor(bearing, ANNEX_10_DEVIATION_RATIO, PATTERN_LEADS, 2);
+            let reading = last_reading(&iq);
+            let error = bearing_error(&reading, 360.0 - bearing);
+            assert!(error.abs() < 0.5, "{bearing} => {}", reading.radial_deg);
+        }
+    }
+
+    #[test]
+    fn both_ends_of_the_annex_10_deviation_ratio_tolerance_still_read_the_bearing() {
+        for ratio in ANNEX_10_DEVIATION_RATIO_LIMITS {
+            let iq = annex_10_conventional_vor(123.0, ratio, PATTERN_LAGS, 2);
+            let reading = last_reading(&iq);
+            let error = bearing_error(&reading, 123.0);
+            assert!(error.abs() < 1.0, "ratio {ratio} => {}", reading.radial_deg);
+            assert!(reading.confidence > 0.3, "ratio {ratio} => {reading:?}");
+        }
+    }
 
     #[test]
     fn measures_the_radial_from_an_analytic_vor_signal() {
@@ -236,16 +338,76 @@ mod tests {
     }
 
     #[test]
+    fn measures_the_radial_at_the_shortest_report_interval() {
+        for radial in [0.0, 37.0, 123.0, 301.0] {
+            let params = VorParams {
+                report_ms: sdrmm_wire::MIN_NAVAID_REPORT_MS,
+                ..VorParams::default()
+            };
+            let mut channel = VorChannel::new(
+                ChannelCtx { input_rate: RATE },
+                settings(ChannelParams::Vor(params)),
+            )
+            .expect("channel");
+            let events = run_events(&mut channel, &crate::synth::vor::transmission(radial, 2));
+            let reading = events
+                .iter()
+                .filter_map(|event| match event {
+                    DecoderEvent::Vor(reading) => Some(reading),
+                    _ => None,
+                })
+                .next_back()
+                .expect("VOR reading");
+            let error = (reading.radial_deg - radial + 180.0).rem_euclid(360.0) - 180.0;
+            assert!(error.abs() < 1.0, "{radial} => {}", reading.radial_deg);
+        }
+    }
+
+    #[test]
+    fn a_report_interval_outside_the_wire_range_is_rejected() {
+        for report_ms in [0, sdrmm_wire::MAX_NAVAID_REPORT_MS + 1] {
+            let params = VorParams {
+                report_ms,
+                ..VorParams::default()
+            };
+            assert!(
+                VorChannel::new(
+                    ChannelCtx { input_rate: RATE },
+                    settings(ChannelParams::Vor(params.clone())),
+                )
+                .is_err(),
+                "{report_ms}"
+            );
+            let mut channel = VorChannel::new(
+                ChannelCtx { input_rate: RATE },
+                settings(ChannelParams::Vor(VorParams::default())),
+            )
+            .expect("channel");
+            assert!(
+                channel.apply(settings(ChannelParams::Vor(params))).is_err(),
+                "{report_ms}"
+            );
+        }
+    }
+
+    #[test]
     fn processing_keeps_ahead_of_the_channel_rate() {
-        let iq = crate::synth::vor::transmission(45.0, 5);
-        let mut channel = VorChannel::new(
-            ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Vor(VorParams::default())),
-        )
-        .expect("channel");
-        let started = Instant::now();
-        let events = run_events(&mut channel, &iq);
-        assert!(!events.is_empty());
-        assert!(started.elapsed().as_secs_f64() < realtime_budget(5.0));
+        let iq = crate::synth::vor::transmission(45.0, PERF_SECONDS as usize);
+        let elapsed = fastest_seconds(THROUGHPUT_ATTEMPTS, || {
+            let mut channel = VorChannel::new(
+                ChannelCtx { input_rate: RATE },
+                settings(ChannelParams::Vor(VorParams::default())),
+            )
+            .expect("channel");
+            let started = Instant::now();
+            let events = run_events(&mut channel, &iq);
+            assert!(!events.is_empty());
+            started.elapsed().as_secs_f64()
+        });
+        assert!(
+            elapsed < realtime_budget(PERF_SECONDS / MIN_REALTIME_SPEEDUP),
+            "{PERF_SECONDS} s of signal took {elapsed:.4} s, {:.1}x realtime",
+            PERF_SECONDS / elapsed
+        );
     }
 }

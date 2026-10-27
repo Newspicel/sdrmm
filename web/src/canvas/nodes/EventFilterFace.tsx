@@ -1,7 +1,7 @@
 import { Chips, ChoiceChip, NumberChip, ToggleChip } from "../../components/face/Chips";
 import { TextChip } from "../../components/face/TextChip";
 import { isEventKind, kindLabel } from "../../lib/eventKinds";
-import { MAX_FILTER_DURATION_MS } from "../../lib/limits";
+import { MAX_FILTER_DURATION_MS, MAX_FILTER_TEXT_LEN } from "../../lib/limits";
 import { useFeeds } from "../../lib/resolved";
 import type { EventFilterNode, EventKindEntry, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
@@ -166,6 +166,7 @@ function Predicate({
           title={appliesTo("Contains", applies)}
           value={settings.contains ?? ""}
           placeholder="any"
+          maxLength={MAX_FILTER_TEXT_LEN}
           onCommit={(text) => edit({ contains: text.trim() || null })}
         />
       );

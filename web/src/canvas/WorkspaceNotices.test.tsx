@@ -19,6 +19,10 @@ function clearedGps(id: number, nodes: string[]): WorkspaceNotice {
   return { id, at: "2026-09-28T12:00:00Z", kind: "cleared_gps", data: { nodes } };
 }
 
+function clearedDevices(id: number, nodes: string[]): WorkspaceNotice {
+  return { id, at: "2026-09-28T12:00:00Z", kind: "cleared_devices", data: { nodes } };
+}
+
 type ButtonProps = { children?: ReactNode; disabled?: boolean; onClick?: () => void };
 
 type Clickable = ReactElement<ButtonProps>;
@@ -60,6 +64,12 @@ describe("WorkspaceNotices", () => {
     expect(dismiss).toHaveLength(2);
     dismiss[1]?.props.onClick?.();
     expect(onDismiss).toHaveBeenCalledWith(8);
+  });
+
+  it("names the nodes whose backend this build dropped", () => {
+    const line = noticeLine(clearedDevices(9, ["dev", "dev2"]), CATALOG);
+    expect(line.text).toBe("Radio cleared: dev, dev2");
+    expect(line.title).toBe("This build no longer has that backend. Pick a radio.");
   });
 
   it("holds the button of a notice while it goes", () => {

@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs};
+use sdrmm_channels::{ChannelCtx, ChannelOutputs, reference_data};
 use sdrmm_dsp::Ddc;
 use sdrmm_wire::{ChannelSettings, DecoderEvent};
 
@@ -13,12 +13,8 @@ const RATE: f64 = 48_000.0;
 const CENTER_HZ: f64 = 21_931_000.0;
 const CHANNEL_HZ: f64 = 21_931_000.0;
 
-fn load() -> Vec<Complex<f32>> {
-    let dir = std::env::var_os("XNG_BENCH_DATA")
-        .map(PathBuf::from)
-        .unwrap();
-    std::fs::read(dir.join(FILE))
-        .unwrap()
+fn load(dir: &Path) -> Vec<Complex<f32>> {
+    reference_data::bytes(dir, FILE)
         .as_chunks::<4>()
         .0
         .iter()
@@ -64,7 +60,10 @@ fn xng(iq: &[Complex<f32>]) -> usize {
 #[test]
 #[ignore = "needs xng bench fixtures: XNG_BENCH_DATA=dir cargo test -p sdrmm-channels --release --test xng_hfdl -- --ignored --nocapture"]
 fn hfdl_beats_xng_off_air() {
-    let iq = load();
+    let Some(dir) = reference_data::xng_bench_data() else {
+        return;
+    };
+    let iq = load(&dir);
     let events = ours(&iq);
     let reference = xng(&iq);
     let valid = events

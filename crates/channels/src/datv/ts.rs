@@ -20,6 +20,13 @@ const PAT_TABLE: u8 = 0x00;
 const PMT_TABLE: u8 = 0x02;
 const SDT_TABLE: u8 = 0x42;
 const MAX_SECTION: usize = 1_024;
+const SECTION_HEADER: usize = 8;
+const SECTION_CRC: usize = 4;
+const SECTION_VERSION: usize = 5;
+const SECTION_NUMBER: usize = 6;
+const LAST_SECTION_NUMBER: usize = 7;
+const MAP_HEADER: usize = 12;
+const DVB_PRIVATE: u8 = 0x40;
 const MAX_PES: usize = 8 << 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -173,6 +180,37 @@ fn section_is_valid(section: &[u8]) -> bool {
 }
 
 #[derive(Default)]
+struct TableAssembly {
+    version: Option<u8>,
+    last: u8,
+    sections: BTreeMap<u8, Vec<u8>>,
+    published: bool,
+}
+
+impl TableAssembly {
+    fn absorb(&mut self, section: &[u8]) -> bool {
+        if section.len() < SECTION_HEADER + SECTION_CRC || section[SECTION_VERSION] & 1 == 0 {
+            return false;
+        }
+        let version = section[SECTION_VERSION] >> 1 & 0x1F;
+        let last = section[LAST_SECTION_NUMBER];
+        if self.version != Some(version) || self.last != last {
+            self.version = Some(version);
+            self.last = last;
+            self.sections.clear();
+            self.published = false;
+        }
+        if self.published || section[SECTION_NUMBER] > last {
+            return false;
+        }
+        self.sections
+            .insert(section[SECTION_NUMBER], section.to_vec());
+        self.published = self.sections.len() == usize::from(last) + 1;
+        self.published
+    }
+}
+
+#[derive(Default)]
 struct PesBuffer {
     data: Vec<u8>,
     active: bool,
@@ -241,6 +279,7 @@ fn text(bytes: &[u8]) -> String {
 #[derive(Default)]
 pub struct TsDemux {
     sections: BTreeMap<u16, SectionBuffer>,
+    tables: BTreeMap<(u16, u8), TableAssembly>,
     pes: BTreeMap<u16, PesBuffer>,
     programs: BTreeMap<u16, Program>,
     pmt_pids: BTreeMap<u16, u16>,
@@ -286,6 +325,7 @@ impl TsDemux {
 
     pub fn reset(&mut self) {
         self.sections.clear();
+        self.tables.clear();
         self.pes.clear();
         self.programs.clear();
         self.pmt_pids.clear();
@@ -391,71 +431,62 @@ impl TsDemux {
 
     fn apply_section(&mut self, pid: u16, section: &[u8]) {
         match (pid, section[0]) {
-            (PAT_PID, PAT_TABLE) => self.apply_pat(section),
+            (PAT_PID, PAT_TABLE) | (_, PMT_TABLE) => self.assemble(pid, section),
             (SDT_PID, SDT_TABLE) => self.apply_sdt(section),
-            (_, PMT_TABLE) => self.apply_pmt(pid, section),
             _ => {}
         }
     }
 
-    fn apply_pat(&mut self, section: &[u8]) {
-        if section.len() < 12 {
+    fn assemble(&mut self, pid: u16, section: &[u8]) {
+        let assembly = self.tables.entry((pid, section[0])).or_default();
+        if !assembly.absorb(section) {
             return;
         }
-        let body = &section[8..section.len() - 4];
+        let table = std::mem::take(&mut assembly.sections);
+        if section[0] == PAT_TABLE {
+            self.apply_pat(&table);
+        } else {
+            self.apply_pmt(pid, &table);
+        }
+    }
+
+    fn apply_pat(&mut self, table: &BTreeMap<u8, Vec<u8>>) {
         self.pmt_pids.clear();
-        for entry in body.as_chunks::<4>().0 {
-            let number = u16::from_be_bytes([entry[0], entry[1]]);
-            let pmt_pid = u16::from_be_bytes([entry[2] & 0x1F, entry[3]]);
-            if number == 0 {
-                continue;
+        for section in table.values() {
+            let body = &section[SECTION_HEADER..section.len() - SECTION_CRC];
+            for entry in body.as_chunks::<4>().0 {
+                let number = u16::from_be_bytes([entry[0], entry[1]]);
+                let pmt_pid = u16::from_be_bytes([entry[2] & 0x1F, entry[3]]);
+                if number == 0 {
+                    continue;
+                }
+                self.pmt_pids.insert(pmt_pid, number);
+                let program = self.programs.entry(number).or_default();
+                program.number = number;
+                program.pmt_pid = pmt_pid;
             }
-            self.pmt_pids.insert(pmt_pid, number);
-            let program = self.programs.entry(number).or_default();
-            program.number = number;
-            program.pmt_pid = pmt_pid;
         }
         self.programs
             .retain(|number, _| self.pmt_pids.values().any(|value| value == number));
     }
 
-    fn apply_pmt(&mut self, pid: u16, section: &[u8]) {
+    fn apply_pmt(&mut self, pid: u16, table: &BTreeMap<u8, Vec<u8>>) {
         let Some(&number) = self.pmt_pids.get(&pid) else {
             return;
         };
-        if section.len() < 16 {
-            return;
-        }
-        let pcr_pid = u16::from_be_bytes([section[8] & 0x1F, section[9]]);
-        let info_len = usize::from(u16::from_be_bytes([section[10] & 0x0F, section[11]]));
-        let mut at = 12 + info_len;
-        let end = section.len() - 4;
+        let mut pcr = None;
         let mut streams = Vec::new();
-        while at + 5 <= end {
-            let mut kind = StreamKind::from_type(section[at]);
-            let stream_pid = u16::from_be_bytes([section[at + 1] & 0x1F, section[at + 2]]);
-            let descriptors = usize::from(u16::from_be_bytes([
-                section[at + 3] & 0x0F,
-                section[at + 4],
-            ]));
-            let next = at + 5 + descriptors;
-            if next > end {
-                break;
-            }
-            if kind == StreamKind::Other(0x06) {
-                kind = private_audio_descriptor(&section[at + 5..next]).unwrap_or(kind);
-            }
-            streams.push(ElementaryStream {
-                pid: stream_pid,
-                kind,
-                language: language_descriptor(&section[at + 5..next]),
-            });
-            at = next;
+        for section in table.values() {
+            pcr = pcr.or_else(|| pcr_pid(section));
+            elementary_streams(section, &mut streams);
         }
+        let Some(pcr) = pcr else {
+            return;
+        };
         let program = self.programs.entry(number).or_default();
         program.number = number;
         program.pmt_pid = pid;
-        program.pcr_pid = pcr_pid;
+        program.pcr_pid = pcr;
         program.streams = streams;
     }
 
@@ -519,6 +550,41 @@ impl TsDemux {
                 buffer.active = false;
             }
         }
+    }
+}
+
+fn pcr_pid(section: &[u8]) -> Option<u16> {
+    (section.len() >= MAP_HEADER + SECTION_CRC)
+        .then(|| u16::from_be_bytes([section[8] & 0x1F, section[9]]))
+}
+
+fn elementary_streams(section: &[u8], out: &mut Vec<ElementaryStream>) {
+    if section.len() < MAP_HEADER + SECTION_CRC {
+        return;
+    }
+    let info_len = usize::from(u16::from_be_bytes([section[10] & 0x0F, section[11]]));
+    let mut at = MAP_HEADER + info_len;
+    let end = section.len() - SECTION_CRC;
+    while at + 5 <= end {
+        let mut kind = StreamKind::from_type(section[at]);
+        let pid = u16::from_be_bytes([section[at + 1] & 0x1F, section[at + 2]]);
+        let descriptors = usize::from(u16::from_be_bytes([
+            section[at + 3] & 0x0F,
+            section[at + 4],
+        ]));
+        let next = at + 5 + descriptors;
+        if next > end {
+            break;
+        }
+        if kind == StreamKind::Other(0x06) {
+            kind = private_audio_descriptor(&section[at + 5..next]).unwrap_or(kind);
+        }
+        out.push(ElementaryStream {
+            pid,
+            kind,
+            language: language_descriptor(&section[at + 5..next]),
+        });
+        at = next;
     }
 }
 
@@ -588,8 +654,7 @@ impl TsWriter {
     pub fn section(&mut self, pid: u16, section: &[u8], out: &mut Vec<[u8; PACKET]>) {
         let mut body = vec![0u8];
         body.extend_from_slice(section);
-        let crc = crc32_mpeg(section);
-        let _ = crc;
+        body.extend_from_slice(&crc32_mpeg(section).to_be_bytes());
         self.payload(pid, &body, out);
     }
 
@@ -670,11 +735,9 @@ pub fn build_section(table: u8, id: u16, version: u8, body: &[u8]) -> Vec<u8> {
     section.push(0);
     section.push(0);
     section.extend_from_slice(body);
-    let length = (section.len() - 3 + 4) as u16;
+    let length = (section.len() - 3 + SECTION_CRC) as u16;
     section[1] = 0xB0 | (length >> 8) as u8;
     section[2] = length as u8;
-    let crc = crc32_mpeg(&section);
-    section.extend_from_slice(&crc.to_be_bytes());
     section
 }
 
@@ -722,19 +785,151 @@ pub fn sdt(provider: &str, name: &str) -> Vec<u8> {
     body.push(descriptor.len() as u8);
     body.extend_from_slice(&descriptor);
     let mut section = build_section(SDT_TABLE, 1, 0, &body);
-    section[1] |= 0x80;
-    let length = section.len() - 3;
-    section[1] = 0xF0 | (length >> 8) as u8;
-    section[2] = length as u8;
-    let crc = crc32_mpeg(&section[..section.len() - 4]);
-    let end = section.len() - 4;
-    section[end..].copy_from_slice(&crc.to_be_bytes());
+    section[1] |= DVB_PRIVATE;
     section
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn with_crc(section: &[u8]) -> Vec<u8> {
+        let mut checked = section.to_vec();
+        checked.extend_from_slice(&crc32_mpeg(section).to_be_bytes());
+        checked
+    }
+
+    fn numbered(section: &[u8], number: u8, last: u8) -> Vec<u8> {
+        let mut part = section.to_vec();
+        part[SECTION_NUMBER] = number;
+        part[LAST_SECTION_NUMBER] = last;
+        part
+    }
+
+    fn versioned(section: &[u8], version: u8) -> Vec<u8> {
+        let mut next = section.to_vec();
+        next[SECTION_VERSION] = 0xC1 | version << 1;
+        next
+    }
+
+    fn announced(section: &[u8]) -> Vec<u8> {
+        let mut next = section.to_vec();
+        next[SECTION_VERSION] &= 0xFE;
+        next
+    }
+
+    fn pat_for(program: u16, pmt_pid: u16) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&program.to_be_bytes());
+        body.extend_from_slice(&(0xE000 | pmt_pid).to_be_bytes());
+        build_section(PAT_TABLE, 1, 0, &body)
+    }
+
+    fn pmt_for(stream_type: u8, pid: u16) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&(0xE000 | VIDEO_PID).to_be_bytes());
+        body.extend_from_slice(&0xF000u16.to_be_bytes());
+        body.push(stream_type);
+        body.extend_from_slice(&(0xE000 | pid).to_be_bytes());
+        body.extend_from_slice(&0xF000u16.to_be_bytes());
+        build_section(PMT_TABLE, PROGRAM, 0, &body)
+    }
+
+    fn feed(demux: &mut TsDemux, writer: &mut TsWriter, pid: u16, section: &[u8]) {
+        let mut packets = Vec::new();
+        let mut units = Vec::new();
+        writer.section(pid, section, &mut packets);
+        for packet in &packets {
+            demux.push(packet, &mut units);
+        }
+    }
+
+    fn numbers(demux: &TsDemux) -> Vec<u16> {
+        demux.programs.keys().copied().collect()
+    }
+
+    #[test]
+    fn a_multi_section_program_table_waits_for_every_section() {
+        let mut demux = TsDemux::new();
+        let mut writer = TsWriter::new();
+        let first = numbered(&pat_for(1, PMT_PID), 0, 1);
+        let second = numbered(&pat_for(2, 0x0200), 1, 1);
+        feed(&mut demux, &mut writer, PAT_PID, &first);
+        assert!(numbers(&demux).is_empty());
+        feed(&mut demux, &mut writer, PAT_PID, &second);
+        assert_eq!(numbers(&demux), [1, 2]);
+        for _ in 0..3 {
+            feed(&mut demux, &mut writer, PAT_PID, &first);
+            assert_eq!(numbers(&demux), [1, 2]);
+        }
+    }
+
+    #[test]
+    fn a_table_announced_for_later_is_not_applied_until_it_is_current() {
+        let mut demux = TsDemux::new();
+        let mut writer = TsWriter::new();
+        feed(&mut demux, &mut writer, PAT_PID, &pat_for(1, PMT_PID));
+        assert_eq!(numbers(&demux), [1]);
+        let next = announced(&versioned(&pat_for(2, 0x0200), 1));
+        feed(&mut demux, &mut writer, PAT_PID, &next);
+        assert_eq!(numbers(&demux), [1]);
+        feed(
+            &mut demux,
+            &mut writer,
+            PAT_PID,
+            &versioned(&pat_for(2, 0x0200), 1),
+        );
+        assert_eq!(numbers(&demux), [2]);
+    }
+
+    #[test]
+    fn a_new_table_version_discards_the_sections_of_the_old_one() {
+        let mut demux = TsDemux::new();
+        let mut writer = TsWriter::new();
+        let stale = numbered(&pat_for(1, PMT_PID), 0, 1);
+        let fresh = numbered(&versioned(&pat_for(2, 0x0200), 1), 1, 1);
+        feed(&mut demux, &mut writer, PAT_PID, &stale);
+        feed(&mut demux, &mut writer, PAT_PID, &fresh);
+        assert!(numbers(&demux).is_empty());
+        let rest = numbered(&versioned(&pat_for(3, 0x0300), 1), 0, 1);
+        feed(&mut demux, &mut writer, PAT_PID, &rest);
+        assert_eq!(numbers(&demux), [2, 3]);
+    }
+
+    #[test]
+    fn a_multi_section_map_table_keeps_the_streams_of_every_section() {
+        let mut demux = TsDemux::new();
+        let mut writer = TsWriter::new();
+        feed(&mut demux, &mut writer, PAT_PID, &pat());
+        feed(
+            &mut demux,
+            &mut writer,
+            PMT_PID,
+            &numbered(&pmt_for(0x02, VIDEO_PID), 0, 1),
+        );
+        feed(
+            &mut demux,
+            &mut writer,
+            PMT_PID,
+            &numbered(&pmt_for(0x03, AUDIO_PID), 1, 1),
+        );
+        let program = demux.program().expect("a program");
+        assert_eq!(program.pcr_pid, VIDEO_PID);
+        assert_eq!(program.streams.len(), 2);
+        assert_eq!(program.streams[0].pid, VIDEO_PID);
+        assert_eq!(program.streams[1].pid, AUDIO_PID);
+    }
+
+    #[test]
+    fn the_writer_appends_the_section_crc() {
+        let mut writer = TsWriter::new();
+        let mut packets = Vec::new();
+        let section = pat();
+        writer.section(PAT_PID, &section, &mut packets);
+        let carried = &packets[0][PACKET - section.len() - SECTION_CRC..];
+        assert_eq!(carried, with_crc(&section));
+        assert_eq!(crc32_mpeg(carried), 0);
+    }
 
     fn multiplex(video: &[u8], audio: &[u8]) -> Vec<[u8; PACKET]> {
         let mut writer = TsWriter::new();
@@ -826,7 +1021,7 @@ mod tests {
     #[test]
     fn the_mpeg_crc_matches_the_reference_check_value() {
         assert_eq!(crc32_mpeg(b"123456789"), 0x0376_E6E7);
-        assert_eq!(crc32_mpeg(&pat()), 0);
+        assert_eq!(crc32_mpeg(&with_crc(&pat())), 0);
     }
 
     #[test]
@@ -853,7 +1048,7 @@ mod tests {
     fn a_pointer_field_finishes_the_previous_section_before_starting_another() {
         let mut buffer = SectionBuffer::default();
         let mut sections = Vec::new();
-        let section = pat();
+        let section = with_crc(&pat());
         let mut first = vec![0];
         first.extend_from_slice(&section[..10]);
         buffer.push(&first, true, &mut sections);
@@ -867,9 +1062,7 @@ mod tests {
     #[test]
     fn a_short_crc_valid_pat_and_a_truncated_pes_do_not_escape_validation() {
         let mut demux = TsDemux::default();
-        let mut short = vec![0, 0, 0];
-        short.extend_from_slice(&crc32_mpeg(&short).to_be_bytes());
-        demux.apply_pat(&short);
+        demux.apply_section(PAT_PID, &with_crc(&[0, 0, 0]));
         assert!(demux.programs.is_empty());
         assert!(parse_pes(1, &[0, 0, 1, 0xe0, 1, 0, 0x80, 0, 0]).is_none());
     }
@@ -938,10 +1131,9 @@ mod tests {
     fn a_section_with_a_broken_crc_is_dropped() {
         let mut writer = TsWriter::new();
         let mut packets = Vec::new();
-        let mut damaged = pat();
-        let last = damaged.len() - 1;
-        damaged[last] ^= 0x01;
-        writer.section(PAT_PID, &damaged, &mut packets);
+        writer.section(PAT_PID, &pat(), &mut packets);
+        let crc_end = PACKET - 1;
+        packets[0][crc_end] ^= 0x01;
         let mut demux = TsDemux::new();
         let mut units = Vec::new();
         for packet in packets {

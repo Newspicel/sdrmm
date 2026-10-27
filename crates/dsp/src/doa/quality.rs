@@ -119,7 +119,7 @@ pub fn joint_fit(
         for (value, left) in column.iter_mut().zip(columns.chunks_exact(elements)) {
             *value = inner(left, product);
         }
-        chol.solve(&mut column[..count]);
+        chol.solve(&mut column[..count])?;
         explained += column[b].re;
     }
     Ok((explained / trace).clamp(0.0, 1.0))

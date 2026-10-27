@@ -4,16 +4,6 @@
     "data": {}
   },
   {
-    "kind": "recording",
-    "data": {}
-  },
-  {
-    "kind": "signal_gen",
-    "data": {
-      "running": true
-    }
-  },
-  {
     "kind": "gps",
     "data": {}
   },
@@ -154,7 +144,8 @@
   {
     "kind": "recorder",
     "data": {
-      "recording": false
+      "recording": false,
+      "pre_roll_s": 0
     }
   },
   {
@@ -168,13 +159,6 @@
     "kind": "baseband_recorder",
     "data": {
       "recording": false
-    }
-  },
-  {
-    "kind": "time_machine",
-    "data": {
-      "armed": false,
-      "history_seconds": 10
     }
   },
   {

@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    CallGate, EventKind,
+    CallGate, DeviceBackend, EventKind,
     channel::ChannelSettings,
     filter::{EventFilterNode, MAX_FILTER_IDS},
     network::NetworkExportNode,
@@ -515,7 +515,10 @@ fn a_baseband_recorder_takes_every_channel_wired_into_it() {
         nodes: vec![
             channel("a", "nfm"),
             channel("b", "nfm"),
-            node("files", NodeBody::BasebandRecorder(RecorderNode::default())),
+            node(
+                "files",
+                NodeBody::BasebandRecorder(BasebandRecorderNode::default()),
+            ),
         ],
         edges: vec![
             edge(("a", "baseband"), ("files", "baseband")),
@@ -528,30 +531,27 @@ fn a_baseband_recorder_takes_every_channel_wired_into_it() {
 }
 
 #[test]
-fn a_time_machine_holds_a_window_the_engine_can_afford() {
+fn a_recorder_holds_a_pre_roll_the_engine_can_afford() {
     let graph = |seconds: u32| PatchGraph {
         nodes: vec![
             node("dev", NodeBody::Device(DeviceNode::default())),
             node(
-                "history",
-                NodeBody::TimeMachine(crate::TimeMachineNode {
-                    history_seconds: seconds,
-                    armed: true,
+                "rec",
+                NodeBody::Recorder(RecorderNode {
+                    recording: false,
+                    pre_roll_s: seconds,
                 }),
             ),
         ],
-        edges: vec![edge(("dev", "iq"), ("history", "iq"))],
+        edges: vec![edge(("dev", "iq"), ("rec", "iq"))],
     };
-    graph(crate::DEFAULT_TIME_MACHINE_SECONDS)
-        .validate()
-        .expect("the default window");
-    for refused in [0, crate::MAX_TIME_MACHINE_SECONDS + 1] {
-        assert_eq!(
-            graph(refused).validate(),
-            Err(PatchError::NodeSettings("history".to_owned())),
-            "{refused} s"
-        );
+    for allowed in [0, crate::DEFAULT_PRE_ROLL_S, crate::MAX_PRE_ROLL_S] {
+        graph(allowed).validate().expect("a pre-roll it can hold");
     }
+    assert_eq!(
+        graph(crate::MAX_PRE_ROLL_S + 1).validate(),
+        Err(PatchError::NodeSettings("rec".to_owned()))
+    );
 }
 
 #[test]
@@ -983,21 +983,21 @@ fn ids_geometry_and_labels_are_bounded() {
 #[test]
 fn device_refs_match_by_serial_then_key_then_singleton() {
     let hardware = DeviceInfo {
-        driver: "rtlsdr".to_owned(),
+        driver: DeviceBackend::Rtlsdr,
         key: "0".to_owned(),
         label: "RTL-SDR".to_owned(),
         serial: Some("00000001".to_owned()),
         profile: None,
     };
     let file = DeviceInfo {
-        driver: "virtual".to_owned(),
+        driver: DeviceBackend::Virtual,
         key: "file:/rec/capture".to_owned(),
         label: "capture".to_owned(),
         serial: None,
         profile: None,
     };
     let band = DeviceInfo {
-        driver: "virtual".to_owned(),
+        driver: DeviceBackend::Virtual,
         key: "band".to_owned(),
         label: "Test band".to_owned(),
         serial: None,
@@ -1018,7 +1018,7 @@ fn device_refs_match_by_serial_then_key_then_singleton() {
     }));
 
     let duo = DeviceInfo {
-        driver: "soapy".to_owned(),
+        driver: DeviceBackend::Soapy,
         key: "123456@DT".to_owned(),
         label: "Dual Tuner".to_owned(),
         serial: Some("123456".to_owned()),
@@ -1041,12 +1041,12 @@ fn device_refs_match_by_serial_then_key_then_singleton() {
     );
 
     let singleton = DeviceRef {
-        backend: "hackrf".to_owned(),
+        backend: DeviceBackend::Hackrf,
         serial: None,
         key: None,
     };
     assert!(singleton.matches(&DeviceInfo {
-        driver: "hackrf".to_owned(),
+        driver: DeviceBackend::Hackrf,
         key: "0".to_owned(),
         label: "HackRF One".to_owned(),
         serial: None,
@@ -1105,6 +1105,24 @@ fn stream_ports_number_from_two_and_round_trip() {
         Some(15),
         "the last storable name"
     );
+}
+
+#[test]
+fn a_lane_port_is_parsed_against_the_lane_cap_not_the_stream_cap() {
+    use crate::array::MAX_ARRAY_LANES;
+
+    for lane in 0..MAX_ARRAY_LANES {
+        let name = stream_port(ARRAY_LANE_PORT, lane);
+        assert_eq!(port_lane(ARRAY_LANE_PORT, &name), Some(lane));
+    }
+    let past = stream_port(ARRAY_LANE_PORT, MAX_ARRAY_LANES);
+    assert_eq!(port_lane(ARRAY_LANE_PORT, &past), None);
+    assert_eq!(
+        PortRepeat::PerLane.limit(),
+        MAX_ARRAY_LANES,
+        "lane ports carry the lane cap"
+    );
+    assert_eq!(PortRepeat::PerRxStream.limit(), MAX_STREAMS);
 }
 
 #[test]
@@ -1615,71 +1633,88 @@ fn default_params_come_from_the_type_id() {
     assert_eq!(ChannelSettings::default_for("telefax"), None);
 }
 
-fn recording(id: &str, stem: Option<&str>) -> PatchNode {
+fn pinned(id: &str, backend: DeviceBackend, key: Option<&str>) -> PatchNode {
     node(
         id,
-        NodeBody::Recording(RecordingNode {
-            recording: stem.map(str::to_owned),
+        NodeBody::Device(DeviceNode {
+            device: Some(DeviceRef {
+                backend,
+                serial: None,
+                key: key.map(str::to_owned),
+            }),
+            ..DeviceNode::default()
         }),
     )
 }
 
+fn recording(id: &str, stem: Option<&str>) -> PatchNode {
+    pinned(id, DeviceBackend::Recording, stem)
+}
+
 #[test]
-fn a_recording_node_opens_the_recording_its_stem_names() {
-    let body = NodeBody::Recording(RecordingNode {
-        recording: Some("2026-09-16T10-00-00".to_owned()),
-    });
+fn a_device_node_pinned_to_a_recording_opens_the_stem_it_names() {
+    let body = recording("rec", Some("2026-09-16T10-00-00")).body;
     assert_eq!(
-        body.device_ref("recording:9f2c"),
+        body.device_ref("rec"),
         Some(DeviceRef {
-            backend: RECORDING_DRIVER_ID.to_owned(),
+            backend: DeviceBackend::Recording,
             serial: None,
             key: Some("2026-09-16T10-00-00".to_owned()),
         })
     );
-    assert!(
-        NodeBody::Recording(RecordingNode::default())
-            .device_ref("recording:9f2c")
-            .is_none()
-    );
+    assert!(recording("rec", None).body.device_ref("rec").is_none());
 }
 
 #[test]
-fn a_signal_generator_opens_the_generator_its_node_names() {
-    let body = NodeBody::SignalGen(SignalGenNode::default());
+fn a_generator_takes_the_key_of_the_node_that_holds_it() {
+    let body = pinned("gen:9f2c", DeviceBackend::Virtual, Some("gen-")).body;
     assert_eq!(
-        body.device_ref("signal_gen:9f2c"),
+        body.device_ref("gen:9f2c"),
         Some(DeviceRef {
-            backend: SIGGEN_DRIVER_ID.to_owned(),
+            backend: DeviceBackend::Virtual,
             serial: None,
-            key: Some("signal_gen-9f2c".to_owned()),
+            key: Some("gen-gen-9f2c".to_owned()),
         })
+    );
+    let copied = body.device_ref("gen:other").expect("a copy opens its own");
+    assert_eq!(copied.key.as_deref(), Some("gen-gen-other"));
+}
+
+#[test]
+fn a_plain_virtual_radio_keeps_the_key_it_was_given() {
+    let body = pinned("dev", DeviceBackend::Virtual, Some("band")).body;
+    assert_eq!(
+        body.device_ref("dev").and_then(|pinned| pinned.key),
+        Some("band".to_owned())
     );
 }
 
 #[test]
 fn a_stopped_generator_stays_stopped_when_the_patch_is_applied_again() {
-    let stopped = NodeBody::SignalGen(SignalGenNode { running: false });
-    assert!(stopped.device_ref("signal_gen:9f2c").is_none());
+    let stopped = NodeBody::Device(DeviceNode {
+        device: Some(DeviceRef {
+            backend: DeviceBackend::Virtual,
+            serial: None,
+            key: Some("gen-gen".to_owned()),
+        }),
+        stopped: true,
+        ..DeviceNode::default()
+    });
+    assert!(stopped.device_ref("gen").is_none());
     assert!(stopped.opens_device());
 
     let saved: NodeBody = serde_json::from_value(serde_json::json!({
-        "kind": "signal_gen",
-        "data": { "running": false }
+        "kind": "device",
+        "data": { "device": { "backend": "virtual", "key": "gen-gen" }, "stopped": true }
     }))
     .expect("a stopped generator round-trips");
     assert_eq!(saved, stopped);
-
-    let older: NodeBody =
-        serde_json::from_value(serde_json::json!({ "kind": "signal_gen", "data": {} }))
-            .expect("a generator saved before the switch existed");
-    assert_eq!(older, NodeBody::SignalGen(SignalGenNode { running: true }));
 }
 
 #[test]
 fn a_stopped_radio_keeps_its_reference_and_claims_no_device() {
     let reference = DeviceRef {
-        backend: "rtlsdr".to_owned(),
+        backend: DeviceBackend::Rtlsdr,
         serial: Some("00000001".to_owned()),
         key: None,
     };
@@ -1716,9 +1751,9 @@ fn a_stopped_radio_keeps_its_reference_and_claims_no_device() {
 fn every_source_that_opens_a_radio_is_bound_like_one() {
     let graph = PatchGraph {
         nodes: vec![
-            node("dev", NodeBody::Device(DeviceNode::default())),
+            pinned("dev", DeviceBackend::Rtlsdr, Some("0")),
             recording("rec", Some("take")),
-            node("gen", NodeBody::SignalGen(SignalGenNode::default())),
+            pinned("gen", DeviceBackend::Virtual, Some("gen-")),
             node("scope", NodeBody::Scope),
         ],
         edges: Vec::new(),
@@ -1730,16 +1765,31 @@ fn every_source_that_opens_a_radio_is_bound_like_one() {
 
 #[test]
 fn a_recording_and_a_generator_each_carry_one_iq_output() {
-    for body in [
-        NodeBody::Recording(RecordingNode::default()),
-        NodeBody::SignalGen(SignalGenNode::default()),
+    for node in [
+        recording("rec", Some("take")),
+        pinned("gen", DeviceBackend::Virtual, Some("gen-")),
     ] {
-        let ports = body.ports(None);
-        assert_eq!(ports.len(), 1, "{}", body.kind());
+        let ports = node.body.ports(None);
+        assert_eq!(ports.len(), 1, "{}", node.id);
         assert_eq!(ports[0].port_type, PortType::Iq);
         assert_eq!(ports[0].direction, PortDirection::Out);
-        assert_eq!(body.category(), NodeCategory::Source);
+        assert_eq!(node.body.category(), NodeCategory::Source);
     }
+}
+
+#[test]
+fn only_a_generator_sends_synthetic_iq() {
+    let synthetic = pinned("gen", DeviceBackend::Virtual, Some("gen-"))
+        .body
+        .ports(None);
+    assert_eq!(
+        synthetic[0].payload,
+        Payload::iq(&[crate::IqOrigin::Synthetic])
+    );
+    let radio = pinned("dev", DeviceBackend::Virtual, Some("band"))
+        .body
+        .ports(None);
+    assert_eq!(radio[0].payload, Payload::iq(&[crate::IqOrigin::Radio]));
 }
 
 #[test]
@@ -1775,17 +1825,25 @@ fn every_catalog_entry_has_a_short_summary() {
 }
 
 #[test]
-fn the_catalog_offers_a_recording_and_a_generator_as_sources() {
+fn the_catalog_offers_one_source_that_opens_a_radio() {
     let catalog = PatchCatalog::build();
-    for kind in ["recording", "signal_gen"] {
-        let entry = catalog
-            .nodes
-            .iter()
-            .find(|entry| entry.kind.as_str() == kind)
-            .unwrap_or_else(|| panic!("{kind} is in the catalog"));
-        assert_eq!(entry.category, NodeCategory::Source);
-        assert!(!entry.needs_channel_type);
-        assert_eq!(entry.ports.len(), 1);
+    let sources: Vec<&str> = catalog
+        .nodes
+        .iter()
+        .filter(|entry| entry.role == Role::OpensRadio)
+        .map(|entry| entry.kind.as_str())
+        .collect();
+    assert_eq!(sources, ["device"]);
+    let entry = catalog
+        .nodes
+        .iter()
+        .find(|entry| entry.kind == NodeKind::Device)
+        .expect("device is in the catalog");
+    assert_eq!(entry.category, NodeCategory::Source);
+    assert!(!entry.needs_channel_type);
+    assert_eq!(entry.ports.len(), 1);
+    for retired in ["recording", "signal_gen"] {
+        assert!(NodeKind::parse(retired).is_none(), "{retired} is retired");
     }
 }
 
@@ -2017,7 +2075,7 @@ fn audio_fx_with_settings_outside_their_range_is_refused() {
 fn radio(key: &str) -> DeviceNode {
     DeviceNode {
         device: Some(DeviceRef {
-            backend: "rtltcp".to_owned(),
+            backend: DeviceBackend::Rtltcp,
             serial: None,
             key: Some(key.to_owned()),
         }),

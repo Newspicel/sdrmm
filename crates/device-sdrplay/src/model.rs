@@ -1,10 +1,11 @@
+use sdrmm_wire::DeviceBackend;
 use std::ffi::c_int;
 
 use sdrmm_wire::DeviceInfo;
 
 use crate::ffi;
 
-pub const DRIVER_ID: &str = "sdrplay";
+pub const DRIVER_ID: DeviceBackend = DeviceBackend::Sdrplay;
 pub const DUO_DUAL_TUNER_FS_HZ: f64 = 6_000_000.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -176,7 +177,7 @@ fn info(model: Model, serial: &str, mode: Option<DuoMode>) -> DeviceInfo {
         None => format!("{} {serial}", model.name()),
     };
     DeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: key(serial, mode),
         label,
         serial: Some(serial.to_string()),

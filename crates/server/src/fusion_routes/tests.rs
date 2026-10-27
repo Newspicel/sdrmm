@@ -12,6 +12,10 @@ use tokio::sync::broadcast;
 use super::*;
 use crate::{ServerOptions, Store, router_with_state, tests::state_over};
 
+/// A fusion update either arrives in milliseconds or never, so the wait only has to outlast
+/// a loaded test runner.
+const GIVE_UP: Duration = Duration::from_secs(60);
+
 const HOME: LatLon = LatLon {
     lat: 52.52,
     lon: 13.405,
@@ -134,7 +138,7 @@ async fn fused(
     wanted: impl Fn(&DfFusionState) -> bool,
     resend: impl Fn(),
 ) -> DfFusionState {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let deadline = tokio::time::Instant::now() + GIVE_UP;
     loop {
         resend();
         let next = tokio::time::Instant::now() + Duration::from_millis(200);
@@ -181,7 +185,7 @@ async fn a_df_bearing_reaches_the_triangulation_it_is_wired_to() {
     )
     .await;
     assert_eq!(stations(&reached), ["roof"]);
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let deadline = tokio::time::Instant::now() + GIVE_UP;
     while state
         .fusion
         .state("blind")

@@ -45,5 +45,4 @@ An NMEA or gpsd heading older than two seconds is dropped. An [Array](arrays.md#
 | Satellite | Pass and Doppler prediction |
 | Signal hunt | Where you stand and which way you point, for sweeps |
 | Signal survey | Where each measurement was taken |
-| Time machine | Location in the capture's metadata |
 | Triangulation | The vehicle to guide |

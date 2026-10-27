@@ -82,7 +82,7 @@ pub(super) fn row(output_node: &str, facts: &EventFacts) -> String {
     line
 }
 
-fn field(value: &str) -> String {
+pub(crate) fn field(value: &str) -> String {
     let guarded = if value.starts_with(FORMULA_STARTS) {
         format!("'{value}")
     } else {

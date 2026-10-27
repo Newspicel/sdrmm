@@ -1,4 +1,9 @@
-use std::{fmt::Write as _, path::Path, process::Command};
+use std::{
+    collections::BTreeSet,
+    fmt::Write as _,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use anyhow::{Context, Result, bail, ensure};
 use clap::ValueEnum;
@@ -6,6 +11,29 @@ use clap::ValueEnum;
 const DIR: &str = ".changeset";
 const GUIDE: &str = "README.md";
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
+
+const VISIBLE_ROOTS: &[&str] = &["crates/", "apps/", "web/src/"];
+const VISIBLE_SUFFIXES: &[&str] = &[".rs", ".ts", ".tsx", ".css", ".kt", ".swift"];
+const EXEMPT_SEGMENTS: &[&str] = &[
+    "/tests/",
+    "/fixtures/",
+    "/fuzz/",
+    "/benches/",
+    "/examples/",
+    "/docs/",
+    "/__tests__/",
+    "web/src/generated/",
+];
+const EXEMPT_SUFFIXES: &[&str] = &[
+    "/tests.rs",
+    ".test.ts",
+    ".test.tsx",
+    ".spec.ts",
+    ".spec.tsx",
+    ".d.ts",
+];
+const DEFAULT_BRANCHES: &[&str] = &["origin/main", "origin/master", "main", "master"];
+const LISTED_PATHS: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Bump {
@@ -45,6 +73,24 @@ struct Change {
     commit: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Dropped {
+    path: String,
+    summary: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Span {
+    changes: Vec<Change>,
+    dropped: Vec<Dropped>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Base {
+    Rev(String),
+    Unknown(String),
+}
+
 pub fn add(root: &Path, bump: Bump, summary: &str) -> Result<()> {
     let summary = summary.trim();
     ensure!(!summary.is_empty(), "a changeset needs a summary");
@@ -59,12 +105,109 @@ pub fn add(root: &Path, bump: Bump, summary: &str) -> Result<()> {
 }
 
 pub fn check(root: &Path) -> Result<()> {
-    load(root).map(drop)
+    load(root).map(drop)?;
+    match comparison_base(root) {
+        Base::Rev(base) => require_changeset(root, &base),
+        Base::Unknown(reason) => {
+            println!("changeset gate skipped: {reason}");
+            Ok(())
+        }
+    }
+}
+
+fn comparison_base(root: &Path) -> Base {
+    if !has_commit(root, "HEAD") {
+        return Base::Unknown("the repository has no commit to compare against".to_string());
+    }
+    for branch in DEFAULT_BRANCHES {
+        if !has_commit(root, branch) {
+            continue;
+        }
+        if let Ok(base) = git(root, &["merge-base", branch, "HEAD"]) {
+            let base = base.trim();
+            if !base.is_empty() {
+                return Base::Rev(base.to_string());
+            }
+        }
+    }
+    let shallow = git(root, &["rev-parse", "--is-shallow-repository"])
+        .is_ok_and(|answer| answer.trim() == "true");
+    Base::Unknown(if shallow {
+        "a shallow clone has no merge base with the default branch".to_string()
+    } else {
+        "no default branch to take a merge base from".to_string()
+    })
+}
+
+fn require_changeset(root: &Path, base: &str) -> Result<()> {
+    let changed = user_visible_changes(root, base)?;
+    if changed.is_empty() {
+        return Ok(());
+    }
+    ensure!(
+        !added_changesets(root, base)?.is_empty(),
+        "user-visible changes since {base} carry no changeset. Add one with \
+         `cargo xtask changeset <patch|minor|major> \"...\"`:\n{}",
+        listing(&changed)
+    );
+    Ok(())
+}
+
+fn user_visible_changes(root: &Path, base: &str) -> Result<Vec<String>> {
+    let tracked = git(root, &["diff", "--name-only", base])?;
+    let untracked = git(root, &["ls-files", "--others", "--exclude-standard"])?;
+    let mut paths: Vec<String> = tracked
+        .lines()
+        .chain(untracked.lines())
+        .map(str::trim)
+        .filter(|path| user_visible(path))
+        .map(str::to_string)
+        .collect();
+    paths.sort_unstable();
+    paths.dedup();
+    Ok(paths)
+}
+
+fn user_visible(path: &str) -> bool {
+    VISIBLE_ROOTS.iter().any(|root| path.starts_with(root))
+        && VISIBLE_SUFFIXES.iter().any(|suffix| path.ends_with(suffix))
+        && !EXEMPT_SEGMENTS.iter().any(|segment| path.contains(segment))
+        && !EXEMPT_SUFFIXES.iter().any(|suffix| path.ends_with(suffix))
+}
+
+fn added_changesets(root: &Path, base: &str) -> Result<Vec<String>> {
+    let before: BTreeSet<String> = changesets_at(root, base)?.into_iter().collect();
+    Ok(working_changesets(root)?
+        .into_iter()
+        .filter(|path| !before.contains(path))
+        .collect())
+}
+
+fn working_changesets(root: &Path) -> Result<Vec<String>> {
+    Ok(changeset_files(root)?
+        .iter()
+        .filter_map(|path| path.file_name())
+        .map(|name| format!("{DIR}/{}", name.to_string_lossy()))
+        .collect())
+}
+
+fn listing(paths: &[String]) -> String {
+    let mut out = String::new();
+    for path in paths.iter().take(LISTED_PATHS) {
+        let _ = writeln!(out, "  {path}");
+    }
+    if paths.len() > LISTED_PATHS {
+        let _ = writeln!(out, "  and {} more", paths.len() - LISTED_PATHS);
+    }
+    out
 }
 
 pub fn release(root: &Path, dry_run: bool) -> Result<()> {
     let previous = latest_version(root)?;
-    let changes = changes_between(root, &format!("v{previous}"), "HEAD")?;
+    let from = format!("v{previous}");
+    let span = changes_between(root, &from, "HEAD")?;
+    report_dropped(&span.dropped, &from, "HEAD");
+    let changes = span.changes;
     ensure!(
         !changes.is_empty(),
         "nothing to release: no changesets since v{previous}. Add one with `cargo xtask changeset`"
@@ -88,7 +231,11 @@ pub fn release(root: &Path, dry_run: bool) -> Result<()> {
 pub fn notes(root: &Path, version: &str, out: Option<&Path>) -> Result<()> {
     let version = version.strip_prefix('v').unwrap_or(version);
     let previous = previous_version(root, version)?;
-    let changes = changes_between(root, &format!("v{previous}"), &format!("v{version}"))?;
+    let from = format!("v{previous}");
+    let to = format!("v{version}");
+    let span = changes_between(root, &from, &to)?;
+    report_dropped(&span.dropped, &from, &to);
+    let changes = span.changes;
     ensure!(
         !changes.is_empty(),
         "v{version} has no changesets since v{previous}"
@@ -103,22 +250,91 @@ pub fn notes(root: &Path, version: &str, out: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
-fn changes_between(root: &Path, from: &str, to: &str) -> Result<Vec<Change>> {
-    let before = changesets_at(root, from)?;
-    changesets_at(root, to)?
-        .into_iter()
-        .filter(|path| !before.contains(path))
+fn changes_between(root: &Path, from: &str, to: &str) -> Result<Span> {
+    let before: BTreeSet<String> = changesets_at(root, from)?.into_iter().collect();
+    let present = changesets_at(root, to)?;
+    let changes = present
+        .iter()
+        .filter(|path| !before.contains(*path))
         .map(|path| {
             let text = git(root, &["show", &format!("{to}:{path}")])?;
             let mut change = parse(&text).with_context(|| path.clone())?;
-            change.commit = added_in(root, to, &path)?;
+            change.commit = added_in(root, to, path)?;
             Ok(change)
         })
-        .collect()
+        .collect::<Result<Vec<Change>>>()?;
+    Ok(Span {
+        changes,
+        dropped: dropped_between(root, from, to, &present)?,
+    })
 }
 
-fn changesets_at(root: &Path, rev: &str) -> Result<Vec<String>> {
-    if git(
+fn dropped_between(root: &Path, from: &str, to: &str, present: &[String]) -> Result<Vec<Dropped>> {
+    if !has_commit(root, to) {
+        return Ok(Vec::new());
+    }
+    let range = if has_commit(root, from) {
+        format!("{from}..{to}")
+    } else {
+        to.to_string()
+    };
+    let listing = git(
+        root,
+        &[
+            "log",
+            "--diff-filter=A",
+            "--format=",
+            "--name-only",
+            &range,
+            "--",
+            &format!("{DIR}/"),
+        ],
+    )?;
+    let mut paths: Vec<String> = listing
+        .lines()
+        .filter(|path| is_changeset(path) && !present.contains(&(*path).to_string()))
+        .map(str::to_string)
+        .collect();
+    paths.sort_unstable();
+    paths.dedup();
+    Ok(paths
+        .into_iter()
+        .map(|path| Dropped {
+            summary: dropped_summary(root, to, &path),
+            path,
+        })
+        .collect())
+}
+
+fn dropped_summary(root: &Path, rev: &str, path: &str) -> Option<String> {
+    let hash = added_in(root, rev, path).ok().flatten()?;
+    let text = git(root, &["show", &format!("{hash}:{path}")]).ok()?;
+    parse(&text).ok().map(|change| change.summary)
+}
+
+fn report_dropped(dropped: &[Dropped], from: &str, to: &str) {
+    if dropped.is_empty() {
+        return;
+    }
+    eprintln!(
+        "warning: {} changesets were added after {from} and deleted before {to}, so no release \
+         notes carry them:",
+        dropped.len()
+    );
+    for item in dropped {
+        match item.summary.as_deref().and_then(|text| text.lines().next()) {
+            Some(summary) => eprintln!("  {}: {summary}", item.path),
+            None => eprintln!("  {}", item.path),
+        }
+    }
+}
+
+fn is_changeset(path: &str) -> bool {
+    path.ends_with(".md") && path.rsplit('/').next() != Some(GUIDE)
+}
+
+fn has_commit(root: &Path, rev: &str) -> bool {
+    git(
         root,
         &[
             "rev-parse",
@@ -127,19 +343,22 @@ fn changesets_at(root: &Path, rev: &str) -> Result<Vec<String>> {
             &format!("{rev}^{{commit}}"),
         ],
     )
-    .is_err()
-    {
+    .is_ok()
+}
+
+fn changesets_at(root: &Path, rev: &str) -> Result<Vec<String>> {
+    if !has_commit(root, rev) {
         return Ok(Vec::new());
     }
     let listing = git(root, &["ls-tree", "--name-only", rev, &format!("{DIR}/")])?;
     Ok(listing
         .lines()
-        .filter(|path| path.ends_with(".md") && *path != format!("{DIR}/{GUIDE}"))
+        .filter(|path| is_changeset(path))
         .map(str::to_string)
         .collect())
 }
 
-fn load(root: &Path) -> Result<Vec<Change>> {
+fn changeset_files(root: &Path) -> Result<Vec<PathBuf>> {
     let dir = root.join(DIR);
     if !dir.exists() {
         return Ok(Vec::new());
@@ -153,7 +372,11 @@ fn load(root: &Path) -> Result<Vec<Change>> {
         }
     }
     paths.sort();
-    paths
+    Ok(paths)
+}
+
+fn load(root: &Path) -> Result<Vec<Change>> {
+    changeset_files(root)?
         .into_iter()
         .map(|path| {
             let text = std::fs::read_to_string(&path)
@@ -462,21 +685,140 @@ mod tests {
         commit_changeset(&root, "Pending fix", Bump::Patch);
 
         let released = changes_between(&root, "v1.0.0", "v1.1.0").expect("released");
-        assert_eq!(released.len(), 1);
-        assert_eq!(released[0].summary, "New feature");
-        assert!(released[0].commit.is_some());
+        assert_eq!(released.changes.len(), 1);
+        assert_eq!(released.changes[0].summary, "New feature");
+        assert!(released.changes[0].commit.is_some());
+        assert!(released.dropped.is_empty());
         assert_eq!(previous_version(&root, "1.1.0").expect("previous"), "1.0.0");
         assert_eq!(previous_version(&root, "1.0.0").expect("previous"), "0.0.0");
         assert_eq!(latest_version(&root).expect("latest"), "1.1.0");
         let pending = changes_between(&root, "v1.1.0", "HEAD").expect("pending");
-        assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].summary, "Pending fix");
+        assert_eq!(pending.changes.len(), 1);
+        assert_eq!(pending.changes[0].summary, "Pending fix");
         assert_eq!(
             changes_between(&root, "v0.0.0", "v1.0.0")
                 .expect("first")
+                .changes
                 .len(),
             1
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_changeset_added_and_then_deleted_between_tags_surfaces() {
+        let root = repo("dropped");
+        commit_changeset(&root, "Old fix", Bump::Patch);
+        tag(&root, "1.0.0").expect("tag");
+        commit_changeset(&root, "Reworked later", Bump::Minor);
+        commit_changeset(&root, "Kept feature", Bump::Minor);
+        std::fs::remove_file(root.join(DIR).join("reworked-later.md")).expect("remove");
+        git(&root, &["add", "--all"]).expect("stage");
+        git(&root, &["commit", "--quiet", "--message", "Rework"]).expect("commit");
+        tag(&root, "1.1.0").expect("tag");
+
+        let span = changes_between(&root, "v1.0.0", "v1.1.0").expect("span");
+        assert_eq!(span.changes.len(), 1);
+        assert_eq!(span.changes[0].summary, "Kept feature");
+        assert_eq!(
+            span.dropped,
+            vec![Dropped {
+                path: format!("{DIR}/reworked-later.md"),
+                summary: Some("Reworked later".to_string()),
+            }]
+        );
+        let released = changes_between(&root, "v0.0.0", "v1.0.0").expect("first");
+        assert!(released.dropped.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn released_changesets_pruned_after_their_tag_are_not_dropped() {
+        let root = repo("pruned");
+        commit_changeset(&root, "Shipped fix", Bump::Patch);
+        tag(&root, "1.0.0").expect("tag");
+        std::fs::remove_file(root.join(DIR).join("shipped-fix.md")).expect("remove");
+        git(&root, &["add", "--all"]).expect("stage");
+        git(&root, &["commit", "--quiet", "--message", "Prune"]).expect("commit");
+        commit_changeset(&root, "Next fix", Bump::Patch);
+        tag(&root, "1.0.1").expect("tag");
+
+        let span = changes_between(&root, "v1.0.0", "v1.0.1").expect("span");
+        assert_eq!(span.changes.len(), 1);
+        assert!(span.dropped.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn user_visible_covers_shipped_source_only() {
+        for path in [
+            "crates/channels/src/aprs.rs",
+            "apps/sdrmm/src/main.rs",
+            "web/src/panels/Scope.tsx",
+            "web/src/theme.css",
+            "apps/android/app/src/main/java/Main.kt",
+        ] {
+            assert!(user_visible(path), "{path}");
+        }
+        for path in [
+            "crates/channels/src/dv/dmr/tests.rs",
+            "crates/wire/src/patch/tests/registry.rs",
+            "crates/channels/fuzz/fuzz_targets/aprs.rs",
+            "crates/dsp/benches/fft.rs",
+            "crates/channels/tests/fixtures/aprs.bin",
+            "web/src/generated/frame.ts",
+            "web/src/panels/Scope.test.tsx",
+            "xtask/src/main.rs",
+            "docs/src/wires.md",
+            ".github/workflows/ci.yml",
+            "Cargo.lock",
+            "crates/channels/README.md",
+        ] {
+            assert!(!user_visible(path), "{path}");
+        }
+    }
+
+    fn write_source(root: &Path, rel: &str, text: &str) {
+        let path = root.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create dir");
+        }
+        std::fs::write(&path, text).expect("write source");
+    }
+
+    #[test]
+    fn the_gate_wants_a_changeset_for_user_visible_work() {
+        let root = repo("gate");
+        write_source(&root, "crates/dsp/src/lib.rs", "pub fn one() {}\n");
+        git(&root, &["add", "--all"]).expect("stage");
+        git(&root, &["commit", "--quiet", "--message", "Base"]).expect("commit");
+        let base = git(&root, &["rev-parse", "HEAD"]).expect("base");
+        let base = base.trim();
+
+        write_source(&root, "crates/dsp/src/tests.rs", "fn two() {}\n");
+        assert!(require_changeset(&root, base).is_ok());
+
+        write_source(&root, "crates/dsp/src/lib.rs", "pub fn two() {}\n");
+        let refused = require_changeset(&root, base).expect_err("refused");
+        assert!(
+            refused.to_string().contains("crates/dsp/src/lib.rs"),
+            "{refused}"
+        );
+
+        add(&root, Bump::Patch, "DSP counts to two").expect("add changeset");
+        require_changeset(&root, base).expect("accepted");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_gate_skips_without_a_base() {
+        let root = repo("base");
+        assert_eq!(
+            comparison_base(&root),
+            Base::Unknown("the repository has no commit to compare against".to_string())
+        );
+        commit_changeset(&root, "First fix", Bump::Patch);
+        assert!(matches!(comparison_base(&root), Base::Rev(_)));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

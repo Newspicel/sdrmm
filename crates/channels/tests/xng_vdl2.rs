@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs};
+use sdrmm_channels::{ChannelCtx, ChannelOutputs, reference_data};
 use sdrmm_dsp::Ddc;
 use sdrmm_wire::{ChannelSettings, DecoderEvent};
 use xng_mode_vdl2::Vdl2ChannelDecoder;
@@ -12,22 +12,18 @@ const BLOCK: usize = 16_384;
 const CAPTURE_RATE: f64 = 105_000.0;
 const CENTER_HZ: f64 = 136_975_000.0;
 
-fn load(file: &str) -> Option<Vec<Complex<f32>>> {
-    let dir = PathBuf::from(std::env::var_os("XNG_BENCH_DATA")?);
-    let bytes = std::fs::read(dir.join(file)).ok()?;
-    Some(
-        bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|&[a, b, c, d]| {
-                Complex::new(
-                    f32::from(i16::from_le_bytes([a, b])) / 32_768.0,
-                    f32::from(i16::from_le_bytes([c, d])) / 32_768.0,
-                )
-            })
-            .collect(),
-    )
+fn load(dir: &Path, file: &str) -> Vec<Complex<f32>> {
+    reference_data::bytes(dir, file)
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|&[a, b, c, d]| {
+            Complex::new(
+                f32::from(i16::from_le_bytes([a, b])) / 32_768.0,
+                f32::from(i16::from_le_bytes([c, d])) / 32_768.0,
+            )
+        })
+        .collect()
 }
 
 fn decode_ours(iq: &[Complex<f32>]) -> Vec<DecoderEvent> {
@@ -66,8 +62,8 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn compare(file: &str) -> (usize, usize) {
-    let iq = load(file).expect(file);
+fn compare(dir: &Path, file: &str) -> (usize, usize) {
+    let iq = load(dir, file);
     let ours: Vec<_> = decode_ours(&iq)
         .into_iter()
         .map(|event| match event {
@@ -98,13 +94,19 @@ fn compare(file: &str) -> (usize, usize) {
 #[test]
 #[ignore = "needs xng bench fixtures: XNG_BENCH_DATA=dir cargo test -p sdrmm-channels --release --test xng_vdl2 -- --ignored --nocapture"]
 fn vdl2_matches_xng_off_air() {
-    let (ours, xng) = compare("vdl2_105k_conj.s16");
+    let Some(dir) = reference_data::xng_bench_data() else {
+        return;
+    };
+    let (ours, xng) = compare(&dir, "vdl2_105k_conj.s16");
     assert!(ours >= xng && ours >= 47);
 }
 
 #[test]
 #[ignore = "needs xng bench fixtures"]
 fn vdl2_matches_xng_on_opflasher() {
-    let (ours, xng) = compare("vdl2_opflasher_105k.cs16");
+    let Some(dir) = reference_data::xng_bench_data() else {
+        return;
+    };
+    let (ours, xng) = compare(&dir, "vdl2_opflasher_105k.cs16");
     assert!(ours >= xng && ours >= 17);
 }

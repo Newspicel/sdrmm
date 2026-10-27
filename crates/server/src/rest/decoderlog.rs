@@ -1,4 +1,5 @@
 use super::*;
+use crate::event_output::csv::field;
 
 #[utoipa::path(
     get, path = "/api/decoderlog",
@@ -153,30 +154,22 @@ pub(super) fn csv_export(entries: &[DecoderLogEntry]) -> Result<String, serde_js
     let mut out = String::from("at,device_set,channel,kind,freq_hz,station,summary,event\r\n");
     for entry in entries {
         let event = serde_json::to_string(&entry.event)?;
-        out.push_str(&csv_field(&entry.at));
+        out.push_str(&field(&entry.at));
         out.push(',');
         out.push_str(&entry.device_set.to_string());
         out.push(',');
         out.push_str(&entry.channel.to_string());
         out.push(',');
-        out.push_str(&csv_field(&entry.kind));
+        out.push_str(&field(&entry.kind));
         out.push(',');
         out.push_str(&entry.freq_hz.to_string());
         out.push(',');
-        out.push_str(&csv_field(entry.station.as_deref().unwrap_or_default()));
+        out.push_str(&field(entry.station.as_deref().unwrap_or_default()));
         out.push(',');
-        out.push_str(&csv_field(&entry.summary));
+        out.push_str(&field(&entry.summary));
         out.push(',');
-        out.push_str(&csv_field(&event));
+        out.push_str(&field(&event));
         out.push_str("\r\n");
     }
     Ok(out)
-}
-
-pub(super) fn csv_field(value: &str) -> String {
-    if value.contains(['"', ',', '\n', '\r']) {
-        format!("\"{}\"", value.replace('"', "\"\""))
-    } else {
-        value.to_string()
-    }
 }

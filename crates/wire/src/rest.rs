@@ -96,6 +96,7 @@ pub struct DevicesResponse {
     pub devices: Vec<DeviceInfo>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub claims: Vec<DeviceClaim>,
+    pub synthetic: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -612,15 +613,9 @@ pub struct ExamplesResponse {
 impl ExampleNeeds {
     #[must_use]
     pub fn of(graph: &crate::patch::PatchGraph, state: &crate::WorkspaceState) -> Self {
-        let kind_count = |kind: crate::patch::NodeKind| {
-            u32::try_from(
-                graph
-                    .nodes
-                    .iter()
-                    .filter(|node| node.body.kind() == kind)
-                    .count(),
-            )
-            .unwrap_or(u32::MAX)
+        let counted = |pick: fn(&crate::patch::NodeBody) -> bool| {
+            u32::try_from(graph.nodes.iter().filter(|node| pick(&node.body)).count())
+                .unwrap_or(u32::MAX)
         };
         let lanes = graph
             .nodes
@@ -631,12 +626,35 @@ impl ExampleNeeds {
             .unwrap_or(0);
         let (min_freq_hz, max_freq_hz) = span(state);
         Self {
-            radios: kind_count(crate::patch::NodeKind::Device),
+            radios: counted(opens_radio),
             lanes: u32::try_from(lanes).unwrap_or(u32::MAX),
-            recordings: kind_count(crate::patch::NodeKind::Recording),
+            recordings: counted(plays_a_recording),
             min_freq_hz,
             max_freq_hz,
         }
+    }
+}
+
+/// A node that needs the operator to supply a radio: one pinned to hardware, or one pinned to
+/// nothing yet. A recording or a generator needs none.
+fn opens_radio(body: &crate::patch::NodeBody) -> bool {
+    match body {
+        crate::patch::NodeBody::Device(device) => device
+            .device
+            .as_ref()
+            .is_none_or(|pinned| !pinned.is_recording() && !pinned.is_generator()),
+        _ => false,
+    }
+}
+
+fn plays_a_recording(body: &crate::patch::NodeBody) -> bool {
+    pinned(body).is_some_and(crate::patch::DeviceRef::is_recording)
+}
+
+fn pinned(body: &crate::patch::NodeBody) -> Option<&crate::patch::DeviceRef> {
+    match body {
+        crate::patch::NodeBody::Device(device) => device.device.as_ref(),
+        _ => None,
     }
 }
 
@@ -762,7 +780,9 @@ pub struct ApiError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::device::{Capabilities, DcArtifact, DeviceProfile, Duplex, Range, StreamScope};
+    use crate::device::{
+        Capabilities, DcArtifact, DeviceBackend, DeviceProfile, Duplex, Range, StreamScope,
+    };
     use crate::patch::{
         ARRAY_LANE_PORT, IQ_PORT, NodeBody, NodeKind, PatchEdge, PatchGraph, PatchNode, PortRef,
         Position,
@@ -779,7 +799,7 @@ mod tests {
     #[test]
     fn each_radio_is_claimed_once_by_the_first_node_naming_it() {
         let device = |key: &str| DeviceInfo {
-            driver: "rtlsdr".to_owned(),
+            driver: DeviceBackend::Rtlsdr,
             key: key.to_owned(),
             label: key.to_owned(),
             serial: None,
@@ -789,7 +809,7 @@ mod tests {
             id: id.to_owned(),
             body: crate::NodeBody::Device(crate::DeviceNode {
                 device: Some(crate::DeviceRef {
-                    backend: "rtlsdr".to_owned(),
+                    backend: DeviceBackend::Rtlsdr,
                     serial: None,
                     key: key.map(str::to_owned),
                 }),
@@ -907,6 +927,7 @@ mod tests {
             retune_keeps_phase: false,
             rx_inputs: Vec::new(),
             clean_fraction: None,
+            bank: None,
         }
         .profile()
     }
@@ -1085,12 +1106,27 @@ mod tests {
         }
     }
 
+    fn pinned(backend: crate::DeviceBackend, key: &str) -> NodeBody {
+        NodeBody::Device(crate::DeviceNode {
+            device: Some(crate::DeviceRef {
+                backend,
+                serial: None,
+                key: Some(key.to_owned()),
+            }),
+            ..crate::DeviceNode::default()
+        })
+    }
+
+    fn recording(stem: &str) -> NodeBody {
+        pinned(crate::DeviceBackend::Recording, stem)
+    }
+
     #[test]
     fn needs_counts_sources_and_lanes() {
         let graph = graph_with(
             &[
                 ("dev", NodeBody::Device(crate::DeviceNode::default())),
-                ("rec", NodeBody::Recording(crate::RecordingNode::default())),
+                ("rec", recording("take")),
                 ("arr", NodeBody::Array(crate::ArrayNode::default())),
             ],
             &[("dev", "arr", ARRAY_LANE_PORT), ("rec", "arr", "lane2")],
@@ -1104,7 +1140,7 @@ mod tests {
     #[test]
     fn needs_of_a_graph_without_sources_is_zero() {
         let graph = graph_with(
-            &[("gen", NodeBody::SignalGen(crate::SignalGenNode::default()))],
+            &[("gen", pinned(crate::DeviceBackend::Virtual, "gen-"))],
             &[],
         );
         let needs = ExampleNeeds::of(&graph, &crate::WorkspaceState::new());

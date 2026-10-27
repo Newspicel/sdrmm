@@ -1,15 +1,20 @@
 use std::{collections::HashSet, time::Duration};
 
-use sdrmm_device_siggen::{GAP_SETTING, LEVEL_SETTING, SigGenDriver};
+use sdrmm_channels::synth::catalog::CATALOG;
+use sdrmm_device_virtual::{GAP_SETTING, LEVEL_SETTING, VirtualDriver};
 
 use super::*;
 
 fn generator_at(level_db: f64) -> (Arc<Engine>, u32) {
     let mut registry = DeviceRegistry::new();
-    registry.register(50, Box::new(SigGenDriver::new()));
+    registry.register(50, Box::new(VirtualDriver::bare().with_signals(&CATALOG)));
     let engine = Engine::with_registry(registry, None);
-    engine.adopt_device("siggen:clip").expect("a generator");
-    let ds = engine.create_device_set("siggen:clip").expect("device set");
+    engine
+        .adopt_device("virtual:gen-clip")
+        .expect("a generator");
+    let ds = engine
+        .create_device_set("virtual:gen-clip")
+        .expect("device set");
     engine
         .patch_device(
             ds,

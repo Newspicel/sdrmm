@@ -1,3 +1,4 @@
+import { AUDIO, CHANNEL_FREQUENCY_SEED_HZ } from "../lib/limits";
 import type {
   AudioProcessing,
   ChannelDescriptor,
@@ -16,6 +17,30 @@ export type ChannelParamsOf<K extends ChannelTypeId> = Extract<
   ChannelParams,
   { type: K }
 >["settings"];
+
+export type Settled<P> = P extends { settings: infer S }
+  ? Omit<P, "settings"> & { settings: { [F in keyof S]-?: S[F] } }
+  : never;
+
+export function settledParams(
+  params: ChannelParams,
+  defaults: ChannelParams | undefined,
+): ChannelParams {
+  if (defaults === undefined || defaults.type !== params.type) {
+    return params;
+  }
+  const settled: Record<string, unknown> = { ...defaults.settings };
+  for (const [name, value] of Object.entries(params.settings as Record<string, unknown>)) {
+    if (value !== undefined) {
+      settled[name] = value;
+    }
+  }
+  return { ...params, settings: settled } as ChannelParams;
+}
+
+export function channelFrequencyHz(settings: ChannelSettings): number {
+  return settings.frequency_hz ?? CHANNEL_FREQUENCY_SEED_HZ;
+}
 
 export function mergeChannelSettings(
   current: ChannelSettings,
@@ -118,23 +143,23 @@ export function scaledLimit(limit: NumberLimit, factor: number): NumberLimit {
 }
 
 export const AUDIO_DEFAULTS = {
-  blankerThreshold: 5,
-  clickThreshold: 6,
-  squelchAutoMarginDb: 8,
-  denoiseStrength: 0.5,
-  filterLowHz: 300,
-  filterHighHz: 3_000,
-  notchFreqHz: 1_000,
-  notchWidthHz: 100,
+  blankerThreshold: AUDIO.blanker_threshold_seed,
+  clickThreshold: AUDIO.click_threshold_seed,
+  squelchAutoMarginDb: AUDIO.squelch_auto_margin_seed_db,
+  denoiseStrength: AUDIO.denoise_strength_seed,
+  filterLowHz: AUDIO.filter_low_seed_hz,
+  filterHighHz: AUDIO.filter_high_seed_hz,
+  notchFreqHz: AUDIO.notch_freq_seed_hz,
+  notchWidthHz: AUDIO.notch_width_seed_hz,
 } as const;
 
 export const AUDIO_LIMITS = {
-  maxNotches: 4,
-  blankerThreshold: { min: 1.5, max: 20 },
-  clickThreshold: { min: 2, max: 20 },
-  squelchAutoMarginDb: { min: 2, max: 40 },
-  toneHz: { min: 30, max: 20_000 },
-  notchWidthHz: { min: 10, max: 2_000 },
+  maxNotches: AUDIO.notches,
+  blankerThreshold: AUDIO.blanker_threshold,
+  clickThreshold: AUDIO.click_threshold,
+  squelchAutoMarginDb: AUDIO.squelch_auto_margin_db,
+  toneHz: AUDIO.tone_hz,
+  notchWidthHz: AUDIO.notch_width_hz,
 } as const;
 
 export function mergeAudio(

@@ -196,8 +196,8 @@ impl Trellis {
         self.survivors[self.front] = [0; STATES];
     }
 
-    // The survivors alternate between the two halves rather than being copied back, because a
-    // 256-byte move per trellis step costs as much as the butterfly that produced it.
+    /// The survivors alternate between the two halves rather than being copied back, because a
+    /// 256-byte move per trellis step costs as much as the butterfly that produced it.
     fn step(&mut self, code: &ConvCode, symbol: &[Soft]) -> u64 {
         let [even, odd] = &mut self.survivors;
         let (metrics, next) = if self.front == 0 {
@@ -317,13 +317,16 @@ pub struct StreamViterbiK7 {
     carried: usize,
 }
 
+/// Every release traces `depth` decisions to find the surviving path before it emits a single
+/// bit, so releasing in batches this many times the depth spreads that fixed cost over more
+/// output.
+const RELEASES_PER_TRACEBACK: usize = 8;
+
 impl StreamViterbiK7 {
     #[must_use]
     pub fn new(code: ConvCode, depth: usize) -> Self {
         let depth = depth.max(8);
-        // Every release traces `depth` decisions to find the surviving path before it emits a
-        // single bit, so releasing in large batches spreads that fixed cost over more output.
-        let batch = 8 * depth;
+        let batch = RELEASES_PER_TRACEBACK * depth;
         let mut trellis = Trellis::new();
         trellis.open();
         Self {

@@ -250,6 +250,8 @@ impl Drop for HackRf {
     }
 }
 
+/// Every burst end submits a marker of this many zero bytes, so an implausible answer would be
+/// an allocation the firmware gets to choose.
 fn read_flush_size(control: &Control, usb_api_version: u16) -> Result<usize> {
     if usb_api_version < BUFFER_SIZE_USB_API {
         return Ok(DEFAULT_FLUSH_SIZE);
@@ -260,8 +262,6 @@ fn read_flush_size(control: &Control, usb_api_version: u16) -> Result<usize> {
         .map(|word| u32::from_le_bytes(*word) as usize)
         .ok_or_else(|| Error::protocol("read TX flush size", "response was not four bytes"))?;
     if size == 0 || size > TX_TRANSFER_SIZE {
-        // Every burst end submits a marker of this many zero bytes, so an implausible answer
-        // would be an allocation the firmware gets to choose.
         return Err(Error::protocol(
             "read TX flush size",
             "firmware returned an unusable buffer size",

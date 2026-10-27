@@ -430,10 +430,11 @@ impl Detector {
     fn centroid_hz(&self, start: usize, end: usize, floor: f32, bin_hz: f64, center: usize) -> f64 {
         let weight = |i: usize| f64::from((self.smoothed[i] - floor).max(0.0));
         let total: f64 = (start..=end).map(weight).sum();
-        if total <= 0.0 {
-            return (start as f64 + end as f64) / 2.0 - center as f64;
-        }
-        let mean: f64 = (start..=end).map(|i| weight(i) * i as f64).sum::<f64>() / total;
+        let mean = if total > 0.0 {
+            (start..=end).map(|i| weight(i) * i as f64).sum::<f64>() / total
+        } else {
+            (start as f64 + end as f64) / 2.0
+        };
         (mean - center as f64) * bin_hz
     }
 
@@ -537,6 +538,18 @@ mod tests {
         assert!(
             (found[0].bandwidth_hz - 50_000.0).abs() < 8_000.0,
             "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_flat_band_reports_the_middle_of_its_span_in_hertz() {
+        let mut detector = Detector::with_size(64, 4);
+        detector.smoothed.fill(1.0);
+        let bin_hz = 100.0;
+        let middle = detector.centroid_hz(40, 48, 1.0, bin_hz, detector.size / 2);
+        assert!(
+            (middle - 1_200.0).abs() < 1e-6,
+            "a flat band 12 bins above the centre sits at {middle} Hz"
         );
     }
 

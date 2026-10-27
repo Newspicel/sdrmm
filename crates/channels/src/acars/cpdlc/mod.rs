@@ -142,7 +142,9 @@ fn read_published(b: &mut Bits) -> Option<String> {
 }
 
 fn read_route_clearance(b: &mut Bits) -> Option<String> {
-    let present: Vec<bool> = (0..10).map(|_| b.read(1) == Some(1)).collect();
+    let present: Vec<bool> = (0..10)
+        .map(|_| b.read(1).map(|bit| bit == 1))
+        .collect::<Option<Vec<bool>>>()?;
     let mut parts: Vec<String> = Vec::new();
     let read_runway = |b: &mut Bits| -> Option<String> {
         let dir = b.read(6)? + 1;
@@ -614,6 +616,20 @@ pub fn decode(body: &[u8], downlink: bool) -> Option<CpdlcMessage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_route_clearance_that_runs_out_of_presence_bits_is_rejected() {
+        let mut truncated = Bits {
+            data: &[0x00],
+            pos: 0,
+        };
+        assert_eq!(read_route_clearance(&mut truncated), None);
+        let mut whole = Bits {
+            data: &[0x00, 0x00],
+            pos: 0,
+        };
+        assert_eq!(read_route_clearance(&mut whole), Some(String::new()));
+    }
 
     fn build(
         msg_id: u8,

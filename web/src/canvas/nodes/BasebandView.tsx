@@ -97,6 +97,7 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
   const bitmapRef = useRef<GridBitmap | null>(null);
   const spectrumRef = useRef<SpectrumFrame | null>(null);
   const dbRef = useRef<Float32Array | null>(null);
+  const railRef = useRef<Float32Array | null>(null);
   const settingsRef = useRef({ view, eyeComponent, symbolRate, decimate });
   useLayoutEffect(() => {
     settingsRef.current = { view, eyeComponent, symbolRate, decimate };
@@ -205,6 +206,7 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
         colormap,
         spectrumRef,
         dbRef,
+        railRef,
         { mer: merRef.current, margin: marginRef.current, drift: driftRef.current },
         insetRef.current,
       );
@@ -432,6 +434,7 @@ function draw(
   colormap: Palette,
   spectrumRef: { current: SpectrumFrame | null },
   dbRef: { current: Float32Array | null },
+  railRef: { current: Float32Array | null },
   trends: Trends,
   inset: PlotInset,
 ): void {
@@ -467,7 +470,7 @@ function draw(
     return;
   }
   if (view === "levels") {
-    drawLevels(canvas, frame, block, settings, inset);
+    drawLevels(canvas, frame, block, settings, railRef, inset);
     return;
   }
   if (view === "spectrum") {
@@ -503,6 +506,7 @@ function drawLevels(
   frame: IqFrame | null,
   block: SymbolFrame | null,
   settings: { symbolRate: number },
+  railRef: { current: Float32Array | null },
   inset: PlotInset,
 ): void {
   if (block !== null) {
@@ -511,7 +515,7 @@ function drawLevels(
     drawHistogram(
       canvas,
       symbolHistogram(block.symbols, stride, scale),
-      [...block.reference],
+      block.reference,
       scale,
       inset,
     );
@@ -521,9 +525,17 @@ function drawLevels(
     return;
   }
   const period = samplesPerSymbol(frame.sampleRate, settings.symbolRate);
-  const rail = discriminator(frame.samples, period, symbolPhase(frame.samples, period));
-  drawHistogram(canvas, symbolHistogram(rail, 1, 1), [], 1, inset);
+  const rail = discriminator(
+    frame.samples,
+    period,
+    symbolPhase(frame.samples, period),
+    railRef.current,
+  );
+  railRef.current = rail;
+  drawHistogram(canvas, symbolHistogram(rail, 1, 1), NO_REFERENCE, 1, inset);
 }
+
+const NO_REFERENCE = new Float32Array(0);
 
 const stateCache = new WeakMap<SymbolFrame, SymbolState[]>();
 
@@ -537,18 +549,27 @@ function statesOf(block: SymbolFrame): SymbolState[] {
   return states;
 }
 
-export function discriminator(samples: Float32Array, period: number, offset: number): Float32Array {
+export function discriminator(
+  samples: Float32Array,
+  period: number,
+  offset: number,
+  scratch: Float32Array | null = null,
+): Float32Array {
   const count = samples.length >> 1;
   const step = Math.max(1, Math.round(period));
-  const out: number[] = [];
-  for (let i = Math.max(1, offset); i < count; i += step) {
+  const start = Math.max(1, offset);
+  const taps = start >= count ? 0 : Math.ceil((count - start) / step);
+  const out = scratch !== null && scratch.length >= taps ? scratch : new Float32Array(taps);
+  let tap = 0;
+  for (let i = start; i < count; i += step) {
     const re = samples[i * 2] ?? 0;
     const im = samples[i * 2 + 1] ?? 0;
     const pr = samples[i * 2 - 2] ?? 0;
     const pi = samples[i * 2 - 1] ?? 0;
-    out.push(Math.atan2(im * pr - re * pi, re * pr + im * pi) / Math.PI);
+    out[tap] = Math.atan2(im * pr - re * pi, re * pr + im * pi) / Math.PI;
+    tap += 1;
   }
-  return Float32Array.from(out);
+  return out.length === taps ? out : out.subarray(0, taps);
 }
 
 interface Scatter {

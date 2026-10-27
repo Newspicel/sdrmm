@@ -1,11 +1,7 @@
 use sdrmm_wire::{
     SurveyCell,
-    survey::{MAX_SURVEY_CELLS, SURVEY_CELL_M},
+    survey::{MAX_SURVEY_CELLS, cell_key},
 };
-
-const METRES_PER_DEGREE_LON: f64 = 111_320.0;
-const METRES_PER_DEGREE_LAT: f64 = 110_540.0;
-const MIN_COS_LAT: f64 = 0.01;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Merged {
@@ -60,16 +56,6 @@ pub(crate) fn measure_dbfs(
         .copied()
         .filter(|level| !level.is_nan())
         .reduce(f32::max)
-}
-
-pub(crate) fn cell_key(latitude: f64, longitude: f64, frequency_hz: f64) -> (i64, i64, i64) {
-    let x = longitude * METRES_PER_DEGREE_LON * latitude.to_radians().cos().max(MIN_COS_LAT);
-    let y = latitude * METRES_PER_DEGREE_LAT;
-    (
-        frequency_hz.round() as i64,
-        (x / SURVEY_CELL_M).round() as i64,
-        (y / SURVEY_CELL_M).round() as i64,
-    )
 }
 
 fn db_to_power(db: f32) -> f64 {

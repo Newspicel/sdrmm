@@ -84,12 +84,23 @@ async fn the_df_drive_example_wires_every_lane_into_one_array() {
     .await;
     let detail: sdrmm_wire::WorkspaceDetail = serde_json::from_slice(&body).expect("json");
     let graph = &detail.snapshot.graph;
-    let lanes = graph
+    let lanes: Vec<&str> = graph
         .edges
         .iter()
-        .filter(|edge| edge.from.node == "dev" && edge.to.node == "array")
-        .count();
-    assert_eq!(lanes, 5);
+        .filter(|edge| {
+            edge.to.node == "array" && edge.to.port.starts_with(sdrmm_wire::ARRAY_LANE_PORT)
+        })
+        .map(|edge| edge.from.node.as_str())
+        .collect();
+    assert_eq!(lanes.len(), 5);
+    assert_eq!(
+        lanes
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        5,
+        "one radio per antenna"
+    );
 
     let patch = sdrmm_wire::patch::resolve::compile(graph, &Default::default()).expect("compiles");
     assert_eq!(

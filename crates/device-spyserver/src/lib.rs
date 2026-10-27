@@ -9,7 +9,7 @@ use sdrmm_device::{
     net::{Adopted, CONNECT_TIMEOUT, Connection, Endpoint, Read},
     single_rx_sink,
 };
-use sdrmm_wire::{Capabilities, DeviceInfo as WireDeviceInfo, DeviceSettings};
+use sdrmm_wire::{Capabilities, DeviceBackend, DeviceInfo as WireDeviceInfo, DeviceSettings};
 
 use crate::{
     caps::Remote,
@@ -21,10 +21,12 @@ use crate::{
 };
 
 mod caps;
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
 mod proto;
 mod stream;
 
-const DRIVER_ID: &str = "spyserver";
+const DRIVER_ID: DeviceBackend = DeviceBackend::Spyserver;
 
 const CLIENT_NAME: &str = "SDR--";
 
@@ -42,7 +44,7 @@ impl SpyServerDriver {
 
 fn device_info(endpoint: &Endpoint) -> WireDeviceInfo {
     WireDeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: endpoint.to_string(),
         label: format!("SpyServer {endpoint}"),
         serial: None,
@@ -51,7 +53,7 @@ fn device_info(endpoint: &Endpoint) -> WireDeviceInfo {
 }
 
 impl DeviceDriver for SpyServerDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 
@@ -273,7 +275,7 @@ impl SdrDevice for SpyServerDevice {
             self.radio.clone(),
             SpyConverter::new(self.radio.coding.clone()),
             single_rx_sink(sinks)?,
-            CaptureConfig::new("sdrmm-spyserver-rx", DRIVER_ID)
+            CaptureConfig::new("sdrmm-spyserver-rx", DRIVER_ID.as_str())
                 .with_sample_rate(self.settings.sample_rate),
         )
     }

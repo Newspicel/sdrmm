@@ -7,13 +7,13 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 | Type | Carries |
 |---|---|
 | IQ | Decoders on a lane retune it unless the lane is locked |
-| Baseband |  |
+| Baseband | One channel, filtered and decimated |
 | Audio | Live audio |
 | Events | Decoded events. Calls and transmissions bring their clip |
-| Video |  |
-| Control |  |
-| Position |  |
-| Array |  |
+| Video | Decoded video frames and pictures |
+| Control | Commands that retune a decoder or point a rotator |
+| Position | A live fix and the heading it comes with |
+| Array | One lane per antenna element |
 | Bearing | A live bearing that steers an array |
 
 ## Event kinds
@@ -36,7 +36,7 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 | `cw_skimmer` | CW skimmer | CW spots | log |
 | `selcall` | Selcall | Selcall | log |
 | `navtex` | NAVTEX | Stations | log, station |
-| `acars` | ACARS | Aircraft | log, station |
+| `acars` | ACARS | Aircraft | log, station, geo |
 | `tone` | Tone | Tones | log |
 | `scrambler` | Scrambler | Scramblers | log |
 | `dv` | Digital voice | Radios | log, station, geo, voice |
@@ -88,27 +88,11 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 
 ### Device
 
-A radio, where every patch starts
+A radio, a recording or a generator: where a patch starts
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `iq` | out | IQ | radio | many, one per lane |
-
-### Recording
-
-Plays back a recorded IQ file
-
-| Port | Way | Type | Carries | Wires |
-|---|---|---|---|---|
-| `iq` | out | IQ | radio | many, one per lane |
-
-### Signal generator
-
-Test signals without a radio
-
-| Port | Way | Type | Carries | Wires |
-|---|---|---|---|---|
-| `iq` | out | IQ | synthetic | many |
 
 ### GPS position
 
@@ -116,7 +100,7 @@ Your station location, live or fixed
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `position` | out | Position |  | many |
+| `position` | out | Position | A live fix and the heading it comes with | many |
 
 ## Channels
 
@@ -130,11 +114,11 @@ Ports follow the decoder the node runs.
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | many lanes. every radio that may carry this decoder; it runs on the one that hears it |
 | `control` | in | Control | tune, doppler, sweep | one. a scanner, signal hunt or satellite drives this decoder; its radio follows |
-| `position` | in | Position |  | one |
-| `baseband` | out | Baseband |  | many |
-| `audio` | out | Audio |  | many |
+| `position` | in | Position | A live fix and the heading it comes with | one |
+| `baseband` | out | Baseband | One channel, filtered and decimated | many |
+| `audio` | out | Audio | Live audio | many |
 | `events` | out | Events | any kind | many. Decoded messages and calls. Analog calls need squelch |
-| `video` | out | Video |  | many |
+| `video` | out | Video | Decoded video frames and pictures | many |
 
 ## Tools
 
@@ -145,8 +129,8 @@ Radio lanes as one antenna array
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `lane` | in | IQ | radio | one, one per array lane. One radio lane per antenna, in antenna order |
-| `position` | in | Position |  | one. Array place and heading |
-| `array` | out | Array |  | many |
+| `position` | in | Position | A live fix and the heading it comes with | one. Array place and heading |
+| `array` | out | Array | One lane per antenna element | many |
 
 ### Spectrum monitor
 
@@ -165,7 +149,7 @@ Follows calls across a DMR trunk system
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one. the radio the control channel sits on; the system runs its own decoders |
 | `events` | out | Events | Digital voice, Call | many |
-| `audio` | out | Audio |  | many |
+| `audio` | out | Audio | Live audio | many |
 
 ### Event filter
 
@@ -182,8 +166,8 @@ Filters, denoise and AGC
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio |  | many |
-| `audio` | out | Audio |  | many |
+| `audio` | in | Audio | Live audio | many |
+| `audio` | out | Audio | Live audio | many |
 
 ### Scanner
 
@@ -202,7 +186,7 @@ Walks you towards a transmitter
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one. The lane it watches |
 | `control` | out | Control | sweep | one |
-| `position` | in | Position |  | one. Where you stand and which way you point |
+| `position` | in | Position | A live fix and the heading it comes with | one. Where you stand and which way you point |
 | `events` | out | Events | Bearing | many. Sweep and mark bearings |
 
 ### Satellite
@@ -211,7 +195,7 @@ Predicts passes and follows Doppler
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `position` | in | Position |  | one |
+| `position` | in | Position | A live fix and the heading it comes with | one |
 | `control` | out | Control | tune, doppler, point | many. decoders to tune and Doppler correct, rotators to point |
 | `events` | out | Events | Satellite | many. Position and ground track for a Map |
 
@@ -221,9 +205,9 @@ Bearings from an array
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `array` | in | Array |  | one |
+| `array` | in | Array | One lane per antenna element | one |
 | `events` | out | Events | Bearing | many. True bearings |
-| `bearing` | out | Bearing |  | many. Live bearing to steer a beam |
+| `bearing` | out | Bearing | A live bearing that steers an array | many. Live bearing to steer a beam |
 
 ### Beamformer
 
@@ -231,8 +215,8 @@ Steer, null or combine an array
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `array` | in | Array |  | one |
-| `steer` | in | Bearing |  | one. A direction finder to steer at |
+| `array` | in | Array | One lane per antenna element | one |
+| `steer` | in | Bearing | A live bearing that steers an array | one. A direction finder to steer at |
 | `beam` | out | IQ | derived | many. The combined lane |
 
 ### Passive radar
@@ -241,8 +225,8 @@ Aircraft echoes of FM, DAB or DVB-T
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `array` | in | Array |  | one |
-| `tx` | in | Position |  | one. GPS node fixed at the transmitter |
+| `array` | in | Array | One lane per antenna element | one |
+| `tx` | in | Position | A live fix and the heading it comes with | one. GPS node fixed at the transmitter |
 | `adsb` | in | Events | ADS-B | many. ADS-B decoder used as truth |
 | `events` | out | Events | Radar, Radar sites | many. Track events |
 
@@ -252,7 +236,7 @@ Spread lanes joined into one wide band
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `array` | in | Array |  | one |
+| `array` | in | Array | One lane per antenna element | one |
 | `wide` | out | IQ | derived | many. Every lane joined |
 
 ### Spatial spectrum
@@ -261,7 +245,7 @@ Bearing over frequency
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `array` | in | Array |  | one |
+| `array` | in | Array | One lane per antenna element | one |
 
 ### Correlator
 
@@ -269,7 +253,7 @@ Baseline visibilities
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `array` | in | Array |  | one |
+| `array` | in | Array | One lane per antenna element | one |
 
 ### Polarimeter
 
@@ -277,7 +261,7 @@ Polarisation of two crossed antennas
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `array` | in | Array |  | one |
+| `array` | in | Array | One lane per antenna element | one |
 | `beam` | out | IQ | derived | many. Matched to the wave |
 
 ### Triangulation
@@ -287,7 +271,7 @@ Crosses bearings into a position
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `events` | in | Events | Bearing | many. Bearings |
-| `position` | in | Position |  | one. Vehicle to guide |
+| `position` | in | Position | A live fix and the heading it comes with | one. Vehicle to guide |
 | `events` | out | Events | Fix, Guidance | many |
 
 ### Note
@@ -310,7 +294,7 @@ Constellation and eye of one channel
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `baseband` | in | Baseband |  | one |
+| `baseband` | in | Baseband | One channel, filtered and decimated | one |
 
 ### Speaker
 
@@ -318,7 +302,7 @@ Plays channel audio
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio |  | many |
+| `audio` | in | Audio | Live audio | many |
 
 ### Map
 
@@ -326,8 +310,8 @@ Decoded positions on a map
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 20 kinds | many |
-| `position` | in | Position |  | many |
+| `events` | in | Events | 21 kinds | many |
+| `position` | in | Position | A live fix and the heading it comes with | many |
 
 ### Signal survey
 
@@ -336,7 +320,7 @@ Maps signal strength while you move
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one |
-| `position` | in | Position |  | one |
+| `position` | in | Position | A live fix and the heading it comes with | one |
 
 ### Propagation map
 
@@ -345,7 +329,7 @@ Where FT8, FT4 and WSPR signals came from
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `events` | in | Events | FT8, FT4, WSPR | many, keeps history |
-| `position` | in | Position |  | one |
+| `position` | in | Position | A live fix and the heading it comes with | one |
 
 ### Readout
 
@@ -377,16 +361,16 @@ ATV frames and decoded pictures
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `video` | in | Video |  | many, keeps pictures |
+| `video` | in | Video | Decoded video frames and pictures | many, keeps pictures |
 
 ### Recorder
 
-Records a radio's full IQ
+Records a radio's full IQ, with an optional pre-roll
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one |
-| `position` | in | Position |  | one |
+| `position` | in | Position | A live fix and the heading it comes with | one |
 
 ### Audio recorder
 
@@ -394,7 +378,7 @@ Records channel audio to WAV
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio |  | many |
+| `audio` | in | Audio | Live audio | many |
 
 ### Baseband recorder
 
@@ -402,16 +386,7 @@ Records one channel's IQ
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `baseband` | in | Baseband |  | many |
-
-### Time machine
-
-Saves IQ from before you pressed record
-
-| Port | Way | Type | Carries | Wires |
-|---|---|---|---|---|
-| `iq` | in | IQ | radio, synthetic, derived | one |
-| `position` | in | Position |  | one |
+| `baseband` | in | Baseband | One channel, filtered and decimated | many |
 
 ### Network IQ
 
@@ -420,7 +395,7 @@ Streams IQ to other programs
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one |
-| `baseband` | in | Baseband |  | one |
+| `baseband` | in | Baseband | One channel, filtered and decimated | one |
 
 ### Export
 

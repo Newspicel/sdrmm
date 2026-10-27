@@ -82,6 +82,7 @@ pub(crate) fn capabilities(sample_rates: &[u32]) -> Capabilities {
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
         clean_fraction: Some(realiq::clean_fraction(realiq::DEFAULT_TAPS)),
+        bank: None,
     }
 }
 

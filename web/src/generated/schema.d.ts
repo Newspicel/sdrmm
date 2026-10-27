@@ -1348,6 +1348,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/serial/ports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_serial_ports"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sinks/{node}": {
         parameters: {
             query?: never;
@@ -1704,14 +1720,22 @@ export interface components {
         };
         AcarsMessage: {
             ack?: string | null;
+            assstat?: string | null;
             block_id: string;
+            decoded?: unknown;
             downlink: boolean;
             flight?: string | null;
             label: string;
+            /** Format: double */
+            lat?: number | null;
+            /** Format: double */
+            lon?: number | null;
+            mfi?: string | null;
             mode: string;
             more: boolean;
             registration: string;
             seq_no?: string | null;
+            sublabel?: string | null;
             text: string;
         };
         AcarsParams: {
@@ -2638,6 +2662,10 @@ export interface components {
             /** @enum {string} */
             kind: "manual";
         };
+        BasebandRecorderNode: {
+            /** @default false */
+            recording: boolean;
+        };
         Baseline: {
             /** Format: int32 */
             a: number;
@@ -3017,6 +3045,7 @@ export interface components {
             /** @description Continuous analog filter widths, for hardware whose IF filter is not a discrete menu. */
             bandwidth_ranges?: components["schemas"]["Range"][];
             bandwidths: number[];
+            bank?: components["schemas"]["ClockBank"] | null;
             bias_tee?: boolean;
             /** Format: double */
             clean_fraction?: number | null;
@@ -3531,7 +3560,7 @@ export interface components {
              * @description The frequency the decoder listens on, whatever any radio happens to be tuned to. A radio
              *     that cannot reach it simply does not carry this channel.
              */
-            frequency_hz: number;
+            frequency_hz?: number;
             params: components["schemas"]["ChannelParams"];
             squelch?: components["schemas"]["Squelch"];
         };
@@ -3632,6 +3661,13 @@ export interface components {
             mode: string;
             started_at?: string | null;
             tag?: string | null;
+        };
+        ClockBank: {
+            id: string;
+            /** Format: int32 */
+            lane: number;
+            /** Format: int32 */
+            lanes: number;
         };
         /** @enum {string} */
         ClutterMethod: "eca_batch" | "eca_sliding" | "nlms" | "block_nlms" | "off";
@@ -4513,6 +4549,12 @@ export interface components {
             /** Format: float */
             strength?: number;
         };
+        /**
+         * @description Which driver opens a radio. The one name a backend has, shared by the device crates,
+         *     the stored patch, the doctor and the browser.
+         * @enum {string}
+         */
+        DeviceBackend: "virtual" | "recording" | "rtlsdr" | "hackrf" | "airspy" | "airspyhf" | "funcube" | "cr8" | "sdrplay" | "soapy" | "rtltcp" | "spyserver" | "sdrconnect" | "kiwisdr" | "ad936x" | "espsdr";
         DeviceClaim: {
             device: string;
             node: string;
@@ -4523,7 +4565,7 @@ export interface components {
          */
         DeviceFault: "unplugged" | "in_use" | "permissions" | "other";
         DeviceInfo: {
-            driver: string;
+            driver: components["schemas"]["DeviceBackend"];
             key: string;
             label: string;
             profile?: components["schemas"]["DeviceProfile"] | null;
@@ -4536,6 +4578,7 @@ export interface components {
             stopped?: boolean;
         };
         DeviceProfile: {
+            bank?: components["schemas"]["ClockBank"] | null;
             coherence?: components["schemas"]["Coherence"];
             duplex: components["schemas"]["Duplex"];
             freq_ranges: components["schemas"]["Range"][];
@@ -4549,7 +4592,7 @@ export interface components {
             tx_streams: number;
         };
         DeviceRef: {
-            backend: string;
+            backend: components["schemas"]["DeviceBackend"];
             key?: string | null;
             serial?: string | null;
         };
@@ -4572,13 +4615,13 @@ export interface components {
             /** Format: int64 */
             overruns?: number;
             playback?: components["schemas"]["PlaybackStatus"] | null;
+            pre_roll?: components["schemas"]["PreRollStatus"] | null;
             recording?: components["schemas"]["RecordingStatus"] | null;
             refused?: components["schemas"]["SettingsRefused"] | null;
             /** @description One scan per decoder that is being driven. */
             scanners?: components["schemas"]["ScannerStatus"][];
             settings: components["schemas"]["DeviceSettings"];
             status: components["schemas"]["DeviceSetStatus"];
-            time_machine?: components["schemas"]["TimeMachineStatus"] | null;
             virtual_lanes?: components["schemas"]["VirtualLane"][];
         };
         /** @enum {string} */
@@ -4606,6 +4649,7 @@ export interface components {
         DevicesResponse: {
             claims?: components["schemas"]["DeviceClaim"][];
             devices: components["schemas"]["DeviceInfo"][];
+            synthetic: boolean;
         };
         /** @enum {string} */
         DfAlgorithm: "bartlett" | "capon" | "music" | "root_music" | "esprit";
@@ -6852,19 +6896,6 @@ export interface components {
         NfmScramblerMode: "off" | "inversion" | "auto";
         /** @enum {string} */
         NfmToneMode: "off" | "detect" | "ctcss" | "dcs";
-        NmeaDeviceInfo: {
-            manufacturer?: string | null;
-            path: string;
-            product?: string | null;
-            serial?: string | null;
-            /** Format: int32 */
-            usb_pid?: number | null;
-            /** Format: int32 */
-            usb_vid?: number | null;
-        };
-        NmeaDevicesResponse: {
-            devices: components["schemas"]["NmeaDeviceInfo"][];
-        };
         NodeActed: {
             /** @enum {string} */
             result: "controlled";
@@ -6878,10 +6909,6 @@ export interface components {
             with: {
                 dropped: components["schemas"]["NoticeWire"][];
             };
-        } | {
-            /** @enum {string} */
-            result: "time_machine";
-            with: components["schemas"]["TimeMachineStatus"];
         } | {
             /** @enum {string} */
             result: "playback";
@@ -6914,10 +6941,6 @@ export interface components {
             with: components["schemas"]["HuntAction"];
         } | {
             /** @enum {string} */
-            action: "time_machine";
-            with: components["schemas"]["TimeMachineAction"];
-        } | {
-            /** @enum {string} */
             action: "playback";
             with: components["schemas"]["PlaybackRequest"];
         } | {
@@ -6929,14 +6952,6 @@ export interface components {
             data: components["schemas"]["DeviceNode"];
             /** @enum {string} */
             kind: "device";
-        } | {
-            data: components["schemas"]["RecordingNode"];
-            /** @enum {string} */
-            kind: "recording";
-        } | {
-            data: components["schemas"]["SignalGenNode"];
-            /** @enum {string} */
-            kind: "signal_gen";
         } | {
             data: components["schemas"]["GpsNode"];
             /** @enum {string} */
@@ -7008,13 +7023,9 @@ export interface components {
             /** @enum {string} */
             kind: "audio_recorder";
         } | {
-            data: components["schemas"]["RecorderNode"];
+            data: components["schemas"]["BasebandRecorderNode"];
             /** @enum {string} */
             kind: "baseband_recorder";
-        } | {
-            data: components["schemas"]["TimeMachineNode"];
-            /** @enum {string} */
-            kind: "time_machine";
         } | {
             data: components["schemas"]["NetworkExportNode"];
             /** @enum {string} */
@@ -7078,7 +7089,7 @@ export interface components {
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "recording" | "signal_gen" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "dmr_trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "time_machine" | "network_export" | "export" | "scanner" | "hunt" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "triangulation" | "note";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "dmr_trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "triangulation" | "note";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -7765,6 +7776,29 @@ export interface components {
         };
         /** @enum {string} */
         Power: "min" | "low" | "mid" | "high" | "max";
+        /**
+         * @description What a recorder holds in memory ahead of the record button, and what it has written since the
+         *     button went down.
+         */
+        PreRollStatus: {
+            /** Format: int64 */
+            capacity_samples: number;
+            capture?: components["schemas"]["RecordingStatus"] | null;
+            /** Format: int64 */
+            center_hz: number;
+            error?: string | null;
+            /** Format: int64 */
+            held_samples: number;
+            node: string;
+            /** Format: int64 */
+            overruns: number;
+            /** Format: int32 */
+            pre_roll_s: number;
+            /** Format: int64 */
+            sample_rate: number;
+            /** Format: int32 */
+            stream: number;
+        };
         Presentation: {
             audio_error?: string | null;
             bearing?: components["schemas"]["BearingRay"] | null;
@@ -7842,6 +7876,8 @@ export interface components {
             dropped_reports: number;
             /** Format: int64 */
             dropped_samples: number;
+            /** Format: int64 */
+            dropped_surfaces?: number;
             error?: string | null;
             gated?: components["schemas"]["ProcessorGate"] | null;
             /** Format: int64 */
@@ -8382,6 +8418,13 @@ export interface components {
             on: boolean;
         };
         RecorderNode: {
+            /**
+             * Format: int32
+             * @description Seconds of IQ kept in memory ahead of the record button, so a saved file starts before the
+             *     press. Zero records from the press on.
+             * @default 0
+             */
+            pre_roll_s: number;
             /** @default false */
             recording: boolean;
         };
@@ -8414,9 +8457,6 @@ export interface components {
             /** Format: int64 */
             samples: number;
             tags?: string[];
-        };
-        RecordingNode: {
-            recording?: string | null;
         };
         RecordingsResponse: {
             dir?: string | null;
@@ -8997,6 +9037,19 @@ export interface components {
         };
         /** @enum {string} */
         SelcallSystem: "ccir1" | "zvei1";
+        SerialDeviceInfo: {
+            manufacturer?: string | null;
+            path: string;
+            product?: string | null;
+            serial?: string | null;
+            /** Format: int32 */
+            usb_pid?: number | null;
+            /** Format: int32 */
+            usb_vid?: number | null;
+        };
+        SerialDevicesResponse: {
+            devices: components["schemas"]["SerialDeviceInfo"][];
+        };
         ServerEvent: {
             data: components["schemas"]["BeastExportStatus"];
             /** @enum {string} */
@@ -9305,10 +9358,6 @@ export interface components {
             level_dbfs: number;
             /** Format: float */
             snr_db: number;
-        };
-        SignalGenNode: {
-            /** @default true */
-            running: boolean;
         };
         SignalMapNode: {
             /**
@@ -9939,36 +9988,6 @@ export interface components {
             uplink_scrambling: number;
         };
         /** @enum {string} */
-        TimeMachineAction: "capture" | "stop";
-        TimeMachineNode: {
-            /** @default false */
-            armed: boolean;
-            /**
-             * Format: int32
-             * @default 10
-             */
-            history_seconds: number;
-        };
-        TimeMachineStatus: {
-            /** Format: int64 */
-            capacity_samples: number;
-            capture?: components["schemas"]["RecordingStatus"] | null;
-            /** Format: int64 */
-            center_hz: number;
-            error?: string | null;
-            /** Format: int64 */
-            held_samples: number;
-            /** Format: int32 */
-            history_seconds: number;
-            node: string;
-            /** Format: int64 */
-            overruns: number;
-            /** Format: int64 */
-            sample_rate: number;
-            /** Format: int32 */
-            stream: number;
-        };
-        /** @enum {string} */
         TimeSlot: "one" | "two";
         Tone: {
             /** Format: int32 */
@@ -10496,6 +10515,12 @@ export interface components {
             };
             /** @enum {string} */
             kind: "cleared_gps";
+        } | {
+            data: {
+                nodes: string[];
+            };
+            /** @enum {string} */
+            kind: "cleared_devices";
         } | {
             data: {
                 kinds: string[];
@@ -13181,6 +13206,15 @@ export interface operations {
                     "application/json": components["schemas"]["WireVerdict"][];
                 };
             };
+            /** @description The graph is larger than a workspace may hold */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Malformed request body */
             422: {
                 headers: {
@@ -13637,7 +13671,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NmeaDevicesResponse"];
+                    "application/json": components["schemas"]["SerialDevicesResponse"];
                 };
             };
             /** @description Serial device discovery failed */
@@ -14300,6 +14334,35 @@ export interface operations {
             };
             /** @description Saved radio not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    get_serial_ports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every serial port a node can open */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SerialDevicesResponse"];
+                };
+            };
+            /** @description Serial device discovery failed */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

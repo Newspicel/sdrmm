@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used)]
+
 use std::f64::consts::TAU;
 
 use jiff::Timestamp;
@@ -407,7 +409,10 @@ fn float24(value: f64) -> u32 {
 
 fn dfm_conf(flight: &Flight, channel: u8, serial_visit: usize) -> u32 {
     let ohm = thermistor_ohm(dfm::THERMISTOR, flight.temperature_c);
-    let serial: u32 = flight.serial.parse().unwrap_or(0);
+    let serial: u32 = flight
+        .serial
+        .parse()
+        .expect("a DFM flight serial is decimal digits");
     match channel {
         0 => float24(ohm + DFM_SERIES_OHM),
         3 => float24(DFM_SERIES_OHM),
@@ -839,5 +844,34 @@ pub fn transmission(sonde: SondeType, frames: u32, rate: f64) -> Vec<Complex<f32
         iq
     } else {
         resample(&iq, RATE, rate)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SERIAL_CHANNEL: u8 = 0xA;
+
+    #[test]
+    fn a_dfm_serial_splits_into_two_half_words() {
+        let flight = flight(SondeType::Dfm);
+        let serial: u32 = flight
+            .serial
+            .parse()
+            .expect("the fixture serial is numeric");
+        let half = |visit| dfm_conf(&flight, SERIAL_CHANNEL, visit) >> 4 & 0xFFFF;
+        assert_eq!(half(0), serial >> 16);
+        assert_eq!(half(1), serial & 0xFFFF);
+    }
+
+    #[test]
+    #[should_panic(expected = "decimal digits")]
+    fn a_dfm_serial_that_is_not_a_number_is_refused() {
+        let named = Flight {
+            serial: "DFM09-1234".to_owned(),
+            ..flight(SondeType::Dfm)
+        };
+        dfm_conf(&named, SERIAL_CHANNEL, 0);
     }
 }

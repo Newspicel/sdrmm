@@ -1,8 +1,8 @@
 use sdrmm_wire::{RadiosondeFrame, SondeType};
 
 use super::fields::{
-    Geodetic, Motion, civil_time, empty_frame, finite_f32, gps_time, plausible, set_motion,
-    set_position, steinhart_hart,
+    Geodetic, Motion, civil_time, current_gps_week, empty_frame, finite_f32, gps_time, plausible,
+    set_motion, set_position, steinhart_hart, unrolled_gps_week,
 };
 
 pub(crate) const BAUD: f64 = 9_616.0;
@@ -49,7 +49,7 @@ pub(crate) const THERMISTOR: [f64; 4] = [
 ];
 pub(crate) const BATTERY_SCALE: f64 = 2.709 * 2.5 / 1_023.0;
 
-const WEEK_ROLLOVER_BEFORE: u16 = 1_304;
+const MAX_PLAUSIBLE_WEEK: u16 = 4_000;
 
 pub(crate) fn be_i16(frame: &[u8], at: usize) -> i16 {
     i16::from_be_bytes([frame[at], frame[at + 1]])
@@ -72,11 +72,7 @@ pub(crate) fn le_u16(frame: &[u8], at: usize) -> u16 {
 }
 
 pub(crate) fn gps_week(raw: u16) -> Option<i64> {
-    match raw {
-        0..WEEK_ROLLOVER_BEFORE => Some(i64::from(raw) + 1_024),
-        WEEK_ROLLOVER_BEFORE..=4_000 => Some(i64::from(raw)),
-        _ => None,
-    }
+    (raw <= MAX_PLAUSIBLE_WEEK).then(|| unrolled_gps_week(raw, current_gps_week()))
 }
 
 pub(crate) fn serial(frame: &[u8]) -> String {

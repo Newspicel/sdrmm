@@ -544,3 +544,242 @@ fn a_picture_channel_shown_in_a_readout_gets_one_video_node_once() {
         2
     );
 }
+
+fn bank(id: &str) -> Value {
+    at(
+        id,
+        "device",
+        json!({ "device": { "backend": "kraken", "serial": "01" } }),
+    )
+}
+
+fn dongle(key: &str) -> Value {
+    json!({ "backend": "rtlsdr", "key": key })
+}
+
+fn banked() -> Value {
+    let mut edges: Vec<Value> = (0..5)
+        .map(|lane| {
+            wire(
+                ("kraken", &sdrmm_wire::stream_port("iq", lane)),
+                ("arr", &sdrmm_wire::stream_port("lane", lane)),
+            )
+        })
+        .collect();
+    edges.push(wire(("gps", "position"), ("kraken", "position")));
+    with_wires(
+        json!([
+            bank("kraken"),
+            at("arr", "array", json!({})),
+            at(
+                "gps",
+                "gps",
+                json!({ "source": { "type": "fixed", "lat": 48.1, "lon": 11.5 } })
+            ),
+        ]),
+        json!(edges),
+    )
+}
+
+fn lane_keys(snapshot: &Value) -> Vec<Value> {
+    snapshot["graph"]["nodes"]
+        .as_array()
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter(|node| node["kind"] == json!("device"))
+                .map(|node| node["data"]["device"].clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn array_lanes(snapshot: &Value, array: &str) -> Vec<(String, String)> {
+    snapshot["graph"]["edges"]
+        .as_array()
+        .map(|edges| {
+            edges
+                .iter()
+                .filter(|edge| edge["to"]["node"] == json!(array))
+                .filter_map(|edge| {
+                    Some((
+                        edge["from"]["node"].as_str()?.to_owned(),
+                        edge["to"]["port"].as_str()?.to_owned(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn kinds_added(notices: &[WorkspaceNoticeKind]) -> Vec<String> {
+    notices
+        .iter()
+        .flat_map(|notice| match notice {
+            WorkspaceNoticeKind::AddedNodes { nodes } => {
+                nodes.iter().map(|node| node.id.clone()).collect()
+            }
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+#[test]
+fn a_stored_bank_becomes_five_dongles_on_the_array_it_already_had() {
+    let mut snapshot = banked();
+    let notices = banks::split_kraken_banks(&mut snapshot);
+    assert_eq!(
+        kinds_added(&notices),
+        vec![
+            "kraken-lane2",
+            "kraken-lane3",
+            "kraken-lane4",
+            "kraken-lane5"
+        ]
+    );
+    assert!(
+        !notices
+            .iter()
+            .any(|notice| matches!(notice, WorkspaceNoticeKind::AddedWires { .. })),
+        "the array it had keeps its wires"
+    );
+    assert_eq!(
+        lane_keys(&snapshot),
+        (0..5)
+            .map(|lane| dongle(&(1000 + lane).to_string()))
+            .collect::<Vec<Value>>()
+    );
+    assert_eq!(
+        array_lanes(&snapshot, "arr"),
+        vec![
+            ("kraken".to_owned(), "lane".to_owned()),
+            ("kraken-lane2".to_owned(), "lane2".to_owned()),
+            ("kraken-lane3".to_owned(), "lane3".to_owned()),
+            ("kraken-lane4".to_owned(), "lane4".to_owned()),
+            ("kraken-lane5".to_owned(), "lane5".to_owned()),
+        ]
+    );
+    assert!(
+        snapshot["graph"]["edges"]
+            .as_array()
+            .is_some_and(|edges| edges.contains(&wire(("gps", "position"), ("kraken", "position")))),
+        "the position wire stays on the node that kept the id"
+    );
+    assert_eq!(
+        snapshot["graph"]["nodes"].as_array().map(|nodes| nodes
+            .iter()
+            .filter(|node| node["kind"] == json!("array"))
+            .count()),
+        Some(1),
+        "no second array for the same bank"
+    );
+    parse_workspace_snapshot(&snapshot.to_string()).expect("the split workspace loads");
+}
+
+#[test]
+fn an_unwired_bank_gains_five_dongles_and_an_array_in_lane_order() {
+    let mut snapshot = with_wires(json!([bank("kraken")]), json!([]));
+    let notices = banks::split_kraken_banks(&mut snapshot);
+    assert_eq!(
+        kinds_added(&notices),
+        vec![
+            "kraken-lane2",
+            "kraken-lane3",
+            "kraken-lane4",
+            "kraken-lane5",
+            "kraken-array"
+        ]
+    );
+    assert_eq!(
+        notices.last(),
+        Some(&WorkspaceNoticeKind::AddedWires {
+            wires: (0..5)
+                .map(|lane| {
+                    let from = if lane == 0 {
+                        "kraken".to_owned()
+                    } else {
+                        format!("kraken-lane{}", lane + 1)
+                    };
+                    notice_wire(
+                        (from.as_str(), "iq"),
+                        ("kraken-array", &sdrmm_wire::stream_port("lane", lane)),
+                        "One dongle per antenna",
+                    )
+                })
+                .collect()
+        })
+    );
+    assert_eq!(
+        array_lanes(&snapshot, "kraken-array"),
+        vec![
+            ("kraken".to_owned(), "lane".to_owned()),
+            ("kraken-lane2".to_owned(), "lane2".to_owned()),
+            ("kraken-lane3".to_owned(), "lane3".to_owned()),
+            ("kraken-lane4".to_owned(), "lane4".to_owned()),
+            ("kraken-lane5".to_owned(), "lane5".to_owned()),
+        ]
+    );
+    let places: Vec<Value> = snapshot["graph"]["nodes"]
+        .as_array()
+        .map(|nodes| nodes.iter().map(|node| node["position"].clone()).collect())
+        .unwrap_or_default();
+    assert_eq!(places.len(), 6);
+    assert!(
+        places
+            .iter()
+            .enumerate()
+            .all(|(n, place)| !places[..n].contains(place)),
+        "{places:?}"
+    );
+    let parsed =
+        parse_workspace_snapshot(&snapshot.to_string()).expect("the split workspace loads");
+    assert_eq!(
+        parsed
+            .graph
+            .edges
+            .iter()
+            .filter(|edge| edge.to.node == "kraken-array")
+            .count(),
+        5,
+        "the contract keeps every lane"
+    );
+}
+
+#[test]
+fn a_bank_of_four_lanes_stays_four() {
+    let mut snapshot = with_wires(
+        json!([bank("kerberos"), at("scope", "scope", json!({}))]),
+        json!([wire(("kerberos", "iq4"), ("scope", "iq"))]),
+    );
+    banks::split_kraken_banks(&mut snapshot);
+    assert_eq!(
+        lane_keys(&snapshot),
+        (0..4)
+            .map(|lane| dongle(&(1000 + lane).to_string()))
+            .collect::<Vec<Value>>()
+    );
+    assert_eq!(
+        snapshot["graph"]["edges"]
+            .as_array()
+            .and_then(|edges| edges.first())
+            .cloned(),
+        Some(wire(("kerberos-lane4", "iq"), ("scope", "iq")))
+    );
+}
+
+#[test]
+fn a_workspace_without_a_bank_is_left_alone() {
+    let before = watching();
+    let mut after = before.clone();
+    assert!(banks::split_kraken_banks(&mut after).is_empty());
+    assert_eq!(after, before);
+}
+
+#[test]
+fn splitting_a_bank_twice_equals_once() {
+    let mut snapshot = banked();
+    banks::split_kraken_banks(&mut snapshot);
+    let mut again = snapshot.clone();
+    assert!(banks::split_kraken_banks(&mut again).is_empty());
+    assert_eq!(again, snapshot);
+}

@@ -45,7 +45,7 @@ export interface Reading {
   rows: { key: string; label: string; color: string; value: string }[];
 }
 
-interface Frame {
+export interface Frame {
   width: number;
   height: number;
   x: (value: number) => number;
@@ -119,12 +119,14 @@ export function Plot({
     if (finished === null) {
       return;
     }
-    const low = Math.min(finished.from, finished.to);
-    const high = Math.max(finished.from, finished.to);
+    const from = onPlotX(finished.from, frame.width);
+    const to = onPlotX(finished.to, frame.width);
+    const low = Math.min(from, to);
+    const high = Math.max(from, to);
     if (high - low >= DRAG_PX && onZoom !== undefined) {
       onZoom({ low: frame.invertX(low), high: frame.invertX(high) });
     } else {
-      onPick(frame.invertX(finished.to));
+      onPick(frame.invertX(to));
     }
     setDrag(null);
   }
@@ -221,7 +223,11 @@ function localX(event: React.PointerEvent<SVGSVGElement>): number {
   return event.clientX - event.currentTarget.getBoundingClientRect().left;
 }
 
-function frameFor(width: number, height: number, xDomain: Domain, yDomain: Domain): Frame {
+export function onPlotX(pixel: number, width: number): number {
+  return clamp(pixel, LEFT, width - RIGHT);
+}
+
+export function frameFor(width: number, height: number, xDomain: Domain, yDomain: Domain): Frame {
   const plotWidth = Math.max(1, width - LEFT - RIGHT);
   const plotHeight = Math.max(1, height - TOP - BOTTOM);
   const xSpan = xDomain.high - xDomain.low || 1;

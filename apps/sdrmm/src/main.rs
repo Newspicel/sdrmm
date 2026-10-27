@@ -16,7 +16,7 @@ mod phone;
 struct Args {
     #[command(subcommand)]
     command: Option<Command>,
-    #[arg(long, default_value = "0.0.0.0:8080")]
+    #[arg(long, default_value = "127.0.0.1:8080")]
     bind: SocketAddr,
     #[arg(long)]
     dev_cors: bool,
@@ -94,6 +94,16 @@ fn resolve_tls(args: &Args, db_path: &Path) -> anyhow::Result<Option<Tls>> {
     }
 }
 
+fn guard_open_bind(bind: SocketAddr, token: Option<&str>) -> anyhow::Result<()> {
+    if bind.ip().is_loopback() || token.is_some_and(|token| !token.is_empty()) {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "{bind} is reachable from the network without a token. Pass --token or set SDRMM_TOKEN, or --bind 127.0.0.1:{} to stay local.",
+        bind.port()
+    )
+}
+
 fn parse_playback_speed(raw: &str) -> Result<f64, String> {
     let speed: f64 = raw
         .parse()
@@ -154,6 +164,7 @@ fn run(mut args: Args) -> anyhow::Result<()> {
         );
         return Ok(());
     }
+    guard_open_bind(args.bind, args.token.as_deref())?;
     let tls = resolve_tls(&args, &db_path)?;
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)
@@ -356,6 +367,31 @@ mod tests {
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn the_bind_default_stays_on_this_machine() {
+        let args = Args::parse_from(["sdrmm"]);
+        assert_eq!(
+            args.bind,
+            "127.0.0.1:8080".parse::<SocketAddr>().expect("addr")
+        );
+    }
+
+    #[test]
+    fn a_network_bind_without_a_token_is_refused() {
+        let open = "0.0.0.0:8080".parse::<SocketAddr>().expect("addr");
+        let error = guard_open_bind(open, None).expect_err("refused");
+        assert!(error.to_string().contains("--token"), "{error}");
+        assert!(error.to_string().contains("SDRMM_TOKEN"), "{error}");
+        assert!(guard_open_bind(open, Some("")).is_err());
+        assert!(
+            guard_open_bind("192.168.1.20:8080".parse().expect("addr"), None).is_err(),
+            "a LAN address is open too"
+        );
+        guard_open_bind(open, Some("s3cret")).expect("a token opens it");
+        guard_open_bind("127.0.0.1:8080".parse().expect("addr"), None).expect("loopback is local");
+        guard_open_bind("[::1]:8080".parse().expect("addr"), None).expect("loopback is local");
     }
 
     #[test]

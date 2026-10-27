@@ -25,6 +25,7 @@ import {
   snapToStage,
   spanOf,
   stageSettings,
+  switchReadout,
 } from "./capabilities";
 import { meterTone } from "./dbfs";
 import { isTunable, tuningRange } from "./dial";
@@ -753,8 +754,7 @@ function StageRow({
         }
         readout={
           <>
-            {on ? `+${stage.range.max.toFixed(0)}` : "0"}{" "}
-            <Unit symbol="dB" className="text-ink-faint" />
+            {switchReadout(stage, on)} <Unit symbol={unit} className="text-ink-faint" />
           </>
         }
       />

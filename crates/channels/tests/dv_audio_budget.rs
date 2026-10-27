@@ -22,8 +22,10 @@ static COUNTING: AtomicBool = AtomicBool::new(false);
 
 struct Counting;
 
-// SAFETY: every call forwards to the system allocator unchanged; the counters are a side effect
-// and the returned pointer is whatever the system produced.
+/// # Safety
+///
+/// Every call forwards to the system allocator unchanged; the counters are a side effect and
+/// the returned pointer is whatever the system produced.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if COUNTING.load(Ordering::Relaxed) {

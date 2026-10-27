@@ -524,6 +524,28 @@ fn offair_u3_lcw_handoff() {
 }
 
 #[test]
+fn a_burst_that_carries_no_frame_is_reported_as_rejected() {
+    let mut idle = ACCESS_DL.to_vec();
+    idle.extend([0u8; 400]);
+    let iq = modulated_stream(&[idle], 0.02, 17);
+    let mut chan = IridiumChannel::new(
+        ChannelCtx {
+            input_rate: CHANNEL_RATE,
+        },
+        settings(ChannelParams::Iridium(IridiumParams::default())),
+    )
+    .expect("iridium channel");
+
+    let events = run_events(&mut chan, &iq);
+
+    assert!(events.is_empty(), "an idle burst was reported as a frame");
+    assert!(
+        chan.rejected() > 0,
+        "an idle burst was dropped without a word"
+    );
+}
+
+#[test]
 fn idle_bursts_are_dropped() {
     let mut bits = ACCESS_DL.to_vec();
     bits.extend([0u8; 400]);

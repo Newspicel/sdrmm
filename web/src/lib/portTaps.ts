@@ -1,7 +1,8 @@
 import type { Listener, SocketEvents, Unsubscribe } from "./listeners";
 import { type PortHub, portHub, portKey } from "./ports";
+import type { StreamKind } from "./types";
 
-export type TapKind = "iq" | "symbols";
+export type TapKind = Extract<StreamKind, "iq" | "symbols">;
 
 export interface TapSocket<K extends TapKind> {
   on(kind: K, listener: Listener<K>): Unsubscribe;

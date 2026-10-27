@@ -129,6 +129,7 @@ pub(crate) mod tests {
         }
         .frame()
         .encode()
+        .expect("radar frame")
     }
 
     fn pixel(image: &RgbaImage, x: usize, y: usize) -> [u8; 4] {

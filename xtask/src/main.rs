@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 mod frame_fixtures;
 
 #[cfg(unix)]
@@ -18,8 +17,8 @@ use num_complex::Complex;
 pub(crate) use xtask_release::bundled;
 pub(crate) use xtask_release::dist::release_features;
 pub(crate) use xtask_release::media::{ensure_target, media_dir, media_env, run_against_media};
-pub(crate) use xtask_release::proc::{run, run_with_env};
-pub(crate) use xtask_release::web::{PNPM, assert_web_dist, ensure_web_deps, web_build};
+pub(crate) use xtask_release::proc::{run, run_with_env, utf8};
+pub(crate) use xtask_release::web::{PNPM, ensure_web_deps, web_build};
 
 mod architecture;
 mod bandplan;
@@ -27,9 +26,11 @@ mod ber;
 mod broadcast_fixtures;
 mod bundle;
 mod capture;
+mod comments;
 mod compare;
 mod denoise_model;
 mod excerpt;
+mod fuzz_seeds;
 mod icons;
 mod ident_matrix;
 mod ios;
@@ -154,6 +155,7 @@ fn main() -> Result<()> {
     }
 }
 
+#[expect(clippy::expect_used)]
 fn root() -> PathBuf {
     xtask_release::root().expect("workspace root")
 }
@@ -161,7 +163,7 @@ fn root() -> PathBuf {
 fn codegen(root: &Path) -> Result<()> {
     std::fs::write(
         root.join("web/src/generated/frame-fixtures.json"),
-        serde_json::to_string_pretty(&frame_fixtures::frames())?,
+        serde_json::to_string_pretty(&frame_fixtures::frames()?)?,
     )
     .context("write binary frame fixtures")?;
     std::fs::write(
@@ -169,6 +171,11 @@ fn codegen(root: &Path) -> Result<()> {
         serde_json::to_string_pretty(&sdrmm_wire::PatchCatalog::build())?,
     )
     .context("write catalog test fixture")?;
+    std::fs::write(
+        root.join("web/src/generated/channel-defaults.json"),
+        serde_json::to_string_pretty(&channel_defaults())?,
+    )
+    .context("write channel defaults")?;
     resolved_fixtures::write(root)?;
     std::fs::write(
         root.join("web/src/generated/labels.json"),
@@ -180,6 +187,11 @@ fn codegen(root: &Path) -> Result<()> {
         sdrmm_wire::limits::generated()?,
     )
     .context("write limits")?;
+    std::fs::write(
+        root.join("web/src/generated/backends.json"),
+        serde_json::to_string_pretty(&sdrmm_wire::backend_table())?,
+    )
+    .context("write device backends")?;
     std::fs::write(
         root.join("docs/src/wires.md"),
         wires::page(&sdrmm_wire::PatchCatalog::build()),
@@ -195,25 +207,36 @@ fn codegen(root: &Path) -> Result<()> {
     println!("wrote {}", openapi_path.display());
 
     let out = root.join("web/src/generated/schema.d.ts");
-    std::fs::create_dir_all(out.parent().expect("schema has a parent"))
-        .context("create generated dir")?;
+    let generated = out.parent().context("schema path has no directory")?;
+    std::fs::create_dir_all(generated).context("create generated dir")?;
 
     run(
         PNPM,
         &[
             "--dir",
-            "web",
+            "codegen",
             "exec",
             "openapi-typescript",
-            openapi_path.to_str().expect("utf8 path"),
+            utf8(&openapi_path)?,
             "-o",
-            out.to_str().expect("utf8 path"),
+            utf8(&out)?,
             "--alphabetize",
         ],
         root,
     )?;
     println!("wrote {}", out.display());
     Ok(())
+}
+
+fn channel_defaults() -> std::collections::BTreeMap<String, sdrmm_wire::ChannelParams> {
+    sdrmm_channels::descriptors()
+        .into_iter()
+        .filter_map(|descriptor| {
+            descriptor
+                .defaults
+                .map(|settings| (descriptor.type_id, settings.params))
+        })
+        .collect()
 }
 
 fn dev(root: &Path, watch: bool) -> Result<()> {
@@ -567,6 +590,7 @@ fn check(root: &Path) -> Result<()> {
     bundle::check_resources(root)?;
     nixhash::check(root)?;
     check_toolchain_pins(root)?;
+    comments::check(root)?;
     check_windows_rs_alignment(root)?;
     check_baked_in_fixtures(root)?;
     mobile::check(root)?;
@@ -581,7 +605,7 @@ fn check(root: &Path) -> Result<()> {
         &["--dir", "web", "exec", "oxlint", "--type-aware"],
         root,
     )?;
-    run(PNPM, &["--dir", "web", "exec", "tsgo", "--noEmit"], root)?;
+    run(PNPM, &["--dir", "web", "exec", "tsc", "--noEmit"], root)?;
     run(PNPM, &["--dir", "site", "exec", "biome", "ci", "."], root)?;
     run(PNPM, &["--dir", "site", "typecheck"], root)?;
 
@@ -619,6 +643,7 @@ fn check(root: &Path) -> Result<()> {
             "--",
             "openapi.json",
             "web/src/generated",
+            "docs/src/wires.md",
         ],
         root,
     )
@@ -695,7 +720,110 @@ fn check_toolchain_pins(root: &Path) -> Result<()> {
     node.push((workers.to_string(), file(workers)?.trim().to_string()));
 
     agree("pnpm", &pnpm)?;
-    agree("the Node major", &node)
+    agree("the Node major", &node)?;
+    check_ndk_pin(root)
+}
+
+const ANDROID_PROPERTIES: &str = "apps/android/gradle.properties";
+const NDK_PACKAGE_PIN: &str = "xtask/src/mobile.rs";
+const NDK_DOCS_PIN: &str = "docs/src/development/phone-apps.md";
+
+fn check_ndk_pin(root: &Path) -> Result<()> {
+    let read = |rel: &str| -> Result<String> {
+        std::fs::read_to_string(root.join(rel)).with_context(|| format!("read {rel}"))
+    };
+    let declared = slice_between(&read(ANDROID_PROPERTIES)?, "sdrmm.ndkVersion=", "\n")
+        .map(str::to_owned)
+        .with_context(|| format!("{ANDROID_PROPERTIES} declares no sdrmm.ndkVersion"))?;
+    let package = slice_between(&read(NDK_PACKAGE_PIN)?, "NDK_PACKAGE: &str = \"ndk;", "\"")
+        .map(str::to_owned)
+        .with_context(|| format!("{NDK_PACKAGE_PIN} declares no NDK_PACKAGE"))?;
+
+    let mut pins = vec![
+        (ANDROID_PROPERTIES.to_owned(), declared),
+        (NDK_PACKAGE_PIN.to_owned(), package),
+    ];
+    let docs = read(NDK_DOCS_PIN)?;
+    let documented = ndk_revisions(&docs);
+    ensure!(
+        !documented.is_empty(),
+        "{NDK_DOCS_PIN} names no NDK revision, so nobody can set up a phone build"
+    );
+    pins.extend(
+        documented
+            .into_iter()
+            .map(|revision| (NDK_DOCS_PIN.to_owned(), revision)),
+    );
+    agree("the Android NDK revision", &pins)
+}
+
+fn ndk_revisions(text: &str) -> Vec<String> {
+    ["ndk;", "ndk/"]
+        .iter()
+        .flat_map(|marker| text.split(marker).skip(1))
+        .map(|rest| {
+            rest.chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect::<String>()
+        })
+        .filter(|revision| !revision.is_empty())
+        .collect()
+}
+
+#[cfg(test)]
+mod ndk_pin_tests {
+    use super::*;
+
+    fn tree(properties: &str, package: &str, docs: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for (rel, body) in [
+            (
+                ANDROID_PROPERTIES,
+                format!("sdrmm.ndkVersion={properties}\n"),
+            ),
+            (
+                NDK_PACKAGE_PIN,
+                format!("pub(crate) const NDK_PACKAGE: &str = \"ndk;{package}\";\n"),
+            ),
+            (NDK_DOCS_PIN, format!("sdkmanager \"ndk;{docs}\"\n")),
+        ] {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn the_tree_pins_one_ndk_revision() {
+        check_ndk_pin(&root()).unwrap();
+    }
+
+    #[test]
+    fn the_tree_agrees_on_pnpm_and_the_node_major() {
+        check_toolchain_pins(&root()).unwrap();
+    }
+
+    #[test]
+    fn revisions_come_from_sdkmanager_names_and_paths() {
+        let text = "sdkmanager \"ndk;30.0.1\"\nANDROID_NDK_HOME=$HOME/ndk/30.0.1\nndk/notes\n";
+        assert_eq!(ndk_revisions(text), ["30.0.1", "30.0.1"]);
+    }
+
+    #[test]
+    fn a_revision_that_drifted_in_the_docs_fails() {
+        let dir = tree("30.0.1", "30.0.1", "29.0.1");
+        let error = check_ndk_pin(dir.path()).unwrap_err().to_string();
+        assert!(error.contains("the Android NDK revision"), "{error}");
+        assert!(error.contains(NDK_DOCS_PIN), "{error}");
+    }
+
+    #[test]
+    fn a_revision_that_drifted_in_the_build_tooling_fails() {
+        let dir = tree("30.0.1", "28.0.1", "30.0.1");
+        let error = check_ndk_pin(dir.path()).unwrap_err().to_string();
+        assert!(error.contains(NDK_PACKAGE_PIN), "{error}");
+    }
 }
 
 fn check_windows_rs_alignment(root: &Path) -> Result<()> {
@@ -827,7 +955,6 @@ fn desktop(root: &Path, target: Option<&str>, bundles: Option<&str>) -> Result<(
     };
 
     web_build(root)?;
-    assert_web_dist(root)?;
     bundle::check_resources(root)?;
 
     let installed = Command::new("cargo")
@@ -940,15 +1067,14 @@ mod perf_tests {
     }
 }
 
+/// Runs every workspace crate under nextest, which schedules all test binaries into one pool
+/// rather than running them one at a time. The synthesized SigMF pairs come first because they
+/// are never committed, so the tests that read them off disk have nothing to read until the
+/// generator has run. Benches stay out rather than arriving with `--all-targets`: a
+/// `harness = false` target cannot answer `--list`, and `cargo xtask check` clippies them.
 fn test(root: &Path) -> Result<()> {
     ensure_tool("nextest", "cargo-nextest")?;
-    // The synthesized SigMF pairs are never committed, so the tests that read them off disk have
-    // nothing to read until the generator has run.
     fixtures(root)?;
-    // `cargo test` runs one test binary at a time; nextest schedules all of them into a single
-    // pool, which is worth minutes here because most of the 48 binaries hold only a few tests.
-    // Benches are excluded rather than covered by `--all-targets`: `harness = false` targets do
-    // not answer `--list`. `cargo xtask check` still clippies them.
     let media = media_dir(root, None)?
         .map(|dir| media_env(&dir))
         .unwrap_or_default();
@@ -956,7 +1082,14 @@ fn test(root: &Path) -> Result<()> {
     env.push(NO_SOAPY_RUNTIME);
     run_with_env(
         "cargo",
-        &["nextest", "run", "--lib", "--bins", "--tests"],
+        &[
+            "nextest",
+            "run",
+            "--workspace",
+            "--lib",
+            "--bins",
+            "--tests",
+        ],
         root,
         &env,
     )?;
@@ -1012,8 +1145,8 @@ fn clang_runtime_dir() -> Result<PathBuf> {
     Ok(dir)
 }
 
-// Rust links its own AddressSanitizer runtime through `-Zsanitizer`, but has no flag for
-// UndefinedBehaviorSanitizer, and `-nodefaultlibs` keeps clang from adding one at link time.
+/// Rust links its own AddressSanitizer runtime through `-Zsanitizer`, but has no flag for
+/// UndefinedBehaviorSanitizer, and `-nodefaultlibs` keeps clang from adding one at link time.
 fn ubsan_runtime(dir: &Path, target: &str) -> Result<PathBuf> {
     let arch = target.split('-').next().unwrap_or_default();
     let names = if cfg!(target_os = "macos") {
@@ -1038,8 +1171,15 @@ fn ubsan_runtime(dir: &Path, target: &str) -> Result<PathBuf> {
         })
 }
 
+/// The wall-clock gates read this and stop holding the decoders to real time, because
+/// instrumentation costs several times the runtime. Every other assertion still runs.
 const SANITIZED_CFG: &str = "--cfg=sanitized";
 const NIGHTLY: &str = "+nightly";
+
+/// The version-mismatch guard is off because Apple's clang emits a check that only its own
+/// runtime answers, and the sanitized build links Rust's.
+const ADDRESS_SANITIZER_CFLAGS: &str =
+    "-fsanitize=address -mllvm -asan-guard-against-version-mismatch=0 -fno-omit-frame-pointer -g";
 
 fn encoded_rustflags(flags: &[String]) -> String {
     flags.join("\u{1f}")
@@ -1059,10 +1199,7 @@ fn sanitize(root: &Path) -> Result<()> {
         "--lib",
     ];
 
-    // Instrumentation costs several times the runtime, so the wall-clock gates read this and
-    // stop holding the decoders to real time; every other assertion still runs.
     let address = encoded_rustflags(&["-Zsanitizer=address".to_owned(), SANITIZED_CFG.to_owned()]);
-    // Apple's clang emits a version check its own runtime answers; the Rust runtime does not.
     run_with_env(
         "cargo",
         &args,
@@ -1070,11 +1207,7 @@ fn sanitize(root: &Path) -> Result<()> {
         &[
             ("CARGO_TARGET_DIR", "target/sanitize-address"),
             ("CC", "clang"),
-            (
-                "CFLAGS",
-                "-fsanitize=address -mllvm -asan-guard-against-version-mismatch=0 \
-                 -fno-omit-frame-pointer -g",
-            ),
+            ("CFLAGS", ADDRESS_SANITIZER_CFLAGS),
             ("CARGO_ENCODED_RUSTFLAGS", &address),
         ],
     )?;
@@ -1100,7 +1233,18 @@ fn sanitize(root: &Path) -> Result<()> {
     )
 }
 
-const FUZZ_TARGETS: [&str; 3] = ["channel_chain", "channel_settings", "dv_voice"];
+const FUZZ_TARGETS: [&str; 9] = [
+    "channel_chain",
+    "channel_settings",
+    "cps_image",
+    "dv_voice",
+    "iqlink_header",
+    "media_bitstream",
+    "net_radio_proto",
+    "recorder_import",
+    "workspace_import",
+];
+const FUZZ_MEMORY_MB: u32 = 8_192;
 
 fn fuzz_targets(target: Option<&str>) -> Result<Vec<&str>> {
     let Some(name) = target else {
@@ -1114,16 +1258,17 @@ fn fuzz_targets(target: Option<&str>) -> Result<Vec<&str>> {
     Ok(vec![name])
 }
 
+/// Fuzzes on the host triple: cargo-fuzz otherwise defaults to the triple its own binary was
+/// built for, and the prebuilt one is a musl static build that no sanitizer can link against.
+/// The memory budget is split across workers because each holds its own copy of the corpus and
+/// of the target's state, so the runner's memory caps it rather than any one input.
 fn fuzz(root: &Path, target: Option<&str>, seconds: u64, jobs: u8, minimize: bool) -> Result<()> {
     ensure_tool("fuzz", "cargo-fuzz")?;
-    // cargo-fuzz defaults to the triple its own binary was built for, and the prebuilt one is a
-    // musl static build: a target no sanitizer can link against. The host is what we fuzz.
+    fuzz_seeds::run(root)?;
     let host = host_target()?;
     let budget = format!("-max_total_time={seconds}");
     let workers = jobs.to_string();
-    // Each worker holds its own copy of the corpus and the target's own state, so the runner's
-    // memory is what caps this rather than any one input.
-    let rss = format!("-rss_limit_mb={}", 8_192 / u32::from(jobs.max(1)));
+    let rss = format!("-rss_limit_mb={}", FUZZ_MEMORY_MB / u32::from(jobs.max(1)));
     for name in fuzz_targets(target)? {
         if minimize {
             run(
@@ -1147,12 +1292,16 @@ fn fuzz(root: &Path, target: Option<&str>, seconds: u64, jobs: u8, minimize: boo
 
 fn audit(root: &Path) -> Result<()> {
     ensure_tool("deny", "cargo-deny")?;
-    run("cargo", &["deny", "check", "advisories"], root)
+    run(
+        "cargo",
+        &["deny", "check", "advisories", "licenses", "bans", "sources"],
+        root,
+    )
 }
 
-// Playwright starts the server with `cargo run -p sdrmm` under a fixed webServer timeout, and that
-// binary pulls in the hardware and GPU features nothing else in the gate builds: a cold cache
-// turns the launch into a full rebuild and the timeout fires before the port opens.
+/// Playwright starts the server with `cargo run -p sdrmm` under a fixed webServer timeout, and
+/// that binary pulls in the hardware and GPU features nothing else in the gate builds: a cold
+/// cache turns the launch into a full rebuild and the timeout fires before the port opens.
 fn build_smoke_server(root: &Path) -> Result<()> {
     run("cargo", &["build", "-p", "sdrmm"], root)
 }

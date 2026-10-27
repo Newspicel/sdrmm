@@ -85,6 +85,13 @@ impl Decoder {
             Self::Wide(decoder) => decoder.process(iq, frames),
         }
     }
+
+    fn rejected(&self) -> u32 {
+        match self {
+            Self::Channel(decoder) => decoder.rejected(),
+            Self::Wide(decoder) => decoder.rejected(),
+        }
+    }
 }
 
 pub struct IridiumChannel {
@@ -192,5 +199,9 @@ impl ChannelRx for IridiumChannel {
                 .iter()
                 .map(|frame| DecoderEvent::Iridium(message(frame))),
         );
+    }
+
+    fn rejected(&self) -> u32 {
+        self.decoder.rejected()
     }
 }

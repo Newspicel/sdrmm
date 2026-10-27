@@ -13,7 +13,7 @@ pub trait SerialLink: Send {
 }
 
 pub trait SerialBackend: Send + Sync {
-    fn ports(&self) -> Result<Vec<serialport::SerialPortInfo>, String>;
+    fn ports(&self) -> Result<Vec<sdrmm_serial::SerialPortInfo>, String>;
     fn open(&self, port: &str, baud: u32) -> Result<Box<dyn SerialLink>, String>;
 }
 
@@ -22,14 +22,14 @@ pub struct SystemSerial;
 const POLL: Duration = Duration::from_millis(50);
 
 impl SerialBackend for SystemSerial {
-    fn ports(&self) -> Result<Vec<serialport::SerialPortInfo>, String> {
-        serialport::available_ports().map_err(|error| error.to_string())
+    fn ports(&self) -> Result<Vec<sdrmm_serial::SerialPortInfo>, String> {
+        sdrmm_serial::ports().map_err(|error| error.to_string())
     }
 
     fn open(&self, port: &str, baud: u32) -> Result<Box<dyn SerialLink>, String> {
-        let handle = serialport::new(port, baud)
+        let handle = sdrmm_serial::new(port, baud)
             .timeout(POLL)
-            .flow_control(serialport::FlowControl::None)
+            .flow_control(sdrmm_serial::FlowControl::None)
             .open()
             .map_err(|error| error.to_string())?;
         Ok(Box::new(SystemLink { handle }))
@@ -37,7 +37,7 @@ impl SerialBackend for SystemSerial {
 }
 
 struct SystemLink {
-    handle: Box<dyn serialport::SerialPort>,
+    handle: Box<dyn sdrmm_serial::SerialPort>,
 }
 
 impl SerialLink for SystemLink {
@@ -70,7 +70,7 @@ impl SerialLink for SystemLink {
 
     fn discard_input(&mut self) -> Result<(), CpsError> {
         self.handle
-            .clear(serialport::ClearBuffer::Input)
+            .clear(sdrmm_serial::ClearBuffer::Input)
             .map_err(|error| CpsError::Transport(error.to_string()))
     }
 

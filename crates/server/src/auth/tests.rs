@@ -23,7 +23,14 @@ fn gate(role: ListenerRole, tls: bool, token: Option<&str>, phones: &Arc<Phones>
         shared: Auth::new(token).token,
         phones: phones.clone(),
         dev_cors: false,
-        local_hosts_only: false,
+        allowed_hosts: None,
+    }
+}
+
+fn host_checked(role: ListenerRole, names: &[&str], phones: &Arc<Phones>) -> AuthGate {
+    AuthGate {
+        allowed_hosts: Some(names.iter().map(|name| (*name).to_owned()).collect()),
+        ..gate(role, false, None, phones)
     }
 }
 
@@ -564,10 +571,8 @@ async fn dev_cors_lets_a_foreign_page_in() {
 }
 
 #[tokio::test]
-async fn a_foreign_host_cannot_reach_a_local_hosts_only_server() {
-    let mut local = gate(ListenerRole::Main, false, None, &phones());
-    local.local_hosts_only = true;
-    let app = app(local);
+async fn a_foreign_host_cannot_reach_a_host_checked_server() {
+    let app = app(host_checked(ListenerRole::Main, &[], &phones()));
     assert_eq!(
         call(&app, "GET", "/api/state", &[("host", "abc.example")])
             .await
@@ -577,10 +582,28 @@ async fn a_foreign_host_cannot_reach_a_local_hosts_only_server() {
 }
 
 #[tokio::test]
+async fn an_operator_named_host_reaches_a_tokenless_server() {
+    let app = app(host_checked(
+        ListenerRole::Main,
+        &["Radio.example"],
+        &phones(),
+    ));
+    for host in [
+        "radio.example",
+        "radio.example:8080",
+        "192.168.1.20:8080",
+        "nas.local:8080",
+    ] {
+        let answer = call(&app, "GET", "/api/state", &[("host", host)]).await;
+        assert_eq!(answer.status, StatusCode::OK, "{host}");
+    }
+    let other = call(&app, "GET", "/api/state", &[("host", "nas.example")]).await;
+    assert_eq!(other.status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn a_rebound_name_cannot_reach_an_open_loopback_server() {
-    let mut local = gate(ListenerRole::Main, false, None, &phones());
-    local.local_hosts_only = true;
-    let app = app(local);
+    let app = app(host_checked(ListenerRole::Main, &[], &phones()));
     for host in [
         "127.0.0.1:41234",
         "localhost:41234",
@@ -617,6 +640,10 @@ async fn a_rebound_name_cannot_reach_an_open_loopback_server() {
 }
 
 fn bound_on(ip: std::net::IpAddr) -> AppState {
+    named_on(ip, Vec::new())
+}
+
+fn named_on(ip: std::net::IpAddr, names: Vec<String>) -> AppState {
     let state = crate::tests::state_over(Arc::new(Store::open(None).expect("store")));
     state.gate.set_main(crate::phones::gate::MainListener {
         record: crate::phones::gate::ListenerRecord {
@@ -625,7 +652,7 @@ fn bound_on(ip: std::net::IpAddr) -> AppState {
             bound: ip,
             pin: None,
             stable_key: false,
-            names: Vec::new(),
+            names,
         },
         own_key: None,
     });
@@ -633,8 +660,8 @@ fn bound_on(ip: std::net::IpAddr) -> AppState {
 }
 
 #[test]
-fn only_a_tokenless_loopback_main_listener_checks_the_host() {
-    let checks = |state: &AppState, role| AuthGate::new(state, role, false).local_hosts_only;
+fn a_tokenless_main_listener_checks_the_host_wherever_it_is_bound() {
+    let checks = |state: &AppState, role| AuthGate::new(state, role, false).allowed_hosts.is_some();
     let loopback = bound_on(std::net::Ipv4Addr::LOCALHOST.into());
     assert!(checks(&loopback, ListenerRole::Main));
     assert!(checks(
@@ -642,9 +669,19 @@ fn only_a_tokenless_loopback_main_listener_checks_the_host() {
         ListenerRole::Main
     ));
     assert!(!checks(&loopback, ListenerRole::Phones));
+    let named = named_on(
+        std::net::Ipv4Addr::UNSPECIFIED.into(),
+        vec!["radio.example".to_owned()],
+    );
+    assert_eq!(
+        AuthGate::new(&named, ListenerRole::Main, false)
+            .allowed_hosts
+            .as_deref(),
+        Some(["radio.example".to_owned()].as_slice())
+    );
     let mut guarded = loopback.clone();
     guarded.auth = Auth::new(Some("secret"));
     assert!(!checks(&guarded, ListenerRole::Main));
     let lan = bound_on(std::net::Ipv4Addr::UNSPECIFIED.into());
-    assert!(!checks(&lan, ListenerRole::Main));
+    assert!(checks(&lan, ListenerRole::Main));
 }

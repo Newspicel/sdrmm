@@ -24,7 +24,12 @@ export function sidTrends(
   for (const { report } of ordered) {
     for (const station of report.stations) {
       const key = `${station.call}:${station.frequency_hz}`;
-      trends.set(key, [...(trends.get(key) ?? []), station.level_dbfs]);
+      const held = trends.get(key);
+      if (held === undefined) {
+        trends.set(key, [station.level_dbfs]);
+      } else {
+        held.push(station.level_dbfs);
+      }
     }
   }
   return trends;

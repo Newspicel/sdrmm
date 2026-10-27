@@ -6,7 +6,7 @@ use sdrmm_device::{
     Capture, CaptureConfig, CaptureRadio, DeviceDriver, DeviceError, Direction, DuplexState,
     RxSink, SdrDevice, lock, single_rx_sink,
 };
-use sdrmm_wire::{Capabilities, DeviceInfo, DeviceSettings};
+use sdrmm_wire::{Capabilities, DeviceBackend, DeviceInfo, DeviceSettings};
 
 use crate::{
     caps::Writes, convert::FunCubeConverter, error::Error, protocol::SAMPLE_RATE_HZ, radio::FunCube,
@@ -36,7 +36,7 @@ use macos as platform;
 #[cfg(target_os = "windows")]
 use windows as platform;
 
-const DRIVER_ID: &str = "funcube";
+const DRIVER_ID: DeviceBackend = DeviceBackend::Funcube;
 const LABEL: &str = "FUNcube Dongle Pro+";
 
 fn map_err(err: Error) -> DeviceError {
@@ -61,7 +61,7 @@ fn map_err(err: Error) -> DeviceError {
 
 fn device_info(key: String) -> DeviceInfo {
     DeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key,
         label: LABEL.to_string(),
         serial: None,
@@ -86,7 +86,7 @@ impl FunCubeDriver {
 }
 
 impl DeviceDriver for FunCubeDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 
@@ -212,7 +212,7 @@ impl SdrDevice for FunCubeDevice {
             self.radio.clone(),
             FunCubeConverter::new(platform::FORMAT, platform::BLOCK_SAMPLES),
             sink,
-            CaptureConfig::new("sdrmm-funcube-rx", DRIVER_ID)
+            CaptureConfig::new("sdrmm-funcube-rx", DRIVER_ID.as_str())
                 .with_sample_rate(Some(f64::from(SAMPLE_RATE_HZ))),
         );
         if started.is_err() {
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn a_dongle_is_named_by_the_port_it_is_plugged_into() {
         let info = device_info("1-4".to_string());
-        assert_eq!(info.driver, "funcube");
+        assert_eq!(info.driver, DeviceBackend::Funcube);
         assert_eq!(info.key, "1-4");
         assert_eq!(info.label, "FUNcube Dongle Pro+");
         assert_eq!(info.serial, None);

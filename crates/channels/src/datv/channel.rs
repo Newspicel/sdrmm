@@ -773,12 +773,13 @@ mod tests {
                 "{modulation:?}: {status:?}"
             );
             assert!(status.frames_ok > 0, "{modulation:?}: {status:?}");
-            // Four times the signal's own duration, not once: these are the heaviest modcods
-            // the standard defines, and a hosted runner's speed moves by nearly two to one
-            // between runs. A tighter bound reports which machine picked up the job; this one
-            // still catches a decoder that has halved in speed.
+            /// Four times the signal's own duration, not once: these are the heaviest modcods
+            /// the standard defines, and a hosted runner's speed moves by nearly two to one
+            /// between runs. A tighter bound would report which machine picked up the job; this
+            /// one still catches a decoder that has halved in speed.
+            const HEAVIEST_MODCOD_BUDGET_SECONDS: f64 = 8.0;
             assert!(
-                elapsed < realtime_budget(8.0),
+                elapsed < realtime_budget(HEAVIEST_MODCOD_BUDGET_SECONDS),
                 "{modulation:?}: {elapsed:.3}s for two seconds of IQ"
             );
         }

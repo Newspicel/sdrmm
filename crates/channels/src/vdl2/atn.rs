@@ -300,6 +300,8 @@ pub struct X25Reassembler {
 }
 
 const X25_TIMEOUT_SECS: f64 = 60.0;
+const MAX_PENDING_ASSEMBLIES: usize = 32;
+const MAX_REASSEMBLY_BYTES: usize = 65_535;
 
 impl X25Reassembler {
     pub fn new() -> Self {
@@ -314,10 +316,17 @@ impl X25Reassembler {
         }
         self.pending.retain(|_, (_, t)| now - *t < X25_TIMEOUT_SECS);
         if pkt.more {
+            if !self.pending.contains_key(&pkt.lcn) {
+                drop_oldest(&mut self.pending, |(_, t): &(Vec<u8>, f64)| *t);
+            }
             let e = self
                 .pending
                 .entry(pkt.lcn)
                 .or_insert_with(|| (Vec::new(), now));
+            if e.0.len() + pkt.payload.len() > MAX_REASSEMBLY_BYTES {
+                self.pending.remove(&pkt.lcn);
+                return None;
+            }
             e.0.extend_from_slice(&pkt.payload);
             e.1 = now;
             return None;
@@ -380,13 +389,58 @@ pub struct ClnpReassembler {
 
 struct ClnpPending {
     data: Vec<u8>,
-    filled: usize,
+    covered: Coverage,
     data_len: Option<usize>,
     header: Option<Vec<u8>>,
     last: f64,
 }
 
 const CLNP_TIMEOUT_SECS: f64 = 60.0;
+
+#[derive(Default)]
+struct Coverage {
+    ranges: Vec<(usize, usize)>,
+}
+
+impl Coverage {
+    fn add(&mut self, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        let at = self.ranges.partition_point(|&(from, _)| from < start);
+        self.ranges.insert(at, (start, end));
+        let mut index = at.saturating_sub(1);
+        while index + 1 < self.ranges.len() {
+            let (from, to) = self.ranges[index + 1];
+            if from <= self.ranges[index].1 {
+                self.ranges[index].1 = self.ranges[index].1.max(to);
+                self.ranges.remove(index + 1);
+            } else {
+                index += 1;
+            }
+        }
+    }
+
+    fn covers(&self, total: usize) -> bool {
+        matches!(self.ranges.first(), Some(&(0, end)) if end >= total)
+    }
+}
+
+fn drop_oldest<K: Clone + Eq + std::hash::Hash, V>(
+    pending: &mut HashMap<K, V>,
+    age: impl Fn(&V) -> f64,
+) {
+    if pending.len() < MAX_PENDING_ASSEMBLIES {
+        return;
+    }
+    let oldest = pending
+        .iter()
+        .min_by(|a, b| age(a.1).total_cmp(&age(b.1)))
+        .map(|(key, _)| key.clone());
+    if let Some(oldest) = oldest {
+        pending.remove(&oldest);
+    }
+}
 
 impl ClnpReassembler {
     pub fn new() -> Self {
@@ -410,13 +464,20 @@ impl ClnpReassembler {
         let data = &b[seg.hdr_len..];
         let data_len = (seg.total_len as usize).checked_sub(seg.hdr_len)?;
         let offset = seg.offset as usize;
+        let end = offset.checked_add(data.len())?;
+        if data_len > MAX_REASSEMBLY_BYTES || end > MAX_REASSEMBLY_BYTES {
+            return None;
+        }
+        if !self.pending.contains_key(&key) {
+            drop_oldest(&mut self.pending, |p: &ClnpPending| p.last);
+        }
 
         let entry = self
             .pending
             .entry(key.clone())
             .or_insert_with(|| ClnpPending {
                 data: Vec::new(),
-                filled: 0,
+                covered: Coverage::default(),
                 data_len: None,
                 header: None,
                 last: now,
@@ -426,18 +487,18 @@ impl ClnpReassembler {
             entry.data_len = Some(data_len);
         }
         let total = entry.data_len.unwrap_or(data_len);
-        if total > 0 && entry.data.len() < total {
-            entry.data.resize(total, 0);
-        }
-        if offset + data.len() <= entry.data.len() {
-            entry.data[offset..offset + data.len()].copy_from_slice(data);
-            entry.filled += data.len();
+        if end <= total {
+            if entry.data.len() < end {
+                entry.data.resize(end, 0);
+            }
+            entry.data[offset..end].copy_from_slice(data);
+            entry.covered.add(offset, end);
         }
         if offset == 0 {
             entry.header = Some(b[..seg.hdr_len].to_vec());
         }
 
-        if entry.filled >= total && entry.header.is_some() {
+        if entry.covered.covers(total) && entry.header.is_some() {
             let ClnpPending { data, header, .. } = self.pending.remove(&key)?;
             let mut hdr = header?;
             if hdr.len() > 4 {
@@ -1227,6 +1288,9 @@ impl CotpReassembler {
             return Some(user);
         }
         if seq == 0 {
+            if !self.pending.contains_key(&dst_ref) {
+                drop_oldest(&mut self.pending, |p: &CotpPending| p.last);
+            }
             self.pending.insert(
                 dst_ref,
                 CotpPending {
@@ -1238,6 +1302,10 @@ impl CotpReassembler {
         } else {
             let entry = self.pending.get_mut(&dst_ref)?;
             if seq != entry.next_seq {
+                return None;
+            }
+            if entry.data.len() + user.len() > MAX_REASSEMBLY_BYTES {
+                self.pending.remove(&dst_ref);
                 return None;
             }
             entry.data.extend_from_slice(&user);
@@ -2079,6 +2147,58 @@ mod tests {
         let v2 = parse_network(&frag2).unwrap();
         assert!(v2.get("cotp").is_none());
         assert_eq!(v2["segment_offset"], 2);
+    }
+
+    #[test]
+    fn a_retransmitted_clnp_segment_never_completes_the_pdu() {
+        let total_len = 21 + 8u16;
+        let first = clnp_segment_pdu(0x7777, 0, total_len, true, &[1, 2, 3, 4]);
+        let mut r = ClnpReassembler::new();
+        assert_eq!(r.push(&first, 0.0), None);
+        assert_eq!(
+            r.push(&first, 1.0),
+            None,
+            "a repeat must not satisfy the total"
+        );
+        let tail = clnp_segment_pdu(0x7777, 4, total_len, false, &[5, 6, 7, 8]);
+        let full = r.push(&tail, 2.0).expect("reassembled PDU");
+        assert_eq!(&full[21..], &[1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn a_clnp_hole_keeps_the_pdu_pending() {
+        let total_len = 21 + 12u16;
+        let mut r = ClnpReassembler::new();
+        let head = clnp_segment_pdu(0x7778, 0, total_len, true, &[1, 2, 3, 4]);
+        let tail = clnp_segment_pdu(0x7778, 8, total_len, false, &[9, 10, 11, 12]);
+        assert_eq!(r.push(&head, 0.0), None);
+        assert_eq!(r.push(&tail, 1.0), None);
+        let middle = clnp_segment_pdu(0x7778, 4, total_len, true, &[5, 6, 7, 8]);
+        let full = r.push(&middle, 2.0).expect("reassembled PDU");
+        assert_eq!(&full[21..], &(1..=12).collect::<Vec<u8>>()[..]);
+    }
+
+    #[test]
+    fn a_small_clnp_segment_never_reserves_the_whole_declared_pdu() {
+        let mut r = ClnpReassembler::new();
+        let tiny = clnp_segment_pdu(0x7779, 0, u16::MAX, true, &[0xAA; 20]);
+        assert_eq!(r.push(&tiny, 0.0), None);
+        let held: usize = r.pending.values().map(|p| p.data.capacity()).sum();
+        assert!(held < 1_024, "{held} bytes held for a 20 byte segment");
+    }
+
+    #[test]
+    fn clnp_pending_assemblies_are_capped() {
+        let mut r = ClnpReassembler::new();
+        for pdu_id in 0..200u16 {
+            let seg = clnp_segment_pdu(pdu_id, 0, 21 + 64, true, &[0x5A; 16]);
+            assert_eq!(r.push(&seg, 0.0), None);
+        }
+        assert!(
+            r.pending.len() <= MAX_PENDING_ASSEMBLIES,
+            "{}",
+            r.pending.len()
+        );
     }
 
     #[test]

@@ -56,10 +56,10 @@ impl EmulatedRadio {
 }
 
 impl SerialBackend for EmulatedRadio {
-    fn ports(&self) -> Result<Vec<serialport::SerialPortInfo>, String> {
-        Ok(vec![serialport::SerialPortInfo {
+    fn ports(&self) -> Result<Vec<sdrmm_serial::SerialPortInfo>, String> {
+        Ok(vec![sdrmm_serial::SerialPortInfo {
             port_name: PORT.to_owned(),
-            port_type: serialport::SerialPortType::UsbPort(serialport::UsbPortInfo {
+            port_type: sdrmm_serial::SerialPortType::UsbPort(sdrmm_serial::UsbPortInfo {
                 vid: 0x0483,
                 pid: 0x5740,
                 serial_number: Some("fixture".to_owned()),
@@ -263,6 +263,61 @@ async fn a_read_stores_the_codeplug_it_pulled_off_the_radio() {
     assert_eq!(detail.info.counts.channels, 35);
     assert_eq!(detail.codeplug.channels[0].name, "PMR FM 1");
     assert_eq!(detail.codeplug.meta.firmware.as_deref(), Some("V100"));
+}
+
+/// The store stays held until the timer that proves the runtime is still turning releases it, so
+/// the test never depends on how fast the machine is.
+const TICK_AFTER: Duration = Duration::from_millis(50);
+const GIVE_UP: Duration = Duration::from_secs(30);
+
+#[tokio::test]
+async fn a_write_waits_for_a_busy_store_without_holding_the_runtime() {
+    let store = Arc::new(Store::open(None).expect("in-memory store"));
+    let mut state = state_over(store.clone());
+    state.cps = Arc::new(crate::cps::CpsHub::with_backend(Arc::new(
+        EmulatedRadio::default(),
+    )));
+    let (app, background) = router_with_state(state, &ServerOptions::default());
+    background.detach();
+
+    let busy = store.clone();
+    let (took_it, held) = std::sync::mpsc::channel();
+    let (let_go, release) = std::sync::mpsc::channel();
+    let holder = std::thread::spawn(move || {
+        let _held = busy.hold();
+        took_it.send(()).expect("report the store held");
+        release.recv().expect("wait to be let go");
+    });
+    held.recv()
+        .expect("the store is held before the request asks for it");
+
+    let ticked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let timer = ticked.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(TICK_AFTER).await;
+        timer.store(true, std::sync::atomic::Ordering::Relaxed);
+        let_go.send(()).expect("let the store go");
+    });
+
+    let answered = tokio::time::timeout(
+        GIVE_UP,
+        request(
+            app,
+            "POST",
+            "/api/cps/write",
+            Some(&format!(
+                r#"{{"model_id":"{MODEL}","port":"{PORT}","codeplug_id":1,"user_id":1,"confirm":true}}"#
+            )),
+        ),
+    )
+    .await;
+    let (status, _) = answered.expect("the request held the executor while the store was busy");
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(
+        ticked.load(std::sync::atomic::Ordering::Relaxed),
+        "the store was let go before the timer ran"
+    );
+    holder.join().expect("the holder thread");
 }
 
 #[tokio::test]

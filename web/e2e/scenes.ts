@@ -22,6 +22,7 @@ export interface Scene {
   id: string;
   title: string;
   stage(page: Page): Promise<void>;
+  shows(page: Page): Locator[];
   ready(page: Page): Promise<void>;
   settle?(page: Page): Promise<void>;
   speaker?: string;
@@ -143,8 +144,12 @@ async function idle(page: Page): Promise<void> {
     .evaluate((element) => (element.ownerDocument.activeElement as HTMLElement | null)?.blur());
 }
 
-function rackScreen(page: Page): Locator {
-  return page.locator('.grid > [data-id="video"]');
+function rackSlot(page: Page, id: string): Locator {
+  return page.locator(`.grid > [data-id="${id}"]`);
+}
+
+function sstvPicture(shell: Locator): Locator {
+  return shell.getByRole("img", { name: SSTV_PICTURE }).first();
 }
 
 async function showRack(page: Page): Promise<void> {
@@ -181,6 +186,7 @@ const patch: Scene = {
   title: "one radio feeding several channels",
   speaker: "speaker",
   settleSeconds: 10,
+  shows: (page) => [face(page, "scope").locator("canvas").first()],
   async stage(page) {
     await stage(page, "Test band", {
       version: 4,
@@ -222,13 +228,14 @@ const spectrum: Scene = {
   id: "spectrum",
   title: "the spectrum and waterfall",
   settleSeconds: 26,
+  shows: (page) => [rackSlot(page, "scope").locator("canvas").first()],
   async stage(page) {
     const snapshot = bandPatch();
     snapshot.rack = { slots: [slot("scope", { x: 0, y: 0, w: 12, h: 8 })] };
     await stage(page, "Spectrum", snapshot);
     await tune(page, BAND, { nfm: 300_000 });
     await showRack(page);
-    const scope = page.locator('.grid > [data-id="scope"]');
+    const scope = rackSlot(page, "scope");
     await expect(scope).toBeVisible();
     await scope.getByRole("button", { name: "Scope settings" }).click();
     await page
@@ -239,7 +246,7 @@ const spectrum: Scene = {
     await idle(page);
   },
   async ready(page) {
-    await expect(page.locator('.grid > [data-id="scope"]').getByText(/MHz/).first()).toBeVisible();
+    await expect(rackSlot(page, "scope").getByText(/MHz/).first()).toBeVisible();
   },
 };
 
@@ -247,6 +254,7 @@ const adsb: Scene = {
   id: "adsb",
   title: "aircraft on the map",
   settleSeconds: 20,
+  shows: (page) => [face(page, "map").locator("canvas").first(), face(page, "log")],
   async stage(page) {
     const device = await recording(page, "adsb_squitters_2m");
     await stage(page, "Aircraft (ADS-B)", {
@@ -286,6 +294,7 @@ const ais: Scene = {
   id: "ais",
   title: "ships on the map",
   settleSeconds: 16,
+  shows: (page) => [face(page, "map").locator("canvas").first(), face(page, "log")],
   async stage(page) {
     const device = await recording(page, "ais_position_240k");
     await stage(page, "Ships (AIS)", {
@@ -322,6 +331,7 @@ const sstv: Scene = {
   id: "sstv",
   title: "an SSTV picture as it lands",
   settleSeconds: 0,
+  shows: (page) => [sstvPicture(face(page, "video")), face(page, "video").locator("canvas")],
   async stage(page) {
     const device = await recording(page, "sstv_robot36_48k");
     await stage(page, "SSTV", {
@@ -346,9 +356,7 @@ const sstv: Scene = {
     await fitForCapture(page);
   },
   async ready(page) {
-    await expect(face(page, "video").getByRole("img", { name: SSTV_PICTURE })).toBeVisible({
-      timeout: 120_000,
-    });
+    await expect(sstvPicture(face(page, "video"))).toBeVisible({ timeout: 120_000 });
   },
   async settle(page) {
     await midScan(face(page, "video"));
@@ -359,6 +367,7 @@ const pocsag: Scene = {
   id: "pocsag",
   title: "decoded pager traffic",
   settleSeconds: 10,
+  shows: (page) => [face(page, "log")],
   async stage(page) {
     const device = await recording(page, "pocsag_1200_240k");
     await stage(page, "Pagers (POCSAG)", {
@@ -408,6 +417,7 @@ const ft8: Scene = {
   id: "ft8",
   title: "a busy FT8 slot",
   settleSeconds: 10,
+  shows: (page) => [face(page, "log")],
   async stage(page) {
     const device = await recording(page, "ft8_20m_busy_12k");
     await stage(page, "Weak signal (FT8)", {
@@ -439,6 +449,7 @@ const rds: Scene = {
   title: "broadcast FM with RDS",
   speaker: "speaker",
   settleSeconds: 16,
+  shows: (page) => [face(page, "readout"), face(page, "log")],
   async stage(page) {
     const device = await recording(page, "rds_station_960k");
     await stage(page, "Broadcast FM (RDS)", {
@@ -477,6 +488,7 @@ const ident: Scene = {
   id: "ident",
   title: "an unknown signal identified",
   settleSeconds: 14,
+  shows: (page) => [face(page, "readout")],
   async stage(page) {
     const device = await recording(page, "pocsag_1200_240k");
     await stage(page, "Signal identification", {
@@ -513,6 +525,7 @@ const atv: Scene = {
   id: "atv",
   title: "analogue television",
   settleSeconds: 24,
+  shows: (page) => [face(page, "video").locator("canvas")],
   async stage(page) {
     const device = await recording(page, "atv_ccir625_2m4");
     await stage(page, "Amateur television", {
@@ -550,6 +563,12 @@ const rack: Scene = {
   id: "rack",
   title: "three receivers in one rack",
   settleSeconds: 0,
+  shows: (page) => [
+    sstvPicture(rackSlot(page, "video")),
+    rackSlot(page, "video").locator("canvas"),
+    rackSlot(page, "map").locator("canvas").first(),
+    rackSlot(page, "log"),
+  ],
   async stage(page) {
     const aisDevice = await recording(page, "ais_position_240k");
     const pocsagDevice = await recording(page, "pocsag_1200_240k");
@@ -606,13 +625,11 @@ const rack: Scene = {
     await showRack(page);
   },
   async ready(page) {
-    await expect(rackScreen(page).getByRole("img", { name: SSTV_PICTURE })).toBeVisible({
-      timeout: 180_000,
-    });
+    await expect(sstvPicture(rackSlot(page, "video"))).toBeVisible({ timeout: 180_000 });
     await page.mouse.move(0, 0);
   },
   async settle(page) {
-    await midScan(rackScreen(page));
+    await midScan(rackSlot(page, "video"));
   },
 };
 

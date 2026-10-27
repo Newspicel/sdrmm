@@ -89,6 +89,7 @@ pub(crate) mod tests {
             gated_samples: 0,
             dropped_samples: 0,
             dropped_reports: 0,
+            dropped_surfaces: 0,
             lane_overflows: 0,
             lane_mismatch: 0,
             solver_failures: 0,

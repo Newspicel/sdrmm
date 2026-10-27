@@ -667,6 +667,116 @@ mod tests {
     }
 
     #[test]
+    fn the_ofdm_parameters_match_the_es_201_980_numerical_values() {
+        const SPEC: [(Robustness, usize, usize, f64, usize); 5] = [
+            (Robustness::A, 1, 9, 125.0 / 3.0, 15),
+            (Robustness::B, 1, 4, 375.0 / 8.0, 15),
+            (Robustness::C, 4, 11, 750.0 / 11.0, 20),
+            (Robustness::D, 11, 14, 750.0 / 7.0, 24),
+            (Robustness::E, 1, 9, 4000.0 / 9.0, 40),
+        ];
+        for (mode, numerator, denominator, spacing_hz, symbols) in SPEC {
+            assert_eq!(
+                mode.guard() * denominator,
+                mode.useful() * numerator,
+                "{mode:?} guard ratio"
+            );
+            assert!(
+                (mode.spacing_hz() - spacing_hz).abs() < 1e-9,
+                "{mode:?} spacing {}",
+                mode.spacing_hz()
+            );
+            assert_eq!(mode.symbols(), symbols, "{mode:?} symbols per frame");
+        }
+    }
+
+    #[test]
+    fn the_carrier_numbers_match_the_es_201_980_table() {
+        const SPEC: [(Robustness, u8, i32, i32); 17] = [
+            (Robustness::A, 0, 2, 102),
+            (Robustness::A, 1, 2, 114),
+            (Robustness::A, 2, -102, 102),
+            (Robustness::A, 3, -114, 114),
+            (Robustness::A, 4, -98, 314),
+            (Robustness::A, 5, -110, 350),
+            (Robustness::B, 0, 1, 91),
+            (Robustness::B, 1, 1, 103),
+            (Robustness::B, 2, -91, 91),
+            (Robustness::B, 3, -103, 103),
+            (Robustness::B, 4, -87, 279),
+            (Robustness::B, 5, -99, 311),
+            (Robustness::C, 3, -69, 69),
+            (Robustness::C, 5, -67, 213),
+            (Robustness::D, 3, -44, 44),
+            (Robustness::D, 5, -43, 135),
+            (Robustness::E, 0, -106, 106),
+        ];
+        for (mode, occupancy, low, high) in SPEC {
+            assert_eq!(mode.carriers(occupancy), Some((low, high)), "{mode:?}");
+        }
+        let offered = Robustness::ALL
+            .iter()
+            .flat_map(|mode| (0..6).map(|occupancy| mode.carriers(occupancy)))
+            .filter(Option::is_some)
+            .count();
+        assert_eq!(offered, SPEC.len());
+        for mode in Robustness::ALL {
+            for k in -1..=1 {
+                assert_eq!(
+                    mode.unused(k),
+                    match mode {
+                        Robustness::A => true,
+                        Robustness::E => false,
+                        _ => k == 0,
+                    },
+                    "{mode:?} {k}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_gain_reference_grid_matches_the_es_201_980_table() {
+        const SPEC: [(Robustness, i32, i32, i32); 5] = [
+            (Robustness::A, 4, 5, 2),
+            (Robustness::B, 2, 3, 1),
+            (Robustness::C, 2, 2, 1),
+            (Robustness::D, 1, 3, 1),
+            (Robustness::E, 4, 4, 2),
+        ];
+        for (mode, x, y, k0) in SPEC {
+            assert_eq!(mode.gain_grid(), (x, y, k0), "{mode:?}");
+            for symbol in 0..mode.symbols() {
+                for p in -3..3 {
+                    let k = k0 + x * (symbol as i32 % y) + x * y * p;
+                    assert!(
+                        mode.is_gain_ref(symbol, k),
+                        "{mode:?} symbol {symbol} k {k}"
+                    );
+                    assert!(!mode.is_gain_ref(symbol, k + 1), "{mode:?} k {}", k + 1);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_boosted_carriers_are_the_two_gain_references_at_each_edge() {
+        for mode in Robustness::ALL {
+            for occupancy in 0..6 {
+                let Some((low, high)) = mode.carriers(occupancy) else {
+                    continue;
+                };
+                let (x, _, _) = mode.gain_grid();
+                assert_eq!(
+                    mode.boosted(occupancy),
+                    [low, low + x, high - x, high],
+                    "{mode:?} {occupancy}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn edge_carriers_are_gain_references() {
         for mode in Robustness::ALL {
             for occupancy in 0..6 {

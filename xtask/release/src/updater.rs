@@ -90,6 +90,7 @@ pub fn manifest(dir: &Path, version: &str, base_url: &str, out: Option<&Path>) -
 
 fn build(sigs: &[(String, String)], version: &str, base_url: &str) -> Result<Manifest> {
     let base_url = base_url.trim_end_matches('/');
+    let version = version.strip_prefix('v').unwrap_or(version);
     let mut best: BTreeMap<String, Candidate> = BTreeMap::new();
 
     for (sig_name, signature) in sigs {
@@ -100,6 +101,11 @@ fn build(sigs: &[(String, String)], version: &str, base_url: &str) -> Result<Man
         let Some((platform, rank)) = classify(&file)? else {
             continue;
         };
+        ensure!(
+            file.contains(version),
+            "`{file}` carries no {version}: it was bundled from a stale version stamp, and \
+             advertising it as {version} makes every client re-download the same update forever"
+        );
         let candidate = Candidate {
             rank,
             file,
@@ -132,7 +138,7 @@ fn build(sigs: &[(String, String)], version: &str, base_url: &str) -> Result<Man
     }
 
     Ok(Manifest {
-        version: version.strip_prefix('v').unwrap_or(version).to_string(),
+        version: version.to_string(),
         platforms: best
             .into_iter()
             .map(|(platform, candidate)| {
@@ -280,5 +286,15 @@ mod tests {
     #[test]
     fn strips_the_tag_prefix_from_the_version() {
         assert_eq!(build(&release(), "v1.2.3", BASE).unwrap().version, "1.2.3");
+    }
+
+    #[test]
+    fn rejects_an_artifact_bundled_from_a_stale_version_stamp() {
+        let sigs: Vec<_> = release()
+            .into_iter()
+            .map(|(name, signature)| (name.replace("1.2.3", "0.0.0"), signature))
+            .collect();
+        let err = build(&sigs, "1.2.3", BASE).unwrap_err().to_string();
+        assert!(err.contains("carries no 1.2.3"), "{err}");
     }
 }

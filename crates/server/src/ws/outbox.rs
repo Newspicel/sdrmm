@@ -5,7 +5,7 @@ use std::{
 };
 
 use axum::extract::ws::Message;
-use sdrmm_wire::FrameKind;
+use sdrmm_wire::{FrameError, FrameKind};
 use tokio::sync::Notify;
 
 const CONTROL_LIMIT: usize = 64;
@@ -231,6 +231,17 @@ impl Outbox {
 
     pub(super) async fn send(&self, message: Message) -> Result<(), ()> {
         self.enqueue(packet(message))
+    }
+
+    pub(super) async fn send_frame(&self, frame: Result<Vec<u8>, FrameError>) -> Result<(), ()> {
+        match frame {
+            Ok(bytes) => self.send(Message::Binary(bytes.into())).await,
+            Err(refused) => {
+                tracing::warn!(error = %refused, "a frame was refused at encode");
+                self.dropped(1);
+                Ok(())
+            }
+        }
     }
 
     pub(super) fn send_pointer(&self, peer: u32, message: Message) -> Result<(), ()> {

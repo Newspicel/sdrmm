@@ -22,7 +22,7 @@ use crate::array::{
     capture::{CaptureKind, CaptureRequest, CaptureStart, SolveSummary},
     host::{
         ProcessorHost,
-        tests::{BANDED, Heard, TALKER, Talk, Talker, Taps, WIDE, frame, plan, taps},
+        tests::{BANDED, Heard, TALKER, Talk, Talker, Taps, WIDE, frame, plan, talker_host, taps},
     },
     tap::{TapPort, TapWriter},
 };
@@ -196,6 +196,49 @@ fn a_full_command_queue_is_busy() {
         queue.send(Command::Pose { sample: pose }),
         Err(EngineError::Array(ArrayFailure::Busy))
     ));
+}
+
+#[test]
+fn a_lane_whose_ring_died_is_dropped_and_reported() {
+    let mut rig = rig(2, frame(2));
+    rig.noise(2 * BLOCK);
+    rig.settle();
+    rig.events();
+    rig.writers.truncate(1);
+    rig.settle();
+    assert!(
+        rig.events()
+            .contains(&AggregatorEvent::LaneStopped { lane: 1 })
+    );
+    assert!(rig.aggregator.aligner.has_lost_lane());
+}
+
+#[test]
+fn a_blocking_retirement_takes_a_spill_slot_instead_of_the_aggregator_thread() {
+    let taps = taps(3);
+    let mut spill: [Option<Retired>; SPILL] =
+        std::array::from_fn(|slot| Some(Retired::Node(format!("slot-{slot}"))));
+    let (host, _log) = talker_host("df", Talk::default(), &taps.sinks);
+    let evicted = park_in_spill(&mut spill, Retired::Host(host)).expect("a cheap item makes room");
+    assert!(!evicted.blocks_on_release());
+    evicted.release();
+    assert_eq!(
+        spill
+            .iter()
+            .flatten()
+            .filter(|held| held.blocks_on_release())
+            .count(),
+        1
+    );
+    let refused = park_in_spill(&mut spill, Retired::Node("late".to_owned()))
+        .expect("a full spill refuses a cheap item");
+    assert!(!refused.blocks_on_release());
+    refused.release();
+    for held in &mut spill {
+        if let Some(held) = held.take() {
+            held.release();
+        }
+    }
 }
 
 #[test]
@@ -466,6 +509,7 @@ fn step_does_not_allocate_after_warmup() {
             steer: Some(20.0),
             refuse_retune: false,
             lanes: false,
+            surface: false,
         },
         &WIDE,
     );

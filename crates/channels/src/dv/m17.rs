@@ -131,6 +131,10 @@ impl ChannelRx for M17Channel {
             self.decoder.push(symbol, out);
         }
     }
+
+    fn rejected(&self) -> u32 {
+        self.decoder.rejected()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -155,6 +159,7 @@ struct Decoder {
     stream_coded: Vec<Soft>,
     stream_info: Vec<bool>,
     vocoder: Codec2Decoder,
+    rejected: u32,
 }
 
 impl Decoder {
@@ -174,7 +179,12 @@ impl Decoder {
             stream_coded: Vec::with_capacity(STREAM_CODED_BITS),
             stream_info: Vec::with_capacity(STREAM_BITS + 4),
             vocoder: Codec2Decoder::new(),
+            rejected: 0,
         })
+    }
+
+    fn rejected(&self) -> u32 {
+        self.rejected
     }
 
     fn reset(&mut self) {
@@ -241,6 +251,10 @@ impl Decoder {
         }
     }
 
+    fn reject(&mut self) {
+        self.rejected = self.rejected.saturating_add(1);
+    }
+
     fn link_setup(&mut self) -> Option<DvFrame> {
         self.window.soft_bits(0, PAYLOAD_SYMBOLS, &mut self.soft);
         for (i, value) in self.soft.iter_mut().enumerate() {
@@ -272,6 +286,7 @@ impl Decoder {
                 .fold(0u8, |acc, &b| acc << 1 | u8::from(b));
         }
         if crc16_msb(CRC_POLY, CRC_INIT, &lsf) != 0 {
+            self.reject();
             return None;
         }
 
@@ -330,7 +345,10 @@ impl Decoder {
             let word = coded[block * 24..(block + 1) * 24]
                 .iter()
                 .fold(0u64, |acc, &bit| acc << 1 | u64::from(bit > 0));
-            let (info, _) = CyclicCode::GOLAY_24_12.decode(word)?;
+            let Some((info, _)) = CyclicCode::GOLAY_24_12.decode(word) else {
+                self.reject();
+                return None;
+            };
             for bit in 0..12 {
                 decoded[block * 12 + bit] = info >> (11 - bit) & 1 == 1;
             }
@@ -353,6 +371,7 @@ impl Decoder {
             lsf[i / 8] |= u8::from(bit) << (7 - i % 8);
         }
         if crc16_msb(CRC_POLY, CRC_INIT, &lsf) != 0 {
+            self.reject();
             return None;
         }
         self.stream_type = Some(u16::from_be_bytes([lsf[12], lsf[13]]));
@@ -395,7 +414,7 @@ fn callsign(address: u64) -> Option<String> {
     if address == 0xFFFF_FFFF_FFFF {
         return Some("ALL".to_owned());
     }
-    if address > 40u64.pow(9) {
+    if address >= 40u64.pow(9) {
         return None;
     }
     let mut value = address;
@@ -529,6 +548,141 @@ mod tests {
         for call in ["DL1ABC", "M0ABC", "SP5WWP", "N0CALL", "ALL"] {
             assert_eq!(callsign(encode_callsign(call)).as_deref(), Some(call));
         }
+    }
+
+    const SPEC_SYMBOL_FOR_DIBIT: [f32; 4] = [1.0, 3.0, -1.0, -3.0];
+
+    fn spec_symbols(sync: u64) -> [f32; 8] {
+        std::array::from_fn(|i| SPEC_SYMBOL_FOR_DIBIT[(sync >> (14 - i * 2)) as usize & 0b11])
+    }
+
+    #[test]
+    fn the_checksum_matches_the_m17_specification_test_vectors() {
+        let every_byte: [u8; 256] = std::array::from_fn(|i| i as u8);
+        for (message, expected) in [
+            (&b""[..], 0xFFFF),
+            (&b"A"[..], 0x206E),
+            (&b"123456789"[..], 0x772B),
+            (&every_byte[..], 0x1C31),
+        ] {
+            assert_eq!(crc16_msb(CRC_POLY, CRC_INIT, message), expected);
+        }
+    }
+
+    #[test]
+    fn the_dibit_symbol_map_matches_the_m17_specification_byte_example() {
+        assert_eq!(
+            crate::dv::dibit_mapping().levels(),
+            &SPEC_SYMBOL_FOR_DIBIT[..]
+        );
+        assert_eq!(
+            spec_symbols(0xB400),
+            [-1.0, -3.0, 3.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn the_sync_bursts_match_the_m17_specification_symbol_table() {
+        assert_eq!(
+            spec_symbols(SYNC_LSF),
+            [3.0, 3.0, 3.0, 3.0, -3.0, -3.0, 3.0, -3.0]
+        );
+        assert_eq!(
+            spec_symbols(SYNC_STREAM),
+            [-3.0, -3.0, -3.0, -3.0, 3.0, 3.0, -3.0, 3.0]
+        );
+        assert_eq!(
+            spec_symbols(SYNC_PACKET),
+            [3.0, -3.0, 3.0, 3.0, -3.0, -3.0, -3.0, -3.0]
+        );
+        assert_eq!(
+            spec_symbols(SYNC_EOT),
+            [3.0, 3.0, 3.0, 3.0, 3.0, 3.0, -3.0, 3.0]
+        );
+    }
+
+    #[test]
+    fn the_puncture_pattern_matches_the_m17_specification_linearized_p1() {
+        const SPEC_P1: [u8; 61] = [
+            1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1,
+            1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1,
+            0, 1, 1,
+        ];
+        assert_eq!(SPEC_P1.iter().filter(|&&kept| kept == 1).count(), 46);
+        for (index, &kept) in SPEC_P1.iter().enumerate() {
+            assert_eq!(PUNCTURE_1[index], kept == 1, "P1 entry {index}");
+        }
+    }
+
+    #[test]
+    fn the_interleaver_matches_the_m17_specification_qpp_table() {
+        const SPEC_QPP: [(usize, usize); 40] = [
+            (0, 0),
+            (1, 137),
+            (2, 90),
+            (3, 227),
+            (4, 180),
+            (5, 317),
+            (6, 270),
+            (7, 39),
+            (8, 360),
+            (9, 129),
+            (92, 92),
+            (93, 229),
+            (94, 182),
+            (95, 319),
+            (96, 272),
+            (97, 41),
+            (98, 362),
+            (99, 131),
+            (100, 84),
+            (101, 221),
+            (184, 184),
+            (185, 321),
+            (186, 274),
+            (187, 43),
+            (188, 364),
+            (189, 133),
+            (190, 86),
+            (191, 223),
+            (192, 176),
+            (193, 313),
+            (276, 276),
+            (277, 45),
+            (278, 366),
+            (279, 135),
+            (280, 88),
+            (281, 225),
+            (282, 178),
+            (283, 315),
+            (284, 268),
+            (285, 37),
+        ];
+        for (input, output) in SPEC_QPP {
+            assert_eq!(interleave_index(input), output, "QPP input {input}");
+        }
+        let mut reached = [false; PAYLOAD_BITS];
+        for input in 0..PAYLOAD_BITS {
+            assert!(
+                !std::mem::replace(&mut reached[interleave_index(input)], true),
+                "QPP input {input} collides"
+            );
+        }
+    }
+
+    #[test]
+    fn callsign_encoding_matches_the_m17_specification_address_map() {
+        const SPEC_AB1CD: u64 = 0x9F_DD51;
+        const SPEC_LAST_STANDARD: u64 = 0xEE6B_27FF_FFFF;
+        const SPEC_FIRST_EXTENDED: u64 = 0xEE6B_2800_0000;
+        const SPEC_BROADCAST: u64 = 0xFFFF_FFFF_FFFF;
+        assert_eq!(encode_callsign("AB1CD"), SPEC_AB1CD);
+        assert_eq!(callsign(SPEC_AB1CD).as_deref(), Some("AB1CD"));
+        assert_eq!(callsign(1).as_deref(), Some("A"));
+        assert_eq!(callsign(SPEC_LAST_STANDARD).as_deref(), Some("........."));
+        assert_eq!(callsign(SPEC_FIRST_EXTENDED), None);
+        assert_eq!(callsign(0), None);
+        assert_eq!(callsign(SPEC_BROADCAST).as_deref(), Some("ALL"));
     }
 
     #[test]

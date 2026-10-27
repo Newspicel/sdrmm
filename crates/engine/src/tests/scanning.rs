@@ -1,3 +1,4 @@
+use sdrmm_wire::DeviceBackend;
 use std::sync::atomic::AtomicU32;
 
 use super::*;
@@ -22,7 +23,7 @@ async fn scan_finds_a_carrier_and_holds() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
 
     let settings = sdrmm_wire::ScanSettings {
@@ -140,7 +141,7 @@ async fn a_radio_tuned_by_hand_stays_put_and_the_scan_searches_only_its_window()
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     hold_tuning(&engine, ds);
     let held_hz = engine.snapshot().device_sets[0].settings.center_hz;
@@ -203,7 +204,7 @@ async fn the_decoder_follows_the_sweep_and_stays_where_the_scan_stops() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     let targets = [110_000_000.0, 110_025_000.0, 110_050_000.0];
     engine
@@ -252,7 +253,7 @@ async fn skipping_a_held_frequency_resumes_and_never_holds_there_again() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     assert!(
         engine.skip_scan(ds, ch).is_err(),
@@ -346,7 +347,7 @@ async fn an_all_scan_visits_each_busy_frequency_once_and_finishes() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     engine
         .start_scan(
@@ -383,7 +384,7 @@ async fn a_busy_priority_frequency_is_held_while_the_sweep_finds_nothing() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     engine
         .start_scan(
@@ -540,7 +541,7 @@ async fn a_hunt_streams_a_strength_a_walker_can_follow() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, SIGNAL_HZ);
     let mut events = engine.subscribe_events();
 
@@ -647,7 +648,7 @@ async fn a_hunt_leaves_the_dial_alone_and_says_so_when_the_radio_is_off_the_deco
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, SIGNAL_HZ);
     engine
         .start_hunt(ds, sdrmm_wire::HuntSettings::for_channel(ch))
@@ -689,7 +690,7 @@ async fn a_hunt_does_not_start_on_a_decoder_its_radio_cannot_hear() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, SIGNAL_HZ);
     engine
         .patch_device(
@@ -717,7 +718,7 @@ async fn a_hunt_and_a_scan_do_not_share_a_decoder() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, SIGNAL_HZ);
     engine
         .start_hunt(ds, sdrmm_wire::HuntSettings::for_channel(ch))
@@ -801,7 +802,7 @@ async fn close_call_stays_quiet_on_an_empty_band() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     engine
         .start_scan(
@@ -841,7 +842,7 @@ async fn a_refused_firmware_sweep_falls_back_to_retuning_without_losing_the_radi
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(RefusedSweepDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:refuses-sweep").unwrap();
+    let ds = engine.create_device_set("rtlsdr:refuses-sweep").unwrap();
     assert!(
         engine.sweeps_in_firmware(ds),
         "this radio has to claim a firmware sweep for the fallback to be exercised"
@@ -1021,7 +1022,7 @@ async fn removing_a_scanning_set_tears_the_scan_down() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     engine
         .start_scan(
@@ -1048,7 +1049,7 @@ async fn scan_rejects_targets_the_tuner_cannot_reach() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     let err = engine
         .start_scan(
@@ -1086,8 +1087,8 @@ struct SweptDriver {
 }
 
 impl DeviceDriver for SweptDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -1222,7 +1223,7 @@ async fn hunt_sweep_publishes_a_df_event() {
         }),
     );
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:swept").unwrap();
+    let ds = engine.create_device_set("rtlsdr:swept").unwrap();
     let ch = nfm_decoder(&engine, ds, SIGNAL_HZ);
     let mut decoded = engine.subscribe_decoded();
     assert!(
@@ -1305,7 +1306,7 @@ async fn a_scan_or_hunt_watching_another_lane_is_refused() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
     let ch = nfm_decoder(&engine, ds, SIGNAL_HZ);
     let elsewhere = Some(sdrmm_wire::WatchedLane {
         device_set: ds,

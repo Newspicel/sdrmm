@@ -663,6 +663,19 @@ mod body_tests {
     }
 
     #[test]
+    fn a_pad_octet_inside_a_group_does_not_start_a_new_group() {
+        let mut info = vec![0x82];
+        info.extend_from_slice(&[0xF0, 0x00, 0x04, 0x00, 0x01, b'V', 0x00]);
+        info.extend_from_slice(&[0x80, 0x00, 0x03, 0x05, 0x01, 0x40]);
+        let params = parse_xid(&info).expect("params");
+        assert_eq!(params.len(), 2, "{params:?}");
+        assert_eq!(params[0].group, 0xF0);
+        assert_eq!(params[0].name, Some("parameter-set-id"));
+        assert_eq!(params[1].group, 0x80);
+        assert_eq!(params[1].name, Some("n1-downlink"));
+    }
+
+    #[test]
     fn malformed_xid_returns_none() {
         let info = [0x82, 0xF0, 0x00, 0x04, 0x42, 0x40];
         assert!(parse_xid(&info).is_none());

@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use sdrmm_device::{DeviceDriver, DeviceError, DeviceRegistry, SdrDevice};
 use sdrmm_device_virtual::VirtualDriver;
-use sdrmm_wire::{DeviceInfo, DeviceRef, NodeBody, StateScope};
+use sdrmm_wire::{DeviceBackend, DeviceInfo, DeviceRef, NodeBody, StateScope};
 
 use super::*;
 
@@ -14,8 +14,8 @@ struct LateDriver {
 }
 
 impl DeviceDriver for LateDriver {
-    fn id(&self) -> &'static str {
-        "late"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Spyserver
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -23,7 +23,7 @@ impl DeviceDriver for LateDriver {
             return Vec::new();
         }
         vec![DeviceInfo {
-            driver: "late".to_string(),
+            driver: DeviceBackend::Spyserver,
             key: "band".to_string(),
             label: "Late radio".to_string(),
             serial: Some(SERIAL.to_string()),
@@ -33,7 +33,7 @@ impl DeviceDriver for LateDriver {
 
     fn open(&self, info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
         self.radios.open(&DeviceInfo {
-            driver: "virtual".to_string(),
+            driver: DeviceBackend::Virtual,
             ..info.clone()
         })
     }
@@ -57,7 +57,7 @@ fn late_snapshot() -> sdrmm_wire::WorkspaceSnapshot {
         panic!("the default workspace opens with a receiver")
     };
     node.device = Some(DeviceRef {
-        backend: "late".to_string(),
+        backend: DeviceBackend::Spyserver,
         serial: Some(SERIAL.to_string()),
         key: None,
     });
@@ -114,7 +114,7 @@ async fn a_radio_that_turns_up_later_is_bound_to_the_node_waiting_for_it() {
         panic!("the default workspace opens with a receiver")
     };
     node.device = Some(DeviceRef {
-        backend: "late".to_string(),
+        backend: DeviceBackend::Spyserver,
         serial: Some(SERIAL.to_string()),
         key: None,
     });

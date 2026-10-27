@@ -413,6 +413,7 @@ pub struct NoticeWire {
 pub enum WorkspaceNoticeKind {
     DroppedNodes { nodes: Vec<DroppedNode> },
     ClearedGps { nodes: Vec<String> },
+    ClearedDevices { nodes: Vec<String> },
     DroppedFilterKinds { node: String, kinds: Vec<String> },
     DroppedWires { wires: Vec<NoticeWire> },
     AddedWires { wires: Vec<NoticeWire> },
@@ -544,9 +545,12 @@ pub struct PatchRefusal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::patch::{
-        ChannelNode, DeviceNode, IQ_PORT, NodeKind, PatchEdge, PortRef, RackCell, RackSlot,
-        port_stream, resolve,
+    use crate::{
+        device::DeviceBackend,
+        patch::{
+            ChannelNode, DeviceNode, IQ_PORT, NodeKind, PatchEdge, PortRef, RackCell, RackSlot,
+            port_stream, resolve,
+        },
     };
 
     fn channels_on(graph: &PatchGraph, device: &str) -> Vec<(String, u32)> {
@@ -588,7 +592,7 @@ mod tests {
 
     fn rtlsdr() -> DeviceRef {
         DeviceRef {
-            backend: "rtlsdr".to_owned(),
+            backend: DeviceBackend::Rtlsdr,
             serial: Some("00000001".to_owned()),
             key: None,
         }

@@ -7,7 +7,7 @@ import {
   promptOff,
   turnPromptOff,
 } from "./serialPrompt";
-import type { DeviceInfo } from "./types";
+import type { DeviceBackend, DeviceInfo } from "./types";
 
 function memoryStorage(): Storage {
   const items = new Map<string, string>();
@@ -23,7 +23,7 @@ function memoryStorage(): Storage {
   };
 }
 
-function device(driver: string, key: string, serial?: string): DeviceInfo {
+function device(driver: DeviceBackend, key: string, serial?: string): DeviceInfo {
   return { driver, key, label: key, ...(serial === undefined ? {} : { serial }) };
 }
 

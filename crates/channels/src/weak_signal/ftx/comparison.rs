@@ -145,9 +145,16 @@ fn reference(samples: &[f32]) -> BTreeSet<String> {
 #[test]
 #[ignore = "needs FT8_CORPUS=<dir of WSJT-X referenced wav files>; run in release"]
 fn ft8_corpus_against_mfsk_core() {
-    let dir = PathBuf::from(std::env::var_os("FT8_CORPUS").expect("FT8_CORPUS"));
+    let Some(dir) = crate::reference_data::ft8_corpus() else {
+        return;
+    };
     let mut all = Vec::new();
     recordings(&dir, &mut all);
+    assert!(
+        !all.is_empty(),
+        "{} holds no 12 kHz mono wav beside a published .txt",
+        dir.display()
+    );
     let mut decoder = FtxDecoder::new(&FT8);
     let (mut published, mut ours_total, mut theirs_total) = (0, (0, 0, 0.0), (0, 0, 0.0));
     for recording in &all {

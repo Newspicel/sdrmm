@@ -90,7 +90,11 @@ impl DscDecoder {
                 .iter()
                 .map(|&soft| u8::from(soft >= 0.0)),
         );
-        while let Some(offset) = self.hard.get(self.scanned..).and_then(find_phasing) {
+        loop {
+            let Some(offset) = self.hard.get(self.scanned..).and_then(find_phasing) else {
+                self.scanned = self.scanned.max(self.phasing_search_end());
+                break;
+            };
             let found = self.scanned + offset;
             match self.outcome(found) {
                 Outcome::Wait => break,
@@ -105,6 +109,10 @@ impl DscDecoder {
             }
         }
         self.trim();
+    }
+
+    fn phasing_search_end(&self) -> usize {
+        self.hard.len().saturating_sub(SYMBOL_BITS - 1)
     }
 
     fn outcome(&mut self, found: usize) -> Outcome {
@@ -143,10 +151,15 @@ impl DscDecoder {
         if self.hard.len() <= MAX_BITS_WINDOW {
             return;
         }
-        let drop = self.scanned.saturating_sub(HISTORY_BITS);
+        let overflow = self.hard.len() - MAX_BITS_WINDOW;
+        let drop = self
+            .scanned
+            .saturating_sub(HISTORY_BITS)
+            .max(overflow)
+            .min(self.hard.len());
         self.hard.drain(..drop);
         self.soft.drain(..drop);
-        self.scanned -= drop;
+        self.scanned = self.scanned.saturating_sub(drop);
         self.waiting = None;
     }
 }
@@ -351,6 +364,41 @@ mod tests {
         assert!(
             out.iter()
                 .any(|m| m.format == Format::DistressAlert && m.ecc_ok())
+        );
+    }
+
+    #[test]
+    fn a_closed_squelch_never_grows_the_bit_buffers() {
+        let mut decoder = DscDecoder::new();
+        let mut out = Vec::new();
+        let silence = vec![Complex::new(0.0, 0.0); 4_096];
+        for _ in 0..120 {
+            decoder.process(&silence, &mut out);
+        }
+        assert!(out.is_empty());
+        assert!(
+            decoder.hard.len() <= MAX_BITS_WINDOW,
+            "{}",
+            decoder.hard.len()
+        );
+        assert_eq!(decoder.soft.len(), decoder.hard.len());
+    }
+
+    #[test]
+    fn a_closed_squelch_still_decodes_a_following_call() {
+        let mut decoder = DscDecoder::new();
+        let mut out = Vec::new();
+        let silence = vec![Complex::new(0.0, 0.0); 4_096];
+        for _ in 0..120 {
+            decoder.process(&silence, &mut out);
+        }
+        for chunk in padded(DISTRESS).chunks(512) {
+            decoder.process(chunk, &mut out);
+        }
+        assert!(
+            out.iter()
+                .any(|m| m.format == Format::DistressAlert && m.ecc_ok()),
+            "{out:?}"
         );
     }
 

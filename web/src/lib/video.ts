@@ -9,6 +9,9 @@ export interface VideoSocket {
 
 const RELEASE_GRACE_MS = 5_000;
 
+const PENDING_FRAMES = 32;
+const PENDING_BYTES = 16 * 1024 * 1024;
+
 export interface VideoInput {
   node: string;
   port: string;
@@ -23,6 +26,7 @@ interface Watched {
   hold: (() => void) | null;
   pending: { frame: VideoFrame; due: number }[];
   pendingBytes: number;
+  dropped: number;
   timer: number;
 }
 
@@ -34,6 +38,7 @@ export class VideoHub {
   private socket: VideoSocket | null = null;
   private unsubscribes: Unsubscribe[] = [];
   private readonly inputs = new Map<string, Watched>();
+  private readonly dropWatchers = new Set<() => void>();
   private hidden = false;
 
   constructor(private readonly ports: PortHub = portHub) {}
@@ -51,12 +56,34 @@ export class VideoHub {
     const due = Date.now() + mediaLatencyMs(producerOf(key));
     watched.pending.push({ frame, due });
     watched.pendingBytes += frame.pixels.byteLength;
-    while (watched.pending.length > 32 || watched.pendingBytes > 64 * 1024 * 1024) {
-      const old = watched.pending.shift();
-      if (old) watched.pendingBytes -= old.frame.pixels.byteLength;
+    let dropped = 0;
+    while (watched.pending.length > PENDING_FRAMES || watched.pendingBytes > PENDING_BYTES) {
+      const oldest = watched.pending.shift();
+      if (oldest === undefined) {
+        break;
+      }
+      watched.pendingBytes -= oldest.frame.pixels.byteLength;
+      dropped += 1;
+    }
+    if (dropped > 0) {
+      watched.dropped += dropped;
+      for (const watcher of this.dropWatchers) {
+        watcher();
+      }
     }
     this.present(watched);
   };
+
+  readonly onDrop = (listener: () => void): (() => void) => {
+    this.dropWatchers.add(listener);
+    return () => {
+      this.dropWatchers.delete(listener);
+    };
+  };
+
+  droppedFrames(input: VideoInput): number {
+    return this.inputs.get(keyOf(input))?.dropped ?? 0;
+  }
 
   private present(watched: Watched): void {
     clearTimeout(watched.timer);
@@ -115,6 +142,7 @@ export class VideoHub {
         hold: null,
         pending: [],
         pendingBytes: 0,
+        dropped: 0,
         timer: 0,
       };
       this.inputs.set(key, watched);

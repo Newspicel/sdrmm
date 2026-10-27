@@ -6,12 +6,12 @@ const RADIO_MARKERS: &[&str] = &["anytone", "at-d", "radtel", "retevis", "rt4", 
 
 #[must_use]
 pub fn partition(
-    ports: Vec<serialport::SerialPortInfo>,
+    ports: Vec<sdrmm_serial::SerialPortInfo>,
     registry: &ModelRegistry,
 ) -> (Vec<CpsPort>, Vec<String>) {
     let mut found = Vec::new();
     let mut ignored = Vec::new();
-    for info in callout_nodes(ports) {
+    for info in ports {
         match identify(&info, registry) {
             Some(port) => found.push(port),
             None => ignored.push(info.port_name),
@@ -24,21 +24,6 @@ pub fn partition(
     });
     ignored.sort();
     (found, ignored)
-}
-
-fn callout_nodes(ports: Vec<serialport::SerialPortInfo>) -> Vec<serialport::SerialPortInfo> {
-    let callouts: Vec<String> = ports
-        .iter()
-        .filter_map(|info| info.port_name.strip_prefix("/dev/cu.").map(str::to_owned))
-        .collect();
-    ports
-        .into_iter()
-        .filter(|info| {
-            info.port_name
-                .strip_prefix("/dev/tty.")
-                .is_none_or(|name| !callouts.iter().any(|callout| callout == name))
-        })
-        .collect()
 }
 
 fn names_a_radio(field: Option<&str>) -> bool {
@@ -62,8 +47,8 @@ fn matching_models(vid: u16, pid: u16, registry: &ModelRegistry) -> Vec<String> 
         .collect()
 }
 
-fn identify(info: &serialport::SerialPortInfo, registry: &ModelRegistry) -> Option<CpsPort> {
-    let serialport::SerialPortType::UsbPort(usb) = &info.port_type else {
+fn identify(info: &sdrmm_serial::SerialPortInfo, registry: &ModelRegistry) -> Option<CpsPort> {
+    let sdrmm_serial::SerialPortType::UsbPort(usb) = &info.port_type else {
         return None;
     };
     let candidate_models = matching_models(usb.vid, usb.pid, registry);
@@ -98,10 +83,10 @@ mod tests {
     use super::*;
     use crate::registry::models;
 
-    fn usb(vid: u16, pid: u16, product: Option<&str>) -> serialport::SerialPortInfo {
-        serialport::SerialPortInfo {
+    fn usb(vid: u16, pid: u16, product: Option<&str>) -> sdrmm_serial::SerialPortInfo {
+        sdrmm_serial::SerialPortInfo {
             port_name: "/dev/cu.usbmodem1".to_owned(),
-            port_type: serialport::SerialPortType::UsbPort(serialport::UsbPortInfo {
+            port_type: sdrmm_serial::SerialPortType::UsbPort(sdrmm_serial::UsbPortInfo {
                 vid,
                 pid,
                 serial_number: Some("1".to_owned()),
@@ -138,23 +123,19 @@ mod tests {
     }
 
     #[test]
-    fn bluetooth_and_dial_in_twins_are_left_out() {
+    fn a_port_that_carries_no_usb_identity_is_named_as_skipped() {
         let (ports, ignored) = partition(
             vec![
-                serialport::SerialPortInfo {
-                    port_name: "/dev/tty.usbmodem1".to_owned(),
-                    ..usb(0x0483, 0x5740, Some("STM32 Virtual ComPort"))
-                },
                 usb(0x0483, 0x5740, Some("STM32 Virtual ComPort")),
-                serialport::SerialPortInfo {
-                    port_name: "/dev/cu.Bluetooth-Incoming-Port".to_owned(),
-                    port_type: serialport::SerialPortType::BluetoothPort,
+                sdrmm_serial::SerialPortInfo {
+                    port_name: "/dev/cu.GlobalSat-SPPslave".to_owned(),
+                    port_type: sdrmm_serial::SerialPortType::BluetoothPort,
                 },
             ],
             models(),
         );
         assert_eq!(ports.len(), 1);
         assert_eq!(ports[0].port, "/dev/cu.usbmodem1");
-        assert_eq!(ignored, vec!["/dev/cu.Bluetooth-Incoming-Port".to_owned()]);
+        assert_eq!(ignored, vec!["/dev/cu.GlobalSat-SPPslave".to_owned()]);
     }
 }

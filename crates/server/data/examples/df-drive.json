@@ -10,8 +10,44 @@
           "kind": "device",
           "data": {},
           "position": {
-            "x": 0.0,
+            "x": -560.0,
             "y": 0.0
+          }
+        },
+        {
+          "id": "dev2",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": -560.0,
+            "y": 640.0
+          }
+        },
+        {
+          "id": "dev3",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": -560.0,
+            "y": 1280.0
+          }
+        },
+        {
+          "id": "dev4",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": -560.0,
+            "y": 1920.0
+          }
+        },
+        {
+          "id": "dev5",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": -560.0,
+            "y": 2560.0
           }
         },
         {
@@ -103,7 +139,7 @@
           "id": "note",
           "kind": "note",
           "data": {
-            "text": "## DF drive\n\nFive lanes on one clock, which is a KrakenSDR or equivalent. A single dongle cannot run this: the lanes have to share a clock for the phases to mean anything.\n\n**Array** is the five antennas as one instrument. Mount element 1 facing forward and set the geometry to match your actual ring.\n\n**Direction finder** turns the array into bearings. Its wire to **Triangulation** is what crosses successive bearings into a position as you move, so a drive narrows the fix that a single bearing cannot.\n\n**GPS position** feeds the array its place and heading, and the fix its vehicle. Pick a paired phone here for both, and it gets directions to the fix.\n\n**Signal survey** maps raw signal strength along the same drive, which is the sanity check on a fix the bearings disagree about.\n\nTuned to 433.920 MHz."
+            "text": "## DF drive\n\nFive radios on one clock, which is a KrakenSDR or equivalent. Pick one lane per Device, in antenna order. A single dongle cannot run this: the lanes have to share a clock for the phases to mean anything.\n\n**Array** is the five antennas as one instrument. Mount element 1 facing forward and set the geometry to match your actual ring.\n\n**Direction finder** turns the array into bearings. Its wire to **Triangulation** is what crosses successive bearings into a position as you move, so a drive narrows the fix that a single bearing cannot.\n\n**GPS position** feeds the array its place and heading, and the fix its vehicle. Pick a paired phone here for both, and it gets directions to the fix.\n\n**Signal survey** maps raw signal strength along the same drive, which is the sanity check on a fix the bearings disagree about.\n\nTuned to 433.920 MHz."
           },
           "position": {
             "x": 0.0,
@@ -138,8 +174,8 @@
         },
         {
           "from": {
-            "node": "dev",
-            "port": "iq2"
+            "node": "dev2",
+            "port": "iq"
           },
           "to": {
             "node": "array",
@@ -148,8 +184,8 @@
         },
         {
           "from": {
-            "node": "dev",
-            "port": "iq3"
+            "node": "dev3",
+            "port": "iq"
           },
           "to": {
             "node": "array",
@@ -158,8 +194,8 @@
         },
         {
           "from": {
-            "node": "dev",
-            "port": "iq4"
+            "node": "dev4",
+            "port": "iq"
           },
           "to": {
             "node": "array",
@@ -168,8 +204,8 @@
         },
         {
           "from": {
-            "node": "dev",
-            "port": "iq5"
+            "node": "dev5",
+            "port": "iq"
           },
           "to": {
             "node": "array",
@@ -275,6 +311,34 @@
     "devices": [
       {
         "node": "dev",
+        "settings": {
+          "center_hz": 433920000.0,
+          "sample_rate": 2400000.0
+        }
+      },
+      {
+        "node": "dev2",
+        "settings": {
+          "center_hz": 433920000.0,
+          "sample_rate": 2400000.0
+        }
+      },
+      {
+        "node": "dev3",
+        "settings": {
+          "center_hz": 433920000.0,
+          "sample_rate": 2400000.0
+        }
+      },
+      {
+        "node": "dev4",
+        "settings": {
+          "center_hz": 433920000.0,
+          "sample_rate": 2400000.0
+        }
+      },
+      {
+        "node": "dev5",
         "settings": {
           "center_hz": 433920000.0,
           "sample_rate": 2400000.0

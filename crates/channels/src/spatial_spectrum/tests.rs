@@ -233,7 +233,9 @@ fn spatial_frame_header_matches_the_grid() {
     assert_eq!(frame.cells.len(), 180 * 256);
     assert!((frame.db_max - frame.db_min - spatial.span_db).abs() < 1e-3);
     assert_eq!(frame.timestamp, rig.unix_ns / NANOS_PER_MILLI - 10);
-    let encoded = SurfaceFrame::SpatialSpectrum(frame.clone()).encode(4);
+    let encoded = SurfaceFrame::SpatialSpectrum(frame.clone())
+        .encode(4)
+        .expect("encode");
     let decoded = SpatialSpectrumFrame::decode(&encoded).unwrap();
     assert_eq!(decoded.stream_id, 4);
     assert_eq!(decoded.cells.len(), frame.cells.len());

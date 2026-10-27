@@ -49,7 +49,7 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     (event: ServerEvent) => {
       switch (event.type) {
         case "Hello":
-          void queryClient.invalidateQueries();
+          invalidateReads(queryClient);
           break;
         case "StateChanged":
           invalidateScope(queryClient, event.data.scope);
@@ -161,10 +161,14 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
 
   return { socket, retrySocket };
 }
+export function invalidateReads(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "get" });
+}
+
 export function invalidateScope(queryClient: QueryClient, scope: StateScope): void {
   switch (scope.scope) {
     case "all":
-      void queryClient.invalidateQueries();
+      invalidateReads(queryClient);
       break;
     case "devices":
       void queryClient.invalidateQueries({ queryKey: STATE_KEY });

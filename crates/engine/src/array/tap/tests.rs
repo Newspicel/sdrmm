@@ -77,6 +77,21 @@ fn a_dropped_feed_releases_its_lease() {
 }
 
 #[test]
+fn a_feed_whose_writer_is_gone_is_lost_once_nothing_is_left_to_align() {
+    let (port, mut writer) = TapPort::new();
+    let mut feed = port.lease(RATE).expect("lease");
+    writer.samples(&block(BLOCK, 1.0), 0);
+    settle(&mut feed);
+    assert!(!feed.lost(), "a live writer owns the ring");
+    drop(writer);
+    let ready = feed.ready();
+    assert_eq!(ready, BLOCK - PRE_GUARD as usize);
+    assert!(!feed.lost(), "aligned samples are still waiting");
+    assert_eq!(feed.skip(ready), ready);
+    assert!(feed.lost());
+}
+
+#[test]
 fn a_stale_lease_never_writes_into_a_new_one() {
     let (port, mut writer) = TapPort::new();
     let mut old = port.lease(RATE).expect("lease");

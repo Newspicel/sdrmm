@@ -19,6 +19,7 @@ import {
   snapToStage,
   spanOf,
   stageSettings,
+  switchReadout,
 } from "./capabilities";
 
 const stage = (
@@ -283,5 +284,19 @@ describe("fitsSlider", () => {
     expect(fitsSlider({ min: 0, max: 10 })).toBe(false);
     expect(fitsSlider({ min: 0, max: 10, step: 0 })).toBe(false);
     expect(fitsSlider({ min: 5, max: 5, step: 1 })).toBe(false);
+  });
+});
+
+describe("switchReadout", () => {
+  it("reads an amp switch out in dB when the radio reports dB", () => {
+    const amp = { unit: "db", range: { min: 0, max: 14 } } as const;
+    expect(switchReadout(amp, true)).toBe("+14");
+    expect(switchReadout(amp, false)).toBe("0");
+  });
+
+  it("drops the dB sign for a stage the radio counts in steps", () => {
+    const stepped = { unit: "index", range: { min: 0, max: 3 } } as const;
+    expect(switchReadout(stepped, true)).toBe("3");
+    expect(gainUnit(stepped)).toBe("");
   });
 });

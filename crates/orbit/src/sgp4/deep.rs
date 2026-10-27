@@ -1,6 +1,7 @@
 use std::f64::consts::{PI, TAU};
 
 use super::{Mean, Near, Osculating, Shape, TWO_THIRDS, xke};
+use crate::OrbitError;
 
 const ZES: f64 = 0.016_75;
 const ZEL: f64 = 0.054_90;
@@ -15,6 +16,7 @@ const ZSINGS: f64 = -0.980_884_58;
 const RPTIM: f64 = 4.375_269_088_011_3e-3;
 const EPOCH_1950_JD: f64 = 2_433_281.5;
 const STEP: f64 = 720.0;
+const MAX_RESONANCE_STEPS: usize = 100_000;
 const STEP2: f64 = 259_200.0;
 const LOW_INCLINATION: f64 = 5.235_987_7e-2;
 
@@ -191,42 +193,46 @@ impl DeepSpace {
         }
     }
 
-    pub(super) fn secular(&self, t: f64, mean: &mut Mean) {
+    pub(super) fn secular(&self, t: f64, mean: &mut Mean) -> Result<(), OrbitError> {
         mean.em += self.dedt * t;
         mean.inclm += self.didt * t;
         mean.argpm += self.domdt * t;
         mean.nodem += self.dnodt * t;
         mean.mm += self.dmdt * t;
         if matches!(self.resonance, Resonance::None) {
-            return;
+            return Ok(());
         }
         let theta = (self.gsto + t * RPTIM) % TAU;
-        let (xl, nm) = self.integrate(t);
+        let (xl, nm) = self.integrate(t).ok_or(OrbitError::Elements(
+            "the resonance integrator cannot reach that time",
+        ))?;
         mean.mm = match self.resonance {
             Resonance::Synchronous { .. } => xl - mean.nodem - mean.argpm + theta,
             _ => xl - 2.0 * mean.nodem + 2.0 * theta,
         };
         mean.nm = nm;
+        Ok(())
     }
 
-    fn integrate(&self, t: f64) -> (f64, f64) {
+    fn integrate(&self, t: f64) -> Option<(f64, f64)> {
         let delt = if t > 0.0 { STEP } else { -STEP };
         let mut atime = 0.0;
         let mut xli = self.xlamo;
         let mut xni = self.no;
-        loop {
+        for _ in 0..MAX_RESONANCE_STEPS {
             let (xndt, xnddt) = self.derivatives(atime, xli, xni);
             let xldot = xni + self.xfact;
             if (t - atime).abs() < STEP {
                 let ft = t - atime;
                 let nm = xni + xndt * ft + xnddt * ft * ft * 0.5;
                 let xl = xli + xldot * ft + xndt * ft * ft * 0.5;
-                return (xl, nm);
+                return Some((xl, nm));
             }
             xli += xldot * delt + xndt * STEP2;
             xni += xndt * delt + xnddt * STEP2;
             atime += delt;
         }
+        None
     }
 
     fn derivatives(&self, atime: f64, xli: f64, xni: f64) -> (f64, f64) {

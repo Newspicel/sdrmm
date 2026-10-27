@@ -107,12 +107,18 @@ impl Corrector {
             .all(|(convolver, spectrum)| convolver.set_response(spectrum).is_ok())
     }
 
-    pub(crate) fn clear_to_identity(&mut self, generation: u32) {
-        self.active.copy_from(&self.identity);
-        self.active.generation = generation;
-        for (convolver, spectrum) in self.lanes.iter_mut().zip(&self.active.spectra) {
-            let _ = convolver.set_response(spectrum);
+    #[must_use]
+    pub(crate) fn clear_to_identity(&mut self, generation: u32) -> bool {
+        let cleared = self
+            .lanes
+            .iter_mut()
+            .zip(&self.identity.spectra)
+            .all(|(convolver, spectrum)| convolver.set_response(spectrum).is_ok());
+        if cleared {
+            self.active.copy_from(&self.identity);
+            self.active.generation = generation;
         }
+        cleared
     }
 
     pub(crate) fn set_generation(&mut self, generation: u32) {

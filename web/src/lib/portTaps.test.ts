@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IqFrame, SymbolFrame } from "./frame";
 import { ListenerRegistry } from "./listeners";
 import { PortHub } from "./ports";
-import { PortTaps, RELEASE_GRACE_MS } from "./portTaps";
+import { PortTaps, RELEASE_GRACE_MS, type TapKind } from "./portTaps";
 import type { ClientCommand, StreamKind } from "./types";
 
 function fakeSocket() {
@@ -144,5 +144,14 @@ describe("PortTaps", () => {
     iq.setVisible(false);
     iq.setVisible(true);
     expect(fake.sent).toEqual([SUBSCRIBE, UNSUBSCRIBE, SUBSCRIBE]);
+  });
+});
+
+describe("the tapped kinds", () => {
+  const TAPPED = ["iq", "symbols"] as const satisfies readonly TapKind[];
+
+  it("are stream kinds a port can carry", () => {
+    const kinds: readonly StreamKind[] = TAPPED;
+    expect(kinds).toEqual(["iq", "symbols"]);
   });
 });

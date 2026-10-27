@@ -1,8 +1,7 @@
 use super::super::{
-    MAX_STREAMS, PatchGraph, PatchNode, PortDirection, PortRef, PortRepeat, PortSpec, port_stream,
-    stream_port,
+    PatchGraph, PatchNode, PortDirection, PortRef, PortRepeat, PortSpec, port_index, stream_port,
 };
-use crate::{array::MAX_ARRAY_LANES, channel::ChannelDescriptor, device::Capabilities};
+use crate::{channel::ChannelDescriptor, device::Capabilities};
 
 pub(super) fn concrete(
     graph: &PatchGraph,
@@ -45,10 +44,10 @@ fn count(repeat: PortRepeat, caps: Option<&Capabilities>, highest: Option<u32>) 
     match repeat {
         PortRepeat::Once => 1,
         PortRepeat::PerRxStream => caps
-            .map_or(1, |caps| caps.rx_streams.clamp(1, MAX_STREAMS))
+            .map_or(1, |caps| caps.rx_streams.clamp(1, repeat.limit()))
             .max(wired)
-            .min(MAX_STREAMS),
-        PortRepeat::PerLane => wired.saturating_add(1).min(MAX_ARRAY_LANES),
+            .min(repeat.limit()),
+        PortRepeat::PerLane => wired.saturating_add(1).min(repeat.limit()),
     }
 }
 
@@ -58,6 +57,6 @@ fn highest_wired(graph: &PatchGraph, node: &str, spec: &PortSpec) -> Option<u32>
         .iter()
         .flat_map(|edge| [&edge.from, &edge.to])
         .filter(|end| end.node == node)
-        .filter_map(|end| port_stream(&spec.name, &end.port))
+        .filter_map(|end| port_index(&spec.name, &end.port, spec.repeat.limit()))
         .max()
 }

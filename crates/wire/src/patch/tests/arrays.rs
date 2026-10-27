@@ -18,6 +18,28 @@ fn radio(id: &str) -> PatchNode {
     node(id, NodeBody::Device(DeviceNode::default()))
 }
 
+fn generator(id: &str) -> PatchNode {
+    pinned(id, crate::DeviceBackend::Virtual, "gen-")
+}
+
+fn recording(id: &str, stem: &str) -> PatchNode {
+    pinned(id, crate::DeviceBackend::Recording, stem)
+}
+
+fn pinned(id: &str, backend: crate::DeviceBackend, key: &str) -> PatchNode {
+    node(
+        id,
+        NodeBody::Device(DeviceNode {
+            device: Some(DeviceRef {
+                backend,
+                serial: None,
+                key: Some(key.to_owned()),
+            }),
+            ..DeviceNode::default()
+        }),
+    )
+}
+
 fn body(kind: &str) -> NodeBody {
     NodeKind::parse(kind)
         .map(NodeBody::default_for)
@@ -155,10 +177,7 @@ fn one_device_lane_feeds_one_array_lane() {
 #[test]
 fn an_array_lane_takes_only_a_radio_lane() {
     for (source, port) in [
-        (
-            node("gen", NodeBody::SignalGen(SignalGenNode::default())),
-            "iq",
-        ),
+        (generator("gen"), "iq"),
         (node("gen", body("beamformer")), "beam"),
     ] {
         let wrong = graph(
@@ -168,7 +187,7 @@ fn an_array_lane_takes_only_a_radio_lane() {
         assert_eq!(refusal(&wrong).as_deref(), Some("Array takes a radio lane"));
     }
     let played = graph(
-        vec![node("gen", body("recording")), array("arr")],
+        vec![recording("gen", "take"), array("arr")],
         vec![edge(("gen", "iq"), ("arr", "lane"))],
     );
     assert!(played.validate().is_ok());
@@ -177,7 +196,7 @@ fn an_array_lane_takes_only_a_radio_lane() {
 #[test]
 fn a_recorded_collection_offers_one_iq_output_per_lane() {
     let played = graph(
-        vec![node("rec", body("recording")), array("arr")],
+        vec![recording("rec", "take"), array("arr")],
         (0..5)
             .map(|lane| {
                 edge(

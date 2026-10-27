@@ -11,7 +11,9 @@ use sdrmm_device::{
     DeviceDriver, DeviceError, RxSink, SILENT_STREAM_TIMEOUT, SdrDevice, Worker,
     check_stream_settings,
 };
-use sdrmm_wire::{Capabilities, DeviceInfo, DeviceSettings};
+use sdrmm_wire::{
+    Capabilities, CheckStatus, DeviceBackend, DeviceInfo, DeviceSettings, DoctorCheck,
+};
 
 mod api;
 mod caps;
@@ -56,6 +58,37 @@ pub fn runtime_info() -> RuntimeInfo {
     }
 }
 
+#[must_use]
+pub fn health(info: &RuntimeInfo) -> DoctorCheck {
+    let loaded = info
+        .library
+        .as_ref()
+        .zip(info.version)
+        .map(|(library, version)| format!("version {version}\nlibrary: {library}"));
+    let installed = loaded.is_some();
+    DoctorCheck {
+        id: "sdrplay.api".to_string(),
+        name: "SDRplay API".to_string(),
+        status: if installed {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Warn
+        },
+        detail: loaded.unwrap_or_else(|| {
+            info.error
+                .clone()
+                .unwrap_or_else(|| "not installed".to_string())
+        }),
+        hint: (!installed).then(|| {
+            "SDRplay receivers need the vendor API, which is licensed for genuine SDRplay \
+             hardware and is not part of this package. Install it from \
+             https://www.sdrplay.com/downloads/ and make sure its service is running. Without \
+             it nothing else is affected, only RSP receivers stay invisible."
+                .to_string()
+        }),
+    }
+}
+
 #[derive(Default)]
 pub struct SdrplayDriver {
     api: Option<Arc<dyn Sdrplay>>,
@@ -88,8 +121,12 @@ fn offers_mode(device: &ffi::DeviceT, mode: Option<DuoMode>) -> bool {
 }
 
 impl DeviceDriver for SdrplayDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn health(&self) -> Option<DoctorCheck> {
+        Some(health(&runtime_info()))
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -140,45 +177,52 @@ struct SendPtr<T>(*mut T);
 
 unsafe impl<T> Send for SendPtr<T> {}
 
-fn target_at<'a>(
-    tree: *mut ffi::DeviceParamsT,
-    model: Model,
-    mode: Option<DuoMode>,
-    tuner: c_int,
-) -> Result<settings::Target<'a>, DeviceError> {
-    if tree.is_null() {
-        return Err(DeviceError::Io(
-            "the SDRplay device has no parameters".to_string(),
-        ));
-    }
-    let (dev, channel) = unsafe {
-        let channel = if tuner == ffi::TUNER_B {
-            (*tree).rx_channel_b
-        } else {
-            (*tree).rx_channel_a
-        };
-        if (*tree).dev_params.is_null() || channel.is_null() {
+struct Params(*mut ffi::DeviceParamsT);
+
+unsafe impl Send for Params {}
+
+impl Params {
+    fn target(
+        &mut self,
+        model: Model,
+        mode: Option<DuoMode>,
+        tuner: c_int,
+    ) -> Result<settings::Target<'_>, DeviceError> {
+        let tree = self.0;
+        if tree.is_null() {
             return Err(DeviceError::Io(
-                "the SDRplay device is missing a parameter block".to_string(),
+                "the SDRplay device has no parameters".to_string(),
             ));
         }
-        (&mut *(*tree).dev_params, &mut *channel)
-    };
-    Ok(settings::Target {
-        model,
-        mode,
-        dev,
-        channel,
-    })
-}
+        let (dev, channel) = unsafe {
+            let channel = if tuner == ffi::TUNER_B {
+                (*tree).rx_channel_b
+            } else {
+                (*tree).rx_channel_a
+            };
+            if (*tree).dev_params.is_null() || channel.is_null() {
+                return Err(DeviceError::Io(
+                    "the SDRplay device is missing a parameter block".to_string(),
+                ));
+            }
+            (&mut *(*tree).dev_params, &mut *channel)
+        };
+        Ok(settings::Target {
+            model,
+            mode,
+            dev,
+            channel,
+        })
+    }
 
-fn read_band(
-    tree: *mut ffi::DeviceParamsT,
-    model: Model,
-    mode: Option<DuoMode>,
-    tuner: c_int,
-) -> Result<caps::Band, DeviceError> {
-    Ok(target_at(tree, model, mode, tuner)?.band())
+    fn band(
+        &mut self,
+        model: Model,
+        mode: Option<DuoMode>,
+        tuner: c_int,
+    ) -> Result<caps::Band, DeviceError> {
+        Ok(self.target(model, mode, tuner)?.band())
+    }
 }
 
 fn stream_tuner(mode: Option<DuoMode>, device_tuner: c_int, stream: u32) -> c_int {
@@ -206,7 +250,7 @@ pub struct SdrplayDevice {
     api: Arc<dyn Sdrplay>,
     device: ffi::DeviceT,
     handle: DevHandle,
-    params: SendPtr<ffi::DeviceParamsT>,
+    params: Params,
     model: Model,
     mode: Option<DuoMode>,
     capabilities: Capabilities,
@@ -225,8 +269,8 @@ impl SdrplayDevice {
         mode: Option<DuoMode>,
     ) -> Result<Self, DeviceError> {
         let handle = DevHandle(device.dev);
-        let params = SendPtr(api.device_params(handle)?);
-        let band = read_band(params.0, model, mode, stream_tuner(mode, device.tuner, 0))?;
+        let mut params = Params(api.device_params(handle)?);
+        let band = params.band(model, mode, stream_tuner(mode, device.tuner, 0))?;
         let mut this = Self {
             api,
             device,
@@ -252,7 +296,7 @@ impl SdrplayDevice {
     }
 
     fn target(&mut self, tuner: c_int) -> Result<settings::Target<'_>, DeviceError> {
-        target_at(self.params.0, self.model, self.mode, tuner)
+        self.params.target(self.model, self.mode, tuner)
     }
 
     fn refresh_capabilities(&mut self) -> Result<(), DeviceError> {
@@ -332,12 +376,28 @@ impl SdrplayDevice {
                 break;
             }
         }
-        let _ = api.uninit(handle);
-        // sdrplay_api_Uninit stops the API's own callback threads before it returns, so the
-        // context is ours again and the sinks can be touched from here.
-        let mut context = unsafe { Box::from_raw(context) };
+        let Some(mut context) = Self::reclaimed(api.as_ref(), handle, context) else {
+            return;
+        };
         if let Some(reason) = reason {
             context.fail_sinks(&reason);
+        }
+    }
+
+    fn reclaimed(
+        api: &dyn Sdrplay,
+        handle: DevHandle,
+        context: *mut StreamContext,
+    ) -> Option<Box<StreamContext>> {
+        match api.uninit(handle) {
+            Ok(()) => Some(unsafe { Box::from_raw(context) }),
+            Err(error) => {
+                tracing::error!(
+                    %error,
+                    "the SDRplay API would not stop the stream, so its callbacks keep the context"
+                );
+                None
+            }
         }
     }
 }
@@ -402,8 +462,7 @@ impl SdrDevice for SdrplayDevice {
                 InitOutcome::MasterPending => self.wait_for_master(&state, context.cast()),
             });
         if let Err(error) = started {
-            let _ = self.api.uninit(self.handle);
-            drop(unsafe { Box::from_raw(context) });
+            drop(Self::reclaimed(self.api.as_ref(), self.handle, context));
             return Err(error);
         }
         let api = self.api.clone();
@@ -413,8 +472,7 @@ impl SdrDevice for SdrplayDevice {
             let pointer = pointer;
             Self::monitor(api, handle, state, pointer.0, running);
         }) {
-            let _ = self.api.uninit(self.handle);
-            drop(unsafe { Box::from_raw(context) });
+            drop(Self::reclaimed(self.api.as_ref(), self.handle, context));
             return Err(error);
         }
         Ok(())
@@ -467,6 +525,24 @@ mod tests {
     }
 
     #[test]
+    fn a_stream_the_api_will_not_stop_keeps_its_context() {
+        let api = Arc::new(FakeApi::rsp1a());
+        let state = StreamState::new(api.clone(), DevHandle(std::ptr::null_mut()));
+        let kept = Box::into_raw(StreamContext::new(Vec::new(), state.clone()));
+        api.refuse_uninit();
+        assert!(
+            SdrplayDevice::reclaimed(api.as_ref(), DevHandle(std::ptr::null_mut()), kept).is_none(),
+            "a context the vendor threads may still write to is never freed"
+        );
+        let freed = Box::into_raw(StreamContext::new(Vec::new(), state));
+        let api = Arc::new(FakeApi::rsp1a());
+        assert!(
+            SdrplayDevice::reclaimed(api.as_ref(), DevHandle(std::ptr::null_mut()), freed)
+                .is_some()
+        );
+    }
+
+    #[test]
     fn nothing_is_listed_when_the_vendor_api_is_missing() {
         if shared().is_err() {
             assert!(SdrplayDriver::new().probe().is_empty());
@@ -477,7 +553,7 @@ mod tests {
     fn opening_a_key_that_is_gone_reports_not_found() {
         let api = Arc::new(FakeApi::rsp1a());
         let info = DeviceInfo {
-            driver: DRIVER_ID.to_string(),
+            driver: DRIVER_ID,
             key: "9999999999".to_string(),
             label: "gone".to_string(),
             serial: Some("9999999999".to_string()),
@@ -922,5 +998,42 @@ mod tests {
             .expect("gain");
         assert_eq!(api.channel(ffi::TUNER_A).tuner_params.gain.gr_db, 34);
         assert_eq!(device.settings().gain(GainKind::If.name()), Some(25.0));
+    }
+
+    #[test]
+    fn health_names_the_library_it_found() {
+        let check = health(&RuntimeInfo {
+            version: Some(3.15),
+            library: Some("/usr/local/lib/libsdrplay_api.so.3".to_string()),
+            error: None,
+        });
+        assert_eq!(check.status, CheckStatus::Ok);
+        assert!(check.detail.contains("3.15"));
+        assert!(check.detail.contains("libsdrplay_api.so.3"));
+        assert!(check.hint.is_none());
+    }
+
+    #[test]
+    fn a_library_that_reported_no_version_is_not_called_installed() {
+        let check = health(&RuntimeInfo {
+            version: None,
+            library: Some("/usr/local/lib/libsdrplay_api.so.3".to_string()),
+            error: Some("sdrplay_api_ApiVersion failed".to_string()),
+        });
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(check.detail.contains("ApiVersion failed"));
+        assert!(check.hint.is_some());
+    }
+
+    #[test]
+    fn a_missing_api_warns_and_says_where_to_get_it() {
+        let check = health(&RuntimeInfo {
+            version: None,
+            library: None,
+            error: Some("the SDRplay API is not installed".to_string()),
+        });
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(check.detail.contains("not installed"));
+        assert!(check.hint.is_some_and(|hint| hint.contains("sdrplay.com")));
     }
 }

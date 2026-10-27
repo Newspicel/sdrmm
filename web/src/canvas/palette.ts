@@ -1,6 +1,12 @@
-import type { ChannelDescriptor, DecoderFamily, NodeKind, PatchCatalog } from "../lib/types";
+import type {
+  ChannelDescriptor,
+  DecoderFamily,
+  NodeCategory,
+  NodeKind,
+  PatchCatalog,
+} from "../lib/types";
 
-export type PaletteSection = "source" | "channel" | "tool" | "output";
+export type PaletteSection = NodeCategory;
 
 export interface PaletteItem {
   id: string;
@@ -17,12 +23,16 @@ export interface PaletteGroup {
   items: PaletteItem[];
 }
 
-export const SECTIONS: readonly { id: PaletteSection; title: string }[] = [
-  { id: "source", title: "Sources" },
-  { id: "channel", title: "Decoders" },
-  { id: "tool", title: "Tools" },
-  { id: "output", title: "Outputs" },
-];
+export const SECTION_TITLES = {
+  source: "Sources",
+  channel: "Decoders",
+  tool: "Tools",
+  output: "Outputs",
+} satisfies Record<PaletteSection, string>;
+
+export const SECTIONS: readonly { id: PaletteSection; title: string }[] = Object.entries(
+  SECTION_TITLES,
+).map(([id, title]) => ({ id: id as PaletteSection, title }));
 
 export const FAMILIES = {
   analog_voice: "Analog voice",

@@ -6,6 +6,8 @@ use sdrmm_wire::{
 use super::{EPOCH_2019, ID_SIZE, MAX_PACK_MESSAGES, MESSAGE_SIZE, PACK, TEXT_SIZE};
 
 const VERSION: u8 = 2;
+const UNKNOWN_TRACK_DEG: u16 = 361;
+const TRACK_HALF_TURN_DEG: u16 = 180;
 
 pub fn message(message: &RemoteIdMessage) -> [u8; MESSAGE_SIZE] {
     let mut out = [0u8; MESSAGE_SIZE];
@@ -83,14 +85,14 @@ fn header(message_type: u8) -> u8 {
 }
 
 fn put_location(out: &mut [u8; MESSAGE_SIZE], location: &RemoteIdLocation) {
-    let track = location.track_deg.unwrap_or(361.0).round() as u16;
+    let (half_turn, track) = track_code(location.track_deg);
     let (speed, multiplied) = speed_code(location.speed_mps);
     out[0] = header(1);
     out[1] = status_code(location.status) << 4
         | u8::from(location.height_reference == HeightReference::Ground) << 2
-        | u8::from(track >= 180) << 1
+        | u8::from(half_turn) << 1
         | u8::from(multiplied);
-    out[2] = (track % 180) as u8;
+    out[2] = track;
     out[3] = speed;
     out[4] = location.vertical_speed_mps.map_or(126, |speed| {
         (speed / 0.5).round().clamp(-124.0, 124.0) as i8
@@ -145,6 +147,20 @@ fn put_system(out: &mut [u8; MESSAGE_SIZE], system: &RemoteIdSystem) {
     out[20..24].copy_from_slice(&to_2019(system.timestamp).to_le_bytes());
 }
 
+fn track_code(track_deg: Option<f32>) -> (bool, u8) {
+    let track = track_deg
+        .map(|degrees| degrees.round() as i32)
+        .filter(|degrees| (0..360).contains(degrees))
+        .map_or(UNKNOWN_TRACK_DEG, |degrees| degrees as u16);
+    let half_turn = track >= TRACK_HALF_TURN_DEG;
+    let remainder = if half_turn {
+        track - TRACK_HALF_TURN_DEG
+    } else {
+        track
+    };
+    (half_turn, remainder as u8)
+}
+
 fn speed_code(speed: Option<f32>) -> (u8, bool) {
     match speed {
         None => (255, true),
@@ -163,7 +179,7 @@ fn altitude(metres: Option<f32>) -> u16 {
 
 fn accuracy_code(table: &[f32], value: Option<f32>) -> u8 {
     value
-        .and_then(|value| table.iter().position(|&bound| bound <= value))
+        .and_then(|value| table.iter().rposition(|&bound| bound >= value))
         .map_or(0, |index| index as u8 + 1)
 }
 

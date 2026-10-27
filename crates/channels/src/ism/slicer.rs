@@ -262,12 +262,12 @@ fn measured_rate(short: i64, tolerance: i64, package: &Package<'_>, base: f64) -
 fn pcm(s: Samples, package: &Package<'_>, bits: &mut Bits, emit: &mut dyn FnMut(&mut Bits)) {
     let rate = pcm_rate(s, package);
     let gap_limit = if s.gap > 0 { s.gap } else { s.reset };
-    let max_zeros = gap_limit / s.long.max(1);
+    let max_run = gap_limit / s.long.max(1);
     let count = package.len();
     for n in 0..count {
         let (pulse, gap) = (package.pulses[n], i64::from(package.gaps[n]));
-        let highs = (f64::from(pulse) * rate + 0.5) as i64;
-        let lows = ((gap as f64 * rate + 0.5) as i64).min(max_zeros);
+        let highs = ((f64::from(pulse) * rate + 0.5) as i64).min(max_run);
+        let lows = ((gap as f64 * rate + 0.5) as i64).min(max_run);
         (0..highs).for_each(|_| bits.push(true));
         (0..lows).for_each(|_| bits.push(false));
         if gap > gap_limit && gap <= s.reset {
@@ -382,6 +382,14 @@ mod tests {
         let timing = Timing::new(100, 100, 1_000);
         let rows = rows_of(IsmCoding::Pcm, timing, &[100, 200, 100], &[100, 300, 2_000]);
         assert_eq!(rows, vec![vec!["101100010000000000".to_owned()]]);
+    }
+
+    #[test]
+    fn pcm_clamps_a_pulse_longer_than_the_gap_limit() {
+        let timing = Timing::new(100, 100, 1_000);
+        let rows = rows_of(IsmCoding::Pcm, timing, &[100, 4_000], &[100, 2_000]);
+        let expected = format!("10{}{}", "1".repeat(10), "0".repeat(10));
+        assert_eq!(rows, vec![vec![expected]]);
     }
 
     #[test]

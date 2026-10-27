@@ -150,6 +150,33 @@ async fn wiring_verdicts_say_which_inputs_take_a_dragged_wire() {
 }
 
 #[tokio::test]
+async fn a_wiring_graph_larger_than_a_workspace_is_refused() {
+    let nodes: Vec<serde_json::Value> = (0..=sdrmm_wire::MAX_NODES)
+        .map(|index| {
+            serde_json::json!({
+                "id": format!("map{index}"),
+                "kind": "map",
+                "position": { "x": 0.0, "y": 0.0 },
+            })
+        })
+        .collect();
+    let body = serde_json::json!({
+        "graph": { "nodes": nodes, "edges": [] },
+        "from": { "node": "map0", "port": "positions" },
+    });
+    let (status, body) = request(
+        test_router(),
+        "POST",
+        "/api/patch/wiring",
+        Some(&body.to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let error: ApiError = serde_json::from_slice(&body).expect("ApiError body");
+    assert!(error.error.contains("too many nodes"), "{}", error.error);
+}
+
+#[tokio::test]
 async fn the_patch_catalog_describes_the_node_palette() {
     let app = test_router();
     let (status, body) = request(app, "GET", "/api/patch/catalog", None).await;

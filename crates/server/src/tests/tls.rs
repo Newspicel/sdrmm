@@ -156,7 +156,7 @@ pub(super) fn insecure_client() -> reqwest::Client {
 }
 
 pub(super) async fn presented_pin(client: &reqwest::Client, url: &str) -> String {
-    let response = client.get(url).send().await.expect("request");
+    let response = answered(client, url).await;
     assert_eq!(response.status(), reqwest::StatusCode::OK, "{url}");
     let presented = response
         .extensions()
@@ -165,6 +165,24 @@ pub(super) async fn presented_pin(client: &reqwest::Client, url: &str) -> String
         .expect("peer certificate")
         .to_vec();
     sdrmm_wire::phone::spki_pin(&presented).expect("pin")
+}
+
+/// A listener that has just been asked for can still reset the first connection, so the caller
+/// waits for it to answer rather than assuming it already does.
+async fn answered(client: &reqwest::Client, url: &str) -> reqwest::Response {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match client.get(url).send().await {
+            Ok(response) => return response,
+            Err(error) => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "{url} never answered: {error}"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        }
+    }
 }
 
 pub(super) fn free_port() -> u16 {

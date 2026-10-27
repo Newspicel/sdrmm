@@ -1,5 +1,5 @@
-// Parity accumulator addresses from ETSI EN 302 307-1 annex B: one row per group of 360
-// information bits, each entry an address in the parity accumulator.
+//! Parity accumulator addresses from ETSI EN 302 307-1 annex B: one row per group of 360
+//! information bits, each entry an address in the parity accumulator.
 
 pub static R11_45: [&[u16]; 11] = [
     &[9054, 9186, 12155, 1000, 7383, 6459, 2992, 4723, 8135, 11250],

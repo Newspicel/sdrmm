@@ -57,8 +57,21 @@ pub(crate) struct Zoom {
     pub(crate) iq: Vec<Complex<f32>>,
 }
 
+fn zoom_rate_hz(rate: f64, band: &Band) -> Option<f64> {
+    if !(rate.is_finite() && rate > 0.0) {
+        return None;
+    }
+    let narrowest = MIN_ZOOM_RATE_HZ.min(rate);
+    let wanted = band.bandwidth_hz * ZOOM_OVERSAMPLE;
+    Some(if wanted.is_finite() {
+        wanted.clamp(narrowest, rate)
+    } else {
+        narrowest
+    })
+}
+
 pub(crate) fn zoom(iq: &[Complex<f32>], rate: f64, band: &Band) -> Option<Zoom> {
-    let target = (band.bandwidth_hz * ZOOM_OVERSAMPLE).clamp(MIN_ZOOM_RATE_HZ, rate);
+    let target = zoom_rate_hz(rate, band)?;
     let mut ddc = Ddc::new(rate, target, band.center_hz).ok()?;
     let mut out = Vec::with_capacity((iq.len() as f64 * target / rate) as usize + 1);
     ddc.process(iq, &mut out);
@@ -840,6 +853,23 @@ mod tests {
 
     fn measure(iq: Vec<Complex<f32>>) -> Waveform {
         Meter::new().measure(&Zoom { rate: RATE, iq }, &band())
+    }
+
+    #[test]
+    fn the_zoom_rate_stays_usable_whatever_the_band_says() {
+        let unusable = Band {
+            bandwidth_hz: f64::NAN,
+            ..band()
+        };
+        assert_eq!(zoom_rate_hz(RATE, &unusable), Some(MIN_ZOOM_RATE_HZ));
+        assert_eq!(zoom_rate_hz(1_000.0, &band()), Some(1_000.0));
+        assert_eq!(zoom_rate_hz(f64::NAN, &band()), None);
+
+        let iq: Vec<Complex<f32>> = (0..48_000)
+            .map(|k| Complex::from_polar(1.0, (TAU * 900.0 * f64::from(k) / RATE) as f32))
+            .collect();
+        let zoomed = zoom(&iq, RATE, &unusable).expect("a usable rate still zooms");
+        assert_eq!(zoomed.rate, MIN_ZOOM_RATE_HZ);
     }
 
     #[test]

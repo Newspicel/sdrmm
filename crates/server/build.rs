@@ -15,36 +15,64 @@ fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let dist = manifest.join("../../web/dist");
-    fs::create_dir_all(&dist).expect("create web/dist");
     println!("cargo:rerun-if-changed=../../web/dist");
     println!("cargo:rerun-if-changed=data");
 
-    write_web_table(&dist, &out.join("web"), &out.join("web_assets.rs"));
+    write_web_table(
+        built_ui(&dist),
+        &out.join("web"),
+        &out.join("web_assets.rs"),
+    );
     compress_tree(&manifest.join("data"), &out.join("data"));
 }
 
-fn write_web_table(dist: &Path, out: &Path, table: &Path) {
-    let mut files = Vec::new();
-    collect(dist, dist, &mut files);
-    files.sort();
+fn built_ui(dist: &Path) -> Option<&Path> {
+    let index = dist.join("index.html");
+    if index.is_file() {
+        println!("cargo:rustc-env=SDRMM_WEB_UI=embedded");
+        return Some(dist);
+    }
+    println!(
+        "cargo:warning={} is missing, so this build serves no interface: run `pnpm --dir web \
+         build` for one",
+        index.display()
+    );
+    println!("cargo:rustc-env=SDRMM_WEB_UI=empty");
+    None
+}
+
+fn write_web_table(dist: Option<&Path>, out: &Path, table: &Path) {
     let mut source = String::from("&[\n");
-    for relative in files {
-        let raw = fs::read(dist.join(&relative)).expect("read web asset");
-        let packed = gzip(&raw);
-        let gzipped = (packed.len() as f64) < raw.len() as f64 * WORTHWHILE_RATIO;
-        let stored = out.join(&relative);
-        fs::create_dir_all(stored.parent().expect("asset parent")).expect("create asset dir");
-        fs::write(&stored, if gzipped { &packed } else { &raw }).expect("write asset");
-        let mime = mime_guess::from_path(&relative).first_or_octet_stream();
-        writeln!(
-            source,
-            "    Asset {{ path: {relative:?}, mime: {mime:?}, gzipped: {gzipped}, body: include_bytes!({stored:?}) }},",
-            mime = mime.as_ref(),
-        )
-        .expect("write table row");
+    if let Some(dist) = dist {
+        for relative in sorted_files(dist) {
+            write_row(&mut source, dist, out, &relative);
+        }
     }
     source.push(']');
     fs::write(table, source).expect("write asset table");
+}
+
+fn sorted_files(dist: &Path) -> Vec<String> {
+    let mut files = Vec::new();
+    collect(dist, dist, &mut files);
+    files.sort();
+    files
+}
+
+fn write_row(source: &mut String, dist: &Path, out: &Path, relative: &str) {
+    let raw = fs::read(dist.join(relative)).expect("read web asset");
+    let packed = gzip(&raw);
+    let gzipped = (packed.len() as f64) < raw.len() as f64 * WORTHWHILE_RATIO;
+    let stored = out.join(relative);
+    fs::create_dir_all(stored.parent().expect("asset parent")).expect("create asset dir");
+    fs::write(&stored, if gzipped { &packed } else { &raw }).expect("write asset");
+    let mime = mime_guess::from_path(relative).first_or_octet_stream();
+    writeln!(
+        source,
+        "    Asset {{ path: {relative:?}, mime: {mime:?}, gzipped: {gzipped}, body: include_bytes!({stored:?}) }},",
+        mime = mime.as_ref(),
+    )
+    .expect("write table row");
 }
 
 fn compress_tree(source: &Path, out: &Path) {

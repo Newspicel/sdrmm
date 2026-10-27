@@ -1,7 +1,8 @@
 pub mod bench;
+pub mod generator;
 
 use std::{
-    sync::{Arc, atomic::Ordering},
+    sync::{Arc, Mutex, atomic::Ordering},
     time::{Duration, Instant},
 };
 
@@ -9,11 +10,13 @@ use arc_swap::ArcSwap;
 use num_complex::Complex;
 use sdrmm_device::{
     DeviceDriver, DeviceError, RxSink, SdrDevice, SweepPlan, SweepSink, Worker,
-    check_stream_settings, single_rx_sink,
+    check_stream_settings, lock, single_rx_sink,
 };
+use sdrmm_dsp::scene::{LaneRenderer, LaneSetup};
+use sdrmm_modem::synth::{Catalog, EMPTY_CATALOG};
 use sdrmm_wire::{
-    Capabilities, Coherence, DcArtifact, DeviceInfo, DeviceSettings, Duplex, GainKind, GainStage,
-    Range, StreamScope,
+    Capabilities, Coherence, DcArtifact, DeviceBackend, DeviceInfo, DeviceSettings, Duplex,
+    GENERATOR_PREFIX, GainKind, GainStage, Range, StreamScope,
 };
 
 use bench::BenchDevice;
@@ -22,8 +25,14 @@ pub use bench::{
     LaneImpairments, LaneTruth, NOISE_SWITCH_LEAD_S, Path, Pilot, RADIUS_SETTING, ReportedGap,
     Ripple, Scene, Slip, Waveform, default_devices, default_scene, default_world,
 };
+use generator::SignalGen;
+pub use generator::{
+    GAP_SETTING, LEVEL_SETTING, MAX_GENERATORS, NOISE_OFF_DB, NOISE_SETTING, OFFSET_SETTING,
+    SIGNAL_SETTING,
+};
 
-const DRIVER_ID: &str = "virtual";
+const DRIVER_ID: DeviceBackend = DeviceBackend::Virtual;
+const MAX_GENERATOR_KEY_LEN: usize = 64;
 const BAND_KEY: &str = "band";
 const BLOCK_SECS: f64 = 0.025;
 
@@ -55,12 +64,19 @@ const NOISE_SEED: u64 = 0x5DEE_CE66_D00D_1234;
 pub struct VirtualDriver {
     synthetic_devices: bool,
     world: Arc<BenchWorld>,
+    signals: &'static Catalog,
+    adopted: Mutex<Vec<String>>,
 }
 
 impl Default for VirtualDriver {
     fn default() -> Self {
         Self::for_build()
     }
+}
+
+#[must_use]
+pub const fn synthetic_devices_offered() -> bool {
+    cfg!(debug_assertions)
 }
 
 impl VirtualDriver {
@@ -72,8 +88,16 @@ impl VirtualDriver {
     #[must_use]
     pub fn for_build() -> Self {
         Self {
-            synthetic_devices: cfg!(debug_assertions),
-            world: default_world(),
+            synthetic_devices: synthetic_devices_offered(),
+            ..Self::with_world(default_world())
+        }
+    }
+
+    #[must_use]
+    pub fn bare() -> Self {
+        Self {
+            synthetic_devices: false,
+            ..Self::with_world(default_world())
         }
     }
 
@@ -82,7 +106,15 @@ impl VirtualDriver {
         Self {
             synthetic_devices: true,
             world,
+            signals: &EMPTY_CATALOG,
+            adopted: Mutex::new(Vec::new()),
         }
+    }
+
+    #[must_use]
+    pub fn with_signals(mut self, signals: &'static Catalog) -> Self {
+        self.signals = signals;
+        self
     }
 
     #[must_use]
@@ -90,9 +122,32 @@ impl VirtualDriver {
         &self.world
     }
 
+    #[must_use]
+    pub fn generator_info(signals: &Catalog, key: &str) -> DeviceInfo {
+        DeviceInfo {
+            driver: DRIVER_ID,
+            key: key.to_string(),
+            label: "Signal generator".to_string(),
+            serial: None,
+            profile: Some(generator::capabilities(signals).profile()),
+        }
+    }
+
+    fn generator_key_valid(&self, key: &str) -> bool {
+        let Some(node) = key.strip_prefix(GENERATOR_PREFIX) else {
+            return false;
+        };
+        !self.signals.is_empty()
+            && !node.is_empty()
+            && key.len() <= MAX_GENERATOR_KEY_LEN
+            && node
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    }
+
     fn band_info() -> DeviceInfo {
         DeviceInfo {
-            driver: DRIVER_ID.to_string(),
+            driver: DRIVER_ID,
             key: BAND_KEY.to_string(),
             label: "Test band (virtual)".to_string(),
             serial: None,
@@ -102,7 +157,7 @@ impl VirtualDriver {
 
     fn marker_info(shape: &MarkerShape) -> DeviceInfo {
         DeviceInfo {
-            driver: DRIVER_ID.to_string(),
+            driver: DRIVER_ID,
             key: shape.key.to_string(),
             label: shape.label.to_string(),
             serial: None,
@@ -112,7 +167,7 @@ impl VirtualDriver {
 }
 
 impl DeviceDriver for VirtualDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 
@@ -123,10 +178,21 @@ impl DeviceDriver for VirtualDriver {
             infos.extend(MARKER_SHAPES.iter().map(Self::marker_info));
             infos.extend(self.world.infos());
         }
+        infos.extend(
+            lock(&self.adopted)
+                .iter()
+                .map(|key| Self::generator_info(self.signals, key)),
+        );
         infos
     }
 
     fn open(&self, info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+        if info.key.starts_with(GENERATOR_PREFIX) {
+            if !self.generator_key_valid(&info.key) {
+                return Err(DeviceError::NotFound(format!("{DRIVER_ID}:{}", info.key)));
+            }
+            return Ok(Box::new(SignalGen::new(self.signals)?));
+        }
         if !self.synthetic_devices {
             return Err(DeviceError::NotFound(format!("{DRIVER_ID}:{}", info.key)));
         }
@@ -137,6 +203,20 @@ impl DeviceDriver for VirtualDriver {
             Some(shape) => Ok(Box::new(MarkerGen::new(shape))),
             None => Ok(Box::new(BenchDevice::open(self.world.clone(), &info.key)?)),
         }
+    }
+
+    fn resolve(&self, key: &str) -> Option<DeviceInfo> {
+        if !self.generator_key_valid(key) {
+            return None;
+        }
+        let mut adopted = lock(&self.adopted);
+        if !adopted.iter().any(|held| held == key) {
+            if adopted.len() >= MAX_GENERATORS {
+                return None;
+            }
+            adopted.push(key.to_string());
+        }
+        Some(Self::generator_info(self.signals, key))
     }
 }
 
@@ -215,6 +295,7 @@ fn band_capabilities() -> Capabilities {
         rx_inputs: Vec::new(),
         clean_fraction: None,
         retune_keeps_phase: false,
+        bank: None,
     }
 }
 
@@ -565,290 +646,166 @@ impl SdrDevice for MarkerGen {
     }
 }
 
-const RENORMALIZE_SAMPLES: u64 = 1_024;
-const DRIFT_STEP_SAMPLES: u64 = 64;
-const SERIES_LIMIT_RAD: f64 = 0.3;
 const LFO_HZ: f64 = 0.08;
 const DRIFT_SPAN: f64 = 0.35;
-const NOISE_AMP: f64 = 0.006;
+const DRIFT_AMP_DB: f64 = -20.0;
+const NOISE_DBFS: f64 = -46.2;
+const TONES: [(f64, f64); 3] = [(0.15, 0.15), (-0.30, 0.08), (0.05, 0.05)];
 
-#[derive(Clone, Copy)]
-struct Phasor {
-    re: f64,
-    im: f64,
-}
-
-impl Phasor {
-    const ONE: Self = Self { re: 1.0, im: 0.0 };
-
-    fn at(angle: f64) -> Self {
-        let (im, re) = angle.sin_cos();
-        Self { re, im }
-    }
-
-    fn small(angle: f64) -> Self {
-        if angle.abs() > SERIES_LIMIT_RAD {
-            return Self::at(angle);
-        }
-        let x2 = angle * angle;
-        Self {
-            re: 1.0 - x2 / 2.0 * (1.0 - x2 / 12.0 * (1.0 - x2 / 30.0)),
-            im: angle * (1.0 - x2 / 6.0 * (1.0 - x2 / 20.0 * (1.0 - x2 / 42.0))),
-        }
-    }
-
-    fn turn(self, by: Self) -> Self {
-        Self {
-            re: self.re * by.re - self.im * by.im,
-            im: self.re * by.im + self.im * by.re,
-        }
-    }
-
-    fn normalized(self) -> Self {
-        let norm = self.re.hypot(self.im);
-        Self {
-            re: self.re / norm,
-            im: self.im / norm,
-        }
+fn emitter(offset_hz: f64, power_db: f64, waveform: Waveform) -> Emitter {
+    Emitter {
+        azimuth_deg: 0.0,
+        elevation_deg: 0.0,
+        offset_hz,
+        power_dbfs: power_db,
+        waveform,
+        paths: Vec::new(),
     }
 }
 
-struct Tone {
-    turn: Phasor,
-    amp: f64,
-    phasor: Phasor,
+fn band_emitters(sample_rate: f64) -> Vec<Emitter> {
+    let mut emitters: Vec<Emitter> = TONES
+        .iter()
+        .map(|&(fraction, amp)| emitter(fraction * sample_rate, decibels(amp), Waveform::Tone))
+        .collect();
+    emitters.push(emitter(
+        0.0,
+        DRIFT_AMP_DB,
+        Waveform::Fm {
+            deviation_hz: DRIFT_SPAN * sample_rate,
+            rate_hz: LFO_HZ,
+        },
+    ));
+    emitters.extend(
+        MOD_CARRIERS
+            .iter()
+            .map(|&(offset_hz, waveform)| emitter(offset_hz, decibels(MOD_CARRIER_AMP), waveform)),
+    );
+    emitters
 }
 
-impl Tone {
-    fn new(fraction: f64, amp: f64) -> Self {
-        Self {
-            turn: Phasor::at(std::f64::consts::TAU * fraction),
-            amp,
-            phasor: Phasor::ONE,
-        }
-    }
+const MOD_CARRIERS: [(f64, Waveform); 3] = [
+    (
+        NFM_CARRIER_OFFSET_HZ,
+        Waveform::Fm {
+            deviation_hz: NFM_DEVIATION_HZ,
+            rate_hz: MOD_TONE_HZ,
+        },
+    ),
+    (
+        AM_CARRIER_OFFSET_HZ,
+        Waveform::Am {
+            depth: AM_MOD_DEPTH,
+            rate_hz: MOD_TONE_HZ,
+        },
+    ),
+    (
+        WFM_CARRIER_OFFSET_HZ,
+        Waveform::Fm {
+            deviation_hz: WFM_DEVIATION_HZ,
+            rate_hz: MOD_TONE_HZ,
+        },
+    ),
+];
+
+fn decibels(amplitude: f64) -> f64 {
+    20.0 * amplitude.log10()
 }
 
-struct ModCarrier {
-    offset_hz: f64,
-    amp: f64,
-    block_amp: f64,
-    kind: ModKind,
-    carrier: Phasor,
-    modulation: Phasor,
-    carrier_turn: Phasor,
-    modulation_turn: Phasor,
-    deviation_rad: f64,
-}
-
-#[derive(Clone, Copy)]
-enum ModKind {
-    Fm { deviation_hz: f64 },
-    Am { depth: f64 },
-}
-
-impl ModCarrier {
-    fn new(offset_hz: f64, kind: ModKind) -> Self {
-        Self {
-            offset_hz,
-            amp: MOD_CARRIER_AMP,
-            block_amp: 0.0,
-            kind,
-            carrier: Phasor::ONE,
-            modulation: Phasor::ONE,
-            carrier_turn: Phasor::ONE,
-            modulation_turn: Phasor::ONE,
-            deviation_rad: 0.0,
-        }
-    }
-
-    fn occupied_half_width_hz(&self) -> f64 {
-        match self.kind {
-            ModKind::Fm { deviation_hz } => deviation_hz + MOD_TONE_HZ,
-            ModKind::Am { .. } => MOD_TONE_HZ,
-        }
-    }
-
-    fn prepare(&mut self, sample_rate: f64) {
-        let hz_to_rad = std::f64::consts::TAU / sample_rate;
-        self.block_amp =
-            if self.offset_hz.abs() + self.occupied_half_width_hz() <= sample_rate / 2.0 {
-                self.amp
-            } else {
-                0.0
-            };
-        self.carrier_turn = Phasor::at(self.offset_hz * hz_to_rad);
-        self.modulation_turn = Phasor::at(MOD_TONE_HZ * hz_to_rad);
-        self.deviation_rad = match self.kind {
-            ModKind::Fm { deviation_hz } => deviation_hz * hz_to_rad,
-            ModKind::Am { .. } => 0.0,
-        };
-    }
-
-    fn next(&mut self) -> Phasor {
-        let envelope = match self.kind {
-            ModKind::Fm { .. } => {
-                self.carrier = self
-                    .carrier
-                    .turn(self.carrier_turn)
-                    .turn(Phasor::small(self.deviation_rad * self.modulation.im));
-                1.0
-            }
-            ModKind::Am { depth } => {
-                self.carrier = self.carrier.turn(self.carrier_turn);
-                1.0 + depth * self.modulation.im
-            }
-        };
-        self.modulation = self.modulation.turn(self.modulation_turn);
-        let scale = self.block_amp * envelope;
-        Phasor {
-            re: scale * self.carrier.re,
-            im: scale * self.carrier.im,
-        }
-    }
-
-    fn renormalize(&mut self) {
-        self.carrier = self.carrier.normalized();
-        self.modulation = self.modulation.normalized();
+fn scene_of(emitters: Vec<Emitter>, sample_rate: f64, seed: u64) -> Scene {
+    Scene {
+        positions: vec![[0.0, 0.0, 0.0]],
+        emitters,
+        echoes: Vec::new(),
+        clutter: Clutter::default(),
+        thermal_dbfs: NOISE_DBFS,
+        noise_source_dbfs: NOISE_DBFS,
+        noise_bandwidth: sample_rate,
+        seed,
     }
 }
 
 struct Generator {
-    tones: Vec<Tone>,
-    drift_amp: f64,
-    drift: Phasor,
-    drift_turn: Phasor,
-    lfo: Phasor,
-    carriers: Vec<ModCarrier>,
-    noise: Xorshift,
-    sample: u64,
+    renderer: LaneRenderer,
+    marker: Option<f64>,
+    seed: u64,
+    built_at: f64,
+    sample: i64,
 }
 
 impl Generator {
     fn new() -> Self {
         Self {
-            tones: vec![
-                Tone::new(0.15, 0.15),
-                Tone::new(-0.30, 0.08),
-                Tone::new(0.05, 0.05),
-            ],
-            drift_amp: 0.10,
-            drift: Phasor::ONE,
-            drift_turn: Phasor::ONE,
-            lfo: Phasor::ONE,
-            carriers: vec![
-                ModCarrier::new(
-                    NFM_CARRIER_OFFSET_HZ,
-                    ModKind::Fm {
-                        deviation_hz: NFM_DEVIATION_HZ,
-                    },
-                ),
-                ModCarrier::new(
-                    AM_CARRIER_OFFSET_HZ,
-                    ModKind::Am {
-                        depth: AM_MOD_DEPTH,
-                    },
-                ),
-                ModCarrier::new(
-                    WFM_CARRIER_OFFSET_HZ,
-                    ModKind::Fm {
-                        deviation_hz: WFM_DEVIATION_HZ,
-                    },
-                ),
-            ],
-            noise: Xorshift::new(NOISE_SEED),
+            renderer: LaneRenderer::new(NOISE_SEED),
+            marker: None,
+            seed: NOISE_SEED,
+            built_at: 0.0,
             sample: 0,
         }
     }
 
     fn stream_marker(stream: u32) -> Self {
+        let seed = NOISE_SEED ^ (u64::from(stream) << 32);
         Self {
-            tones: Vec::new(),
-            drift_amp: 0.0,
-            drift: Phasor::ONE,
-            drift_turn: Phasor::ONE,
-            lfo: Phasor::ONE,
-            carriers: vec![ModCarrier::new(
-                stream_marker_offset_hz(stream),
-                ModKind::Fm {
-                    deviation_hz: NFM_DEVIATION_HZ,
-                },
-            )],
-            noise: Xorshift::new(NOISE_SEED ^ (u64::from(stream) << 32)),
+            renderer: LaneRenderer::new(seed),
+            marker: Some(stream_marker_offset_hz(stream)),
+            seed,
+            built_at: 0.0,
             sample: 0,
         }
     }
 
     fn set_marker_offset_hz(&mut self, offset_hz: f64) {
-        for carrier in &mut self.carriers {
-            carrier.offset_hz = offset_hz;
+        if self.marker != Some(offset_hz) {
+            self.marker = Some(offset_hz);
+            self.built_at = 0.0;
+        }
+    }
+
+    fn emitters(&self, sample_rate: f64) -> Vec<Emitter> {
+        match self.marker {
+            Some(offset_hz) => vec![emitter(
+                offset_hz,
+                decibels(MOD_CARRIER_AMP),
+                Waveform::Fm {
+                    deviation_hz: NFM_DEVIATION_HZ,
+                    rate_hz: MOD_TONE_HZ,
+                },
+            )],
+            None => band_emitters(sample_rate),
         }
     }
 
     fn fill(&mut self, block: &mut [Complex<f32>], sample_rate: f64) {
-        let lfo_step =
-            Phasor::at(std::f64::consts::TAU * LFO_HZ * DRIFT_STEP_SAMPLES as f64 / sample_rate);
-        for carrier in &mut self.carriers {
-            carrier.prepare(sample_rate);
+        if self.built_at != sample_rate {
+            let scene = scene_of(self.emitters(sample_rate), sample_rate, self.seed);
+            let impairments = LaneImpairments::default();
+            self.renderer.configure(
+                &scene,
+                &LaneSetup {
+                    position: scene.positions[0],
+                    center_hz: DEFAULT_CENTER_HZ,
+                    radio_center_hz: DEFAULT_CENTER_HZ,
+                    sample_rate,
+                    impairments: &impairments,
+                    gain_setting_db: 0.0,
+                    scramble_rad: 0.0,
+                    pilot: None,
+                    noise_seed: None,
+                    isolated: false,
+                },
+            );
+            self.built_at = sample_rate;
         }
-        for slot in block.iter_mut() {
-            let mut sum = Phasor { re: 0.0, im: 0.0 };
-            for tone in &mut self.tones {
-                tone.phasor = tone.phasor.turn(tone.turn);
-                sum.re += tone.amp * tone.phasor.re;
-                sum.im += tone.amp * tone.phasor.im;
-            }
-            if self.drift_amp > 0.0 {
-                if self.sample.is_multiple_of(DRIFT_STEP_SAMPLES) {
-                    self.drift_turn = Phasor::at(std::f64::consts::TAU * DRIFT_SPAN * self.lfo.im);
-                    self.lfo = self.lfo.turn(lfo_step);
-                }
-                self.drift = self.drift.turn(self.drift_turn);
-                sum.re += self.drift_amp * self.drift.re;
-                sum.im += self.drift_amp * self.drift.im;
-            }
-            for carrier in &mut self.carriers {
-                let value = carrier.next();
-                sum.re += value.re;
-                sum.im += value.im;
-            }
-            sum.re += NOISE_AMP * self.noise.next_bipolar();
-            sum.im += NOISE_AMP * self.noise.next_bipolar();
-            *slot = Complex::new(sum.re as f32, sum.im as f32);
-            self.sample += 1;
-            if self.sample.is_multiple_of(RENORMALIZE_SAMPLES) {
-                self.renormalize();
-            }
-        }
-    }
-
-    fn renormalize(&mut self) {
-        for tone in &mut self.tones {
-            tone.phasor = tone.phasor.normalized();
-        }
-        self.drift = self.drift.normalized();
-        self.lfo = self.lfo.normalized();
-        for carrier in &mut self.carriers {
-            carrier.renormalize();
-        }
-    }
-}
-
-struct Xorshift(u64);
-
-impl Xorshift {
-    fn new(seed: u64) -> Self {
-        Self(seed | 1)
-    }
-
-    fn next_bipolar(&mut self) -> f64 {
-        let mut x = self.0;
-        x ^= x >> 12;
-        x ^= x << 25;
-        x ^= x >> 27;
-        self.0 = x;
-        let bits = (x.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 40) as f64;
-        bits / (1u64 << 23) as f64 - 1.0
+        let step_s = 1.0 / sample_rate;
+        self.renderer.render(
+            self.sample,
+            self.sample as f64 * step_s,
+            step_s,
+            false,
+            block,
+        );
+        self.sample += block.len() as i64;
     }
 }
 

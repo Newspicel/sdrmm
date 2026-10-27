@@ -3,7 +3,8 @@
 use num_complex::Complex;
 use sdrmm_channels::{ChannelCtx, ChannelOutputs, ChannelRx};
 use sdrmm_modem_test_support::ber::perf::{
-    CALIBRATION_BENCH, PerfBaseline, compare_perf, host_id, load_baselines, save_baselines,
+    CALIBRATION_BENCH, PerfBaseline, compare_perf, host_id, load_baselines, missing_host_baseline,
+    rows_for_host, save_baselines,
 };
 use sdrmm_test_support::{CountingAlloc, assert_no_alloc, measure_throughput};
 
@@ -18,6 +19,9 @@ const BLOCK: usize = 2_048;
 const SURVEY_SECONDS: f64 = 0.1;
 const BATCH_ITERS: u64 = 20;
 const NOISE_AMPLITUDE: f32 = 0.1;
+const REGRESSION_FRACTION: f64 = 0.35;
+const RECORD_COMMAND: &str = "cargo test -p sdrmm-channels --release --test channel_perf -- \
+     --ignored --exact write_perf_baseline";
 
 struct Row {
     type_id: String,
@@ -80,6 +84,12 @@ fn survey() -> Vec<Row> {
 #[test]
 #[ignore = "throughput survey; run in release: cargo test -p sdrmm-channels --release --test channel_perf -- --ignored --nocapture"]
 fn survey_every_channel_search_path() {
+    let committed = committed_baselines();
+    assert!(
+        committed.iter().any(|row| row.bench != CALIBRATION_BENCH),
+        "{}",
+        missing_host_baseline("channel throughput", RECORD_COMMAND)
+    );
     if cfg!(debug_assertions) {
         eprintln!("skipping the survey: throughput is only meaningful in release");
         return;
@@ -100,17 +110,6 @@ fn survey_every_channel_search_path() {
         );
     }
     assert_eq!(rows.len(), sdrmm_channels::descriptors().len());
-    let path = baseline_path();
-    if !path.exists() {
-        println!(
-            "no committed baseline for {}: the survey above is reported, the gate is not \
-             enforced. Record one on this host with `cargo test -p sdrmm-channels --release \
-             --test channel_perf -- --ignored --exact write_perf_baseline`",
-            host_id()
-        );
-        return;
-    }
-    let committed = load_baselines(&path).expect("committed channel throughput baselines");
     let measured = baselines(&rows);
     assert_eq!(
         committed
@@ -120,11 +119,14 @@ fn survey_every_channel_search_path() {
         measured.len(),
         "registry changed: measure and review its performance budgets"
     );
-    let changes = compare_perf(&measured, &committed, 0.35).unwrap_or_else(|regressions| {
-        panic!(
-            "channel throughput regressed more than 35% after host calibration: {regressions:#?}"
-        )
-    });
+    let changes =
+        compare_perf(&measured, &committed, REGRESSION_FRACTION).unwrap_or_else(|regressions| {
+            panic!(
+                "channel throughput regressed more than {:.0}% after host calibration: \
+                 {regressions:#?}",
+                100.0 * REGRESSION_FRACTION
+            )
+        });
     for change in changes {
         println!(
             "{}: {:+.1}% calibrated",
@@ -138,6 +140,14 @@ fn baseline_path() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("baselines/channel_perf")
         .join(format!("{}.json", host_id()))
+}
+
+fn committed_baselines() -> Vec<PerfBaseline> {
+    let path = baseline_path();
+    if !path.exists() {
+        return Vec::new();
+    }
+    rows_for_host(&load_baselines(&path).expect("committed channel throughput baselines"))
 }
 
 fn baselines(rows: &[Row]) -> Vec<PerfBaseline> {

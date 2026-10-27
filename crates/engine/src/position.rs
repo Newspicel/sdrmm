@@ -31,7 +31,7 @@ impl Engine {
         Ok(())
     }
 
-    pub fn update_time_machine_position(
+    pub fn update_pre_roll_position(
         &self,
         ds: u32,
         fix: Option<PositionFix>,
@@ -41,8 +41,8 @@ impl Engine {
             .device_sets
             .get(&ds)
             .ok_or(EngineError::DeviceSetNotFound(ds))?;
-        let history = state.time_machine.as_ref().ok_or_else(|| {
-            EngineError::Recording("no time machine is holding this radio's history".to_owned())
+        let history = state.pre_roll.as_ref().ok_or_else(|| {
+            EngineError::Recording("no recorder is holding this radio's pre-roll".to_owned())
         })?;
         history
             .control

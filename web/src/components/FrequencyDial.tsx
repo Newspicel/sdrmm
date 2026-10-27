@@ -5,6 +5,7 @@ import {
   type DialDigit,
   dialDigits,
   dialPlaces,
+  digitDirection,
   parseFrequency,
   type Range,
   setDialDigit,
@@ -173,8 +174,12 @@ function Digit({
               : "text-vfo"
         } ${active ? "bg-accent/10 shadow-[inset_0_-2px_0_var(--color-accent)]" : ""}`}
         onPointerDown={(event) => {
+          const direction = digitDirection(event, event.currentTarget.getBoundingClientRect());
+          if (direction === null) {
+            return;
+          }
           onSelect();
-          onStep(halfAt(event.currentTarget, event.clientY));
+          onStep(direction);
         }}
         onPointerMove={(event) => {
           const half = halfAt(event.currentTarget, event.clientY);

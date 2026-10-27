@@ -179,6 +179,47 @@ async fn an_unwired_speaker_is_refused() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_refused_port_subscription_is_not_kept() {
+    let (mut ws, _state, _) = bench(speaker_graph(None)).await;
+    let ghost = ServerEvent::PortRefused {
+        node: "ghost".to_owned(),
+        port: "audio".to_owned(),
+        reason: "No such node".to_owned(),
+    };
+    for _ in 0..2 {
+        subscribe_port(&mut ws, "ghost", "audio").await;
+        assert_eq!(next_port_event(&mut ws).await, ghost);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_watches_only_so_many_ports() {
+    let speakers = crate::ws::ports::MAX_WATCHED + 1;
+    let nodes = (0..speakers)
+        .map(|n| of(&format!("spk{n}"), NodeKind::Speaker))
+        .collect();
+    let (mut ws, _state, _) = bench(PatchGraph {
+        nodes,
+        edges: Vec::new(),
+    })
+    .await;
+    for n in 0..crate::ws::ports::MAX_WATCHED {
+        subscribe_port(&mut ws, &format!("spk{n}"), "audio").await;
+        assert!(matches!(
+            next_port_event(&mut ws).await,
+            ServerEvent::PortRefused { .. }
+        ));
+    }
+    subscribe_port(
+        &mut ws,
+        &format!("spk{}", crate::ws::ports::MAX_WATCHED),
+        "audio",
+    )
+    .await;
+    assert_eq!(next_error(&mut ws).await, "Too many ports watched");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn audio_follows_a_rewire_without_a_resubscribe() {
     let (mut ws, state, id) = bench(speaker_graph(Some("a"))).await;
     subscribe_speaker(&mut ws).await;

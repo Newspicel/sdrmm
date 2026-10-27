@@ -1,4 +1,5 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import limits from "../../generated/limits.json";
 import { JitterBuffer } from "./jitter";
 import { MAX_FRAMES, SAMPLE_RATE, TARGET_FRAMES } from "./worklet";
 
@@ -43,4 +44,10 @@ it("absorbs consecutive delivery delays after the stream falls one packet behind
   }
   expect(jitter.underruns).toBe(0);
   expect(jitter.trimmed).toBe(0);
+});
+
+describe("the playback rate", () => {
+  it("is the rate the server publishes", () => {
+    expect(SAMPLE_RATE).toBe(limits.audio.rate_hz);
+  });
 });

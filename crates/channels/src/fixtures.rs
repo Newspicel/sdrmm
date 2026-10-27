@@ -1,16 +1,17 @@
 use num_complex::Complex;
 use sdrmm_wire::{
-    AcarsParams, AdsbParams, AirtimeSpan, AisParams, AprsMode, AprsParams, AptParams, AvhrrChannel,
-    BleLink, BleParams, ChannelParams, ChannelSettings, DabParams, DabTransmissionMode, DatvParams,
-    DatvStandard, DecoderEvent, DectParams, DpmrParams, DrmMode, DrmParams, DscParams, DstarParams,
-    DvbtParams, EotArming, EotBattery, EotParams, EotStatus, ErmesParams, EventKind, FlexParams,
-    FreeDvParams, GnssParams, GsmParams, IdentParams, IlsParams, InmarsatAeroParams, IsmParams,
-    IsmSurveyParams, LoraParams, LrptMode, LrptParams, M17Params, MorseParams, NavtexParams,
-    NfmParams, NfmToneMode, NoiseFigureParams, NxdnParams, P25Params, PerParams, PocsagParams,
-    PskBaud, PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams,
-    RttyParams, SameParams, SarsatParams, SelcallParams, SelcallSystem, SidParams, SondeType,
-    SstvMode, SstvParams, StanagParams, TetraParams, TetrapolParams, VorParams, WefaxIoc, WefaxLpm,
-    WefaxParams, WfmParams, WifiOccupancyParams, WsjtParams, WsprParams, YsfParams,
+    AcarsParams, AdsbParams, AirtimeSpan, AisParams, AmParams, AprsMode, AprsParams, AptParams,
+    AtvParams, AvhrrChannel, BleLink, BleParams, BroadcastStatus, ChannelParams, ChannelSettings,
+    DabParams, DabTransmissionMode, DatvParams, DatvStandard, DecoderEvent, DectParams, DpmrParams,
+    DrmMode, DrmParams, DscParams, DstarParams, DvbtParams, EotArming, EotBattery, EotParams,
+    EotStatus, ErmesParams, EventKind, FlexParams, FreeDvParams, GnssParams, GsmParams,
+    IdentParams, IlsParams, InmarsatAeroParams, IsmParams, IsmSurveyParams, LoraParams, LrptMode,
+    LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NfmToneMode, NoiseFigureParams,
+    NxdnParams, P25Params, PerParams, PocsagParams, PskBaud, PskParams, RadioClockParams,
+    RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams, SameParams, SarsatParams,
+    SelcallParams, SelcallSystem, SidParams, SondeType, SsbParams, SstvMode, SstvParams,
+    StanagParams, TetraParams, TetrapolParams, VorParams, WefaxIoc, WefaxLpm, WefaxParams,
+    WfmParams, WifiOccupancyParams, WsjtParams, WsprParams, YsfParams,
 };
 
 use crate::{
@@ -27,27 +28,544 @@ const BLE_38_HZ: f64 = 2_426e6;
 const BLE_37_HZ: f64 = 2_402e6;
 const WIFI_6_HZ: f64 = 2_437e6;
 const GSM_ARFCN_725_HZ: f64 = 1_847_800_000.0;
+const SID_CENTRE_HZ: f64 = 30_000.0;
+const APRS_POSITION_REPORT: &str = "!5230.00N/01324.00E>SDR FIXTURE";
+const GNSS_FIXTURE_PRN: u8 = 7;
+const DVBT_SYMBOLS: usize = 1_024;
+const NXDN_RAN: u8 = 1;
+const NXDN_SOURCE: u16 = 1_001;
+const NXDN_DESTINATION: u16 = 2_002;
 
 #[derive(Default)]
 struct Heard {
     kinds: Vec<EventKind>,
+    events: Vec<DecoderEvent>,
+    broadcasts: Vec<BroadcastStatus>,
+    audio_samples: usize,
+    pictures: usize,
 }
 
 impl Heard {
     fn from_events(events: &[DecoderEvent]) -> Self {
         Self {
             kinds: events.iter().map(DecoderEvent::kind).collect(),
+            events: events.to_vec(),
+            ..Self::default()
         }
     }
 
     fn take(&mut self, out: &mut ChannelOutputs) {
-        self.kinds
-            .extend(out.events.drain(..).map(|event| event.kind()));
-        if out.broadcast.take().is_some() {
-            self.kinds.push(EventKind::Broadcast);
+        for event in out.events.drain(..) {
+            self.kinds.push(event.kind());
+            self.events.push(event);
         }
+        if let Some(broadcast) = out.broadcast.take() {
+            self.kinds.push(EventKind::Broadcast);
+            self.broadcasts.push(broadcast);
+        }
+        self.audio_samples += out.audio_pcm.len();
+        self.pictures += out.video.len() + out.images.len();
+    }
+
+    fn rendered(&self) -> String {
+        let events = self.events.iter().map(|event| {
+            let view = event.present();
+            let fields = view
+                .fields
+                .iter()
+                .map(|field| format!("{}={:?}", field.label, field.value))
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!(
+                "{} | {} | {} | {} | {} | {}",
+                serde_json::to_string(event).unwrap_or_default(),
+                view.summary,
+                view.headline.unwrap_or_default(),
+                view.entity.unwrap_or_default(),
+                view.text.unwrap_or_default(),
+                fields
+            )
+        });
+        let broadcasts = self
+            .broadcasts
+            .iter()
+            .map(|status| serde_json::to_string(status).unwrap_or_default());
+        events.chain(broadcasts).collect::<Vec<_>>().join("\n")
+    }
+
+    fn places(&self) -> Vec<(f64, f64)> {
+        self.events
+            .iter()
+            .filter_map(|event| event.present().place)
+            .map(|place| (place.at.lat, place.at.lon))
+            .collect()
     }
 }
+
+struct Payload {
+    type_id: &'static str,
+    carries: &'static [&'static str],
+    at: Option<(f64, f64)>,
+    audio_samples: usize,
+    pictures: usize,
+}
+
+const fn reads(type_id: &'static str, carries: &'static [&'static str]) -> Payload {
+    Payload {
+        type_id,
+        carries,
+        at: None,
+        audio_samples: 0,
+        pictures: 0,
+    }
+}
+
+impl Payload {
+    const fn at(self, lat: f64, lon: f64) -> Self {
+        Self {
+            at: Some((lat, lon)),
+            ..self
+        }
+    }
+
+    const fn audio(self, audio_samples: usize) -> Self {
+        Self {
+            audio_samples,
+            ..self
+        }
+    }
+
+    const fn pictures(self, pictures: usize) -> Self {
+        Self { pictures, ..self }
+    }
+
+    fn proves_a_decode(&self) -> bool {
+        !self.carries.is_empty() || self.audio_samples > 0 || self.pictures > 0
+    }
+}
+
+const PLACE_TOLERANCE_DEG: f64 = 0.001;
+
+const PAYLOADS: &[Payload] = &[
+    reads("am", &[]).audio(16_000),
+    reads("ssb", &[]).audio(16_000),
+    reads("atv", &[]).pictures(1),
+    reads("nfm", &[r#""ctcss_hz":88.5"#, r#""open":true"#]).audio(16_000),
+    reads(
+        "pocsag",
+        &[
+            r#""address":1234567"#,
+            r#""function":3"#,
+            r#""baud":1200"#,
+            r#""text":"SDR FIXTURE""#,
+        ],
+    ),
+    reads(
+        "flex",
+        &[
+            r#""address":1234567"#,
+            r#""cycle":4"#,
+            r#""frame":72"#,
+            r#""text":"SDR FIXTURE""#,
+        ],
+    ),
+    reads(
+        "ermes",
+        &[
+            r#""local_address":234567"#,
+            r#""message_number":3"#,
+            r#""urgent":true"#,
+            r#""alert":5"#,
+            r#""text":"ERMES ALPHA PAGE""#,
+        ],
+    ),
+    reads(
+        "eot",
+        &[
+            r#""unit_address":24680"#,
+            r#""arming":"normal""#,
+            r#""pressure_psig":90"#,
+            r#""battery_charge_pct":76"#,
+        ],
+    ),
+    reads(
+        "sarsat",
+        &[
+            r#""identity":"MMSI 211406406""#,
+            r#""beacon":"epirb""#,
+            r#""country":211"#,
+        ],
+    )
+    .at(54.3233, 10.1233),
+    reads(
+        "acars",
+        &[
+            r#""registration":"D-AIBL""#,
+            r#""flight":"LH0400""#,
+            r#""label":"H1""#,
+            r#""block_id":"4""#,
+            r#""text":"SDR FIXTURE""#,
+        ],
+    ),
+    reads(
+        "aprs",
+        &[
+            r#""source":"DL0SDR""#,
+            r#""destination":"APRS""#,
+            r#""info":"!5230.00N/01324.00E>SDR FIXTURE""#,
+        ],
+    )
+    .at(52.5, 13.4),
+    reads(
+        "ais",
+        &[
+            r#""mmsi":244010000"#,
+            r#""heading_deg":88"#,
+            r#""nav_status":0"#,
+        ],
+    )
+    .at(52.3702, 4.8952),
+    reads(
+        "adsb",
+        &[
+            r#""icao":"3C65AC""#,
+            r#""callsign":"DLH123""#,
+            r#""vertical_rate_fpm":-1216"#,
+        ],
+    ),
+    reads(
+        "morse",
+        &[
+            r#""text":"CQ""#,
+            r#""text":" CQ""#,
+            r#""text":" DE""#,
+            r#""text":" SDR""#,
+            r#""text":" K""#,
+        ],
+    ),
+    reads("rtty", &[r#""text":"CQ CQ DE DL1ABC K""#]),
+    reads(
+        "navtex",
+        &[
+            r#""station":"F""#,
+            r#""subject":"A""#,
+            r#""serial":1"#,
+            r#""text":"SDR FIXTURE""#,
+            r#""complete":true"#,
+        ],
+    ),
+    reads("psk", &[r#""baud":"psk31""#, r#""text":"CQ CQ DE SDR \n""#]),
+    reads("selcall", &[r#""system":"ccir1""#, r#""code":"12234""#]),
+    reads("ft8", &[r#""text":"CQ W1AW FN42""#]),
+    reads("ft4", &[r#""text":"CQ JA1ABC PM95""#]),
+    reads(
+        "wspr",
+        &[
+            r#""callsign":"K1ABC""#,
+            r#""grid":"FN42""#,
+            r#""power_dbm":37"#,
+        ],
+    ),
+    reads(
+        "sstv",
+        &[
+            r#""mode":"martin_m1""#,
+            r#""width":320"#,
+            r#""height":256"#,
+            r#""complete":true"#,
+        ],
+    ),
+    reads(
+        "apt",
+        &[
+            r#""lines":240"#,
+            r#""channel_a":"ch2""#,
+            r#""channel_b":"ch4""#,
+            r#""complete":true"#,
+        ],
+    ),
+    reads(
+        "lrpt",
+        &[
+            r#""mode":"oqpsk72""#,
+            r#""apids":[64,65,66]"#,
+            r#""complete":true"#,
+        ],
+    ),
+    reads(
+        "wefax",
+        &[
+            r#""ioc":"ioc576""#,
+            r#""lpm":"lpm120""#,
+            r#""lines":120"#,
+            r#""complete":true"#,
+        ],
+    ),
+    reads(
+        "same",
+        &[
+            r#""originator":"WXR""#,
+            r#""event":"TOR""#,
+            r#""station":"KEC55/NW""#,
+            r#""valid_minutes":30"#,
+            r#""name":"Harris, TX""#,
+            r#""copies":2"#,
+        ],
+    ),
+    reads(
+        "radiosonde",
+        &[
+            r#""sonde":"rs41""#,
+            r#""serial":"W3420567""#,
+            r#""satellites":9"#,
+            r#""battery_v":2.9"#,
+        ],
+    )
+    .at(48.1235, 11.5432),
+    reads("vor", &["123.1\u{b0} radial"]),
+    reads("ils", &[r#""component":"localizer""#, "+0.160 DDM"]),
+    reads(
+        "radio_clock",
+        &[
+            r#""standard":"dcf77""#,
+            r#""datetime":"2026-10-03T22:04:00+02:00""#,
+            r#""dst":true"#,
+        ],
+    ),
+    reads(
+        "dmr",
+        &[
+            r#""color_code":1"#,
+            r#""source":2621001"#,
+            r#""destination":505"#,
+            r#""crc_verified":true"#,
+        ],
+    ),
+    reads(
+        "p25",
+        &[
+            r#""color_code":659"#,
+            r#""source":11259375"#,
+            r#""destination":4609"#,
+            r#""message_indicator":"0123456789abcdef12""#,
+        ],
+    ),
+    reads(
+        "nxdn",
+        &[
+            r#""color_code":1"#,
+            r#""source":1001"#,
+            r#""destination":2002"#,
+            r#""opcode":"voice call""#,
+        ],
+    ),
+    reads(
+        "dstar",
+        &[
+            r#""source_call":"DL1ABC""#,
+            r#""destination_call":"CQCQCQ""#,
+            r#""via":"DB0ABC B""#,
+            r#""text":"hello from SDR--""#,
+        ],
+    ),
+    reads(
+        "m17",
+        &[
+            r#""source_call":"DL1ABC""#,
+            r#""destination_call":"ALL""#,
+            r#""opcode":"stream""#,
+        ],
+    ),
+    reads(
+        "ysf",
+        &[
+            r#""source_call":"DL1ABC""#,
+            r#""destination_call":"ALL""#,
+            "\"via\":\"DB0XYZ \u{2192} DB0ABC\"",
+            r#""destination":7"#,
+        ],
+    ),
+    reads(
+        "dpmr",
+        &[
+            r#""color_code":37"#,
+            r#""source":1193046"#,
+            r#""destination":65535"#,
+        ],
+    ),
+    reads("freedv", &[r#""mode":"freedv""#, r#""opcode":"1600""#]),
+    reads(
+        "tetrapol",
+        &[
+            r#""group":393"#,
+            r#""channel":2890"#,
+            r#""country":3"#,
+            r#""bs":7"#,
+        ],
+    ),
+    reads(
+        "tetra",
+        &[
+            r#""color_code":17"#,
+            r#""network_id":1010"#,
+            r#""system_id":262"#,
+            r#""site_id":4242"#,
+            r#""text":"Einsatz Hbf""#,
+        ],
+    ),
+    reads(
+        "wfm",
+        &[
+            r#""pi":"D3C2""#,
+            r#""ps":"SDR-M4""#,
+            r#""radiotext":"fixture""#,
+            r#""pty":10"#,
+        ],
+    )
+    .audio(16_000),
+    reads(
+        "lora",
+        &[
+            r#""spreading_factor":7"#,
+            r#""coding_rate":"4/8""#,
+            r#""integrity":"crc_ok""#,
+            r#""payload":"deadbeef""#,
+        ],
+    ),
+    reads(
+        "remote_id",
+        &[
+            r#""uas_id":"1581F5FJD239C00DW22E""#,
+            r#""ua_type":"rotorcraft""#,
+        ],
+    )
+    .at(52.5163, 13.3777),
+    reads(
+        "ble",
+        &[
+            r#""name":"Greenhouse""#,
+            r#""company":"Apple""#,
+            r#""url":"https://sdrmm.com""#,
+        ],
+    ),
+    reads(
+        "ism",
+        &[
+            r#""model":"Nexus-TH""#,
+            r#""id":"181""#,
+            r#""temperature_c":19.0"#,
+            r#""humidity_pct":71"#,
+        ],
+    ),
+    reads("ism_survey", &[r#""kind":"wifi""#]),
+    reads(
+        "wifi_occupancy",
+        &[r#""number":6"#, r#""band":"ghz2_4""#, "ch 6 30%"],
+    ),
+    reads(
+        "per",
+        &[r#""per":0.0"#, r#""missed":0"#, r#""bit_errors":0"#],
+    ),
+    reads("noise_figure", &["Y 10.00 dB"]),
+    reads("sid", &["GQD 42 dB", "DHO38 48 dB", "NAA 38 dB"]),
+    reads(
+        "dect",
+        &[
+            r#""rfpi":"0123456780""#,
+            r#""carrier":3"#,
+            r#""rf_carriers":1023"#,
+            r#""pscn":5"#,
+            r#""authentication_supported":true"#,
+        ],
+    ),
+    reads(
+        "gnss",
+        &[
+            r#""prn":7"#,
+            r#""doppler_hz":1000.0"#,
+            r#""code_phase_chips":158.3"#,
+        ],
+    ),
+    reads(
+        "gsm",
+        &[r#""arfcn":725"#, r#""bsic":48"#, r#""value":"015C5703""#],
+    ),
+    reads(
+        "dab",
+        &[
+            r#""service_id":49569"#,
+            r#""name":"slide.png""#,
+            r#""media_type":"image/png""#,
+        ],
+    ),
+    reads("datv", &[r#""protocol":2048"#, r#""name":"GSE-1-0.bin""#]),
+    reads(
+        "dvbt",
+        &[
+            r#""locked":true"#,
+            r#""label":"Rust TV""#,
+            r#""ensemble_label":"SDR--""#,
+        ],
+    ),
+    reads(
+        "drm",
+        &[
+            r#""locked":true"#,
+            r#""system":"drm30""#,
+            r#""label":"Rust Wave""#,
+        ],
+    ),
+    reads("cw_skimmer", &["DL1AAA", "20 WPM"]),
+    reads("ident", &[r#""type_id":"pocsag""#, r#""confirmed":true"#]),
+    reads(
+        "dsc",
+        &[
+            r#""station":"002191000""#,
+            r#""to":"231700000""#,
+            r#""category":"safety""#,
+            r#""crc_ok":true"#,
+        ],
+    ),
+    reads(
+        "stanag",
+        &[r#""modem":"stanag_4285""#, r#""confidence":1.0"#],
+    ),
+    reads(
+        "inmarsat_aero",
+        &[r#""station":"HL8217""#, r#""tail":"HL8217""#],
+    ),
+    reads(
+        "inmarsat_stdc",
+        &[r#""region":"AOR-W""#, r#""frame_number":1000"#],
+    ),
+    reads(
+        "vdl2",
+        &[
+            r#""station":"VT-ANB""#,
+            r#""flight":"AI0142""#,
+            r#""label":"B6""#,
+        ],
+    )
+    .at(52.0402, 19.8039),
+    reads(
+        "hfdl",
+        &[r#""gs_name":"Shannon, Ireland""#, r#""frame_index":1234"#],
+    ),
+    reads(
+        "iridium",
+        &[r#""sat":44"#, r#""beam":25"#, r#""tmsi":"071ca54a""#],
+    )
+    .at(40.1088, -127.2933),
+    reads(
+        "wmbus",
+        &[
+            r#""manufacturer":"SEN""#,
+            r#""id":"33225544""#,
+            r#""device_type":7"#,
+            r#""value":123.529"#,
+        ],
+    ),
+];
 
 pub(crate) struct Fixture {
     settings: ChannelSettings,
@@ -93,6 +611,12 @@ fn with_tail(mut iq: Vec<Complex<f32>>, rate: f64, seconds: f64) -> Vec<Complex<
     iq
 }
 
+fn with_lead(iq: Vec<Complex<f32>>, rate: f64, seconds: f64) -> Vec<Complex<f32>> {
+    let mut led = synth::silence((seconds * rate) as usize);
+    led.extend(iq);
+    led
+}
+
 fn ci16_le(bytes: &[u8]) -> Vec<Complex<f32>> {
     bytes
         .as_chunks::<4>()
@@ -121,20 +645,59 @@ fn cu8(bytes: &[u8]) -> Vec<Complex<f32>> {
         .collect()
 }
 
+fn payload(type_id: &str) -> &'static Payload {
+    PAYLOADS
+        .iter()
+        .find(|payload| payload.type_id == type_id)
+        .unwrap_or_else(|| panic!("{type_id} has no expected payload"))
+}
+
 fn check(type_id: &str) {
     let descriptor = crate::descriptor(type_id).expect("registered");
     let heard = heard(type_id).unwrap_or_else(|| panic!("{type_id} has no positive fixture"));
-    assert!(
-        !heard.kinds.is_empty(),
-        "{type_id} produced nothing from its fixture"
-    );
-    for kind in heard.kinds {
+    let expected = payload(type_id);
+    if !expected.carries.is_empty() {
         assert!(
-            descriptor.emits.contains(&kind),
+            !heard.kinds.is_empty(),
+            "{type_id} produced nothing from its fixture"
+        );
+    }
+    for kind in &heard.kinds {
+        assert!(
+            descriptor.emits.contains(kind),
             "{type_id} emitted {kind} but declares {:?}",
             descriptor.emits
         );
     }
+    let rendered = heard.rendered();
+    for carry in expected.carries {
+        assert!(
+            rendered.contains(carry),
+            "{type_id} fixture read {rendered} and never carried {carry}"
+        );
+    }
+    if let Some((lat, lon)) = expected.at {
+        let places = heard.places();
+        assert!(
+            places.iter().any(|&(heard_lat, heard_lon)| {
+                (heard_lat - lat).abs() < PLACE_TOLERANCE_DEG
+                    && (heard_lon - lon).abs() < PLACE_TOLERANCE_DEG
+            }),
+            "{type_id} fixture placed {places:?} and never {lat}, {lon}"
+        );
+    }
+    assert!(
+        heard.audio_samples >= expected.audio_samples,
+        "{type_id} fixture gave {} audio samples, short of {}",
+        heard.audio_samples,
+        expected.audio_samples
+    );
+    assert!(
+        heard.pictures >= expected.pictures,
+        "{type_id} fixture gave {} pictures, short of {}",
+        heard.pictures,
+        expected.pictures
+    );
 }
 
 fn heard(type_id: &str) -> Option<Heard> {
@@ -142,6 +705,9 @@ fn heard(type_id: &str) -> Option<Heard> {
         "ft8" | "ft4" | "wspr" => return Some(weak(type_id)),
         "wifi_occupancy" => return Some(wifi_occupancy()),
         "ism_survey" => return Some(ism_survey()),
+        "am" => am(),
+        "ssb" => ssb(),
+        "atv" => atv(),
         "nfm" => nfm(),
         "pocsag" => pocsag(),
         "flex" => flex(),
@@ -198,6 +764,38 @@ fn heard(type_id: &str) -> Option<Heard> {
         _ => return None,
     };
     Some(fixture.heard())
+}
+
+fn am() -> Fixture {
+    let params = ChannelParams::Am(AmParams::default());
+    let rate = Fixture::rate(&params);
+    let iq = (0..(rate * 0.5) as usize)
+        .map(|index| {
+            let time = index as f64 / rate;
+            let envelope = 0.5 * (1.0 + 0.6 * (std::f64::consts::TAU * 1_000.0 * time).sin());
+            Complex::new(envelope as f32, 0.0)
+        })
+        .collect();
+    Fixture::new(params, iq)
+}
+
+fn ssb() -> Fixture {
+    let params = ChannelParams::Ssb(SsbParams::default());
+    let rate = Fixture::rate(&params);
+    let iq = (0..(rate * 0.5) as usize)
+        .map(|index| {
+            let phase = std::f64::consts::TAU * 1_000.0 * index as f64 / rate;
+            Complex::from_polar(0.5, phase as f32)
+        })
+        .collect();
+    Fixture::new(params, iq)
+}
+
+fn atv() -> Fixture {
+    let params = ChannelParams::Atv(AtvParams::default());
+    let rate = Fixture::rate(&params);
+    let source = synth::atv::AtvSource::new(&AtvParams::default(), rate);
+    Fixture::new(params, synth::atv::bars(&source, 2))
 }
 
 fn nfm() -> Fixture {
@@ -335,7 +933,7 @@ fn aprs() -> Option<Fixture> {
     });
     let rate = Fixture::rate(&params);
     let mut tx = AprsTx::new(ChannelCtx { input_rate: rate }, settings(params.clone())).ok()?;
-    tx.submit(TxPayload::Frame(aprs_frame("SDR FIXTURE")))
+    tx.submit(TxPayload::Frame(aprs_frame(APRS_POSITION_REPORT)))
         .ok()?;
     let iq = synth::burst(&mut tx);
     Some(Fixture::new(params, with_tail(iq, rate, 0.5)))
@@ -373,7 +971,7 @@ fn morse() -> Fixture {
     let params = ChannelParams::Morse(MorseParams::default());
     let rate = Fixture::rate(&params);
     let iq = synth::morse::transmission("CQ CQ DE SDR K", 20.0, 0.0, rate);
-    Fixture::new(params, with_tail(iq, rate, 3.5))
+    Fixture::new(params, with_tail(with_lead(iq, rate, 0.5), rate, 3.5))
 }
 
 fn rtty() -> Fixture {
@@ -394,7 +992,7 @@ fn psk() -> Fixture {
     let params = ChannelParams::Psk(PskParams::default());
     let iq = synth::psk::transmission("CQ CQ DE SDR \n", PskBaud::Psk31.rate());
     let rate = Fixture::rate(&params);
-    Fixture::new(params, with_tail(iq, rate, 1.0))
+    Fixture::new(params, with_tail(with_lead(iq, rate, 0.5), rate, 1.0))
 }
 
 fn selcall() -> Option<Fixture> {
@@ -519,7 +1117,14 @@ fn digital_voice(type_id: &str) -> Fixture {
         ),
         "nxdn" => (
             ChannelParams::Nxdn(NxdnParams::default()),
-            dv::nxdn::transmission(&dv::nxdn::Shape::default(), 1, true, 48_000.0),
+            dv::nxdn::addressed_transmission(
+                &dv::nxdn::Shape::default(),
+                NXDN_RAN,
+                NXDN_SOURCE,
+                NXDN_DESTINATION,
+                true,
+                48_000.0,
+            ),
         ),
         "dstar" => (
             ChannelParams::Dstar(DstarParams::default()),
@@ -644,12 +1249,13 @@ fn sid() -> Fixture {
         params,
         synth::sid::carriers(
             &[(19_580.0, 0.05), (23_400.0, 0.1), (24_000.0, 0.03)],
-            30_000.0,
+            SID_CENTRE_HZ,
             10.0,
             rate,
             0x51D,
         ),
     )
+    .tuned(SID_CENTRE_HZ)
 }
 
 fn dect() -> Fixture {
@@ -665,8 +1271,11 @@ fn dect() -> Fixture {
 
 fn gnss() -> Fixture {
     Fixture::new(
-        ChannelParams::Gnss(GnssParams::default()),
-        synth::gnss::acquisition(7, 1_000.0, 317, 1_000),
+        ChannelParams::Gnss(GnssParams {
+            prn: GNSS_FIXTURE_PRN,
+            ..GnssParams::default()
+        }),
+        synth::gnss::acquisition(GNSS_FIXTURE_PRN, 1_000.0, 317, 1_000),
     )
 }
 
@@ -701,8 +1310,8 @@ fn datv() -> Fixture {
 fn dvbt() -> Fixture {
     let params = ChannelParams::Dvbt(DvbtParams::default());
     let rate = Fixture::rate(&params);
-    let iq = synth::dvbt::waveform(synth::dvbt::defaults(), 180);
-    Fixture::new(params, with_tail(iq, rate, 0.3))
+    let iq = synth::dvbt::waveform(synth::dvbt::defaults(), DVBT_SYMBOLS);
+    Fixture::new(params, with_tail(iq, rate, 0.01))
 }
 
 fn drm() -> Fixture {
@@ -812,14 +1421,29 @@ fn ism_survey() -> Heard {
 }
 
 #[test]
-fn every_channel_that_emits_has_a_positive_fixture() {
+fn every_registered_channel_has_a_positive_fixture() {
     let missing: Vec<String> = descriptors()
         .into_iter()
-        .filter(|descriptor| !descriptor.emits.is_empty())
         .map(|descriptor| descriptor.type_id)
         .filter(|type_id| !FIXTURED.contains(&type_id.as_str()))
         .collect();
     assert!(missing.is_empty(), "no positive fixture for {missing:?}");
+}
+
+#[test]
+fn every_positive_fixture_states_what_it_must_read() {
+    for type_id in FIXTURED {
+        assert!(
+            payload(type_id).proves_a_decode(),
+            "{type_id} has no expected payload, so its fixture proves nothing"
+        );
+    }
+    let stale: Vec<&str> = PAYLOADS
+        .iter()
+        .map(|payload| payload.type_id)
+        .filter(|type_id| !FIXTURED.contains(type_id))
+        .collect();
+    assert!(stale.is_empty(), "expected payload for {stale:?}");
 }
 
 macro_rules! emitted_kinds_are_declared {
@@ -835,6 +1459,9 @@ macro_rules! emitted_kinds_are_declared {
 }
 
 emitted_kinds_are_declared! {
+    am_emits_what_it_declares => "am",
+    ssb_emits_what_it_declares => "ssb",
+    atv_emits_what_it_declares => "atv",
     nfm_emits_what_it_declares => "nfm",
     pocsag_emits_what_it_declares => "pocsag",
     flex_emits_what_it_declares => "flex",

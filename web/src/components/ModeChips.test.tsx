@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import channelDefaults from "../generated/channel-defaults.json";
 import type { ChannelParams, ParamChoice } from "../lib/types";
 import { loraKeysShown } from "./LoraKeysChip";
 import { bandwidthOptions, ModeChips, serviceOptions } from "./ModeChips";
@@ -56,16 +57,50 @@ const CHOICES: Partial<Record<ChannelParams["type"], readonly ParamChoice[]>> = 
   ],
 };
 
+const DEFAULTS = channelDefaults as Partial<Record<ChannelParams["type"], ChannelParams>>;
+
 function render(
   params: ChannelParams,
   choices: readonly ParamChoice[] = CHOICES[params.type] ?? [],
 ): string {
   return renderToStaticMarkup(
-    <ModeChips params={params} limits={[]} choices={choices} onParams={() => undefined} />,
+    <ModeChips
+      params={params}
+      defaults={DEFAULTS[params.type]}
+      limits={[]}
+      choices={choices}
+      onParams={() => undefined}
+    />,
+  );
+}
+
+function renderWithoutDefaults(params: ChannelParams): string {
+  return renderToStaticMarkup(
+    <ModeChips
+      params={params}
+      limits={[]}
+      choices={CHOICES[params.type] ?? []}
+      onParams={() => undefined}
+    />,
   );
 }
 
 describe("ModeChips", () => {
+  it("carries no default of its own", () => {
+    expect(render({ type: "lora", settings: {} })).toContain("125 kHz");
+    expect(renderWithoutDefaults({ type: "lora", settings: {} })).not.toContain("125 kHz");
+    expect(render({ type: "lrpt", settings: {} })).toContain("OQPSK 72k");
+    expect(renderWithoutDefaults({ type: "lrpt", settings: {} })).not.toContain("OQPSK 72k");
+  });
+
+  it("shows the value the decoder's own defaults name", () => {
+    for (const [type, seeded] of Object.entries(DEFAULTS)) {
+      expect(render({ type, settings: {} } as ChannelParams), `${type} reads its defaults`).toBe(
+        render(seeded),
+      );
+    }
+  });
+
   it("shows the CTCSS chip only for CTCSS tone squelch", () => {
     expect(render({ type: "nfm", settings: {} })).not.toContain('aria-label="CTCSS tone"');
     const html = render({ type: "nfm", settings: { tone_mode: "ctcss", ctcss_hz: 100 } });

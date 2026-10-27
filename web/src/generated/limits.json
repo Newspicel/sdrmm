@@ -411,13 +411,65 @@
   "patch": {
     "nodes": 128,
     "wires": 256,
-    "streams": 16
+    "streams": 16,
+    "channels_per_radio": 64,
+    "monitors_per_radio": 128
+  },
+  "scan": {
+    "targets": 20000
   },
   "name_len": 64,
   "note_len": 4096,
   "filter": {
+    "kinds": 63,
     "ids": 256,
     "duration_ms": 600000,
     "text_len": 128
-  }
+  },
+  "channel_frequency_seed_hz": 100000000.0,
+  "audio": {
+    "rate_hz": 48000,
+    "notches": 4,
+    "blanker_threshold": {
+      "min": 1.5,
+      "max": 20.0
+    },
+    "blanker_threshold_seed": 5.0,
+    "click_threshold": {
+      "min": 2.0,
+      "max": 20.0
+    },
+    "click_threshold_seed": 6.0,
+    "squelch_auto_margin_db": {
+      "min": 2.0,
+      "max": 40.0
+    },
+    "squelch_auto_margin_seed_db": 8.0,
+    "tone_hz": {
+      "min": 30.0,
+      "max": 20000.0
+    },
+    "notch_width_hz": {
+      "min": 10.0,
+      "max": 2000.0
+    },
+    "notch_freq_seed_hz": 1000.0,
+    "notch_width_seed_hz": 100.0,
+    "denoise_strength_seed": 0.5,
+    "filter_low_seed_hz": 300.0,
+    "filter_high_seed_hz": 3000.0
+  },
+  "survey": {
+    "cells": 5000,
+    "cell_m": 10.0,
+    "metres_per_degree_lon": 111320.0,
+    "metres_per_degree_lat": 110540.0,
+    "min_cos_lat": 0.01
+  },
+  "wmbus": {
+    "keys": 256,
+    "meter_digits": 8,
+    "key_digits": 32
+  },
+  "workspace_state_version": 2
 }

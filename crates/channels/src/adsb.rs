@@ -66,7 +66,7 @@ const AIRBORNE_ZONE_DEG: f64 = 360.0;
 const SURFACE_ZONE_DEG: f64 = 90.0;
 const CPR_SCALE: f64 = 131_072.0;
 
-const CPR_CACHE_LEN: usize = 64;
+const TRACK_CACHE_LEN: usize = 512;
 const CPR_PAIR_MAX_AGE_S: f64 = 10.0;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
@@ -121,6 +121,7 @@ pub struct AdsbChannel {
     mag: Vec<f32>,
     stream_pos: u64,
     cpr: Vec<Aircraft>,
+    evicted: u32,
     short_flips: Vec<u32>,
     long_flips: Vec<u32>,
 }
@@ -530,7 +531,8 @@ impl AdsbChannel {
         if let Some(index) = self.cpr.iter().position(|a| a.icao == icao) {
             return self.cpr.get_mut(index);
         }
-        if self.cpr.len() < CPR_CACHE_LEN {
+        self.expire_tracks(at);
+        if self.cpr.len() < TRACK_CACHE_LEN {
             self.cpr.push(Aircraft::new(icao, at));
             return self.cpr.last_mut();
         }
@@ -542,7 +544,24 @@ impl AdsbChannel {
             .map(|(index, _)| index)?;
         let entry = self.cpr.get_mut(oldest)?;
         *entry = Aircraft::new(icao, at);
+        self.evicted = self.evicted.saturating_add(1);
         Some(entry)
+    }
+
+    fn expire_tracks(&mut self, at: u64) {
+        let pair_age = self.cpr_pair_max_age;
+        let proof_age = self.roll_call_max_age;
+        for entry in &mut self.cpr {
+            if at.saturating_sub(entry.last) > pair_age {
+                entry.even = None;
+                entry.odd = None;
+            }
+        }
+        self.cpr.retain(|a| {
+            at.saturating_sub(a.last) <= pair_age
+                || a.proven
+                    .is_some_and(|proved| at.saturating_sub(proved) <= proof_age)
+        });
     }
 
     fn pair(&mut self, icao: u32, fix: CprFix, odd: bool) -> Option<(f64, f64)> {
@@ -782,7 +801,8 @@ impl ChannelRx for AdsbChannel {
             roll_call_max_age: (ROLL_CALL_MAX_AGE_S * ctx.input_rate) as u64,
             mag: Vec::new(),
             stream_pos: 0,
-            cpr: Vec::with_capacity(CPR_CACHE_LEN),
+            cpr: Vec::with_capacity(TRACK_CACHE_LEN),
+            evicted: 0,
             short_flips: mode_s_bit_overlays(SHORT_BYTES),
             long_flips: mode_s_bit_overlays(LONG_BYTES),
         })
@@ -817,6 +837,10 @@ impl ChannelRx for AdsbChannel {
         let keep = positions;
         self.mag.drain(..keep);
         self.stream_pos += keep as u64;
+    }
+
+    fn skipped(&self) -> u32 {
+        self.evicted
     }
 }
 
@@ -1451,13 +1475,32 @@ mod tests {
 
     #[test]
     fn the_cpr_cache_is_bounded() {
-        let frames: Vec<Vec<u8>> = (0..CPR_CACHE_LEN as u32 * 3)
+        let frames: Vec<Vec<u8>> = (0..TRACK_CACHE_LEN as u32 + 1)
             .map(|n| squitter(0x40_0000 + n, me_airborne_position(30_000, LAT, LON, false)))
             .collect();
         let mut chan = channel(AdsbParams::default());
         let iq = transmission(&frames, GAP_US, LEVEL, INPUT_RATE_HZ);
         assert_eq!(feed(&mut chan, &iq, &[8_192]).len(), frames.len());
-        assert_eq!(chan.cpr.len(), CPR_CACHE_LEN);
+        assert!(chan.cpr.len() <= TRACK_CACHE_LEN, "{}", chan.cpr.len());
+        assert!(chan.skipped() > 0, "evictions must surface");
+    }
+
+    #[test]
+    fn a_hub_sized_fleet_keeps_every_roll_call_proof() {
+        const FLEET: u32 = 200;
+        let mut chan = channel(AdsbParams::default());
+        for n in 0..FLEET {
+            chan.observe(0x40_0000 + n, 0, true);
+        }
+        for n in 0..FLEET {
+            let reply = altitude_reply(0x40_0000 + n, 30_000, 0);
+            assert!(
+                chan.vouched(0x40_0000 + n, 0),
+                "lost the proof for aircraft {n}"
+            );
+            assert_eq!(chan.message(&reply, 4, 0x40_0000 + n, 0).df, 4);
+        }
+        assert_eq!(chan.skipped(), 0);
     }
 
     #[test]

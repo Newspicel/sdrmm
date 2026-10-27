@@ -30,7 +30,6 @@ pub mod polar;
 pub mod radar;
 pub mod realiq;
 pub mod resamp;
-#[cfg(any(test, feature = "test-scene"))]
 pub mod scene;
 pub mod special;
 pub mod spectrum;

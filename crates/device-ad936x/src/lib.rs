@@ -10,8 +10,8 @@ use sdrmm_device::{
     net::{Adopted, Endpoint},
 };
 use sdrmm_wire::{
-    AgcGain, Capabilities, DeviceInfo, DeviceSettings, Duplex, GainKind, Readout, ReadoutValue,
-    StreamSettings,
+    AgcGain, Capabilities, DeviceBackend, DeviceInfo, DeviceSettings, Duplex, GainKind, Readout,
+    ReadoutValue, StreamSettings,
 };
 
 use crate::{
@@ -45,7 +45,7 @@ mod source;
 mod tone;
 mod tx;
 
-const DRIVER_ID: &str = "ad936x";
+const DRIVER_ID: DeviceBackend = DeviceBackend::Ad936x;
 
 const SINK_BLOCK_SAMPLES: usize = 32_768;
 
@@ -122,7 +122,7 @@ impl Ad936xDriver {
 fn net_info(endpoint: &Endpoint, identity: Identity) -> DeviceInfo {
     let name = identity.name.as_deref().unwrap_or("AD936x");
     DeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: endpoint.to_string(),
         label: format!("{name} {endpoint}"),
         serial: identity.serial,
@@ -132,7 +132,7 @@ fn net_info(endpoint: &Endpoint, identity: Identity) -> DeviceInfo {
 
 fn usb_info(radio: &discovery::UsbRadio) -> DeviceInfo {
     DeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: radio.key.clone(),
         label: radio.label.clone(),
         serial: radio.serial.clone(),
@@ -141,7 +141,7 @@ fn usb_info(radio: &discovery::UsbRadio) -> DeviceInfo {
 }
 
 impl DeviceDriver for Ad936xDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 
@@ -582,7 +582,7 @@ impl SdrDevice for Ad936xDevice {
             fan_out(sinks, SINK_BLOCK_SAMPLES),
             CaptureConfig {
                 block_samples: SINK_BLOCK_SAMPLES * lanes,
-                ..CaptureConfig::new("sdrmm-ad936x-rx", DRIVER_ID)
+                ..CaptureConfig::new("sdrmm-ad936x-rx", DRIVER_ID.as_str())
                     .with_sample_rate(self.settings.sample_rate.map(|rate| rate * lanes as f64))
             },
         );

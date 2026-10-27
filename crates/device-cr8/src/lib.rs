@@ -5,7 +5,9 @@ use std::{
 };
 
 use sdrmm_device::{DeviceDriver, DeviceError, RxSink, SdrDevice, check_stream_settings};
-use sdrmm_wire::{Capabilities, DeviceInfo, DeviceSettings};
+use sdrmm_wire::{
+    Capabilities, CheckStatus, DeviceBackend, DeviceInfo, DeviceSettings, DoctorCheck,
+};
 
 mod api;
 mod caps;
@@ -15,9 +17,30 @@ mod settings;
 pub use api::{Cr8Api, DevHandle, library_candidates, load_error, shared};
 pub use caps::{CLOCK_EXTERNAL, CLOCK_INTERNAL, CLOCK_SETTING, capabilities, profile};
 
-pub const DRIVER_ID: &str = "cr8";
+pub const DRIVER_ID: DeviceBackend = DeviceBackend::Cr8;
 
 const BUFFER_SAMPLES: usize = 65_536;
+
+#[must_use]
+pub fn health(error: Option<String>) -> DoctorCheck {
+    DoctorCheck {
+        id: "cr8.library".to_string(),
+        name: "Dragon Labs CR-8 SDK".to_string(),
+        status: if error.is_none() {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Warn
+        },
+        detail: error.clone().unwrap_or_else(|| "loaded".to_string()),
+        hint: error.is_some().then(|| {
+            "The CR-8 needs its vendor library, which ships with the receiver and is not part of \
+             this package. Put libdlcr where the loader can find it, or point \
+             SDRMM_DLCR_LIBRARY at it. Nothing else is affected, only CR-8 receivers stay \
+             invisible."
+                .to_string()
+        }),
+    }
+}
 
 pub struct Cr8Driver {
     api: Option<Arc<dyn Cr8Api>>,
@@ -50,7 +73,7 @@ impl Cr8Driver {
 
 fn info(serial: &str) -> DeviceInfo {
     DeviceInfo {
-        driver: DRIVER_ID.to_owned(),
+        driver: DRIVER_ID,
         key: serial.to_owned(),
         label: format!("Dragon Labs CR-8 {serial}"),
         serial: Some(serial.to_owned()),
@@ -59,8 +82,12 @@ fn info(serial: &str) -> DeviceInfo {
 }
 
 impl DeviceDriver for Cr8Driver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn health(&self) -> Option<DoctorCheck> {
+        Some(health(load_error()))
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -428,7 +455,7 @@ mod tests {
     fn a_radio_that_is_not_plugged_in_is_refused_by_name() {
         let driver = Cr8Driver::with_api(recorder(&["DL0001"]));
         let missing = DeviceInfo {
-            driver: DRIVER_ID.to_owned(),
+            driver: DRIVER_ID,
             key: "DL9999".to_owned(),
             label: String::new(),
             serial: None,
@@ -459,6 +486,46 @@ mod tests {
                 freq_hz: 433.92e6
             }]
         );
+    }
+
+    #[test]
+    fn a_tuning_the_radio_cannot_reach_never_becomes_a_call() {
+        let capabilities = capabilities();
+        for hz in [
+            10e9,
+            1.0,
+            f64::NAN,
+            f64::INFINITY,
+            caps::MIN_FREQ_HZ - 1.0,
+            caps::MAX_FREQ_HZ + 1.0,
+        ] {
+            let refused = plan(
+                &DeviceSettings {
+                    center_hz: Some(hz),
+                    ..DeviceSettings::default()
+                },
+                &DeviceSettings::default(),
+                &capabilities,
+            );
+            assert!(
+                matches!(refused, Err(DeviceError::Unsupported(_))),
+                "{hz} must not reach the radio, got {refused:?}"
+            );
+        }
+        for hz in [caps::MIN_FREQ_HZ, 433.92e6, caps::MAX_FREQ_HZ] {
+            assert!(
+                plan(
+                    &DeviceSettings {
+                        center_hz: Some(hz),
+                        ..DeviceSettings::default()
+                    },
+                    &DeviceSettings::default(),
+                    &capabilities,
+                )
+                .is_ok(),
+                "{hz}"
+            );
+        }
     }
 
     #[test]
@@ -925,5 +992,19 @@ mod tests {
         assert_eq!(channel_mask(0), 0b1);
         assert_eq!(channel_mask(7), 0b1000_0000);
         assert_eq!(channel_mask(8), 0, "there is no ninth channel");
+    }
+
+    #[test]
+    fn a_missing_library_warns_and_says_where_it_comes_from() {
+        let check = health(Some("libdlcr.so could not be loaded".to_string()));
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(check.detail.contains("libdlcr"));
+        assert!(
+            check
+                .hint
+                .unwrap_or_default()
+                .contains("SDRMM_DLCR_LIBRARY")
+        );
+        assert_eq!(health(None).status, CheckStatus::Ok);
     }
 }

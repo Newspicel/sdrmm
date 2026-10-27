@@ -178,19 +178,24 @@ impl FbmcDemod {
         &self.params
     }
 
-    pub fn demodulate(&mut self, x: &[Complex<f32>], symbols: usize, out: &mut Vec<Complex<f32>>) {
+    pub fn demodulate(
+        &mut self,
+        x: &[Complex<f32>],
+        symbols: usize,
+        out: &mut Vec<Complex<f32>>,
+    ) -> usize {
         let (allocated, stride) = (self.params.allocated, self.params.slot_stride());
         let len = self.params.prototype_len();
         for symbol in 0..symbols {
+            if (2 * symbol + 1) * stride + len > x.len() {
+                return symbol;
+            }
             for index in 0..allocated {
                 let kernel = &self.kernels[index];
                 let mut halves = [0.0f32; 2];
                 for (half, slot_value) in halves.iter_mut().enumerate() {
                     let slot = 2 * symbol + half;
                     let base = slot * stride;
-                    if base + len > x.len() {
-                        continue;
-                    }
                     let mut acc = Complex::new(0.0f32, 0.0);
                     for (u, &tap) in kernel.iter().enumerate() {
                         acc += x[base + u] * tap.conj();
@@ -200,6 +205,7 @@ impl FbmcDemod {
                 out.push(Complex::new(halves[0], halves[1]));
             }
         }
+        symbols
     }
 }
 
@@ -272,6 +278,21 @@ mod tests {
             .map(|(a, b)| f64::from((a - b).norm()))
             .fold(0.0f64, f64::max);
         assert!(worst < 0.02, "worst interior error {worst}");
+    }
+
+    #[test]
+    fn a_frame_cut_short_demodulates_only_its_whole_symbols() {
+        let params = FbmcParams::reference();
+        let symbols = 16;
+        let sent = points(symbols * params.allocated);
+        let mut wave = Vec::new();
+        FbmcMod::new(params).modulate(&sent, &mut wave);
+        let stride = params.slot_stride();
+        let cut = &wave[..11 * 2 * stride];
+        let mut got = Vec::new();
+        let decided = FbmcDemod::new(params).demodulate(cut, symbols, &mut got);
+        assert!(decided < symbols, "{decided} of {symbols} symbols");
+        assert_eq!(got.len(), decided * params.allocated);
     }
 
     #[test]

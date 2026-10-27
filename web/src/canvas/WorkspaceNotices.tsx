@@ -10,6 +10,7 @@ const RETIRED_NAMES: Readonly<Record<string, string>> = { df: "DF" };
 const SHOWN_KINDS = 4;
 
 const CLEARED_GPS_TITLE = "This device is gone. Pick a phone.";
+const CLEARED_DEVICE_TITLE = "This build no longer has that backend. Pick a radio.";
 
 export interface KindNames {
   nodes: readonly { kind: string; name: string }[];
@@ -38,6 +39,13 @@ export function noticeLine(notice: WorkspaceNotice, catalog: KindNames): NoticeL
       id: notice.id,
       text: `GPS source cleared: ${notice.data.nodes.join(", ")}`,
       title: CLEARED_GPS_TITLE,
+    };
+  }
+  if (notice.kind === "cleared_devices") {
+    return {
+      id: notice.id,
+      text: `Radio cleared: ${notice.data.nodes.join(", ")}`,
+      title: CLEARED_DEVICE_TITLE,
     };
   }
   if (notice.kind === "dropped_wires" || notice.kind === "added_wires") {

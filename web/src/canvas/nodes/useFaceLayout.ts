@@ -21,7 +21,7 @@ export function useFaceLayout(): {
     if (host === null) {
       return;
     }
-    const next = anchorsOf(marks.current, (mark: HTMLElement) => centreOn(mark, host));
+    const next = faceAnchors(host, marks.current);
     setAnchors((current) => (sameAnchors(current, next) ? current : next));
   }, []);
 
@@ -41,17 +41,22 @@ export function useFaceLayout(): {
     [measure],
   );
 
-  useLayoutEffect(measure);
+  useLayoutEffect(measure, [measure]);
   useLayoutEffect(() => watchMoves(container.current, marks.current, watch, measure), [measure]);
 
   const slot = useMemo(() => ({ track }), [track]);
   return { container, anchors, slot };
 }
 
-function centreOn(mark: Element, host: HTMLElement): number {
+export function faceAnchors(
+  host: Pick<HTMLElement, "getBoundingClientRect" | "offsetHeight" | "clientTop">,
+  marks: ReadonlyMap<string, HTMLElement>,
+): Anchors {
   const box = host.getBoundingClientRect();
   const scale = host.offsetHeight === 0 ? 1 : box.height / host.offsetHeight;
-  return visualCenter(mark.getBoundingClientRect(), box, scale, host.clientTop);
+  return anchorsOf(marks, (mark: HTMLElement) =>
+    visualCenter(mark.getBoundingClientRect(), box, scale, host.clientTop),
+  );
 }
 
 function watchMoves(

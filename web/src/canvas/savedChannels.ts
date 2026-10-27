@@ -1,3 +1,4 @@
+import { WORKSPACE_STATE_VERSION } from "../lib/limits";
 import type { ChannelSettings, WorkspaceDetail } from "../lib/types";
 
 export function savedChannelsOf(
@@ -16,7 +17,7 @@ export function withSavedChannel(
   node: string,
   settings: ChannelSettings,
 ): WorkspaceDetail {
-  const state = detail.state ?? { version: 2, devices: [], channels: [] };
+  const state = detail.state ?? { version: WORKSPACE_STATE_VERSION, devices: [], channels: [] };
   const channels = state.channels ?? [];
   return {
     ...detail,

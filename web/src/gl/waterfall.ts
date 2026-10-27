@@ -1,5 +1,6 @@
 import { token } from "../lib/tokens";
 import { COLORMAP_GLSL, CUSTOM_STOPS, type Palette, paletteIndex, type Rgb } from "./colormap";
+import { watchOnScreen } from "./onScreen";
 import {
   advanceRing,
   backingPx,
@@ -14,8 +15,6 @@ import { timeTicks } from "./timeTicks";
 export { COLORMAPS, type Colormap, DEFAULT_COLORMAP, type Palette } from "./colormap";
 
 const HISTORY_ROWS = 1024;
-
-const PREROLL_MARGIN = "128px";
 
 const VERT = `#version 300 es
 in vec2 aPos;
@@ -173,7 +172,7 @@ interface Attachment {
 
 class Plot implements WaterfallView {
   private readonly ctx: CanvasRenderingContext2D | null;
-  private readonly observer: IntersectionObserver;
+  private readonly unwatch: () => void;
   private live: Attachment | null = null;
   private bins = 0;
   private writeRow = 0;
@@ -194,14 +193,10 @@ class Plot implements WaterfallView {
     private readonly onStatus: WaterfallStatus,
   ) {
     this.ctx = canvas.getContext("2d");
-    this.observer = new IntersectionObserver(
-      (entries) => {
-        this.onScreen = entries[entries.length - 1]?.isIntersecting ?? false;
-        this.dirty ||= this.onScreen;
-      },
-      { rootMargin: PREROLL_MARGIN },
-    );
-    this.observer.observe(canvas);
+    this.unwatch = watchOnScreen(canvas, (visible) => {
+      this.onScreen = visible;
+      this.dirty ||= visible;
+    });
   }
 
   attach(context: Shared): void {
@@ -309,7 +304,11 @@ class Plot implements WaterfallView {
   }
 
   private storeRow(row: number, level: RowLevel): void {
-    this.rowData.set([0, level.signal, level.spanDb, 0], row * ROW_FIELDS);
+    const at = row * ROW_FIELDS;
+    this.rowData[at] = 0;
+    this.rowData[at + 1] = level.signal;
+    this.rowData[at + 2] = level.spanDb;
+    this.rowData[at + 3] = 0;
     this.times[row] = level.at;
     this.rowsDirty = true;
   }
@@ -335,7 +334,7 @@ class Plot implements WaterfallView {
   }
 
   dispose(): void {
-    this.observer.disconnect();
+    this.unwatch();
     plots.delete(this);
     const live = this.live;
     if (live !== null) {

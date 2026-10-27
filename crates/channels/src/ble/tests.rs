@@ -116,6 +116,29 @@ fn advertising_data_reads_into_fields() {
 }
 
 #[test]
+fn a_partial_uuid_in_a_list_is_counted() {
+    let fields = Fields::read(&[0x06, 0x03, 0x0F, 0x18, 0x0A, 0x18, 0x0D]);
+    let uuids: Vec<&str> = fields
+        .services
+        .iter()
+        .map(|service| service.uuid.as_str())
+        .collect();
+    assert_eq!(uuids, vec!["180F", "180A"]);
+    assert_eq!(fields.truncated, 1);
+}
+
+#[test]
+fn a_truncated_service_list_reaches_the_rejected_count() {
+    let rate = BleLink::Channel.input_rate_hz();
+    let data = [0x02, 0x01, 0x06, 0x04, 0x03, 0x0F, 0x18, 0x0A];
+    let packet = bluetooth(&advert(0x02, &data), 12, ModemPhy::Le1m, rate);
+    let (adverts, rejected) = run(BleLink::Channel, CHANNEL_38_HZ, &air(&[packet], rate, 0.01));
+    assert_eq!(adverts.len(), 1, "{adverts:?}");
+    assert_eq!(adverts[0].services.len(), 1);
+    assert_eq!(rejected, 1);
+}
+
+#[test]
 fn beacons_are_recognised() {
     let fields = Fields::read(&ibeacon());
     assert_eq!(

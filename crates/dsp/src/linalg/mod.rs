@@ -25,6 +25,8 @@ pub enum LinalgError {
     NotPositiveDefinite(usize),
     #[error("matrix is rank deficient at column {0}")]
     RankDeficient(usize),
+    #[error("no factorization to solve with")]
+    NotFactored,
     #[error("matrix holds a non-finite value")]
     NonFinite,
     #[error("no convergence after {0} iterations")]
@@ -61,20 +63,28 @@ impl CMat {
         self.n
     }
 
+    fn cell(&self, row: usize, col: usize) -> usize {
+        assert!(
+            row < self.n && col < self.n,
+            "cell {row},{col} is outside an order {} matrix",
+            self.n
+        );
+        row * self.n + col
+    }
+
     #[must_use]
     pub fn get(&self, row: usize, col: usize) -> Complex<f32> {
-        debug_assert!(row < self.n && col < self.n);
-        self.data[row * self.n + col]
+        self.data[self.cell(row, col)]
     }
 
     pub fn set(&mut self, row: usize, col: usize, value: Complex<f32>) {
-        debug_assert!(row < self.n && col < self.n);
-        self.data[row * self.n + col] = value;
+        let at = self.cell(row, col);
+        self.data[at] = value;
     }
 
     pub fn add(&mut self, row: usize, col: usize, value: Complex<f32>) {
-        debug_assert!(row < self.n && col < self.n);
-        self.data[row * self.n + col] += value;
+        let at = self.cell(row, col);
+        self.data[at] += value;
     }
 
     #[must_use]
@@ -299,6 +309,20 @@ mod tests {
             matrix.permuted(&[0, 4], &mut swapped),
             Err(LinalgError::Order(4))
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "outside an order 3 matrix")]
+    fn a_cell_past_the_order_never_aliases_another_one() {
+        let matrix = CMat::identity(3).unwrap();
+        let _ = matrix.get(1, 5);
+    }
+
+    #[test]
+    #[should_panic(expected = "outside an order 3 matrix")]
+    fn writing_a_cell_past_the_order_never_aliases_another_one() {
+        let mut matrix = CMat::identity(3).unwrap();
+        matrix.set(5, 0, Complex::new(1.0, 0.0));
     }
 
     #[test]

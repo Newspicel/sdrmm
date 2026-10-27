@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "dev.newspicel.sdrmm"
     compileSdk = 37
-    ndkVersion = "30.0.16248370"
+    ndkVersion = providers.gradleProperty("sdrmm.ndkVersion").get()
     buildToolsVersion = "37.0.0"
 
     defaultConfig {
@@ -37,7 +37,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release").takeIf { it.storeFile != null }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

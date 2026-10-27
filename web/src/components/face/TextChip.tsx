@@ -20,6 +20,7 @@ export function TextChip({
   name,
   shown,
   placeholder,
+  maxLength,
   secret = false,
   disabled,
   onCommit,
@@ -30,6 +31,7 @@ export function TextChip({
   name?: string;
   shown?: string;
   placeholder?: string;
+  maxLength?: number;
   secret?: boolean;
   disabled?: boolean;
   onCommit: (value: string) => boolean | void;
@@ -49,6 +51,7 @@ export function TextChip({
             value={value}
             secret={secret}
             placeholder={placeholder}
+            maxLength={maxLength}
             onCommit={(next) => {
               onCommit(next);
             }}

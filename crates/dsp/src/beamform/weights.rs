@@ -112,7 +112,7 @@ impl BlockSolver {
         let n = self.n;
         let delta = self.chol.factor_loaded(r, loading)?;
         let y = &mut self.scratch[OUT][..n];
-        self.chol.solve_into(steer, y);
+        self.chol.solve_into(steer, y)?;
         let gain: Complex<f32> = steer.iter().zip(y.iter()).map(|(a, v)| a.conj() * v).sum();
         if !(gain.re.is_finite() && gain.re > 0.0) {
             return Err(LinalgError::NotPositiveDefinite(0).into());
@@ -151,7 +151,7 @@ impl BlockSolver {
         for k in 0..count {
             let column = &mut self.scratch[k][..n];
             match delta {
-                Some(_) => self.chol.solve_into(constraints.vector(k), column),
+                Some(_) => self.chol.solve_into(constraints.vector(k), column)?,
                 None => column.copy_from_slice(constraints.vector(k)),
             }
         }
@@ -167,7 +167,7 @@ impl BlockSolver {
         for (k, value) in g.iter_mut().enumerate().take(count) {
             *value = constraints.response(k).conj();
         }
-        self.small.solve(&mut g[..count]);
+        self.small.solve(&mut g[..count])?;
         let (columns, rest) = self.scratch.split_at_mut(OUT);
         let textbook = &mut rest[0][..n];
         textbook.fill(ZERO);
@@ -205,7 +205,7 @@ impl BlockSolver {
         for (value, &lane) in z.iter_mut().zip(references) {
             *value = r.get(lane, primary);
         }
-        self.chol.solve(z);
+        self.chol.solve(z)?;
         if !z.iter().all(|value| value.is_finite()) {
             return Err(LinalgError::NonFinite.into());
         }
@@ -337,7 +337,7 @@ mod tests {
         let mut chol = Cholesky::new(m).unwrap();
         chol.factor_cmat(&aux).unwrap();
         let mut s: Vec<Complex<f32>> = references.iter().map(|&lane| r.get(0, lane)).collect();
-        chol.solve(&mut s);
+        chol.solve(&mut s).unwrap();
         let mut weights = vec![Complex::new(1.0, 0.0)];
         weights.extend(s.iter().map(|value| -value));
         weights

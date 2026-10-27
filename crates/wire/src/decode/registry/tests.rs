@@ -65,7 +65,7 @@ fn an_event_carries_the_tag_of_its_kind() {
 #[test]
 fn derived_facets_equal_the_old_table() {
     let mut position = OLD_POSITION.to_vec();
-    position.extend(["radiosonde", "nav", "radar_sites", "satellite"]);
+    position.extend(["acars", "radiosonde", "nav", "radar_sites", "satellite"]);
     assert_eq!(tags(KindSet::with_cap(Capability::Geo)), sorted(&position));
     assert_eq!(
         tags(KindSet::with_cap(Capability::Voice)),
@@ -129,14 +129,14 @@ fn the_user_example_row_reads_as_specified() {
 
 #[test]
 fn a_kind_set_does_set_algebra() {
-    let air = KindSet::from_iter([EventKind::Adsb, EventKind::Acars]);
+    let air = KindSet::from_iter([EventKind::Adsb, EventKind::Ils]);
     let geo = KindSet::with_cap(Capability::Geo);
     assert!(KindSet::EMPTY.is_empty());
     assert_eq!(air.len(), 2);
-    assert!(air.contains(EventKind::Acars));
+    assert!(air.contains(EventKind::Ils));
     assert!(!air.contains(EventKind::Ais));
     assert_eq!(air.intersection(geo), KindSet::EMPTY.with(EventKind::Adsb));
-    assert_eq!(air.without(geo), KindSet::EMPTY.with(EventKind::Acars));
+    assert_eq!(air.without(geo), KindSet::EMPTY.with(EventKind::Ils));
     assert_eq!(air.union(geo).len(), geo.len() + 1);
     assert_eq!(air.union(air), air);
     assert_eq!(air.with(EventKind::Adsb), air);

@@ -1,11 +1,11 @@
 use std::time::Instant;
 
 use sdrmm_engine::Engine;
+use sdrmm_serial::UsbPortInfo;
 use sdrmm_wire::{
     GpsNode, HeadingSource, PatchNode, Position, WorkspaceSnapshot,
     phone::{PHONE_NOT_PAIRED, PHONE_OFFLINE, PHONE_SILENT},
 };
-use tokio_serial::UsbPortInfo;
 
 use super::{
     gpsd::{GpsdOutcome, GpsdState},
@@ -77,7 +77,7 @@ async fn bounded_lines_reject_oversized_input_before_allocating_it() {
 
 #[test]
 fn serial_discovery_preserves_usb_identity() {
-    let device = nmea_device_info(SerialPortInfo {
+    let device = serial_device_info(SerialPortInfo {
         port_name: "/dev/ttyACM0".to_owned(),
         port_type: SerialPortType::UsbPort(UsbPortInfo {
             vid: 0x1546,
@@ -97,30 +97,8 @@ fn serial_discovery_preserves_usb_identity() {
 }
 
 #[test]
-fn only_openable_ports_are_offered_and_receivers_rank_first() {
-    for pseudo in [
-        "/dev/cu.Bluetooth-Incoming-Port",
-        "/dev/cu.debug-console",
-        "/dev/tty.usbmodem11401",
-    ] {
-        assert!(
-            !is_openable_port(&SerialPortInfo {
-                port_name: pseudo.to_owned(),
-                port_type: SerialPortType::Unknown,
-            }),
-            "offered {pseudo}"
-        );
-    }
-    assert!(is_openable_port(&SerialPortInfo {
-        port_name: "/dev/cu.usbmodem11401".to_owned(),
-        port_type: SerialPortType::Unknown,
-    }));
-    assert!(is_openable_port(&SerialPortInfo {
-        port_name: "/dev/ttyUSB0".to_owned(),
-        port_type: SerialPortType::Unknown,
-    }));
-
-    let port = |product: Option<&str>, vid: Option<u16>| NmeaDeviceInfo {
+fn a_receiver_ranks_ahead_of_any_other_serial_hardware() {
+    let port = |product: Option<&str>, vid: Option<u16>| SerialDeviceInfo {
         path: "/dev/ttyUSB0".to_owned(),
         product: product.map(ToOwned::to_owned),
         manufacturer: None,
@@ -143,7 +121,7 @@ fn only_openable_ports_are_offered_and_receivers_rank_first() {
 
 #[test]
 fn the_picker_is_offered_receivers_alone_unless_there_are_none() {
-    let named = |path: &str, product: Option<&str>| NmeaDeviceInfo {
+    let named = |path: &str, product: Option<&str>| SerialDeviceInfo {
         path: path.to_owned(),
         product: product.map(ToOwned::to_owned),
         manufacturer: None,
@@ -168,8 +146,35 @@ fn the_picker_is_offered_receivers_alone_unless_there_are_none() {
 }
 
 #[test]
+fn every_serial_port_stays_listed_when_a_receiver_is_attached() {
+    let named = |path: &str, product: Option<&str>| SerialDeviceInfo {
+        path: path.to_owned(),
+        product: product.map(ToOwned::to_owned),
+        manufacturer: None,
+        serial: None,
+        usb_vid: Some(0x1234),
+        usb_pid: None,
+    };
+    let rotator = named("/dev/cu.usbserial-A901", Some("FT232R USB UART"));
+    let puck = named("/dev/cu.usbmodem11401", Some("u-blox GNSS receiver"));
+    let listed = offered_ports(vec![rotator.clone(), puck.clone()]);
+    assert_eq!(
+        listed
+            .iter()
+            .map(|port| port.path.as_str())
+            .collect::<Vec<_>>(),
+        ["/dev/cu.usbmodem11401"],
+        "the GPS picker narrows to receivers"
+    );
+    assert!(
+        !listed.contains(&rotator),
+        "a rotator cannot be picked from the receiver list, which is why it needs its own"
+    );
+}
+
+#[test]
 fn a_screen_that_answers_on_a_serial_port_is_never_offered_as_a_receiver() {
-    let monitor = NmeaDeviceInfo {
+    let monitor = SerialDeviceInfo {
         path: "/dev/cu.usbmodem306NTQD8F3802".to_owned(),
         product: Some("LG Monitor Controls".to_owned()),
         manufacturer: Some("LG Electronics Inc.".to_owned()),
@@ -177,7 +182,7 @@ fn a_screen_that_answers_on_a_serial_port_is_never_offered_as_a_receiver() {
         usb_vid: Some(0x043e),
         usb_pid: Some(0x9a39),
     };
-    let keyboard = NmeaDeviceInfo {
+    let keyboard = SerialDeviceInfo {
         path: "/dev/cu.usbmodem4001".to_owned(),
         product: Some("USB Keyboard".to_owned()),
         manufacturer: None,
@@ -187,7 +192,7 @@ fn a_screen_that_answers_on_a_serial_port_is_never_offered_as_a_receiver() {
     };
     assert!(offered_ports(vec![monitor, keyboard]).is_empty());
 
-    let mapping = NmeaDeviceInfo {
+    let mapping = SerialDeviceInfo {
         path: "/dev/cu.usbmodem11401".to_owned(),
         product: Some("Garmin GPSMAP Display".to_owned()),
         manufacturer: None,

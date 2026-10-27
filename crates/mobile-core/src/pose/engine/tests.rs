@@ -699,3 +699,43 @@ fn a_bump_is_not_published_as_a_turn_but_a_turn_is() {
     let last = turning.last().copied().unwrap_or_default();
     assert!((last - 30.0).abs() < 2.0, "{turning:?}");
 }
+
+#[test]
+fn a_motion_sample_stamped_in_the_future_does_not_block_the_rest_of_the_run() {
+    let mut engine = PoseEngine::new(settings(HeadingMode::Auto, 0.0));
+    let ahead = T0 + 7 * 24 * 3_600_000;
+    engine.motion(gyro(ahead, 10.0));
+    engine.motion(gyro(T0, 10.0));
+    assert_eq!(engine.counters().invalid_samples, 0);
+    let t = drive(&mut engine, T0, 5, 10.0, 80.0);
+    for step in 1..=10 {
+        engine.motion(gyro(t + step * 100, 10.0));
+    }
+    assert_eq!(engine.counters().invalid_samples, 0);
+    assert_eq!(engine.view(t + 1_000).source, HeadingSourceKind::Fused);
+}
+
+#[test]
+fn a_fix_stamped_in_the_future_does_not_leave_the_phone_without_a_fix() {
+    let mut engine = PoseEngine::new(settings(HeadingMode::Auto, 0.0));
+    engine.demand(true, true, T0);
+    let ahead = T0 + 7 * 24 * 3_600_000;
+    engine.location(fix(ahead, Some(1.0), None));
+    let step = engine.location(fix(T0 + 1_000, Some(1.0), None));
+    assert!(
+        step.publish
+            .as_ref()
+            .is_some_and(|out| out.fix.is_some() && out.error.is_none()),
+        "{:?}",
+        step.publish
+    );
+    assert_eq!(engine.view(T0 + 1_000).fix_age_ms, Some(0));
+}
+
+#[test]
+fn a_sample_a_moment_out_of_order_is_still_refused() {
+    let mut engine = PoseEngine::new(settings(HeadingMode::Auto, 0.0));
+    engine.motion(gyro(T0 + 1_000, 10.0));
+    engine.motion(gyro(T0 + 900, 10.0));
+    assert_eq!(engine.counters().invalid_samples, 1);
+}

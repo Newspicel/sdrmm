@@ -195,7 +195,11 @@ impl WorkspaceState {
                     }
                     held.channels.sort_unstable_by_key(|channel| channel.lcn);
                 }
-                None => self.trunks.push(trunk),
+                None => {
+                    let mut fresh = trunk;
+                    fresh.channels.sort_unstable_by_key(|channel| channel.lcn);
+                    self.trunks.push(fresh);
+                }
             }
         }
     }
@@ -365,6 +369,20 @@ mod tests {
         assert_eq!(held.channels.len(), 2);
         assert_eq!(held.channels[0].lcn, 2, "the plan was left unsorted");
         assert_eq!(held.channels[1].freq_hz, 451_050_000);
+    }
+
+    #[test]
+    fn a_newly_learned_plan_is_written_down_in_channel_order() {
+        let mut state = WorkspaceState::new();
+        state.merge_trunks(vec![trunk(
+            "sys",
+            Some(3),
+            &[(17, 451_050_000), (2, 451_000_000)],
+        )]);
+
+        let held = state.trunk("sys", Some(3)).expect("the plan");
+        let order: Vec<u16> = held.channels.iter().map(|channel| channel.lcn).collect();
+        assert_eq!(order, vec![2, 17]);
     }
 
     #[test]

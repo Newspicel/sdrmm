@@ -27,14 +27,77 @@ jobs:
     name: Measurements (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
         with:
           cache: nightly
       - name: Modem gates
         run: cargo test -p sdrmm-modem -p sdrmm-modem-test-support --release -- --ignored --skip write_perf_baseline
-      - name: Channel baselines
-        run: cargo test -p sdrmm-channels --release -- --ignored --skip write_perf_baseline
+      - name: Fetch the xng bench captures
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/reference/xng"
+          gh release download bench-fixtures-v1 --repo airframesio/xng --clobber \
+            --dir "$RUNNER_TEMP/reference/xng" \
+            --pattern acars_100k.cs16 \
+            --pattern adsb_quiet_24m.cu8 \
+            --pattern ais_96k.cs16 \
+            --pattern hfdl_48k.cs16 \
+            --pattern navtex_62500.cs16 \
+            --pattern vdl2_105k_conj.s16 \
+            --pattern vdl2_opflasher_105k.cs16
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/reference/xng/modes1.cu8" \
+            https://raw.githubusercontent.com/airframesio/xng/096c805278faa0a904de7d98066bf4cf395cb6c2/bench/data/modes1.cu8
+          echo "XNG_BENCH_DATA=$RUNNER_TEMP/reference/xng" >> "$GITHUB_ENV"
+      - name: Fetch the SigIDWiki DECT capture
+        run: |
+          mkdir -p "$RUNNER_TEMP/reference/dect"
+          if curl -fsSL --retry 3 -o "$RUNNER_TEMP/reference/dect.zip" https://www.sigidwiki.com/images/5/5f/Dect.zip; then
+            unzip -oq "$RUNNER_TEMP/reference/dect.zip" -d "$RUNNER_TEMP/reference/dect"
+            echo "DECT_SIGID_WAV=$RUNNER_TEMP/reference/dect/dect.wav" >> "$GITHUB_ENV"
+          else
+            echo "::warning::sigidwiki.com did not serve Dect.zip, so the DECT cross-check skips"
+          fi
+      - name: Fetch the ITU-T G.726 test vectors
+        run: |
+          mkdir -p "$RUNNER_TEMP/reference/g726"
+          if curl -fsSL --retry 3 -o "$RUNNER_TEMP/reference/g726.zip" \
+            'https://www.itu.int/rec/dologin_pub.asp?lang=e&id=T-REC-G.726-199103-I%21AppII%21SOFT-ZST-E&type=items'; then
+            unzip -oq "$RUNNER_TEMP/reference/g726.zip" -d "$RUNNER_TEMP/reference/g726"
+            unzip -oq "$RUNNER_TEMP/reference/g726/Software.zip" -d "$RUNNER_TEMP/reference/g726"
+            echo "G726_VECTORS=$RUNNER_TEMP/reference/g726/software/G726ap2/G726ap2e/DISK2" >> "$GITHUB_ENV"
+          else
+            echo "::warning::itu.int did not serve the G.726 Appendix II software, so the vector cross-check skips"
+          fi
+      - name: Reference data no runner can fetch
+        run: |
+          echo 'STANAG_SIGID_DIR stays unset: all 48 LIBRARY stems of crates/channels/src/stanag/tests/air.rs'
+          echo 'as 9.6 kHz mono f32le <stem>.f32. Nine source URLs sit in fixtures/stanag/*.sigmf-meta;'
+          echo 'sigidwiki publishes no manifest for the rest, so an operator caches the set once.'
+          echo 'FT8_CORPUS stays unset: WSJT-X sample wavs, each beside its published-decode .txt. The wavs'
+          echo 'ship inside WSJT-X (save/samples) and the .txt is what jt9 prints, so nothing is downloadable.'
+      - name: Channel reference cross-checks
+        run: |
+          cargo test -p sdrmm-channels --release \
+            --test xng_fixtures --test xng_vdl2 --test xng_hfdl -- --ignored --nocapture
+          cargo test -p sdrmm-channels --release --lib -- --ignored --nocapture \
+            names_the_sigidwiki_library \
+            reproduces_the_itu_reset_vectors_bit_for_bit \
+            decodes_two_real_base_stations_off_air \
+            separates_real_bases_moved_onto_two_carriers_of_a_wideband_capture
+      - name: Channel measurement sweeps
+        run: |
+          cargo test -p sdrmm-channels --release --lib \
+            --test channel_perf --test datv_perf \
+            --test dmr_ambe_gain --test dmr_baseline --test dmr_soft_gain \
+            -- --ignored --nocapture \
+            --skip write_perf_baseline \
+            --skip write_drm_frame_fixtures \
+            --skip names_the_sigidwiki_library \
+            --skip reproduces_the_itu_reset_vectors_bit_for_bit \
+            --skip decodes_two_real_base_stations_off_air \
+            --skip separates_real_bases_moved_onto_two_carriers_of_a_wideband_capture
       - name: BER curves
         run: cargo run -p xtask -- ber bpsk-ideal --full
       - name: Modem benches
@@ -42,7 +105,7 @@ jobs:
       - name: DSP benches
         run: cargo bench -p sdrmm-dsp -- --test
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ber-curves
           path: target/ber
@@ -53,7 +116,7 @@ jobs:
     name: iPhone UI (macos)
     runs-on: xcode-27
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select -s /Applications/Xcode_27.app
       - run: xcrun simctl list runtimes | grep -q 'iOS 18.1 ' || xcodebuild -downloadPlatform iOS -buildVersion 18.1 -architectureVariant arm64
       - uses: ./.github/actions/rust
@@ -62,7 +125,7 @@ jobs:
           save: false
       - run: cargo xtask ios test --ui --floor
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-ui-results
           path: target/ios/results
@@ -72,7 +135,7 @@ jobs:
     name: iPhone end to end (macos)
     runs-on: xcode-27
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select -s /Applications/Xcode_27.app
       - uses: ./.github/actions/rust
         with:
@@ -80,7 +143,7 @@ jobs:
           save: false
       - run: cargo xtask ios e2e
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-e2e-results
           path: |
@@ -92,26 +155,28 @@ jobs:
     name: Android device tests (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "21"
-      - uses: android-actions/setup-android@v4
+      - id: ndk
+        run: echo "version=$(sed -n 's/^sdrmm.ndkVersion=//p' apps/android/gradle.properties)" >> "$GITHUB_OUTPUT"
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
-          packages: platforms;android-37.0 build-tools;37.0.0 ndk;30.0.16248370
-      - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          packages: platforms;android-37.0 build-tools;37.0.0 ndk;${{ steps.ndk.outputs.version }}
+      - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ steps.ndk.outputs.version }}" >> "$GITHUB_ENV"
       - uses: ./.github/actions/rust
         with:
           cache: android
           save: false
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
       - name: KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - uses: reactivecircus/android-emulator-runner@v2
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 36
           target: google_apis
@@ -119,7 +184,7 @@ jobs:
           working-directory: apps/android
           script: ./gradlew connectedDebugAndroidTest
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-device-reports
           path: apps/android/app/build/reports/androidTests
@@ -129,7 +194,7 @@ jobs:
     name: Sanitizers (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
         with:
           cache: sanitize
@@ -143,17 +208,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [channel_chain, channel_settings, dv_voice]
+        target:
+          - channel_chain
+          - channel_settings
+          - cps_image
+          - dv_voice
+          - iqlink_header
+          - media_bitstream
+          - net_radio_proto
+          - recorder_import
+          - workspace_import
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
         with:
           cache: fuzz
       - run: rustup toolchain install nightly --profile minimal
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-fuzz
-      - uses: actions/cache/restore@v6
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
@@ -164,12 +238,12 @@ jobs:
         if: always()
         run: cargo xtask fuzz --target ${{ matrix.target }} --minimize
       - if: always()
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz/corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-artifacts-${{ matrix.target }}
           path: fuzz/artifacts

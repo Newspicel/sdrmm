@@ -354,6 +354,7 @@ fn array_status_round_trips_through_json() {
             gated_samples: 10,
             dropped_samples: 1,
             dropped_reports: 2,
+            dropped_surfaces: 8,
             lane_overflows: 3,
             lane_mismatch: 4,
             solver_failures: 5,

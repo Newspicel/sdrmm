@@ -7,9 +7,8 @@ use std::{
 use num_complex::Complex;
 use sdrmm_device::{DeviceDriver, DeviceRegistry, RxSink, SdrDevice, lock, single_rx_sink};
 use sdrmm_wire::{
-    AdsbParams, ChannelParams, ChannelSettings, DcArtifact, DecoderEvent, Duplex,
-    MAX_TIME_MACHINE_SECONDS, NfmParams, ScanState, Sideband, SsbParams, StreamScope,
-    TimeMachineAction, TimeMachineNode, TimeMachineStatus, Tuning,
+    AdsbParams, ChannelParams, ChannelSettings, DcArtifact, DecoderEvent, DeviceBackend, Duplex,
+    MAX_PRE_ROLL_S, NfmParams, PreRollStatus, ScanState, Sideband, SsbParams, StreamScope, Tuning,
 };
 
 use super::*;
@@ -48,7 +47,7 @@ fn hold_tuning(engine: &Engine, ds: u32) {
 
 fn mock_info(key: &str, serial: Option<&str>) -> DeviceInfo {
     DeviceInfo {
-        driver: "mock".to_string(),
+        driver: DeviceBackend::Rtlsdr,
         key: key.to_string(),
         label: format!("Mock {key}"),
         serial: serial.map(str::to_string),
@@ -97,14 +96,15 @@ fn empty_capabilities() -> Capabilities {
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
         clean_fraction: None,
+        bank: None,
     }
 }
 
 struct DyingDriver;
 
 impl DeviceDriver for DyingDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -161,8 +161,8 @@ impl SdrDevice for DyingDevice {
 struct InstantFailDriver;
 
 impl DeviceDriver for InstantFailDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -209,8 +209,8 @@ struct VanishingDriver {
 }
 
 impl DeviceDriver for VanishingDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -235,8 +235,8 @@ struct AdoptingDriver {
 }
 
 impl DeviceDriver for AdoptingDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -265,8 +265,8 @@ struct CountingDriver {
 }
 
 impl DeviceDriver for CountingDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -285,8 +285,8 @@ impl DeviceDriver for CountingDriver {
 struct RatelessDriver;
 
 impl DeviceDriver for RatelessDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -329,8 +329,8 @@ impl SdrDevice for SilentDevice {
 struct FloodingDriver;
 
 impl DeviceDriver for FloodingDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -378,8 +378,8 @@ struct FaultOnDemandDriver {
 }
 
 impl DeviceDriver for FaultOnDemandDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -450,8 +450,8 @@ struct BlockingApplyDriver {
 }
 
 impl DeviceDriver for BlockingApplyDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -511,8 +511,8 @@ struct SlowTunerDriver {
 }
 
 impl DeviceDriver for SlowTunerDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -585,8 +585,8 @@ impl SdrDevice for SlowTunerDevice {
 struct RefusedSweepDriver;
 
 impl DeviceDriver for RefusedSweepDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -660,8 +660,8 @@ const SIGNAL_RATE_HZ: f64 = 240_000.0;
 struct SignalDriver;
 
 impl DeviceDriver for SignalDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -762,13 +762,13 @@ impl SdrDevice for SignalDevice {
 struct AdsbTestDriver;
 
 impl DeviceDriver for AdsbTestDriver {
-    fn id(&self) -> &'static str {
-        "test-adsb"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Airspy
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
         vec![DeviceInfo {
-            driver: self.id().to_owned(),
+            driver: self.id(),
             key: "surface".to_owned(),
             label: "Synthetic ADS-B".to_owned(),
             serial: None,
@@ -859,8 +859,8 @@ struct SnappingDriver;
 const SNAPPED_RATE: f64 = 2_400_000.0;
 
 impl DeviceDriver for SnappingDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -916,8 +916,8 @@ struct HeldSinkDriver {
 }
 
 impl DeviceDriver for HeldSinkDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -969,8 +969,8 @@ struct ExclusiveDriver {
 }
 
 impl DeviceDriver for ExclusiveDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -1052,8 +1052,8 @@ struct UnopenableDriver {
 }
 
 impl DeviceDriver for UnopenableDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -1100,8 +1100,8 @@ fn a_fault_the_operator_can_act_on_keeps_its_own_name() {
 struct BusyDriver;
 
 impl DeviceDriver for BusyDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -1120,8 +1120,8 @@ struct FlappingDriver {
 }
 
 impl DeviceDriver for FlappingDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -1309,7 +1309,7 @@ async fn wait_for_baseband_samples(engine: &Engine, ds: u32, ch: u32, min: u64) 
     }
 }
 
-async fn wait_for_history(engine: &Engine, ds: u32, min: u64) -> TimeMachineStatus {
+async fn wait_for_history(engine: &Engine, ds: u32, min: u64) -> PreRollStatus {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let history = engine
@@ -1317,7 +1317,7 @@ async fn wait_for_history(engine: &Engine, ds: u32, min: u64) -> TimeMachineStat
             .device_sets
             .iter()
             .find(|set| set.id == ds)
-            .and_then(|set| set.time_machine.clone());
+            .and_then(|set| set.pre_roll.clone());
         if let Some(history) = history
             && history.held_samples >= min
         {

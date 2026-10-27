@@ -12,6 +12,8 @@ pub use sdrmm_test_support::{
 
 pub const CALIBRATION_BENCH: &str = "__calibration";
 
+pub const BASELINE_DOC: &str = "docs/src/development/building.md";
+
 #[must_use]
 pub fn calibrate() -> f64 {
     const LEN: usize = 8_192;
@@ -51,18 +53,59 @@ pub fn host_id() -> String {
     format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS)
 }
 
-pub fn save_baselines(path: &Path, baselines: &[PerfBaseline]) -> std::io::Result<()> {
-    let mut rows: Vec<PerfBaseline> = baselines
-        .iter()
-        .filter(|row| row.bench != CALIBRATION_BENCH)
+#[must_use]
+pub fn rows_for_host(rows: &[PerfBaseline]) -> Vec<PerfBaseline> {
+    let host = host_id();
+    rows.iter()
+        .filter(|row| row.host == host)
         .cloned()
+        .collect()
+}
+
+#[must_use]
+pub fn missing_host_baseline(what: &str, record_command: &str) -> String {
+    format!(
+        "no committed {what} baseline for {host}, so the gate cannot run.\n\
+         Record one on a quiet machine of this host and commit it:\n  {record_command}\n\
+         Procedure: {BASELINE_DOC}, \"Performance baselines\".",
+        host = host_id()
+    )
+}
+
+#[must_use]
+pub fn committed_for_host(
+    rows: &[PerfBaseline],
+    what: &str,
+    record_command: &str,
+) -> Vec<PerfBaseline> {
+    let selected = rows_for_host(rows);
+    assert!(
+        !selected.is_empty(),
+        "{}",
+        missing_host_baseline(what, record_command)
+    );
+    selected
+}
+
+pub fn save_baselines(path: &Path, baselines: &[PerfBaseline]) -> std::io::Result<()> {
+    let host = host_id();
+    let mut rows: Vec<PerfBaseline> = load_baselines(path)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| row.host != host)
         .collect();
+    rows.extend(
+        baselines
+            .iter()
+            .filter(|row| row.bench != CALIBRATION_BENCH)
+            .cloned(),
+    );
     rows.push(PerfBaseline {
         bench: CALIBRATION_BENCH.into(),
         msamples_per_s: calibrate(),
         realtime_factor: 0.0,
         config: "fixed reference kernel, scales the gate to the host's current speed".into(),
-        host: host_id(),
+        host,
     });
     let mut json = serde_json::to_string_pretty(&rows).map_err(std::io::Error::other)?;
     json.push('\n');
@@ -250,6 +293,90 @@ mod tests {
         assert!(compare_perf(&measured, &committed, REGRESSION_FRACTION).is_ok());
     }
 
+    fn calibration_row(msamples_per_s: f64) -> PerfBaseline {
+        PerfBaseline {
+            bench: CALIBRATION_BENCH.into(),
+            msamples_per_s,
+            realtime_factor: 0.0,
+            config: "reference kernel".into(),
+            host: host_id(),
+        }
+    }
+
+    #[test]
+    fn a_host_calibration_scales_the_expectation() {
+        let committed = vec![
+            baseline("cpm_demod_m4_48k", 100.0),
+            calibration_row(2.0 * calibrate()),
+        ];
+        let halved = vec![baseline("cpm_demod_m4_48k", 55.0)];
+        assert!(compare_perf(&halved, &committed, REGRESSION_FRACTION).is_ok());
+        let slower = vec![baseline("cpm_demod_m4_48k", 40.0)];
+        assert_eq!(
+            compare_perf(&slower, &committed, REGRESSION_FRACTION)
+                .unwrap_err()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_foreign_host_row_is_never_selected() {
+        let mut foreign = baseline("cpm_demod_m4_48k", 100.0);
+        foreign.host = format!("{}-elsewhere", host_id());
+        let rows = vec![foreign, baseline("symbol_sync_8sps", 400.0)];
+        let selected = rows_for_host(&rows);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].bench, "symbol_sync_8sps");
+    }
+
+    #[test]
+    fn recording_a_baseline_keeps_the_rows_of_other_hosts() {
+        let path = std::env::temp_dir().join(format!(
+            "sdrmm-modem-perf-hosts-{}.json",
+            std::process::id()
+        ));
+        let mut foreign = baseline("symbol_sync_8sps", 11.0);
+        foreign.host = "sparc-plan9".into();
+        save_baselines(&path, &[foreign]).unwrap();
+        save_baselines(&path, &[baseline("symbol_sync_8sps", 400.0)]).unwrap();
+        let loaded = load_baselines(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let kept: Vec<&PerfBaseline> = loaded
+            .iter()
+            .filter(|row| row.host == "sparc-plan9" && row.bench == "symbol_sync_8sps")
+            .collect();
+        assert_eq!(kept.len(), 1, "{loaded:#?}");
+        assert!((kept[0].msamples_per_s - 11.0).abs() < 1e-9);
+        assert_eq!(rows_for_host(&loaded).len(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "so the gate cannot run")]
+    fn a_baseline_from_another_host_alone_cannot_stand_in_for_this_one() {
+        let mut foreign = baseline("symbol_sync_8sps", 400.0);
+        foreign.host = "sparc-plan9".into();
+        let _ = committed_for_host(&[foreign], "modem throughput", RECORD_COMMAND);
+    }
+
+    #[test]
+    fn a_baseline_for_this_host_is_the_one_the_gate_reads() {
+        let mut foreign = baseline("symbol_sync_8sps", 11.0);
+        foreign.host = "sparc-plan9".into();
+        let mine = baseline("symbol_sync_8sps", 400.0);
+        let selected = committed_for_host(&[foreign, mine], "modem throughput", RECORD_COMMAND);
+        assert_eq!(selected.len(), 1);
+        assert!((selected[0].msamples_per_s - 400.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_missing_baseline_message_names_the_host_and_the_command() {
+        let message = missing_host_baseline("modem throughput", RECORD_COMMAND);
+        assert!(message.contains(&host_id()), "{message}");
+        assert!(message.contains(RECORD_COMMAND), "{message}");
+        assert!(message.contains(BASELINE_DOC), "{message}");
+    }
+
     #[test]
     fn a_vanished_bench_is_a_full_regression() {
         let committed = vec![baseline("cpm_demod_m4_48k", 100.0)];
@@ -290,7 +417,10 @@ mod tests {
 
     const SYMBOL_SYNC_RATE_HZ: f64 = 8.0 * 4_800.0;
 
-    const RETIRED: [&str; 2] = ["fsk4_dmr_48k", CALIBRATION_BENCH];
+    const RETIRED: [&str; 1] = ["fsk4_dmr_48k"];
+
+    const RECORD_COMMAND: &str = "cargo test -p sdrmm-modem-test-support --release -- \
+         --ignored --exact ber::perf::tests::write_perf_baseline";
 
     fn measured_baselines() -> Vec<PerfBaseline> {
         let bpsk = shaped_bpsk_iq(4_096, 8.0, 0x0dd5);
@@ -319,6 +449,17 @@ mod tests {
             .collect()
     }
 
+    fn gated_benches(committed: &[PerfBaseline]) -> Vec<String> {
+        let mut benches: Vec<String> = live_committed(committed)
+            .into_iter()
+            .filter(|b| b.bench != CALIBRATION_BENCH)
+            .map(|b| b.bench)
+            .collect();
+        benches.sort();
+        benches.dedup();
+        benches
+    }
+
     fn committed_baseline_path() -> std::path::PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../modem/baselines/perf_phase0.json")
     }
@@ -330,11 +471,7 @@ mod tests {
             committed.iter().any(|b| b.bench == "fsk4_dmr_48k"),
             "the pre-migration reference row was removed from the committed baseline"
         );
-        let live: Vec<String> = live_committed(&committed)
-            .into_iter()
-            .map(|b| b.bench)
-            .collect();
-        assert_eq!(live, ["symbol_sync_8sps"]);
+        assert_eq!(gated_benches(&committed), ["symbol_sync_8sps"]);
     }
 
     #[test]
@@ -344,8 +481,7 @@ mod tests {
             panic!("a debug-profile number must never become the committed baseline");
         }
         let path = committed_baseline_path();
-        let mut rows: Vec<PerfBaseline> = load_baselines(&path)
-            .unwrap_or_default()
+        let mut rows: Vec<PerfBaseline> = rows_for_host(&load_baselines(&path).unwrap_or_default())
             .into_iter()
             .filter(|b| RETIRED.contains(&b.bench.as_str()))
             .collect();
@@ -357,16 +493,18 @@ mod tests {
     #[test]
     #[ignore = "nightly perf gate; run in release: cargo test -p sdrmm-modem-test-support --release compare_perf_baseline -- --ignored"]
     fn compare_perf_baseline() {
+        let committed = live_committed(&rows_for_host(
+            &load_baselines(&committed_baseline_path()).unwrap(),
+        ));
+        assert!(
+            !gated_benches(&committed).is_empty(),
+            "{}",
+            missing_host_baseline("modem throughput", RECORD_COMMAND)
+        );
         if cfg!(debug_assertions) {
-            eprintln!("skipping the perf gate: throughput is only comparable in release");
+            eprintln!("skipping the comparison: throughput is only comparable in release");
             return;
         }
-        let committed = load_baselines(&committed_baseline_path()).unwrap();
-        if committed.iter().any(|b| b.host != host_id()) {
-            eprintln!("skipping the perf gate: baseline host is not {}", host_id());
-            return;
-        }
-        let committed = live_committed(&committed);
         match compare_perf(&measured_baselines(), &committed, REGRESSION_FRACTION) {
             Ok(changes) => {
                 for c in changes {

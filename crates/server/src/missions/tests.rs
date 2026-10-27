@@ -8,7 +8,7 @@ use axum::{
 use http_body_util::BodyExt;
 use sdrmm_wire::{
     ApiError, ArrayNode, Attitude, BearingSource, ChannelNode, DecodedRecord, DecoderEvent,
-    DeviceNode, DeviceRef, DfNode, GpsNode, HeadingSource, HuntMission, HuntNode,
+    DeviceBackend, DeviceNode, DeviceRef, DfNode, GpsNode, HeadingSource, HuntMission, HuntNode,
     MissionActionResponse, NodeBody, PassiveRadarNode, PatchEdge, PatchNode, PortRef, Position,
     PositionFix, PositionLink, PositionSource, RackLayout, ServerEvent, SignalMapNode, SweepState,
     TriangulationNode, WorkspaceSnapshot, patch::stream_port,
@@ -56,7 +56,7 @@ fn radio(id: &str, key: &str) -> PatchNode {
         id,
         NodeBody::Device(DeviceNode {
             device: Some(DeviceRef {
-                backend: "virtual".to_owned(),
+                backend: DeviceBackend::Virtual,
                 serial: None,
                 key: Some(key.to_owned()),
             }),

@@ -6,6 +6,7 @@ pub(crate) const WGS84_B: f64 = 6_356_752.314_245_18;
 pub(crate) const GPS_EPOCH_UNIX: i64 = 315_964_800;
 pub(crate) const GPS_UTC_LEAP_SECONDS: i64 = 18;
 pub(crate) const SECONDS_PER_WEEK: i64 = 604_800;
+pub(crate) const GPS_WEEK_CYCLE: i64 = 1_024;
 
 const MIN_ALTITUDE_M: f64 = -1_000.0;
 const MAX_ALTITUDE_M: f64 = 80_000.0;
@@ -63,6 +64,16 @@ pub(crate) fn plausible(position: Geodetic) -> bool {
         && position.lat.abs() <= 90.0
         && position.lon.abs() <= 180.0
         && (MIN_ALTITUDE_M..=MAX_ALTITUDE_M).contains(&position.alt)
+}
+
+pub(crate) fn current_gps_week() -> i64 {
+    (Timestamp::now().as_second() - GPS_EPOCH_UNIX).div_euclid(SECONDS_PER_WEEK)
+}
+
+pub(crate) fn unrolled_gps_week(raw: u16, reference_week: i64) -> i64 {
+    let truncated = i64::from(raw).rem_euclid(GPS_WEEK_CYCLE);
+    let cycles = (reference_week - truncated + GPS_WEEK_CYCLE / 2).div_euclid(GPS_WEEK_CYCLE);
+    truncated + cycles * GPS_WEEK_CYCLE
 }
 
 pub(crate) fn gps_time(week: i64, seconds_of_week: i64, leap_seconds: i64) -> Option<String> {

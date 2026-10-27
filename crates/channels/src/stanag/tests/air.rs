@@ -301,9 +301,8 @@ const LIBRARY: &[Sample] = &[
     ("Stanag4481", None, None, &[]),
 ];
 
-fn audio(path: &std::path::Path) -> Vec<Complex<f32>> {
-    std::fs::read(path)
-        .unwrap()
+fn audio(dir: &std::path::Path, stem: &str) -> Vec<Complex<f32>> {
+    crate::reference_data::bytes(dir, &format!("{stem}.f32"))
         .as_chunks::<4>()
         .0
         .iter()
@@ -333,11 +332,13 @@ fn expected(
 #[test]
 #[ignore = "needs STANAG_SIGID_DIR=<sigidwiki samples as 9.6 kHz mono f32le, one <stem>.f32 each>"]
 fn names_the_sigidwiki_library() {
-    let dir = std::path::PathBuf::from(std::env::var("STANAG_SIGID_DIR").unwrap());
+    let Some(dir) = crate::reference_data::stanag_sigid_dir() else {
+        return;
+    };
     let window = usize::from(sdrmm_wire::STANAG_WINDOW_S) * 9_600;
     let mut misses = Vec::new();
     for &(stem, modem, rate, also) in LIBRARY {
-        let iq = audio(&dir.join(format!("{stem}.f32")));
+        let iq = audio(&dir, stem);
         let mut channel = super::channel();
         let reports = run(&mut channel, &iq);
         let ok = if iq.len() < window {

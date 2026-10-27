@@ -5,7 +5,7 @@ use sdrmm_device::{
     net::{Adopted, WebSocket},
     single_rx_sink,
 };
-use sdrmm_wire::{Capabilities, DeviceInfo as WireDeviceInfo, DeviceSettings};
+use sdrmm_wire::{Capabilities, DeviceBackend, DeviceInfo as WireDeviceInfo, DeviceSettings};
 
 use crate::{
     caps::Remote,
@@ -14,11 +14,13 @@ use crate::{
 };
 
 mod caps;
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
 mod proto;
 mod session;
 mod stream;
 
-const DRIVER_ID: &str = "sdrconnect";
+const DRIVER_ID: DeviceBackend = DeviceBackend::Sdrconnect;
 
 #[derive(Debug, Default)]
 pub struct SdrConnectDriver {
@@ -34,7 +36,7 @@ impl SdrConnectDriver {
 
 fn device_info(address: &Address) -> WireDeviceInfo {
     WireDeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: address.to_string(),
         label: format!("SDRconnect {address}"),
         serial: None,
@@ -43,7 +45,7 @@ fn device_info(address: &Address) -> WireDeviceInfo {
 }
 
 impl DeviceDriver for SdrConnectDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 
@@ -169,7 +171,7 @@ impl SdrDevice for SdrConnectDevice {
             self.radio.clone(),
             IqConverter::default(),
             single_rx_sink(sinks)?,
-            CaptureConfig::new("sdrmm-sdrconnect-rx", DRIVER_ID)
+            CaptureConfig::new("sdrmm-sdrconnect-rx", DRIVER_ID.as_str())
                 .with_sample_rate(self.settings.sample_rate),
         )
     }

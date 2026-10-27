@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { DeviceSet, PatchGraph, RecordingStatus } from "../../lib/types";
+import type { DeviceInfo, DeviceSet, PatchGraph, RecordingStatus } from "../../lib/types";
 import { renderFace } from "../../test/faceHarness";
 import { deviceSet, placed } from "../../test/fixtures";
 import { RecorderFace } from "./RecorderFaces";
 
-const RADIO = { driver: "ad936x", key: "192.168.1.10:30431", label: "AntSDR AD9361" };
+const RADIO: DeviceInfo = {
+  driver: "ad936x",
+  key: "192.168.1.10:30431",
+  label: "AntSDR AD9361",
+};
 
 const TAKE: RecordingStatus = {
   bytes: 167_317_504,
@@ -15,8 +19,8 @@ const TAKE: RecordingStatus = {
   node: "rec",
 };
 
-function recorder(recording: boolean) {
-  return placed("rec", { kind: "recorder", data: { recording } });
+function recorder(recording: boolean, pre_roll_s = 0) {
+  return placed("rec", { kind: "recorder", data: { recording, pre_roll_s } });
 }
 
 function render(wired: boolean, recording: RecordingStatus | null): string {

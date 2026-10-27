@@ -29,10 +29,25 @@ function recording(file: string, overrides: Partial<RecordingInfo> = {}): Record
 describe("claimedRecordings", () => {
   const graph = {
     nodes: [
-      { id: "a", kind: "recording", data: { recording: "airband" }, position: { x: 0, y: 0 } },
-      { id: "b", kind: "recording", data: { recording: "weather" }, position: { x: 0, y: 0 } },
-      { id: "c", kind: "recording", data: {}, position: { x: 0, y: 0 } },
-      { id: "d", kind: "device", data: {}, position: { x: 0, y: 0 } },
+      {
+        id: "a",
+        kind: "device",
+        data: { device: { backend: "recording", key: "airband" } },
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "b",
+        kind: "device",
+        data: { device: { backend: "recording", key: "weather" } },
+        position: { x: 0, y: 0 },
+      },
+      { id: "c", kind: "device", data: {}, position: { x: 0, y: 0 } },
+      {
+        id: "d",
+        kind: "device",
+        data: { device: { backend: "rtlsdr", key: "0" } },
+        position: { x: 0, y: 0 },
+      },
     ],
     edges: [],
   } as unknown as PatchGraph;
@@ -102,11 +117,11 @@ describe("checkUpload", () => {
 describe("recordingNodeFor", () => {
   const at = { x: 40, y: 80 };
 
-  it("opens a library row as a Recording node holding its stem", () => {
-    expect(recordingNodeFor(recording("airband"), "recording:9f2c", at)).toEqual({
-      id: "recording:9f2c",
-      kind: "recording",
-      data: { recording: "airband" },
+  it("opens a library row as a device node pinned to its stem", () => {
+    expect(recordingNodeFor(recording("airband"), "device:9f2c", at)).toEqual({
+      id: "device:9f2c",
+      kind: "device",
+      data: { device: { backend: "recording", key: "airband" } },
       position: at,
       label: "airband",
     });

@@ -1,4 +1,4 @@
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use sdrmm_wire::{AudioAgcMode, AudioProcessing, MAX_EDGES, MAX_NODES};
 use serde_json::{Value, json};
 
@@ -28,7 +28,7 @@ pub(super) fn lift_audio_chains(conn: &Connection) -> Result<(), StoreError> {
                 params![id],
                 |row| row.get(0),
             )
-            .ok();
+            .optional()?;
         let tx = conn.unchecked_transaction()?;
         if let Some(snapshot_json) = snapshot_json {
             let mut snapshot: Value = serde_json::from_str(&snapshot_json)?;
@@ -291,6 +291,22 @@ mod tests {
         let (snapshot, _, raw) = read(&conn);
         assert_eq!(snapshot.graph.nodes.len(), 3);
         assert!(raw["channels"][0]["settings"].get("audio").is_none());
+    }
+
+    #[test]
+    fn a_database_error_aborts_the_lift_instead_of_stripping_the_chain() {
+        let conn = store_with(&graph(), &state("nfm", &json!({"auto_notch": true})));
+        conn.execute_batch("DROP TABLE workspaces").expect("drop");
+        let error = lift_audio_chains(&conn).expect_err("the failed read surfaces");
+        assert!(matches!(error, StoreError::Db(_)), "{error}");
+        let state: String = conn
+            .query_row(
+                "SELECT state FROM workspace_state WHERE workspace_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("state row");
+        assert!(state.contains("\"audio\""), "the chain was stripped anyway");
     }
 
     #[test]

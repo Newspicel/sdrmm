@@ -9,7 +9,7 @@ use sdrmm_wire::{
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
 
-mod codeword;
+pub(crate) mod codeword;
 mod tones;
 
 use codeword::{PHASE_BITS, WORDS, Word, decode_word};
@@ -17,7 +17,7 @@ use tones::{Afc, Bank, Powers, TONES};
 
 const RATE: f64 = 48_000.0;
 const CHANNEL_TAPS: usize = 129;
-const SYNC_MARKER: u32 = 0xA6C6_AAAA;
+pub(crate) const SYNC_MARKER: u32 = 0xA6C6_AAAA;
 const SEARCH_SPS: usize = 30;
 const FAST_SPS: usize = 15;
 const LATE: usize = 2;
@@ -26,6 +26,10 @@ const TIMING_GAIN: f32 = 0.15;
 const SYNC_TOLERANCE: u32 = 3;
 const MAX_TEXT: usize = 256;
 const MAX_SOFT_ADDRESS_ERRORS: u32 = 3;
+const CAPCODE_OFFSET: u32 = 0x8000;
+const FIRST_ADDRESS_WORD: u32 = 0x8001;
+const LAST_ADDRESS_WORD: u32 = 0x1F_7FFE;
+const IDLE_ADDRESS_WORDS: [u32; 2] = [0, 0x1F_FFFF];
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "flex".to_owned(),
@@ -40,10 +44,48 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 });
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct Mode {
-    symbol_rate: u16,
-    levels: u8,
+pub(crate) struct Mode {
+    pub(crate) symbol_rate: u16,
+    pub(crate) levels: u8,
 }
+
+pub(crate) const SYNC_CODES: [(u16, Mode); 5] = [
+    (
+        0x870C,
+        Mode {
+            symbol_rate: 1_600,
+            levels: 2,
+        },
+    ),
+    (
+        0xB068,
+        Mode {
+            symbol_rate: 1_600,
+            levels: 4,
+        },
+    ),
+    (
+        0x7B18,
+        Mode {
+            symbol_rate: 3_200,
+            levels: 2,
+        },
+    ),
+    (
+        0xDEA0,
+        Mode {
+            symbol_rate: 3_200,
+            levels: 4,
+        },
+    ),
+    (
+        0x4C7C,
+        Mode {
+            symbol_rate: 3_200,
+            levels: 4,
+        },
+    ),
+];
 
 impl Mode {
     fn payload_baud(self) -> u16 {
@@ -113,6 +155,7 @@ pub struct FlexChannel {
     symbol_samples: usize,
     symbol_target: usize,
     polarity: bool,
+    rejected: u32,
 }
 
 fn params(settings: &ChannelSettings) -> Result<&FlexParams, ChannelError> {
@@ -154,46 +197,10 @@ pub(crate) fn channel_filter(params: &FlexParams) -> Result<ChannelFilter, Chann
 }
 
 fn mode(sync: u16) -> Option<Mode> {
-    [
-        (
-            0x870Cu16,
-            Mode {
-                symbol_rate: 1_600,
-                levels: 2,
-            },
-        ),
-        (
-            0xB068u16,
-            Mode {
-                symbol_rate: 1_600,
-                levels: 4,
-            },
-        ),
-        (
-            0x7B18u16,
-            Mode {
-                symbol_rate: 3_200,
-                levels: 2,
-            },
-        ),
-        (
-            0xDEA0u16,
-            Mode {
-                symbol_rate: 3_200,
-                levels: 4,
-            },
-        ),
-        (
-            0x4C7Cu16,
-            Mode {
-                symbol_rate: 3_200,
-                levels: 4,
-            },
-        ),
-    ]
-    .into_iter()
-    .find(|(word, _)| hamming_distance(u64::from(*word), u64::from(sync)) <= SYNC_TOLERANCE)
-    .map(|(_, mode)| mode)
+    SYNC_CODES
+        .into_iter()
+        .find(|(word, _)| hamming_distance(u64::from(*word), u64::from(sync)) <= SYNC_TOLERANCE)
+        .map(|(_, mode)| mode)
 }
 
 fn sync_match(register: u64) -> Option<(Mode, bool)> {
@@ -334,6 +341,7 @@ impl FlexChannel {
     fn symbol(&mut self, tone: usize, powers: Powers, out: &mut ChannelOutputs) {
         let bit = tone >= TONES / 2;
         let mut next = None;
+        let mut rejected = 0;
         match &mut self.state {
             State::Search => {}
             State::Fiw { mode, count, word } => {
@@ -401,13 +409,25 @@ impl FlexChannel {
                 let total = usize::from(mode.symbol_rate) * 176 / 100;
                 if *symbols == total {
                     for &phase in mode.active_phases() {
-                        decode_phase(&phases[phase], *mode, *cycle, *frame, *errors, phase, out);
+                        decode_phase(
+                            &phases[phase],
+                            FrameInfo {
+                                mode: *mode,
+                                cycle: *cycle,
+                                frame: *frame,
+                                phase,
+                                errors: *errors,
+                            },
+                            out,
+                            &mut rejected,
+                        );
                     }
                     next = Some(State::Search);
                     self.symbol_target = SEARCH_SPS;
                 }
             }
         }
+        self.rejected = self.rejected.saturating_add(rejected);
         if let Some(state) = next {
             self.state = state;
         } else if matches!(self.state, State::Fiw { count: 48, .. }) {
@@ -436,20 +456,11 @@ fn soft_bits(powers: Powers, levels: u8) -> [f32; 2] {
     ]
 }
 
-fn decode_phase(
-    bits: &[f32],
-    mode: Mode,
-    cycle: u8,
-    frame: u8,
-    fiw_errors: u32,
-    phase: usize,
-    out: &mut ChannelOutputs,
-) {
+fn decode_phase(bits: &[f32], sync: FrameInfo, out: &mut ChannelOutputs, rejected: &mut u32) {
     let Some(received) = codeword::deinterleave(bits) else {
         return;
     };
     let words = received.map(|word| codeword::decode(&word));
-    let errors = fiw_errors + words.iter().map(|word| word.errors()).sum::<u32>();
     let Some(biw) = trusted_biw(words[0]) else {
         return;
     };
@@ -459,23 +470,45 @@ fn decode_phase(
         return;
     }
     let info = FrameInfo {
-        mode,
-        cycle,
-        frame,
-        phase,
-        errors,
+        errors: sync.errors + words.iter().map(|word| word.errors()).sum::<u32>(),
+        ..sync
     };
     for address_index in address_start..vector_start {
         let vector_index = vector_start + address_index - address_start;
         if vector_index >= WORDS {
             break;
         }
-        if let Some(message) = page(&words, address_index, vector_index, &info) {
-            out.events.push(DecoderEvent::Flex(message));
+        match capcode_of(words[address_index]) {
+            Capcode::Idle => {}
+            Capcode::Unusable => *rejected = rejected.saturating_add(1),
+            Capcode::Address(address) => match page(&words, address, vector_index, &info) {
+                Some(message) => out.events.push(DecoderEvent::Flex(message)),
+                None => *rejected = rejected.saturating_add(1),
+            },
         }
     }
 }
 
+enum Capcode {
+    Idle,
+    Unusable,
+    Address(u64),
+}
+
+fn capcode_of(word: Word) -> Capcode {
+    let Some(data) = trusted_address(word) else {
+        return Capcode::Unusable;
+    };
+    if IDLE_ADDRESS_WORDS.contains(&data) {
+        return Capcode::Idle;
+    }
+    if !(FIRST_ADDRESS_WORD..=LAST_ADDRESS_WORD).contains(&data) {
+        return Capcode::Unusable;
+    }
+    Capcode::Address(u64::from(data - CAPCODE_OFFSET))
+}
+
+#[derive(Clone, Copy)]
 struct FrameInfo {
     mode: Mode,
     cycle: u8,
@@ -485,11 +518,8 @@ struct FrameInfo {
 }
 
 fn trusted_biw(word: Word) -> Option<u32> {
-    match word {
-        Word::Hard { data, .. } => Some(data),
-        Word::Soft { data, .. } => checksum(data).then_some(data),
-        Word::Lost => None,
-    }
+    let data = word.data()?;
+    checksum(data).then_some(data)
 }
 
 fn trusted_address(word: Word) -> Option<u32> {
@@ -502,13 +532,12 @@ fn trusted_address(word: Word) -> Option<u32> {
 
 fn page(
     words: &[Word; WORDS],
-    address_index: usize,
+    address: u64,
     vector_index: usize,
     info: &FrameInfo,
 ) -> Option<FlexMessage> {
-    let address_word = trusted_address(words[address_index])?;
     let vector = words[vector_index].data()?;
-    if matches!(address_word, 0 | 0x1F_FFFF) || !checksum(vector) {
+    if !checksum(vector) {
         return None;
     }
     let data = words.map(|word| word.data().unwrap_or(0));
@@ -526,7 +555,7 @@ fn page(
         return None;
     }
     Some(FlexMessage {
-        address: u64::from(address_word.wrapping_sub(0x8000)),
+        address,
         payload,
         text,
         baud: info.mode.payload_baud(),
@@ -661,6 +690,7 @@ impl ChannelRx for FlexChannel {
             symbol_samples: 0,
             symbol_target: SEARCH_SPS,
             polarity: false,
+            rejected: 0,
         })
     }
 
@@ -683,6 +713,10 @@ impl ChannelRx for FlexChannel {
             self.push_sample(sample, out);
             self.sample = self.sample.wrapping_add(1);
         }
+    }
+
+    fn rejected(&self) -> u32 {
+        self.rejected
     }
 }
 
@@ -832,6 +866,10 @@ mod tests {
     }
 
     fn received(iq: &[Complex<f32>]) -> Vec<FlexMessage> {
+        received_with_rejected(iq).0
+    }
+
+    fn received_with_rejected(iq: &[Complex<f32>]) -> (Vec<FlexMessage>, u32) {
         let Ok(ChannelFilter::Symmetric(mut filter)) = channel_filter(&FlexParams::default())
         else {
             panic!("flex filters symmetrically");
@@ -847,13 +885,74 @@ mod tests {
         for chunk in filtered.chunks(997) {
             channel.process(chunk, &mut out);
         }
-        out.events
+        let messages = out
+            .events
             .into_iter()
             .filter_map(|event| match event {
                 DecoderEvent::Flex(message) => Some(message),
                 _ => None,
             })
-            .collect()
+            .collect();
+        (messages, channel.rejected())
+    }
+
+    #[test]
+    fn address_words_outside_the_capcode_range_are_refused() {
+        let hard = |data| Word::Hard { data, errors: 0 };
+        assert!(matches!(capcode_of(hard(0x8001)), Capcode::Address(1)));
+        assert!(matches!(
+            capcode_of(hard(0x1F_7806)),
+            Capcode::Address(2_029_574)
+        ));
+        assert!(matches!(capcode_of(hard(0)), Capcode::Idle));
+        assert!(matches!(capcode_of(hard(0x1F_FFFF)), Capcode::Idle));
+        for refused in [1, 0x100, 0x8000, 0x1F_7FFF, 0x1F_FFFE] {
+            assert!(
+                matches!(capcode_of(hard(refused)), Capcode::Unusable),
+                "{refused:#X}"
+            );
+        }
+        assert!(matches!(capcode_of(Word::Lost), Capcode::Unusable));
+    }
+
+    #[test]
+    fn a_hard_block_information_word_still_has_to_check_out() {
+        let hard = |data| Word::Hard { data, errors: 0 };
+        let biw = 2 << 10 | 7;
+        assert!(checksum(biw));
+        assert_eq!(trusted_biw(hard(biw)), Some(biw));
+        assert_eq!(trusted_biw(hard(2 << 10)), None);
+        assert_eq!(trusted_biw(hard(biw ^ 0x10)), None);
+    }
+
+    #[test]
+    fn a_numeric_page_decodes_its_digits() {
+        let page = synth::flex::Page {
+            address: 123_456,
+            text: "0123456789-U".to_owned(),
+        };
+        let iq = synth::flex::numeric_transmission(&page, 7, 83, RATE);
+        let (messages, rejected) = received_with_rejected(&iq);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert_eq!(messages[0].address, 123_456);
+        assert_eq!(messages[0].payload, PagerPayload::Numeric);
+        assert_eq!(messages[0].text, "0123456789-U");
+        assert_eq!(rejected, 0);
+    }
+
+    #[test]
+    fn a_damaged_message_word_counts_the_page_it_loses() {
+        let mut iq = synth::flex::transmission(&page(), 7, 83, RATE);
+        let data_start = (1_072 + 40) * 30;
+        for bit in 0..6 {
+            let start = data_start + (bit * 8 + 3) * 30;
+            for sample in &mut iq[start..start + 30] {
+                *sample = sample.conj();
+            }
+        }
+        let (messages, rejected) = received_with_rejected(&iq);
+        assert!(messages.is_empty(), "{messages:?}");
+        assert_eq!(rejected, 1);
     }
 
     #[test]

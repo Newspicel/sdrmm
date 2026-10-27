@@ -11,6 +11,7 @@ pub(crate) const FORBIDDEN_ON_PHONES: &[&str] = &[
     "sdrmm-modem",
     "sdrmm-device",
     "sdrmm-usb-stream",
+    "sdrmm-serial",
     "sdrmm-recorder",
     "codec2",
     "ffmpeg-the-third",
@@ -97,10 +98,40 @@ fn validate_production_tree(tree: &str) -> Result<()> {
     Ok(())
 }
 
+const DEVICE_FORBIDDEN: &[&str] = &["sdrmm-channels", "sdrmm-engine", "sdrmm-server"];
+
+fn validate_device_crates(packages: &[Value]) -> Result<()> {
+    for package in packages {
+        let Some(name) = package["name"].as_str() else {
+            continue;
+        };
+        if !name.starts_with("sdrmm-device") {
+            continue;
+        }
+        let Some(dependencies) = package["dependencies"].as_array() else {
+            continue;
+        };
+        for dependency in dependencies {
+            if !dependency["kind"].is_null() {
+                continue;
+            }
+            let dependency_name = dependency["name"]
+                .as_str()
+                .context("dependency has no name")?;
+            ensure!(
+                !DEVICE_FORBIDDEN.contains(&dependency_name),
+                "{name} must not depend on {dependency_name}"
+            );
+        }
+    }
+    Ok(())
+}
+
 fn validate(metadata: &Value) -> Result<()> {
     let packages = metadata["packages"]
         .as_array()
         .context("metadata has no packages")?;
+    validate_device_crates(packages)?;
     for (name, allowed) in [
         ("sdrmm-dsp", &[][..]),
         ("sdrmm-modem", &["sdrmm-dsp"][..]),
@@ -208,6 +239,23 @@ mod tests {
             assert!(validate(&data).is_err());
         }
         assert!(validate_production_tree("sdrmm v0.0.0|\nsdrmm-modem v0.0.0|").is_ok());
+    }
+
+    #[test]
+    fn a_device_backend_may_not_reach_for_the_decoders() {
+        let packages = vec![json!({
+            "name": "sdrmm-device-virtual",
+            "dependencies": [{"name": "sdrmm-channels", "kind": null}]
+        })];
+        assert!(validate_device_crates(&packages).is_err());
+        let packages = vec![json!({
+            "name": "sdrmm-device-virtual",
+            "dependencies": [
+                {"name": "sdrmm-modem", "kind": null},
+                {"name": "sdrmm-channels", "kind": "dev"}
+            ]
+        })];
+        assert!(validate_device_crates(&packages).is_ok());
     }
 
     #[test]

@@ -15,6 +15,7 @@ import {
   nanoVnaMeasurementQuery,
   saveNanoVnaMeasurement,
 } from "../../lib/api";
+import { toastRejection } from "../../lib/toasts";
 import type { NanoVnaAntenna, NanoVnaMeasurementInfo, NanoVnaPoint } from "../../lib/types";
 import { formatSwr } from "./Readouts";
 import { MAX_REFERENCES, type Reference, type ReferenceSource, storedKey } from "./references";
@@ -243,6 +244,7 @@ function AntennaGroup({
     mutationFn: async (id: number) => deleteNanoVnaMeasurement(id),
     onSuccess: (_, id) => onDeleted([storedKey(id)]),
   });
+  const removal = removeAntenna.error?.message ?? removeMeasurement.error?.message ?? null;
   return (
     <li
       className={`rounded-control border ${selected ? "border-accent/60 bg-accent/5" : "border-line"}`}
@@ -264,6 +266,7 @@ function AntennaGroup({
           onConfirm={() => removeAntenna.mutate()}
         />
       </div>
+      {removal !== null && <p className={`${ALERT} px-2 pb-1.5`}>{removal}</p>}
       {measurements.length > 0 && (
         <ul className="border-t border-line/60">
           {measurements.map((measurement) => (
@@ -273,8 +276,8 @@ function AntennaGroup({
               detail={describe(measurement)}
               reference={shown(storedKey(measurement.id))}
               full={full}
-              onToggle={() => void onToggle(measurement)}
-              onOpen={() => void onOpen(measurement)}
+              onToggle={() => toastRejection(onToggle(measurement))}
+              onOpen={() => toastRejection(onOpen(measurement))}
               onDelete={() => removeMeasurement.mutate(measurement.id)}
             />
           ))}
@@ -312,7 +315,12 @@ function Files({
       setError(`${file.name} is not a .s1p or .s2p file`);
       return;
     }
-    const parsed = parseTouchstone(await file.text(), ports);
+    const text = await file.text().catch(() => null);
+    if (text === null) {
+      setError(`${file.name} could not be read`);
+      return;
+    }
+    const parsed = parseTouchstone(text, ports);
     if (!parsed.ok) {
       setError(`${file.name}: ${parsed.error}`);
       return;
@@ -339,7 +347,7 @@ function Files({
           const file = event.target.files?.[0];
           event.target.value = "";
           if (file !== undefined) {
-            void load(file);
+            toastRejection(load(file));
           }
         }}
       />

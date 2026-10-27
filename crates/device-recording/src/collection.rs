@@ -123,6 +123,7 @@ fn capabilities(reader: &CollectionReader) -> Capabilities {
         retune_keeps_phase: reader.array().retune_keeps_phase,
         rx_inputs: Vec::new(),
         clean_fraction: None,
+        bank: None,
     }
 }
 

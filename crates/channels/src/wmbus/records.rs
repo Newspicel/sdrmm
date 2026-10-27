@@ -13,6 +13,11 @@ const TABLE_FB: u8 = 0x7B;
 const TABLE_FD: u8 = 0x7D;
 const SECONDS: [f64; 4] = [1.0, 60.0, 3_600.0, 86_400.0];
 const J_PER_WH: f64 = 3_600.0;
+const LVAR_POSITIVE_BCD: u8 = 0xC0;
+const LVAR_NEGATIVE_BCD: u8 = 0xD0;
+const LVAR_BINARY: u8 = 0xE0;
+const LVAR_RESERVED: u8 = 0xF0;
+const LVAR_MAX_NUMBER_BYTES: usize = 8;
 
 #[derive(Clone, Copy)]
 enum Data {
@@ -20,6 +25,7 @@ enum Data {
     Integer(usize),
     Real,
     Bcd(usize),
+    NegativeBcd(usize),
     Variable,
     Selection,
 }
@@ -50,14 +56,14 @@ struct Reader<'a> {
     at: usize,
 }
 
-impl Reader<'_> {
+impl<'a> Reader<'a> {
     fn next(&mut self) -> Option<u8> {
         let byte = *self.bytes.get(self.at)?;
         self.at += 1;
         Some(byte)
     }
 
-    fn take(&mut self, len: usize) -> Option<&[u8]> {
+    fn take(&mut self, len: usize) -> Option<&'a [u8]> {
         let slice = self.bytes.get(self.at..self.at + len)?;
         self.at += len;
         Some(slice)
@@ -108,14 +114,11 @@ fn record(dif: u8, reader: &mut Reader<'_>) -> Option<Option<WmbusRecord>> {
     let data = data_kind(dif & 0x0F);
     let vif = reader.next()?;
     let scale = vif_scale(vif, reader)?;
-    let raw = match data {
+    let (data, raw) = match data {
         Data::None => return Some(None),
-        Data::Integer(len) | Data::Bcd(len) => reader.take(len)?,
-        Data::Real => reader.take(4)?,
-        Data::Variable => {
-            let len = usize::from(reader.next()?);
-            reader.take(len.min(0xBF))?
-        }
+        Data::Integer(len) | Data::Bcd(len) | Data::NegativeBcd(len) => (data, reader.take(len)?),
+        Data::Real => (data, reader.take(4)?),
+        Data::Variable => variable(reader)?,
         Data::Selection => return Some(None),
     };
     let (value, text) = interpret(data, raw, scale);
@@ -127,6 +130,31 @@ fn record(dif: u8, reader: &mut Reader<'_>) -> Option<Option<WmbusRecord>> {
         value,
         text,
     }))
+}
+
+fn variable<'a>(reader: &mut Reader<'a>) -> Option<(Data, &'a [u8])> {
+    let lvar = reader.next()?;
+    let number = |first: u8| {
+        let len = usize::from(lvar - first);
+        (len <= LVAR_MAX_NUMBER_BYTES).then_some(len)
+    };
+    let (data, len) = match lvar {
+        0..LVAR_POSITIVE_BCD => (Data::Variable, usize::from(lvar)),
+        LVAR_POSITIVE_BCD..LVAR_NEGATIVE_BCD => {
+            let len = number(LVAR_POSITIVE_BCD)?;
+            (Data::Bcd(len), len)
+        }
+        LVAR_NEGATIVE_BCD..LVAR_BINARY => {
+            let len = number(LVAR_NEGATIVE_BCD)?;
+            (Data::NegativeBcd(len), len)
+        }
+        LVAR_BINARY..LVAR_RESERVED => {
+            let len = number(LVAR_BINARY)?;
+            (Data::Integer(len), len)
+        }
+        _ => return None,
+    };
+    Some((data, reader.take(len)?))
 }
 
 fn data_kind(code: u8) -> Data {
@@ -255,6 +283,7 @@ fn interpret(data: Data, raw: &[u8], scale: Scale) -> (Option<f64>, Option<Strin
     let number = match data {
         Data::Integer(_) => Some(signed(raw)),
         Data::Bcd(_) => bcd(raw),
+        Data::NegativeBcd(_) => bcd(raw).map(|value| -value),
         Data::Real => raw
             .try_into()
             .ok()
@@ -276,6 +305,9 @@ fn scaled(value: f64, scale: Scale) -> f64 {
 }
 
 fn signed(raw: &[u8]) -> f64 {
+    if raw.is_empty() {
+        return 0.0;
+    }
     let mut bytes = [0u8; 8];
     bytes[..raw.len()].copy_from_slice(raw);
     let shift = 64 - 8 * raw.len() as u32;
@@ -371,6 +403,30 @@ mod tests {
             Some(31.5)
         );
         assert_eq!(reading(&records, WmbusQuantity::Power, 0), Some(0.0));
+    }
+
+    fn variable_volume(lvar: &[u8]) -> Vec<WmbusRecord> {
+        let mut bytes = vec![0x0D, 0x13];
+        bytes.extend_from_slice(lvar);
+        parse(&bytes)
+    }
+
+    #[test]
+    fn variable_length_numbers_follow_their_lvar_code() {
+        let value = |lvar: &[u8]| reading(&variable_volume(lvar), WmbusQuantity::Volume, 0);
+        assert_eq!(value(&[0xC3, 0x56, 0x34, 0x12]), Some(123.456));
+        assert_eq!(value(&[0xD2, 0x34, 0x12]), Some(-1.234));
+        assert_eq!(value(&[0xE2, 0xD2, 0x04]), Some(1.234));
+        let text = variable_volume(&[0x03, b'a', b'b', b'c']);
+        assert_eq!(text[0].text.as_deref(), Some("cba"));
+    }
+
+    #[test]
+    fn a_reserved_lvar_code_does_not_swallow_the_records_after_it() {
+        let mut bytes = vec![0x0D, 0x13, 0xF5];
+        bytes.resize(bytes.len() + 200, 0);
+        assert!(parse(&bytes).is_empty());
+        assert!(variable_volume(&[0xFF, 0x01, 0x02]).is_empty());
     }
 
     #[test]

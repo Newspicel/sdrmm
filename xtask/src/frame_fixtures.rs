@@ -1,11 +1,11 @@
 use sdrmm_wire::frame::{FusionGridFrame, SpatialSpectrumFrame, VisibilityFrame};
 use sdrmm_wire::{
-    AudioFrame, IqFrame, RangeDopplerFrame, SpectrumFrame, SymbolFrame, SymbolPlane, VideoData,
-    VideoFrame,
+    AudioFrame, FrameError, IqFrame, RangeDopplerFrame, SpectrumFrame, SymbolFrame, SymbolPlane,
+    VideoData, VideoFrame,
 };
 
-pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
-    vec![
+pub(crate) fn frames() -> Result<Vec<(&'static str, Vec<u8>)>, FrameError> {
+    Ok(vec![
         (
             "spectrum",
             SpectrumFrame {
@@ -19,7 +19,7 @@ pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
                 floor_db: -90.0,
                 bins: &[0, 127, 255],
             }
-            .encode(),
+            .encode()?,
         ),
         (
             "audio",
@@ -30,7 +30,7 @@ pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
                 ch_layout: 2,
                 opus: &[1, 2, 3],
             }
-            .encode(),
+            .encode()?,
         ),
         (
             "iq",
@@ -42,7 +42,7 @@ pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
                 sample_rate: 48_000.0,
                 samples: &[0.25, -0.5],
             }
-            .encode(),
+            .encode()?,
         ),
         (
             "symbols",
@@ -59,7 +59,7 @@ pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
                 reference: &[-1.0, 1.0],
                 symbols: &[0.5, -0.5],
             }
-            .encode(),
+            .encode()?,
         ),
         (
             "surface",
@@ -78,7 +78,7 @@ pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
                 db_max: 30.0,
                 cells: &[1, 2],
             }
-            .encode(),
+            .encode()?,
         ),
         (
             "gray",
@@ -90,7 +90,7 @@ pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
                 height: 1,
                 data: VideoData::Gray(&[1, 2]),
             }
-            .encode(),
+            .encode()?,
         ),
         (
             "rgb",
@@ -102,7 +102,7 @@ pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
                 height: 1,
                 data: VideoData::Rgb(&[1, 2, 3, 4, 5, 6]),
             }
-            .encode(),
+            .encode()?,
         ),
         (
             "spatial_spectrum",
@@ -118,7 +118,7 @@ pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
                 db_max: 30.0,
                 cells: &[0, 64, 128, 255],
             }
-            .encode(),
+            .encode()?,
         ),
         (
             "visibility",
@@ -135,7 +135,7 @@ pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
                 amplitude: &[10, 20],
                 phase: &[128, 255],
             }
-            .encode(),
+            .encode()?,
         ),
         (
             "fusion_grid",
@@ -151,7 +151,7 @@ pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
                 rows: 1,
                 cells: &[0, 255],
             }
-            .encode(),
+            .encode()?,
         ),
-    ]
+    ])
 }

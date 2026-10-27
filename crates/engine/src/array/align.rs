@@ -164,6 +164,12 @@ impl Aligner {
         self.feeds.iter().any(Option::is_none)
     }
 
+    pub(crate) fn stopped_lane(&self) -> Option<usize> {
+        self.feeds
+            .iter()
+            .position(|feed| feed.as_ref().is_some_and(LaneFeed::lost))
+    }
+
     pub(crate) const fn index(&self) -> u64 {
         self.index
     }

@@ -12,7 +12,7 @@ use super::{
     fic::{FIB_BYTES, FicDecoder},
     fig::{Audio, Ensemble, SubChannel},
     mode::{Mode, TRANSMISSION_MODES},
-    msc::{CIF_BITS, SubChannelDecoder, subchannel_range},
+    msc::{CIF_BITS, Fragment, SubChannelDecoder, subchannel_range},
     ofdm::{FrameSync, SymbolDemod},
     pacer::Pacer,
     prs::PrsProbe,
@@ -127,6 +127,7 @@ pub struct DabChannel {
     locked: bool,
     samples_without_frame: usize,
     unlocked_frames: u32,
+    rejected: u32,
 }
 
 fn derotate(
@@ -403,10 +404,22 @@ impl DabChannel {
                 return;
             };
             let mut logical = std::mem::take(&mut self.logical);
-            let ready = selection.decoder.frame(fragment, &mut logical);
+            let state = selection.decoder.frame(fragment, &mut logical);
             self.logical = logical;
-            if !ready {
-                continue;
+            match state {
+                Fragment::Filling => continue,
+                Fragment::WrongSize { expected, got } => {
+                    self.rejected = self.rejected.saturating_add(1);
+                    let reason = format!("DAB sub-channel fragment is {got} bits, not {expected}");
+                    if selection.packet.is_some() {
+                        self.media.data_errors = self.media.data_errors.saturating_add(1);
+                        self.media.data_error = Some(reason);
+                    } else {
+                        self.media.audio_gap(0, 1, &reason);
+                    }
+                    continue;
+                }
+                Fragment::Ready => {}
             }
 
             if selection.packet.is_some() {
@@ -633,6 +646,7 @@ impl ChannelRx for DabChannel {
             locked: false,
             samples_without_frame: 0,
             unlocked_frames: 0,
+            rejected: 0,
         })
     }
 
@@ -681,6 +695,10 @@ impl ChannelRx for DabChannel {
         }
         self.collect_audio(out);
         self.pacer.release(iq.len(), out);
+    }
+
+    fn rejected(&self) -> u32 {
+        self.rejected
     }
 }
 
@@ -953,6 +971,27 @@ mod tests {
                 status.frequency_error_hz
             );
         }
+    }
+
+    #[test]
+    fn a_subchannel_size_that_disagrees_with_its_profile_is_rejected_and_reported() {
+        let mut channel = channel(Some(synth::dab::MUSIC_SERVICE));
+        let mut out = ChannelOutputs::default();
+        channel.process(&synth::dab::ensemble(20), &mut out);
+        assert!(status(&out).locked);
+        assert_eq!(channel.rejected(), 0);
+        channel
+            .selection
+            .as_mut()
+            .expect("a selection")
+            .subchannel
+            .size_cu += 1;
+        channel.read_msc();
+        out.reset();
+        channel.report(&mut out);
+        assert!(channel.rejected() > 0);
+        let error = status(&out).audio_error.clone().expect("an audio error");
+        assert!(error.contains("sub-channel fragment"), "{error}");
     }
 
     #[test]

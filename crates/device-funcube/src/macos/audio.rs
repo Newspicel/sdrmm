@@ -20,7 +20,7 @@ use objc2_core_audio::{
     kAudioStreamPropertyVirtualFormat,
 };
 use objc2_core_audio_types::{
-    AudioBufferList, AudioStreamBasicDescription, AudioTimeStamp, AudioTimeStampFlags,
+    AudioBuffer, AudioBufferList, AudioStreamBasicDescription, AudioTimeStamp, AudioTimeStampFlags,
     kAudioFormatFlagIsFloat, kAudioFormatFlagIsNonInterleaved, kAudioFormatLinearPCM,
 };
 use objc2_core_foundation::{CFRetained, CFString};
@@ -306,6 +306,14 @@ impl Feed {
     }
 }
 
+unsafe fn filled_buffer(list: *const AudioBufferList) -> Option<AudioBuffer> {
+    if unsafe { (&raw const (*list).mNumberBuffers).read() } == 0 {
+        return None;
+    }
+    let buffer = unsafe { (&raw const (*list).mBuffers[0]).read() };
+    (!buffer.mData.is_null() && buffer.mDataByteSize > 0).then_some(buffer)
+}
+
 unsafe extern "C-unwind" fn on_input(
     _device: AudioObjectID,
     _now: NonNull<AudioTimeStamp>,
@@ -319,12 +327,11 @@ unsafe extern "C-unwind" fn on_input(
         return NO_ERROR;
     };
     let feed = unsafe { feed.as_mut() };
-    let list = unsafe { input.as_ref() };
     let time = unsafe { input_time.as_ref() };
-    let buffer = list.mBuffers[0];
-    if list.mNumberBuffers == 0 || buffer.mData.is_null() {
+    let filled = unsafe { filled_buffer(input.as_ptr()) };
+    let Some(buffer) = filled else {
         return NO_ERROR;
-    }
+    };
     let bytes = unsafe {
         std::slice::from_raw_parts(buffer.mData.cast::<u8>(), buffer.mDataByteSize as usize)
     };
@@ -520,6 +527,30 @@ mod tests {
         (0..count * BYTES_PER_SAMPLE)
             .map(|n| (n % 251 + 1) as u8)
             .collect()
+    }
+
+    fn buffer_list(buffers: u32, bytes: &mut [u8]) -> AudioBufferList {
+        AudioBufferList {
+            mNumberBuffers: buffers,
+            mBuffers: [AudioBuffer {
+                mNumberChannels: 2,
+                mDataByteSize: bytes.len() as u32,
+                mData: bytes.as_mut_ptr().cast(),
+            }],
+        }
+    }
+
+    #[test]
+    fn a_list_that_carries_no_buffer_is_left_untouched() {
+        let mut bytes = frames(4);
+        let empty = buffer_list(0, &mut bytes);
+        assert!(unsafe { filled_buffer(&raw const empty) }.is_none());
+        let filled = buffer_list(1, &mut bytes);
+        let got = unsafe { filled_buffer(&raw const filled) }.expect("one buffer");
+        assert_eq!(got.mDataByteSize as usize, bytes.len());
+        let mut nothing: [u8; 0] = [];
+        let short = buffer_list(1, &mut nothing);
+        assert!(unsafe { filled_buffer(&raw const short) }.is_none());
     }
 
     #[test]

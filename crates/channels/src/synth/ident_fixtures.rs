@@ -239,12 +239,13 @@ pub const FIXTURES: &[Fixture] = &[
         "ysf",
         FOUR_LEVEL,
     ),
-    beyond(
+    named(
         "rds_station_960k",
         960_000.0,
         200_000.0,
         95_500_000.0,
-        "a single tone at broadcast deviation reads as four discrete frequency levels",
+        "wfm",
+        &[Modulation::Fm],
     ),
     named(
         "dcf77_2026_2k",
@@ -547,7 +548,12 @@ pub fn judge(fixture: &Fixture, outcome: &Outcome) -> Result<(), String> {
                 Err(format!("{}, expected one of {families:?}", describe()))
             }
         }
-        Expect::Beyond(_) => Ok(()),
+        Expect::Beyond(_) => {
+            if outcome.confirmed {
+                return Err(format!("{}, expected no confirmed match", describe()));
+            }
+            Ok(())
+        }
     }
 }
 

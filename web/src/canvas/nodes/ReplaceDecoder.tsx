@@ -1,3 +1,4 @@
+import { channelFrequencyHz } from "../../components/channelSettings";
 import { formatHz } from "../../components/format";
 import { toastError } from "../../lib/toasts";
 import type { PatchNode } from "../../lib/types";
@@ -20,7 +21,7 @@ export function ReplaceDecoder({ node, onClose }: { node: PatchNode; onClose: ()
     <ChannelPicker
       title="Replace the decoder"
       note={`${descriptor?.name ?? typeId.toUpperCase()}${
-        settings === null ? "" : `: ${formatHz(settings.frequency_hz)}`
+        settings === null ? "" : `: ${formatHz(channelFrequencyHz(settings))}`
       }`}
       groups={decoderReplacements(workspace.context.channelTypes, typeId)}
       onChannel={(channelType) => {

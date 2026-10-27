@@ -1,3 +1,4 @@
+use sdrmm_wire::DeviceBackend;
 use std::sync::{Arc, Mutex};
 
 use super::*;
@@ -8,8 +9,8 @@ struct Started(Arc<Mutex<Vec<usize>>>);
 struct LanesDriver(Started);
 
 impl DeviceDriver for LanesDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -90,7 +91,7 @@ fn inputs(picked: &[u32]) -> DeviceSettings {
 #[tokio::test]
 async fn a_new_pick_of_inputs_restarts_the_capture_with_only_those_lanes() {
     let (engine, started) = lanes_engine();
-    let ds = engine.create_device_set("mock:lanes").unwrap();
+    let ds = engine.create_device_set("rtlsdr:lanes").unwrap();
     engine.patch_device(ds, inputs(&[0])).expect("RX1");
     assert_eq!(engine.snapshot().device_sets[0].capabilities.rx_streams, 1);
     engine.patch_device(ds, inputs(&[1])).expect("RX2");
@@ -103,7 +104,7 @@ async fn a_new_pick_of_inputs_restarts_the_capture_with_only_those_lanes() {
 #[tokio::test]
 async fn a_lane_that_is_wired_is_not_switched_off() {
     let (engine, started) = lanes_engine();
-    let ds = engine.create_device_set("mock:lanes").unwrap();
+    let ds = engine.create_device_set("rtlsdr:lanes").unwrap();
     hold_tuning(&engine, ds);
     engine
         .add_channel(ds, 1, nfm_settings(0.0))
@@ -122,7 +123,7 @@ async fn a_lane_that_is_wired_is_not_switched_off() {
 #[tokio::test]
 async fn drops_counted_before_a_lane_restart_do_not_upset_the_next_poll() {
     let (engine, _) = lanes_engine();
-    let ds = engine.create_device_set("mock:lanes").unwrap();
+    let ds = engine.create_device_set("rtlsdr:lanes").unwrap();
     let mut known = None;
     let mut missing_once = HashSet::new();
     let deadline = Instant::now() + Duration::from_secs(5);

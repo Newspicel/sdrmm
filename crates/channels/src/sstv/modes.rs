@@ -100,7 +100,7 @@ const ROBOT72: &[Segment] = &[
     seg(Part::Gap(CHROMA_PORCH_HZ), 1.5),
     seg(Part::Scan(Scan::ChromaR), 69.0),
     seg(Part::Gap(HIGH_SEPARATOR_HZ), 4.5),
-    seg(Part::Gap(CHROMA_PORCH_HZ), 1.5),
+    seg(Part::Gap(PORCH_HZ), 1.5),
     seg(Part::Scan(Scan::ChromaB), 69.0),
 ];
 
@@ -305,6 +305,153 @@ pub(crate) fn hz_to_level(hz: f32) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const DAYTON_PAPER_MODES: [(SstvMode, u8, f64, f64, f64); 12] = [
+        (SstvMode::Robot36, 8, 9.0, 3.0, 88.0),
+        (SstvMode::Robot72, 12, 9.0, 3.0, 138.0),
+        (SstvMode::MartinM1, 44, 4.862, 0.572, 146.432),
+        (SstvMode::MartinM2, 40, 4.862, 0.572, 73.216),
+        (SstvMode::ScottieS1, 60, 9.0, 1.5, 138.240),
+        (SstvMode::ScottieS2, 56, 9.0, 1.5, 88.064),
+        (SstvMode::ScottieDx, 76, 9.0, 1.5, 345.6),
+        (SstvMode::Pd50, 93, 20.0, 2.080, 91.520),
+        (SstvMode::Pd90, 99, 20.0, 2.080, 170.240),
+        (SstvMode::Pd120, 95, 20.0, 2.080, 121.600),
+        (SstvMode::Pd180, 96, 20.0, 2.080, 183.040),
+        (SstvMode::Sc2180, 55, 5.5225, 0.500, 235.000),
+    ];
+
+    const DAYTON_PAPER_ROBOT36_LINE: [(&str, f64, f64); 6] = [
+        ("sync", 1_200.0, 9.0),
+        ("gap", 1_500.0, 3.0),
+        ("scan", 0.0, 88.0),
+        ("alternating gap", 0.0, 4.5),
+        ("gap", 1_900.0, 1.5),
+        ("scan", 0.0, 44.0),
+    ];
+
+    const DAYTON_PAPER_ROBOT72_LINE: [(&str, f64, f64); 9] = [
+        ("sync", 1_200.0, 9.0),
+        ("gap", 1_500.0, 3.0),
+        ("scan", 0.0, 138.0),
+        ("gap", 1_500.0, 4.5),
+        ("gap", 1_900.0, 1.5),
+        ("scan", 0.0, 69.0),
+        ("gap", 2_300.0, 4.5),
+        ("gap", 1_500.0, 1.5),
+        ("scan", 0.0, 69.0),
+    ];
+
+    const DAYTON_PAPER_SCOTTIE_STARTING_SYNC_MS: f64 = 9.0;
+
+    fn described(segment: &Segment) -> (&'static str, f64, f64) {
+        match segment.part {
+            Part::Sync => ("sync", SYNC_HZ, segment.ms),
+            Part::Gap(hz) => ("gap", hz, segment.ms),
+            Part::AlternatingGap => ("alternating gap", 0.0, segment.ms),
+            Part::Scan(_) => ("scan", 0.0, segment.ms),
+        }
+    }
+
+    fn sync_porch_ms(row: &Timing) -> f64 {
+        let at = row
+            .segments
+            .iter()
+            .position(|segment| segment.part == Part::Sync)
+            .unwrap_or_else(|| panic!("{:?} has no sync", row.mode));
+        let porch = row.segments[at + 1];
+        assert!(
+            matches!(porch.part, Part::Gap(_)),
+            "{:?} has {:?} after its sync",
+            row.mode,
+            porch.part
+        );
+        porch.ms
+    }
+
+    fn longest_scan_ms(row: &Timing) -> f64 {
+        row.segments
+            .iter()
+            .filter(|segment| matches!(segment.part, Part::Scan(_)))
+            .map(|segment| segment.ms)
+            .fold(0.0f64, f64::max)
+    }
+
+    #[test]
+    fn every_mode_carries_its_published_vis_code() {
+        for (mode, vis, _, _, _) in DAYTON_PAPER_MODES {
+            assert_eq!(mode.vis(), vis, "{mode:?}");
+            assert_eq!(SstvMode::from_vis(vis), Some(mode));
+        }
+    }
+
+    #[test]
+    fn every_mode_keeps_its_published_sync_porch_and_scan_lengths() {
+        for (mode, _, sync_ms, porch_ms, scan_ms) in DAYTON_PAPER_MODES {
+            let row = timing(mode);
+            assert!((row.sync_ms - sync_ms).abs() < 1e-9, "{mode:?} sync width");
+            assert!(
+                (sync_porch_ms(row) - porch_ms).abs() < 1e-9,
+                "{mode:?} porch width"
+            );
+            assert!(
+                (longest_scan_ms(row) - scan_ms).abs() < 1e-9,
+                "{mode:?} scan length {} against a published {scan_ms}",
+                longest_scan_ms(row)
+            );
+        }
+    }
+
+    #[test]
+    fn the_robot_line_sequences_match_the_published_step_lists() {
+        for (mode, published) in [
+            (SstvMode::Robot36, DAYTON_PAPER_ROBOT36_LINE.as_slice()),
+            (SstvMode::Robot72, DAYTON_PAPER_ROBOT72_LINE.as_slice()),
+        ] {
+            let row = timing(mode);
+            assert_eq!(row.segments.len(), published.len(), "{mode:?} step count");
+            for (step, (&(part, hz, ms), segment)) in published.iter().zip(row.segments).enumerate()
+            {
+                let (actual_part, actual_hz, actual_ms) = described(segment);
+                assert_eq!(actual_part, part, "{mode:?} step {step}");
+                assert!((actual_hz - hz).abs() < 1e-9, "{mode:?} step {step} tone");
+                assert!((actual_ms - ms).abs() < 1e-9, "{mode:?} step {step} length");
+            }
+        }
+    }
+
+    #[test]
+    fn the_scottie_modes_open_with_the_published_starting_sync_pulse() {
+        for mode in [
+            SstvMode::ScottieS1,
+            SstvMode::ScottieS2,
+            SstvMode::ScottieDx,
+        ] {
+            let row = timing(mode);
+            assert!(
+                (row.lead_in_ms - DAYTON_PAPER_SCOTTIE_STARTING_SYNC_MS).abs() < 1e-9,
+                "{mode:?} lead-in {}",
+                row.lead_in_ms
+            );
+            assert!(row.sync_offset_ms > 0.0, "{mode:?} syncs at the line break");
+        }
+    }
+
+    #[test]
+    fn the_calibration_header_tones_are_the_published_ones() {
+        assert!((SYNC_HZ - 1_200.0).abs() < 1e-9);
+        assert!((LEADER_HZ - 1_900.0).abs() < 1e-9);
+        assert!((VIS_ONE_HZ - 1_100.0).abs() < 1e-9);
+        assert!((VIS_ZERO_HZ - 1_300.0).abs() < 1e-9);
+        assert!((PORCH_HZ - 1_500.0).abs() < 1e-9);
+        assert!((CHROMA_PORCH_HZ - 1_900.0).abs() < 1e-9);
+        assert!((HIGH_SEPARATOR_HZ - 2_300.0).abs() < 1e-9);
+        assert!((BLACK_HZ - 1_500.0).abs() < 1e-9);
+        assert!((WHITE_HZ - 2_300.0).abs() < 1e-9);
+        assert!((LEADER_MS - 300.0).abs() < 1e-9);
+        assert!((BREAK_MS - 10.0).abs() < 1e-9);
+        assert!((VIS_BIT_MS - 30.0).abs() < 1e-9);
+    }
 
     #[test]
     fn every_mode_has_one_timing_row_in_wire_order() {

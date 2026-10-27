@@ -1,6 +1,6 @@
 import type { Options } from "../../components/controls";
 import type { AutocompleteSuggestion } from "../../components/TextAutocomplete";
-import type { NmeaDeviceInfo, PositionSource } from "../../lib/types";
+import type { SerialDeviceInfo, PositionSource } from "../../lib/types";
 
 export type GpsTab = "receiver" | "network" | "fixed" | "phone";
 
@@ -42,7 +42,7 @@ export function validHostPort(address: string): boolean {
   return /^[a-z0-9._-]+$/i.test(host);
 }
 
-export function nmeaSuggestion(device: NmeaDeviceInfo): AutocompleteSuggestion {
+export function nmeaSuggestion(device: SerialDeviceInfo): AutocompleteSuggestion {
   const description = device.product ?? device.manufacturer;
   if (description == null) {
     return { value: device.path };
@@ -51,16 +51,16 @@ export function nmeaSuggestion(device: NmeaDeviceInfo): AutocompleteSuggestion {
   return { value: device.path, detail: `${description}${serial}` };
 }
 
-export function nmeaDetail(device: NmeaDeviceInfo): string {
+export function serialDetail(device: SerialDeviceInfo): string {
   return [device.product ?? device.manufacturer, device.serial]
     .filter((part): part is string => part != null && part !== "")
     .join(" · ");
 }
 
 export function filterNmeaDevices(
-  devices: readonly NmeaDeviceInfo[],
+  devices: readonly SerialDeviceInfo[],
   query: string,
-): readonly NmeaDeviceInfo[] {
+): readonly SerialDeviceInfo[] {
   const needle = query.trim().toLowerCase();
   if (needle === "") {
     return devices;

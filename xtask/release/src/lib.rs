@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 mod aur;
 pub mod bundled;
 pub mod changeset;

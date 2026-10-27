@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use sdrmm_wire::{
-    ChannelNode, ChannelSettings, DeviceRef, NodeBody, PatchEdge, PatchNode, PortRef, Position,
-    ResolvedState, Runs, UpdateWorkspaceRequest, WorkspaceSnapshot,
+    ChannelNode, ChannelSettings, DeviceBackend, DeviceRef, NodeBody, PatchEdge, PatchNode,
+    PortRef, Position, ResolvedState, Runs, UpdateWorkspaceRequest, WorkspaceSnapshot,
 };
 use tokio::sync::broadcast;
 
@@ -73,7 +73,7 @@ fn snapshot(channels: &[&str]) -> WorkspaceSnapshot {
     let mut snapshot = WorkspaceSnapshot::starter();
     if let NodeBody::Device(device) = &mut snapshot.graph.nodes[0].body {
         device.device = Some(DeviceRef {
-            backend: "virtual".to_owned(),
+            backend: DeviceBackend::Virtual,
             serial: None,
             key: Some("band".to_owned()),
         });

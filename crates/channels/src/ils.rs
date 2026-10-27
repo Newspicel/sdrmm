@@ -50,6 +50,10 @@ fn params(settings: &ChannelSettings) -> Result<&IlsParams, ChannelError> {
     }
 }
 
+fn check_params(params: &IlsParams) -> Result<(), ChannelError> {
+    datalink::check_navaid_report_ms(params.report_ms)
+}
+
 pub(crate) fn occupied_band() -> (f64, f64) {
     (-HALF_BANDWIDTH, HALF_BANDWIDTH)
 }
@@ -66,11 +70,13 @@ impl ChannelRx for IlsChannel {
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = *params(&settings)?;
+        check_params(&params)?;
         Ok(Self::build(params))
     }
 
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = *params(&settings)?;
+        check_params(&params)?;
         self.params = params;
         Ok(())
     }
@@ -169,7 +175,111 @@ mod tests {
     use std::time::Instant;
 
     use super::*;
-    use crate::testutil::{realtime_budget, run_events, settings};
+    use crate::testutil::{
+        THROUGHPUT_ATTEMPTS, fastest_seconds, realtime_budget, run_events, settings,
+    };
+
+    const ANNEX_10_LOCALIZER_COURSE_DEPTH: f32 = 0.20;
+    const ANNEX_10_GLIDEPATH_ON_PATH_DEPTH: f32 = 0.40;
+    const ANNEX_10_COURSE_SECTOR_DDM: f32 = 0.155;
+    const ANNEX_10_GLIDEPATH_SECTOR_DDM: f32 = 0.175;
+    const LOCALIZER_FULL_SCALE_DOTS: f32 = 2.5;
+    const GLIDEPATH_FULL_SCALE_DOTS: f32 = 2.0;
+    const PERF_SECONDS: f64 = 5.0;
+    const MIN_REALTIME_SPEEDUP: f64 = 800.0;
+
+    fn two_tone_am(depth_90: f32, depth_150: f32, seconds: usize) -> Vec<Complex<f32>> {
+        (0..RATE as usize * seconds)
+            .map(|index| {
+                let time = index as f64 / RATE;
+                let envelope = 1.0
+                    + f64::from(depth_90) * (TAU * 90.0 * time).cos()
+                    + f64::from(depth_150) * (TAU * 150.0 * time).cos();
+                Complex::new(envelope as f32, 0.0)
+            })
+            .collect()
+    }
+
+    fn last_reading(component: IlsComponent, iq: &[Complex<f32>]) -> IlsReading {
+        let params = IlsParams {
+            component,
+            ..IlsParams::default()
+        };
+        let mut channel = IlsChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(ChannelParams::Ils(params)),
+        )
+        .expect("channel");
+        run_events(&mut channel, iq)
+            .into_iter()
+            .filter_map(|event| match event {
+                DecoderEvent::Ils(reading) => Some(reading),
+                _ => None,
+            })
+            .next_back()
+            .expect("ILS reading")
+    }
+
+    fn sector_edge_depths(on_course: f32, ddm: f32) -> (f32, f32) {
+        (on_course + ddm / 2.0, on_course - ddm / 2.0)
+    }
+
+    #[test]
+    fn the_annex_10_on_course_and_on_path_depths_read_zero_deviation() {
+        for (component, depth) in [
+            (IlsComponent::Localizer, ANNEX_10_LOCALIZER_COURSE_DEPTH),
+            (IlsComponent::Glideslope, ANNEX_10_GLIDEPATH_ON_PATH_DEPTH),
+        ] {
+            let reading = last_reading(component, &two_tone_am(depth, depth, 2));
+            assert!(
+                (reading.modulation_90 - depth).abs() < 0.005,
+                "{component:?} {reading:?}"
+            );
+            assert!(
+                (reading.modulation_150 - depth).abs() < 0.005,
+                "{component:?} {reading:?}"
+            );
+            assert!(reading.ddm.abs() < 0.005, "{component:?} {reading:?}");
+            assert!(
+                reading.deviation_dots.abs() < 0.1,
+                "{component:?} {reading:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_annex_10_sector_limits_read_full_scale_deflection() {
+        for (component, on_course, ddm, dots) in [
+            (
+                IlsComponent::Localizer,
+                ANNEX_10_LOCALIZER_COURSE_DEPTH,
+                ANNEX_10_COURSE_SECTOR_DDM,
+                LOCALIZER_FULL_SCALE_DOTS,
+            ),
+            (
+                IlsComponent::Glideslope,
+                ANNEX_10_GLIDEPATH_ON_PATH_DEPTH,
+                ANNEX_10_GLIDEPATH_SECTOR_DDM,
+                GLIDEPATH_FULL_SCALE_DOTS,
+            ),
+        ] {
+            let (larger, smaller) = sector_edge_depths(on_course, ddm);
+            let reading = last_reading(component, &two_tone_am(larger, smaller, 2));
+            assert!(
+                (reading.ddm - ddm).abs() < 0.005,
+                "{component:?} {reading:?}"
+            );
+            assert!(
+                (reading.deviation_dots - dots).abs() < 0.1,
+                "{component:?} {reading:?}"
+            );
+            let mirrored = last_reading(component, &two_tone_am(smaller, larger, 2));
+            assert!(
+                (mirrored.deviation_dots + dots).abs() < 0.1,
+                "{component:?} {mirrored:?}"
+            );
+        }
+    }
 
     #[test]
     fn measures_ils_difference_in_depth_of_modulation() {
@@ -240,23 +350,50 @@ mod tests {
     }
 
     #[test]
+    fn a_report_interval_outside_the_wire_range_is_rejected() {
+        for report_ms in [0, sdrmm_wire::MAX_NAVAID_REPORT_MS + 1] {
+            let params = IlsParams {
+                report_ms,
+                ..IlsParams::default()
+            };
+            assert!(
+                IlsChannel::new(
+                    ChannelCtx { input_rate: RATE },
+                    settings(ChannelParams::Ils(params)),
+                )
+                .is_err(),
+                "{report_ms}"
+            );
+            let mut channel = IlsChannel::new(
+                ChannelCtx { input_rate: RATE },
+                settings(ChannelParams::Ils(IlsParams::default())),
+            )
+            .expect("channel");
+            assert!(
+                channel.apply(settings(ChannelParams::Ils(params))).is_err(),
+                "{report_ms}"
+            );
+        }
+    }
+
+    #[test]
     fn processing_keeps_ahead_of_the_channel_rate() {
-        let iq: Vec<_> = (0..RATE as usize * 5)
-            .map(|index| {
-                let time = index as f64 / RATE;
-                let envelope =
-                    1.0 + 0.2 * (TAU * 90.0 * time).cos() + 0.2 * (TAU * 150.0 * time).cos();
-                Complex::new(envelope as f32, 0.0)
-            })
-            .collect();
-        let mut channel = IlsChannel::new(
-            ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Ils(IlsParams::default())),
-        )
-        .expect("channel");
-        let started = Instant::now();
-        let events = run_events(&mut channel, &iq);
-        assert!(!events.is_empty());
-        assert!(started.elapsed().as_secs_f64() < realtime_budget(5.0));
+        let iq = two_tone_am(0.2, 0.2, PERF_SECONDS as usize);
+        let elapsed = fastest_seconds(THROUGHPUT_ATTEMPTS, || {
+            let mut channel = IlsChannel::new(
+                ChannelCtx { input_rate: RATE },
+                settings(ChannelParams::Ils(IlsParams::default())),
+            )
+            .expect("channel");
+            let started = Instant::now();
+            let events = run_events(&mut channel, &iq);
+            assert!(!events.is_empty());
+            started.elapsed().as_secs_f64()
+        });
+        assert!(
+            elapsed < realtime_budget(PERF_SECONDS / MIN_REALTIME_SPEEDUP),
+            "{PERF_SECONDS} s of signal took {elapsed:.4} s, {:.1}x realtime",
+            PERF_SECONDS / elapsed
+        );
     }
 }

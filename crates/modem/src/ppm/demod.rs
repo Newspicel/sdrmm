@@ -30,10 +30,7 @@ impl PpmDemod {
         phase: f64,
         detector: SlotDetector,
     ) -> Self {
-        assert!(
-            m >= 2 && m.is_power_of_two(),
-            "M must be a power of two of at least 2, got {m}"
-        );
+        assert_slots(m);
         assert!(symbols > 0, "a receiver needs at least one symbol to read");
         Self::over(
             m,
@@ -44,10 +41,7 @@ impl PpmDemod {
 
     #[must_use]
     pub fn over(m: usize, grid: SlotGrid, detector: SlotDetector) -> Self {
-        assert!(
-            m >= 2 && m.is_power_of_two(),
-            "M must be a power of two of at least 2, got {m}"
-        );
+        assert_slots(m);
         let norm = match detector {
             SlotDetector::MatchedFilter => (0..grid.slots())
                 .map(|slot| grid.weight_energy(slot).sqrt().recip())
@@ -191,6 +185,13 @@ impl PpmDemod {
     }
 }
 
+fn assert_slots(m: usize) {
+    assert!(
+        (2..=MAX_SLOTS).contains(&m) && m.is_power_of_two(),
+        "M must be a power of two from 2 to {MAX_SLOTS}, got {m}"
+    );
+}
+
 pub const MAX_SLOTS: usize = 256;
 
 pub const MAX_SLOT_BITS: usize = MAX_SLOTS.trailing_zeros() as usize;
@@ -226,6 +227,18 @@ mod tests {
 
     fn demod(m: usize, sps: f64, symbols: usize, detector: SlotDetector) -> PpmDemod {
         PpmDemod::new(m, sps, 0, symbols, 0.0, detector)
+    }
+
+    #[test]
+    #[should_panic(expected = "from 2 to 256")]
+    fn more_slots_than_the_scratch_holds_is_refused() {
+        let _ = demod(512, 4.0, 4, SlotDetector::MatchedFilter);
+    }
+
+    #[test]
+    #[should_panic(expected = "from 2 to 256")]
+    fn more_slots_than_the_scratch_holds_is_refused_over_a_grid() {
+        let _ = PpmDemod::over(512, SlotGrid::new(4.0, 2_048, 0.0), SlotDetector::Envelope);
     }
 
     #[test]

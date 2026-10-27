@@ -111,8 +111,8 @@ mod tests {
 
     use sdrmm_wire::{
         AdsbMessage, ChannelNode, ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent,
-        DeviceRef, EventFilterNode, FilterMode, NodeBody, PatchEdge, PatchNode, PortRef, Position,
-        WorkspaceSnapshot, WsprSpot,
+        DeviceBackend, DeviceRef, EventFilterNode, FilterMode, NodeBody, PatchEdge, PatchNode,
+        PortRef, Position, WorkspaceSnapshot, WsprSpot,
     };
     use tokio::time::{Duration, timeout};
 
@@ -220,7 +220,7 @@ mod tests {
             panic!("the starter's radio is a device node");
         };
         device.device = Some(DeviceRef {
-            backend: "virtual".to_owned(),
+            backend: DeviceBackend::Virtual,
             serial: None,
             key: Some("band".to_owned()),
         });

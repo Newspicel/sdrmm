@@ -1,4 +1,7 @@
-use sdrmm_wire::patch::resolve::{self, ResolveCtx, WireVerdict, WiringRequest};
+use sdrmm_wire::{
+    MAX_NODES, PatchError, PatchGraph,
+    patch::resolve::{self, ResolveCtx, WireVerdict, WiringRequest},
+};
 
 use super::*;
 
@@ -13,6 +16,7 @@ use super::*;
                            the save stays the authority",
             body = Vec<WireVerdict>,
         ),
+        (status = 400, description = "The graph is larger than a workspace may hold", body = ApiError),
         (status = 422, description = "Malformed request body", body = ApiError),
     ),
 )]
@@ -20,6 +24,7 @@ pub(super) async fn post_patch_wiring(
     State(state): State<AppState>,
     Json(request): Json<WiringRequest>,
 ) -> Result<Json<Vec<WireVerdict>>, AppError> {
+    holdable(&request.graph)?;
     let engine = state.engine.clone();
     let verdicts = tokio::task::spawn_blocking(move || {
         let live = engine.snapshot();
@@ -31,4 +36,11 @@ pub(super) async fn post_patch_wiring(
     })
     .await?;
     Ok(Json(verdicts))
+}
+
+fn holdable(graph: &PatchGraph) -> Result<(), AppError> {
+    if graph.nodes.len() <= MAX_NODES {
+        return Ok(());
+    }
+    Err(AppError::bad_request(PatchError::TooManyNodes.to_string()))
 }

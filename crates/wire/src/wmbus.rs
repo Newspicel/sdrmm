@@ -11,8 +11,8 @@ pub const WMBUS_BANDWIDTH_HZ: f64 = 300_000.0;
 pub const WMBUS_T_C_HZ: f64 = 868_950_000.0;
 pub const WMBUS_S_HZ: f64 = 868_300_000.0;
 pub const MAX_WMBUS_KEYS: usize = 256;
-const METER_DIGITS: usize = 8;
-const KEY_DIGITS: usize = 32;
+pub const METER_DIGITS: usize = 8;
+pub const KEY_DIGITS: usize = 32;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct WmbusKey {
@@ -537,5 +537,18 @@ mod tests {
             serde_json::to_value(WmbusParams::default()).unwrap(),
             serde_json::json!({})
         );
+    }
+
+    #[test]
+    fn the_key_shapes_are_the_lengths_the_published_limits_carry() {
+        assert_eq!(crate::limits::WMBUS_LIMITS.meter_digits, METER_DIGITS);
+        assert_eq!(crate::limits::WMBUS_LIMITS.key_digits, KEY_DIGITS);
+        let params = WmbusParams {
+            keys: vec![WmbusKey {
+                meter: "1".repeat(METER_DIGITS),
+                key: "a".repeat(KEY_DIGITS),
+            }],
+        };
+        assert!(params.validate().is_ok());
     }
 }

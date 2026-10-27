@@ -4,11 +4,17 @@ use serde_json::Value;
 
 use super::{StoreError, coherent_break};
 
+mod backends;
+mod banks;
 mod clip_wires;
 mod filter_kinds;
+mod generators;
 mod pictures;
+mod place;
+mod preroll;
 mod refused;
 mod silent_events;
+mod sources;
 mod steer;
 mod tx;
 mod watched_lanes;
@@ -18,6 +24,10 @@ type Step = fn(&mut Value) -> Vec<WorkspaceNoticeKind>;
 
 const STEPS: &[Step] = &[
     filter_kinds::drop_unknown_filter_kinds,
+    sources::sources_become_device_nodes,
+    preroll::time_machines_become_recorders,
+    generators::generators_join_the_virtual_backend,
+    backends::clear_unknown_backends,
     steer::steer_from_bearing,
     tx::drop_tx_wires,
     clip_wires::drop_clip_wires,
@@ -28,6 +38,7 @@ const STEPS: &[Step] = &[
 const ONCE: &[(&str, Step)] = &[
     ("step:wire_watched_lanes", watched_lanes::wire_watched_lanes),
     ("step:wire_pictures", pictures::wire_pictures),
+    ("step:split_kraken_banks", banks::split_kraken_banks),
 ];
 
 pub(super) fn run(snapshot: &mut Value) -> Vec<WorkspaceNoticeKind> {
@@ -45,6 +56,8 @@ fn upgrade_with(snapshot: &mut Value, once: &[Step]) -> Vec<WorkspaceNoticeKind>
     notices.extend(run(snapshot));
     notices
 }
+
+pub(super) use generators::migrated_generator_device_id;
 
 pub(crate) fn upgrade_import(export: &mut Value) -> Vec<WorkspaceNoticeKind> {
     let mut notices = coherent_break::upgrade_export(export).notices();

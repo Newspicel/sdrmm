@@ -35,7 +35,7 @@ const fn reg(reg: u8, value: u8, mask: u8) -> Step {
 }
 
 pub(crate) fn rf_hz(board: Board, requested_hz: u32) -> u64 {
-    let shift = board.has_upconverter() && requested_hz < UPCONVERTER_HZ;
+    let shift = board.has_upconverter() && requested_hz <= UPCONVERTER_HZ;
     u64::from(requested_hz) + if shift { u64::from(UPCONVERTER_HZ) } else { 0 }
 }
 
@@ -153,11 +153,27 @@ mod tests {
     const NOT_HF: Step = Step::Pin { pin: 5, high: true };
 
     #[test]
-    fn the_v4_family_upconverts_below_28_8_mhz() {
+    fn the_v4_family_upconverts_up_to_28_8_mhz() {
         assert_eq!(rf_hz(Board::BlogV4, 7_100_000), 35_900_000);
         assert_eq!(rf_hz(Board::BlogV4Lite, 500_000), 29_300_000);
-        assert_eq!(rf_hz(Board::BlogV4, 28_800_000), 28_800_000);
+        assert_eq!(rf_hz(Board::BlogV4, 28_800_000), 57_600_000);
+        assert_eq!(rf_hz(Board::BlogV4Lite, 28_800_000), 57_600_000);
+        assert_eq!(rf_hz(Board::BlogV4, 28_800_001), 28_800_001);
         assert_eq!(rf_hz(Board::Generic, 7_100_000), 7_100_000);
+    }
+
+    #[test]
+    fn the_top_of_hf_upconverts_on_the_band_the_filters_pick() {
+        for board in [Board::BlogV4, Board::BlogV4Lite] {
+            let hf = switching(board, TunerKind::R828D, UPCONVERTER_HZ, None);
+            assert_eq!(hf.band, Some(Band::Hf));
+            assert!(hf.steps.contains(&HF), "{board:?}");
+            assert_eq!(
+                rf_hz(board, UPCONVERTER_HZ),
+                u64::from(UPCONVERTER_HZ) * 2,
+                "{board:?}"
+            );
+        }
     }
 
     #[test]

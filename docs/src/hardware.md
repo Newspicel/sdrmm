@@ -31,7 +31,7 @@ Making a radio? Write to [hi@jhaag.me](mailto:hi@jhaag.me) to get it supported a
 |---|---|---:|---:|---:|---:|---:|---|
 | RTL-SDR | 24 MHz to 1.766 GHz | 3.2 MS/s | 3.2 MHz | 8 | 1 | 0 | Small |
 | RTL-SDR Blog V4 | 500 kHz to 1.766 GHz | 3.2 MS/s | 3.2 MHz | 8 | 1 | 0 | Small |
-| KrakenSDR | 24 MHz to 1.766 GHz | 2.56 MS/s | 2.56 MHz | 8 | 5 | 0 | Small |
+| KrakenSDR lane | 24 MHz to 1.766 GHz | 2.56 MS/s | 2.56 MHz | 8 | 1 | 0 | Small |
 | HackRF One | 1 MHz to 6 GHz | 20 MS/s | 20 MHz | 8 | 1 | 1 | Yes |
 | Airspy R2 | 24 MHz to 1.8 GHz | 10 MS/s | 9 MHz | 12 | 1 | 0 | No |
 | Airspy Mini | 24 MHz to 1.8 GHz | 10 MS/s | 6 MHz | 12 | 1 | 0 | No |
@@ -165,23 +165,29 @@ serial.
 
 ## KrakenSDR
 
-One Device with five lanes; KerberosSDR has four. SDR-- groups the tuners by serial and USB hub,
-so the vendor Pi image is not needed. **Make array** wires all lanes to an [Array](user-guide/arrays.md).
-There is no direct sampling, and the rate tops out at 2.56 MS/s.
+Five tuners on one clock, a Device each; KerberosSDR has four. SDR-- knows them by serial and USB
+hub, so the vendor Pi image is not needed, and names them `KrakenSDR <hub> lane 1` to `lane 5`.
+Add a Device per lane and wire them to one [Array](user-guide/arrays.md) in antenna order. Each
+lane reports the bank it shares, so the Array takes **Shared clock** from the hardware and not from
+what you declare. There is no direct sampling, and the rate tops out at 2.56 MS/s.
 
 The lanes share a clock, not a phase. The Array switches on the built-in noise source to solve
 delay, phase, and gain after every retune and gain change, and checks them every minute. The
 antennas are cut off while the source is on; processors pause.
 
+- **Switches:** the noise source and all five bias tees hang off lane 1's tuner, so lane 1 has to
+  be open and in the Array to move them.
 - **Gain:** lane phase moves by up to about 10° across the gain steps. The Array solves at the gain
   you run.
 - **Clipping:** the noise source clips at higher gain. Past 75% clipped samples the Array shows
   `Noise clips, lower gain`.
-- **Restarts:** a lane error restarts all five lanes in about 80 ms, and the Array searches its
-  offsets again from scratch.
+- **Starts:** the lanes start one by one, so the Array searches its offsets on the first lock and
+  again whenever a lane restarts.
+- **Noise source:** the Array needs every lane of the bank to run it, or it shows
+  `Noise needs all lanes`.
 
-If the array shows up as separate dongles, one of its tuners is missing: check `sdrmm --doctor`
-or `lsusb`. [Hardware tests](development/hardware-tests.md#krakensdr) has measurements.
+A lane that is missing shows up in `sdrmm --doctor` under Coherent banks.
+[Hardware tests](development/hardware-tests.md#krakensdr) has measurements.
 
 Tested on hardware provided by [KrakenRF](https://www.krakenrf.com). Thank you.
 
@@ -444,7 +450,9 @@ SDR-- probes SoapySDR in a child process, so a crashing module cannot take it do
 
 ## Other sources
 
-| Node | Gives |
+A Device node picks these from its own source tabs, the same way it picks a radio.
+
+| Source | Gives |
 |---|---|
 | Recording | Plays a [SigMF recording](user-guide/recording.md#play-a-recording) |
 | Signal generator | Test signals, from a carrier tone to DVB-T and ATV |

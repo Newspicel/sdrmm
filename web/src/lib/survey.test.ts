@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import limits from "../generated/limits.json";
 import { cellKey, useSurveyStore, withCell } from "./survey";
 import type { SurveyCell, SurveyUpdate } from "./types";
 
@@ -188,5 +189,22 @@ describe("useSurveyStore catching up", () => {
     expect(useSurveyStore.getState().byNode.map?.cells).toHaveLength(1);
     store.observe({ type: "SurveyUpdate", data: { node: "map", update: update({ cells: 0 }) } });
     expect(useSurveyStore.getState().byNode.map).toMatchObject({ behind: false, cells: [] });
+  });
+});
+
+function cellIndex(at: SurveyCell): [number, number] {
+  const [, x, y] = cellKey(at).split(":").map(Number);
+  return [x as number, y as number];
+}
+
+describe("the survey grid", () => {
+  it("indexes cells by the size and scale the server publishes", () => {
+    const here = cell(52.52, -40);
+    const cos = Math.max(limits.survey.min_cos_lat, Math.cos((here.latitude * Math.PI) / 180));
+    const latCell = limits.survey.cell_m / limits.survey.metres_per_degree_lat;
+    const lonCell = limits.survey.cell_m / (limits.survey.metres_per_degree_lon * cos);
+    const [x, y] = cellIndex(here);
+    expect(cellIndex({ ...here, latitude: here.latitude + latCell * 3 })).toEqual([x, y + 3]);
+    expect(cellIndex({ ...here, longitude: here.longitude + lonCell * 4 })).toEqual([x + 4, y]);
   });
 });

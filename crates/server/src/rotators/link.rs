@@ -22,7 +22,7 @@ pub(super) enum LinkError {
     #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
-    Serial(#[from] serialport::Error),
+    Serial(#[from] sdrmm_serial::Error),
     #[error("rotator refused, code {0}")]
     Refused(i32),
     #[error("unreadable reply \"{0}\"")]
@@ -34,11 +34,15 @@ pub(super) enum LinkError {
 pub(super) fn open(link: &RotatorLink, axes: RotatorAxes) -> Result<Box<dyn Link>, LinkError> {
     match link {
         RotatorLink::Gs232 { device, baud } => {
-            let port = serialport::new(device, *baud).timeout(IO_TIMEOUT).open()?;
+            let port = sdrmm_serial::new(device, *baud)
+                .timeout(IO_TIMEOUT)
+                .open()?;
             Ok(Box::new(Gs232::new(port, axes)))
         }
         RotatorLink::Winegard { device, baud } => {
-            let port = serialport::new(device, *baud).timeout(IO_TIMEOUT).open()?;
+            let port = sdrmm_serial::new(device, *baud)
+                .timeout(IO_TIMEOUT)
+                .open()?;
             Ok(Box::new(Winegard::open(port)?))
         }
         RotatorLink::Rotctld { address } => {

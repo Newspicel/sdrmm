@@ -1,6 +1,5 @@
 mod device;
 mod lane;
-mod render;
 mod scene;
 #[cfg(test)]
 mod tests;
@@ -15,10 +14,11 @@ use sdrmm_device::{DeviceError, lock};
 use sdrmm_wire::{DeviceInfo, NoiseSource};
 
 pub(crate) use device::BenchDevice;
-pub use scene::{
-    BenchDeviceSpec, Clutter, Echo, Emitter, LaneImpairments, MAX_BENCH_LANES,
-    MAX_CLUTTER_DELAY_SAMPLES, MAX_CLUTTER_ECHOES, MAX_PPM, MAX_RIPPLE_CYCLES, MAX_RIPPLE_DB, Path,
-    Pilot, ReportedGap, Ripple, Scene, Slip, Waveform, default_devices, default_scene,
+pub use scene::{BenchDeviceSpec, default_devices};
+pub use sdrmm_dsp::scene::{
+    Clutter, Echo, Emitter, LaneImpairments, MAX_BENCH_LANES, MAX_CLUTTER_DELAY_SAMPLES,
+    MAX_CLUTTER_ECHOES, MAX_PPM, MAX_RIPPLE_CYCLES, MAX_RIPPLE_DB, Path, Pilot, ReportedGap,
+    Ripple, Scene, Slip, Waveform, default_scene,
 };
 
 pub const BLOCK_LEN: usize = 8_192;
@@ -265,7 +265,7 @@ impl BenchWorld {
         }
         if let Some(radius_m) = radius_m {
             let spec = self.spec(slot);
-            let circle = scene::uca_positions(radius_m, spec.lanes.len())
+            let circle = sdrmm_dsp::scene::uca_positions(radius_m, spec.lanes.len())
                 .map_err(DeviceError::Unsupported)?;
             let end = spec.first_element + circle.len();
             let elements = scene

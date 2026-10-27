@@ -252,6 +252,39 @@ fn a_retune_starts_a_capture_on_every_lane() {
 }
 
 #[test]
+fn captures_that_step_backwards_are_refused_rather_than_wrapping() {
+    let meta: SigmfMeta = serde_json::from_value(serde_json::json!({
+        "global": { "core:datatype": "cf32_le", "core:version": SIGMF_VERSION },
+        "captures": [
+            { "core:sample_start": 100 },
+            { "core:sample_start": 0, "core:global_index": 0 },
+        ],
+    }))
+    .unwrap();
+    match events_of(&[meta]) {
+        Err(SigmfError::Malformed(message)) => assert!(message.contains("follow"), "{message}"),
+        other => panic!("a capture before its predecessor must be refused, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_lane_is_a_recording_only_once_the_collection_is_on_disk() {
+    let dir = TempDir::new().unwrap();
+    let stem = dir.path().join("half");
+    let mut writer = CollectionWriter::create(&stem, &lanes(), RATE, array()).unwrap();
+    write(&mut writer, 0, 8);
+    fs::create_dir(meta_path(&lane_stem(&stem, 2))).unwrap();
+
+    writer
+        .finalize()
+        .expect_err("the last lane cannot be published");
+
+    assert!(collection_path(&stem).is_file());
+    let listed = crate::scan_library(dir.path()).unwrap();
+    assert_eq!(listed, vec![crate::Stored::Collection(stem)]);
+}
+
+#[test]
 fn a_changed_lane_meta_fails_the_hash() {
     let dir = TempDir::new().unwrap();
     let stem = dir.path().join("tampered");

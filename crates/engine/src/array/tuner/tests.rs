@@ -42,6 +42,7 @@ fn caps(streams: u32, per_stream: StreamScope, steps: &[f64]) -> Capabilities {
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
         clean_fraction: None,
+        bank: None,
     }
 }
 

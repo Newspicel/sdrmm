@@ -1,7 +1,7 @@
 use sdrmm_wire::{
-    ChannelNode, ChannelParams, ChannelSettings, NfmParams, NodeBody, NoiseBlankerSettings,
-    PatchEdge, PatchGraph, PatchNode, PortRef, PortType, Position, RackLayout, RecordingNode,
-    Squelch, WorkspaceSnapshot,
+    ChannelNode, ChannelParams, ChannelSettings, DeviceBackend, DeviceNode, DeviceRef, NfmParams,
+    NodeBody, NoiseBlankerSettings, PatchEdge, PatchGraph, PatchNode, PortRef, PortType, Position,
+    RackLayout, Squelch, WorkspaceSnapshot,
 };
 
 use super::signal::{self, CENTER_HZ, STEM};
@@ -16,8 +16,13 @@ pub fn snapshot(receivers: usize) -> WorkspaceSnapshot {
     let mut nodes = vec![
         node(
             RECORDING,
-            NodeBody::Recording(RecordingNode {
-                recording: Some(STEM.to_owned()),
+            NodeBody::Device(DeviceNode {
+                device: Some(DeviceRef {
+                    backend: DeviceBackend::Recording,
+                    serial: None,
+                    key: Some(STEM.to_owned()),
+                }),
+                ..DeviceNode::default()
             }),
             0.0,
             0.0,

@@ -74,7 +74,7 @@ impl Rt4DSession {
         Ok(data)
     }
 
-    fn write_page(&mut self, at: Placement, data: &[u8]) -> Result<(), CpsError> {
+    fn write_page(&mut self, at: Placement, data: &[u8; PAGE_BYTES]) -> Result<(), CpsError> {
         self.send_acknowledged(
             "write",
             Command::WritePage {
@@ -83,6 +83,15 @@ impl Rt4DSession {
                 data,
             },
         )
+    }
+
+    fn page_holding(&mut self, addr: u32, head: &[u8]) -> Result<[u8; PAGE_BYTES], CpsError> {
+        if let Ok(whole) = <[u8; PAGE_BYTES]>::try_from(head) {
+            return Ok(whole);
+        }
+        let mut page = self.read_page(page_of(addr)?)?;
+        page[..head.len()].copy_from_slice(head);
+        Ok(page)
     }
 
     fn leave(&mut self) {
@@ -101,23 +110,34 @@ fn page_of(addr: u32) -> Result<u16, CpsError> {
     })
 }
 
-fn placements(addr: u32, len: usize) -> Result<Vec<(Placement, usize)>, CpsError> {
+struct Page {
+    at: Placement,
+    addr: u32,
+    offset: usize,
+}
+
+fn placements(addr: u32, len: usize) -> Result<Vec<Page>, CpsError> {
     let mut plan = Vec::with_capacity(len.div_ceil(PAGE_BYTES));
     let mut offset = 0usize;
     while offset < len {
         let take = PAGE_BYTES.min(len - offset);
-        let at = u32::try_from(offset)
-            .ok()
-            .and_then(|offset| addr.checked_add(offset))
-            .and_then(|page_addr| place(page_addr, take))
-            .ok_or_else(|| CpsError::Protocol {
-                step: "write",
-                reason: format!("{addr:#x} (+{offset:#x}) is outside every writable segment"),
-            })?;
-        plan.push((at, offset));
+        let page = page_at(addr, offset, take).ok_or_else(|| CpsError::Protocol {
+            step: "write",
+            reason: format!("{addr:#x} (+{offset:#x}) is outside every writable segment"),
+        })?;
+        plan.push(page);
         offset += take;
     }
     Ok(plan)
+}
+
+fn page_at(addr: u32, offset: usize, take: usize) -> Option<Page> {
+    let page_addr = addr.checked_add(u32::try_from(offset).ok()?)?;
+    Some(Page {
+        at: place(page_addr, take)?,
+        addr: page_addr,
+        offset,
+    })
 }
 
 impl RadioSession for Rt4DSession {
@@ -160,9 +180,10 @@ impl RadioSession for Rt4DSession {
     fn write(&mut self, addr: u32, data: &[u8]) -> Result<(), CpsError> {
         let plan = placements(addr, data.len())?;
         self.ensure_programming()?;
-        for (at, offset) in plan {
-            let end = (offset + PAGE_BYTES).min(data.len());
-            self.write_page(at, &data[offset..end])?;
+        for page in plan {
+            let end = (page.offset + PAGE_BYTES).min(data.len());
+            let whole = self.page_holding(page.addr, &data[page.offset..end])?;
+            self.write_page(page.at, &whole)?;
         }
         Ok(())
     }
@@ -325,14 +346,31 @@ mod tests {
 
     #[test]
     fn a_write_frame_names_its_segment_and_page() {
+        let mut page = [0x33u8; PAGE_BYTES];
+        page[..2].copy_from_slice(&[0x44, 0x55]);
         let (mut radio, sent) = session(vec![vec![ACK], vec![ACK]]);
-        radio.write(0x4800, &[0x11, 0x22]).expect("write");
+        radio.write(0x4800, &page).expect("write");
         let bytes = sent_bytes(&sent);
         let frame = &bytes[ENTER.len()..];
         assert_eq!(frame.len(), PAGE_BYTES + 5);
+        assert_eq!(&frame[..6], &[0x09, 0x01, 0x00, 0x02, 0x44, 0x55]);
+        assert!(frame[6..PAGE_BYTES + 4].iter().all(|byte| *byte == 0x33));
+        assert_eq!(frame[PAGE_BYTES + 4], sum8(&frame[..PAGE_BYTES + 4]));
+    }
+
+    #[test]
+    fn a_partial_page_keeps_the_bytes_already_on_the_radio() {
+        let mut held = [0xffu8; PAGE_BYTES];
+        held[2..].fill(0x77);
+        let (mut radio, sent) = session(vec![vec![ACK], page_reply(0x12, &held), vec![ACK]]);
+        radio.write(0x4800, &[0x11, 0x22]).expect("write");
+        let bytes = sent_bytes(&sent);
+        let read = &bytes[ENTER.len()..ENTER.len() + 4];
+        assert_eq!(read, &[0x52, 0x00, 0x12, 0x64]);
+        let frame = &bytes[ENTER.len() + read.len()..];
+        assert_eq!(frame.len(), PAGE_BYTES + 5);
         assert_eq!(&frame[..6], &[0x09, 0x01, 0x00, 0x02, 0x11, 0x22]);
-        assert!(frame[6..PAGE_BYTES + 4].iter().all(|byte| *byte == 0));
-        assert_eq!(frame[PAGE_BYTES + 4], 0x3f);
+        assert!(frame[6..PAGE_BYTES + 4].iter().all(|byte| *byte == 0x77));
     }
 
     #[test]

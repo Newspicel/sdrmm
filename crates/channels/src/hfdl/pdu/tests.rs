@@ -1,7 +1,7 @@
 use super::{
     build::{
-        acars_mpdu, lpdu_acars, lpdu_hfnpdu, lpdu_logon_confirm, mpdu_downlink, mpdu_uplink, spdu,
-        with_fcs,
+        acars_block, acars_mpdu, lpdu_acars, lpdu_hfnpdu, lpdu_logon_confirm, mpdu_downlink,
+        mpdu_uplink, spdu, with_fcs,
     },
     *,
 };
@@ -180,6 +180,46 @@ fn spdu_slot_assignment_region_is_surfaced_raw() {
     assert_eq!(d["slot_assignment_hex"], hex(&p[4..52]));
     assert_eq!(d["slot_assignment_hex"].as_str().map(str::len), Some(96));
     assert_eq!(d["min_priority"], 0x0A);
+}
+
+#[test]
+fn spdu_neighbour_frequency_bitmaps_keep_their_own_alignment() {
+    let mut p = vec![0u8; 64];
+    p[1] = 4 | 0x80;
+    p[54] = 0x30;
+    p[55] = 0x12;
+    p[56] = 0x09;
+    p[57] = 0x89;
+    p[58] = 0xC7;
+    p[59] = 0xA3;
+    p[60] = 0xB5;
+    p[61] = 0x02;
+    let events = parse_fresh(&with_fcs(p));
+    let d = &events[0].details;
+    assert_eq!(d["freqs_in_use"], 0x9123);
+    assert_eq!(d["neighbor2"]["gs_id"], 9);
+    assert_eq!(d["neighbor2"]["freqs"], 0x5_A3C7);
+    assert_eq!(d["neighbor3_gs_id"], 0x2B);
+}
+
+#[test]
+fn an_uplink_lpdu_names_only_the_aircraft_it_is_addressed_to() {
+    let first = lpdu_acars(&acars_block());
+    let second = lpdu_acars(&acars_block());
+    let mut header = vec![0b0001_0001, 7, 0x11, 1 << 4];
+    header.push((first.len() - 1) as u8);
+    header.extend_from_slice(&[0x22, 1 << 4]);
+    header.push((second.len() - 1) as u8);
+    let mut p = with_fcs(header);
+    p.extend_from_slice(&first);
+    p.extend_from_slice(&second);
+    let events = parse(&mut PduParser::new(), &p, 1800);
+    assert_eq!(events.len(), 2, "{events:?}");
+    for (event, want) in events.iter().zip([0x11, 0x22]) {
+        let aircraft = &event.details["who"]["aircraft"];
+        assert_eq!(aircraft.as_array().map(Vec::len), Some(1), "{aircraft}");
+        assert_eq!(aircraft[0]["aircraft_id"], want);
+    }
 }
 
 #[test]

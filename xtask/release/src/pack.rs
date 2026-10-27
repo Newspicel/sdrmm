@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::proc::{run, run_with_env};
+use crate::proc::{run, run_with_env, utf8};
 
 pub fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     std::fs::create_dir_all(to).with_context(|| format!("cannot create {}", to.display()))?;
@@ -50,13 +50,7 @@ pub fn archive(root: &Path, out: &Path, name: &str, windows: bool) -> Result<Pat
     } else {
         run_with_env(
             "tar",
-            &[
-                "-C",
-                out.to_str().expect("utf8 path"),
-                "-czf",
-                path.to_str().expect("utf8 path"),
-                name,
-            ],
+            &["-C", utf8(out)?, "-czf", utf8(&path)?, name],
             root,
             &[("COPYFILE_DISABLE", "1")],
         )?;

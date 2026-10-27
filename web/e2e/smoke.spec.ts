@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { channelFrequencyHz } from "../src/components/channelSettings";
 import type { StateSnapshot, WorkspaceDetail } from "../src/lib/types";
 import { activate, addNode, dragWire, fitPatch, nodeUrl, radioNodeOf } from "./canvas";
 
@@ -823,7 +824,7 @@ test.describe("the workspace", () => {
         const state: StateSnapshot = await page.request.get("/api/state").then((r) => r.json());
         const set = state.device_sets[0];
         const centerHz = set?.settings.center_hz ?? 0;
-        const offsets = set?.channels.map((c) => c.settings.frequency_hz - centerHz) ?? [];
+        const offsets = set?.channels.map((c) => channelFrequencyHz(c.settings) - centerHz) ?? [];
         return offsets.filter((offset) => Math.abs(offset + 512_000) < 30_000).length;
       })
       .toBe(1);

@@ -11,8 +11,8 @@ use sdrmm_device::{DeviceDriver, DeviceError, RxSink};
 use sdrmm_wire::{DeviceInfo, DeviceSettings, GainValue};
 
 const CENTER_HZ: f64 = 100_000_000.0;
-// Tried in order; the first that both drivers accept is what a comparison runs at. A HackRF
-// takes any rate in 2..20 MHz through its own driver but only a discrete menu through Soapy.
+/// Tried in order; the first that both drivers accept is what a comparison runs at. A HackRF
+/// takes any rate in 2..20 MHz through its own driver but only a discrete menu through Soapy.
 const RATE_CANDIDATES: [f64; 5] = [2_048_000.0, 2_400_000.0, 8_000_000.0, 10_000_000.0, 20e6];
 const GAIN_DB: f64 = 20.0;
 const CAPTURE: Duration = Duration::from_secs(3);
@@ -206,6 +206,12 @@ fn soapy_peer(info: &DeviceInfo) -> Option<(sdrmm_device_soapy::SoapyDriver, Dev
     Some((soapy, peer))
 }
 
+/// Soapy is asked for exactly what the native driver reported programming, so this compares two
+/// signal paths at one hardware setting rather than two opinions about which gain-table entry an
+/// off-table request should take. The gains are compared as a subset rather than for equality:
+/// SoapyHackRF presents the switched +14 dB RF amp as a third gain stage where the native driver
+/// presents the switch it actually is as the `amp` boolean, and every stage both drivers do model
+/// has to agree.
 #[test]
 #[ignore = "needs an RTL-SDR or HackRF on the bus"]
 fn a_native_driver_streams_what_soapy_streams_from_the_same_radio() {
@@ -235,9 +241,6 @@ fn a_native_driver_streams_what_soapy_streams_from_the_same_radio() {
                 "{} delivered {delivered:.1} Hz against {rate} Hz",
                 native.id()
             );
-            // Soapy is asked for exactly what the native driver reported programming, so the
-            // comparison is of two signal paths at one hardware setting rather than of two
-            // opinions about which gain-table entry an off-table request should take.
             let (soapy_measurement, soapy_applied) =
                 measure(&soapy, &peer, &native_applied.gains, rate, CAPTURE)
                     .unwrap_or_else(|e| panic!("soapy capture: {e}"));
@@ -259,9 +262,6 @@ fn a_native_driver_streams_what_soapy_streams_from_the_same_radio() {
                 offset_db,
             );
 
-            // A subset rather than an equality: SoapyHackRF presents the switched +14 dB RF amp as
-            // a third gain stage, where the native driver presents the switch it actually is as
-            // the `amp` boolean. Every stage both drivers do model has to agree.
             for gain in &native_applied.gains {
                 let held = soapy_applied
                     .gains
@@ -296,6 +296,8 @@ fn a_native_driver_streams_what_soapy_streams_from_the_same_radio() {
     assert!(compared > 0, "no radio was comparable against soapy");
 }
 
+/// The offset is only held below compression: at the top of the range the front end is
+/// non-linear and a fraction of a dB between two captures is the radio, not the driver.
 #[test]
 #[ignore = "needs an RTL-SDR or HackRF on the bus"]
 fn the_two_drivers_track_each_other_across_the_gain_range() {
@@ -327,9 +329,6 @@ fn the_two_drivers_track_each_other_across_the_gain_range() {
                     n.rms,
                     s.rms,
                 );
-                // Only below compression: at the top of the range the front end is non-linear and
-                // a fraction of a dB of difference between two captures is the radio, not the
-                // driver.
                 if !clipped {
                     assert!(
                         offset_db.abs() < 1.5,

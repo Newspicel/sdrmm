@@ -128,7 +128,7 @@ pub struct GpsNode {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct NmeaDeviceInfo {
+pub struct SerialDeviceInfo {
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product: Option<String>,
@@ -143,8 +143,8 @@ pub struct NmeaDeviceInfo {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct NmeaDevicesResponse {
-    pub devices: Vec<NmeaDeviceInfo>,
+pub struct SerialDevicesResponse {
+    pub devices: Vec<SerialDeviceInfo>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

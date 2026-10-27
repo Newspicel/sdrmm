@@ -77,6 +77,12 @@ impl Fir {
         }
     }
 
+    pub(super) fn reset(&mut self) {
+        self.history.fill(Complex::new(0.0, 0.0));
+        self.head = 0;
+        self.phase = 0;
+    }
+
     pub(super) fn filter(&mut self, sample: Complex<f32>) -> Complex<f32> {
         self.push(sample);
         self.output()

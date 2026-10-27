@@ -8,8 +8,8 @@ use sdrmm_modem::multicarrier::{
 use sdrmm_modem_test_support::ber::{
     catalog::{multicarrier::gfdm_params, ofdm::RATE},
     perf::{
-        CountingAlloc, PerfBaseline, REGRESSION_FRACTION, assert_no_alloc, compare_perf, host_id,
-        load_baselines, measure_throughput, save_baselines,
+        CountingAlloc, PerfBaseline, REGRESSION_FRACTION, assert_no_alloc, committed_for_host,
+        compare_perf, host_id, load_baselines, measure_throughput, save_baselines,
     },
 };
 
@@ -311,11 +311,11 @@ fn compare_multicarrier_perf_baseline() {
         eprintln!("skipping the perf gate: throughput is only comparable in release");
         return;
     }
-    let committed = load_baselines(&path(STEM)).unwrap();
-    if committed.iter().any(|b| b.host != host_id()) {
-        eprintln!("skipping the perf gate: baseline host is not {}", host_id());
-        return;
-    }
+    let committed = committed_for_host(
+        &load_baselines(&path(STEM)).unwrap(),
+        STEM,
+        "cargo test -p sdrmm-modem --release --test multicarrier_perf write_multicarrier_perf_baseline -- --ignored",
+    );
     match compare_perf(&measured_baselines(), &committed, REGRESSION_FRACTION) {
         Ok(changes) => {
             for c in changes {

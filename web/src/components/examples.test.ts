@@ -56,15 +56,15 @@ describe("examplesHint", () => {
 
 describe("kindLabels", () => {
   const catalog = {
-    nodes: [{ kind: "signal_gen", name: "Signal generator" }],
+    nodes: [{ kind: "device", name: "Device" }],
   } as unknown as PatchCatalog;
 
   it("names a kind the catalog knows", () => {
-    expect(kindLabels(example({}, ["signal_gen"]), catalog)).toEqual(["Signal generator"]);
+    expect(kindLabels(example({}, ["device"]), catalog)).toEqual(["Device"]);
   });
 
   it("falls back to the raw kind when the catalog has not loaded", () => {
-    expect(kindLabels(example({}, ["signal_gen"]), undefined)).toEqual(["signal_gen"]);
+    expect(kindLabels(example({}, ["device"]), undefined)).toEqual(["device"]);
   });
 
   it("falls back to the raw kind the catalog does not list", () => {

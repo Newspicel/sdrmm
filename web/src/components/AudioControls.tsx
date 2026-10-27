@@ -29,6 +29,7 @@ import { ChipField, ChoiceChip, SettingChip, ToggleChip } from "./face/Chips";
 import { formatBytes, formatHz } from "./format";
 import { Icon } from "./Icon";
 import { NumberField } from "./NumberField";
+import { rowKeys } from "./rowKeys";
 import { Segmented } from "./Segmented";
 import { Select } from "./Select";
 import { SliderField } from "./Slider";
@@ -65,6 +66,7 @@ export function AudioControls({
   onAudio: (audio: AudioProcessing) => void;
 }) {
   const notches = audio.notches ?? [];
+  const notchKeys = rowKeys(notches);
   const edit: Edit = (patch) => onAudio(mergeAudio(audio, patch));
   const agc = audio.agc ?? "off";
   return (
@@ -88,7 +90,7 @@ export function AudioControls({
       <PassbandChip audio={audio} edit={edit} />
       {notches.map((notch, index) => (
         <NotchChip
-          key={`notch-${index}`}
+          key={notchKeys[index]}
           index={index}
           notch={notch}
           onEdit={(patch) => edit({ notches: withNotchAt(notches, index, patch) })}
@@ -344,40 +346,61 @@ function NotchChip({
   return (
     <SettingChip label={name} value={formatHz(freqHz)} title={name}>
       {(close) => (
-        <ChipField label={name}>
-          <NumberField
-            label={`${name} frequency`}
-            value={freqHz}
-            min={AUDIO_LIMITS.toneHz.min}
-            max={AUDIO_LIMITS.toneHz.max}
-            step={10}
-            className="w-24"
-            unit="Hz"
-            onCommit={(freq_hz) => onEdit({ freq_hz })}
-          />
-          <NumberField
-            label={`${name} width`}
-            value={notch.width_hz ?? AUDIO_DEFAULTS.notchWidthHz}
-            min={AUDIO_LIMITS.notchWidthHz.min}
-            max={AUDIO_LIMITS.notchWidthHz.max}
-            step={10}
-            className="w-24"
-            unit="wide"
-            onCommit={(width_hz) => onEdit({ width_hz })}
-          />
-          <Button
-            type="button"
-            className={`${ICON_BTN_SM} ml-auto hover:text-danger`}
-            aria-label={`Remove ${name.toLowerCase()}`}
-            onClick={() => {
-              onRemove();
-              close();
-            }}
-          >
-            <Icon glyph={X} size={12} />
-          </Button>
-        </ChipField>
+        <NotchFields
+          name={name}
+          notch={notch}
+          onEdit={onEdit}
+          onRemove={() => {
+            onRemove();
+            close();
+          }}
+        />
       )}
     </SettingChip>
+  );
+}
+
+export function NotchFields({
+  name,
+  notch,
+  onEdit,
+  onRemove,
+}: {
+  name: string;
+  notch: NotchSettings;
+  onEdit: (patch: Partial<NotchSettings>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <ChipField label={name}>
+      <NumberField
+        label={`${name} frequency`}
+        value={notch.freq_hz ?? AUDIO_DEFAULTS.notchFreqHz}
+        min={AUDIO_LIMITS.toneHz.min}
+        max={AUDIO_LIMITS.toneHz.max}
+        step={10}
+        className="w-24"
+        unit="Hz"
+        onCommit={(freq_hz) => onEdit({ freq_hz })}
+      />
+      <NumberField
+        label={`${name} width`}
+        value={notch.width_hz ?? AUDIO_DEFAULTS.notchWidthHz}
+        min={AUDIO_LIMITS.notchWidthHz.min}
+        max={AUDIO_LIMITS.notchWidthHz.max}
+        step={10}
+        className="w-24"
+        unit="Hz"
+        onCommit={(width_hz) => onEdit({ width_hz })}
+      />
+      <Button
+        type="button"
+        className={`${ICON_BTN_SM} ml-auto hover:text-danger`}
+        aria-label={`Remove ${name.toLowerCase()}`}
+        onClick={onRemove}
+      >
+        <Icon glyph={X} size={12} />
+      </Button>
+    </ChipField>
   );
 }

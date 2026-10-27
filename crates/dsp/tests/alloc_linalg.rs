@@ -53,8 +53,8 @@ fn cholesky_and_jacobi_do_not_allocate() {
             eigen.solve(&matrix, &mut values).unwrap();
             sink += values.values()[MAX_ORDER - 1];
             let loading = chol.factor_loaded(&matrix, 1e-3).unwrap();
-            sink += loading + chol.quad_inverse(&steer, &mut scratch);
-            chol.solve_into(&steer, &mut solved);
+            sink += loading + chol.quad_inverse(&steer, &mut scratch).unwrap();
+            chol.solve_into(&steer, &mut solved).unwrap();
             chol.inverse_into(&mut inverse, &mut scratch).unwrap();
             sink += chol.log_det() + chol.pivot_ratio() + matrix.quad(&steer);
             matrix.copy_block(2, 8, &mut block).unwrap();

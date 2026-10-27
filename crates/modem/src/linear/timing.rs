@@ -125,9 +125,12 @@ impl TimingTrack {
         per_symbol: usize,
         out: &mut Vec<Complex<f32>>,
     ) {
-        let anchor = self.offset_samples - self.rate * self.at_sample;
-        let step = sps as f64 / (1.0 - self.rate);
-        let origin = anchor / (1.0 - self.rate);
+        let advance = 1.0 - self.rate;
+        let step = sps as f64 / advance;
+        let origin = (self.offset_samples - self.rate * self.at_sample) / advance;
+        if !(step.is_finite() && step > 0.0) || !origin.is_finite() {
+            return;
+        }
         let first = ((1.0 - origin) / step).ceil();
         let spacing = step / per_symbol.max(1) as f64;
         let mut k = first * per_symbol.max(1) as f64;
@@ -136,9 +139,9 @@ impl TimingTrack {
             if (position as usize) + 2 >= filtered.len() {
                 break;
             }
-            let base = position as usize;
-            let mu = (position - base as f64) as f32;
-            out.push(farrow(&filtered[base - 1..base + 3], mu));
+            if let Some(value) = farrow_at(filtered, position) {
+                out.push(value);
+            }
             k += 1.0;
         }
     }
@@ -347,11 +350,21 @@ pub fn resample_at(
         position += sps as f64;
     }
     while (position as usize) + 2 < filtered.len() {
-        let base = position as usize;
-        let mu = (position - base as f64) as f32;
-        out.push(farrow(&filtered[base - 1..base + 3], mu));
+        match farrow_at(filtered, position) {
+            Some(value) => out.push(value),
+            None => return,
+        }
         position += sps as f64;
     }
+}
+
+fn farrow_at(filtered: &[Complex<f32>], position: f64) -> Option<Complex<f32>> {
+    if position < 1.0 || position.is_nan() {
+        return None;
+    }
+    let base = position as usize;
+    let window = filtered.get(base - 1..base + 3)?;
+    Some(farrow(window, (position - base as f64) as f32))
 }
 
 #[cfg(test)]
@@ -482,6 +495,37 @@ mod tests {
     }
 
     #[test]
+    fn a_track_whose_clock_never_advances_resamples_nothing() {
+        let filtered = vec![Complex::new(1.0f32, 0.0); 256];
+        for rate in [1.0f64, 2.0, f64::NAN, f64::INFINITY] {
+            let track = TimingTrack {
+                offset_samples: 0.5,
+                at_sample: 0.0,
+                rate,
+            };
+            let mut out = Vec::new();
+            track.resample(&filtered, SPS, &mut out);
+            assert!(out.is_empty(), "rate {rate} produced {} symbols", out.len());
+        }
+        let slow = TimingTrack {
+            offset_samples: 0.5,
+            at_sample: 0.0,
+            rate: -1.0,
+        };
+        let mut out = Vec::new();
+        slow.resample(&filtered, SPS, &mut out);
+        assert_eq!(out.len(), 63);
+    }
+
+    #[test]
+    fn resampling_from_an_unusable_offset_reads_no_samples() {
+        let filtered = vec![Complex::new(1.0f32, 0.0); 256];
+        let mut out = Vec::new();
+        resample_at(&filtered, SPS, f64::NAN, &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
     fn an_empty_burst_estimates_nothing_rather_than_a_nan() {
         assert_eq!(square_law_offset(&[], SPS), 0.0);
         assert_eq!(square_law_offset(&[Complex::new(0.0, 0.0); 64], SPS), 0.0);
@@ -490,11 +534,7 @@ mod tests {
     fn evm(table: &Constellation, symbols: &[Complex<f32>]) -> f64 {
         (symbols
             .iter()
-            .map(|&y| {
-                let l = table.hard_slice(y);
-                let i = table.labels().iter().position(|&x| x == l).unwrap();
-                f64::from((y - table.points()[i]).norm_sqr())
-            })
+            .map(|&y| f64::from((y - table.nearest(y)).norm_sqr()))
             .sum::<f64>()
             / symbols.len() as f64)
             .sqrt()

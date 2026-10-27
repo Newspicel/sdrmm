@@ -15,7 +15,9 @@ import {
 const KRAKEN: DeviceRef = { backend: "virtual", key: "kraken5" };
 const LANES = 5;
 const TRACK_MS = 60_000;
-const QUIET_MS = 10_000;
+const QUIET_POLL_MS = 500;
+const QUIET_SAMPLES = 10;
+const STEADY_MS = 20_000;
 
 test.describe.configure({ timeout: 180_000 });
 test.afterEach(({ request }) => unstage(request));
@@ -67,6 +69,18 @@ function countSubscribes(page: Page): () => number {
   return () => subscribes;
 }
 
+function steadyCount(count: () => number): () => number | null {
+  const seen: number[] = [];
+  return () => {
+    seen.push(count());
+    const recent = seen.slice(-QUIET_SAMPLES);
+    if (recent.length < QUIET_SAMPLES || new Set(recent).size > 1) {
+      return null;
+    }
+    return recent[0] ?? null;
+  };
+}
+
 test("draws range and Doppler with axes, tracks and echoes on the map", async ({ page }) => {
   const subscribes = countSubscribes(page);
   await stage(page, "Radar bench", radarBench());
@@ -80,8 +94,9 @@ test("draws range and Doppler with axes, tracks and echoes on the map", async ({
   await expect
     .poll(() => radar.locator("table tbody tr").count(), { timeout: TRACK_MS })
     .toBeGreaterThan(0);
-  await page.waitForTimeout(QUIET_MS);
-  expect(subscribes()).toBe(1);
+  await expect
+    .poll(steadyCount(subscribes), { timeout: STEADY_MS, intervals: [QUIET_POLL_MS] })
+    .toBe(1);
   await expect(map.getByText(/ · Sites$/)).toBeVisible();
 
   await deleteWire(page, edgeKey(["tx", "position"], ["radar", "tx"]));

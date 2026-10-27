@@ -171,20 +171,23 @@ impl BurstGate {
     }
 }
 
-fn cfo_remove(samples: &[Complex<f32>], bit_rate: f64) -> Option<Vec<Complex<f32>>> {
+fn cfo_remove(
+    samples: &[Complex<f32>],
+    bit_rate: f64,
+    smoothed: &mut Vec<f32>,
+    shifted: &mut Vec<Complex<f32>>,
+) -> bool {
     let samples_per_bit = CHANNEL_RATE / bit_rate;
     let window = (30.0 * samples_per_bit) as usize;
     if samples.len() < window + 16 {
-        return None;
+        return false;
     }
     let mut average = 0.0f32;
-    let smoothed: Vec<f32> = samples
-        .iter()
-        .map(|sample| {
-            average += 0.1 * (sample.norm_sqr() - average);
-            average
-        })
-        .collect();
+    smoothed.clear();
+    smoothed.extend(samples.iter().map(|sample| {
+        average += 0.1 * (sample.norm_sqr() - average);
+        average
+    }));
     let peak = smoothed.iter().copied().fold(0.0f32, f32::max);
     let start = smoothed
         .iter()
@@ -200,29 +203,57 @@ fn cfo_remove(samples: &[Complex<f32>], bit_rate: f64) -> Option<Vec<Complex<f32
         .arg();
     let from = start.saturating_sub(lead);
     let mut phase = 0.0f32;
-    let mut shifted: Vec<Complex<f32>> = samples[from..]
-        .iter()
-        .map(|&sample| {
-            let mixed = sample * Complex::from_polar(1.0, -phase);
-            phase += cfo;
-            mixed
-        })
-        .collect();
+    shifted.clear();
+    shifted.extend(samples[from..].iter().map(|&sample| {
+        let mixed = sample * Complex::from_polar(1.0, -phase);
+        phase += cfo;
+        mixed
+    }));
     shifted.extend(std::iter::repeat_n(Complex::new(0.0, 0.0), 256));
-    Some(shifted)
+    true
 }
 
-fn demod_burst(samples: &[Complex<f32>], bit_rate: f64, coherent: bool) -> Vec<(f32, u8)> {
-    let Some(shifted) = cfo_remove(samples, bit_rate) else {
-        return Vec::new();
-    };
-    let mut bits = Vec::new();
-    if coherent {
-        CoherentMskDemod::new(CHANNEL_RATE, bit_rate).process(&shifted, &mut bits);
-    } else {
-        MskDemod::new(CHANNEL_RATE, bit_rate).process(&shifted, &mut bits);
+struct RateDemods {
+    bit_rate: u32,
+    incoherent: MskDemod,
+    coherent: CoherentMskDemod,
+    smoothed: Vec<f32>,
+    shifted: Vec<Complex<f32>>,
+    bits: Vec<(f32, u8)>,
+}
+
+impl RateDemods {
+    fn new(bit_rate: u32) -> Self {
+        let rate = f64::from(bit_rate);
+        Self {
+            bit_rate,
+            incoherent: MskDemod::new(CHANNEL_RATE, rate),
+            coherent: CoherentMskDemod::new(CHANNEL_RATE, rate),
+            smoothed: Vec::new(),
+            shifted: Vec::new(),
+            bits: Vec::new(),
+        }
     }
-    bits
+
+    fn demod(&mut self, samples: &[Complex<f32>], coherent: bool) -> &[(f32, u8)] {
+        self.bits.clear();
+        if !cfo_remove(
+            samples,
+            f64::from(self.bit_rate),
+            &mut self.smoothed,
+            &mut self.shifted,
+        ) {
+            return &self.bits;
+        }
+        if coherent {
+            self.coherent.reset();
+            self.coherent.process(&self.shifted, &mut self.bits);
+        } else {
+            self.incoherent.reset();
+            self.incoherent.process(&self.shifted, &mut self.bits);
+        }
+        &self.bits
+    }
 }
 
 pub(super) struct BurstEvent {
@@ -236,6 +267,7 @@ pub(super) struct BurstEvent {
 pub(super) struct AeroBurstDecoder {
     gate: BurstGate,
     packetizers: [BurstPacketizer; 2],
+    demods: [RateDemods; 2],
 }
 
 impl AeroBurstDecoder {
@@ -243,17 +275,18 @@ impl AeroBurstDecoder {
         Self {
             gate: BurstGate::new(MAX_BURST_SECONDS * CHANNEL_RATE as usize),
             packetizers: [BurstPacketizer::new(), BurstPacketizer::new()],
+            demods: [RateDemods::new(600), RateDemods::new(1200)],
         }
     }
 
     pub(super) fn process(&mut self, input: &[Complex<f32>]) -> Vec<BurstEvent> {
         let mut out = Vec::new();
         for burst in self.gate.process(input) {
-            for (packetizer, rate) in self.packetizers.iter_mut().zip([600u32, 1200]) {
-                let bits = demod_burst(&burst, f64::from(rate), false);
+            for (packetizer, demods) in self.packetizers.iter_mut().zip(&mut self.demods) {
+                let rate = demods.bit_rate;
                 let result = packetizer
-                    .process(&bits)
-                    .or_else(|| packetizer.process(&demod_burst(&burst, f64::from(rate), true)));
+                    .process(demods.demod(&burst, false))
+                    .or_else(|| packetizer.process(demods.demod(&burst, true)));
                 if let Some(result) = result {
                     out.extend(events(result, rate));
                     break;
@@ -353,6 +386,24 @@ mod tests {
         iq.chunks(4096)
             .flat_map(|chunk| decoder.process(chunk))
             .collect()
+    }
+
+    #[test]
+    fn reusing_the_demodulators_matches_a_fresh_pass_per_burst() {
+        let bytes = t_burst_bytes();
+        let bursts: Vec<Vec<Complex<f32>>> = [180.0f64, -120.0, 60.0]
+            .iter()
+            .map(|&cfo| burst_iq(&burst_bits(&bytes), 1200.0, cfo, 2000, 126.0))
+            .collect();
+        let mut reused = RateDemods::new(1200);
+        for burst in &bursts {
+            for coherent in [false, true] {
+                let mut fresh = RateDemods::new(1200);
+                let want = fresh.demod(burst, coherent).to_vec();
+                assert!(!want.is_empty());
+                assert_eq!(reused.demod(burst, coherent), want.as_slice());
+            }
+        }
     }
 
     #[test]

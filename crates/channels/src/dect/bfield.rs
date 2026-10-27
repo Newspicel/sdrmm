@@ -125,6 +125,61 @@ mod tests {
         (319, "11111000"),
     ];
 
+    const EN_300_175_3_FULL_SLOT_TEST_BITS: usize = 84;
+    const EN_300_175_3_X_CRC_SIZE: usize = 4;
+    const EN_300_175_3_FULL_SLOT_DELTA: usize = 240;
+    const EN_300_175_3_FULL_SLOT_RUN: usize = 16;
+    const EN_300_175_3_FULL_SLOT_STRIDE: usize = 48;
+    const EN_300_175_3_X_CRC_GENERATOR: u8 = 0o21;
+
+    fn published_test_bit_index(index: usize) -> usize {
+        if index < EN_300_175_3_FULL_SLOT_TEST_BITS - EN_300_175_3_X_CRC_SIZE {
+            index + EN_300_175_3_FULL_SLOT_STRIDE * (1 + index / EN_300_175_3_FULL_SLOT_RUN)
+        } else {
+            index + EN_300_175_3_FULL_SLOT_DELTA
+        }
+    }
+
+    fn published_x_remainder(field: &BField) -> u8 {
+        let mut remainder = 0u8;
+        for index in 0..EN_300_175_3_FULL_SLOT_TEST_BITS {
+            remainder = (remainder << 1) | u8::from(field.bit(published_test_bit_index(index)));
+            if remainder & (1 << EN_300_175_3_X_CRC_SIZE) != 0 {
+                remainder ^= EN_300_175_3_X_CRC_GENERATOR;
+            }
+        }
+        remainder
+    }
+
+    #[test]
+    fn the_x_crc_reads_the_published_full_slot_test_bits() {
+        let data: [u8; B_BYTES] = std::array::from_fn(|index| (index * 53 + 7) as u8);
+        let field = BField::scrambled(&data, 2);
+        assert!(field.x_crc_ok());
+        assert_eq!(published_x_remainder(&field), 0);
+        let bits: Vec<bool> = (0..FIELD_BITS).map(|index| field.bit(index)).collect();
+        for index in 0..EN_300_175_3_FULL_SLOT_TEST_BITS {
+            let at = published_test_bit_index(index);
+            let mut flipped = bits.clone();
+            flipped[at] = !flipped[at];
+            let broken = BField::from_bits(flipped);
+            assert!(!broken.x_crc_ok(), "test bit {index} at {at}");
+            assert_ne!(
+                published_x_remainder(&broken),
+                0,
+                "test bit {index} at {at}"
+            );
+        }
+        let tested: Vec<usize> = (0..EN_300_175_3_FULL_SLOT_TEST_BITS)
+            .map(published_test_bit_index)
+            .collect();
+        for at in (0..B_BITS).filter(|at| !tested.contains(at)) {
+            let mut flipped = bits.clone();
+            flipped[at] = !flipped[at];
+            assert!(BField::from_bits(flipped).x_crc_ok(), "untested bit {at}");
+        }
+    }
+
     fn bit(sequence: &[u8; B_BYTES], index: usize) -> char {
         if sequence[index / 8] & (0x80 >> (index % 8)) != 0 {
             '1'

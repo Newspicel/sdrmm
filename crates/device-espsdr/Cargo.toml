@@ -6,6 +6,7 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+publish = false
 
 [lints]
 workspace = true
@@ -14,7 +15,7 @@ workspace = true
 sdrmm-wire.workspace = true
 sdrmm-device = { workspace = true, features = ["net"] }
 sdrmm-dsp.workspace = true
+sdrmm-serial.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serialport.workspace = true
 tracing.workspace = true

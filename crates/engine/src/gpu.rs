@@ -247,8 +247,7 @@ impl Processor {
     }
 
     fn power_db(&mut self, input: &[Complex<f32>], out: &mut [f32]) -> Result<(), String> {
-        assert_eq!(input.len(), self.size, "input length must equal FFT size");
-        assert_eq!(out.len(), self.size, "output length must equal FFT size");
+        fits(self.size, input.len(), out.len())?;
         for (slot, &source) in self.upload.iter_mut().zip(&self.bit_reversed) {
             let value = input[source] * self.window[source];
             *slot = [value.re, value.im];
@@ -513,8 +512,7 @@ impl Analyzer {
         out: &mut [f32],
         frame: SpectrumFrame,
     ) -> Result<Option<SpectrumFrame>, String> {
-        assert_eq!(input.len(), self.size, "input length must equal FFT size");
-        assert_eq!(out.len(), self.size, "output length must equal FFT size");
+        fits(self.size, input.len(), out.len())?;
         if self
             .worker
             .as_ref()
@@ -693,6 +691,15 @@ pub(crate) mod caf;
 mod compute;
 mod fft;
 
+fn fits(size: usize, input: usize, out: usize) -> Result<(), String> {
+    if input == size && out == size {
+        return Ok(());
+    }
+    Err(format!(
+        "spectrum buffers of {input} and {out} do not fit a transform of {size}"
+    ))
+}
+
 pub(crate) fn spectrum_is_faster(context: Arc<Context>, size: usize) -> bool {
     match measure_spectrum(context, size) {
         Ok((cpu, gpu)) => {
@@ -742,4 +749,20 @@ fn measure_spectrum(context: Arc<Context>, size: usize) -> Result<(Duration, Dur
     cpu_times.sort_unstable();
     gpu_times.sort_unstable();
     Ok((cpu_times[3], gpu_times[3]))
+}
+#[cfg(test)]
+mod length_tests {
+    use super::fits;
+
+    #[test]
+    fn buffers_that_miss_the_transform_size_are_an_error_not_a_panic() {
+        assert!(fits(4_096, 4_096, 4_096).is_ok());
+        assert!(fits(4_096, 2_048, 4_096).is_err());
+        assert!(fits(4_096, 4_096, 2_048).is_err());
+        assert!(
+            fits(4_096, 2_048, 4_096)
+                .expect_err("a short input is refused")
+                .contains("4096")
+        );
+    }
 }

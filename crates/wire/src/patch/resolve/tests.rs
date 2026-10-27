@@ -1,6 +1,6 @@
 use super::{feeds::MAX_PASS_DEPTH, *};
 use crate::{
-    CallGate, EventKind,
+    CallGate, DeviceBackend, EventKind,
     array::VirtualLane,
     channel::{ChannelInfo, ChannelSettings},
     filter::EventFilterNode,
@@ -36,7 +36,7 @@ fn radio(id: &str, key: &str) -> PatchNode {
         id,
         NodeBody::Device(DeviceNode {
             device: Some(DeviceRef {
-                backend: "virtual".to_owned(),
+                backend: DeviceBackend::Virtual,
                 serial: None,
                 key: Some(key.to_owned()),
             }),

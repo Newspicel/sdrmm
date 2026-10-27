@@ -4,6 +4,20 @@ use utoipa::ToSchema;
 pub const MAX_SURVEY_CELLS: usize = 5_000;
 pub const SURVEY_CELL_M: f64 = 10.0;
 pub const SURVEY_LEVEL_INTERVAL_MS: u64 = 250;
+pub const METRES_PER_DEGREE_LON: f64 = 111_320.0;
+pub const METRES_PER_DEGREE_LAT: f64 = 110_540.0;
+pub const MIN_COS_LAT: f64 = 0.01;
+
+#[must_use]
+pub fn cell_key(latitude: f64, longitude: f64, frequency_hz: f64) -> (i64, i64, i64) {
+    let x = longitude * METRES_PER_DEGREE_LON * latitude.to_radians().cos().max(MIN_COS_LAT);
+    let y = latitude * METRES_PER_DEGREE_LAT;
+    (
+        frequency_hz.round() as i64,
+        (x / SURVEY_CELL_M).round() as i64,
+        (y / SURVEY_CELL_M).round() as i64,
+    )
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct SurveyCell {

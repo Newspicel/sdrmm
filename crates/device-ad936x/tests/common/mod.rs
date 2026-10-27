@@ -98,13 +98,13 @@ fn serve(state: &Arc<State>, mut stream: TcpStream) {
     }
 }
 
+/// A refused write still takes its payload, or the conversation is left desynchronised.
 fn handle(state: &Arc<State>, stream: &mut TcpStream, line: &str) -> Option<()> {
     let words: Vec<&str> = line.split_whitespace().collect();
     let command = *words.first()?;
     if let Some((refused, errno)) = lock(&state.refuse).clone()
         && line.starts_with(&refused)
     {
-        // A refused write still takes its payload, or the conversation is left desynchronised.
         if command == "WRITE"
             && let Some(count) = words.last().and_then(|n| n.parse::<usize>().ok())
         {

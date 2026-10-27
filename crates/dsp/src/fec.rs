@@ -415,7 +415,7 @@ pub fn hdlc_repair(frame: &mut [u8]) -> bool {
     let bits = frame.len() * 8;
     let flip = |frame: &mut [u8], at: usize| frame[at / 8] ^= 1 << (at % 8);
     for span in [1usize, 2] {
-        for at in 0..=bits - span {
+        for at in 0..bits.saturating_sub(span - 1) {
             (at..at + span).for_each(|b| flip(frame, b));
             if hdlc_fcs_ok(frame) {
                 return true;
@@ -991,6 +991,13 @@ mod tests {
     fn hdlc_rejects_frames_too_short_to_hold_an_fcs() {
         assert!(!hdlc_fcs_ok(&[]));
         assert!(!hdlc_fcs_ok(&[0x00, 0x00]));
+    }
+
+    #[test]
+    fn hdlc_repair_refuses_a_frame_with_no_bits_to_flip() {
+        assert!(!hdlc_repair(&mut []));
+        assert!(!hdlc_repair(&mut [0x00]));
+        assert!(!hdlc_repair(&mut [0x00, 0x00]));
     }
 
     #[test]

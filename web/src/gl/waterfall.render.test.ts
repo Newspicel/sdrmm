@@ -123,6 +123,25 @@ describe("waterfall repainting", () => {
     expect(h.draw).toHaveBeenCalledTimes(5);
   });
 
+  it("stores a row's level in place, without a scratch array per row", () => {
+    const h = harness();
+    const view = attachWaterfall(h.canvas().element);
+    views.push(view);
+    h.visible(0, true);
+    view.pushRow(new Uint8Array(8), { signal: -40, spanDb: 60, at: 5 });
+
+    const set = vi.spyOn(Float32Array.prototype, "set");
+    view.pushRow(new Uint8Array(8), { signal: -30, spanDb: 50, at: 6 });
+    expect(set).not.toHaveBeenCalled();
+    set.mockRestore();
+
+    h.frame();
+    const levels = h.texSubImage2D.mock.calls
+      .map((call) => call[8])
+      .findLast((data) => data instanceof Float32Array) as Float32Array;
+    expect([...levels.subarray(0, 8)]).toEqual([0, -40, 60, 0, 0, -30, 50, 0]);
+  });
+
   it("keeps a custom palette set before the first paint", () => {
     const h = harness();
     const view = attachWaterfall(h.canvas().element);

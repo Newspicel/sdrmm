@@ -1,4 +1,4 @@
-use sdrmm_wire::{MAX_SCAN_TARGETS, Range, ScanSettings};
+use sdrmm_wire::{MAX_SCAN_TARGETS, Range, ScanRange, ScanSettings};
 
 use crate::EngineError;
 
@@ -13,18 +13,12 @@ fn bad(msg: String) -> EngineError {
 
 impl ScanPlan {
     pub(crate) fn build(settings: &ScanSettings) -> Result<Self, EngineError> {
-        if !settings.margin_db.is_finite() {
-            return Err(bad("margin_db must be finite".to_string()));
+        if let Some(problem) = settings.problem() {
+            return Err(bad(problem.to_owned()));
         }
-        if let Some(bw_hz) = settings.measure_bw_hz
-            && (!bw_hz.is_finite() || bw_hz <= 0.0)
-        {
-            return Err(bad(format!("measure_bw_hz must be positive, got {bw_hz}")));
-        }
-        let mut targets = expand_ranges(settings)?;
-        let priority = usable_frequencies(&settings.priority)?;
-        targets.extend(usable_frequencies(&settings.frequencies)?);
-        targets.extend(&priority);
+        let mut targets = expand_ranges(&settings.ranges);
+        targets.extend(&settings.frequencies);
+        targets.extend(&settings.priority);
         if targets.len() > MAX_SCAN_TARGETS {
             return Err(bad(format!(
                 "scan expands to more than {MAX_SCAN_TARGETS} targets"
@@ -38,64 +32,19 @@ impl ScanPlan {
         }
         Ok(Self {
             targets,
-            priority: sorted_hz(priority),
+            priority: sorted_hz(settings.priority.clone()),
         })
     }
 }
 
-fn expand_ranges(settings: &ScanSettings) -> Result<Vec<f64>, EngineError> {
+fn expand_ranges(ranges: &[ScanRange]) -> Vec<f64> {
     let mut targets: Vec<f64> = Vec::new();
-    for range in &settings.ranges {
-        if !range.start_hz.is_finite() || !range.stop_hz.is_finite() {
-            return Err(bad("scan range bounds must be finite".to_string()));
-        }
-        if !range.step_hz.is_finite() || range.step_hz <= 0.0 {
-            return Err(bad(format!(
-                "scan range step must be positive, got {}",
-                range.step_hz
-            )));
-        }
-        if range.stop_hz < range.start_hz {
-            return Err(bad(format!(
-                "scan range {} Hz–{} Hz ends before it starts",
-                range.start_hz, range.stop_hz
-            )));
-        }
+    for range in ranges {
         let steps = ((range.stop_hz - range.start_hz) / range.step_hz).floor();
-        let too_many = !steps.is_finite()
-            || steps < 0.0
-            || steps >= MAX_SCAN_TARGETS as f64
-            || targets.len() + (steps as usize) + 1 > MAX_SCAN_TARGETS;
-        if too_many {
-            return Err(bad(format!(
-                "scan expands to more than {MAX_SCAN_TARGETS} targets; widen the step or \
-                 narrow the range"
-            )));
-        }
         let count = steps as usize + 1;
         targets.extend((0..count).map(|i| range.start_hz + range.step_hz * i as f64));
     }
-    Ok(targets)
-}
-
-fn usable_frequencies(frequencies: &[f64]) -> Result<Vec<f64>, EngineError> {
-    if frequencies.len() > MAX_SCAN_TARGETS {
-        return Err(bad(format!(
-            "scan expands to more than {MAX_SCAN_TARGETS} targets"
-        )));
-    }
-    frequencies
-        .iter()
-        .map(|&freq| {
-            if freq.is_finite() && freq > 0.0 {
-                Ok(freq)
-            } else {
-                Err(bad(format!(
-                    "scan frequency {freq} is not a usable Hz value"
-                )))
-            }
-        })
-        .collect()
+    targets
 }
 
 fn sorted_hz(mut hz: Vec<f64>) -> Vec<f64> {
@@ -124,8 +73,6 @@ impl ScanPlan {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::ScanRange;
-
     use super::*;
 
     fn settings(ranges: Vec<ScanRange>, frequencies: Vec<f64>) -> ScanSettings {

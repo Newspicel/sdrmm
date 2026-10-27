@@ -39,8 +39,8 @@ pub fn host_triple() -> Result<String> {
         .context("`rustc -vV` printed no host line")
 }
 
-// Every codec build lands in its own `.media/<triple>`, so a cross build has to be pointed at the
-// tree for the target rather than the one the host happens to have.
+/// Every codec build lands in its own `.media/<triple>`, so a cross build has to be pointed at
+/// the tree for the target rather than the one the host happens to have.
 pub fn media_dir(root: &Path, target: Option<&str>) -> Result<Option<PathBuf>> {
     let triple = target.map(str::to_owned).map_or_else(host_triple, Ok)?;
     let dir = root.join(".media").join(triple);

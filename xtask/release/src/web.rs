@@ -10,7 +10,7 @@ pub const PNPM: &str = "pnpm.cmd";
 pub const PNPM: &str = "pnpm";
 
 pub fn ensure_web_deps(root: &Path) -> Result<()> {
-    for dir in ["web", "site"] {
+    for dir in ["web", "site", "codegen"] {
         if !root.join(dir).join("node_modules").is_dir() {
             run(PNPM, &["--dir", dir, "install", "--frozen-lockfile"], root)?;
         }
@@ -20,10 +20,7 @@ pub fn ensure_web_deps(root: &Path) -> Result<()> {
 
 pub fn web_build(root: &Path) -> Result<()> {
     ensure_web_deps(root)?;
-    run(PNPM, &["--dir", "web", "build"], root)
-}
-
-pub fn assert_web_dist(root: &Path) -> Result<()> {
+    run(PNPM, &["--dir", "web", "build"], root)?;
     let index = root.join("web/dist/index.html");
     ensure!(
         index.exists(),

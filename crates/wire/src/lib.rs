@@ -36,6 +36,7 @@ pub mod note;
 pub mod patch;
 pub mod phone;
 pub mod position;
+pub mod preroll;
 pub mod presence;
 pub mod present;
 pub mod processor;
@@ -53,7 +54,6 @@ pub mod stanag;
 pub mod state;
 pub mod survey;
 pub mod tetrapol;
-pub mod timemachine;
 pub mod tools;
 pub mod units;
 pub mod weather;
@@ -94,9 +94,9 @@ pub use ble::{
 };
 pub use channel::{
     AcarsParams, AdsbParams, AeroChannel, AisChannel, AisParams, AmParams, AprsMode, AprsParams,
-    AtvColor, AtvModulation, AtvParams, AtvStandard, BandMiss, CTCSS_TONES_HZ, CallGate,
-    ChannelDescriptor, ChannelInfo, ChannelParams, ChannelSettings, CwSkimmerParams, DCS_CODES,
-    DECT_CARRIER_SPACING_HZ, DEEMPHASIS_US, DEFAULT_FREQUENCY_HZ, DabMode, DabParams,
+    AtvColor, AtvModulation, AtvParams, AtvStandard, BandMiss, CHANNEL_TYPE_IDS, CTCSS_TONES_HZ,
+    CallGate, ChannelDescriptor, ChannelInfo, ChannelParams, ChannelSettings, CwSkimmerParams,
+    DCS_CODES, DECT_CARRIER_SPACING_HZ, DEEMPHASIS_US, DEFAULT_FREQUENCY_HZ, DabMode, DabParams,
     DabTransmissionMode, DatvCodeRate, DatvParams, DatvRollOff, DatvStandard, DecoderFamily,
     DectBand, DectParams, DectSides, DectSpan, DmrParams, DmrSlots, DpmrParams, DrmMode, DrmParams,
     DscParams, DstarParams, DvbtBandwidth, DvbtParams, DvbtStandard, EotParams, ErmesParams,
@@ -142,12 +142,13 @@ pub use decode::{
     Vendor, VorReading, WsjtMessage, WsprSpot,
 };
 pub use device::{
-    Agc, AgcGain, AgcReach, AgcSetting, ArgumentInfo, ArgumentOption, ArgumentType,
-    BandwidthSetting, Capabilities, ChannelCapabilities, Coherence, DcArtifact, DeviceInfo,
-    DeviceProfile, DeviceSettings, Direction, DirectionalCapabilities, Duplex, ExtraSetting,
-    ExtraValue, GainKind, GainStage, GainUnit, GainValue, MAX_RECORDING_STEM_LEN, NoiseSource,
-    RECORDING_DRIVER_ID, Range, Readout, ReadoutValue, SIGGEN_DRIVER_ID, StreamScope,
-    StreamSettings, Tuning, any_range_holds, recording_stem_valid,
+    Agc, AgcGain, AgcReach, AgcSetting, ArgumentInfo, ArgumentOption, ArgumentType, BackendEntry,
+    BackendReach, BandwidthSetting, Capabilities, ChannelCapabilities, ClockBank, Coherence,
+    DcArtifact, DeviceBackend, DeviceInfo, DeviceProfile, DeviceSettings, Direction,
+    DirectionalCapabilities, Duplex, ExtraSetting, ExtraValue, GENERATOR_PREFIX, GainKind,
+    GainStage, GainUnit, GainValue, MAX_RECORDING_STEM_LEN, NoiseSource, Range, Readout,
+    ReadoutValue, StreamScope, StreamSettings, Tuning, any_range_holds, backend_table,
+    recording_stem_valid,
 };
 pub use diagnostics::{DiagnosticsReport, LogLevel, LogLine, MAX_LOG_LINES, MAX_LOG_MESSAGE_LEN};
 pub use doctor::{CheckStatus, DoctorCheck, DoctorReport};
@@ -209,22 +210,23 @@ pub use node_action::{NetworkRadioRequest, NodeActed, NodeAction};
 pub use note::{MAX_NOTE_LEN, NoteNode};
 pub use patch::{
     ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, ArrayOffer, AudioRecorderNode, BASEBAND_PORT,
-    BEAM_PORT, BEARING_PORT, BeamformerNode, CONTROL_PORT, ChannelAddr, ChannelNode,
-    CorrelatorNode, DEFAULT_DMR_PROBES, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
+    BEAM_PORT, BEARING_PORT, BasebandRecorderNode, BeamformerNode, CONTROL_PORT, ChannelAddr,
+    ChannelNode, CorrelatorNode, DEFAULT_DMR_PROBES, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
     DEFAULT_SIGNAL_MAP_OFFSET_HZ, DecoderLogNode, DeviceNode, DeviceRef, DfNode, DmrChannelEntry,
     DmrDiscovery, DmrSearchRange, DmrTrunkNode, DmrTrunkProtocol, EVENTS_PORT, Face, FaceSize,
-    Feed, Held, Hue, HuntNode, IQ_PORT, IqOrigin, Keeps, LaneWire, MAX_DMR_CHANNEL_MAP,
-    MAX_DMR_LOGICAL_CHANNEL, MAX_DMR_PROBES, MAX_DMR_SEARCH_CANDIDATES, MAX_DMR_SEARCH_RANGES,
-    MAX_EDGES, MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_STREAMS,
-    MIN_DMR_SEARCH_STEP_HZ, Multi, NodeBody, NodeCategory, NodeKind, NodeProblem, NodeTypeInfo,
-    POSITION_PORT, PassiveRadarNode, PatchCatalog, PatchEdge, PatchError, PatchGraph, PatchNode,
-    Payload, PolarimeterNode, PortDirection, PortRef, PortRepeat, PortSpec, PortType, PortTypeInfo,
+    Feed, Held, Hue, HuntNode, IQ_PORT, IqOrigin, Keeps, LaneWire, MAX_CHANNELS_PER_RADIO,
+    MAX_DMR_CHANNEL_MAP, MAX_DMR_LOGICAL_CHANNEL, MAX_DMR_PROBES, MAX_DMR_SEARCH_CANDIDATES,
+    MAX_DMR_SEARCH_RANGES, MAX_EDGES, MAX_MONITORS_PER_RADIO, MAX_NODES,
+    MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_STREAMS, MIN_DMR_SEARCH_STEP_HZ,
+    Multi, NodeBody, NodeCategory, NodeKind, NodeProblem, NodeTypeInfo, POSITION_PORT,
+    PassiveRadarNode, PatchCatalog, PatchEdge, PatchError, PatchGraph, PatchNode, Payload,
+    PolarimeterNode, PortDirection, PortRef, PortRepeat, PortSpec, PortType, PortTypeInfo,
     Position, ProblemSource, RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT, RADAR_TX_PORT, REFUSALS,
-    RackCell, RackLayout, RackSlot, Reach, RecorderNode, RecordingNode, Refusal, RefusedEdge,
-    ResolveCtx, ResolvedEdge, ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs,
-    STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalGenNode, SignalMapNode, Size,
-    SpatialSpectrumNode, StitchNode, Tap, TriangulationNode, UnboundReason, VIDEO_PORT,
-    channel_ports, port_stream, siggen_key, stream_port,
+    RackCell, RackLayout, RackSlot, Reach, RecorderNode, Refusal, RefusedEdge, ResolveCtx,
+    ResolvedEdge, ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs, STEER_PORT,
+    STITCH_WIDE_PORT, ScannerNode, SignalMapNode, Size, SpatialSpectrumNode, StitchNode, Tap,
+    TriangulationNode, UnboundReason, VIDEO_PORT, channel_ports, generator_key, port_index,
+    port_lane, port_stream, stream_port,
 };
 #[cfg(feature = "pin")]
 pub use phone::PinError;
@@ -237,7 +239,11 @@ pub use position::{
     Attitude, DEFAULT_GPSD_ADDRESS, DEFAULT_NMEA_BAUD, DEFAULT_NMEA_UPDATE_INTERVAL_MS, GpsNode,
     HeadingSource, MAX_HEADING_ACCURACY_DEG, MAX_NMEA_BAUD, MAX_NMEA_UPDATE_INTERVAL_MS,
     MAX_POSITION_ENDPOINT_LEN, MAX_YAW_RATE_DPS, MIN_NMEA_BAUD, MIN_NMEA_UPDATE_INTERVAL_MS,
-    NmeaDeviceInfo, NmeaDevicesResponse, PositionFix, PositionSource, normalize_heading,
+    PositionFix, PositionSource, SerialDeviceInfo, SerialDevicesResponse, normalize_heading,
+};
+pub use preroll::{
+    DEFAULT_PRE_ROLL_S, MAX_PRE_ROLL_BYTES, MAX_PRE_ROLL_S, MIN_PRE_ROLL_S, PreRollStatus,
+    pre_roll_capacity_samples, pre_roll_valid,
 };
 pub use presence::{
     AUTHOR_HEADER, DraggedNode, MAX_AUTHOR_LEN, MAX_PEER_NAME_LEN, MAX_POINTER_NODES,
@@ -333,11 +339,6 @@ pub use tetrapol::{
     MAX_TETRAPOL_SCRAMBLING, TETRAPOL_BANDWIDTH_HZ, TetrapolAddress, TetrapolAddressKind,
     TetrapolBand, TetrapolCallType, TetrapolCell, TetrapolGroupCall, TetrapolKey,
     TetrapolLogicalChannel, TetrapolMessage, TetrapolParams, TetrapolPayload, TetrapolSystemInfo,
-};
-pub use timemachine::{
-    DEFAULT_TIME_MACHINE_SECONDS, MAX_TIME_MACHINE_BYTES, MAX_TIME_MACHINE_SECONDS,
-    MIN_TIME_MACHINE_SECONDS, TimeMachineAction, TimeMachineNode, TimeMachineStatus,
-    history_capacity_samples,
 };
 pub use tools::{
     ANTENNA_TOOL_ID, AntennaDesign, AntennaGeometry, AntennaGround, AntennaMaterial, AntennaModel,
@@ -1104,7 +1105,7 @@ mod contract_tests {
         DeviceSet {
             id: 1,
             device: DeviceInfo {
-                driver: "virtual".to_owned(),
+                driver: DeviceBackend::Virtual,
                 key: "band".to_owned(),
                 label: "Test band".to_owned(),
                 serial: None,
@@ -1135,6 +1136,7 @@ mod contract_tests {
                 retune_keeps_phase: false,
                 rx_inputs: Vec::new(),
                 clean_fraction: None,
+                bank: None,
             },
             settings: DeviceSettings::default(),
             status: DeviceSetStatus::Running,
@@ -1146,7 +1148,7 @@ mod contract_tests {
             refused: None,
             recording: None,
             network_export: None,
-            time_machine: None,
+            pre_roll: None,
             scanners: Vec::new(),
             hunts: Vec::new(),
             playback: None,
@@ -1336,19 +1338,19 @@ mod contract_tests {
     }
 
     #[test]
-    fn a_time_machine_reports_its_window_and_only_names_a_capture_while_one_runs() {
+    fn a_pre_roll_reports_its_window_and_only_names_a_capture_while_one_runs() {
         let mut set = sample_device_set();
         assert!(
             serde_json::to_value(&set)
                 .unwrap()
-                .get("time_machine")
+                .get("pre_roll")
                 .is_none()
         );
 
-        set.time_machine = Some(TimeMachineStatus {
-            node: "history".to_owned(),
+        set.pre_roll = Some(PreRollStatus {
+            node: "rec".to_owned(),
             stream: 0,
-            history_seconds: 10,
+            pre_roll_s: 10,
             sample_rate: 2_048_000,
             center_hz: 100_000_000,
             held_samples: 10_240_000,
@@ -1358,35 +1360,41 @@ mod contract_tests {
             error: None,
         });
         let mut json = serde_json::to_value(&set).unwrap();
-        assert_eq!(json["time_machine"]["held_samples"], 10_240_000);
-        assert!(json["time_machine"].get("capture").is_none());
+        assert_eq!(json["pre_roll"]["held_samples"], 10_240_000);
+        assert!(json["pre_roll"].get("capture").is_none());
         assert_eq!(
             serde_json::from_value::<DeviceSet>(json.clone()).unwrap(),
             set
         );
         assert_eq!(
-            set.time_machine.as_ref().unwrap().held_seconds(),
+            set.pre_roll.as_ref().unwrap().held_seconds(),
             5.0,
             "the window reads in seconds, not samples"
         );
 
-        json.as_object_mut().unwrap().remove("time_machine");
+        json.as_object_mut().unwrap().remove("pre_roll");
         assert_eq!(
-            serde_json::from_value::<DeviceSet>(json)
-                .unwrap()
-                .time_machine,
+            serde_json::from_value::<DeviceSet>(json).unwrap().pre_roll,
             None
         );
     }
 
     #[test]
-    fn a_time_machine_node_defaults_its_window() {
-        let node: TimeMachineNode = serde_json::from_str("{}").unwrap();
-        assert_eq!(node.history_seconds, DEFAULT_TIME_MACHINE_SECONDS);
-        assert!(node.valid());
-        assert_eq!(
-            serde_json::to_value(TimeMachineAction::Capture).unwrap(),
-            "capture"
+    fn a_recorder_records_from_the_press_until_it_is_given_a_pre_roll() {
+        let plain: RecorderNode = serde_json::from_str("{}").unwrap();
+        assert_eq!(plain.pre_roll_s, 0);
+        assert!(plain.valid());
+        let held = RecorderNode {
+            recording: false,
+            pre_roll_s: DEFAULT_PRE_ROLL_S,
+        };
+        assert!(held.valid());
+        assert!(
+            !RecorderNode {
+                recording: false,
+                pre_roll_s: MAX_PRE_ROLL_S + 1,
+            }
+            .valid()
         );
     }
 

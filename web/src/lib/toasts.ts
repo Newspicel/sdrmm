@@ -51,6 +51,10 @@ export function toastError(error: unknown, tone: Tone = "error"): void {
   });
 }
 
+export function toastRejection(task: Promise<unknown>): void {
+  task.catch((error: unknown) => toastError(error));
+}
+
 function messageOf(error: unknown): string {
   if (error instanceof Error) {
     return error.message;

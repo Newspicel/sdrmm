@@ -90,7 +90,7 @@ fn node_section(out: &mut String, node: &NodeTypeInfo) {
             port.name,
             way(port.direction),
             port.port_type.name(),
-            carries(&port.payload),
+            carries(port),
             wires(port)
         );
     }
@@ -103,8 +103,8 @@ const fn way(direction: PortDirection) -> &'static str {
     }
 }
 
-fn carries(payload: &Payload) -> String {
-    match payload {
+fn carries(port: &PortSpec) -> String {
+    match &port.payload {
         Payload::Iq { origins } => listed(origins.iter().map(snake)),
         Payload::Events { kinds } => kinds_of(*kinds),
         Payload::Control { verbs } => listed(verbs.iter().map(snake)),
@@ -113,7 +113,7 @@ fn carries(payload: &Payload) -> String {
         | Payload::Video
         | Payload::Position
         | Payload::Array
-        | Payload::Bearing => String::new(),
+        | Payload::Bearing => port.port_type.note().unwrap_or_default().to_owned(),
     }
 }
 
@@ -167,6 +167,24 @@ fn snake<T: serde::Serialize>(value: &T) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_port_and_port_type_says_what_it_carries() {
+        let catalog = PatchCatalog::build();
+        for info in &catalog.port_types {
+            assert!(info.note.is_some(), "{} has no note", info.name);
+        }
+        for node in &catalog.nodes {
+            for port in &node.ports {
+                assert!(
+                    !carries(port).is_empty(),
+                    "{} {} carries nothing",
+                    node.name,
+                    port.name
+                );
+            }
+        }
+    }
 
     #[test]
     fn the_page_names_every_node_port_type_and_kind() {

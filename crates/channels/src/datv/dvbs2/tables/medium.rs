@@ -1,5 +1,5 @@
-// Parity accumulator addresses from ETSI EN 302 307-2 annex B, medium FECFRAME: one row per
-// group of 360 information bits, each entry an address in the parity accumulator.
+//! Parity accumulator addresses from ETSI EN 302 307-2 annex B, medium FECFRAME: one row per
+//! group of 360 information bits, each entry an address in the parity accumulator.
 
 pub static R1_5: [&[u16]; 18] = [
     &[

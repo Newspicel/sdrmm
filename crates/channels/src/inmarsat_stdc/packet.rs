@@ -8,6 +8,7 @@ use super::fields::{
 };
 
 const ASSEMBLY_MAX_AGE: u32 = 8;
+const FIRST_EGC_PKT_SEQ: u16 = 1;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StdcPacket {
@@ -548,8 +549,21 @@ impl PacketParser {
     }
 }
 
+fn missing_egc_packet_seqs(parts: &[(u16, Vec<u8>)]) -> Vec<u16> {
+    let mut present: Vec<u16> = parts.iter().map(|(key, _)| key / 2).collect();
+    present.sort_unstable();
+    present.dedup();
+    let Some(&last) = present.last() else {
+        return Vec::new();
+    };
+    (FIRST_EGC_PKT_SEQ..last)
+        .filter(|want| !present.contains(want))
+        .collect()
+}
+
 fn assembled_egc(mut done: EgcAssembly) -> StdcPacket {
     done.parts.sort_by_key(|(key, _)| *key);
+    let missing = missing_egc_packet_seqs(&done.parts);
     let payload: Vec<u8> = done
         .parts
         .iter()
@@ -569,11 +583,14 @@ fn assembled_egc(mut done: EgcAssembly) -> StdcPacket {
     if let Some(area) = egc_area(done.service, &done.address) {
         insert(&mut details, "area", area);
     }
+    if !missing.is_empty() {
+        insert(&mut details, "missing_pkt_seqs", json!(missing));
+    }
     merge(&mut details, &extra);
     StdcPacket {
         descriptor: if done.double_header { 0xB1 } else { 0xB0 },
         name: "egc-message",
-        checksum_ok: true,
+        checksum_ok: missing.is_empty(),
         text,
         details,
         fec_corrected: None,

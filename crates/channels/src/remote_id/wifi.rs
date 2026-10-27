@@ -65,7 +65,10 @@ pub(crate) fn frame(mpdu: &Mpdu<'_>, tracker: &mut Tracker) -> Option<RemoteIdFr
             if let Some(drone_id) =
                 element(elements, |id, data| id == VENDOR && dji::is_drone_id(data))
             {
-                let messages = dji::messages(drone_id)?;
+                let Some(messages) = dji::messages(drone_id) else {
+                    tracker.refuse();
+                    return None;
+                };
                 return Some(tracker.direct(
                     heard(RemoteIdTransport::WifiBeaconDji, None, ssid, &[]),
                     messages,
@@ -74,7 +77,10 @@ pub(crate) fn frame(mpdu: &Mpdu<'_>, tracker: &mut Tracker) -> Option<RemoteIdFr
             let french = element(elements, |id, data| {
                 id == VENDOR && data.starts_with(&french::OUI) && data.get(3) == Some(&french::TYPE)
             })?;
-            let messages = french::messages(french.get(4..)?)?;
+            let Some(messages) = french.get(4..).and_then(french::messages) else {
+                tracker.refuse();
+                return None;
+            };
             Some(tracker.direct(
                 heard(RemoteIdTransport::WifiBeaconFrench, None, ssid, &[]),
                 messages,

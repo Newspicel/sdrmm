@@ -143,3 +143,36 @@ fn kerui(bits: &mut Bits, found: &mut Found) -> Outcome {
     };
     Outcome::emit(found, message)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ism::bits::from_rows;
+
+    const KERUI_OPEN: &str = "0111001111010000111100010";
+
+    #[test]
+    fn a_kerui_contact_frame_inverts_its_bits_and_reads_the_open_command() {
+        let rows = [KERUI_OPEN; 9];
+        let mut bits = from_rows(&rows);
+        let mut found = Found::new();
+        assert_eq!(kerui(&mut bits, &mut found), Outcome::Decoded);
+        let [message] = found.as_slice() else {
+            panic!("{found:?}");
+        };
+        assert_eq!(message.model, "Kerui-Security");
+        assert_eq!(message.id, "574192");
+        assert_eq!(message.command, Some(0x0e));
+        assert_eq!(message.contact_open, Some(true));
+        assert_eq!(message.raw, "8c2f0e");
+        assert_eq!(message.bits, 25);
+    }
+
+    #[test]
+    fn a_kerui_frame_without_enough_repeats_is_skipped() {
+        let rows = [KERUI_OPEN; 8];
+        let mut bits = from_rows(&rows);
+        let mut found = Found::new();
+        assert_eq!(kerui(&mut bits, &mut found), Outcome::Skip);
+    }
+}

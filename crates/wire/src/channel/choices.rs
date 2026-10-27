@@ -6,7 +6,7 @@ use super::{
     DabMode, DabTransmissionMode, DatvCodeRate, DatvRollOff, DatvStandard, DectBand, DectSides,
     DectSpan, DmrSlots, DrmMode, DvbtBandwidth, DvbtStandard, IlsComponent, IridiumSpan,
     NfmScramblerMode, NfmToneMode, NxdnBandwidth, PocsagBaud, PskBaud, RadioClockStandard,
-    RttyStopBits, SelcallSystem, Sideband, SstvMode, SstvModulation,
+    RttyStopBits, SelcallSystem, Sideband, SstvMode, SstvModulation, decoders,
 };
 use crate::{
     airtime::AirtimeSpan,
@@ -115,101 +115,27 @@ fn plain(value: f64) -> String {
     format!("{value}")
 }
 
-impl ChannelParams {
-    #[must_use]
-    pub fn choices(&self) -> Vec<ParamChoice> {
-        match self {
-            Self::Nfm(_) => nfm_choices(),
-            Self::Selcall(_) => vec![choice::<SelcallSystem>("system")],
-            Self::Ssb(_) | Self::Freedv(_) => vec![choice::<Sideband>("sideband")],
-            Self::Wfm(_) => vec![numbers("deemphasis_us", &DEEMPHASIS_US, |us| {
-                format!("{us} µs")
-            })],
-            Self::Pocsag(_) => vec![choice::<PocsagBaud>("baud")],
-            Self::Tetrapol(_) => vec![choice::<TetrapolBand>("band")],
-            Self::Ais(_) => vec![choice::<AisChannel>("ais_channel")],
-            Self::InmarsatAero(_) => vec![choice::<AeroChannel>("channel")],
-            Self::Iridium(_) => vec![choice::<IridiumSpan>("span")],
-            Self::Aprs(_) => vec![choice::<AprsMode>("mode")],
-            Self::Rtty(_) => rtty_choices(),
-            Self::Psk(_) => vec![choice::<PskBaud>("baud")],
-            Self::RadioClock(_) => vec![choice::<RadioClockStandard>("standard")],
-            Self::Ils(_) => vec![choice::<IlsComponent>("component")],
-            Self::Atv(_) => vec![
-                choice::<AtvModulation>("modulation"),
-                choice::<AtvStandard>("standard"),
-                choice::<AtvColor>("color"),
-            ],
-            Self::Sstv(_) => vec![
-                choice::<SstvModulation>("modulation"),
-                optional::<SstvMode>("mode", "Follow VIS"),
-            ],
-            Self::Dab(_) => vec![
-                choice::<DabMode>("mode"),
-                choice::<DabTransmissionMode>("transmission_mode"),
-            ],
-            Self::Datv(_) => vec![
-                choice::<DatvStandard>("standard"),
-                choice::<DatvRollOff>("roll_off"),
-                choice::<DatvCodeRate>("code_rate"),
-            ],
-            Self::Dvbt(_) => vec![
-                choice::<DvbtStandard>("standard"),
-                choice::<DvbtBandwidth>("bandwidth"),
-            ],
-            Self::Drm(_) => vec![choice::<DrmMode>("mode")],
-            Self::Dmr(_) => vec![choice::<DmrSlots>("slots")],
-            Self::Nxdn(_) => vec![choice::<NxdnBandwidth>("bandwidth")],
-            Self::Dect(_) => vec![
-                choice::<DectBand>("band"),
-                choice::<DectSpan>("span"),
-                choice::<DectSides>("sides"),
-            ],
-            Self::Lrpt(_) => vec![choice::<LrptMode>("mode")],
-            Self::Wefax(_) => vec![choice::<WefaxIoc>("ioc"), choice::<WefaxLpm>("lpm")],
-            Self::Radiosonde(_) => vec![optional::<SondeType>("sonde", "Auto")],
-            Self::Lora(_) => lora_choices(),
-            Self::RemoteId(_) => vec![choice::<RemoteIdLink>("link")],
-            Self::Ble(_) => vec![choice::<BleLink>("link")],
-            Self::WifiOccupancy(_) | Self::IsmSurvey(_) => vec![choice::<AirtimeSpan>("span")],
-            Self::Per(_) => vec![choice::<PerBaud>("baud")],
-            Self::Am(_)
-            | Self::Flex(_)
-            | Self::Ermes(_)
-            | Self::Eot(_)
-            | Self::Same(_)
-            | Self::Sarsat(_)
-            | Self::Adsb(_)
-            | Self::Morse(_)
-            | Self::CwSkimmer(_)
-            | Self::Navtex(_)
-            | Self::Acars(_)
-            | Self::Dstar(_)
-            | Self::Ysf(_)
-            | Self::P25(_)
-            | Self::Dpmr(_)
-            | Self::M17(_)
-            | Self::Tetra(_)
-            | Self::Ft8(_)
-            | Self::Ft4(_)
-            | Self::Wspr(_)
-            | Self::Ident(_)
-            | Self::Gnss(_)
-            | Self::Vor(_)
-            | Self::Dsc(_)
-            | Self::InmarsatStdc(_)
-            | Self::Vdl2(_)
-            | Self::Hfdl(_)
-            | Self::Gsm(_)
-            | Self::Apt(_)
-            | Self::Ism(_)
-            | Self::Wmbus(_)
-            | Self::NoiseFigure(_)
-            | Self::Sid(_)
-            | Self::Stanag(_) => Vec::new(),
+macro_rules! define_choices {
+    ($((
+        $variant:ident,
+        $type_id:literal,
+        $params:ty,
+        $limits:expr,
+        $home:expr,
+        $choices:expr
+    )),* $(,)?) => {
+        impl ChannelParams {
+            #[must_use]
+            pub fn choices(&self) -> Vec<ParamChoice> {
+                match self {
+                    $(Self::$variant(_) => $choices,)*
+                }
+            }
         }
-    }
+    };
 }
+
+decoders!(define_choices);
 
 fn nfm_choices() -> Vec<ParamChoice> {
     vec![

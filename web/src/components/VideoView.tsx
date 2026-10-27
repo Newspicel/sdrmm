@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import type { VideoFrame } from "../lib/frame";
 import { type VideoInput, videoHub } from "../lib/video";
 
@@ -23,6 +23,10 @@ export function videoSignalText(signal: VideoSignal | null): string {
     return "waiting for sync";
   }
   return `${signal.width} × ${signal.height}${signal.live ? "" : " · no sync"}`;
+}
+
+export function useVideoDrops(scope: VideoInput): number {
+  return useSyncExternalStore(videoHub.onDrop, () => videoHub.droppedFrames(scope));
 }
 
 export function VideoView({

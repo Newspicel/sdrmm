@@ -22,7 +22,7 @@ use tokio::sync::{
 use crate::{NativeShell, calls::Calls, decoded::Decoded, resolved::Resolved};
 
 mod beast;
-mod csv;
+pub(crate) mod csv;
 mod influx;
 mod postgres;
 mod status;

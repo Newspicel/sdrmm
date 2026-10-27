@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import wire from "../generated/limits.json";
 import type {
   AudioProcessing,
   ChannelDescriptor,
@@ -6,6 +7,7 @@ import type {
   ParamChoice,
 } from "../lib/types";
 import {
+  AUDIO_DEFAULTS,
   AUDIO_LIMITS,
   audioChainActive,
   channelHasAudio,
@@ -478,5 +480,28 @@ describe("choices", () => {
       { value: "auto", label: "Auto" },
       { value: "dfm", label: "DFM" },
     ]);
+  });
+});
+
+describe("the audio seeds and bounds", () => {
+  it("are the ones the server publishes", () => {
+    expect(AUDIO_DEFAULTS).toEqual({
+      blankerThreshold: wire.audio.blanker_threshold_seed,
+      clickThreshold: wire.audio.click_threshold_seed,
+      squelchAutoMarginDb: wire.audio.squelch_auto_margin_seed_db,
+      denoiseStrength: wire.audio.denoise_strength_seed,
+      filterLowHz: wire.audio.filter_low_seed_hz,
+      filterHighHz: wire.audio.filter_high_seed_hz,
+      notchFreqHz: wire.audio.notch_freq_seed_hz,
+      notchWidthHz: wire.audio.notch_width_seed_hz,
+    });
+    expect(AUDIO_LIMITS).toEqual({
+      maxNotches: wire.audio.notches,
+      blankerThreshold: wire.audio.blanker_threshold,
+      clickThreshold: wire.audio.click_threshold,
+      squelchAutoMarginDb: wire.audio.squelch_auto_margin_db,
+      toneHz: wire.audio.tone_hz,
+      notchWidthHz: wire.audio.notch_width_hz,
+    });
   });
 });

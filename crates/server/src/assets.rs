@@ -121,6 +121,14 @@ mod tests {
     }
 
     #[test]
+    fn the_asset_table_says_what_the_build_found() {
+        match env!("SDRMM_WEB_UI") {
+            "embedded" => assert!(find("index.html").is_some(), "no page to serve"),
+            empty => assert!(ASSETS.is_empty(), "{empty} build holds {}", ASSETS.len()),
+        }
+    }
+
+    #[test]
     fn asset_table_is_sorted_for_lookup() {
         assert!(ASSETS.windows(2).all(|pair| pair[0].path < pair[1].path));
     }

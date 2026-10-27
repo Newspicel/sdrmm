@@ -25,6 +25,7 @@ import { FaceStats, Stat } from "./face/Stats";
 import { MHZ_DIGITS } from "./format";
 import { Icon } from "./Icon";
 import { NumberField, OptionalNumberField } from "./NumberField";
+import { rowKeys } from "./rowKeys";
 import {
   applyPreset,
   channelName,
@@ -266,12 +267,13 @@ function ScanSetup({
   const patch = (next: Partial<ScanSettings>): void => onSettings({ ...settings, ...next });
   const patchRange = (index: number, next: Partial<ScanRange>): void =>
     patch({ ranges: ranges.map((r, i) => (i === index ? { ...r, ...next } : r)) });
+  const keys = rowKeys(ranges);
   return (
     <Chips className="border-t border-line">
       <BandChip settings={settings} plan={plan} onSettings={onSettings} />
       {ranges.map((range, index) => (
         <RangeChip
-          key={index}
+          key={keys[index]}
           range={range}
           index={index}
           numbered={ranges.length > 1}

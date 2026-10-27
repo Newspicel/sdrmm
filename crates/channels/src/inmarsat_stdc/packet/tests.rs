@@ -213,6 +213,39 @@ fn egc_multi_packet_assembly() {
 }
 
 #[test]
+fn a_gap_in_the_egc_sequence_is_flagged_not_published_as_whole() {
+    let mut parser = PacketParser::new();
+    let first = egc_packet(0xB0, 0x31, true, 0, (43, 1), 0, b"GALE ");
+    let third = egc_packet(0xB0, 0x31, false, 0, (43, 3), 0, b"WARNING");
+    assert!(parse(&mut parser, &first).is_empty());
+    let events = parse(&mut parser, &third);
+    assert_eq!(events.len(), 1);
+    assert!(!events[0].checksum_ok, "{:?}", events[0].details);
+    assert_eq!(
+        events[0].details["missing_pkt_seqs"],
+        serde_json::json!([2])
+    );
+    assert_eq!(events[0].details["parts"], 2);
+}
+
+#[test]
+fn a_complete_egc_sequence_reports_no_gap() {
+    let mut parser = PacketParser::new();
+    for sequence in [(44, 1), (44, 2)] {
+        let last = sequence.1 == 2;
+        let part = egc_packet(0xB0, 0x31, !last, 0, sequence, 0, b"OK ");
+        let events = parse(&mut parser, &part);
+        if !last {
+            assert!(events.is_empty());
+            continue;
+        }
+        assert_eq!(events.len(), 1);
+        assert!(events[0].checksum_ok);
+        assert!(events[0].details["missing_pkt_seqs"].is_null());
+    }
+}
+
+#[test]
 fn egc_double_header_pair() {
     let mut parser = PacketParser::new();
     let header = egc_packet(0xB1, 0x31, true, 1, (200, 1), 0, b"DOUBLE ");

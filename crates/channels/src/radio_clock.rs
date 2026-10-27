@@ -1117,6 +1117,8 @@ mod tests {
         let frames = decode(RadioClockStandard::Wwvb, &iq);
         assert_eq!(frames.len(), 1, "{frames:?}");
         assert_eq!(frames[0].datetime, "2021-03-14T05:35:00Z");
+        assert_eq!(&frames[0].symbols[57..59], "10");
+        assert!(!frames[0].dst, "daylight time starts later that morning");
     }
 
     #[test]

@@ -36,9 +36,16 @@ impl MfskDemod {
         self.params.bits_per_symbol()
     }
 
-    pub fn energies(&self, iq: &[Complex<f32>], offset: usize, symbol: usize, out: &mut [f32]) {
+    #[must_use]
+    pub fn energies(
+        &self,
+        iq: &[Complex<f32>],
+        offset: usize,
+        symbol: usize,
+        out: &mut [f32],
+    ) -> bool {
         self.bank
-            .energies(iq, offset + symbol * self.params.window(), out);
+            .energies(iq, offset + symbol * self.params.window(), out)
     }
 
     #[must_use]
@@ -49,7 +56,9 @@ impl MfskDemod {
         for offset in 0..self.params.window() {
             let mut score = 0.0f64;
             for symbol in 0..symbols {
-                self.energies(iq, offset, symbol, energies);
+                if !self.energies(iq, offset, symbol, energies) {
+                    break;
+                }
                 score += f64::from(energies.iter().copied().fold(0.0f32, f32::max));
             }
             if score > best.1 {
@@ -65,14 +74,17 @@ impl MfskDemod {
         offset: usize,
         symbols: usize,
         out: &mut Vec<u8>,
-    ) {
+    ) -> usize {
         let mut energies = [0.0f32; SCRATCH];
         let energies = &mut energies[..self.m()];
         out.reserve(symbols);
         for symbol in 0..symbols {
-            self.energies(iq, offset, symbol, energies);
+            if !self.energies(iq, offset, symbol, energies) {
+                return symbol;
+            }
             out.push(argmax(energies));
         }
+        symbols
     }
 
     pub fn llrs(
@@ -82,7 +94,7 @@ impl MfskDemod {
         symbols: usize,
         noise_var: f64,
         out: &mut Vec<Llr>,
-    ) {
+    ) -> usize {
         let bits = self.bits_per_symbol() as usize;
         let mut energies = [0.0f32; SCRATCH];
         let mut symbol_llrs = [Llr(0.0); SCRATCH];
@@ -90,10 +102,13 @@ impl MfskDemod {
         let symbol_llrs = &mut symbol_llrs[..bits];
         out.reserve(symbols * bits);
         for symbol in 0..symbols {
-            self.energies(iq, offset, symbol, energies);
+            if !self.energies(iq, offset, symbol, energies) {
+                return symbol;
+            }
             energy_llrs(energies, noise_var, symbol_llrs);
             out.extend_from_slice(symbol_llrs);
         }
+        symbols
     }
 }
 
@@ -207,6 +222,22 @@ mod tests {
     }
 
     #[test]
+    fn a_truncated_buffer_decides_only_the_whole_symbols() {
+        let p = params(8);
+        let window = p.window();
+        let symbols = payload(8, 16);
+        let wave = modulate(&p, TonePhase::Continuous, &symbols);
+        let demod = MfskDemod::new(p);
+        let short = &wave[..10 * window + 1];
+        let mut out = Vec::new();
+        assert_eq!(demod.demodulate(short, 0, 16, &mut out), 10);
+        assert_eq!(out.len(), 10);
+        let mut llrs = Vec::new();
+        assert_eq!(demod.llrs(short, 0, 16, 1.0, &mut llrs), 10);
+        assert_eq!(llrs.len(), 10 * demod.bits_per_symbol() as usize);
+    }
+
+    #[test]
     fn a_half_symbol_offset_loses_most_of_the_energy() {
         let p = params(8);
         let symbols = payload(8, 64);
@@ -216,7 +247,7 @@ mod tests {
         let peak_at = |offset: usize, energies: &mut [f32]| {
             let mut sum = 0.0f64;
             for symbol in 0..60 {
-                demod.energies(&wave, offset, symbol, energies);
+                assert!(demod.energies(&wave, offset, symbol, energies));
                 sum += f64::from(energies.iter().copied().fold(0.0f32, f32::max));
             }
             sum
@@ -236,7 +267,7 @@ mod tests {
         let mut energies = vec![0.0f32; 8 * symbols.len()];
         for symbol in 0..symbols.len() {
             let at = symbol * 8;
-            demod.energies(&wave, 0, symbol, &mut energies[at..at + 8]);
+            assert!(demod.energies(&wave, 0, symbol, &mut energies[at..at + 8]));
         }
         let estimate = noise_var_from_energies(&energies, 8);
         assert!(

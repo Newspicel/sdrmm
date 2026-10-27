@@ -53,8 +53,10 @@ pub fn bartlett(r: &CMat, a: &[Complex<f32>]) -> f32 {
 
 #[must_use]
 pub fn capon(loaded: &Cholesky, a: &[Complex<f32>], scratch: &mut [Complex<f32>]) -> f32 {
-    let inverse = loaded.quad_inverse(a, scratch);
-    if inverse > 0.0 { inverse.recip() } else { 0.0 }
+    match loaded.quad_inverse(a, scratch) {
+        Ok(inverse) if inverse > 0.0 => inverse.recip(),
+        _ => 0.0,
+    }
 }
 
 #[must_use]

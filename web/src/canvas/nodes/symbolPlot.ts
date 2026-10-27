@@ -106,7 +106,7 @@ export function plotLabel(
 export function drawHistogram(
   canvas: HTMLCanvasElement,
   bins: Float32Array,
-  reference: readonly number[],
+  reference: Float32Array | readonly number[],
   scale: number,
   inset: PlotInset = NO_INSET,
 ): void {

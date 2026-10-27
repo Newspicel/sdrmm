@@ -101,6 +101,22 @@ async fn decoder_log_clear_emits_the_decoder_log_scope() {
 }
 
 #[tokio::test]
+async fn a_csv_export_defuses_a_spreadsheet_formula() {
+    let (app, store) = test_router_with_store();
+    store
+        .insert_decoder_events(
+            &[formula_record(&recent(30))].map(crate::events::Routed::unattributed),
+        )
+        .expect("insert");
+
+    let (status, body) = request(app, "GET", "/api/decoderlog/export/csv", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let csv = String::from_utf8(body.to_vec()).expect("utf-8");
+    assert!(csv.contains("'=1+1"), "{csv}");
+    assert!(!csv.contains(",=1+1"), "{csv}");
+}
+
+#[tokio::test]
 async fn decoder_log_exports_csv_and_json() {
     let (app, store) = test_router_with_store();
     seed_decoder_log(&store);

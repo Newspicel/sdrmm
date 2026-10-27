@@ -363,6 +363,7 @@ pub struct OutputTally {
     pub events: usize,
     pub steer: Option<Steer>,
     pub dropped_reports: u64,
+    pub dropped_surfaces: u64,
     pub dropped_events: u64,
 }
 
@@ -403,7 +404,7 @@ impl<'a> ProcessorOutput<'a> {
         match self.slots.surface.as_deref_mut() {
             Some(slot) if !self.tally.surface => Some(slot),
             _ => {
-                self.tally.dropped_reports += 1;
+                self.tally.dropped_surfaces += 1;
                 None
             }
         }

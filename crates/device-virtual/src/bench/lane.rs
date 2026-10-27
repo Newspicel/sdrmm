@@ -10,14 +10,12 @@ use std::{
 use arc_swap::ArcSwap;
 use num_complex::Complex;
 use sdrmm_device::{GapScope, LaneMark, RxSink, UNKNOWN_ERROR, Uncertainty};
+use sdrmm_dsp::scene::{
+    LaneImpairments, LaneRenderer, LaneSetup, ReportedGap, Scene, mix, mix_key,
+};
 use sdrmm_wire::NoiseSource;
 
-use super::{
-    BLOCK_LEN, BenchWorld, LaneTruth, NoiseSchedule,
-    device::DeviceTune,
-    render::{LaneRenderer, LaneSetup},
-    scene::{LaneImpairments, ReportedGap, Scene, mix, mix_key},
-};
+use super::{BLOCK_LEN, BenchWorld, LaneTruth, NoiseSchedule, device::DeviceTune};
 
 const MAX_NAP_S: f64 = 0.02;
 const MARK_WINDOW: u64 = BLOCK_LEN as u64;

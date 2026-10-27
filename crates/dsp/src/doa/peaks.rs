@@ -17,13 +17,30 @@ pub struct GridShape {
     pub wraps: bool,
 }
 
+impl GridShape {
+    #[must_use]
+    pub fn covered_by(self, len: usize) -> Self {
+        if self.azimuths == 0 {
+            return Self {
+                elevations: 0,
+                ..self
+            };
+        }
+        Self {
+            elevations: self.elevations.min(len / self.azimuths),
+            ..self
+        }
+    }
+}
+
 pub fn local_maxima(
     spectrum: &[f32],
     shape: GridShape,
     range_db: f32,
     out: &mut [Candidate],
 ) -> usize {
-    let points = (shape.azimuths * shape.elevations).min(spectrum.len());
+    let shape = shape.covered_by(spectrum.len());
+    let points = shape.azimuths * shape.elevations;
     let spectrum = &spectrum[..points];
     let top = spectrum
         .iter()
@@ -202,6 +219,32 @@ mod tests {
         assert_eq!(count, 2);
         assert_eq!(out[0].point, 5);
         assert_eq!(out[1].point, 3);
+    }
+
+    #[test]
+    fn a_spectrum_shorter_than_the_grid_stays_inside_the_samples_given() {
+        let shape = GridShape {
+            azimuths: 4,
+            elevations: 3,
+            wraps: true,
+        };
+        let spectrum = [0.0f32, 1.0, 0.0, 0.0, 0.0];
+        let mut out = [Candidate::default(); 4];
+        let count = local_maxima(&spectrum, shape, 30.0, &mut out);
+        assert_eq!(count, 1);
+        assert_eq!(out[0].point, 1);
+        assert_eq!(
+            local_maxima(
+                &spectrum,
+                GridShape {
+                    azimuths: 0,
+                    ..shape
+                },
+                30.0,
+                &mut out
+            ),
+            0
+        );
     }
 
     #[test]

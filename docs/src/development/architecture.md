@@ -14,14 +14,14 @@ Radio / network / recording → DSP engine → audio, events, spectrum, IQ
 | Crate | Responsibility |
 |---|---|
 | `sdrmm-dsp` | Allocation-free signal-processing primitives; no I/O or internal project dependencies |
-| `sdrmm-modem` | Reusable modem algorithms depending only on DSP |
+| `sdrmm-modem` | Reusable modem algorithms and waveform synthesis, depending only on DSP |
 | `sdrmm-modem-test-support` | Modem measurement catalogs, simulations, and baseline tooling; tests and developer tools only |
 | `sdrmm-wire` | Shared settings, DTOs, events, patch graph, and OpenAPI schemas |
 | `sdrmm-device` | Hardware-independent device traits, capabilities, settings, and registry |
-| `sdrmm-device-recording` | SigMF playback behind the Recording node |
-| `sdrmm-device-siggen` | Signals for the Signal generator node |
-| `sdrmm-device-virtual` | Synthetic radios for debug builds and tests |
+| `sdrmm-device-recording` | SigMF playback behind a Device node |
+| `sdrmm-device-virtual` | Synthetic radios, the bench scenes and the signal generator |
 | `sdrmm-usb-stream` | Bulk USB streaming shared by the native drivers |
+| `sdrmm-serial` | Serial port enumeration, one filtering policy, and the serial library every crate uses |
 | `sdrmm-device-rtlsdr` | Native RTL-SDR driver |
 | `sdrmm-device-airspy`, `sdrmm-device-airspyhf` | Native Airspy drivers |
 | `sdrmm-device-hackrf` | Native HackRF driver |
@@ -54,7 +54,7 @@ The dependency rules:
 
 - `dsp` does no I/O and depends on no project crate.
 - `modem` builds reusable modulation algorithms on `dsp` only.
-- `channels` depends on `dsp`, `modem`, `wire`, and `codec2`.
+- `channels` pulls no internal crates beyond `dsp`, `modem` and `wire`.
 - `mobile-core` depends on `wire` only. Phone builds pull no engine, server, DSP, USB, FFmpeg,
   codec2, or SQLite crate.
 - `test-support` and `modem-test-support` never reach the `sdrmm` dependency graph.

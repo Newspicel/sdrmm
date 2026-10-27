@@ -28,6 +28,7 @@ pub(crate) const GAP_SIGMA_DEG: f64 = 30.0;
 pub(crate) const MAX_PUBLISH_SIGMA_DEG: f64 = 45.0;
 pub(crate) const FRESH_MS: i64 = 1_000;
 pub(crate) const NOTICE_EVERY_MS: i64 = 60_000;
+pub(crate) const CLOCK_RESTART_MS: i64 = 60_000;
 pub(crate) const ATTITUDE_STREAK: u32 = 10;
 pub(crate) const MIN_UP_Z: f64 = 0.95;
 pub(crate) const DERIVE_MIN_MS: i64 = 500;
@@ -254,11 +255,11 @@ impl PoseEngine {
             self.invalid(t, &mut step);
             return step;
         };
+        self.clock(t);
         if self.motion_ms.is_some_and(|last| t <= last) {
             self.invalid(t, &mut step);
             return step;
         }
-        self.clock(t);
         let rate_cw = -gyro.dot(up).to_degrees();
         match self.motion_ms {
             Some(last) if t - last <= MAX_GYRO_DT_MS => {
@@ -383,7 +384,20 @@ impl PoseEngine {
     }
 
     fn clock(&mut self, t_ms: i64) {
+        if self.clock_ms.saturating_sub(t_ms) >= CLOCK_RESTART_MS {
+            self.restart_clock(t_ms);
+            return;
+        }
         self.clock_ms = self.clock_ms.max(t_ms);
+    }
+
+    fn restart_clock(&mut self, t_ms: i64) {
+        self.clock_ms = t_ms;
+        self.motion_ms = None;
+        self.filter_ms = None;
+        self.attitude_ms = None;
+        self.movement = MovementTracker::default();
+        self.policy.forget();
     }
 
     fn gyro_fresh(&self, now_ms: i64) -> bool {

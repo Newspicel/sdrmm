@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-shopt -s nullglob
 
 STAPLE_ATTEMPTS=5
 
@@ -15,7 +14,11 @@ staple() {
   done
 }
 
-for dmg in bundles/*.dmg; do
+shopt -s nullglob
+dmgs=(bundles/*.dmg)
+test "${#dmgs[@]}" -gt 0 || { echo "no .dmg in bundles: the disk image was never built or never collected" >&2; exit 1; }
+
+for dmg in "${dmgs[@]}"; do
   xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
   staple "$dmg"
   xcrun stapler validate "$dmg"

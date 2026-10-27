@@ -16,10 +16,10 @@ use sdrmm_mobile_core::{
 };
 use sdrmm_server::{Config, ServerHandle, ServerOptions, tls::Tls};
 use sdrmm_wire::{
-    ChannelNode, CreateWorkspaceRequest, CreatedRowId, DeviceNode, DeviceRef, GpsNode, HuntNode,
-    NodeBody, PairUri, PairingOffer, PatchEdge, PatchGraph, PatchNode, PhoneAccess,
-    PhoneAccessStatus, PhonesResponse, PortRef, Position, PositionSource, RackLayout, ServerEvent,
-    WorkspaceSnapshot,
+    ChannelNode, CreateWorkspaceRequest, CreatedRowId, DeviceBackend, DeviceNode, DeviceRef,
+    GpsNode, HuntNode, NodeBody, PairUri, PairingOffer, PatchEdge, PatchGraph, PatchNode,
+    PhoneAccess, PhoneAccessStatus, PhonesResponse, PortRef, Position, PositionSource, RackLayout,
+    ServerEvent, WorkspaceSnapshot,
 };
 use tempfile::TempDir;
 use tokio_tungstenite::{
@@ -466,7 +466,7 @@ pub fn hunt_graph(phone: Option<&str>) -> PatchGraph {
                 "radio",
                 NodeBody::Device(DeviceNode {
                     device: Some(DeviceRef {
-                        backend: "virtual".to_owned(),
+                        backend: DeviceBackend::Virtual,
                         serial: None,
                         key: Some("band".to_owned()),
                     }),

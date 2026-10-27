@@ -1,49 +1,18 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Fragment,
-  type ReactNode,
-  type PointerEvent as ReactPointerEvent,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Fragment, type ReactNode, type RefObject, useCallback, useMemo, useRef } from "react";
 import { Button } from "../../components/BaseControls";
 import { identify, suggestedAt } from "../../components/bandPlan";
-import { paramBandwidthHz } from "../../components/channelSettings";
+import { channelFrequencyHz, paramBandwidthHz } from "../../components/channelSettings";
 import { plotButton } from "../../components/controls";
 import { clampWindow } from "../../components/dbRange";
 import { formatHz, formatMhz } from "../../components/format";
-import { FrameTween } from "../../components/frameTween";
-import { ReadoutHold } from "../../components/readoutHold";
-import {
-  alignHistory,
-  type FrameKey,
-  historyLevels,
-  retuneAction,
-  rowLevel,
-  seedRows,
-} from "../../components/spectrumAlign";
-import {
-  accumulateTraces,
-  type DbWindow,
-  dequantize,
-  frameWindow,
-  requantize,
-  type TraceMode,
-  type TraceState,
-  traceOf,
-} from "../../components/spectrumTraces";
+import type { DbWindow } from "../../components/spectrumTraces";
 import {
   clusterMarkers,
   FULL_VIEW,
   isFullView,
   labelWidth,
   offsetToSpan,
-  panView,
   type SpectrumView,
   spanToOffset,
   spanToView,
@@ -51,91 +20,40 @@ import {
   viewWidth,
   wheelView,
 } from "../../components/spectrumView";
-import {
-  AVERAGE_CHOICES,
-  type AverageFrames,
-  DEFAULT_AVERAGE,
-  quantizeDb,
-  VideoAverage,
-} from "../../components/videoAverage";
-import type { Rgb } from "../../gl/colormap";
-import { attachWaterfall, GRAPHICS_HELP, type WaterfallView } from "../../gl/waterfall";
-import { bookmarksQuery, nodeAction, STATE_KEY } from "../../lib/api";
-import type { SpectrumFrame } from "../../lib/frame";
+import { GRAPHICS_HELP } from "../../gl/waterfall";
+import { bookmarksQuery } from "../../lib/api";
 import { heardHz, type SetLevels, useLevelStore } from "../../lib/levels";
-import { SPECTRUM_SIGNAL_MARGIN_DB } from "../../lib/limits";
-import { channelNodesOn, feedsOf } from "../../lib/resolved";
-import { SPECTRUM_MAX_BINS, spectrumHub } from "../../lib/spectrum";
-import { toastError } from "../../lib/toasts";
-import type { Bookmark, ChannelInfo, ChannelParams, DeviceSet, PatchNode } from "../../lib/types";
+import type { Bookmark, ChannelInfo, DeviceSet, PatchNode } from "../../lib/types";
 import { useBandPlan } from "../../lib/useBandPlan";
-import { useChannelPatch } from "../../lib/useChannelPatch";
-import { useNodeTune } from "../../lib/useNodeTune";
 import { useWorkspaceContext } from "../context";
-import { addEdge, addNode, newNodeId, nodeIds, nodeOf } from "../graph";
 import { type IqLane, iqSourceOf } from "../lanes";
 import { channelPicker } from "../palette";
-import { useNodePlacement } from "../placement";
 import { runningSetOf } from "../workspaceDevice";
 import { BAND_RULER_H, BandRuler } from "./BandRuler";
 import { ChannelPicker } from "./ChannelPicker";
-import { lockedChannels } from "./channelNode";
-import { autoTuning, laneLocked } from "./deviceNode";
-import { type TrunkChannelOwner, trunkChannelRoles } from "./dmrTrunk";
+import type { TrunkChannelOwner } from "./dmrTrunk";
 import { FaceBody, NodeShell, useFaceActive, useFaceWheel } from "./NodeShell";
-import { ScopeMenu, type ScopeMenuAt } from "./ScopeMenu";
+import { ScopeMenu } from "./ScopeMenu";
 import { ScopeSettings } from "./ScopeSettings";
+import { type ScopeChannels, useScopeChannels } from "./scopeChannels";
+import { type ScopeDisplay, useScopeDisplay } from "./scopeDisplay";
 import {
-  type PaletteChoice,
-  paletteOf,
-  readChoice,
-  readCustom,
-  storeChoice,
-  storeCustom,
-} from "./scopePalette";
-import {
-  bookmarkDraft,
-  channelTypeAt,
-  dragTuneHz,
-  pickAt,
-  type ScopePick,
-  streamChannels,
-  takeCreationTune,
-  tuneOnCreate,
-} from "./scopePick";
-import { DensityLayer, drawPlot, type PlotFrame, type PlotTrace, rollOffShare } from "./scopePlot";
-
-const DRAG_SLOP_PX = 4;
-const GRAB_PX = 12;
-const TUNE_THROTTLE_MS = 150;
+  displayWindow,
+  type FrameMeta,
+  type ScopeFeed,
+  useScopeFeed,
+  type WaterfallBox,
+} from "./scopeFeed";
+import { onPlotSurface, type ScopePreview, useScopeGesture } from "./scopeGesture";
+import { bookmarkDraft, channelTypeAt, streamChannels } from "./scopePick";
+import { useScopePicks } from "./scopePicks";
+import type { DensityLayer } from "./scopePlot";
 
 const NO_CHANNELS: readonly ChannelInfo[] = [];
 
-const NO_OWNERS: ReadonlyMap<number, TrunkChannelOwner> = new Map();
-const AVERAGE_KEY = "sdrmm.scopeAverage";
 const TRACE_MIN = 0.15;
 const TRACE_MAX = 0.75;
 const LABEL_TOP_PX = 28;
-const EMPTY_WINDOW: DbWindow = { min: -100, max: -20 };
-
-interface FrameMeta {
-  centerHz: number;
-  spanHz: number;
-  dbMin: number;
-  dbMax: number;
-  floorDb: number;
-}
-
-interface Gesture {
-  pointerX: number;
-  at: number;
-  view: SpectrumView;
-  channel: number | null;
-  moved: boolean;
-  centerHz: number;
-  sentHz: number | null;
-  sentAt: number;
-}
 
 export function ScopeFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
@@ -155,23 +73,6 @@ export function ScopeFace({ node }: { node: PatchNode }) {
   );
 }
 
-function useLaneTune(node: string, set: DeviceSet | null, source: IqLane | null) {
-  const tuneNode = useNodeTune();
-  const { graph } = useWorkspaceContext();
-  const stream = source?.stream ?? 0;
-  const locked = source !== null && laneLocked(nodeOf(graph, source.source), stream);
-  const centerHeld =
-    source?.virtual === undefined && set !== null && (autoTuning(set, stream) || locked);
-  const tuneCenter = (hz: number): void => {
-    if (!centerHeld) {
-      tuneNode(node, hz);
-    }
-  };
-  return { centerHeld, tuneCenter };
-}
-
-const SCOPE_PORT = "iq";
-
 function Spectrum({
   node,
   set,
@@ -182,361 +83,63 @@ function Spectrum({
   source: IqLane | null;
 }) {
   const workspace = useWorkspaceContext();
-  const stream = source?.stream ?? 0;
   const setId = set?.id ?? null;
+  const stream = source?.stream ?? 0;
   const levels = useLevelStore((state) => (setId === null ? undefined : state.byDeviceSet[setId]));
   const channels = useMemo(
     () => streamChannels(set?.channels ?? NO_CHANNELS, stream),
     [set?.channels, stream],
   );
-  const { applyEdit } = useChannelPatch();
-  const tuneNode = useNodeTune();
-  const queryClient = useQueryClient();
   const active = useFaceActive();
-  const placeNode = useNodePlacement();
   const { plan, ruler: bandRuler, setRuler } = useBandPlan();
   const bookmarks = useQuery(bookmarksQuery());
-
   const plotRef = useRef<HTMLDivElement>(null);
-  const waterfallRef = useRef<HTMLCanvasElement>(null);
   const traceRef = useRef<HTMLCanvasElement>(null);
-  const rendererRef = useRef<WaterfallView | null>(null);
-  const [seedFrame] = useState<SpectrumFrame | null>(() =>
-    setId === null ? null : spectrumHub.latest(node, SCOPE_PORT),
-  );
-  const frameRef = useRef<SpectrumFrame | null>(seedFrame);
-  const gestureRef = useRef<Gesture | null>(null);
-  const liveDbRef = useRef<Float32Array | null>(null);
-  const tweenRef = useRef(new FrameTween());
-  const readoutRef = useRef(new ReadoutHold());
-  const videoRef = useRef(new VideoAverage());
-  const tracesRef = useRef<TraceState | null>(null);
-  const densityRef = useRef<DensityLayer | null>(null);
-  const rowRef = useRef<Uint8Array | null>(null);
-  const keyRef = useRef<FrameKey | null>(null);
+  const waterfallRef = useRef<HTMLCanvasElement>(null);
   const hoverRef = useRef<number | null>(null);
-  const reseedRef = useRef(0);
+  const densityRef = useRef<DensityLayer | null>(null);
 
-  const [meta, setMeta] = useState<FrameMeta | null>(() =>
-    seedFrame === null ? null : metaOf(seedFrame),
-  );
-  const [glError, setGlError] = useState<string | null>(null);
-  const [view, setView] = useState<SpectrumView>(FULL_VIEW);
-  const [traceModes, setTraceModes] = useState<readonly TraceMode[]>([]);
-  const [phosphor, setPhosphor] = useState(false);
-  const [average, setAverage] = useState<AverageFrames>(readAverage);
-  const [range, setRange] = useState<DbWindow | null>(null);
-  const [waterfall, setWaterfall] = useState({ top: 0, height: 0, width: 0 });
-  const [paletteChoice, setPaletteChoice] = useState<PaletteChoice>(readChoice);
-  const [customStops, setCustomStops] = useState<readonly Rgb[]>(readCustom);
-  const colormap = useMemo(
-    () => paletteOf(paletteChoice, customStops),
-    [paletteChoice, customStops],
-  );
-  const [traceFraction, setTraceFraction] = useState(0.32);
-  const [preview, setPreview] = useState<{
-    channel: number;
-    offsetHz: number;
-  } | null>(null);
-  const [panning, setPanning] = useState(false);
-  const [hovering, setHovering] = useState(false);
-  const [picked, setPicked] = useState<number | null>(null);
-  const [menu, setMenu] = useState<{
-    pick: ScopePick;
-    at: ScopeMenuAt;
-    frame: string;
-  } | null>(null);
-  const [picker, setPicker] = useState<{ pick: ScopePick; frame: string } | null>(null);
-
-  const viewRef = useRef(view);
-  const modesRef = useRef(traceModes);
-  const rangeRef = useRef(range);
-  const averageRef = useRef(average);
-  const cleanRef = useRef<number | null>(null);
-  const rateRef = useRef<number | null>(null);
-  useLayoutEffect(() => {
-    viewRef.current = view;
-    cleanRef.current =
-      source?.virtual === undefined ? (set?.capabilities.clean_fraction ?? null) : null;
-    rateRef.current = set?.settings.sample_rate ?? null;
-    averageRef.current = average;
-    modesRef.current = traceModes;
-    rangeRef.current = range;
-    if (!active) {
-      hoverRef.current = null;
-    }
+  const display = useScopeDisplay();
+  const feed = useScopeFeed({
+    node,
+    set,
+    source,
+    active,
+    display,
+    traceRef,
+    waterfallRef,
+    hoverRef,
+    densityRef,
+  });
+  const tuning = useScopeChannels({ node, set, source, channels, meta: feed.meta });
+  const gesture = useScopeGesture({
+    plotRef,
+    active,
+    meta: feed.meta,
+    channels,
+    levels,
+    display,
+    hoverRef,
+    tuning,
   });
 
-  const hover = (at: number | null): void => {
-    hoverRef.current = at;
-    setHovering(at !== null);
-  };
-  const rulerH = bandRuler && plan !== null ? BAND_RULER_H : 0;
-
-  const faces = new Map<number, string>();
-  const onStream = new Set(channels.map((channel) => channel.id));
-  if (setId !== null) {
-    for (const [channel, face] of channelNodesOn(workspace.resolved, setId)) {
-      if (onStream.has(channel)) {
-        faces.set(channel, face);
-      }
-    }
-  }
-  const owners = setId === null ? NO_OWNERS : trunkChannelRoles(workspace.trunks, setId);
-  for (const [channel, owner] of owners) {
-    if (onStream.has(channel)) {
-      faces.set(channel, owner.node);
-    }
-  }
-  const locked = lockedChannels(workspace.resolved, faces);
-  const heldChannel = (channel: number): boolean => owners.has(channel) || locked.has(channel);
-  const { centerHeld, tuneCenter } = useLaneTune(node, set, source);
-
-  const workspaceChannel = [...faces].find(([, id]) => id === workspace.selected)?.[0] ?? null;
-  const selectedChannel =
-    workspaceChannel ?? (channels.some((channel) => channel.id === picked) ? picked : null);
-  const tunableChannel =
-    selectedChannel !== null && !heldChannel(selectedChannel) ? selectedChannel : null;
-
-  const selectChannel = (channel: number): void => {
-    setPicked(channel);
-    const face = faces.get(channel);
-    if (face !== undefined) {
-      workspace.select(face);
-    }
-  };
-
-  const tuneChannel = (channel: number, frequencyHz: number): void => {
-    const face = faces.get(channel);
-    if (face !== undefined && !heldChannel(channel)) {
-      tuneNode(face, frequencyHz);
-    }
-  };
-
-  const tuneToBand = (hz: number, suggested: ChannelParams | null): void => {
-    const face = tunableChannel === null ? undefined : faces.get(tunableChannel);
-    if (face === undefined) {
-      tuneCenter(hz);
-      return;
-    }
-    if (meta === null || Math.abs(hz - meta.centerHz) >= meta.spanHz / 2) {
-      tuneCenter(hz);
-    }
-    if (suggested === null) {
-      applyEdit(face, { frequency_hz: Math.round(hz) });
-      return;
-    }
-    void nodeAction(face, { action: "retype", with: { channel_type: suggested.type } })
-      .then(() => queryClient.refetchQueries({ queryKey: STATE_KEY }))
-      .then(() => applyEdit(face, { frequency_hz: Math.round(hz), params: suggested }))
-      .catch(toastError);
-  };
-
-  const tuneTo = (pick: ScopePick): void => {
-    if (tunableChannel !== null) {
-      tuneChannel(tunableChannel, pick.hz);
-    } else {
-      tuneCenter(pick.hz);
-    }
-  };
-
-  const addChannelAt = (pick: ScopePick, channelType: string): void => {
-    const feed = feedsOf(workspace.resolved, node, "iq")[0];
-    if (feed === undefined) {
-      return;
-    }
-    const fed = { node: feed.source, port: feed.port };
-    const id = newNodeId("channel", nodeIds(workspace.graph));
-    tuneOnCreate(id, pick.hz);
-    workspace.edit((snapshot) => ({
-      ...snapshot,
-      graph: addEdge(
-        addNode(snapshot.graph, {
-          id,
-          kind: "channel",
-          data: { channel_type: channelType },
-          position: placeNode(snapshot.graph, "channel"),
-        }),
-        { from: fed, to: { node: id, port: "iq" } },
-      ),
-    }));
-    workspace.apply();
-    workspace.select(id);
-  };
-
-  const editRef = useRef(applyEdit);
-  const bandTuneRef = useRef(tuneToBand);
-  useLayoutEffect(() => {
-    editRef.current = applyEdit;
-    bandTuneRef.current = tuneToBand;
-  });
-  const onBandTune = useCallback(
-    (hz: number, suggested: ChannelParams | null) => bandTuneRef.current(hz, suggested),
-    [],
-  );
-
-  useEffect(() => {
-    if (setId === null) {
-      return;
-    }
-    for (const face of faces.values()) {
-      const frequencyHz = takeCreationTune(face);
-      if (frequencyHz !== undefined) {
-        editRef.current(face, { frequency_hz: frequencyHz });
-      }
-    }
+  const picks = useScopePicks({
+    plotRef,
+    active,
+    meta: feed.meta,
+    view: display.view,
+    pointerFraction: gesture.pointerFraction,
   });
 
-  useEffect(() => {
-    const canvas = waterfallRef.current;
-    if (canvas === null) {
-      return;
-    }
-    let renderer: WaterfallView;
-    try {
-      renderer = attachWaterfall(canvas, setGlError);
-    } catch (error) {
-      // oxlint-disable-next-line react/set-state-in-effect -- the WebGL context is the external system this effect attaches, and its refusal has to reach the face
-      setGlError(error instanceof Error ? error.message : String(error));
-      return;
-    }
-    rendererRef.current = renderer;
-    return () => {
-      if (reseedRef.current !== 0) {
-        cancelAnimationFrame(reseedRef.current);
-        reseedRef.current = 0;
-      }
-      renderer.dispose();
-      rendererRef.current = null;
-    };
-  }, []);
+  const meta = feed.meta;
+  const view = display.view;
+  const setView = display.setView;
 
-  useEffect(() => {
-    rendererRef.current?.setColormap(colormap);
-  }, [colormap]);
-
-  useEffect(() => {
-    rendererRef.current?.setWindow(view.start, viewWidth(view));
-  }, [view]);
-
-  useEffect(() => {
-    if (setId === null) {
-      return;
-    }
-    const past = spectrumHub.history(node, SCOPE_PORT);
-    if (past.count > 0) {
-      rendererRef.current?.seed(
-        seedRows(past, frameRef.current, rangeRef.current),
-        past.count,
-        past.bins,
-        historyLevels(past, rangeRef.current),
-      );
-    }
-    keyRef.current = frameRef.current === null ? null : frameKeyOf(frameRef.current);
-    let count = 0;
-    const listener = (frame: SpectrumFrame): void => {
-      const action = retuneAction(keyRef.current, frameKeyOf(frame));
-      keyRef.current = frameKeyOf(frame);
-      frameRef.current = frame;
-      const held = rangeRef.current;
-      const window = held ?? frameWindow(frame);
-      liveDbRef.current = dequantize(frame, liveDbRef.current);
-      if (action.kind !== "none") {
-        videoRef.current.reset();
-      }
-      const db = videoRef.current.apply(liveDbRef.current, averageRef.current);
-      if (action.kind === "none") {
-        tweenRef.current.push(db, performance.now());
-      } else {
-        tweenRef.current.jump(db, performance.now());
-      }
-      let seeded = false;
-      if (action.kind !== "none") {
-        tracesRef.current = null;
-        densityRef.current?.clear();
-        if (action.kind === "shift") {
-          rendererRef.current?.shiftRows(action.delta);
-        } else {
-          const rows = spectrumHub.history(node, SCOPE_PORT);
-          if (rows.count > 0) {
-            rendererRef.current?.seed(
-              alignHistory(rows, { centerHz: frame.centerHz, spanHz: frame.spanHz }, held),
-              rows.count,
-              rows.bins,
-              historyLevels(rows, held),
-            );
-            seeded = true;
-          }
-        }
-      }
-      if (!seeded) {
-        rowRef.current = waterfallRow(frame, db, liveDbRef.current, held, rowRef.current);
-        rendererRef.current?.pushRow(rowRef.current, rowLevel(window, frame.floorDb, Date.now()));
-      }
-      tracesRef.current = accumulateTraces(tracesRef.current, db);
-      densityRef.current?.add(db, viewRef.current, window);
-      count += 1;
-      if (count === 1 || count % 8 === 0) {
-        setMeta(metaOf(frame));
-      }
-    };
-    return spectrumHub.subscribe(node, SCOPE_PORT, listener, { bins: SPECTRUM_MAX_BINS });
-  }, [setId, node]);
-
-  useEffect(() => {
-    let raf = 0;
-    const loop = () => {
-      const { frame, window } = plotSource(
-        frameRef.current,
-        liveDbRef.current === null ? null : tweenRef.current.sample(performance.now()),
-        rangeRef.current,
-      );
-      drawPlot(traceRef.current, {
-        frame,
-        view: viewRef.current,
-        window,
-        traces: overlays(tracesRef.current, modesRef.current, frame),
-        density: densityRef.current,
-        cursor: hoverRef.current,
-        readout: readoutRef.current,
-        rollOff: frame === null ? 0 : rollOffShare(cleanRef.current, rateRef.current, frame.spanHz),
-      });
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  useEffect(() => {
-    if (!phosphor) {
-      densityRef.current = null;
-      return;
-    }
-    const layer = new DensityLayer(colormap);
-    densityRef.current = layer;
-    return () => {
-      if (densityRef.current === layer) {
-        densityRef.current = null;
-      }
-    };
-  }, [phosphor, colormap]);
-
-  useEffect(() => {
-    const canvas = waterfallRef.current;
-    if (canvas === null) {
-      return;
-    }
-    const measure = () =>
-      setWaterfall({
-        top: canvas.offsetTop,
-        height: canvas.clientHeight,
-        width: canvas.clientWidth,
-      });
-    const observer = new ResizeObserver(measure);
-    observer.observe(canvas);
-    measure();
-    return () => observer.disconnect();
-  }, []);
+  const applyRange = (next: DbWindow | null): void => {
+    display.holdRange(next);
+    feed.scheduleReseed();
+    densityRef.current?.clear();
+  };
 
   useFaceWheel(
     useCallback(
@@ -554,228 +157,23 @@ function Spectrum({
     ),
   );
 
-  const chooseColormap = (next: PaletteChoice): void => {
-    setPaletteChoice(next);
-    storeChoice(next);
-  };
-
-  const chooseCustom = (stops: readonly Rgb[]): void => {
-    setCustomStops(stops);
-    storeCustom(stops);
-  };
-
-  const reseed = (held: DbWindow | null): void => {
-    if (setId === null) {
-      return;
-    }
-    const past = spectrumHub.history(node, SCOPE_PORT);
-    if (past.count === 0) {
-      return;
-    }
-    rendererRef.current?.seed(
-      seedRows(past, frameRef.current, held),
-      past.count,
-      past.bins,
-      historyLevels(past, held),
-    );
-  };
-
-  const scheduleReseed = (): void => {
-    if (reseedRef.current !== 0) {
-      return;
-    }
-    reseedRef.current = requestAnimationFrame(() => {
-      reseedRef.current = 0;
-      reseed(rangeRef.current);
-    });
-  };
-
-  const chooseAverage = (frames: AverageFrames): void => {
-    setAverage(frames);
-    try {
-      localStorage.setItem(AVERAGE_KEY, String(frames));
-    } catch {}
-  };
-
-  const togglePhosphor = (): void => {
-    if (!phosphor && range === null) {
-      holdRange();
-    }
-    setPhosphor(!phosphor);
-  };
-
-  const toggleTrace = (mode: TraceMode): void => {
-    setTraceModes((current) =>
-      current.includes(mode) ? current.filter((name) => name !== mode) : [...current, mode],
-    );
-  };
-
-  const applyRange = (next: DbWindow | null): void => {
-    rangeRef.current = next;
-    setRange(next);
-    scheduleReseed();
-    densityRef.current?.clear();
-  };
-
-  const holdRange = (): void => {
-    applyRange(clampWindow(displayWindow(meta, null)));
-  };
-
-  const shownRange = displayWindow(meta, range);
-  const spanHz = meta?.spanHz ?? 0;
-  const pointerFraction = (clientX: number): number => {
-    const rect = plotRef.current?.getBoundingClientRect();
-    return rect === undefined || rect.width === 0 ? 0 : (clientX - rect.left) / rect.width;
-  };
-
-  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    if (!active || event.button !== 0 || plotRef.current === null || meta === null || spanHz <= 0) {
-      return;
-    }
-    if (!onPlotSurface(event.target, plotRef.current)) {
-      return;
-    }
-    const rect = plotRef.current.getBoundingClientRect();
-    const at = pointerFraction(event.clientX);
-    const grabbed =
-      markerFrom(event.target, channels) ??
-      markerAt(channels, levels, view, meta.centerHz, spanHz, at, GRAB_PX / rect.width);
-    if (grabbed !== null) {
-      selectChannel(grabbed.id);
-    }
-    gestureRef.current = {
-      pointerX: event.clientX,
-      at,
-      view,
-      channel: grabbed?.id ?? null,
-      moved: false,
-      centerHz: meta.centerHz,
-      sentHz: null,
-      sentAt: 0,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    hover(
-      active && plotRef.current !== null && onPlotSurface(event.target, plotRef.current)
-        ? pointerFraction(event.clientX)
-        : null,
-    );
-    const gesture = gestureRef.current;
-    if (gesture === null) {
-      return;
-    }
-    if (!gesture.moved && Math.abs(event.clientX - gesture.pointerX) < DRAG_SLOP_PX) {
-      return;
-    }
-    gesture.moved = true;
-    const at = pointerFraction(event.clientX);
-    if (gesture.channel !== null) {
-      if (heldChannel(gesture.channel)) {
-        return;
-      }
-      setPreview({
-        channel: gesture.channel,
-        offsetHz: Math.round(spanToOffset(viewToSpan(gesture.view, at), spanHz)),
-      });
-      return;
-    }
-    const rect = plotRef.current?.getBoundingClientRect();
-    if (isFullView(gesture.view) && centerHeld) {
-      return;
-    }
-    setPanning(true);
-    if (isFullView(gesture.view)) {
-      const hz = dragTuneHz(
-        gesture.centerHz,
-        spanHz,
-        gesture.view,
-        gesture.pointerX - event.clientX,
-        rect?.width || 1,
-      );
-      const now = Date.now();
-      if (hz !== gesture.sentHz && now - gesture.sentAt >= TUNE_THROTTLE_MS) {
-        gesture.sentHz = hz;
-        gesture.sentAt = now;
-        tuneCenter(hz);
-      }
-      return;
-    }
-    setView(panView(gesture.view, (gesture.pointerX - event.clientX) / (rect?.width || 1)));
-  };
-
-  const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    const gesture = gestureRef.current;
-    gestureRef.current = null;
-    setPanning(false);
-    setPreview(null);
-    if (gesture === null) {
-      return;
-    }
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    if (gesture.moved) {
-      if (gesture.channel !== null && preview !== null && meta !== null) {
-        tuneChannel(gesture.channel, meta.centerHz + preview.offsetHz);
-      } else if (
-        gesture.channel === null &&
-        isFullView(gesture.view) &&
-        !centerHeld &&
-        meta !== null
-      ) {
-        const rect = plotRef.current?.getBoundingClientRect();
-        const hz = dragTuneHz(
-          gesture.centerHz,
-          meta.spanHz,
-          gesture.view,
-          gesture.pointerX - event.clientX,
-          rect?.width || 1,
-        );
-        if (hz !== gesture.sentHz) {
-          tuneCenter(hz);
-        }
-      }
-      return;
-    }
-    if (meta === null || gesture.channel !== null) {
-      return;
-    }
-    const offsetHz = Math.round(spanToOffset(viewToSpan(gesture.view, gesture.at), meta.spanHz));
-    if (tunableChannel !== null) {
-      tuneChannel(tunableChannel, meta.centerHz + offsetHz);
-    } else {
-      tuneCenter(meta.centerHz + offsetHz);
-    }
-  };
-
-  const frameStamp = `${meta?.centerHz}:${meta?.spanHz}:${view.start}:${view.end}`;
-  const openMenu = menu?.frame === frameStamp ? menu : null;
-  const openPicker = picker?.frame === frameStamp ? picker : null;
+  const rulerH = bandRuler && plan !== null ? BAND_RULER_H : 0;
+  const openMenu = picks.menu;
+  const openPicker = picks.picker;
   const suggestedType = (hz: number): string =>
     channelTypeAt(
       plan === null ? null : suggestedAt(identify(plan, hz)),
-      channels.find((channel) => channel.id === tunableChannel),
+      channels.find((channel) => channel.id === tuning.tunableChannel),
     );
 
-  const onContextMenu = (event: React.MouseEvent<HTMLDivElement>): void => {
+  const onDoubleClick = (event: React.MouseEvent<HTMLDivElement>): void => {
     const plot = plotRef.current;
     if (!active || meta === null || plot === null || !onPlotSurface(event.target, plot)) {
       return;
     }
-    event.preventDefault();
-    event.stopPropagation();
-    const rect = plot.getBoundingClientRect();
-    const at = pointerFraction(event.clientX);
-    setMenu({
-      pick: pickAt(meta.centerHz, meta.spanHz, view, at),
-      at: {
-        x: at,
-        y: rect.height === 0 ? 0 : (event.clientY - rect.top) / rect.height,
-      },
-      frame: frameStamp,
-    });
+    const at = gesture.pointerFraction(event.clientX);
+    tuning.tuneCenter(Math.round(meta.centerHz + spanToOffset(viewToSpan(view, at), meta.spanHz)));
+    setView(FULL_VIEW);
   };
 
   return (
@@ -783,101 +181,57 @@ function Spectrum({
       ref={plotRef}
       className={`relative flex h-full min-h-0 flex-col overflow-hidden bg-plot-bg ${
         active ? "nodrag nopan touch-none cursor-crosshair" : "cursor-default"
-      } ${panning ? "!cursor-grabbing" : ""}`}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      onPointerLeave={() => hover(null)}
-      onContextMenu={onContextMenu}
-      onDoubleClick={(event) => {
-        const plot = plotRef.current;
-        if (!active || meta === null || plot === null || !onPlotSurface(event.target, plot)) {
-          return;
-        }
-        const at = pointerFraction(event.clientX);
-        tuneCenter(Math.round(meta.centerHz + spanToOffset(viewToSpan(view, at), meta.spanHz)));
-        setView(FULL_VIEW);
-      }}
+      } ${gesture.panning ? "!cursor-grabbing" : ""}`}
+      onPointerDown={gesture.onPointerDown}
+      onPointerMove={gesture.onPointerMove}
+      onPointerUp={gesture.onPointerUp}
+      onPointerCancel={gesture.onPointerUp}
+      onPointerLeave={() => gesture.hover(null)}
+      onContextMenu={picks.onContextMenu}
+      onDoubleClick={onDoubleClick}
     >
       {meta !== null && (
-        <BandRuler centerHz={meta.centerHz} spanHz={meta.spanHz} view={view} onTune={onBandTune} />
+        <BandRuler
+          centerHz={meta.centerHz}
+          spanHz={meta.spanHz}
+          view={view}
+          onTune={tuning.onBandTune}
+        />
       )}
       <canvas
         ref={traceRef}
         className="w-full shrink-0"
-        style={{ height: `${traceFraction * 100}%` }}
+        style={{ height: `${display.traceFraction * 100}%` }}
       />
-      <Divider fraction={traceFraction} onFraction={setTraceFraction} plotRef={plotRef} />
+      <Divider
+        fraction={display.traceFraction}
+        onFraction={display.setTraceFraction}
+        plotRef={plotRef}
+      />
       <canvas ref={waterfallRef} className="w-full min-h-0 flex-1" />
 
-      {meta !== null && (
-        <Bookmarks
-          bookmarks={bookmarks.data ?? []}
-          centerHz={meta.centerHz}
-          spanHz={meta.spanHz}
-          view={view}
-          labelTop={waterfall.top + 3}
-          widthPx={waterfall.width}
-        />
-      )}
+      <ScopeOverlays
+        meta={meta}
+        view={view}
+        bookmarks={bookmarks.data ?? []}
+        channels={channels}
+        levels={levels}
+        tuning={tuning}
+        preview={gesture.preview}
+        labelTop={rulerH + LABEL_TOP_PX}
+        waterfall={feed.waterfall}
+      />
 
-      {meta !== null && (
-        <Markers
-          channels={channels}
-          levels={levels}
-          view={view}
-          centerHz={meta.centerHz}
-          spanHz={meta.spanHz}
-          selected={selectedChannel}
-          owners={owners}
-          locked={locked}
-          preview={preview}
-          onSelect={selectChannel}
-          labelTop={rulerH + LABEL_TOP_PX}
-          widthPx={waterfall.width}
-        />
-      )}
-
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-between p-1.5"
-        style={{ top: rulerH }}
-      >
-        <span
-          className={`legend self-end ${hovering && active ? "invisible" : ""} font-mono text-2xs text-right whitespace-pre text-plot-ink-dim`}
-        >
-          {meta !== null && `${formatCentre(meta, view)}${formatFloor(meta.floorDb)}`}
-          {range !== null && " · manual"}
-        </span>
-        <div
-          data-plot-chrome
-          className="pointer-events-auto flex items-center gap-1 self-start rounded-control bg-plot-bg/85 p-0.5"
-        >
-          <ScopeSettings
-            colormap={paletteChoice}
-            onColormap={chooseColormap}
-            custom={customStops}
-            onCustom={chooseCustom}
-            average={average}
-            onAverage={chooseAverage}
-            traces={traceModes}
-            onTrace={toggleTrace}
-            phosphor={phosphor}
-            onPhosphor={togglePhosphor}
-            bands={bandRuler}
-            onBands={() => setRuler(!bandRuler)}
-            range={clampWindow(shownRange)}
-            manual={range !== null}
-            onRange={applyRange}
-            onAuto={() => applyRange(null)}
-          />
-          {!isFullView(view) && (
-            <Button type="button" className={plotButton(false)} onClick={() => setView(FULL_VIEW)}>
-              {(1 / viewWidth(view)).toFixed(1)}× · reset
-            </Button>
-          )}
-        </div>
-      </div>
+      <ScopeChrome
+        display={display}
+        feed={feed}
+        active={active}
+        hovering={gesture.hovering}
+        rulerH={rulerH}
+        bands={bandRuler}
+        onBands={() => setRuler(!bandRuler)}
+        onRange={applyRange}
+      />
 
       {openMenu !== null && (
         <ScopeMenu
@@ -885,40 +239,170 @@ function Spectrum({
           at={openMenu.at}
           draft={bookmarkDraft(openMenu.pick.hz, plan)}
           onTune={() => {
-            tuneTo(openMenu.pick);
-            setMenu(null);
+            tuning.tuneTo(openMenu.pick);
+            picks.closeMenu();
           }}
-          onChannel={() => {
-            setPicker({ pick: openMenu.pick, frame: frameStamp });
-            setMenu(null);
-          }}
-          onClose={() => setMenu(null)}
+          onChannel={picks.pickChannel}
+          onClose={picks.closeMenu}
         />
       )}
 
       {openPicker !== null && (
         <ChannelPicker
           title="New channel"
-          note={formatHz(openPicker.pick.hz)}
-          groups={channelPicker(workspace.context.channelTypes, suggestedType(openPicker.pick.hz))}
+          note={formatHz(openPicker.hz)}
+          groups={channelPicker(workspace.context.channelTypes, suggestedType(openPicker.hz))}
           onChannel={(channelType) => {
-            addChannelAt(openPicker.pick, channelType);
-            setPicker(null);
+            tuning.addChannelAt(openPicker, channelType);
+            picks.closePicker();
           }}
-          onClose={() => setPicker(null)}
+          onClose={picks.closePicker}
         />
       )}
 
-      {glError !== null && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-2">
-          <span
-            className="pointer-events-auto rounded-control border border-danger bg-bg/85 px-2 py-1 font-mono text-xs text-danger"
-            title={GRAPHICS_HELP}
+      <GraphicsFault error={feed.glError} />
+    </div>
+  );
+}
+
+function GraphicsFault({ error }: { error: string | null }) {
+  if (error === null) {
+    return null;
+  }
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-2">
+      <span
+        className="pointer-events-auto rounded-control border border-danger bg-bg/85 px-2 py-1 font-mono text-xs text-danger"
+        title={GRAPHICS_HELP}
+      >
+        waterfall unavailable: {error}
+      </span>
+    </div>
+  );
+}
+
+function ScopeOverlays({
+  meta,
+  view,
+  bookmarks,
+  channels,
+  levels,
+  tuning,
+  preview,
+  labelTop,
+  waterfall,
+}: {
+  meta: FrameMeta | null;
+  view: SpectrumView;
+  bookmarks: readonly Bookmark[];
+  channels: readonly ChannelInfo[];
+  levels: SetLevels | undefined;
+  tuning: ScopeChannels;
+  preview: ScopePreview | null;
+  labelTop: number;
+  waterfall: WaterfallBox;
+}) {
+  if (meta === null) {
+    return null;
+  }
+  return (
+    <>
+      <Bookmarks
+        bookmarks={bookmarks}
+        centerHz={meta.centerHz}
+        spanHz={meta.spanHz}
+        view={view}
+        labelTop={waterfall.top + 3}
+        widthPx={waterfall.width}
+      />
+      <Markers
+        channels={channels}
+        levels={levels}
+        view={view}
+        centerHz={meta.centerHz}
+        spanHz={meta.spanHz}
+        selected={tuning.selectedChannel}
+        owners={tuning.owners}
+        locked={tuning.locked}
+        preview={preview}
+        onSelect={tuning.selectChannel}
+        labelTop={labelTop}
+        widthPx={waterfall.width}
+      />
+    </>
+  );
+}
+
+function ScopeChrome({
+  display,
+  feed,
+  active,
+  hovering,
+  rulerH,
+  bands,
+  onBands,
+  onRange,
+}: {
+  display: ScopeDisplay;
+  feed: ScopeFeed;
+  active: boolean;
+  hovering: boolean;
+  rulerH: number;
+  bands: boolean;
+  onBands: () => void;
+  onRange: (next: DbWindow | null) => void;
+}) {
+  const meta = feed.meta;
+  const view = display.view;
+  const togglePhosphor = (): void => {
+    if (!display.phosphor && display.range === null) {
+      onRange(clampWindow(displayWindow(meta, null)));
+    }
+    display.setPhosphor(!display.phosphor);
+  };
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-between p-1.5"
+      style={{ top: rulerH }}
+    >
+      <span
+        className={`legend self-end ${hovering && active ? "invisible" : ""} font-mono text-2xs text-right whitespace-pre text-plot-ink-dim`}
+      >
+        {meta !== null && `${formatCentre(meta, view)}${formatFloor(meta.floorDb)}`}
+        {display.range !== null && " · manual"}
+      </span>
+      <div
+        data-plot-chrome
+        className="pointer-events-auto flex items-center gap-1 self-start rounded-control bg-plot-bg/85 p-0.5"
+      >
+        <ScopeSettings
+          colormap={display.paletteChoice}
+          onColormap={display.chooseColormap}
+          custom={display.customStops}
+          onCustom={display.chooseCustom}
+          average={display.average}
+          onAverage={display.chooseAverage}
+          traces={display.traceModes}
+          onTrace={display.toggleTrace}
+          phosphor={display.phosphor}
+          onPhosphor={togglePhosphor}
+          bands={bands}
+          onBands={onBands}
+          range={clampWindow(displayWindow(meta, display.range))}
+          manual={display.range !== null}
+          onRange={onRange}
+          onAuto={() => onRange(null)}
+        />
+        {!isFullView(view) && (
+          <Button
+            type="button"
+            className={plotButton(false)}
+            onClick={() => display.setView(FULL_VIEW)}
           >
-            waterfall unavailable: {glError}
-          </span>
-        </div>
-      )}
+            {(1 / viewWidth(view)).toFixed(1)}× · reset
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -999,7 +483,7 @@ function Markers({
       const offsetHz =
         preview?.channel === channel.id
           ? preview.offsetHz
-          : heardHz(channel.settings.frequency_hz, levels?.[channel.id]) - centerHz;
+          : heardHz(channelFrequencyHz(channel.settings), levels?.[channel.id]) - centerHz;
       return {
         channel,
         hz: centerHz + offsetHz,
@@ -1203,43 +687,6 @@ function MarkerLabel({
   );
 }
 
-function markerAt(
-  channels: readonly ChannelInfo[],
-  levels: SetLevels | undefined,
-  view: SpectrumView,
-  centerHz: number,
-  spanHz: number,
-  at: number,
-  tolerance: number,
-): ChannelInfo | null {
-  let best: ChannelInfo | null = null;
-  let bestDistance = tolerance;
-  for (const channel of channels) {
-    const offsetHz = heardHz(channel.settings.frequency_hz, levels?.[channel.id]) - centerHz;
-    const position = spanToView(view, offsetToSpan(offsetHz, spanHz));
-    const distance = Math.abs(position - at);
-    if (distance <= bestDistance) {
-      best = channel;
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
-function markerFrom(
-  target: EventTarget | null,
-  channels: readonly ChannelInfo[],
-): ChannelInfo | null {
-  if (!(target instanceof Element)) {
-    return null;
-  }
-  const id = target.closest("[data-marker]")?.getAttribute("data-marker");
-  if (id == null) {
-    return null;
-  }
-  return channels.find((channel) => String(channel.id) === id) ?? null;
-}
-
 function wheelOnPlot(event: WheelEvent, plot: HTMLElement, active: boolean): boolean {
   if (active) {
     return event.target instanceof Node && plot.contains(event.target);
@@ -1253,49 +700,6 @@ function wheelOnPlot(event: WheelEvent, plot: HTMLElement, active: boolean): boo
   );
 }
 
-function onPlotSurface(target: EventTarget | null, plot: HTMLElement): boolean {
-  if (!(target instanceof Node) || !plot.contains(target)) {
-    return false;
-  }
-  return !(target instanceof Element) || target.closest("[data-plot-chrome]") === null;
-}
-
-function frameKeyOf(frame: SpectrumFrame): FrameKey {
-  return { centerHz: frame.centerHz, spanHz: frame.spanHz, bins: frame.bins.length };
-}
-
-function metaOf(frame: SpectrumFrame): FrameMeta {
-  return {
-    centerHz: frame.centerHz,
-    spanHz: frame.spanHz,
-    dbMin: frame.dbMin,
-    dbMax: frame.dbMax,
-    floorDb: frame.floorDb,
-  };
-}
-
-function waterfallRow(
-  frame: SpectrumFrame,
-  shown: Float32Array,
-  raw: Float32Array,
-  held: DbWindow | null,
-  scratch: Uint8Array | null,
-): Uint8Array {
-  if (shown !== raw) {
-    return quantizeDb(shown, held ?? frameWindow(frame), scratch);
-  }
-  return held === null ? frame.bins : requantize(frame.bins, frameWindow(frame), held, scratch);
-}
-
-function readAverage(): AverageFrames {
-  try {
-    const stored = Number(localStorage.getItem(AVERAGE_KEY));
-    return AVERAGE_CHOICES.find((frames) => frames === stored) ?? DEFAULT_AVERAGE;
-  } catch {
-    return DEFAULT_AVERAGE;
-  }
-}
-
 function formatCentre(meta: FrameMeta, view: SpectrumView): string {
   const visible = meta.spanHz * viewWidth(view);
   const centre = meta.centerHz + spanToOffset((view.start + view.end) / 2, meta.spanHz);
@@ -1306,48 +710,4 @@ function formatCentre(meta: FrameMeta, view: SpectrumView): string {
 
 function formatFloor(floorDb: number): string {
   return Number.isFinite(floorDb) ? `   floor ${floorDb.toFixed(0)} dBFS` : "";
-}
-
-function displayWindow(meta: FrameMeta | null, held: DbWindow | null): DbWindow {
-  if (held !== null) {
-    return held;
-  }
-  return meta === null ? EMPTY_WINDOW : { min: meta.dbMin, max: meta.dbMax };
-}
-
-function plotSource(
-  frame: SpectrumFrame | null,
-  liveDb: Float32Array | null,
-  held: DbWindow | null,
-): { frame: PlotFrame | null; window: DbWindow } {
-  if (frame === null || liveDb === null) {
-    return { frame: null, window: held ?? EMPTY_WINDOW };
-  }
-  return {
-    frame: {
-      centerHz: frame.centerHz,
-      spanHz: frame.spanHz,
-      signalDb: frame.floorDb + SPECTRUM_SIGNAL_MARGIN_DB,
-      db: liveDb,
-    },
-    window: held ?? frameWindow(frame),
-  };
-}
-
-function overlays(
-  state: TraceState | null,
-  modes: readonly TraceMode[],
-  frame: PlotFrame | null,
-): PlotTrace[] {
-  if (state === null || frame === null) {
-    return [];
-  }
-  const traces: PlotTrace[] = [];
-  for (const mode of modes) {
-    const db = traceOf(state, mode);
-    if (db.length === frame.db.length) {
-      traces.push({ mode, db });
-    }
-  }
-  return traces;
 }

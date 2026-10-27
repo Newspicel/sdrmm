@@ -239,17 +239,44 @@ pub enum LoraKey {
     },
 }
 
+pub struct LoraKeyField<'a> {
+    pub name: &'static str,
+    pub text: &'a str,
+    pub max_len: usize,
+}
+
+const fn field<'a>(name: &'static str, text: &'a str, max_len: usize) -> LoraKeyField<'a> {
+    LoraKeyField {
+        name,
+        text,
+        max_len,
+    }
+}
+
 impl LoraKey {
-    fn texts(&self) -> Vec<&str> {
+    #[must_use]
+    pub fn fields(&self) -> Vec<LoraKeyField<'_>> {
         match self {
-            Self::MeshtasticChannel { name, psk } => vec![name, psk],
-            Self::MeshcoreChannel { name, secret } => vec![name, secret],
+            Self::MeshtasticChannel { name, psk } => vec![
+                field("name", name, MAX_LORA_KEY_NAME_LEN),
+                field("key", psk, MAX_LORA_KEY_TEXT_LEN),
+            ],
+            Self::MeshcoreChannel { name, secret } => vec![
+                field("name", name, MAX_LORA_KEY_NAME_LEN),
+                field("secret", secret, MAX_LORA_KEY_TEXT_LEN),
+            ],
             Self::LorawanSession {
                 dev_addr,
                 nwk_s_key,
                 app_s_key,
-            } => vec![dev_addr, nwk_s_key, app_s_key],
-            Self::LorawanAppKey { app_key } => vec![app_key],
+            } => vec![
+                field("device address", dev_addr, MAX_LORA_KEY_TEXT_LEN),
+                field("network session key", nwk_s_key, MAX_LORA_KEY_TEXT_LEN),
+                field("app session key", app_s_key, MAX_LORA_KEY_TEXT_LEN),
+            ],
+            Self::LorawanAppKey { app_key } => {
+                vec![field("app key", app_key, MAX_LORA_KEY_TEXT_LEN)]
+            }
         }
     }
 }
@@ -275,14 +302,17 @@ impl LoraParams {
         if self.keys.len() > MAX_LORA_KEYS {
             return Err(format!("at most {MAX_LORA_KEYS} LoRa keys"));
         }
-        let too_long = self
+        let over = self
             .keys
             .iter()
-            .flat_map(LoraKey::texts)
-            .any(|text| text.len() > MAX_LORA_KEY_TEXT_LEN.max(MAX_LORA_KEY_NAME_LEN));
-        if too_long {
+            .flat_map(LoraKey::fields)
+            .find(|field| field.text.chars().count() > field.max_len);
+        if let Some(field) = over {
             return Err(format!(
-                "LoRa key fields are at most {MAX_LORA_KEY_TEXT_LEN} characters"
+                "a LoRa {} is at most {} characters, got {}",
+                field.name,
+                field.max_len,
+                field.text.chars().count()
             ));
         }
         if self
@@ -979,6 +1009,39 @@ mod tests {
             app_key: "0".repeat(MAX_LORA_KEY_TEXT_LEN + 1),
         }];
         assert!(params.validate().is_err());
+    }
+
+    #[test]
+    fn a_channel_name_is_bounded_by_the_name_limit_not_the_text_limit() {
+        let named = |len: usize| LoraParams {
+            keys: vec![LoraKey::MeshtasticChannel {
+                name: "n".repeat(len),
+                psk: "AQ==".to_owned(),
+            }],
+            ..LoraParams::default()
+        };
+        assert!(named(MAX_LORA_KEY_NAME_LEN).validate().is_ok());
+        let refused = named(MAX_LORA_KEY_NAME_LEN + 1)
+            .validate()
+            .expect_err("a name over its own limit");
+        assert!(refused.contains("name"), "{refused}");
+        assert!(
+            refused.contains(&MAX_LORA_KEY_NAME_LEN.to_string()),
+            "{refused}"
+        );
+        assert!(named(MAX_LORA_KEY_TEXT_LEN).validate().is_err());
+    }
+
+    #[test]
+    fn a_key_field_is_measured_in_characters() {
+        let wide = LoraParams {
+            keys: vec![LoraKey::MeshtasticChannel {
+                name: "\u{8def}".repeat(MAX_LORA_KEY_NAME_LEN),
+                psk: "AQ==".to_owned(),
+            }],
+            ..LoraParams::default()
+        };
+        assert!(wide.validate().is_ok());
     }
 
     #[test]

@@ -93,6 +93,39 @@ fn rack_slots_are_keyed_by_node() {
 }
 
 #[test]
+fn a_gain_stage_keeps_one_entry_per_stage() {
+    let base = json!([{ "stage": "LNA", "value_db": 0.0 }, { "stage": "VGA", "value_db": 0.0 }]);
+    let ours = json!([{ "stage": "LNA", "value_db": 12.0 }, { "stage": "VGA", "value_db": 0.0 }]);
+    let theirs = json!([{ "stage": "LNA", "value_db": 6.0 }, { "stage": "VGA", "value_db": 8.0 }]);
+    assert_eq!(
+        merge3(&base, &ours, &theirs),
+        json!([{ "stage": "LNA", "value_db": 12.0 }, { "stage": "VGA", "value_db": 8.0 }])
+    );
+}
+
+#[test]
+fn a_numeric_key_keeps_one_entry_per_stream() {
+    let base = json!([{ "stream": 0, "center_hz": 1.0 }, { "stream": 1, "center_hz": 1.0 }]);
+    let ours = json!([{ "stream": 0, "center_hz": 2.0 }, { "stream": 1, "center_hz": 1.0 }]);
+    let theirs = json!([{ "stream": 0, "center_hz": 1.5 }, { "stream": 1, "center_hz": 3.0 }]);
+    assert_eq!(
+        merge3(&base, &ours, &theirs),
+        json!([{ "stream": 0, "center_hz": 2.0 }, { "stream": 1, "center_hz": 3.0 }])
+    );
+}
+
+#[test]
+fn a_named_entry_is_not_duplicated_by_an_edit() {
+    let base = json!([{ "name": "wide", "span_hz": 1.0 }]);
+    let ours = json!([{ "name": "wide", "span_hz": 2.0 }]);
+    let theirs = json!([{ "name": "wide", "span_hz": 3.0 }]);
+    assert_eq!(
+        merge3(&base, &ours, &theirs),
+        json!([{ "name": "wide", "span_hz": 2.0 }])
+    );
+}
+
+#[test]
 fn a_changed_kind_is_taken_whole() {
     let base = json!({ "kind": "nfm", "squelch": 1 });
     let ours = json!({ "kind": "am", "depth": 3 });

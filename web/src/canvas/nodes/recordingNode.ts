@@ -1,6 +1,7 @@
 import { matchesRecordingSearch, recordingTitle } from "../../components/recordings";
 import { MAX_NAME_LEN } from "../../lib/limits";
 import type { PatchNodeOf, Position, RecordingInfo } from "../../lib/types";
+import { recordingRef } from "./deviceNode";
 
 export const META_SUFFIX = ".sigmf-meta";
 export const DATA_SUFFIX = ".sigmf-data";
@@ -24,12 +25,13 @@ export function claimedRecordings(
 ): string[] {
   const claimed: string[] = [];
   for (const node of graph.nodes) {
-    if (node.kind !== "recording" || node.id === exceptNode) {
+    if (node.kind !== "device" || node.id === exceptNode) {
       continue;
     }
-    const stem = (node.data as { recording?: string | null } | undefined)?.recording;
-    if (stem != null && stem !== "") {
-      claimed.push(stem);
+    const pinned = (node.data as { device?: { backend?: string; key?: string } } | undefined)
+      ?.device;
+    if (pinned?.backend === "recording" && pinned.key != null && pinned.key !== "") {
+      claimed.push(pinned.key);
     }
   }
   return claimed;
@@ -75,11 +77,11 @@ export function recordingNodeFor(
   recording: RecordingInfo,
   id: string,
   position: Position,
-): PatchNodeOf<"recording"> {
+): PatchNodeOf<"device"> {
   return {
     id,
-    kind: "recording",
-    data: { recording: recording.file },
+    kind: "device",
+    data: { device: recordingRef(recording.file) },
     position,
     label: recordingTitle(recording).slice(0, MAX_NAME_LEN),
   };

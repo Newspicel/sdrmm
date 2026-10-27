@@ -41,6 +41,7 @@ pub struct FreeDvChannel {
     even_frame: bool,
     synced: bool,
     vocoder: Codec2Decoder,
+    rejected: u32,
 }
 
 fn params(settings: &ChannelSettings) -> Result<&FreeDvParams, ChannelError> {
@@ -85,6 +86,7 @@ impl ChannelRx for FreeDvChannel {
             even_frame: false,
             synced: false,
             vocoder: Codec2Decoder::new(),
+            rejected: 0,
         })
     }
 
@@ -114,6 +116,10 @@ impl ChannelRx for FreeDvChannel {
             }
         }
     }
+
+    fn rejected(&self) -> u32 {
+        self.rejected
+    }
 }
 
 impl FreeDvChannel {
@@ -130,6 +136,7 @@ impl FreeDvChannel {
             header.opcode = Some("1600".to_owned());
             out.events.push(DecoderEvent::Dv(header));
         } else if !sync && self.synced {
+            self.rejected = self.rejected.saturating_add(1);
             out.events.push(DecoderEvent::Dv(DvFrame::new(
                 DvMode::FreeDv,
                 DvFrameKind::Terminator,
@@ -231,6 +238,48 @@ mod tests {
         }
         assert!(out.events.is_empty(), "{:?}", out.events.first());
         assert!(out.audio_pcm.is_empty());
+    }
+
+    #[test]
+    fn the_frame_that_loses_modem_sync_is_reported_as_rejected() {
+        let params = FreeDvParams::default();
+        let mut iq = recording();
+        iq.extend(std::iter::repeat_n(Complex::new(0.0, 0.0), 32_000));
+        let mut channel = FreeDvChannel::new(
+            ChannelCtx {
+                input_rate: INPUT_RATE_HZ,
+            },
+            settings(ChannelParams::Freedv(params)),
+        )
+        .expect("freedv channel");
+        let mut filter = channel_filter(&params).expect("freedv filter");
+        let mut filtered = Vec::new();
+        let mut out = ChannelOutputs::default();
+        for block in iq.chunks(997) {
+            filter.process(block, &mut filtered);
+            out.reset();
+            channel.process(&filtered, &mut out);
+        }
+
+        assert!(
+            channel.rejected() > 0,
+            "the modem frame that lost sync was dropped without a word"
+        );
+    }
+
+    fn recording() -> Vec<Complex<f32>> {
+        const FIXTURE: &[u8] = include_bytes!("../../../../fixtures/freedv_1600_8k.sigmf-data");
+        FIXTURE
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|sample| {
+                Complex::new(
+                    f32::from_le_bytes([sample[0], sample[1], sample[2], sample[3]]),
+                    f32::from_le_bytes([sample[4], sample[5], sample[6], sample[7]]),
+                )
+            })
+            .collect()
     }
 
     #[test]

@@ -23,11 +23,7 @@ impl PhaseDetector {
         }
         match self {
             Self::DecisionDirected => {
-                let label = table.hard_slice(y);
-                let index = table.labels().iter().position(|&l| l == label);
-                let Some(x) = index.map(|i| table.points()[i]) else {
-                    return 0.0;
-                };
+                let x = table.nearest(y);
                 if x.re == 0.0 && x.im == 0.0 {
                     return 0.0;
                 }
@@ -247,11 +243,7 @@ mod tests {
     fn worst_residual_turns(out: &[Complex<f32>], table: &Constellation) -> f64 {
         out[out.len() * 3 / 4..]
             .iter()
-            .map(|&y| {
-                let label = table.hard_slice(y);
-                let i = table.labels().iter().position(|&l| l == label).unwrap();
-                f64::from((y * table.points()[i].conj()).arg()).abs() / TAU
-            })
+            .map(|&y| f64::from((y * table.nearest(y).conj()).arg()).abs() / TAU)
             .fold(0.0, f64::max)
     }
 
@@ -305,11 +297,7 @@ mod tests {
 
     fn symbols_to_lock(out: &[Complex<f32>], table: &Constellation, tol: f64) -> Option<usize> {
         const WINDOW: usize = 200;
-        let error = |y: Complex<f32>| {
-            let label = table.hard_slice(y);
-            let i = table.labels().iter().position(|&l| l == label).unwrap();
-            f64::from((y * table.points()[i].conj()).arg()).abs() / TAU
-        };
+        let error = |y: Complex<f32>| f64::from((y * table.nearest(y).conj()).arg()).abs() / TAU;
         let mut run = 0usize;
         for (k, &y) in out.iter().enumerate() {
             run = if error(y) < tol { run + 1 } else { 0 };

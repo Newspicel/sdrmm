@@ -5,7 +5,7 @@ use sdrmm_device::{
     RxSink, SdrDevice, lock, single_rx_sink,
 };
 use sdrmm_usb_stream::RxStream;
-use sdrmm_wire::{Capabilities, DeviceInfo, DeviceSettings, GainKind};
+use sdrmm_wire::{Capabilities, DeviceBackend, DeviceInfo, DeviceSettings, GainKind};
 
 use crate::driver::{Airspy, DeviceDescriptor, RX_TRANSFER_SIZE};
 
@@ -15,7 +15,7 @@ mod driver;
 #[cfg(test)]
 mod hardware;
 
-const DRIVER_ID: &str = "airspy";
+const DRIVER_ID: DeviceBackend = DeviceBackend::Airspy;
 const NOSERIAL_KEY_PREFIX: &str = "noserial-";
 
 fn map_err(err: driver::Error) -> DeviceError {
@@ -55,7 +55,7 @@ fn device_info(descriptor: &DeviceDescriptor) -> DeviceInfo {
     let serial = descriptor.serial.map(full_serial);
     let location = format!("{}/{}", descriptor.bus, descriptor.address);
     DeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: serial
             .clone()
             .unwrap_or_else(|| format!("{NOSERIAL_KEY_PREFIX}{location}")),
@@ -86,11 +86,11 @@ impl AirspyDriver {
         Self
     }
 
+    /// Opening "the first Airspy" would be the wrong radio as soon as two are attached, so a
+    /// dongle whose descriptor carries no serial is addressed by where it is plugged in.
     pub fn open_device(&self, info: &DeviceInfo) -> Result<AirspyDevice, DeviceError> {
         let device = match (key_serial(&info.key), key_location(&info.key)) {
             (Some(serial), _) => Airspy::open_serial(serial),
-            // Opening "the first Airspy" would be the wrong radio as soon as two are attached, so
-            // a dongle whose descriptor carries no serial is addressed by where it is plugged in.
             (None, Some((bus, address))) => Airspy::open_at(bus, address),
             (None, None) => return Err(DeviceError::NotFound(info.id())),
         }
@@ -100,7 +100,7 @@ impl AirspyDriver {
 }
 
 impl DeviceDriver for AirspyDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 
@@ -240,7 +240,7 @@ impl SdrDevice for AirspyDevice {
             self.radio.clone(),
             convert::AirspyConverter::new(RX_TRANSFER_SIZE / 2),
             sink,
-            CaptureConfig::new("sdrmm-airspy-rx", DRIVER_ID)
+            CaptureConfig::new("sdrmm-airspy-rx", DRIVER_ID.as_str())
                 .with_sample_rate(self.settings.sample_rate),
         );
         if started.is_err() {
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn a_radio_with_a_serial_is_keyed_by_it() {
         let info = device_info(&descriptor(Some(0x0044_0000_2e19_a5b3)));
-        assert_eq!(info.driver, "airspy");
+        assert_eq!(info.driver, DeviceBackend::Airspy);
         assert_eq!(info.key, "004400002e19a5b3");
         assert_eq!(info.label, "AIRSPY 004400002e19a5b3");
         assert_eq!(key_serial(&info.key), Some(0x0044_0000_2e19_a5b3));

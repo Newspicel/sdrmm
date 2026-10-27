@@ -51,7 +51,7 @@ import type {
   NanoVnaLibraryResponse,
   NanoVnaMeasurement,
   NanoVnaMeasurementInfo,
-  NmeaDevicesResponse,
+  SerialDevicesResponse,
   NodeActed,
   NodeAction,
   OccupancyReport,
@@ -117,6 +117,7 @@ client.use({
 export const STATE_KEY = ["get", "/api/state"] as const;
 export const DEVICES_KEY = ["get", "/api/devices"] as const;
 export const NMEA_DEVICES_KEY = ["get", "/api/position/nmea-devices"] as const;
+export const SERIAL_PORTS_KEY = ["get", "/api/serial/ports"] as const;
 export const CHANNEL_TYPES_KEY = ["get", "/api/channeltypes"] as const;
 export const PRESETS_KEY = ["get", "/api/presets"] as const;
 export const BOOKMARKS_KEY = ["get", "/api/bookmarks"] as const;
@@ -221,8 +222,17 @@ export function devicesQuery() {
 export function nmeaDevicesQuery() {
   return queryOptions({
     queryKey: NMEA_DEVICES_KEY,
-    queryFn: async (): Promise<NmeaDevicesResponse> =>
+    queryFn: async (): Promise<SerialDevicesResponse> =>
       unwrap(await client.GET("/api/position/nmea-devices")),
+    staleTime: 5_000,
+  });
+}
+
+export function serialPortsQuery() {
+  return queryOptions({
+    queryKey: SERIAL_PORTS_KEY,
+    queryFn: async (): Promise<SerialDevicesResponse> =>
+      unwrap(await client.GET("/api/serial/ports")),
     staleTime: 5_000,
   });
 }

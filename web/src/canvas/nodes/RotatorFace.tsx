@@ -8,7 +8,7 @@ import { Readout, Readouts } from "../../components/face/Readouts";
 import { TextChip } from "../../components/face/TextChip";
 import { Segmented } from "../../components/Segmented";
 import { TextAutocomplete } from "../../components/TextAutocomplete";
-import { nmeaDevicesQuery } from "../../lib/api";
+import { serialPortsQuery } from "../../lib/api";
 import { ROTATOR_LIMITS } from "../../lib/limits";
 import { useRotatorStore } from "../../lib/rotator";
 import type {
@@ -21,7 +21,7 @@ import type {
 } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { nmeaDetail, nmeaSuggestion, validHostPort } from "./gpsSource";
+import { serialDetail, nmeaSuggestion, validHostPort } from "./gpsSource";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 import {
   AZIMUTH_RANGES,
@@ -238,12 +238,12 @@ function LinkChoices({ onPick }: { onPick: Pick }) {
 }
 
 function SerialChoices({ onPick, make }: { onPick: Pick; make: (device: string) => RotatorLink }) {
-  const devices = useQuery(nmeaDevicesQuery());
+  const devices = useQuery(serialPortsQuery());
   const listed = devices.data?.devices ?? [];
   return (
     <div className="flex flex-col gap-1">
       {listed.map((device) => {
-        const detail = nmeaDetail(device);
+        const detail = serialDetail(device);
         return (
           <Button
             key={device.path}
@@ -321,7 +321,7 @@ function LinkChips({ link, onChange }: { link: RotatorLink; onChange: Pick }) {
 }
 
 function SerialChips({ link, onChange }: { link: SerialRotator; onChange: Pick }) {
-  const devices = useQuery(nmeaDevicesQuery());
+  const devices = useQuery(serialPortsQuery());
   return (
     <>
       <SettingChip label="Port" value={link.device} title={PORT_TITLES[link.type]}>

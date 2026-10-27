@@ -4,11 +4,11 @@ use futures::StreamExt;
 use sdrmm_engine::ArrayEvent;
 use sdrmm_wire::{
     ArrayCalRecord, ArrayCalSource, ArrayGain, ArrayNode, ArrayOrientation, ArrayStatus, Attitude,
-    BeamformerNode, CalSourceKind, ChannelNode, DeviceNode, DeviceRef, DfNode, FusionGridOwned,
-    GpsNode, HeadingSource, LaneKey, LaneSolution, NodeBody, PassiveRadarNode, PatchApplyReport,
-    PatchEdge, PatchGraph, PatchNode, PatchRefusal, PortRef, Position, PositionFix, PositionSource,
-    ProcessorReading, RackLayout, RadarTrackEvent, RadarUpdate, RecordingNode, ServerEvent,
-    SurfaceFrame, TrackChange, WorkspaceNoticeKind, WorkspaceSnapshot,
+    BeamformerNode, CalSourceKind, ChannelNode, DeviceBackend, DeviceNode, DeviceRef, DfNode,
+    FusionGridOwned, GpsNode, HeadingSource, LaneKey, LaneSolution, NodeBody, PassiveRadarNode,
+    PatchApplyReport, PatchEdge, PatchGraph, PatchNode, PatchRefusal, PortRef, Position,
+    PositionFix, PositionSource, ProcessorReading, RackLayout, RadarTrackEvent, RadarUpdate,
+    ServerEvent, SurfaceFrame, TrackChange, WorkspaceNoticeKind, WorkspaceSnapshot,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
 
@@ -47,7 +47,7 @@ fn radio(id: &str, key: &str) -> PatchNode {
         id,
         NodeBody::Device(DeviceNode {
             device: Some(DeviceRef {
-                backend: "virtual".to_owned(),
+                backend: DeviceBackend::Virtual,
                 serial: None,
                 key: Some(key.to_owned()),
             }),
@@ -855,8 +855,13 @@ async fn a_recorded_collection_feeds_an_array_through_its_lane_outputs() {
         nodes: vec![
             node(
                 "rec",
-                NodeBody::Recording(RecordingNode {
-                    recording: Some("take".to_owned()),
+                NodeBody::Device(DeviceNode {
+                    device: Some(DeviceRef {
+                        backend: DeviceBackend::Recording,
+                        serial: None,
+                        key: Some("take".to_owned()),
+                    }),
+                    ..DeviceNode::default()
                 }),
             ),
             node(ARRAY, NodeBody::Array(ArrayNode::default())),

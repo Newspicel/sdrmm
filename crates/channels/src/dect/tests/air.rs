@@ -308,7 +308,8 @@ fn a_base_without_part_two_reports_no_dsaa2() {
 }
 
 fn load_wav(path: &std::path::Path) -> (Vec<Complex<f32>>, f64) {
-    let bytes = std::fs::read(path).expect("DECT recording");
+    let bytes = crate::reference_data::read(path);
+    assert!(bytes.len() > 44, "{} is truncated", path.display());
     let rate = u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]);
     let data = bytes
         .windows(4)
@@ -332,8 +333,9 @@ fn load_wav(path: &std::path::Path) -> (Vec<Complex<f32>>, f64) {
 #[test]
 #[ignore = "needs DECT_SIGID_WAV=<SigIDWiki Dect.zip dect.wav>"]
 fn decodes_two_real_base_stations_off_air() {
-    let path =
-        std::path::PathBuf::from(std::env::var_os("DECT_SIGID_WAV").expect("DECT_SIGID_WAV"));
+    let Some(path) = crate::reference_data::dect_sigid_wav() else {
+        return;
+    };
     let (iq, rate) = load_wav(&path);
     let mut ddc = sdrmm_dsp::Ddc::new(rate, crate::dect::burst::INPUT_RATE_HZ, 0.0).expect("ddc");
     let mut resampled = Vec::new();
@@ -391,8 +393,9 @@ fn relocate(iq: &[Complex<f32>], rate: f64, band: DectBand, carrier: u8) -> Vec<
 #[test]
 #[ignore = "needs DECT_SIGID_WAV=<SigIDWiki Dect.zip dect.wav>"]
 fn separates_real_bases_moved_onto_two_carriers_of_a_wideband_capture() {
-    let path =
-        std::path::PathBuf::from(std::env::var_os("DECT_SIGID_WAV").expect("DECT_SIGID_WAV"));
+    let Some(path) = crate::reference_data::dect_sigid_wav() else {
+        return;
+    };
     let (iq, rate) = load_wav(&path);
     let band = DectBand::Eu;
     let low = relocate(&iq, rate, band, 1);

@@ -22,7 +22,9 @@ jobs:
     name: Static gate (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/node
       - uses: ./.github/actions/rust
         with:
@@ -34,7 +36,7 @@ jobs:
     name: DVB tables vs ETSI (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - run: rustup show
       - run: python3 crates/modem-test-support/scripts/dvbs2_spec_check.py --cache "$RUNNER_TEMP/etsi" --dvbs2 crates/channels/src/datv/dvbs2
@@ -45,7 +47,7 @@ jobs:
     name: Performance gates (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
         with:
           cache: performance
@@ -64,13 +66,14 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/node
       - uses: ./.github/actions/rust
         with:
           cache: ${{ matrix.label == 'ubuntu' && 'ubuntu' || 'macos' }}
           save: ${{ env.SAVE_CACHE }}
-      - uses: taiki-e/install-action@v2
+          tauri: true
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-nextest
       - run: cargo xtask test
@@ -79,7 +82,7 @@ jobs:
     name: GPU parity (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
       - uses: ./.github/actions/rust
         with:
@@ -102,12 +105,12 @@ jobs:
     name: x86 SIMD kernels under SDE (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
         with:
           cache: simd
           save: ${{ env.SAVE_CACHE }}
-      - uses: petarpetrovt/setup-sde@v6.0
+      - uses: petarpetrovt/setup-sde@6d2773bc0ef3005fd52e0ae0bb91782321793aec # v6.0
       - run: "cargo test -p sdrmm-dsp --release --lib -- fir:: realiq resamp"
         env:
           SDRMM_REQUIRE_AVX512: "1"
@@ -117,7 +120,7 @@ jobs:
     name: Array realtime (ubuntu arm64)
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
         with:
           cache: array-realtime
@@ -130,11 +133,13 @@ jobs:
     name: Mobile core (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: android-actions/setup-android@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: ndk
+        run: echo "version=$(sed -n 's/^sdrmm.ndkVersion=//p' apps/android/gradle.properties)" >> "$GITHUB_OUTPUT"
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
-          packages: ndk;30.0.16248370
-      - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          packages: ndk;${{ steps.ndk.outputs.version }}
+      - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ steps.ndk.outputs.version }}" >> "$GITHUB_ENV"
       - uses: ./.github/actions/rust
         with:
           cache: mobile
@@ -146,7 +151,7 @@ jobs:
     name: iPhone app (macos)
     runs-on: xcode-27
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select -s /Applications/Xcode_27.app
       - uses: ./.github/actions/rust
         with:
@@ -156,7 +161,7 @@ jobs:
       - run: cargo xtask ios lint
       - run: cargo xtask ios test
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-results
           path: target/ios/results
@@ -166,27 +171,29 @@ jobs:
     name: Android app (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "21"
-      - uses: android-actions/setup-android@v4
+      - id: ndk
+        run: echo "version=$(sed -n 's/^sdrmm.ndkVersion=//p' apps/android/gradle.properties)" >> "$GITHUB_OUTPUT"
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
-          packages: platforms;android-37.0 build-tools;37.0.0 ndk;30.0.16248370
-      - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          packages: platforms;android-37.0 build-tools;37.0.0 ndk;${{ steps.ndk.outputs.version }}
+      - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ steps.ndk.outputs.version }}" >> "$GITHUB_ENV"
       - uses: ./.github/actions/rust
         with:
           cache: android
           save: ${{ env.SAVE_CACHE }}
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
       - run: ./gradlew -p build-logic test
         working-directory: apps/android
       - run: ./gradlew spotlessCheck checkSourceRules lintDebug testDebugUnitTest assembleDebug
         working-directory: apps/android
       - run: '"$ANDROID_HOME/build-tools/37.0.0/zipalign" -c -P 16 -v 4 apps/android/app/build/outputs/apk/debug/app-debug.apk'
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-reports
           path: apps/android/app/build/reports
@@ -196,7 +203,7 @@ jobs:
     name: Browser smoke (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/node
       - uses: ./.github/actions/rust
         with:
@@ -205,7 +212,7 @@ jobs:
       - run: pnpm --dir web exec playwright install --with-deps chromium
       - run: cargo xtask smoke
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: smoke-trace
           path: web/test-results
@@ -227,7 +234,7 @@ jobs:
             runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
         with:
           cache: desktop-${{ matrix.label }}
@@ -239,12 +246,12 @@ jobs:
     name: Advisories (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
         with:
           cache: ubuntu
           save: false
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-deny
       - run: cargo xtask audit
@@ -261,9 +268,9 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           platforms: linux/${{ matrix.arch }}
           load: true
@@ -306,10 +313,10 @@ jobs:
             system: aarch64-linux
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # 31.11.3
       - run: sudo apt-get update && sudo apt-get install --yes xvfb
       - name: Flake check
         run: nix flake check --print-build-logs

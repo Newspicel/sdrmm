@@ -155,6 +155,7 @@ fn radar_frame(stream_id: u16) -> Vec<u8> {
     }
     .frame()
     .encode()
+    .expect("frame")
 }
 
 fn grid_frame(stream_id: u16) -> Vec<u8> {
@@ -175,6 +176,7 @@ fn grid_frame(stream_id: u16) -> Vec<u8> {
     }
     .frame()
     .encode()
+    .expect("frame")
 }
 
 #[test]

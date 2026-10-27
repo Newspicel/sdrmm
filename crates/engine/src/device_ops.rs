@@ -286,7 +286,7 @@ impl Engine {
                     dirty = true;
                 }
             }
-            if let Some(history) = &mut s.time_machine {
+            if let Some(history) = &mut s.pre_roll {
                 let held = history.handle.shared().held();
                 if held != history.held_seen {
                     history.held_seen = held;
@@ -699,7 +699,7 @@ impl Engine {
                     baseband_recordings: HashMap::new(),
                     channel_exports: HashMap::new(),
                     network_export: None,
-                    time_machine: None,
+                    pre_roll: None,
                     scanners: HashMap::new(),
                     hunts: HashMap::new(),
                     rate_patches: 0,
@@ -1011,7 +1011,7 @@ impl Engine {
                 Some(("exporting", "stop the export first"))
             } else if state.recording.is_some() {
                 Some(("recording", "stop the recording first"))
-            } else if state.time_machine.is_some() {
+            } else if state.pre_roll.is_some() {
                 Some(("holding history", "disarm the time machine first"))
             } else {
                 None
@@ -1058,7 +1058,7 @@ impl Engine {
             {
                 export.center_hz = center_hz;
             }
-            let history_center = state.time_machine.as_ref().map(|history| {
+            let history_center = state.pre_roll.as_ref().map(|history| {
                 state
                     .settings
                     .for_stream(history.stream, &state.capabilities.per_stream)
@@ -1066,8 +1066,7 @@ impl Engine {
                     .unwrap_or(DEFAULT_CENTER_HZ)
                     .round() as i64
             });
-            if let (Some(history), Some(center_hz)) = (state.time_machine.as_mut(), history_center)
-            {
+            if let (Some(history), Some(center_hz)) = (state.pre_roll.as_mut(), history_center) {
                 history.center_hz = center_hz;
             }
             let rate = sample_rate_of(&state.settings);
@@ -1215,7 +1214,7 @@ impl DeviceSetState {
             .map(|channel| channel.stream)
             .chain(self.recording.as_ref().map(|recording| recording.stream))
             .chain(self.network_export.as_ref().map(|export| export.stream))
-            .chain(self.time_machine.as_ref().map(|history| history.stream))
+            .chain(self.pre_roll.as_ref().map(|history| history.stream))
             .filter(|stream| *stream >= lanes)
             .min();
         match busy {
@@ -1238,7 +1237,7 @@ impl DeviceSetState {
                 "sample rate is locked while recording; stop the recording first".to_string(),
             ));
         }
-        if self.time_machine.is_some() {
+        if self.pre_roll.is_some() {
             return Err(EngineError::Recording(
                 "sample rate is locked while the time machine holds history; disarm it first"
                     .to_string(),

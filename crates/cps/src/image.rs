@@ -140,7 +140,9 @@ impl Image {
         while cursor < bytes.len() {
             let header = bytes.get(cursor..cursor + 8)?;
             let addr = u32::from_le_bytes(header[..4].try_into().ok()?);
-            let len = u32::from_le_bytes(header[4..].try_into().ok()?) as usize;
+            let len = u32::from_le_bytes(header[4..].try_into().ok()?);
+            addr.checked_add(len)?;
+            let len = len as usize;
             cursor += 8;
             let data = bytes.get(cursor..cursor + len)?;
             image.segments.insert(addr, data.to_vec());
@@ -173,7 +175,9 @@ pub fn changed_blocks(before: &Image, after: &Image, block: u32) -> Vec<(u32, Ve
             let Some(slice) = data.get(offset as usize..offset as usize + take) else {
                 break;
             };
-            let at = addr + offset;
+            let Some(at) = addr.checked_add(offset) else {
+                break;
+            };
             if before.get(at, take) != Some(slice) {
                 blocks.push((at, slice.to_vec()));
             }
@@ -217,6 +221,26 @@ mod tests {
         image.allocate(0, 16, 0);
         assert!(image.get(8, 16).is_none());
         assert!(image.get_mut(8, 8).is_some());
+    }
+
+    #[test]
+    fn a_stored_segment_running_past_the_address_space_is_refused() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0xffff_fff0u32.to_le_bytes());
+        bytes.extend_from_slice(&32u32.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 32]);
+        assert!(Image::from_bytes(&bytes).is_none());
+    }
+
+    #[test]
+    fn a_segment_overrunning_the_address_space_blocks_without_wrapping() {
+        let mut before = Image::new();
+        before.allocate(0xffff_ff00, 0x200, 0);
+        let mut after = before.clone();
+        after.put(0xffff_ff00, &[1, 2, 3, 4]);
+        let blocks = changed_blocks(&before, &after, 0x40);
+        assert_eq!(blocks.first().map(|(at, _)| *at), Some(0xffff_ff00));
+        assert!(blocks.iter().all(|(at, _)| *at >= 0xffff_ff00));
     }
 
     #[test]

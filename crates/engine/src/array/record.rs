@@ -54,7 +54,7 @@ pub(crate) struct RecordTap {
 
 impl RecordTap {
     pub(crate) fn push(&mut self, raw: &[&[Complex<f32>]], index: u64, notes: &[RecordNote]) {
-        let count = raw.first().map_or(0, |lane| lane.len());
+        let count = raw.iter().map(|lane| lane.len()).min().unwrap_or(0);
         if count == 0 {
             return;
         }
@@ -71,19 +71,22 @@ impl RecordTap {
         }
         self.next = Some(index + count as u64);
         let room = self.lanes.iter().map(Producer::slots).min().unwrap_or(0);
-        if room < count || raw.len() != self.lanes.len() {
-            self.shared
-                .dropped
-                .fetch_add(count as u64, Ordering::Relaxed);
-            self.note(RecordNote::Gap {
-                at: index,
-                missing: count as u64,
-            });
-            return;
+        if room < count || raw.len() != self.lanes.len() || !self.push_all(raw, count) {
+            self.missed(index, count as u64);
         }
+    }
+
+    fn push_all(&mut self, raw: &[&[Complex<f32>]], count: usize) -> bool {
+        let mut taken = 0;
         for (lane, samples) in self.lanes.iter_mut().zip(raw) {
-            let _ = lane.push_entire_slice(samples);
+            taken += usize::from(lane.push_entire_slice(&samples[..count]).is_ok());
         }
+        taken == self.lanes.len()
+    }
+
+    fn missed(&mut self, at: u64, missing: u64) {
+        self.shared.dropped.fetch_add(missing, Ordering::Relaxed);
+        self.note(RecordNote::Gap { at, missing });
     }
 
     pub(crate) fn next(&self) -> Option<u64> {

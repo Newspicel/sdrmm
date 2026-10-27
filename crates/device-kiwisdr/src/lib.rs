@@ -5,7 +5,7 @@ use sdrmm_device::{
     net::{Adopted, WebSocket},
     single_rx_sink,
 };
-use sdrmm_wire::{Capabilities, DeviceInfo as WireDeviceInfo, DeviceSettings};
+use sdrmm_wire::{Capabilities, DeviceBackend, DeviceInfo as WireDeviceInfo, DeviceSettings};
 
 use crate::{
     address::Address,
@@ -17,11 +17,13 @@ use crate::{
 
 mod address;
 mod caps;
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
 mod proto;
 mod session;
 mod stream;
 
-const DRIVER_ID: &str = "kiwisdr";
+const DRIVER_ID: DeviceBackend = DeviceBackend::Kiwisdr;
 
 #[derive(Debug, Default)]
 pub struct KiwiSdrDriver {
@@ -37,7 +39,7 @@ impl KiwiSdrDriver {
 
 fn device_info(address: &Address) -> WireDeviceInfo {
     WireDeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: address.to_string(),
         label: format!("KiwiSDR {}", address.endpoint),
         serial: None,
@@ -46,7 +48,7 @@ fn device_info(address: &Address) -> WireDeviceInfo {
 }
 
 impl DeviceDriver for KiwiSdrDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 
@@ -115,15 +117,26 @@ impl KiwiSdrRadio {
     }
 }
 
+fn armed<S, T>(
+    spare: Option<S>,
+    login: impl FnOnce() -> Result<S, DeviceError>,
+    start: impl Fn(S) -> Result<T, DeviceError>,
+) -> Result<T, DeviceError> {
+    match spare {
+        Some(held) => start(held),
+        None => start(login()?),
+    }
+}
+
 impl CaptureRadio for KiwiSdrRadio {
     type Stream = KiwiStream;
 
     fn arm(&self) -> Result<KiwiStream, DeviceError> {
-        let spare = lock(&self.spare).take();
-        if let Some(stream) = spare.and_then(|socket| self.start(socket).ok()) {
-            return Ok(stream);
-        }
-        self.start(self.login()?)
+        armed(
+            lock(&self.spare).take(),
+            || self.login(),
+            |socket| self.start(socket),
+        )
     }
 
     fn disarm(&self) {
@@ -190,7 +203,7 @@ impl SdrDevice for KiwiSdrDevice {
             self.radio.clone(),
             IqConverter::default(),
             single_rx_sink(sinks)?,
-            CaptureConfig::new("sdrmm-kiwisdr-rx", DRIVER_ID)
+            CaptureConfig::new("sdrmm-kiwisdr-rx", DRIVER_ID.as_str())
                 .with_sample_rate(Some(self.radio.station.sample_rate)),
         )
     }
@@ -202,7 +215,31 @@ impl SdrDevice for KiwiSdrDevice {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
+
+    #[test]
+    fn a_held_socket_that_will_not_arm_says_why_instead_of_logging_in_again() {
+        let logins = Cell::new(0);
+        let login = || {
+            logins.set(logins.get() + 1);
+            Ok("fresh")
+        };
+        let start = |socket: &'static str| match socket {
+            "held" => Err(DeviceError::Io("the KiwiSDR closed the socket".to_owned())),
+            other => Ok(other),
+        };
+        let refused = armed(Some("held"), login, start);
+        assert!(matches!(refused, Err(DeviceError::Io(_))));
+        assert_eq!(
+            logins.get(),
+            0,
+            "one channel per address means never logging in twice over"
+        );
+        assert_eq!(armed(None, login, start).expect("armed"), "fresh");
+        assert_eq!(logins.get(), 1);
+    }
 
     #[test]
     fn an_endpoint_without_a_port_gets_the_kiwi_port() {

@@ -4,23 +4,18 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_recorder::SigmfReader;
-use sdrmm_wire::{TimeMachineAction, TimeMachineNode};
-
 use crate::Engine;
+use sdrmm_recorder::SigmfReader;
 
 const NODE: &str = "capture-health-history";
 
-fn settings() -> TimeMachineNode {
-    TimeMachineNode {
-        history_seconds: super::number("SDRMM_CAPTURE_HISTORY_SECONDS", 1),
-        armed: true,
-    }
+fn pre_roll_s() -> u32 {
+    super::number("SDRMM_CAPTURE_HISTORY_SECONDS", 1)
 }
 
 pub(super) fn check(engine: &Engine, elapsed: Duration) {
     for set in &engine.snapshot().device_sets {
-        let history = set.time_machine.as_ref().expect("armed history");
+        let history = set.pre_roll.as_ref().expect("armed history");
         assert!(
             history.error.is_none(),
             "history {} failed after {elapsed:?}: {:?}",
@@ -31,17 +26,16 @@ pub(super) fn check(engine: &Engine, elapsed: Duration) {
 }
 
 pub(super) fn start(engine: &Engine, sets: &[(u32, Vec<u32>)]) {
-    let settings = settings();
     for (ds, _) in sets {
         engine
-            .arm_time_machine(*ds, NODE.to_owned(), 0, settings)
+            .arm_pre_roll(*ds, NODE.to_owned(), 0, pre_roll_s())
             .expect("arm history");
     }
-    let deadline = Instant::now() + Duration::from_secs(10 + u64::from(settings.history_seconds));
+    let deadline = Instant::now() + Duration::from_secs(10 + u64::from(pre_roll_s()));
     loop {
         let snapshot = engine.snapshot();
         let ready = snapshot.device_sets.iter().all(|set| {
-            let history = set.time_machine.as_ref().expect("armed history");
+            let history = set.pre_roll.as_ref().expect("armed history");
             assert!(
                 history.error.is_none(),
                 "history failed: {:?}",
@@ -57,7 +51,7 @@ pub(super) fn start(engine: &Engine, sets: &[(u32, Vec<u32>)]) {
     }
     for (ds, _) in sets {
         engine
-            .control_time_machine(*ds, NODE, TimeMachineAction::Capture)
+            .start_pre_roll_capture(*ds, NODE)
             .expect("capture history");
     }
 }
@@ -69,10 +63,9 @@ pub(super) fn finish(
     seconds: u64,
     allow_drops: bool,
 ) {
-    let settings = settings();
     for (ds, _) in sets {
         let status = engine
-            .control_time_machine(*ds, NODE, TimeMachineAction::Stop)
+            .stop_pre_roll_capture(*ds, NODE)
             .expect("finish history capture");
         let capture = status.capture.expect("history recording");
         eprintln!(
@@ -91,13 +84,10 @@ pub(super) fn finish(
             assert_eq!(capture.overruns, 0);
             assert!(
                 capture.samples
-                    >= (seconds + u64::from(settings.history_seconds)).saturating_sub(1)
-                        * status.sample_rate,
+                    >= (seconds + u64::from(pre_roll_s())).saturating_sub(1) * status.sample_rate,
                 "history recording is too short"
             );
         }
-        engine
-            .disarm_time_machine(*ds, NODE)
-            .expect("disarm history");
+        engine.drop_pre_roll(*ds, NODE).expect("disarm history");
     }
 }

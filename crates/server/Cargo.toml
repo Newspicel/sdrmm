@@ -6,6 +6,7 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+publish = false
 
 [lints]
 workspace = true
@@ -13,9 +14,9 @@ workspace = true
 # Passthrough to the engine's deliberate minimal-build gates.
 [features]
 default = ["soapy", "sdrplay", "cr8", "rtlsdr", "hackrf", "airspy", "airspyhf", "funcube", "espsdr", "ad936x", "net-client", "gpu-fft"]
-soapy = ["sdrmm-engine/soapy", "dep:sdrmm-device-soapy"]
-sdrplay = ["sdrmm-engine/sdrplay", "dep:sdrmm-device-sdrplay"]
-cr8 = ["sdrmm-engine/cr8", "dep:sdrmm-device-cr8"]
+soapy = ["sdrmm-engine/soapy"]
+sdrplay = ["sdrmm-engine/sdrplay"]
+cr8 = ["sdrmm-engine/cr8"]
 rtlsdr = ["sdrmm-engine/rtlsdr"]
 hackrf = ["sdrmm-engine/hackrf"]
 airspy = ["sdrmm-engine/airspy"]
@@ -37,11 +38,9 @@ num-complex.workspace = true
 sdrmm-orbit.workspace = true
 sdrmm-channels.workspace = true
 sdrmm-device.workspace = true
-sdrmm-device-soapy = { workspace = true, optional = true }
-sdrmm-device-sdrplay = { workspace = true, optional = true }
-sdrmm-device-cr8 = { workspace = true, optional = true }
 sdrmm-cps.workspace = true
 sdrmm-recorder.workspace = true
+sdrmm-serial.workspace = true
 sdrmm-tools.workspace = true
 
 # `macros` for the FromRequest/FromRequestParts derives that remap extractor rejections
@@ -59,7 +58,6 @@ tokio-postgres-rustls.workspace = true
 rustls-platform-verifier.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
 tokio-serial.workspace = true
-serialport.workspace = true
 
 rmcp.workspace = true
 schemars.workspace = true
@@ -99,7 +97,6 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "ti
 # Hermetic test engine: tests must never enumerate live Soapy modules.
 sdrmm-device-virtual.workspace = true
 sdrmm-device-recording.workspace = true
-sdrmm-device-siggen.workspace = true
 sdrmm-channels = { workspace = true, features = ["synth"] }
 sdrmm-dsp = { workspace = true, features = ["test-scene"] }
 tokio-tungstenite.workspace = true

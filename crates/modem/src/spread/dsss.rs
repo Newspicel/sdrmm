@@ -187,7 +187,8 @@ impl DsssDemod {
 
         self.scratch.clear();
         for symbol in 0..preamble.len() {
-            self.scratch.push(self.despread(origin, symbol));
+            let point = self.despread(origin, symbol)?;
+            self.scratch.push(point);
         }
         let anchor = PhaseAnchor::fit_gain_only(&self.scratch, preamble).ok()?;
         anchor.correct_block(0, &mut self.scratch);
@@ -214,7 +215,9 @@ impl DsssDemod {
         let Some((table, bw)) = &self.tracking else {
             for k in 0..symbols {
                 let index = preamble_symbols + k;
-                let raw = self.despread(acquisition.origin, index);
+                let Some(raw) = self.despread(acquisition.origin, index) else {
+                    return;
+                };
                 out.push(acquisition.anchor.correct(index, raw));
             }
             return;
@@ -246,22 +249,19 @@ impl DsssDemod {
     }
 
     #[must_use]
-    pub fn despread(&self, origin: usize, symbol: usize) -> Complex<f32> {
+    pub fn despread(&self, origin: usize, symbol: usize) -> Option<Complex<f32>> {
         let n = self.params.chips_per_symbol();
         let sps = self.params.shaper.sps();
         let chips = self.params.pn.chips();
         let mut re = 0.0f64;
         let mut im = 0.0f64;
         for (c, &code) in chips.iter().enumerate() {
-            let at = origin + (symbol * n + c) * sps;
-            let Some(&y) = self.filtered.get(at) else {
-                continue;
-            };
+            let &y = self.filtered.get(origin + (symbol * n + c) * sps)?;
             re += f64::from(code) * f64::from(y.re);
             im += f64::from(code) * f64::from(y.im);
         }
         let scale = (n as f64).sqrt().recip();
-        Complex::new((re * scale) as f32, (im * scale) as f32)
+        Some(Complex::new((re * scale) as f32, (im * scale) as f32))
     }
 
     pub fn llrs(&self, points: &[Complex<f32>], table: &Constellation, out: &mut [Llr]) {
@@ -482,6 +482,22 @@ mod tests {
     }
 
     #[test]
+    fn a_symbol_past_the_filtered_tail_is_not_despread() {
+        let table = tables::qam_square(4).unwrap();
+        let p = params(PnSequence::barker(11).unwrap());
+        let preamble = points(&table, PREAMBLE, 0x0b0c);
+        let payload = points(&table, 64, 0x0b0d);
+        let wave = transmit(&p, &preamble, &payload);
+        let mut demod = DsssDemod::new(p);
+        demod.genie(&wave, identity(LEAD, &payload));
+        assert!(demod.despread(LEAD, 0).is_some());
+        assert_eq!(demod.despread(LEAD, 100_000), None);
+        let mut got = Vec::new();
+        demod.demodulate(PREAMBLE, 100_000, &mut got);
+        assert!(got.len() < 100_000, "a short capture decided every symbol");
+    }
+
+    #[test]
     fn the_anchor_removes_a_rotation() {
         let table = tables::qam_square(4).unwrap();
         let p = params(PnSequence::barker(11).unwrap());
@@ -525,7 +541,7 @@ mod tests {
         demod.acquire(&wave, &preamble, LEAD + 64).unwrap();
 
         let despread: Vec<Complex<f32>> = (0..preamble.len())
-            .map(|k| demod.despread(LEAD, k))
+            .map(|k| demod.despread(LEAD, k).unwrap())
             .collect();
         let indices: Vec<usize> = (0..preamble.len()).collect();
         let sloped = PhaseAnchor::fit(&indices, &despread, &preamble).unwrap();
@@ -534,7 +550,8 @@ mod tests {
             (0..payload.len())
                 .filter(|&k| {
                     let index = PREAMBLE + k;
-                    let corrected = anchor.correct(index, demod.despread(LEAD, index));
+                    let raw = demod.despread(LEAD, index).unwrap();
+                    let corrected = anchor.correct(index, raw);
                     table.hard_slice(corrected) != table.hard_slice(payload[k])
                 })
                 .count()

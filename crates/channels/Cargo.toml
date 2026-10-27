@@ -6,6 +6,7 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+publish = false
 
 [lints]
 workspace = true
@@ -13,6 +14,7 @@ workspace = true
 [features]
 synth = []
 fixtures = ["synth"]
+fuzzing = []
 probe = ["sdrmm-wire/probe"]
 
 [dependencies]

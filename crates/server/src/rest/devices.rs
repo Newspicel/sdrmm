@@ -18,18 +18,36 @@ pub(super) async fn get_devices(
     let engine = state.engine.clone();
     let devices = tokio::task::spawn_blocking(move || engine.probe_devices()).await?;
     let claims = sdrmm_wire::device_claims(&state.resolved.current().graph, &devices);
-    Ok(Json(DevicesResponse { devices, claims }))
+    Ok(Json(DevicesResponse {
+        devices,
+        claims,
+        synthetic: sdrmm_engine::synthetic_devices_offered(),
+    }))
 }
 
 #[utoipa::path(
     get, path = "/api/position/nmea-devices",
     responses(
-        (status = 200, description = "Serial devices available to NMEA GPS nodes", body = NmeaDevicesResponse),
+        (status = 200, description = "Serial devices available to NMEA GPS nodes", body = SerialDevicesResponse),
         (status = 500, description = "Serial device discovery failed", body = ApiError),
     ),
 )]
-pub(super) async fn get_nmea_devices() -> Result<Json<NmeaDevicesResponse>, AppError> {
+pub(super) async fn get_nmea_devices() -> Result<Json<SerialDevicesResponse>, AppError> {
     let devices = tokio::task::spawn_blocking(crate::gps::nmea_devices)
+        .await?
+        .map_err(AppError::internal)?;
+    Ok(Json(devices))
+}
+
+#[utoipa::path(
+    get, path = "/api/serial/ports",
+    responses(
+        (status = 200, description = "Every serial port a node can open", body = SerialDevicesResponse),
+        (status = 500, description = "Serial device discovery failed", body = ApiError),
+    ),
+)]
+pub(super) async fn get_serial_ports() -> Result<Json<SerialDevicesResponse>, AppError> {
+    let devices = tokio::task::spawn_blocking(crate::gps::serial_ports)
         .await?
         .map_err(AppError::internal)?;
     Ok(Json(devices))

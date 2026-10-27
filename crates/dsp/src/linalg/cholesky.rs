@@ -10,6 +10,7 @@ const PIVOT_TOL: f32 = 16.0 * f32::EPSILON;
 pub struct Cholesky {
     capacity: usize,
     order: usize,
+    factored: bool,
     l: Vec<Complex<f32>>,
 }
 
@@ -21,6 +22,7 @@ impl Cholesky {
         Ok(Self {
             capacity: order,
             order,
+            factored: false,
             l: vec![Complex::new(0.0, 0.0); order * order],
         })
     }
@@ -68,25 +70,39 @@ impl Cholesky {
         Err(last)
     }
 
-    pub fn solve(&self, b: &mut [Complex<f32>]) {
+    pub fn solve(&self, b: &mut [Complex<f32>]) -> Result<(), LinalgError> {
+        if !self.factored {
+            return Err(LinalgError::NotFactored);
+        }
         let b = &mut b[..self.order];
         self.forward(b);
         self.backward(b);
+        Ok(())
     }
 
-    pub fn solve_into(&self, b: &[Complex<f32>], out: &mut [Complex<f32>]) {
+    pub fn solve_into(
+        &self,
+        b: &[Complex<f32>],
+        out: &mut [Complex<f32>],
+    ) -> Result<(), LinalgError> {
         let n = self.order;
         out[..n].copy_from_slice(&b[..n]);
-        self.solve(out);
+        self.solve(out)
     }
 
-    #[must_use]
-    pub fn quad_inverse(&self, a: &[Complex<f32>], scratch: &mut [Complex<f32>]) -> f32 {
+    pub fn quad_inverse(
+        &self,
+        a: &[Complex<f32>],
+        scratch: &mut [Complex<f32>],
+    ) -> Result<f32, LinalgError> {
+        if !self.factored {
+            return Err(LinalgError::NotFactored);
+        }
         let n = self.order;
         let y = &mut scratch[..n];
         y.copy_from_slice(&a[..n]);
         self.forward(y);
-        y.iter().map(|value| value.norm_sqr()).sum()
+        Ok(y.iter().map(|value| value.norm_sqr()).sum())
     }
 
     pub fn inverse_into(
@@ -103,7 +119,7 @@ impl Cholesky {
         for col in 0..n {
             column.fill(Complex::new(0.0, 0.0));
             column[col] = Complex::new(1.0, 0.0);
-            self.solve(column);
+            self.solve(column)?;
             for (row, &value) in column.iter().enumerate() {
                 out.set(row, col, value);
             }
@@ -163,6 +179,7 @@ impl Cholesky {
         if n == 0 || n > self.capacity {
             return Err(LinalgError::Order(n));
         }
+        self.factored = false;
         self.order = n;
         let l = &mut self.l[..n * n];
         l.fill(Complex::new(0.0, 0.0));
@@ -191,6 +208,7 @@ impl Cholesky {
                 }
             }
         }
+        self.factored = true;
         Ok(())
     }
 }
@@ -230,7 +248,7 @@ mod tests {
         let mut b = mat_vec(&matrix, &want);
         let mut chol = Cholesky::new(3).unwrap();
         chol.factor(matrix.as_slice()).unwrap();
-        chol.solve(&mut b);
+        chol.solve(&mut b).unwrap();
         for (index, (got, expected)) in b.iter().zip(&want).enumerate() {
             assert!(
                 (got - expected).norm() < 1e-4,
@@ -238,7 +256,7 @@ mod tests {
             );
         }
         let mut out = [Complex::new(0.0f32, 0.0); 3];
-        chol.solve_into(&mat_vec(&matrix, &want), &mut out);
+        chol.solve_into(&mat_vec(&matrix, &want), &mut out).unwrap();
         assert!(
             out.iter()
                 .zip(&want)
@@ -282,8 +300,32 @@ mod tests {
         assert_eq!(chol.order(), 4);
         let want = [Complex::new(0.5f32, -1.0); 4];
         let mut b = mat_vec(&matrix, &want);
-        chol.solve(&mut b);
+        chol.solve(&mut b).unwrap();
         assert!(b.iter().all(|got| (got - want[0]).norm() < 1e-4));
+    }
+
+    #[test]
+    fn solving_without_a_factorization_is_refused() {
+        let mut chol = Cholesky::new(2).unwrap();
+        let mut b = [Complex::new(1.0f32, 0.0); 2];
+        let mut out = [Complex::new(0.0f32, 0.0); 2];
+        let mut scratch = [Complex::new(0.0f32, 0.0); 2];
+        assert_eq!(chol.solve(&mut b), Err(LinalgError::NotFactored));
+        assert_eq!(chol.solve_into(&b, &mut out), Err(LinalgError::NotFactored));
+        assert_eq!(
+            chol.quad_inverse(&b, &mut scratch),
+            Err(LinalgError::NotFactored)
+        );
+        let mut inverse = CMat::zeros(1).unwrap();
+        assert_eq!(
+            chol.inverse_into(&mut inverse, &mut scratch),
+            Err(LinalgError::NotFactored)
+        );
+        let indefinite = hermitian(2, &[(0, 0, 1.0, 0.0), (0, 1, 4.0, 0.0), (1, 1, 1.0, 0.0)]);
+        assert!(chol.factor_cmat(&indefinite).is_err());
+        assert_eq!(chol.solve(&mut b), Err(LinalgError::NotFactored));
+        chol.factor_cmat(&CMat::identity(2).unwrap()).unwrap();
+        assert_eq!(chol.solve(&mut b), Ok(()));
     }
 
     #[test]
@@ -359,7 +401,7 @@ mod tests {
         let mut rng = XorShift32(23);
         let a = random_vector(&mut rng, 5);
         let mut scratch = [Complex::new(0.0f32, 0.0); 5];
-        let fast = chol.quad_inverse(&a, &mut scratch);
+        let fast = chol.quad_inverse(&a, &mut scratch).unwrap();
         let mut inverse = CMat::zeros(1).unwrap();
         chol.inverse_into(&mut inverse, &mut scratch).unwrap();
         let slow = inverse.quad(&a);

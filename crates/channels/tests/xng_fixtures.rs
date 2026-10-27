@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs};
+use sdrmm_channels::{ChannelCtx, ChannelOutputs, reference_data};
 use sdrmm_dsp::Ddc;
 use sdrmm_wire::{AisChannel, AisParams, ChannelParams, ChannelSettings, DecoderEvent};
 
@@ -22,13 +22,9 @@ struct Capture {
     center_hz: f64,
 }
 
-fn fixture_dir() -> Option<PathBuf> {
-    std::env::var_os("XNG_BENCH_DATA").map(PathBuf::from)
-}
-
-fn load(capture: &Capture) -> Option<Vec<Complex<f32>>> {
-    let bytes = std::fs::read(fixture_dir()?.join(capture.file)).ok()?;
-    Some(match capture.format {
+fn load(dir: &Path, capture: &Capture) -> Vec<Complex<f32>> {
+    let bytes = reference_data::bytes(dir, capture.file);
+    match capture.format {
         Format::Cu8 => bytes
             .as_chunks::<2>()
             .0
@@ -51,7 +47,7 @@ fn load(capture: &Capture) -> Option<Vec<Complex<f32>>> {
                 )
             })
             .collect(),
-    })
+    }
 }
 
 fn decode(iq: &[Complex<f32>], capture: &Capture, settings: &ChannelSettings) -> Vec<DecoderEvent> {
@@ -109,8 +105,11 @@ fn capture(file: &'static str, format: Format, rate: f64, center_hz: f64) -> Cap
 #[test]
 #[ignore = "needs xng bench fixtures: XNG_BENCH_DATA=dir cargo test -p sdrmm-channels --release --test xng_fixtures -- --ignored --nocapture"]
 fn adsb_beats_xng_on_modes1() {
+    let Some(dir) = reference_data::xng_bench_data() else {
+        return;
+    };
     let modes1 = capture("modes1.cu8", Format::Cu8, 2_000_000.0, 1_090_000_000.0);
-    let iq = load(&modes1).expect("modes1.cu8");
+    let iq = load(&dir, &modes1);
     let events = decode(&iq, &modes1, &tuned("adsb", 1_090_000_000.0));
     let unique = unique_adsb(&events);
     eprintln!("adsb_modes1: {} frames, {unique} unique", events.len());
@@ -120,13 +119,16 @@ fn adsb_beats_xng_on_modes1() {
 #[test]
 #[ignore = "needs xng bench fixtures"]
 fn adsb_stays_silent_on_quiet_air() {
+    let Some(dir) = reference_data::xng_bench_data() else {
+        return;
+    };
     let quiet = capture(
         "adsb_quiet_24m.cu8",
         Format::Cu8,
         2_400_000.0,
         1_090_000_000.0,
     );
-    let iq = load(&quiet).expect("adsb_quiet_24m.cu8");
+    let iq = load(&dir, &quiet);
     let count = decode(&iq, &quiet, &tuned("adsb", 1_090_000_000.0)).len();
     eprintln!("adsb_quiet: {count}");
     assert!(count <= 1);
@@ -135,8 +137,11 @@ fn adsb_stays_silent_on_quiet_air() {
 #[test]
 #[ignore = "needs xng bench fixtures"]
 fn ais_beats_xng_off_air() {
+    let Some(dir) = reference_data::xng_bench_data() else {
+        return;
+    };
     let ais = capture("ais_96k.cs16", Format::Cs16, 96_000.0, 162_000_000.0);
-    let iq = load(&ais).expect("ais_96k.cs16");
+    let iq = load(&dir, &ais);
     let count: usize = [
         (AisChannel::A, 161_975_000.0),
         (AisChannel::B, 162_025_000.0),
@@ -157,8 +162,11 @@ fn ais_beats_xng_off_air() {
 #[test]
 #[ignore = "needs xng bench fixtures"]
 fn navtex_matches_the_uscg_message() {
+    let Some(dir) = reference_data::xng_bench_data() else {
+        return;
+    };
     let navtex = capture("navtex_62500.cs16", Format::Cs16, 62_500.0, 516_000.0);
-    let iq = load(&navtex).expect("navtex_62500.cs16");
+    let iq = load(&dir, &navtex);
     let events = decode(&iq, &navtex, &tuned("navtex", 518_000.0));
     let [DecoderEvent::Navtex(m)] = &events[..] else {
         panic!("one message expected: {events:?}");
@@ -169,8 +177,11 @@ fn navtex_matches_the_uscg_message() {
 #[test]
 #[ignore = "needs xng bench fixtures"]
 fn acars_beats_xng_off_air() {
+    let Some(dir) = reference_data::xng_bench_data() else {
+        return;
+    };
     let acars = capture("acars_100k.cs16", Format::Cs16, 100_000.0, 131_550_000.0);
-    let iq = load(&acars).expect("acars_100k.cs16");
+    let iq = load(&dir, &acars);
     let count = decode(&iq, &acars, &tuned("acars", 131_550_000.0)).len();
     eprintln!("acars_offair: {count}");
     assert!(count > 15);

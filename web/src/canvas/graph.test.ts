@@ -506,3 +506,25 @@ describe("arrays", () => {
     expect(nodeMinSize("correlator", [])).toEqual({ w: 380, h: 340 });
   });
 });
+
+describe("sameGraph", () => {
+  const graph = {
+    nodes: [placedNode("scope1", { kind: "scope", data: {} })],
+    edges: [],
+  };
+
+  it("reads a reordered node body as the same graph", () => {
+    const reordered = {
+      edges: [],
+      nodes: [{ kind: "scope", data: {}, id: "scope1", position: { y: 0, x: 0 } }],
+    } as unknown as typeof graph;
+
+    expect(sameGraph(graph, reordered)).toBe(true);
+  });
+
+  it("still catches a moved node", () => {
+    const moved = { ...graph, nodes: [{ ...graph.nodes[0], position: { x: 9, y: 0 } }] };
+
+    expect(sameGraph(graph, moved as typeof graph)).toBe(false);
+  });
+});

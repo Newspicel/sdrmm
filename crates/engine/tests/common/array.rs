@@ -13,8 +13,9 @@ use sdrmm_device_virtual::{
 };
 use sdrmm_engine::{ArrayEvent, ArraySpec, Engine, LaneRef, ProcessorSpec};
 use sdrmm_wire::{
-    ArrayGeometry, ArrayNode, ArrayStatus, CalPhase, DeviceInfo, DeviceSettings, ProcessorParams,
-    ProcessorReading, ProcessorStatus, SyncState, Winding, processor::df::DfParams,
+    ArrayGeometry, ArrayNode, ArrayStatus, CalPhase, DeviceBackend, DeviceInfo, DeviceSettings,
+    ProcessorParams, ProcessorReading, ProcessorStatus, SyncState, Winding,
+    processor::df::DfParams,
 };
 use tokio::sync::broadcast::{self, error::TryRecvError};
 
@@ -50,7 +51,7 @@ impl Pluggable {
 }
 
 impl DeviceDriver for Pluggable {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         self.inner.id()
     }
 

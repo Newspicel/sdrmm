@@ -115,6 +115,7 @@ pub(crate) fn capabilities(tuner: Tuner, gains: &[i32]) -> Capabilities {
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
         clean_fraction: None,
+        bank: None,
     }
 }
 

@@ -3,8 +3,14 @@ use std::f64::consts::TAU;
 use num_complex::Complex;
 use sdrmm_dsp::pocsag_bch_encode;
 
-const WORDS: usize = 88;
-const SYNC_MARKER: u32 = 0xA6C6_AAAA;
+use crate::flex::{SYNC_CODES, SYNC_MARKER, codeword::WORDS};
+
+const CAPCODE_OFFSET: u32 = 0x8000;
+const WORD_BITS: usize = 21;
+const NUMERIC_HEADER_BITS: usize = 6;
+const NUMERIC_FILL: u32 = 12;
+const ALPHA_VECTOR: u32 = 5;
+const NUMERIC_VECTOR: u32 = 3;
 
 #[derive(Clone, Debug)]
 pub struct Page {
@@ -21,27 +27,25 @@ pub enum Mode {
 }
 
 impl Mode {
-    fn sync(self) -> u16 {
+    fn sync_code(self) -> usize {
         match self {
-            Self::Flex1600_2 => 0x870C,
-            Self::Flex1600_4 => 0xB068,
-            Self::Flex3200_2 => 0x7B18,
-            Self::Flex3200_4 => 0xDEA0,
+            Self::Flex1600_2 => 0,
+            Self::Flex1600_4 => 1,
+            Self::Flex3200_2 => 2,
+            Self::Flex3200_4 => 3,
         }
+    }
+
+    fn sync(self) -> u16 {
+        SYNC_CODES[self.sync_code()].0
     }
 
     fn symbol_rate(self) -> usize {
-        match self {
-            Self::Flex1600_2 | Self::Flex1600_4 => 1_600,
-            Self::Flex3200_2 | Self::Flex3200_4 => 3_200,
-        }
+        usize::from(SYNC_CODES[self.sync_code()].1.symbol_rate)
     }
 
     fn levels(self) -> usize {
-        match self {
-            Self::Flex1600_2 | Self::Flex3200_2 => 2,
-            Self::Flex1600_4 | Self::Flex3200_4 => 4,
-        }
+        usize::from(SYNC_CODES[self.sync_code()].1.levels)
     }
 }
 
@@ -93,10 +97,56 @@ fn frame_words(page: &Page) -> [u32; WORDS] {
     let message_start = 3;
     let message_len = text.len() + 1;
     words[0] = checksum(2 << 10);
-    words[1] = page.address + 0x8000;
-    words[2] = checksum((5 << 4) | (message_start as u32) << 7 | (message_len as u32) << 14);
+    words[1] = page.address + CAPCODE_OFFSET;
+    words[2] =
+        checksum((ALPHA_VECTOR << 4) | (message_start as u32) << 7 | (message_len as u32) << 14);
     words[message_start] = alpha_header(3 << 11 | 1 << 19, &text);
     for (slot, word) in words[message_start + 1..].iter_mut().zip(text) {
+        *slot = word;
+    }
+    words.map(encode_word)
+}
+
+fn numeric_code(digit: char) -> u32 {
+    match digit {
+        '0'..='9' => u32::from(digit) - u32::from('0'),
+        ' ' => 10,
+        'U' => 11,
+        '-' => 13,
+        ']' => 14,
+        '[' => 15,
+        _ => NUMERIC_FILL,
+    }
+}
+
+fn numeric_words(text: &str) -> Vec<u32> {
+    let mut bits = vec![false; NUMERIC_HEADER_BITS];
+    for code in text.chars().map(numeric_code) {
+        push_lsb(&mut bits, code, 4);
+    }
+    while !bits.len().is_multiple_of(WORD_BITS) {
+        push_lsb(&mut bits, NUMERIC_FILL, 4);
+    }
+    bits.chunks(WORD_BITS)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .enumerate()
+                .fold(0u32, |word, (bit, &set)| word | u32::from(set) << bit)
+        })
+        .collect()
+}
+
+fn numeric_frame_words(page: &Page) -> [u32; WORDS] {
+    let mut words = [0u32; WORDS];
+    let message = numeric_words(&page.text);
+    let message_start = 3;
+    let message_len = message.len() as u32;
+    words[0] = checksum(2 << 10);
+    words[1] = page.address + CAPCODE_OFFSET;
+    words[2] =
+        checksum((NUMERIC_VECTOR << 4) | (message_start as u32) << 7 | (message_len - 1) << 14);
+    for (slot, word) in words[message_start..].iter_mut().zip(message) {
         *slot = word;
     }
     words.map(encode_word)
@@ -142,8 +192,8 @@ fn phase_bits(words: &[u32; WORDS]) -> Vec<bool> {
     bits
 }
 
-fn data_symbols(page: &Page, mode: Mode) -> Vec<f64> {
-    let active = phase_bits(&frame_words(page));
+fn data_symbols(words: &[u32; WORDS], mode: Mode) -> Vec<f64> {
+    let active = phase_bits(words);
     let idle = phase_bits(&[encode_word(0); WORDS]);
     let phases = [&active, &idle, &idle, &idle];
     let mut frequencies = Vec::with_capacity(mode.symbol_rate() * 176 / 100);
@@ -198,14 +248,7 @@ fn append_symbols(
     }
 }
 
-#[must_use]
-pub fn transmission_mode(
-    page: &Page,
-    cycle: u8,
-    frame: u8,
-    rate: f64,
-    mode: Mode,
-) -> Vec<Complex<f32>> {
+fn air(words: &[u32; WORDS], cycle: u8, frame: u8, rate: f64, mode: Mode) -> Vec<Complex<f32>> {
     let header = sync_bits(mode)
         .into_iter()
         .map(|bit| -data_tone(bit))
@@ -214,7 +257,7 @@ pub fn transmission_mode(
     let sync2 = (0..mode.symbol_rate() / 40)
         .map(|index| if index % 2 == 0 { -4_800.0 } else { 4_800.0 })
         .collect::<Vec<_>>();
-    let data = data_symbols(page, mode);
+    let data = data_symbols(words, mode);
     let tail = (0..mode.symbol_rate() * 6 / 100)
         .map(|index| if index % 2 == 0 { -4_800.0 } else { 4_800.0 })
         .collect::<Vec<_>>();
@@ -235,8 +278,30 @@ pub fn transmission_mode(
 }
 
 #[must_use]
+pub fn transmission_mode(
+    page: &Page,
+    cycle: u8,
+    frame: u8,
+    rate: f64,
+    mode: Mode,
+) -> Vec<Complex<f32>> {
+    air(&frame_words(page), cycle, frame, rate, mode)
+}
+
+#[must_use]
 pub fn transmission(page: &Page, cycle: u8, frame: u8, rate: f64) -> Vec<Complex<f32>> {
     transmission_mode(page, cycle, frame, rate, Mode::Flex1600_2)
+}
+
+#[must_use]
+pub fn numeric_transmission(page: &Page, cycle: u8, frame: u8, rate: f64) -> Vec<Complex<f32>> {
+    air(
+        &numeric_frame_words(page),
+        cycle,
+        frame,
+        rate,
+        Mode::Flex1600_2,
+    )
 }
 
 #[cfg(test)]
@@ -256,9 +321,34 @@ mod tests {
             Mode::Flex3200_4,
         ] {
             assert_eq!(
-                data_symbols(&page, mode).len(),
+                data_symbols(&frame_words(&page), mode).len(),
                 mode.symbol_rate() * 176 / 100
             );
         }
+    }
+
+    #[test]
+    fn every_mode_takes_its_sync_word_from_the_decoder_table() {
+        for (mode, symbol_rate, levels) in [
+            (Mode::Flex1600_2, 1_600, 2),
+            (Mode::Flex1600_4, 1_600, 4),
+            (Mode::Flex3200_2, 3_200, 2),
+            (Mode::Flex3200_4, 3_200, 4),
+        ] {
+            let entry = SYNC_CODES[mode.sync_code()];
+            assert_eq!(entry.0, mode.sync());
+            assert_eq!(usize::from(entry.1.symbol_rate), symbol_rate);
+            assert_eq!(usize::from(entry.1.levels), levels);
+        }
+    }
+
+    #[test]
+    fn numeric_digits_pack_four_bits_after_the_header() {
+        let words = numeric_words("19");
+        assert_eq!(words.len(), 2);
+        assert_eq!(words[0] & 0x3F, 0);
+        assert_eq!(words[0] >> NUMERIC_HEADER_BITS & 0xF, 1);
+        assert_eq!(words[0] >> (NUMERIC_HEADER_BITS + 4) & 0xF, 9);
+        assert_eq!(words[0] >> (NUMERIC_HEADER_BITS + 8) & 0xF, NUMERIC_FILL);
     }
 }

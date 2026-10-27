@@ -102,3 +102,10 @@ pub(super) fn fahrenheit(f: f32) -> f32 {
 }
 
 pub(super) const DEVICES: &[Device] = devices::ALL;
+
+#[cfg(test)]
+pub(super) fn tenths_c(message: &IsmMessage) -> Option<f32> {
+    message
+        .temperature_c
+        .map(|value| (value * 10.0).round() / 10.0)
+}

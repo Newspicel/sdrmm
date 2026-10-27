@@ -110,7 +110,11 @@ impl PortType {
             Self::Bearing => Some("A live bearing that steers an array"),
             Self::Audio => Some("Live audio"),
             Self::Events => Some("Decoded events. Calls and transmissions bring their clip"),
-            Self::Baseband | Self::Video | Self::Control | Self::Position | Self::Array => None,
+            Self::Baseband => Some("One channel, filtered and decimated"),
+            Self::Video => Some("Decoded video frames and pictures"),
+            Self::Control => Some("Commands that retune a decoder or point a rotator"),
+            Self::Position => Some("A live fix and the heading it comes with"),
+            Self::Array => Some("One lane per antenna element"),
         }
     }
 
@@ -311,6 +315,17 @@ pub enum PortRepeat {
     Once,
     PerRxStream,
     PerLane,
+}
+
+impl PortRepeat {
+    #[must_use]
+    pub const fn limit(self) -> u32 {
+        match self {
+            Self::Once => 1,
+            Self::PerRxStream => super::MAX_STREAMS,
+            Self::PerLane => crate::array::MAX_ARRAY_LANES,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

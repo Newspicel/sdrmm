@@ -96,6 +96,7 @@ impl FilePlayback {
             retune_keeps_phase: false,
             rx_inputs: Vec::new(),
             clean_fraction: None,
+            bank: None,
         };
         let settings = DeviceSettings {
             center_hz: Some(center_hz),

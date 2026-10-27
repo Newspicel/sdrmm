@@ -48,24 +48,35 @@ pub enum RealDetector {
     ToneFilterbank { plus_hz: f64, minus_hz: f64 },
 }
 
-enum FrontEnd {
+pub struct IqFront(IqKind);
+
+enum IqKind {
     Quadrature(FmDemod),
-    Analytic {
-        mixer: Nco,
-        image: Decimator,
-        demod: FmDemod,
-        mixed: Vec<Complex<f32>>,
-        baseband: Vec<Complex<f32>>,
-    },
+    Tones(Box<ToneFront>),
+}
+
+struct ToneFront {
+    plus: ToneCorrelator<Complex<f32>>,
+    minus: ToneCorrelator<Complex<f32>>,
+    tracker: OffsetTracker,
+}
+
+pub struct RealFront(RealKind);
+
+enum RealKind {
+    Analytic(Box<Analytic>),
     Filterbank {
         plus: ToneCorrelator,
         minus: ToneCorrelator,
     },
-    Tones {
-        plus: ToneCorrelator<Complex<f32>>,
-        minus: ToneCorrelator<Complex<f32>>,
-        tracker: OffsetTracker,
-    },
+}
+
+struct Analytic {
+    mixer: Nco,
+    image: Decimator,
+    demod: FmDemod,
+    mixed: Vec<Complex<f32>>,
+    baseband: Vec<Complex<f32>>,
 }
 
 #[derive(Clone, Debug)]
@@ -197,8 +208,8 @@ impl Gate {
     }
 }
 
-pub struct CpmDemod {
-    front: FrontEnd,
+pub struct CpmDemod<F = IqFront> {
+    front: F,
     matched: RealDecimator,
     sync: SymbolSync,
     level_max: f32,
@@ -224,10 +235,13 @@ pub struct CpmDemod {
     retimed_settled: Vec<bool>,
 }
 
-impl CpmDemod {
+impl CpmDemod<IqFront> {
     #[must_use]
     pub fn new(params: &CpmParams, receive_filter: &[f32], timing_bw: f64) -> Self {
-        let front = FrontEnd::Quadrature(FmDemod::new(params.sps(), params.h() / 2.0));
+        let front = IqFront(IqKind::Quadrature(FmDemod::new(
+            params.sps(),
+            params.h() / 2.0,
+        )));
         Self::build(params, receive_filter, timing_bw, front, 0)
     }
 
@@ -241,7 +255,7 @@ impl CpmDemod {
         let sps = params.sps();
         let window = (sps.round() as usize).max(2);
         let shift = params.h() / 2.0;
-        let front = FrontEnd::Tones {
+        let front = IqFront(IqKind::Tones(Box::new(ToneFront {
             plus: ToneCorrelator::complex(sps, shift, window),
             minus: ToneCorrelator::complex(sps, -shift, window),
             tracker: OffsetTracker::new(
@@ -251,10 +265,40 @@ impl CpmDemod {
                 1.0 / sps,
                 1.0 / (COARSE_SYMBOLS * sps),
             ),
-        };
+        })));
         Self::build(params, receive_filter, timing_bw, front, window)
     }
 
+    pub fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<f32>) {
+        self.carrier_run.clear();
+        self.settled_run.clear();
+        self.gate_run(iq.iter().map(Complex::norm_sqr));
+        match &mut self.front.0 {
+            IqKind::Quadrature(demod) => demod.process(iq, &mut self.demod_buf),
+            IqKind::Tones(tones) => {
+                let ToneFront {
+                    plus,
+                    minus,
+                    tracker,
+                } = tones.as_mut();
+                self.demod_buf.clear();
+                self.demod_buf.extend(iq.iter().map(|&s| {
+                    let centred = tracker.centre(s);
+                    let difference = plus.push(centred) - minus.push(centred);
+                    tracker.follow(plus.correlation(), minus.correlation());
+                    difference
+                }));
+            }
+        }
+        self.finish(out);
+    }
+
+    pub fn reset(&mut self) {
+        self.clear();
+    }
+}
+
+impl CpmDemod<RealFront> {
     #[must_use]
     pub fn real(
         params: &CpmParams,
@@ -276,13 +320,13 @@ impl CpmDemod {
                 );
                 let taps = design_lowpass(IMAGE_TAPS, centre_hz / sample_rate);
                 (
-                    FrontEnd::Analytic {
+                    RealKind::Analytic(Box::new(Analytic {
                         mixer: Nco::new(-centre_hz as f32, sample_rate as f32),
                         image: Decimator::new(&taps, 1),
                         demod: FmDemod::new(sample_rate, params.h() * baud / 2.0),
                         mixed: Vec::new(),
                         baseband: Vec::new(),
-                    },
+                    })),
                     IMAGE_TAPS,
                 )
             }
@@ -295,7 +339,7 @@ impl CpmDemod {
                 assert!(plus_hz != minus_hz, "filterbank tones must be distinct");
                 let window = (sample_rate / (plus_hz - minus_hz).abs()).round() as usize;
                 (
-                    FrontEnd::Filterbank {
+                    RealKind::Filterbank {
                         plus: ToneCorrelator::new(sample_rate, plus_hz, window),
                         minus: ToneCorrelator::new(sample_rate, minus_hz, window),
                     },
@@ -303,14 +347,55 @@ impl CpmDemod {
                 )
             }
         };
-        Self::build(params, receive_filter, timing_bw, front, extra)
+        Self::build(params, receive_filter, timing_bw, RealFront(front), extra)
     }
 
+    pub fn process_real(&mut self, audio: &[f32], out: &mut Vec<f32>) {
+        self.carrier_run.clear();
+        self.settled_run.clear();
+        self.gate_run(audio.iter().map(|&sample| sample * sample));
+        match &mut self.front.0 {
+            RealKind::Analytic(analytic) => {
+                let Analytic {
+                    mixer,
+                    image,
+                    demod,
+                    mixed,
+                    baseband,
+                } = analytic.as_mut();
+                mixed.clear();
+                mixed.extend(
+                    audio
+                        .iter()
+                        .map(|&s| Complex::new(s, 0.0) * mixer.next_sample()),
+                );
+                image.process(mixed, baseband);
+                demod.process(baseband, &mut self.demod_buf);
+            }
+            RealKind::Filterbank { plus, minus } => {
+                self.demod_buf.clear();
+                self.demod_buf
+                    .extend(audio.iter().map(|&s| plus.push(s) - minus.push(s)));
+            }
+        }
+        self.finish(out);
+    }
+
+    pub fn reset(&mut self) {
+        if let RealKind::Filterbank { plus, minus } = &mut self.front.0 {
+            plus.reset();
+            minus.reset();
+        }
+        self.clear();
+    }
+}
+
+impl<F> CpmDemod<F> {
     fn build(
         params: &CpmParams,
         receive_filter: &[f32],
         timing_bw: f64,
-        front: FrontEnd,
+        front: F,
         front_support: usize,
     ) -> Self {
         assert!(!receive_filter.is_empty(), "receive filter must have taps");
@@ -387,63 +472,6 @@ impl CpmDemod {
     #[must_use]
     pub fn frequency_error_cycles_per_sample(&self) -> f64 {
         f64::from(self.centre + self.offset) * self.centre_scale
-    }
-
-    pub fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<f32>) {
-        self.carrier_run.clear();
-        self.settled_run.clear();
-        self.gate_run(iq.iter().map(Complex::norm_sqr));
-        match &mut self.front {
-            FrontEnd::Quadrature(demod) => demod.process(iq, &mut self.demod_buf),
-            FrontEnd::Tones {
-                plus,
-                minus,
-                tracker,
-            } => {
-                self.demod_buf.clear();
-                self.demod_buf.extend(iq.iter().map(|&s| {
-                    let centred = tracker.centre(s);
-                    let difference = plus.push(centred) - minus.push(centred);
-                    tracker.follow(plus.correlation(), minus.correlation());
-                    difference
-                }));
-            }
-            _ => panic!("constructed for real input; call process_real"),
-        }
-        self.finish(out);
-    }
-
-    pub fn process_real(&mut self, audio: &[f32], out: &mut Vec<f32>) {
-        self.carrier_run.clear();
-        self.settled_run.clear();
-        self.gate_run(audio.iter().map(|&sample| sample * sample));
-        match &mut self.front {
-            FrontEnd::Quadrature(_) | FrontEnd::Tones { .. } => {
-                panic!("constructed for IQ input; call process")
-            }
-            FrontEnd::Analytic {
-                mixer,
-                image,
-                demod,
-                mixed,
-                baseband,
-            } => {
-                mixed.clear();
-                mixed.extend(
-                    audio
-                        .iter()
-                        .map(|&s| Complex::new(s, 0.0) * mixer.next_sample()),
-                );
-                image.process(mixed, baseband);
-                demod.process(baseband, &mut self.demod_buf);
-            }
-            FrontEnd::Filterbank { plus, minus } => {
-                self.demod_buf.clear();
-                self.demod_buf
-                    .extend(audio.iter().map(|&s| plus.push(s) - minus.push(s)));
-            }
-        }
-        self.finish(out);
     }
 
     fn gate_run(&mut self, powers: impl Iterator<Item = f32>) {
@@ -546,12 +574,8 @@ impl CpmDemod {
             .then(|| magnitude * self.level_max / decision)
     }
 
-    pub fn reset(&mut self) {
+    fn clear(&mut self) {
         self.sync.reset();
-        if let FrontEnd::Filterbank { plus, minus } = &mut self.front {
-            plus.reset();
-            minus.reset();
-        }
         self.centre = 0.0;
         self.offset = 0.0;
         self.since_outer = 0;
@@ -1145,24 +1169,21 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "call process_real")]
-    fn feeding_iq_to_a_real_construction_is_a_caller_bug() {
-        let mut demod = CpmDemod::real(
+    fn each_construction_reads_only_the_domain_it_was_built_for() {
+        let mut real = CpmDemod::real(
             &afsk_params(),
             &pulse::rect(40.0, Norm::Area),
             TIMING_BW_BURST,
             RATE,
             RealDetector::Discriminator { centre_hz: 1_700.0 },
         );
-        demod.process(&[Complex::new(0.0, 0.0); 16], &mut Vec::new());
-    }
+        let mut soft = Vec::new();
+        real.process_real(&[0.0; 4_096], &mut soft);
+        real.reset();
 
-    #[test]
-    #[should_panic(expected = "call process")]
-    fn feeding_audio_to_an_iq_construction_is_a_caller_bug() {
-        let params = four_level(1_944.0);
-        let mut demod = CpmDemod::new(&params, &rx_rrc(), TIMING_BW_BURST);
-        demod.process_real(&[0.0; 16], &mut Vec::new());
+        let mut iq = CpmDemod::new(&four_level(1_944.0), &rx_rrc(), TIMING_BW_BURST);
+        iq.process(&[Complex::new(0.0, 0.0); 4_096], &mut soft);
+        iq.reset();
     }
 
     #[test]

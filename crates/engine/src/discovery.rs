@@ -66,11 +66,13 @@ impl Discovery {
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_wire::DeviceBackend;
+
     use super::*;
 
-    fn device(driver: &str, key: &str) -> DeviceInfo {
+    fn device(driver: DeviceBackend, key: &str) -> DeviceInfo {
         DeviceInfo {
-            driver: driver.to_string(),
+            driver,
             key: key.to_string(),
             label: format!("{driver} {key}"),
             serial: None,
@@ -85,9 +87,9 @@ mod tests {
     #[test]
     fn a_network_radio_joins_the_attached_ones() {
         let mut discovery = Discovery::default();
-        discovery.searched(vec![device("soapy", "remote")], Instant::now());
+        discovery.searched(vec![device(DeviceBackend::Soapy, "remote")], Instant::now());
         assert_eq!(
-            ids(&discovery.merge(vec![device("rtlsdr", "0")])),
+            ids(&discovery.merge(vec![device(DeviceBackend::Rtlsdr, "0")])),
             vec!["rtlsdr:0", "soapy:remote"]
         );
     }
@@ -95,9 +97,9 @@ mod tests {
     #[test]
     fn a_radio_the_quick_search_already_found_is_listed_once() {
         let mut discovery = Discovery::default();
-        discovery.searched(vec![device("soapy", "one")], Instant::now());
+        discovery.searched(vec![device(DeviceBackend::Soapy, "one")], Instant::now());
         assert_eq!(
-            ids(&discovery.merge(vec![device("soapy", "one")])),
+            ids(&discovery.merge(vec![device(DeviceBackend::Soapy, "one")])),
             vec!["soapy:one"]
         );
     }
@@ -127,8 +129,8 @@ mod tests {
     fn only_a_different_result_counts_as_a_change() {
         let now = Instant::now();
         let mut discovery = Discovery::default();
-        assert!(discovery.searched(vec![device("soapy", "remote")], now));
-        assert!(!discovery.searched(vec![device("soapy", "remote")], now));
+        assert!(discovery.searched(vec![device(DeviceBackend::Soapy, "remote")], now));
+        assert!(!discovery.searched(vec![device(DeviceBackend::Soapy, "remote")], now));
         assert!(discovery.searched(Vec::new(), now));
     }
 }

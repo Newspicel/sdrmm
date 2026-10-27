@@ -6,16 +6,18 @@ Correlator, Polarimeter and [Passive radar](passive-radar.md).
 
 ## Make an array
 
-On a multi-lane radio such as a KrakenSDR, press **Make array** on the Device. It adds an Array
-and wires every lane to it. The button is greyed out when the lanes share no clock. A playing
+On a multi-lane radio such as an RSPduo or a CR-8, press **Make array** on the Device. It adds an
+Array and wires every lane to it. The button is greyed out when the lanes share no clock. A playing
 array recording has the same button.
 
-For separate radios on one clock:
+For separate radios, a KrakenSDR among them:
 
 1. Add a Device for each radio.
 2. Wire each Device `iq` to the Array in antenna order: `lane1`, `lane2`, and so on.
 3. Open **Tier** and pick what the radios share: **Shared clock**, or **Shared LO** for clock and
-   local oscillator.
+   local oscillator. Radios that know they share a clock, the lanes of a
+   [KrakenSDR](../hardware.md#krakensdr) among them, say so themselves and keep that tier whatever
+   you pick.
 
 A lane belongs to one Array. The Device then shows **Array** on that lane, and tuning and gain
 move to the Array.
@@ -34,13 +36,13 @@ It also measures clock drift between radios. When the tier ends up below what yo
 
 | Radio | Tier | Noise source |
 |---|---|---|
-| KrakenSDR | Shared clock | Built in, antennas cut off |
-| KerberosSDR | Shared clock | Built in, antennas stay on |
+| KrakenSDR, five Devices | Shared clock, reported by the lanes | Built in, antennas cut off |
+| KerberosSDR, four Devices | Shared clock, reported by the lanes | Built in, antennas stay on |
 | RSPduo dual tuner | Shared clock | None |
 | LimeSDR, USRP B210, bladeRF 2, AD936x boards | Shared LO | None |
 | CR-8 | Shared LO | None |
 | Other multi-channel SoapySDR radios | Shared clock | None |
-| Several radios in one Array | What you declare, capped by any radio that gives more than one lane | None |
+| Several radios in one Array | What you declare, capped by any radio or bank that gives more than one lane | None |
 | [Array recording](recording.md#play-an-array-recording) | As recorded | Recorded noise windows |
 
 ## Lane tuning

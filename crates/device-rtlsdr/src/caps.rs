@@ -7,8 +7,8 @@ use sdrmm_wire::{
 
 use crate::{
     DEFAULT_CENTER_HZ, DRIVER_ID,
+    bank::{self, Lane},
     dongle::{Board, DIRECT_MAX_HZ, DirectSampling, Listing},
-    kraken::Model,
 };
 
 const TUNER_MIN_HZ: f64 = 24e6;
@@ -62,9 +62,11 @@ pub(crate) enum GainMode {
 }
 
 pub(crate) fn device_infos(descriptors: &[Listing]) -> Vec<DeviceInfo> {
+    let banked = bank::lanes(descriptors);
     descriptors
         .iter()
-        .map(|d| {
+        .zip(&banked)
+        .map(|(d, lane)| {
             let serial = d.serial.as_ref().filter(|s| {
                 descriptors
                     .iter()
@@ -73,30 +75,35 @@ pub(crate) fn device_infos(descriptors: &[Listing]) -> Vec<DeviceInfo> {
                     == 1
             });
             let location = format!("{}/{}", d.bus, d.address);
-            let model = match (&d.manufacturer, &d.product) {
-                (Some(manufacturer), Some(product)) => format!("{manufacturer} {product}"),
-                (Some(name), None) | (None, Some(name)) => name.clone(),
-                (None, None) => "RTL-SDR".to_string(),
+            let profile = Some(capabilities_of(d.board, lane.as_ref(), &[]).profile());
+            let (key, serial) = match serial {
+                Some(serial) => (serial.clone(), Some(serial.clone())),
+                None => (location.clone(), None),
             };
-            let profile = Some(capabilities(d.board, &[]).profile());
-            match serial {
-                Some(serial) => DeviceInfo {
-                    driver: DRIVER_ID.to_string(),
-                    key: serial.clone(),
-                    label: format!("{model} {serial}"),
-                    serial: Some(serial.clone()),
-                    profile,
-                },
-                None => DeviceInfo {
-                    driver: DRIVER_ID.to_string(),
-                    key: location.clone(),
-                    label: format!("{model} ({location})"),
-                    serial: None,
-                    profile,
-                },
+            DeviceInfo {
+                driver: DRIVER_ID,
+                label: label_of(d, lane.as_ref(), &key),
+                key,
+                serial,
+                profile,
             }
         })
         .collect()
+}
+
+fn label_of(descriptor: &Listing, lane: Option<&Lane>, key: &str) -> String {
+    if let Some(lane) = lane {
+        return lane.label();
+    }
+    let model = match (&descriptor.manufacturer, &descriptor.product) {
+        (Some(manufacturer), Some(product)) => format!("{manufacturer} {product}"),
+        (Some(name), None) | (None, Some(name)) => name.clone(),
+        (None, None) => "RTL-SDR".to_string(),
+    };
+    match &descriptor.serial {
+        Some(serial) if serial == key => format!("{model} {serial}"),
+        _ => format!("{model} ({key})"),
+    }
 }
 
 fn tuner_stage(gains: &[i32]) -> Option<GainStage> {
@@ -166,61 +173,56 @@ pub(crate) fn capabilities(board: Board, gains: &[i32]) -> Capabilities {
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
         clean_fraction: None,
+        bank: None,
     }
 }
 
-pub(crate) const KRAKEN_MAX_RATE_HZ: f64 = 2_560_000.0;
-
-fn kraken_rates() -> Vec<f64> {
+fn capped_rates() -> Vec<f64> {
     RATE_MENU
         .iter()
         .copied()
-        .filter(|rate| *rate <= KRAKEN_MAX_RATE_HZ)
+        .filter(|rate| *rate <= bank::MAX_RATE_HZ)
         .collect()
 }
 
-fn kraken_rate_windows() -> Vec<Range> {
+fn capped_rate_windows() -> Vec<Range> {
     RATE_WINDOWS
         .iter()
-        .filter(|(min, _)| *min <= KRAKEN_MAX_RATE_HZ)
+        .filter(|(min, _)| *min <= bank::MAX_RATE_HZ)
         .map(|(min, max)| Range {
             min: *min,
-            max: max.min(KRAKEN_MAX_RATE_HZ),
+            max: max.min(bank::MAX_RATE_HZ),
             step: None,
         })
         .collect()
 }
 
-pub(crate) fn kraken_lane_capabilities(gains: &[i32]) -> Capabilities {
-    Capabilities {
-        extra: Vec::new(),
-        sample_rates: kraken_rates(),
-        sample_rate_ranges: kraken_rate_windows(),
-        ..capabilities(Board::Generic, gains)
+pub(crate) fn capabilities_of(board: Board, lane: Option<&Lane>, gains: &[i32]) -> Capabilities {
+    match lane {
+        Some(lane) => lane_capabilities(lane, gains),
+        None => capabilities(board, gains),
     }
 }
 
-pub(crate) fn kraken_capabilities(model: Model, lanes: u32, gains: &[i32]) -> Capabilities {
+pub(crate) fn lane_capabilities(lane: &Lane, gains: &[i32]) -> Capabilities {
     Capabilities {
         freq_ranges: vec![Range {
             min: TUNER_MIN_HZ,
             max: TUNER_MAX_HZ,
             step: None,
         }],
-        bias_tee: model == Model::Kraken,
-        noise_source: match model {
-            Model::Kraken => sdrmm_wire::NoiseSource::Isolated,
-            Model::Kerberos => sdrmm_wire::NoiseSource::Unisolated,
-        },
-        rx_streams: lanes,
-        per_stream: StreamScope {
-            tuning: true,
-            gain: true,
-            antenna: false,
-            agc: true,
+        extra: Vec::new(),
+        sample_rates: capped_rates(),
+        sample_rate_ranges: capped_rate_windows(),
+        bias_tee: lane.model.has_bias_tees(),
+        noise_source: if lane.controls() {
+            lane.model.noise_source()
+        } else {
+            sdrmm_wire::NoiseSource::None
         },
         coherence: sdrmm_wire::Coherence::TimeSync,
-        ..kraken_lane_capabilities(gains)
+        bank: Some(lane.wire()),
+        ..capabilities(Board::Generic, gains)
     }
 }
 
@@ -363,21 +365,30 @@ fn plan_center(
     Ok(())
 }
 
-fn plan_sample_rate(delta: &DeviceSettings, plan: &mut Plan) -> Result<(), DeviceError> {
+fn plan_sample_rate(
+    delta: &DeviceSettings,
+    caps: &Capabilities,
+    plan: &mut Plan,
+) -> Result<(), DeviceError> {
     let Some(rate) = delta.sample_rate else {
         return Ok(());
     };
-    if !RATE_WINDOWS
-        .iter()
-        .any(|(lo, hi)| *lo <= rate && rate <= *hi)
-    {
+    if !sdrmm_wire::any_range_holds(&caps.sample_rate_ranges, rate) {
         return Err(DeviceError::Unsupported(format!(
-            "sample_rate {rate} outside the RTL2832U windows \
-             225001-300000 and 900001-3200000 Hz"
+            "sample_rate {rate} outside the windows {} Hz",
+            windows_of(caps)
         )));
     }
     plan.sample_rate = Some(rate.round() as u32);
     Ok(())
+}
+
+fn windows_of(caps: &Capabilities) -> String {
+    caps.sample_rate_ranges
+        .iter()
+        .map(|range| format!("{}-{}", range.min, range.max))
+        .collect::<Vec<_>>()
+        .join(" and ")
 }
 
 fn plan_bandwidth(
@@ -515,7 +526,7 @@ pub(crate) fn validate(
     }
 
     plan_center(delta, caps, current, mode, &mut plan)?;
-    plan_sample_rate(delta, &mut plan)?;
+    plan_sample_rate(delta, caps, &mut plan)?;
     plan_bandwidth(delta, current, mode, &mut plan)?;
     plan_antenna_and_ppm(delta, caps, &mut plan)?;
 
@@ -586,8 +597,10 @@ pub(crate) fn current_manual_tenths(current: &DeviceSettings) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_wire::DeviceBackend;
+
     use super::*;
-    use crate::dongle::GAINS;
+    use crate::{bank::Model, dongle::GAINS};
 
     fn descriptor(address: u8, serial: Option<&str>) -> Listing {
         Listing {
@@ -603,69 +616,93 @@ mod tests {
         }
     }
 
+    fn lane(model: Model, lane: u32) -> Lane {
+        Lane {
+            model,
+            id: "001/4".to_owned(),
+            lane,
+        }
+    }
+
     #[test]
-    fn every_lane_tunes_alone_and_the_bank_carries_the_switches_of_the_whole_unit() {
-        let caps = kraken_capabilities(Model::Kraken, 5, GAINS);
-        assert_eq!(caps.rx_streams, 5);
-        assert_eq!(caps.tx_streams, 0);
-        assert_eq!(caps.coherence, sdrmm_wire::Coherence::TimeSync);
-        assert!(caps.per_stream.tuning, "every lane has its own synthesizer");
-        assert!(caps.per_stream.gain);
+    fn a_lane_tunes_alone_and_only_the_first_carries_the_switches_of_the_bank() {
+        let first = lane_capabilities(&lane(Model::Kraken, 0), GAINS);
+        assert_eq!(first.rx_streams, 1);
+        assert_eq!(first.tx_streams, 0);
+        assert_eq!(first.coherence, sdrmm_wire::Coherence::TimeSync);
+        assert_eq!(first.bank.as_ref().map(|bank| bank.lanes), Some(5));
         assert_eq!(
-            caps.noise_source,
+            first.noise_source,
             sdrmm_wire::NoiseSource::Isolated,
-            "the bank calibrates against its own"
+            "the array calibrates against the bank's own source"
         );
-        assert!(caps.extra.is_empty(), "the bank has no oddities of its own");
-        assert!(caps.bias_tee);
-        assert_eq!(caps.agc, Agc::Switch);
+        assert!(first.extra.is_empty(), "a lane has no oddities of its own");
+        assert!(first.bias_tee);
+        assert_eq!(first.agc, Agc::Switch);
         assert!(
-            caps.freq_ranges
+            first
+                .freq_ranges
                 .iter()
                 .all(|range| range.min >= TUNER_MIN_HZ),
             "elements are wired to antennas, so the tuner is never bypassed"
         );
+        let third = lane_capabilities(&lane(Model::Kraken, 2), GAINS);
+        assert_eq!(third.noise_source, sdrmm_wire::NoiseSource::None);
+        assert_eq!(third.bank.as_ref().map(|bank| bank.lane), Some(2));
+        assert_eq!(third.coherence, first.coherence);
     }
 
     #[test]
-    fn a_kerberos_calibrates_on_an_unisolated_source_and_offers_no_bias_tee() {
-        let caps = kraken_capabilities(Model::Kerberos, 4, GAINS);
-        assert_eq!(caps.rx_streams, 4);
+    fn a_kerberos_lane_calibrates_on_an_unisolated_source_and_offers_no_bias_tee() {
+        let caps = lane_capabilities(&lane(Model::Kerberos, 0), GAINS);
+        assert_eq!(caps.bank.as_ref().map(|bank| bank.lanes), Some(4));
         assert_eq!(caps.coherence, sdrmm_wire::Coherence::TimeSync);
         assert_eq!(caps.noise_source, sdrmm_wire::NoiseSource::Unisolated);
         assert!(!caps.bias_tee);
     }
 
     #[test]
-    fn a_bank_offers_no_rate_above_its_cap() {
-        for caps in [
-            kraken_capabilities(Model::Kraken, 5, GAINS),
-            kraken_lane_capabilities(GAINS),
-        ] {
-            assert!(caps.sample_rates.contains(&KRAKEN_MAX_RATE_HZ));
-            assert!(
-                caps.sample_rates
-                    .iter()
-                    .all(|rate| *rate <= KRAKEN_MAX_RATE_HZ)
-            );
-            assert!(
-                caps.sample_rate_ranges
-                    .iter()
-                    .all(|range| range.max <= KRAKEN_MAX_RATE_HZ)
-            );
-            assert!(sdrmm_wire::any_range_holds(&caps.sample_rate_ranges, 2.4e6));
-            assert!(!sdrmm_wire::any_range_holds(
-                &caps.sample_rate_ranges,
-                2.88e6
-            ));
-        }
+    fn a_lane_offers_no_rate_above_the_bank_cap() {
+        let caps = lane_capabilities(&lane(Model::Kraken, 1), GAINS);
+        assert!(caps.sample_rates.contains(&bank::MAX_RATE_HZ));
+        assert!(
+            caps.sample_rates
+                .iter()
+                .all(|rate| *rate <= bank::MAX_RATE_HZ)
+        );
+        assert!(
+            caps.sample_rate_ranges
+                .iter()
+                .all(|range| range.max <= bank::MAX_RATE_HZ)
+        );
+        assert!(sdrmm_wire::any_range_holds(&caps.sample_rate_ranges, 2.4e6));
+        assert!(!sdrmm_wire::any_range_holds(
+            &caps.sample_rate_ranges,
+            2.88e6
+        ));
+        let refused = validate(
+            &DeviceSettings {
+                sample_rate: Some(2.88e6),
+                ..DeviceSettings::default()
+            },
+            &caps,
+            &DeviceSettings::default(),
+            GAINS,
+        );
+        let Err(DeviceError::Unsupported(message)) = refused else {
+            panic!("a lane runs at most 2.56 MS/s");
+        };
+        assert_eq!(
+            message,
+            "sample_rate 2880000 outside the windows 225001-300000 and 900001-2560000 Hz"
+        );
     }
 
     #[test]
     fn unique_serial_becomes_the_key() {
         let infos = device_infos(&[descriptor(4, Some("00000123"))]);
         assert_eq!(infos.len(), 1);
-        assert_eq!(infos[0].driver, "rtlsdr");
+        assert_eq!(infos[0].driver, DeviceBackend::Rtlsdr);
         assert_eq!(infos[0].key, "00000123");
         assert_eq!(infos[0].serial.as_deref(), Some("00000123"));
         assert_eq!(infos[0].label, "Realtek RTL2838UHIDIR 00000123");

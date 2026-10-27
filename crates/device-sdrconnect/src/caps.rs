@@ -175,6 +175,7 @@ pub(crate) fn capabilities(snapshot: &Snapshot) -> Capabilities {
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
         clean_fraction: None,
+        bank: None,
     }
 }
 

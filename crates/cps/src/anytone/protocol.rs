@@ -13,7 +13,8 @@ const QUERY_ID: u8 = 0x02;
 const BYE: &[u8] = b"END";
 const READ: u8 = b'R';
 const DATA: u8 = b'W';
-const DATA_FRAME: usize = BLOCK + 8;
+const HEAD: usize = 6;
+const DATA_FRAME: usize = BLOCK + HEAD + 2;
 
 pub struct AnytoneSession {
     link: Box<dyn SerialLink>,
@@ -80,9 +81,9 @@ impl AnytoneSession {
     }
 
     fn store_block(&mut self, addr: u32, block: &[u8]) -> Result<(), CpsError> {
-        let frame = data_frame(addr, block);
+        let frame = DataFrame::of(addr, block)?;
         let mut reply = [0u8; 1];
-        self.transact(&frame, &mut reply)?;
+        self.transact(frame.bytes(), &mut reply)?;
         if reply[0] == ACK {
             return Ok(());
         }
@@ -122,7 +123,7 @@ impl RadioSession for AnytoneSession {
         let mut at = addr;
         for target in buffer.chunks_mut(BLOCK) {
             let frame = self.fetch_block(at)?;
-            target.copy_from_slice(&frame[6..6 + target.len()]);
+            target.copy_from_slice(&frame[HEAD..HEAD + target.len()]);
             at += BLOCK as u32;
         }
         Ok(())
@@ -154,7 +155,9 @@ impl RadioSession for AnytoneSession {
 
 impl Drop for AnytoneSession {
     fn drop(&mut self) {
-        let _ = self.finish();
+        if let Err(error) = self.finish() {
+            tracing::error!(%error, "the radio stayed in programming mode");
+        }
     }
 }
 
@@ -185,15 +188,33 @@ fn sum8(bytes: &[u8]) -> u8 {
     bytes.iter().copied().fold(0, u8::wrapping_add)
 }
 
-fn data_frame(addr: u32, block: &[u8]) -> [u8; DATA_FRAME] {
-    let mut frame = [0u8; DATA_FRAME];
-    frame[0] = DATA;
-    frame[1..5].copy_from_slice(&addr.to_be_bytes());
-    frame[5] = BLOCK as u8;
-    frame[6..6 + block.len()].copy_from_slice(block);
-    frame[DATA_FRAME - 2] = sum8(&frame[1..DATA_FRAME - 2]);
-    frame[DATA_FRAME - 1] = ACK;
-    frame
+struct DataFrame {
+    frame: [u8; DATA_FRAME],
+    len: usize,
+}
+
+impl DataFrame {
+    fn of(addr: u32, block: &[u8]) -> Result<Self, CpsError> {
+        if block.is_empty() || block.len() > BLOCK {
+            return Err(CpsError::Protocol {
+                step: "write",
+                reason: format!("{} bytes is not a block of 1 to {BLOCK}", block.len()),
+            });
+        }
+        let len = HEAD + block.len() + 2;
+        let mut frame = [0u8; DATA_FRAME];
+        frame[0] = DATA;
+        frame[1..5].copy_from_slice(&addr.to_be_bytes());
+        frame[5] = block.len() as u8;
+        frame[HEAD..HEAD + block.len()].copy_from_slice(block);
+        frame[len - 2] = sum8(&frame[1..len - 2]);
+        frame[len - 1] = ACK;
+        Ok(Self { frame, len })
+    }
+
+    fn bytes(&self) -> &[u8] {
+        &self.frame[..self.len]
+    }
 }
 
 fn verify_data_frame(frame: &[u8; DATA_FRAME], addr: u32) -> Result<(), CpsError> {
@@ -245,7 +266,10 @@ mod tests {
     use crate::serial::fixture::ScriptedLink;
 
     fn block_reply(addr: u32, fill: u8) -> Vec<u8> {
-        data_frame(addr, &[fill; BLOCK]).to_vec()
+        DataFrame::of(addr, &[fill; BLOCK])
+            .expect("frame")
+            .bytes()
+            .to_vec()
     }
 
     fn ident_reply(model: &str, firmware: &str) -> Vec<u8> {
@@ -346,11 +370,27 @@ mod tests {
 
     #[test]
     fn a_write_frame_carries_the_address_length_checksum_and_ack() {
-        let frame = data_frame(0x0102_0304, &[0x11; BLOCK]);
-        assert_eq!(&frame[..6], &[b'W', 0x01, 0x02, 0x03, 0x04, 0x10]);
-        assert_eq!(&frame[6..22], &[0x11; BLOCK]);
-        assert_eq!(frame[22], 0x2a);
-        assert_eq!(frame[23], ACK);
+        let frame = DataFrame::of(0x0102_0304, &[0x11; BLOCK]).expect("frame");
+        let bytes = frame.bytes();
+        assert_eq!(bytes.len(), DATA_FRAME);
+        assert_eq!(&bytes[..6], &[b'W', 0x01, 0x02, 0x03, 0x04, 0x10]);
+        assert_eq!(&bytes[6..22], &[0x11; BLOCK]);
+        assert_eq!(bytes[22], 0x2a);
+        assert_eq!(bytes[23], ACK);
+    }
+
+    #[test]
+    fn a_partial_tail_is_written_at_its_own_length() {
+        let tail = [0x11; 8];
+        let frame = DataFrame::of(0x0102_0304, &tail).expect("frame");
+        let bytes = frame.bytes();
+        assert_eq!(bytes.len(), 6 + tail.len() + 2);
+        assert_eq!(&bytes[..6], &[b'W', 0x01, 0x02, 0x03, 0x04, 0x08]);
+        assert_eq!(&bytes[6..14], &tail);
+        assert_eq!(bytes[14], sum8(&bytes[1..14]));
+        assert_eq!(bytes[15], ACK);
+        assert!(DataFrame::of(0, &[]).is_err());
+        assert!(DataFrame::of(0, &[0; BLOCK + 1]).is_err());
     }
 
     #[test]

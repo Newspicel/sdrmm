@@ -107,6 +107,27 @@ fn a_full_ring_drops_the_block_on_every_lane_and_counts_it() {
 }
 
 #[test]
+fn a_short_lane_keeps_every_lane_on_the_same_sample() {
+    let (mut tap, mut reader) = record_tap(2, RATE);
+    let long = block(100, 1.0);
+    let short = block(40, 1.0);
+    tap.push(&[&long, &short], 0, &[]);
+    assert_eq!(tap.next(), Some(40));
+    assert!(reader.lanes.iter().all(|lane| lane.slots() == 40));
+    let next = block(20, 2.0);
+    tap.push(&[&next, &next], 100, &[]);
+    assert_eq!(reader.notes.pop(), Ok(RecordNote::Start { at: 0 }));
+    assert_eq!(
+        reader.notes.pop(),
+        Ok(RecordNote::Gap {
+            at: 40,
+            missing: 60
+        })
+    );
+    assert!(reader.lanes.iter().all(|lane| lane.slots() == 60));
+}
+
+#[test]
 fn a_noise_note_behind_the_writer_marks_its_own_sample() {
     let dir = tempfile::TempDir::new().expect("scratch");
     let stem = dir.path().join("late");

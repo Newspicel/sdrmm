@@ -154,6 +154,7 @@ struct Candidate {
     batching: Batching,
     pending: Option<Pending>,
     payload: Vec<bool>,
+    rejected: u32,
 }
 
 impl Candidate {
@@ -170,6 +171,7 @@ impl Candidate {
             batching: Batching::Hunt,
             pending: None,
             payload: Vec::new(),
+            rejected: 0,
         }
     }
 
@@ -258,6 +260,7 @@ impl Candidate {
             return;
         };
         if pending.poisoned {
+            self.rejected = self.rejected.saturating_add(1);
             return;
         }
         let (payload, text) = if self.payload.is_empty() {
@@ -405,6 +408,13 @@ impl ChannelRx for PocsagChannel {
             }
         }
         self.soft = soft;
+    }
+
+    fn rejected(&self) -> u32 {
+        self.candidates
+            .iter()
+            .map(|candidate| candidate.rejected)
+            .fold(0, u32::saturating_add)
     }
 }
 
@@ -715,6 +725,7 @@ mod tests {
             messages[0].address, NUMERIC_ADDRESS,
             "the undamaged page must survive"
         );
+        assert_eq!(chan.rejected(), 1);
     }
 
     fn burst_of_codewords(words: &[u32], baud: u16) -> Vec<Complex<f32>> {
@@ -734,6 +745,7 @@ mod tests {
         };
         let mut chan = channel();
         assert!(run(&mut chan, &burst(&[long], 2_400)).is_empty());
+        assert_eq!(chan.rejected(), 1);
     }
 
     #[test]

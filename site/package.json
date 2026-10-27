@@ -6,11 +6,11 @@
   "packageManager": "pnpm@12.8.0",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro sync && tsgo --noEmit && astro build",
+    "build": "astro sync && tsc --noEmit && astro build",
     "preview": "wrangler dev",
     "test": "vitest run",
     "format": "biome check --write .",
-    "typecheck": "astro sync && tsgo --noEmit && wrangler types worker/worker-configuration.d.ts && tsgo --noEmit -p worker && wrangler types -c downloads/wrangler.jsonc downloads/worker-configuration.d.ts && tsgo --noEmit -p downloads"
+    "typecheck": "astro sync && tsc --noEmit && wrangler types worker/worker-configuration.d.ts && tsc --noEmit -p worker && wrangler types -c downloads/wrangler.jsonc downloads/worker-configuration.d.ts && tsc --noEmit -p downloads"
   },
   "dependencies": {
     "@astrojs/react": "^7.0.0",
@@ -24,9 +24,9 @@
     "@tailwindcss/vite": "4.3.3",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "oxc-transform-react": "^0.152.0",
     "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
     "vitest": "5.0.2",
     "wrangler": "4.144.0"
   }

@@ -100,3 +100,24 @@ describe("tickLabel", () => {
     expect(tickLabel(0.5)).toBe("0.5");
   });
 });
+
+describe("discriminator reuse", () => {
+  it("fills a scratch rail instead of allocating one per frame", () => {
+    const wave = new Float32Array(64 * 2);
+    for (let i = 0; i < 64; i++) {
+      const phase = (Math.PI / 4) * i;
+      wave[i * 2] = Math.cos(phase);
+      wave[i * 2 + 1] = Math.sin(phase);
+    }
+    const first = discriminator(wave, 4, 1);
+    const again = discriminator(wave, 4, 1, first);
+    expect(again).toBe(first);
+    expect([...again]).toEqual([...first]);
+  });
+
+  it("grows past a scratch rail that is too short", () => {
+    const wave = new Float32Array(64 * 2);
+    const rail = discriminator(wave, 4, 1, new Float32Array(2));
+    expect(rail).toHaveLength(16);
+  });
+});

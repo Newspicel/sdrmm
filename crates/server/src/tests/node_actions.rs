@@ -1,5 +1,5 @@
 use sdrmm_device::{DeviceDriver, DeviceError, SdrDevice};
-use sdrmm_wire::{DeviceInfo, NodeActed, NodeBody, WorkspaceNoticeKind};
+use sdrmm_wire::{DeviceBackend, DeviceInfo, NodeActed, NodeBody, WorkspaceNoticeKind};
 
 use super::*;
 
@@ -317,8 +317,8 @@ async fn saving_pads_explicit_array_geometry_to_its_wired_lanes() {
 struct Answering;
 
 impl DeviceDriver for Answering {
-    fn id(&self) -> &'static str {
-        "answering"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Kiwisdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -331,7 +331,7 @@ impl DeviceDriver for Answering {
 
     fn resolve(&self, key: &str) -> Option<DeviceInfo> {
         Some(DeviceInfo {
-            driver: "answering".to_owned(),
+            driver: DeviceBackend::Kiwisdr,
             key: key.to_owned(),
             label: format!("answering {key}"),
             serial: None,
@@ -355,7 +355,7 @@ async fn a_network_radio_is_adopted_without_opening() {
         app.clone(),
         "POST",
         "/api/devices/network",
-        Some(r#"{"address":"answering:10.0.0.2:1234"}"#),
+        Some(r#"{"address":"kiwisdr:10.0.0.2:1234"}"#),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));

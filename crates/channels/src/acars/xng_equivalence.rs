@@ -248,17 +248,62 @@ fn to_json<T: serde::Serialize>(value: &T) -> Value {
     serde_json::to_value(value).unwrap()
 }
 
+fn drop_hex_damaged(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            object.remove("hex_damaged");
+            for nested in object.values_mut() {
+                drop_hex_damaged(nested);
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(drop_hex_damaged),
+        _ => {}
+    }
+}
+
+fn without_fields_xng_drops(mut value: Value) -> Value {
+    if let Some(object) = value.as_object_mut() {
+        for field in ["oooi", "position", "met"] {
+            object.remove(field);
+        }
+    }
+    drop_hex_damaged(&mut value);
+    value
+}
+
 fn assert_parse_matches(octets: &[u8]) {
-    let ours = block::parse(octets).map(|b| to_json(&b));
+    let ours = block::parse(octets).map(|b| without_fields_xng_drops(to_json(&b)));
     let theirs = xng_acars::block::parse(octets).map(|b| to_json(&b));
     assert_eq!(ours, theirs, "block {octets:02x?}");
+}
+
+#[test]
+fn blocks_keep_the_decodes_xng_drops() {
+    let octets = block::build(
+        '2',
+        "N12345",
+        None,
+        "20",
+        '4',
+        Some("M01A"),
+        Some("UA1234"),
+        "POSN38160W077075,,211733,360,OTT,212041,,N42,19689,40,544",
+        false,
+    );
+    let parsed = block::parse(&octets).expect("block parses");
+    let position = parsed.position.expect("label 20 carries a position");
+    assert!((position.latitude - 38.16).abs() < 0.001, "{position:?}");
+    assert!((position.longitude + 77.075).abs() < 0.001, "{position:?}");
+    assert!(xng_acars::block::parse(&octets).is_some());
 }
 
 fn assert_decode_matches(label: &str, text: &str, downlink: bool) {
     let ours = decode(label, text, downlink);
     let theirs = xng_acars::decode(label, text, downlink);
+    let mut ours_json = to_json(&ours);
+    drop_hex_damaged(&mut ours_json);
     assert_eq!(
-        to_json(&ours),
+        ours_json,
         to_json(&theirs),
         "decode {label} {text:?} downlink={downlink}"
     );

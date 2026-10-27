@@ -72,8 +72,8 @@ impl CaptureRadio for NetRadio {
             .map_err(|e| DeviceError::Io(e.to_string()))?
             .port();
         let tuning = Tuning::of(&lock(&self.desired));
-        call.send(&Request::start(tuning, port))?;
         self.streaming.store(true, Ordering::Release);
+        call.send(&Request::start(tuning, port))?;
         tracing::debug!(endpoint = %self.endpoint, port, "ESP-SDR streams over Ethernet");
         Ok(NetStream::new(
             socket,
@@ -99,6 +99,7 @@ struct State {
     held: bool,
     carried: Option<BlockGap>,
     returned: Option<BlockGap>,
+    malformed: u64,
 }
 
 pub(crate) struct NetStream {
@@ -130,6 +131,7 @@ impl NetStream {
                 held: false,
                 carried: None,
                 returned: None,
+                malformed: 0,
             }),
             failure: Mutex::new(None),
         }
@@ -147,7 +149,18 @@ impl NetStream {
             tracing::debug!(%from, "ignored a datagram from another host");
             return Ok(None);
         }
-        let header = Header::parse(&state.datagram[..n])?;
+        let header = match Header::parse(&state.datagram[..n]) {
+            Ok(header) => header,
+            Err(error) => {
+                state.malformed += 1;
+                tracing::warn!(
+                    %error,
+                    malformed = state.malformed,
+                    "ESP-SDR datagram skipped"
+                );
+                return Ok(None);
+            }
+        };
         Ok(Some(state.tracker.place(header)))
     }
 
@@ -367,22 +380,46 @@ mod tests {
     }
 
     #[test]
-    fn a_foreign_packet_ends_the_stream_with_its_reason() {
+    fn a_malformed_datagram_is_skipped_and_the_stream_goes_on() {
         let mut short = packet(1, 0, 0);
         short.truncate(100);
-        let board = board(vec![short], 1);
+        let board = board(vec![short, packet(1, 0, 7), packet(1, 672, 8)], 1);
         let radio = NetRadio::new(board.endpoint.clone(), esp32().defaults());
         let stream = radio.arm().expect("armed");
         board.server.join().expect("board");
-        let mut ended = false;
-        for _ in 0..50 {
-            if matches!(stream.next_block(Duration::from_millis(100)), Next::Ended) {
-                ended = true;
-                break;
-            }
-        }
-        assert!(ended);
-        assert!(stream.failure().reason.contains("100 bytes"));
+        let first = block(&stream);
+        assert_eq!(first.len(), 2 * PAYLOAD_BYTES);
+        assert_eq!((first[0], first[PAYLOAD_BYTES]), (7, 8));
+        assert_eq!(lock(&stream.state).malformed, 1);
+    }
+
+    #[test]
+    fn a_start_whose_reply_is_lost_still_stops_the_board() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let at: SocketAddr = listener.local_addr().expect("addr");
+        let (tx, requests) = mpsc::channel();
+        let server = thread::spawn(move || {
+            let (tcp, _) = listener.accept().expect("accept");
+            tx.send(read_request(&tcp)).expect("record the start");
+            drop(tcp);
+            let (mut tcp, _) = listener.accept().expect("accept the stop");
+            tx.send(read_request(&tcp)).expect("record the stop");
+            tcp.write_all(reply(200, STATUS).as_bytes()).expect("reply");
+        });
+        let radio = NetRadio::new(
+            Endpoint::parse(&at.to_string(), HTTP_PORT).expect("endpoint"),
+            esp32().defaults(),
+        );
+        assert!(radio.arm().is_err(), "a start without a reply is no stream");
+        let waited = Duration::from_secs(5);
+        assert_eq!(requests.recv_timeout(waited).expect("start")["op"], "start");
+        radio.disarm();
+        assert_eq!(
+            requests.recv_timeout(waited).expect("stop")["op"],
+            "stop",
+            "a board that may have armed is always told to stop"
+        );
+        server.join().expect("board");
     }
 
     #[test]

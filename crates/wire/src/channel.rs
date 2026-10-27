@@ -9,11 +9,13 @@ use crate::{
 };
 
 mod choices;
+mod decoders;
 
 pub use choices::{
     CTCSS_TONES_HZ, DCS_CODES, DEEMPHASIS_US, ParamChoice, ParamOption, RTTY_BAUDS, RTTY_SHIFTS_HZ,
     SettingChoice,
 };
+pub(crate) use decoders::decoders;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -115,142 +117,6 @@ fn navaid_report_limit() -> ParamLimit {
         f64::from(MAX_NAVAID_REPORT_MS),
         250.0,
     )
-}
-
-#[must_use]
-pub fn param_limits(type_id: &str) -> Vec<ParamLimit> {
-    match type_id {
-        "nfm" => vec![limit("inversion_hz", 1_500.0, 4_500.0, 50.0)],
-        "ssb" => vec![limit("bandwidth_hz", 200.0, 10_000.0, 100.0)],
-        "tetrapol" => vec![limit(
-            "scrambling",
-            0.0,
-            f64::from(crate::tetrapol::MAX_TETRAPOL_SCRAMBLING),
-            1.0,
-        )],
-        "sarsat" => vec![limit(
-            "bandwidth_hz",
-            crate::sarsat::MIN_SARSAT_BANDWIDTH_HZ,
-            crate::sarsat::MAX_SARSAT_BANDWIDTH_HZ,
-            1_000.0,
-        )],
-        "rtty" => vec![
-            limit("baud", 10.0, 1_200.0, 0.05),
-            limit("shift_hz", 20.0, 2_000.0, 5.0),
-        ],
-        "morse" => vec![
-            limit("bandwidth_hz", 50.0, 3_000.0, 50.0),
-            limit("wpm", 5.0, 60.0, 1.0),
-        ],
-        "cw_skimmer" => vec![
-            limit("bandwidth_hz", 1_000.0, 24_000.0, 500.0),
-            limit("threshold_db", 3.0, 40.0, 1.0),
-            limit("max_signals", 1.0, 128.0, 1.0),
-            limit("wpm", 3.0, 80.0, 1.0),
-        ],
-        "ft8" | "ft4" | "wspr" => wsjt_limits(),
-        "gnss" => vec![
-            limit("prn", 1.0, 32.0, 1.0),
-            limit("doppler_hz", 500.0, 20_000.0, 500.0),
-            limit("threshold", 1.5, 100.0, 0.1),
-        ],
-        "vor" => vec![
-            limit("station_lat", -90.0, 90.0, 0.00001),
-            limit("station_lon", -180.0, 180.0, 0.00001),
-            limit("magnetic_declination_deg", -180.0, 180.0, 0.1),
-            navaid_report_limit(),
-        ],
-        "ils" => vec![navaid_report_limit()],
-        "radiosonde" => vec![
-            limit("burst_m", 5_000.0, 45_000.0, 500.0),
-            limit("ground_m", -500.0, 6_000.0, 10.0),
-        ],
-        "wifi_occupancy" | "ism_survey" => vec![limit(
-            "margin_db",
-            f64::from(crate::airtime::MIN_AIRTIME_MARGIN_DB),
-            f64::from(crate::airtime::MAX_AIRTIME_MARGIN_DB),
-            0.5,
-        )],
-        "noise_figure" => vec![limit(
-            "enr_db",
-            f64::from(crate::measurement::MIN_ENR_DB),
-            f64::from(crate::measurement::MAX_ENR_DB),
-            0.01,
-        )],
-        "per" => vec![limit(
-            "payload_bytes",
-            f64::from(crate::measurement::MIN_PER_PAYLOAD_BYTES),
-            f64::from(crate::measurement::MAX_PER_PAYLOAD_BYTES),
-            1.0,
-        )],
-        "stanag" => vec![limit(
-            "window_s",
-            f64::from(crate::stanag::MIN_STANAG_WINDOW_S),
-            f64::from(crate::stanag::MAX_STANAG_WINDOW_S),
-            1.0,
-        )],
-        "sid" => vec![
-            limit(
-                "report_s",
-                f64::from(crate::measurement::MIN_SID_REPORT_S),
-                f64::from(crate::measurement::MAX_SID_REPORT_S),
-                1.0,
-            ),
-            limit(
-                "threshold_db",
-                f64::from(crate::measurement::MIN_SID_THRESHOLD_DB),
-                f64::from(crate::measurement::MAX_SID_THRESHOLD_DB),
-                0.5,
-            ),
-        ],
-        "atv" => vec![limit(
-            "sound_subcarrier_hz",
-            500_000.0,
-            7_500_000.0,
-            500_000.0,
-        )],
-        "datv" => vec![
-            limit(
-                "symbol_rate",
-                MIN_DATV_SYMBOL_RATE,
-                MAX_DATV_SYMBOL_RATE,
-                1_000.0,
-            ),
-            limit(
-                "superframe_reference",
-                0.0,
-                f64::from(MAX_SUPERFRAME_CODE),
-                1.0,
-            ),
-            limit(
-                "superframe_payload",
-                0.0,
-                f64::from(MAX_SUPERFRAME_CODE),
-                1.0,
-            ),
-        ],
-        "ident" => vec![
-            limit(
-                "bandwidth_hz",
-                MIN_IDENT_BANDWIDTH_HZ,
-                MAX_IDENT_BANDWIDTH_HZ,
-                500.0,
-            ),
-            limit(
-                "interval_ms",
-                f64::from(MIN_IDENT_INTERVAL_MS),
-                f64::from(MAX_IDENT_INTERVAL_MS),
-                250.0,
-            ),
-            limit(
-                "threshold_db",
-                f64::from(MIN_IDENT_THRESHOLD_DB),
-                f64::from(MAX_IDENT_THRESHOLD_DB),
-                1.0,
-            ),
-        ],
-        _ => Vec::new(),
-    }
 }
 
 fn default_has_audio() -> bool {
@@ -1508,6 +1374,17 @@ fn default_navaid_report_ms() -> u32 {
     500
 }
 
+fn navaid_report_schema() -> utoipa::openapi::schema::Object {
+    utoipa::openapi::ObjectBuilder::new()
+        .schema_type(utoipa::openapi::schema::Type::Integer)
+        .format(Some(utoipa::openapi::SchemaFormat::KnownFormat(
+            utoipa::openapi::KnownFormat::Int32,
+        )))
+        .minimum(Some(MIN_NAVAID_REPORT_MS))
+        .maximum(Some(MAX_NAVAID_REPORT_MS))
+        .build()
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct VorParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1519,7 +1396,7 @@ pub struct VorParams {
     #[serde(default)]
     pub magnetic_declination_deg: f64,
     #[serde(default = "default_navaid_report_ms")]
-    #[schema(minimum = 250, maximum = 5000)]
+    #[schema(schema_with = navaid_report_schema)]
     pub report_ms: u32,
 }
 
@@ -1548,7 +1425,7 @@ pub struct IlsParams {
     #[serde(default)]
     pub component: IlsComponent,
     #[serde(default = "default_navaid_report_ms")]
-    #[schema(minimum = 250, maximum = 5000)]
+    #[schema(schema_with = navaid_report_schema)]
     pub report_ms: u32,
 }
 
@@ -1710,155 +1587,62 @@ pub struct IridiumParams {
     pub span: IridiumSpan,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-#[serde(tag = "type", content = "settings", rename_all = "snake_case")]
-pub enum ChannelParams {
-    Nfm(NfmParams),
-    Selcall(SelcallParams),
-    Am(AmParams),
-    Ssb(SsbParams),
-    Wfm(WfmParams),
-    Pocsag(PocsagParams),
-    Flex(FlexParams),
-    Ermes(ErmesParams),
-    Eot(EotParams),
-    Sarsat(crate::sarsat::SarsatParams),
-    Adsb(AdsbParams),
-    Ais(AisParams),
-    Aprs(AprsParams),
-    Rtty(RttyParams),
-    Morse(MorseParams),
-    CwSkimmer(CwSkimmerParams),
-    Navtex(NavtexParams),
-    Acars(AcarsParams),
-    Atv(AtvParams),
-    Sstv(SstvParams),
-    Dab(DabParams),
-    Datv(DatvParams),
-    Dvbt(DvbtParams),
-    Drm(DrmParams),
-    Dmr(DmrParams),
-    Dstar(DstarParams),
-    Ysf(YsfParams),
-    Nxdn(NxdnParams),
-    P25(P25Params),
-    Dpmr(DpmrParams),
-    M17(M17Params),
-    Tetra(TetraParams),
-    Tetrapol(crate::tetrapol::TetrapolParams),
-    Ft8(WsjtParams),
-    Ft4(WsjtParams),
-    Psk(PskParams),
-    Wspr(WsprParams),
-    Freedv(FreeDvParams),
-    Ident(IdentParams),
-    RadioClock(RadioClockParams),
-    Gnss(GnssParams),
-    Vor(VorParams),
-    Ils(IlsParams),
-    Dsc(DscParams),
-    InmarsatStdc(InmarsatStdcParams),
-    InmarsatAero(InmarsatAeroParams),
-    Vdl2(Vdl2Params),
-    Hfdl(HfdlParams),
-    Iridium(IridiumParams),
-    Dect(DectParams),
-    Gsm(crate::gsm::GsmParams),
-    Apt(crate::weather::AptParams),
-    Lrpt(crate::weather::LrptParams),
-    Wefax(crate::weather::WefaxParams),
-    Same(crate::same::SameParams),
-    Radiosonde(crate::weather::RadiosondeParams),
-    Lora(crate::lora::LoraParams),
-    RemoteId(crate::remote_id::RemoteIdParams),
-    Ble(crate::ble::BleParams),
-    WifiOccupancy(crate::airtime::WifiOccupancyParams),
-    IsmSurvey(crate::airtime::IsmSurveyParams),
-    Ism(crate::ism::IsmParams),
-    Wmbus(crate::wmbus::WmbusParams),
-    NoiseFigure(crate::measurement::NoiseFigureParams),
-    Per(crate::measurement::PerParams),
-    Sid(crate::measurement::SidParams),
-    Stanag(crate::stanag::StanagParams),
+macro_rules! define_channel_params {
+    ($((
+        $variant:ident,
+        $type_id:literal,
+        $params:ty,
+        $limits:expr,
+        $home:expr,
+        $choices:expr
+    )),* $(,)?) => {
+        #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+        #[serde(tag = "type", content = "settings", rename_all = "snake_case")]
+        pub enum ChannelParams {
+            $(
+                #[serde(rename = $type_id)]
+                $variant($params),
+            )*
+        }
+
+        impl ChannelParams {
+            #[must_use]
+            pub const fn type_id(&self) -> &'static str {
+                match self {
+                    $(Self::$variant(_) => $type_id,)*
+                }
+            }
+        }
+
+        pub const CHANNEL_TYPE_IDS: &[&str] = &[$($type_id),*];
+
+        /// The range a numeric setting of this decoder is accepted in, named by its field.
+        #[must_use]
+        pub fn param_limits(type_id: &str) -> Vec<ParamLimit> {
+            match type_id {
+                $($type_id => $limits,)*
+                _ => Vec::new(),
+            }
+        }
+
+        /// The one frequency a service lives on the world over, for the decoders that have one. A
+        /// mode that can sit anywhere, voice, paging, a data burst, has none, and starts wherever
+        /// the radio feeding it is tuned.
+        #[must_use]
+        pub fn home_frequency_hz(type_id: &str) -> Option<f64> {
+            match type_id {
+                $($type_id => $home,)*
+                _ => None,
+            }
+        }
+    };
 }
 
-impl ChannelParams {
-    #[must_use]
-    pub fn type_id(&self) -> &'static str {
-        match self {
-            Self::Nfm(_) => "nfm",
-            Self::Selcall(_) => "selcall",
-            Self::Am(_) => "am",
-            Self::Ssb(_) => "ssb",
-            Self::Wfm(_) => "wfm",
-            Self::Pocsag(_) => "pocsag",
-            Self::Flex(_) => "flex",
-            Self::Ermes(_) => "ermes",
-            Self::Eot(_) => "eot",
-            Self::Sarsat(_) => "sarsat",
-            Self::Adsb(_) => "adsb",
-            Self::Ais(_) => "ais",
-            Self::Aprs(_) => "aprs",
-            Self::Rtty(_) => "rtty",
-            Self::Morse(_) => "morse",
-            Self::CwSkimmer(_) => "cw_skimmer",
-            Self::Navtex(_) => "navtex",
-            Self::Acars(_) => "acars",
-            Self::Atv(_) => "atv",
-            Self::Sstv(_) => "sstv",
-            Self::Dab(_) => "dab",
-            Self::Datv(_) => "datv",
-            Self::Dvbt(_) => "dvbt",
-            Self::Drm(_) => "drm",
-            Self::Dmr(_) => "dmr",
-            Self::Dstar(_) => "dstar",
-            Self::Ysf(_) => "ysf",
-            Self::Nxdn(_) => "nxdn",
-            Self::P25(_) => "p25",
-            Self::Dpmr(_) => "dpmr",
-            Self::M17(_) => "m17",
-            Self::Tetra(_) => "tetra",
-            Self::Tetrapol(_) => "tetrapol",
-            Self::Ft8(_) => "ft8",
-            Self::Ft4(_) => "ft4",
-            Self::Psk(_) => "psk",
-            Self::Wspr(_) => "wspr",
-            Self::Freedv(_) => "freedv",
-            Self::Ident(_) => "ident",
-            Self::RadioClock(_) => "radio_clock",
-            Self::Gnss(_) => "gnss",
-            Self::Vor(_) => "vor",
-            Self::Ils(_) => "ils",
-            Self::Dsc(_) => "dsc",
-            Self::InmarsatStdc(_) => "inmarsat_stdc",
-            Self::InmarsatAero(_) => "inmarsat_aero",
-            Self::Vdl2(_) => "vdl2",
-            Self::Hfdl(_) => "hfdl",
-            Self::Iridium(_) => "iridium",
-            Self::Dect(_) => "dect",
-            Self::Gsm(_) => "gsm",
-            Self::Apt(_) => "apt",
-            Self::Lrpt(_) => "lrpt",
-            Self::Wefax(_) => "wefax",
-            Self::Same(_) => "same",
-            Self::Radiosonde(_) => "radiosonde",
-            Self::Lora(_) => "lora",
-            Self::RemoteId(_) => "remote_id",
-            Self::Ble(_) => "ble",
-            Self::WifiOccupancy(_) => "wifi_occupancy",
-            Self::IsmSurvey(_) => "ism_survey",
-            Self::Ism(_) => "ism",
-            Self::Wmbus(_) => "wmbus",
-            Self::NoiseFigure(_) => "noise_figure",
-            Self::Per(_) => "per",
-            Self::Sid(_) => "sid",
-            Self::Stanag(_) => "stanag",
-        }
-    }
-}
+decoders!(define_channel_params);
 
 pub const MIN_SQUELCH_AUTO_MARGIN_DB: f32 = 2.0;
 pub const MAX_SQUELCH_AUTO_MARGIN_DB: f32 = 40.0;
+pub const DEFAULT_SQUELCH_AUTO_MARGIN_DB: f32 = 8.0;
 
 /// How a channel gates what it decodes: not at all, above a level the operator set, or a margin
 /// above the noise floor it measures for itself.
@@ -1929,50 +1713,11 @@ impl Squelch {
 
 pub const DEFAULT_FREQUENCY_HZ: f64 = 100_000_000.0;
 
-/// The one frequency a service lives on the world over, for the decoders that have one. A mode
-/// that can sit anywhere, voice, paging, a data burst, has none, and starts wherever the radio
-/// feeding it is tuned.
-#[must_use]
-pub fn home_frequency_hz(type_id: &str) -> Option<f64> {
-    let hz = match type_id {
-        "adsb" => 1_090_000_000.0,
-        "ais" => 161_975_000.0,
-        "acars" => 131_550_000.0,
-        "vdl2" => 136_975_000.0,
-        "aprs" => 144_800_000.0,
-        "dsc" => 2_187_500.0,
-        "navtex" => 518_000.0,
-        "wspr" => 14_095_600.0,
-        "ft8" => 14_074_000.0,
-        "ft4" => 14_080_000.0,
-        "psk" => 14_070_000.0,
-        "gnss" => 1_575_420_000.0,
-        "iridium" => 1_621_500_000.0,
-        "inmarsat_stdc" | "inmarsat_aero" => 1_541_450_000.0,
-        "hfdl" => 10_081_000.0,
-        "vor" => 113_000_000.0,
-        "ils" => 110_300_000.0,
-        "dect" => 1_897_344_000.0,
-        "apt" => 137_100_000.0,
-        "lrpt" => 137_900_000.0,
-        "radio_clock" => 77_500.0,
-        "dab" => 227_360_000.0,
-        "remote_id" | "ble" => 2_426_000_000.0,
-        "wifi_occupancy" => 2_437_000_000.0,
-        "ism_survey" => 2_442_000_000.0,
-        "ism" => 433_920_000.0,
-        "wmbus" => crate::wmbus::WMBUS_T_C_HZ,
-        "sid" => 30_000.0,
-        "sarsat" => 406_034_000.0,
-        _ => return None,
-    };
-    Some(hz)
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
 pub struct ChannelSettings {
     /// The frequency the decoder listens on, whatever any radio happens to be tuned to. A radio
     /// that cannot reach it simply does not carry this channel.
+    #[schema(required = false)]
     pub frequency_hz: f64,
     #[serde(default)]
     pub squelch: Squelch,

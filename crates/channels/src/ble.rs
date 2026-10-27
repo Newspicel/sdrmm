@@ -200,8 +200,10 @@ impl Sink for Events<'_> {
         let Some(repeats) = self.repeats.admit(key(&pdu), content(&pdu), packet.sample) else {
             return;
         };
+        let fields = Fields::read(pdu.data);
+        *self.unreadable = self.unreadable.saturating_add(fields.truncated);
         self.events
-            .push(DecoderEvent::Ble(advert(&pdu, &packet, repeats)));
+            .push(DecoderEvent::Ble(advert(&pdu, &packet, repeats, fields)));
     }
 }
 
@@ -236,8 +238,12 @@ fn data_id(pdu: &AdvPdu<'_>) -> [u8; 2] {
     adi(pdu).map_or([0xFF; 2], |adi| adi.data_id.to_le_bytes())
 }
 
-pub(crate) fn advert(pdu: &AdvPdu<'_>, packet: &Packet<'_>, repeats: u32) -> BleAdvert {
-    let fields = Fields::read(pdu.data);
+pub(crate) fn advert(
+    pdu: &AdvPdu<'_>,
+    packet: &Packet<'_>,
+    repeats: u32,
+    fields: Fields,
+) -> BleAdvert {
     let extended = pdu.extended.unwrap_or_default();
     BleAdvert {
         pdu: pdu.kind,

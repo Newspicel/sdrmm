@@ -60,7 +60,7 @@ function replay(stem: string): WorkspaceSnapshot {
       nodes: [
         node(
           "rec",
-          { kind: "recording", data: { recording: stem } },
+          { kind: "device", data: { device: { backend: "recording", key: stem } } },
           { x: 0, y: 0, w: 420, h: 360 },
         ),
         array(),

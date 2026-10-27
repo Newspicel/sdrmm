@@ -70,6 +70,13 @@ def run(args, cwd, env):
     subprocess.run(args, cwd=cwd, env=env, check=True)
 
 
+def require_nasm(target, env):
+    if target.split("-", 1)[0] not in ("x86_64", "i686"):
+        return
+    if shutil.which("nasm", path=env.get("PATH")) is None:
+        raise RuntimeError(f"nasm is required to assemble FFmpeg's x86 kernels for {target}")
+
+
 def require_msys_shell(env):
     kernel = subprocess.run(
         [tool("bash", env), "-c", "uname -s"], env=env, capture_output=True, text=True, check=True
@@ -166,8 +173,7 @@ def configure(source, prefix, fdk, target, env):
     ]
     arch = target.split("-", 1)[0]
     args.append(f"--arch={arch}")
-    if not shutil.which("nasm", path=env.get("PATH")):
-        args.append("--disable-x86asm")
+    require_nasm(target, env)
     if "windows-msvc" in target:
         # `lib.exe` rather than `llvm-lib`: configure picks an archiver's flags by asking it who it
         # is, and only the Microsoft banner selects `-out:`. llvm-lib answers with nothing configure

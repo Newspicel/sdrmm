@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelDescriptor, PatchCatalog } from "../lib/types";
-import { catalogBody, catalogShape } from "../test/catalog";
+import { CATALOG as WIRE_CATALOG, catalogBody, catalogShape } from "../test/catalog";
 import {
   channelPicker,
   decoderGroups,
   filterPalette,
   firstPaletteItem,
   paletteGroups,
+  SECTION_TITLES,
+  SECTIONS,
   sectionGroups,
 } from "./palette";
 
@@ -232,6 +234,24 @@ describe("filterPalette", () => {
     );
     for (const entry of CATALOG.nodes) {
       expect(offered.has(entry.kind), `${entry.kind} is not in the palette`).toBe(true);
+    }
+  });
+});
+
+describe("the palette sections", () => {
+  it("cover every category and node the wire catalog carries", () => {
+    const listed = new Set(SECTIONS.map((section) => section.id));
+    expect(Object.keys(SECTION_TITLES).length).toBe(listed.size);
+    const offered = new Set(
+      paletteGroups(WIRE_CATALOG, [])
+        .flatMap((group) => group.items)
+        .map((item) => item.kind),
+    );
+    for (const entry of WIRE_CATALOG.nodes) {
+      expect(listed, `${entry.kind} is in no section`).toContain(entry.category);
+      if (entry.needs_channel_type !== true) {
+        expect(offered.has(entry.kind), `${entry.kind} is in no palette group`).toBe(true);
+      }
     }
   });
 });

@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import { controlSurvey, surveyQuery } from "./api";
 import { omitNodes } from "./byNode";
+import { SURVEY_LIMITS } from "./limits";
 import { clearAction, failAction } from "./refusals";
 import type {
   ServerEvent,
@@ -42,15 +43,13 @@ export const EMPTY_SURVEY: SurveyState = {
   behind: false,
 };
 
-const METRES_PER_DEG_LON = 111_320;
-const METRES_PER_DEG_LAT = 110_540;
-const CELL_M = 10;
-
 export function cellKey(cell: SurveyCell): string {
   const lat = (cell.latitude * Math.PI) / 180;
-  const x = cell.longitude * METRES_PER_DEG_LON * Math.max(0.01, Math.cos(lat));
-  const y = cell.latitude * METRES_PER_DEG_LAT;
-  return `${Math.round(cell.frequency_hz)}:${Math.round(x / CELL_M)}:${Math.round(y / CELL_M)}`;
+  const cos = Math.max(SURVEY_LIMITS.min_cos_lat, Math.cos(lat));
+  const x = cell.longitude * SURVEY_LIMITS.metres_per_degree_lon * cos;
+  const y = cell.latitude * SURVEY_LIMITS.metres_per_degree_lat;
+  const cellM = SURVEY_LIMITS.cell_m;
+  return `${Math.round(cell.frequency_hz)}:${Math.round(x / cellM)}:${Math.round(y / cellM)}`;
 }
 
 export function withCell(

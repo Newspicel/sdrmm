@@ -206,3 +206,111 @@ fn wh31e(bits: &mut Bits, found: &mut Found) -> Outcome {
         }
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ism::bits::from_rows;
+    use crate::ism::device::{Decode, tenths_c};
+
+    const WH5_ROW: &str = "11111110100101000110010011001110011011100000011";
+    const TELLDUS_ROW: &str = "1111111110100010111001000011110110100000100101101";
+    const WH24_ROW: &str = "1101010101010101010101010101010101010101000101101110101000010010010111111000010101110001000000110010011100000100000000010000000000100101000000000000000010000000000000000000000001000111100000111001";
+    const WH65B_ROW: &str = "01010101010101010101010101010101010101010101000101101110101000010010001010000011001111110001010000111010000010000000000000000000000000000000100000000000000100000000000000000000000001000110000010100001000000001";
+    const WH31B_ROW: &str = "101010101010101010101010001011011101010000110111110000111000000111010101010111000111000100011101";
+    const WH40_ROW: &str = "1010101010101010101010100010110111010100010000000000000011001101011011110001000000000000000000110011011111000110";
+
+    fn only(decode: Decode, row: &str) -> IsmMessage {
+        let mut bits = from_rows(&[row]);
+        let mut found = Found::new();
+        assert_eq!(decode(&mut bits, &mut found), Outcome::Decoded);
+        assert_eq!(found.len(), 1, "{found:?}");
+        found.remove(0)
+    }
+
+    #[test]
+    fn a_wh5_frame_offsets_its_temperature_by_forty_degrees() {
+        let message = only(wh2, WH5_ROW);
+        assert_eq!(message.model, "Fineoffset-WH5");
+        assert_eq!(message.id, "163");
+        assert_eq!(tenths_c(&message), Some(21.5));
+        assert_eq!(message.humidity_pct, Some(55));
+        assert_eq!(message.raw, "4a32673703");
+        assert_eq!(message.bits, 40);
+    }
+
+    #[test]
+    fn a_telldus_proove_frame_reads_a_sign_magnitude_temperature() {
+        let message = only(wh2, TELLDUS_ROW);
+        assert_eq!(message.model, "Fineoffset-TelldusProove");
+        assert_eq!(message.id, "92");
+        assert_eq!(tenths_c(&message), Some(-12.3));
+        assert_eq!(message.humidity_pct, Some(65));
+        assert_eq!(message.raw, "45c87b412d");
+    }
+
+    #[test]
+    fn a_wh24_frame_reads_wind_rain_and_light_after_the_sync_word() {
+        let message = only(wh24, WH24_ROW);
+        assert_eq!(message.model, "Fineoffset-WH24");
+        assert_eq!(message.id, "191");
+        assert_eq!(message.battery_ok, Some(true));
+        assert_eq!(tenths_c(&message), Some(11.8));
+        assert_eq!(message.humidity_pct, Some(78));
+        assert_eq!(message.wind_dir_deg, Some(266.0));
+        assert_eq!(message.wind_avg_m_s, Some(1.12));
+        assert_eq!(message.wind_max_m_s, Some(2.24));
+        assert_eq!(message.rain_mm, Some(22.2));
+        assert_eq!(message.uv_index, Some(0.0));
+        assert_eq!(message.light_lux, Some(0.0));
+        assert_eq!(message.raw, "24bf0ae2064e0802004a00010000008f07");
+        assert_eq!(message.bits, 136);
+    }
+
+    #[test]
+    fn a_longer_postamble_reports_the_wh65b_cup_and_wind_factors() {
+        let message = only(wh24, WH65B_ROW);
+        assert_eq!(message.model, "Fineoffset-WH65B");
+        assert_eq!(message.id, "80");
+        assert_eq!(tenths_c(&message), Some(24.7));
+        assert_eq!(message.humidity_pct, Some(65));
+        assert_eq!(message.wind_dir_deg, Some(359.0));
+        assert_eq!(message.wind_avg_m_s, Some(0.0));
+        assert_eq!(message.wind_max_m_s, Some(0.0));
+        assert_eq!(message.rain_mm, Some(0.254));
+        assert_eq!(message.raw, "245067e287410000000100020000008c14");
+    }
+
+    #[test]
+    fn a_wh31b_frame_reports_the_b_model_for_type_code_thirty_seven() {
+        let message = only(wh31e, WH31B_ROW);
+        assert_eq!(message.model, "AmbientWeather-WH31B");
+        assert_eq!(message.id, "195");
+        assert_eq!(message.channel.as_deref(), Some("1"));
+        assert_eq!(message.battery_ok, Some(true));
+        assert_eq!(tenths_c(&message), Some(6.9));
+        assert_eq!(message.humidity_pct, Some(92));
+        assert_eq!(message.raw, "37c381d55c711d");
+        assert_eq!(message.bits, 56);
+    }
+
+    #[test]
+    fn a_wh40_frame_counts_rain_in_tenths_of_a_millimetre() {
+        let message = only(wh31e, WH40_ROW);
+        assert_eq!(message.model, "EcoWitt-WH40");
+        assert_eq!(message.id, "52591");
+        assert_eq!(message.rain_mm, Some(0.3));
+        assert_eq!(message.raw, "4000cd6f10000337c6");
+        assert_eq!(message.bits, 72);
+    }
+
+    #[test]
+    fn a_wh40_frame_with_a_broken_sum_reports_a_failed_check() {
+        let mut row = WH40_ROW.to_owned();
+        row.replace_range(row.len() - 1.., "1");
+        let mut bits = from_rows(&[row.as_str()]);
+        let mut found = Found::new();
+        assert_eq!(wh31e(&mut bits, &mut found), Outcome::Mic);
+        assert!(found.is_empty());
+    }
+}

@@ -1,10 +1,10 @@
 use std::path::Path;
 
-use sdrmm_wire::{ArrayStatus, CheckStatus, DeviceInfo, DoctorCheck, DoctorReport, SyncState};
+use sdrmm_wire::{
+    ArrayStatus, CheckStatus, DeviceBackend, DeviceInfo, DoctorCheck, DoctorReport, SyncState,
+};
 
-const BANK_DRIVER: &str = "kraken";
-const KERBEROS_LABEL: &str = "KerberosSDR";
-const MISSING_SUFFIX: &str = " missing)";
+const LANE_SUFFIX: &str = " lane ";
 
 #[must_use]
 pub fn collect(db_path: Option<&Path>, recordings_dir: Option<&Path>) -> DoctorReport {
@@ -19,17 +19,8 @@ pub fn report(
     recordings_dir: Option<&Path>,
 ) -> DoctorReport {
     let mut checks = vec![backends_check(registry)];
-    let devices = devices_checks(registry);
-    #[cfg(all(feature = "soapy", not(test)))]
-    {
-        let info = sdrmm_device_soapy::runtime_info();
-        checks.push(soapy_check(&info));
-    }
-    #[cfg(all(feature = "sdrplay", not(test)))]
-    checks.push(sdrplay_check(&sdrmm_device_sdrplay::runtime_info()));
-    #[cfg(all(feature = "cr8", not(test)))]
-    checks.push(cr8_check(sdrmm_device_cr8::load_error()));
-    checks.extend(devices);
+    checks.extend(registry.health());
+    checks.extend(devices_checks(registry));
     checks.extend(usb_checks());
     checks.push(path_check(
         "storage.db",
@@ -54,25 +45,25 @@ pub fn report(
 }
 
 fn backends_check(registry: &sdrmm_device::DeviceRegistry) -> DoctorCheck {
-    let mut ids: Vec<&str> = registry
+    let mut backends: Vec<DeviceBackend> = registry
         .driver_ids()
         .into_iter()
-        .map(|(_, id)| id)
+        .map(|(_, backend)| backend)
         .collect();
-    ids.sort_unstable();
-    let hardware: Vec<&str> = ids
+    backends.sort_unstable_by_key(|backend| backend.as_str());
+    let hardware: Vec<DeviceBackend> = backends
         .iter()
         .copied()
-        .filter(|id| {
-            !matches!(
-                *id,
-                "virtual" | sdrmm_wire::RECORDING_DRIVER_ID | sdrmm_wire::SIGGEN_DRIVER_ID
-            )
-        })
+        .filter(|backend| backend.is_radio())
         .collect();
-    let detail = format!("compiled backends: {}", ids.join(", "));
+    let names: Vec<&str> = backends
+        .iter()
+        .copied()
+        .map(DeviceBackend::as_str)
+        .collect();
+    let detail = format!("compiled backends: {}", names.join(", "));
     if hardware.is_empty() {
-        let virtual_capabilities = virtual_capabilities(cfg!(debug_assertions));
+        let virtual_capabilities = virtual_capabilities(sdrmm_engine::synthetic_devices_offered());
         return DoctorCheck {
             id: "backends".to_string(),
             name: "Device backends".to_string(),
@@ -102,117 +93,6 @@ fn virtual_capabilities(debug_build: bool) -> &'static str {
     }
 }
 
-#[cfg(feature = "soapy")]
-fn soapy_check(info: &sdrmm_device_soapy::RuntimeInfo) -> DoctorCheck {
-    let Some(core_version) = &info.core_version else {
-        return DoctorCheck {
-            id: "soapy.runtime".to_string(),
-            name: "SoapySDR runtime".to_string(),
-            status: CheckStatus::Warn,
-            detail: info
-                .error
-                .clone()
-                .unwrap_or_else(|| "not installed".to_string()),
-            hint: Some(
-                "SoapySDR is optional. Install it with your package manager to reach bladeRF, \
-                 LimeSDR and other hardware only its modules drive; RTL-SDR, HackRF, Airspy, \
-                 AD936x, SDRplay and CR-8 receivers do not need it."
-                    .to_string(),
-            ),
-        };
-    };
-    let module_names: Vec<String> = info
-        .modules
-        .iter()
-        .map(|path| {
-            Path::new(path)
-                .file_name()
-                .map_or_else(|| path.clone(), |name| name.to_string_lossy().into_owned())
-        })
-        .collect();
-    DoctorCheck {
-        id: "soapy.runtime".to_string(),
-        name: "SoapySDR runtime".to_string(),
-        status: if module_names.is_empty() {
-            CheckStatus::Warn
-        } else {
-            CheckStatus::Ok
-        },
-        detail: format!(
-            "core: {core_version}\nlibrary: {}\nmodule search path: {}\nloaded modules: {}",
-            info.library.as_deref().unwrap_or("(unknown)"),
-            if info.search_paths.is_empty() {
-                "(none)".to_string()
-            } else {
-                info.search_paths.join(", ")
-            },
-            if module_names.is_empty() {
-                "(none)".to_string()
-            } else {
-                module_names.join(", ")
-            }
-        ),
-        hint: module_names.is_empty().then(|| {
-            "SoapySDR loaded no driver modules, so it can reach no hardware of its own. \
-             RTL-SDR, HackRF, Airspy, AD936x, SDRplay and CR-8 receivers do not need it and are \
-             unaffected."
-                .to_string()
-        }),
-    }
-}
-
-#[cfg(feature = "sdrplay")]
-fn sdrplay_check(info: &sdrmm_device_sdrplay::RuntimeInfo) -> DoctorCheck {
-    let loaded = info
-        .library
-        .as_ref()
-        .zip(info.version)
-        .map(|(library, version)| format!("version {version}\nlibrary: {library}"));
-    let installed = loaded.is_some();
-    DoctorCheck {
-        id: "sdrplay.api".to_string(),
-        name: "SDRplay API".to_string(),
-        status: if installed {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Warn
-        },
-        detail: loaded.unwrap_or_else(|| {
-            info.error
-                .clone()
-                .unwrap_or_else(|| "not installed".to_string())
-        }),
-        hint: (!installed).then(|| {
-            "SDRplay receivers need the vendor API, which is licensed for genuine SDRplay \
-             hardware and is not part of this package. Install it from \
-             https://www.sdrplay.com/downloads/ and make sure its service is running. Without \
-             it nothing else is affected, only RSP receivers stay invisible."
-                .to_string()
-        }),
-    }
-}
-
-#[cfg(feature = "cr8")]
-fn cr8_check(error: Option<String>) -> DoctorCheck {
-    DoctorCheck {
-        id: "cr8.library".to_string(),
-        name: "Dragon Labs CR-8 SDK".to_string(),
-        status: if error.is_none() {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Warn
-        },
-        detail: error.clone().unwrap_or_else(|| "loaded".to_string()),
-        hint: error.is_some().then(|| {
-            "The CR-8 needs its vendor library, which ships with the receiver and is not part of \
-             this package. Put libdlcr where the loader can find it, or point \
-             SDRMM_DLCR_LIBRARY at it. Nothing else is affected, only CR-8 receivers stay \
-             invisible."
-                .to_string()
-        }),
-    }
-}
-
 fn devices_checks(registry: &sdrmm_device::DeviceRegistry) -> Vec<DoctorCheck> {
     let timings = registry.probe_timings();
     let devices = registry.probe_all_deep();
@@ -222,35 +102,57 @@ fn devices_checks(registry: &sdrmm_device::DeviceRegistry) -> Vec<DoctorCheck> {
     checks
 }
 
-fn bank_line(device: &DeviceInfo) -> String {
-    let model = if device.label.starts_with(KERBEROS_LABEL) {
-        "kerberos"
-    } else {
-        "kraken"
-    };
-    let missing = device
-        .label
-        .strip_suffix(MISSING_SUFFIX)
-        .and_then(|label| label.rsplit_once(" ("))
-        .map(|(_, serials)| serials);
-    match (missing, &device.profile) {
-        (Some(serials), _) => format!("{model} {}: {serials} missing", device.key),
-        (None, Some(profile)) => format!("{model} {}: {} lanes", device.key, profile.rx_streams),
-        (None, None) => format!("{model} {}", device.key),
+struct Bank {
+    id: String,
+    name: String,
+    seen: u32,
+    lanes: u32,
+}
+
+impl Bank {
+    fn line(&self) -> String {
+        format!("{}: {} of {} lanes", self.name, self.seen, self.lanes)
+    }
+
+    fn whole(&self) -> bool {
+        self.seen == self.lanes
     }
 }
 
+fn banked(devices: &[DeviceInfo]) -> Vec<Bank> {
+    let mut found: Vec<Bank> = Vec::new();
+    for device in devices {
+        let Some(bank) = device
+            .profile
+            .as_ref()
+            .and_then(|profile| profile.bank.as_ref())
+        else {
+            continue;
+        };
+        let name = device
+            .label
+            .split_once(LANE_SUFFIX)
+            .map_or(device.label.as_str(), |(name, _)| name)
+            .to_owned();
+        match found.iter_mut().find(|held| held.id == bank.id) {
+            Some(held) => held.seen += 1,
+            None => found.push(Bank {
+                id: bank.id.clone(),
+                name,
+                seen: 1,
+                lanes: bank.lanes,
+            }),
+        }
+    }
+    found
+}
+
 fn banks_check(devices: &[DeviceInfo]) -> Option<DoctorCheck> {
-    let banks: Vec<&DeviceInfo> = devices
-        .iter()
-        .filter(|device| device.driver == BANK_DRIVER)
-        .collect();
+    let banks = banked(devices);
     if banks.is_empty() {
         return None;
     }
-    let broken = banks
-        .iter()
-        .any(|device| device.label.ends_with(MISSING_SUFFIX));
+    let broken = !banks.iter().all(Bank::whole);
     Some(DoctorCheck {
         id: "devices.banks".to_string(),
         name: "Coherent banks".to_string(),
@@ -259,11 +161,7 @@ fn banks_check(devices: &[DeviceInfo]) -> Option<DoctorCheck> {
         } else {
             CheckStatus::Ok
         },
-        detail: banks
-            .iter()
-            .map(|device| bank_line(device))
-            .collect::<Vec<_>>()
-            .join("\n"),
+        detail: banks.iter().map(Bank::line).collect::<Vec<_>>().join("\n"),
         hint: broken.then(|| "replug the missing dongles, then power the bank again".to_string()),
     })
 }
@@ -316,7 +214,7 @@ pub(crate) fn served(engine: &sdrmm_engine::Engine, db_path: Option<&Path>) -> D
 fn port_bound_check(devices: &[DeviceInfo]) -> Option<DoctorCheck> {
     let bound: Vec<&str> = devices
         .iter()
-        .filter(|device| device.driver == "rtlsdr" && device.serial.is_none())
+        .filter(|device| device.driver == DeviceBackend::Rtlsdr && device.serial.is_none())
         .map(|device| device.label.as_str())
         .collect();
     if bound.is_empty() {
@@ -340,11 +238,11 @@ fn port_bound_check(devices: &[DeviceInfo]) -> Option<DoctorCheck> {
 
 fn devices_check(
     devices: &[DeviceInfo],
-    timings: &[(&'static str, usize, std::time::Duration)],
+    timings: &[(DeviceBackend, usize, std::time::Duration)],
 ) -> DoctorCheck {
     let mut hardware: Vec<String> = devices
         .iter()
-        .filter(|d| d.driver != "virtual")
+        .filter(|d| d.driver.is_radio())
         .map(|d| match &d.serial {
             Some(serial) => format!("{} [{}] serial {serial}", d.id(), d.label),
             None => format!("{} [{}]", d.id(), d.label),
@@ -386,7 +284,7 @@ pub fn rate_report(registry: &sdrmm_device::DeviceRegistry) -> DoctorReport {
     let checks = registry
         .probe_all_deep()
         .into_iter()
-        .filter(|d| d.driver != "virtual")
+        .filter(|d| d.driver.is_radio())
         .map(|info| match registry.open(&info.id()) {
             Ok((_, mut device)) => {
                 let rates = device.capabilities().sample_rates.clone();
@@ -428,6 +326,8 @@ fn hold_rate(device: &mut dyn sdrmm_device::SdrDevice, rate: f64) -> Option<f64>
 
 const RATE_TOLERANCE: f64 = 1e-6;
 
+/// A radio that resamples across a window has no fixed rate to hold, so nothing can fail here.
+/// Only a radio that declares neither discrete rates nor a range is unverifiable.
 fn rate_check(
     id: &str,
     label: &str,
@@ -435,8 +335,6 @@ fn rate_check(
     ranges: &[sdrmm_wire::Range],
 ) -> DoctorCheck {
     if held.is_empty() {
-        // A radio that resamples across a window has no fixed rate to hold, so there is nothing
-        // to fail here. Only a radio that declares neither is unverifiable.
         let (status, detail) = if ranges.is_empty() {
             (
                 CheckStatus::Warn,
@@ -707,14 +605,14 @@ mod tests {
     #[test]
     fn an_rtl_sdr_known_by_its_port_is_told_to_get_a_serial() {
         let dongle = |key: &str, serial: Option<&str>| DeviceInfo {
-            driver: "rtlsdr".to_string(),
+            driver: DeviceBackend::Rtlsdr,
             key: key.to_string(),
             label: format!("RTL-SDR {key}"),
             serial: serial.map(str::to_string),
             profile: None,
         };
         let network = DeviceInfo {
-            driver: "rtltcp".to_string(),
+            driver: DeviceBackend::Rtltcp,
             ..dongle("10.0.0.5:1234", None)
         };
         assert!(port_bound_check(&[dongle("00000123", Some("00000123")), network]).is_none());
@@ -915,6 +813,48 @@ mod tests {
     }
 
     #[test]
+    fn the_report_carries_what_a_driver_says_about_its_runtime() {
+        struct Ailing;
+
+        impl sdrmm_device::DeviceDriver for Ailing {
+            fn id(&self) -> DeviceBackend {
+                DeviceBackend::Sdrplay
+            }
+
+            fn probe(&self) -> Vec<DeviceInfo> {
+                Vec::new()
+            }
+
+            fn open(
+                &self,
+                _info: &DeviceInfo,
+            ) -> Result<Box<dyn sdrmm_device::SdrDevice>, sdrmm_device::DeviceError> {
+                Err(sdrmm_device::DeviceError::NotFound("ailing".to_string()))
+            }
+
+            fn health(&self) -> Option<DoctorCheck> {
+                Some(DoctorCheck {
+                    id: "ailing.library".to_string(),
+                    name: "Ailing SDK".to_string(),
+                    status: CheckStatus::Warn,
+                    detail: "not installed".to_string(),
+                    hint: None,
+                })
+            }
+        }
+
+        let mut registry = sdrmm_device::DeviceRegistry::new();
+        registry.register(10, Box::new(Ailing));
+        let report = report(&registry, None, None);
+        let runtime = report
+            .checks
+            .iter()
+            .find(|check| check.id == "ailing.library")
+            .expect("the driver's own check");
+        assert_eq!(runtime.status, CheckStatus::Warn);
+    }
+
+    #[test]
     fn backends_check_warns_when_only_the_virtual_driver_is_compiled_in() {
         let mut registry = sdrmm_device::DeviceRegistry::new();
         registry.register(10, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
@@ -937,147 +877,47 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "soapy")]
-    #[test]
-    fn soapy_check_reports_the_core_its_paths_and_the_modules_it_loaded() {
-        let check = soapy_check(&sdrmm_device_soapy::RuntimeInfo {
-            core_version: Some("0.8.1".to_string()),
-            library: Some("/opt/homebrew/lib/libSoapySDR.0.8.dylib".to_string()),
-            search_paths: vec!["/opt/homebrew/lib/SoapySDR/modules0.8".to_string()],
-            modules: vec!["libbladeRFSupport.so".to_string()],
-            error: None,
-        });
-        assert_eq!(check.status, CheckStatus::Ok);
-        assert!(check.detail.contains("core: 0.8.1"));
-        assert!(check.detail.contains("libSoapySDR.0.8.dylib"));
-        assert!(
-            check
-                .detail
-                .contains("/opt/homebrew/lib/SoapySDR/modules0.8")
-        );
-        assert!(check.detail.contains("libbladeRFSupport.so"));
-        assert!(check.hint.is_none());
-    }
-
-    #[cfg(feature = "soapy")]
-    #[test]
-    fn a_soapy_runtime_with_no_modules_warns_without_blaming_the_native_backends() {
-        let check = soapy_check(&sdrmm_device_soapy::RuntimeInfo {
-            core_version: Some("0.8.1".to_string()),
-            library: Some("/usr/lib/libSoapySDR.so.0.8".to_string()),
-            search_paths: Vec::new(),
-            modules: Vec::new(),
-            error: None,
-        });
-        assert_eq!(check.status, CheckStatus::Warn);
-        assert!(check.detail.contains("(none)"));
-        assert!(check.hint.is_some_and(|hint| hint.contains("RTL-SDR")));
-    }
-
-    #[cfg(feature = "soapy")]
-    #[test]
-    fn a_host_without_soapysdr_warns_and_says_which_radios_are_unaffected() {
-        let check = soapy_check(&sdrmm_device_soapy::RuntimeInfo {
-            core_version: None,
-            library: None,
-            search_paths: Vec::new(),
-            modules: Vec::new(),
-            error: Some("SoapySDR is not installed".to_string()),
-        });
-        assert_eq!(check.status, CheckStatus::Warn);
-        assert!(check.detail.contains("not installed"));
-        assert!(check.hint.is_some_and(|hint| hint.contains("bladeRF")));
-    }
-
-    #[cfg(feature = "cr8")]
-    #[test]
-    fn a_missing_cr8_library_warns_and_says_where_it_comes_from() {
-        let check = cr8_check(Some("libdlcr.so could not be loaded".to_string()));
-        assert_eq!(check.status, CheckStatus::Warn);
-        assert!(check.detail.contains("libdlcr"));
-        assert!(
-            check
-                .hint
-                .unwrap_or_default()
-                .contains("SDRMM_DLCR_LIBRARY")
-        );
-        assert_eq!(cr8_check(None).status, CheckStatus::Ok);
-    }
-
-    #[cfg(feature = "sdrplay")]
-    #[test]
-    fn sdrplay_check_names_the_library_it_found() {
-        let check = sdrplay_check(&sdrmm_device_sdrplay::RuntimeInfo {
-            version: Some(3.15),
-            library: Some("/usr/local/lib/libsdrplay_api.so.3".to_string()),
-            error: None,
-        });
-        assert_eq!(check.status, CheckStatus::Ok);
-        assert!(check.detail.contains("3.15"));
-        assert!(check.detail.contains("libsdrplay_api.so.3"));
-        assert!(check.hint.is_none());
-    }
-
-    #[cfg(feature = "sdrplay")]
-    #[test]
-    fn a_library_that_reported_no_version_is_not_called_installed() {
-        let check = sdrplay_check(&sdrmm_device_sdrplay::RuntimeInfo {
-            version: None,
-            library: Some("/usr/local/lib/libsdrplay_api.so.3".to_string()),
-            error: Some("sdrplay_api_ApiVersion failed".to_string()),
-        });
-        assert_eq!(check.status, CheckStatus::Warn);
-        assert!(check.detail.contains("ApiVersion failed"));
-        assert!(check.hint.is_some());
-    }
-
-    #[cfg(feature = "sdrplay")]
-    #[test]
-    fn a_missing_sdrplay_api_warns_and_says_where_to_get_it() {
-        let check = sdrplay_check(&sdrmm_device_sdrplay::RuntimeInfo {
-            version: None,
-            library: None,
-            error: Some("the SDRplay API is not installed".to_string()),
-        });
-        assert_eq!(check.status, CheckStatus::Warn);
-        assert!(check.detail.contains("not installed"));
-        assert!(check.hint.is_some_and(|hint| hint.contains("sdrplay.com")));
-    }
-
-    fn bank(label: &str, lanes: u32) -> DeviceInfo {
+    fn lane(name: &str, lane: u32, lanes: u32) -> DeviceInfo {
         DeviceInfo {
-            driver: "kraken".to_string(),
-            key: "01/1".to_string(),
-            label: label.to_string(),
+            driver: DeviceBackend::Rtlsdr,
+            key: (1000 + lane).to_string(),
+            label: format!("{name} lane {}", lane + 1),
             serial: None,
             profile: Some(sdrmm_wire::DeviceProfile {
-                rx_streams: lanes,
+                rx_streams: 1,
+                bank: Some(sdrmm_wire::ClockBank {
+                    id: name.to_string(),
+                    lane,
+                    lanes,
+                }),
                 ..sdrmm_wire::DeviceProfile::default()
             }),
         }
     }
 
+    fn bank(name: &str, lanes: u32, seen: u32) -> Vec<DeviceInfo> {
+        (0..seen).map(|held| lane(name, held, lanes)).collect()
+    }
+
     #[test]
     fn a_whole_bank_lists_its_lanes() {
-        let check = banks_check(&[
-            bank("KrakenSDR (01/1)", 5),
-            DeviceInfo {
-                key: "02/3".to_string(),
-                ..bank("KerberosSDR (02/3)", 4)
-            },
-        ])
-        .expect("banks are listed");
+        let mut devices = bank("KrakenSDR 01/1", 5, 5);
+        devices.extend(bank("KerberosSDR 02/3", 4, 4));
+        let check = banks_check(&devices).expect("banks are listed");
         assert_eq!(check.status, CheckStatus::Ok);
-        assert_eq!(check.detail, "kraken 01/1: 5 lanes\nkerberos 02/3: 4 lanes");
+        assert_eq!(
+            check.detail,
+            "KrakenSDR 01/1: 5 of 5 lanes\nKerberosSDR 02/3: 4 of 4 lanes"
+        );
         assert!(check.hint.is_none());
         assert!(banks_check(&[]).is_none(), "no bank, no line");
     }
 
     #[test]
-    fn a_bank_short_of_a_dongle_names_its_serial() {
-        let check = banks_check(&[bank("KrakenSDR (1004 missing)", 5)]).expect("listed");
+    fn a_bank_short_of_a_dongle_is_a_warning() {
+        let check = banks_check(&bank("KrakenSDR 01/1", 5, 4)).expect("listed");
         assert_eq!(check.status, CheckStatus::Warn);
-        assert_eq!(check.detail, "kraken 01/1: 1004 missing");
+        assert_eq!(check.detail, "KrakenSDR 01/1: 4 of 5 lanes");
         assert!(check.hint.is_some());
     }
 

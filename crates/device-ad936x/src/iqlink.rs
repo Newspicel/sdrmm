@@ -1,6 +1,6 @@
 use std::{
     io,
-    net::UdpSocket,
+    net::{IpAddr, SocketAddr, UdpSocket},
     sync::Mutex,
     time::{Duration, Instant},
 };
@@ -15,6 +15,7 @@ use crate::iio::Stopper;
 
 const PROBE_TIMEOUT: Duration = Duration::from_millis(300);
 const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_JUMP_FRAMES: u64 = 1 << 26;
 
 pub(crate) struct Request<'a> {
     pub(crate) device: &'a str,
@@ -45,6 +46,7 @@ fn connect(
         return Ok(None);
     };
     let local = tcp.local_addr().map_err(io_error)?.ip();
+    let board = tcp.peer_addr().map_err(io_error)?.ip();
     let socket = udp_receiver(local)?;
     let port = socket.local_addr().map_err(io_error)?.port();
     let control = Connection::new(tcp);
@@ -65,7 +67,9 @@ fn connect(
                 frame_bytes,
                 lanes: request.lanes.max(1) as u64,
             };
-            Ok(Some(IqlinkStream::new(control, socket, pool, &shape)))
+            Ok(Some(IqlinkStream::new(
+                control, socket, board, pool, &shape,
+            )))
         }
         Reply::Streaming { frame_bytes } => Err(DeviceError::Io(format!(
             "iqlink sends {frame_bytes}-byte frames, expected {}",
@@ -136,10 +140,19 @@ impl Sequence {
         if header.index < expected {
             return Ok(Placed::Stale);
         }
-        self.expected = Some(header.index + (payload / self.frame_bytes) as u64);
+        let gap = header.index - expected;
+        if gap > MAX_JUMP_FRAMES {
+            return Err(DeviceError::Io(format!(
+                "iqlink jumped {gap} frames past {expected}, more than a stream ever skips"
+            )));
+        }
+        self.expected = Some(
+            header
+                .index
+                .saturating_add((payload / self.frame_bytes) as u64),
+        );
         let board = header.board_lost.saturating_sub(self.board_lost);
         self.board_lost = self.board_lost.max(header.board_lost);
-        let gap = header.index - expected;
         if gap == 0 {
             return Ok(Placed::Next);
         }
@@ -165,11 +178,14 @@ struct State {
     carried: Option<BlockGap>,
     returned: Option<BlockGap>,
     stale: u64,
+    foreign: u64,
+    bound: bool,
 }
 
 pub(crate) struct IqlinkStream {
     control: Connection,
     socket: UdpSocket,
+    board: IpAddr,
     pool: BlockPool,
     refill: usize,
     stopper: Stopper,
@@ -190,12 +206,19 @@ enum Fill {
 }
 
 impl IqlinkStream {
-    fn new(control: Connection, socket: UdpSocket, pool: BlockPool, shape: &Shape) -> Self {
+    fn new(
+        control: Connection,
+        socket: UdpSocket,
+        board: IpAddr,
+        pool: BlockPool,
+        shape: &Shape,
+    ) -> Self {
         let stopper = Stopper::socket(control.stop_handle());
         let payload = DATAGRAM_BYTES - HEADER_BYTES;
         Self {
             control,
             socket,
+            board,
             pool,
             refill: shape.refill.max(payload),
             stopper,
@@ -211,6 +234,8 @@ impl IqlinkStream {
                 carried: None,
                 returned: None,
                 stale: 0,
+                foreign: 0,
+                bound: false,
             }),
         }
     }
@@ -266,8 +291,8 @@ impl IqlinkStream {
         filled: &mut usize,
         gap: &mut Option<BlockGap>,
     ) -> Result<Fill, DeviceError> {
-        let n = match self.socket.recv(&mut state.datagram) {
-            Ok(n) => n,
+        let (n, from) = match self.socket.recv_from(&mut state.datagram) {
+            Ok(got) => got,
             Err(e)
                 if matches!(
                     e.kind(),
@@ -278,6 +303,9 @@ impl IqlinkStream {
             }
             Err(e) => return Err(io_error(e)),
         };
+        if !self.board_sent(state, from)? {
+            return Ok(Fill::Room);
+        }
         let header = Header::decode(&state.datagram[..n])
             .map_err(|e| DeviceError::Io(format!("iqlink: {e}")))?;
         let payload = n - HEADER_BYTES;
@@ -307,6 +335,19 @@ impl IqlinkStream {
         } else {
             Fill::Room
         })
+    }
+
+    fn board_sent(&self, state: &mut State, from: SocketAddr) -> Result<bool, DeviceError> {
+        if from.ip() != self.board {
+            state.foreign += 1;
+            tracing::debug!(%from, foreign = state.foreign, "iqlink datagram from another host");
+            return Ok(false);
+        }
+        if !state.bound {
+            self.socket.connect(from).map_err(io_error)?;
+            state.bound = true;
+        }
+        Ok(true)
     }
 
     fn idle(&self) -> Next<Block> {
@@ -346,6 +387,7 @@ mod tests {
     use std::{
         io::{BufRead, BufReader, Write},
         net::{SocketAddr, TcpListener},
+        sync::mpsc,
         thread,
     };
 
@@ -423,6 +465,19 @@ mod tests {
         assert!(seq.place(&wide, 40).is_err());
     }
 
+    #[test]
+    fn a_wild_index_is_refused_and_the_stream_carries_on() {
+        let mut seq = sequence();
+        placed(&mut seq, 100, 0);
+        assert!(
+            seq.place(&header(200 + MAX_JUMP_FRAMES, 0), 40).is_err(),
+            "a jump no stream makes must not move the sequence"
+        );
+        assert_eq!(placed(&mut seq, 110, 0), Placed::Next);
+        let mut fresh = sequence();
+        assert_eq!(placed(&mut fresh, u64::MAX, 0), Placed::Next);
+    }
+
     fn daemon(datagrams: Vec<(u64, u64, usize)>) -> (Endpoint, thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let port = listener.local_addr().expect("addr").port();
@@ -497,6 +552,75 @@ mod tests {
         ));
         drop(stream);
         daemon.join().expect("daemon");
+    }
+
+    #[test]
+    fn a_datagram_from_another_socket_is_not_samples() {
+        let (at, ports, go, daemon) = spoofed_daemon();
+        let stream = connect(&at, request(), BlockPool::default())
+            .expect("connect")
+            .expect("iqlink answered");
+        let port = ports.recv().expect("the port the board sends to");
+        let first = next(&stream);
+        assert_eq!((first.len(), first[0]), (40, 0));
+        let spoofer = UdpSocket::bind("127.0.0.1:0").expect("spoofer");
+        let mut spoof = header(u64::MAX / 2, 0).encode().to_vec();
+        spoof.extend(std::iter::repeat_n(0xffu8, 40));
+        spoofer
+            .send_to(&spoof, (std::net::Ipv4Addr::LOCALHOST, port))
+            .expect("spoofed datagram");
+        go.send(()).expect("the daemon sends the rest");
+        let second = next(&stream);
+        assert_eq!((second.len(), second[0]), (40, 40));
+        assert_eq!(stream.block_gap(), None, "a stranger is not a gap");
+        assert!(
+            !stream.failure().reason.contains("jumped"),
+            "the socket takes datagrams from the board and nobody else: {}",
+            stream.failure().reason
+        );
+        sdrmm_device::StopHandle::stop(&stream.stopper());
+        drop(stream);
+        daemon.join().expect("daemon");
+    }
+
+    type Spoofed = (
+        Endpoint,
+        mpsc::Receiver<u16>,
+        mpsc::Sender<()>,
+        thread::JoinHandle<()>,
+    );
+
+    fn spoofed_daemon() -> Spoofed {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let (ports, listening) = mpsc::channel();
+        let (go, spoofed) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let (mut control, peer) = listener.accept().expect("accept");
+            let mut line = String::new();
+            BufReader::new(control.try_clone().expect("clone"))
+                .read_line(&mut line)
+                .expect("start");
+            let start = Start::parse(&line).expect("start line");
+            control
+                .write_all(Reply::Streaming { frame_bytes: 4 }.line().as_bytes())
+                .expect("reply");
+            let udp = UdpSocket::bind("127.0.0.1:0").expect("udp");
+            udp.connect(SocketAddr::new(peer.ip(), start.udp_port))
+                .expect("connect");
+            ports.send(start.udp_port).expect("publish the port");
+            let mut first = header(0, 0).encode().to_vec();
+            first.extend(0..40u8);
+            udp.send(&first).expect("datagram");
+            spoofed.recv().expect("the spoofed datagram went out");
+            let mut second = header(10, 0).encode().to_vec();
+            second.extend((40..80).map(|byte| byte as u8));
+            udp.send(&second).expect("datagram");
+            let mut rest = [0u8; 16];
+            while matches!(std::io::Read::read(&mut control, &mut rest), Ok(n) if n > 0) {}
+        });
+        let at = Endpoint::parse(&format!("127.0.0.1:{port}"), 1).expect("endpoint");
+        (at, listening, go, handle)
     }
 
     #[test]

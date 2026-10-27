@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     DATA_SUFFIX, DATATYPE_CF32_LE, META_SUFFIX, SIGMF_VERSION, SigmfError, SigmfMeta, data_path,
-    lane_of, meta_path, scan_collections,
+    lane_of, meta_path, publish_meta, scan_collections, tmp_meta_path,
 };
 
 mod archive;
@@ -52,9 +52,10 @@ pub fn import_pair(
     if meta.global.name.is_none() {
         meta.global.name = Some(name.clone());
     }
-    if let Err(err) = fs::write(meta_path(&stem), serde_json::to_vec_pretty(&meta)?) {
+    if let Err(err) = publish_meta(&stem, &meta) {
         let _ = fs::remove_file(data_path(&stem));
-        return Err(err.into());
+        let _ = fs::remove_file(tmp_meta_path(&stem));
+        return Err(err);
     }
     Ok(Imported { stem, samples })
 }
@@ -140,6 +141,12 @@ fn convert(stem: &Path, datatype: Datatype, mut data: impl Read) -> Result<u64, 
         held -= whole;
     }
     out.flush()?;
+    out.get_ref().sync_all()?;
+    if held != 0 {
+        return Err(SigmfError::Malformed(format!(
+            "the upload ends {held} bytes into a sample"
+        )));
+    }
     if samples == 0 {
         return Err(SigmfError::Malformed(
             "the upload carries no samples".to_owned(),
@@ -248,6 +255,34 @@ mod tests {
         .expect_err("real samples are not IQ");
         assert!(matches!(err, SigmfError::UnsupportedDatatype(_)));
         assert!(scan_stems_empty(dir.path()));
+    }
+
+    #[test]
+    fn an_upload_that_ends_mid_sample_is_refused_rather_than_stored_short() {
+        let dir = TempDir::new().expect("temp");
+        let mut data = ci16(&[(1, 1), (2, 2)]);
+        data.truncate(data.len() - 1);
+        let err = import_pair(dir.path(), "cut", &meta_json("ci16_le"), data.as_slice())
+            .expect_err("a sample is cut in half");
+        assert!(matches!(err, SigmfError::Malformed(_)), "{err}");
+        assert!(scan_stems_empty(dir.path()));
+    }
+
+    #[test]
+    fn an_imported_meta_is_published_through_its_tmp_name() {
+        let dir = TempDir::new().expect("temp");
+        std::fs::create_dir(tmp_meta_path(&dir.path().join("blocked"))).expect("block the rename");
+        let data = ci16(&[(1, 1)]);
+        let err = import_pair(
+            dir.path(),
+            "blocked",
+            &meta_json("ci16_le"),
+            data.as_slice(),
+        )
+        .expect_err("the tmp name is taken by a directory");
+        assert!(matches!(err, SigmfError::Io(_)), "{err}");
+        assert!(!meta_path(&dir.path().join("blocked")).exists());
+        assert!(crate::scan_stems(dir.path()).expect("scan").is_empty());
     }
 
     #[test]

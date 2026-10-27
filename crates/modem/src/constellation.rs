@@ -38,6 +38,7 @@ impl std::error::Error for ConstellationError {}
 pub struct Constellation {
     points: Vec<Complex<f32>>,
     labels: Vec<u32>,
+    index_of_label: Vec<usize>,
     bits_per_symbol: usize,
 }
 
@@ -81,9 +82,14 @@ impl Constellation {
                 )
             })
             .collect();
+        let mut index_of_label = vec![0usize; n];
+        for (index, &label) in labels.iter().enumerate() {
+            index_of_label[label as usize] = index;
+        }
         Ok(Self {
             points,
             labels,
+            index_of_label,
             bits_per_symbol: n.trailing_zeros() as usize,
         })
     }
@@ -114,19 +120,29 @@ impl Constellation {
     }
 
     #[must_use]
-    pub fn nearest(&self, y: Complex<f32>) -> Complex<f32> {
-        let mut best = Complex::new(0.0, 0.0);
+    pub fn index_of(&self, label: u32) -> Option<usize> {
+        self.index_of_label.get(label as usize).copied()
+    }
+
+    #[must_use]
+    pub fn nearest_index(&self, y: Complex<f32>) -> usize {
+        let mut best = 0usize;
         let mut best_d2 = f64::INFINITY;
-        for &p in &self.points {
+        for (i, p) in self.points.iter().enumerate() {
             let dr = f64::from(y.re) - f64::from(p.re);
             let di = f64::from(y.im) - f64::from(p.im);
             let d2 = dr * dr + di * di;
             if d2 < best_d2 {
                 best_d2 = d2;
-                best = p;
+                best = i;
             }
         }
         best
+    }
+
+    #[must_use]
+    pub fn nearest(&self, y: Complex<f32>) -> Complex<f32> {
+        self.points[self.nearest_index(y)]
     }
 
     #[must_use]
@@ -159,18 +175,7 @@ impl Constellation {
 
     #[must_use]
     pub fn hard_slice(&self, y: Complex<f32>) -> u32 {
-        let mut best = 0usize;
-        let mut best_d2 = f64::INFINITY;
-        for (i, p) in self.points.iter().enumerate() {
-            let dr = f64::from(y.re) - f64::from(p.re);
-            let di = f64::from(y.im) - f64::from(p.im);
-            let d2 = dr * dr + di * di;
-            if d2 < best_d2 {
-                best_d2 = d2;
-                best = i;
-            }
-        }
-        self.labels[best]
+        self.labels[self.nearest_index(y)]
     }
 }
 
@@ -205,6 +210,27 @@ mod tests {
             vec![0b00, 0b01, 0b11, 0b10],
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_label_resolves_to_its_own_point_without_a_scan() {
+        let c = gray_4pam();
+        for (index, &label) in c.labels().iter().enumerate() {
+            assert_eq!(c.index_of(label), Some(index));
+        }
+        assert_eq!(c.index_of(4), None);
+        assert_eq!(c.index_of(u32::MAX), None);
+    }
+
+    #[test]
+    fn the_slice_index_names_the_point_and_the_label_it_picked() {
+        let c = gray_4pam();
+        for y in [-2.0f32, -0.9, 0.0, 0.9, 2.0] {
+            let y = Complex::new(y, 0.1);
+            let index = c.nearest_index(y);
+            assert_eq!(c.points()[index], c.nearest(y));
+            assert_eq!(c.labels()[index], c.hard_slice(y));
+        }
     }
 
     #[test]

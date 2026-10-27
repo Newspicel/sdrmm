@@ -8,8 +8,9 @@ use std::{
     time::Duration,
 };
 
+use sdrmm_serial::{SerialPortInfo, SerialPortType};
 use sdrmm_wire::{
-    NmeaDeviceInfo, NmeaDevicesResponse, NodeBody, PositionFix, PositionSource, ProblemSource,
+    NodeBody, PositionFix, PositionSource, ProblemSource, SerialDeviceInfo, SerialDevicesResponse,
     ServerEvent,
 };
 use tokio::{
@@ -17,7 +18,7 @@ use tokio::{
     sync::broadcast,
     task::JoinHandle,
 };
-use tokio_serial::{SerialPortBuilderExt, SerialPortInfo, SerialPortType};
+use tokio_serial::SerialPortBuilderExt;
 
 use crate::{AppState, problems::ProblemBoard};
 
@@ -433,10 +434,10 @@ fn clear_position_consumers(state: &RouteState) {
         {
             tracing::debug!(%error, device_set = set.id, "could not clear recording GPS fix");
         }
-        if set.time_machine.is_some()
-            && let Err(error) = state.engine.update_time_machine_position(set.id, None)
+        if set.pre_roll.is_some()
+            && let Err(error) = state.engine.update_pre_roll_position(set.id, None)
         {
-            tracing::debug!(%error, device_set = set.id, "could not clear held history GPS fix");
+            tracing::debug!(%error, device_set = set.id, "could not clear pre-roll GPS fix");
         }
     }
 }
@@ -593,19 +594,28 @@ where
     })
 }
 
-pub(crate) fn nmea_devices() -> Result<NmeaDevicesResponse, String> {
-    let ports = tokio_serial::available_ports()
+pub(crate) fn nmea_devices() -> Result<SerialDevicesResponse, String> {
+    let ports = sdrmm_serial::ports()
         .map_err(|error| format!("list serial devices: {error}"))?
         .into_iter()
-        .filter(is_openable_port)
-        .map(nmea_device_info)
+        .map(serial_device_info)
         .collect();
-    Ok(NmeaDevicesResponse {
+    Ok(SerialDevicesResponse {
         devices: offered_ports(ports),
     })
 }
 
-fn offered_ports(mut ports: Vec<NmeaDeviceInfo>) -> Vec<NmeaDeviceInfo> {
+pub(crate) fn serial_ports() -> Result<SerialDevicesResponse, String> {
+    let mut devices: Vec<SerialDeviceInfo> = sdrmm_serial::ports()
+        .map_err(|error| format!("list serial devices: {error}"))?
+        .into_iter()
+        .map(serial_device_info)
+        .collect();
+    devices.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(SerialDevicesResponse { devices })
+}
+
+fn offered_ports(mut ports: Vec<SerialDeviceInfo>) -> Vec<SerialDeviceInfo> {
     ports.retain(|port| receiver_rank(port) == RECEIVER || !describes(port, &PERIPHERAL_WORDS));
     ports.sort_by(|left, right| {
         receiver_rank(left)
@@ -622,18 +632,6 @@ fn offered_ports(mut ports: Vec<NmeaDeviceInfo>) -> Vec<NmeaDeviceInfo> {
     } else {
         receivers
     }
-}
-
-const PSEUDO_PORTS: [&str; 4] = [
-    "Bluetooth-Incoming-Port",
-    "debug-console",
-    "wlan-debug",
-    "WirelessiAP",
-];
-
-fn is_openable_port(info: &SerialPortInfo) -> bool {
-    let name = info.port_name.rsplit('/').next().unwrap_or(&info.port_name);
-    !name.starts_with("tty.") && !PSEUDO_PORTS.iter().any(|pseudo| name.contains(pseudo))
 }
 
 const GNSS_USB_VIDS: [u16; 2] = [0x1546, 0x091e];
@@ -661,7 +659,7 @@ const PERIPHERAL_WORDS: [&str; 14] = [
 
 const RECEIVER: u8 = 0;
 
-fn describes(device: &NmeaDeviceInfo, words: &[&str]) -> bool {
+fn describes(device: &SerialDeviceInfo, words: &[&str]) -> bool {
     device
         .product
         .iter()
@@ -672,7 +670,7 @@ fn describes(device: &NmeaDeviceInfo, words: &[&str]) -> bool {
         })
 }
 
-fn receiver_rank(device: &NmeaDeviceInfo) -> u8 {
+fn receiver_rank(device: &SerialDeviceInfo) -> u8 {
     if describes(device, &GNSS_WORDS)
         || device
             .usb_vid
@@ -686,8 +684,8 @@ fn receiver_rank(device: &NmeaDeviceInfo) -> u8 {
     }
 }
 
-fn nmea_device_info(info: SerialPortInfo) -> NmeaDeviceInfo {
-    let mut device = NmeaDeviceInfo {
+fn serial_device_info(info: SerialPortInfo) -> SerialDeviceInfo {
+    let mut device = SerialDeviceInfo {
         path: info.port_name,
         product: None,
         manufacturer: None,

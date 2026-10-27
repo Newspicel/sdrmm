@@ -104,7 +104,7 @@ fn fields(tlvs: &[u8]) -> Option<Fields> {
             HEIGHT => fields.height = metres(value),
             TAKEOFF_LAT => fields.takeoff_lat = degrees(value, 90.0),
             TAKEOFF_LON => fields.takeoff_lon = degrees(value, 180.0),
-            SPEED => fields.speed = value.first().map(|&speed| f32::from(speed as i8)),
+            SPEED => fields.speed = value.first().map(|&speed| f32::from(speed)),
             COURSE => fields.course = metres(value).filter(|course| (0.0..360.0).contains(course)),
             _ => {}
         }
@@ -192,6 +192,22 @@ mod tests {
             panic!("{found:?}");
         };
         assert!((system.operator_lat.unwrap() - 48.841).abs() < 1e-9);
+    }
+
+    #[test]
+    fn horizontal_speed_counts_up_to_255_metres_a_second() {
+        let tlvs = [
+            tlv(1, &[1]),
+            tlv(3, b"1581F4XFC2342001"),
+            tlv(7, &40i16.to_be_bytes()),
+            tlv(10, &[200]),
+        ]
+        .concat();
+        let found = messages(&tlvs).unwrap();
+        let [_, RemoteIdMessage::Location(location)] = &found[..] else {
+            panic!("{found:?}");
+        };
+        assert_eq!(location.speed_mps, Some(200.0));
     }
 
     #[test]

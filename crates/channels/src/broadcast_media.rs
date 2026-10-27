@@ -70,6 +70,38 @@ impl Kind {
     }
 }
 
+#[cfg(feature = "fuzzing")]
+const FUZZED_KINDS: [Kind; 8] = [
+    Kind::Mp2,
+    Kind::Aac,
+    Kind::Latm,
+    Kind::Ac3,
+    Kind::Eac3,
+    Kind::Mpeg2,
+    Kind::H264,
+    Kind::H265,
+];
+
+#[cfg(feature = "fuzzing")]
+pub fn decode_bitstream(selector: u8, bytes: &[u8]) {
+    let kind = FUZZED_KINDS[usize::from(selector) % FUZZED_KINDS.len()];
+    let Ok(mut decoder) = decoder::Decoder::new(kind) else {
+        return;
+    };
+    let mut decoded = Vec::new();
+    if decoder.push(bytes, None, &mut decoded).is_err() {
+        let _ = decoder.recover();
+    }
+    for (_, payload) in &decoded {
+        if let Payload::Audio(pcm) = payload {
+            assert!(
+                pcm.iter().all(|sample| sample.is_finite()),
+                "{kind:?} produced a non-finite sample"
+            );
+        }
+    }
+}
+
 struct Input {
     epoch: u64,
     kind: Kind,

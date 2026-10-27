@@ -43,6 +43,7 @@ pub(crate) struct Fields {
     pub manufacturer: Vec<BleManufacturer>,
     pub uri: Option<String>,
     pub beacon: Option<BleBeacon>,
+    pub truncated: u32,
 }
 
 impl Fields {
@@ -97,8 +98,13 @@ impl Fields {
     }
 
     fn list(&mut self, body: &[u8], width: usize) {
-        for uuid in body.chunks_exact(width) {
+        let mut rest = body;
+        while let Some((uuid, next)) = rest.split_at_checked(width) {
             self.services.push(service(uuid, None));
+            rest = next;
+        }
+        if !rest.is_empty() {
+            self.truncated = self.truncated.saturating_add(1);
         }
     }
 

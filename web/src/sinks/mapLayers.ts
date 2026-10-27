@@ -28,6 +28,7 @@ export const SINK_SOURCES = {
 export const SINK_LAYERS = [
   "sink-fills",
   "sink-lines",
+  "sink-dashed",
   "sink-trails",
   "sink-pins",
   "sink-pin-labels",
@@ -300,9 +301,6 @@ export function installSinkLayers(
   enabled: boolean,
 ): boolean {
   removeSinkLayers(map);
-  if (map.getLayer("sink-dashed") !== undefined) {
-    map.removeLayer("sink-dashed");
-  }
   if (!enabled) {
     return true;
   }

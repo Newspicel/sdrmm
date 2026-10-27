@@ -1,7 +1,7 @@
 use sdrmm_device::{DeviceRegistry, RxSink, SdrDevice};
 use sdrmm_wire::{
-    Agc, ChannelParams, ChannelSettings, Coherence, DcArtifact, DeviceInfo, Duplex, GainKind,
-    GainStage, HeldLane, NfmParams, NoiseSource, Range, StreamSettings,
+    Agc, ChannelParams, ChannelSettings, Coherence, DcArtifact, DeviceBackend, DeviceInfo, Duplex,
+    GainKind, GainStage, HeldLane, NfmParams, NoiseSource, Range, StreamSettings,
 };
 
 use super::*;
@@ -90,6 +90,7 @@ fn capabilities(per_stream: StreamScope) -> Capabilities {
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
         clean_fraction: None,
+        bank: None,
     }
 }
 
@@ -99,7 +100,7 @@ fn engine() -> Arc<Engine> {
 
 fn open(engine: &Engine, per_stream: StreamScope) -> u32 {
     let info = DeviceInfo {
-        driver: "mock".to_owned(),
+        driver: DeviceBackend::Rtlsdr,
         key: "lanes".to_owned(),
         label: "Mock lanes".to_owned(),
         serial: None,

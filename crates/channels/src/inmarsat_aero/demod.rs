@@ -44,6 +44,18 @@ impl MskDemod {
         }
     }
 
+    pub(super) fn reset(&mut self) {
+        self.lowpass.reset();
+        self.filtered.clear();
+        self.previous_sample = Complex::new(0.0, 0.0);
+        self.previous_discriminator = 0.0;
+        self.freq_offset = 0.0;
+        self.timing = 0.0;
+        self.accumulator = 0.0;
+        self.accumulated = 0;
+        self.magnitude = 1e-3;
+    }
+
     pub(super) fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<(f32, u8)>) {
         self.filtered.clear();
         self.lowpass.process(input, &mut self.filtered);

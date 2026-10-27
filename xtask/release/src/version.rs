@@ -7,11 +7,38 @@ pub fn set(root: &Path, version: &str) -> Result<()> {
     validate(version)?;
     let manifest = root.join("Cargo.toml");
     let lock = root.join("Cargo.lock");
+    let properties = root.join(ANDROID_PROPERTIES);
     let members = members(&read(&lock)?);
     write(&manifest, &stamp_manifest(&read(&manifest)?, version)?)?;
     write(&lock, &stamp_lock(&read(&lock)?, &members, version))?;
+    write(
+        &properties,
+        &stamp_properties(&read(&properties)?, version)?,
+    )?;
     println!("version: {version}");
     Ok(())
+}
+
+const ANDROID_PROPERTIES: &str = "apps/android/gradle.properties";
+const ANDROID_VERSION_NAME: &str = "sdrmmVersionName=";
+
+fn stamp_properties(properties: &str, version: &str) -> Result<String> {
+    let mut hits = 0;
+    let mut out = String::with_capacity(properties.len());
+    for line in properties.lines() {
+        if line.starts_with(ANDROID_VERSION_NAME) {
+            out.push_str(&format!("{ANDROID_VERSION_NAME}{version}\n"));
+            hits += 1;
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    ensure!(
+        hits == 1,
+        "expected exactly one `{ANDROID_VERSION_NAME}` in {ANDROID_PROPERTIES}, found {hits}"
+    );
+    Ok(out)
 }
 
 fn validate(version: &str) -> Result<()> {
@@ -112,6 +139,21 @@ mod tests {
             "[package]\nversion = \"1.0.0\"\n\n[workspace.package]\nversion = \"0.9.0\"\n";
         let stamped = stamp_manifest(manifest, "2.0.0").unwrap();
         assert_eq!(stamped, manifest.replace("0.9.0", "2.0.0"));
+    }
+
+    #[test]
+    fn stamps_the_android_version_name() {
+        let properties = "sdrmm.abis=arm64-v8a\nsdrmmVersionName=0.0.0\nsdrmmVersionCode=1\n";
+        let stamped = stamp_properties(properties, "2.0.0").unwrap();
+        assert_eq!(stamped, properties.replace("0.0.0", "2.0.0"));
+    }
+
+    #[test]
+    fn rejects_android_properties_without_a_version_name() {
+        let error = stamp_properties("sdrmm.abis=arm64-v8a\n", "2.0.0")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("found 0"), "{error}");
     }
 
     #[test]

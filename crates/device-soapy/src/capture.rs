@@ -358,9 +358,9 @@ impl Timeline {
         if !std::mem::take(&mut self.overflowed) {
             return None;
         }
-        match (time_ns, self.next_ns) {
-            (Some(at), Some(expected)) if self.rate > 0.0 => {
-                let missing = ((at - expected) as f64 * self.rate / 1e9).round();
+        match self.since_expected(time_ns) {
+            Some(elapsed_ns) if self.rate > 0.0 => {
+                let missing = (elapsed_ns as f64 * self.rate / 1e9).round();
                 Some(if missing < 0.0 {
                     Gap::Backwards
                 } else {
@@ -369,6 +369,10 @@ impl Timeline {
             }
             _ => Some(Gap::Estimated(self.estimate(samples, now))),
         }
+    }
+
+    fn since_expected(&self, time_ns: Option<i64>) -> Option<i64> {
+        time_ns?.checked_sub(self.next_ns?)
     }
 
     fn estimate(&self, samples: usize, now: Instant) -> u64 {
@@ -387,7 +391,7 @@ impl Timeline {
         }
         self.next_ns = time_ns
             .filter(|_| self.rate > 0.0)
-            .map(|at| at + (samples as f64 * 1e9 / self.rate).round() as i64);
+            .and_then(|at| at.checked_add((samples as f64 * 1e9 / self.rate).round() as i64));
     }
 }
 
@@ -807,7 +811,7 @@ mod tests {
     }
 
     fn identity() -> ProbeIdentity {
-        ProbeIdentity::from_args(&Args::from("driver=fake, serial=1"))
+        ProbeIdentity::from_args(&Args::from("driver=fake, serial=1"), &[])
     }
 
     fn run_combined(steps: &[Step], lanes: usize) -> (Outcome, Vec<Log>) {
@@ -916,6 +920,24 @@ mod tests {
         timeline.advance(None, BLOCK, 300, at(500));
         timeline.overflowed = true;
         assert_eq!(timeline.gap(None, BLOCK, at(600)), Some(Gap::Estimated(0)));
+    }
+
+    #[test]
+    fn a_wild_hardware_timestamp_is_estimated_instead_of_overflowing() {
+        let now = Instant::now();
+        let mut timeline = Timeline::new(RATE, GapScope::Device);
+        timeline.advance(Some(i64::MAX - 1_000), BLOCK, 0, now);
+        timeline.overflowed = true;
+        assert!(matches!(
+            timeline.gap(Some(i64::MIN), BLOCK, now),
+            Some(Gap::Estimated(_))
+        ));
+        timeline.advance(Some(i64::MAX), BLOCK, 0, now);
+        timeline.overflowed = true;
+        assert!(matches!(
+            timeline.gap(Some(0), BLOCK, now),
+            Some(Gap::Estimated(_))
+        ));
     }
 
     #[test]

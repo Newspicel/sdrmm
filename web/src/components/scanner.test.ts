@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_SCAN_TARGETS } from "../lib/limits";
 import type {
   BandAllocation,
   BandPlan,
@@ -53,6 +54,34 @@ describe("targetCount", () => {
         frequencies: [300, 400],
       }),
     ).toBe(5);
+  });
+
+  it("counts nothing for a step that cannot advance", () => {
+    expect(targetCount({ ranges: [{ start_hz: 100, stop_hz: 200, step_hz: 0 }] })).toBe(0);
+    expect(targetCount({ ranges: [{ start_hz: 100, stop_hz: 200, step_hz: -5 }] })).toBe(0);
+    expect(
+      targetCount({ ranges: [{ start_hz: 0, stop_hz: 6e9, step_hz: 0 }], frequencies: [1] }),
+    ).toBe(1);
+  });
+});
+
+describe("the engine's target cap", () => {
+  it("refuses a sweep the engine would reject", () => {
+    const wide = { start_hz: 0, stop_hz: MAX_SCAN_TARGETS * 100, step_hz: 100 };
+    expect(targetCount({ ranges: [wide] })).toBe(MAX_SCAN_TARGETS + 1);
+    expect(rangeProblem({ ranges: [wide] })).toContain(String(MAX_SCAN_TARGETS));
+  });
+
+  it("accepts a sweep that lands exactly on the cap", () => {
+    const edge = { start_hz: 0, stop_hz: (MAX_SCAN_TARGETS - 1) * 100, step_hz: 100 };
+    expect(targetCount({ ranges: [edge] })).toBe(MAX_SCAN_TARGETS);
+    expect(rangeProblem({ ranges: [edge] })).toBeNull();
+  });
+
+  it("names the line whose step cannot advance", () => {
+    expect(rangeProblem({ ranges: [{ start_hz: 1, stop_hz: 2, step_hz: 0 }] })).toMatch(
+      /^the step has to be above zero/,
+    );
   });
 });
 

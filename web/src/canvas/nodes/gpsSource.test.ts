@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterNmeaDevices,
   gpsTabs,
-  nmeaDetail,
+  serialDetail,
   nmeaSource,
   nmeaSuggestion,
   validHostPort,
@@ -64,9 +64,9 @@ describe("the receiver list", () => {
   ];
 
   it("names a receiver by what it reports, and says nothing for a bare port", () => {
-    expect(nmeaDetail(devices[0]!)).toBe("GNSS receiver");
-    expect(nmeaDetail({ ...devices[0]!, serial: "GPS-1" })).toBe("GNSS receiver · GPS-1");
-    expect(nmeaDetail(devices[1]!)).toBe("");
+    expect(serialDetail(devices[0]!)).toBe("GNSS receiver");
+    expect(serialDetail({ ...devices[0]!, serial: "GPS-1" })).toBe("GNSS receiver · GPS-1");
+    expect(serialDetail(devices[1]!)).toBe("");
   });
 
   it("filters on the path and on what the receiver calls itself", () => {

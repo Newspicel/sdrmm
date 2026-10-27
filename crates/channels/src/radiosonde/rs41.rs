@@ -392,6 +392,68 @@ impl Rs41 {
 mod tests {
     use super::*;
 
+    const PUBLISHED_HEADER: [u8; 8] = [0x10, 0xB6, 0xCA, 0x11, 0x22, 0x96, 0x12, 0xF8];
+    const PUBLISHED_MASK_HEAD: [u8; 8] = [0x96, 0x83, 0x3E, 0x51, 0xB1, 0x49, 0x08, 0x98];
+    const PUBLISHED_MASK_TAIL: [u8; 2] = [0x4C, 0xC1];
+    const PUBLISHED_MASK_LEN: usize = 64;
+    const PUBLISHED_PARITY_FIRST: usize = 0x008;
+    const PUBLISHED_PARITY_LAST: usize = 0x037;
+    const PUBLISHED_BAUD: f64 = 4_800.0;
+    const PUBLISHED_STANDARD_LEN: usize = 320;
+    const CRC16_CCITT_FALSE_CATALOGUE_INPUT: &[u8] = b"123456789";
+    const CRC16_CCITT_FALSE_CATALOGUE_CHECK: u16 = 0x29B1;
+    const PUBLISHED_CORRECTABLE_BYTES_PER_LANE: usize = 24 / 2;
+
+    #[test]
+    fn the_frame_layout_matches_the_published_rs41_description() {
+        assert_eq!(HEADER, PUBLISHED_HEADER);
+        assert_eq!(MASK.len(), PUBLISHED_MASK_LEN);
+        assert_eq!(MASK[..PUBLISHED_MASK_HEAD.len()], PUBLISHED_MASK_HEAD);
+        assert_eq!(
+            MASK[MASK.len() - PUBLISHED_MASK_TAIL.len()..],
+            PUBLISHED_MASK_TAIL
+        );
+        assert_eq!(PARITY_POS, PUBLISHED_PARITY_FIRST);
+        assert_eq!(PARITY_POS + 2 * PARITY_LEN - 1, PUBLISHED_PARITY_LAST);
+        assert_eq!(STANDARD_LEN, PUBLISHED_STANDARD_LEN);
+        assert!((BAUD - PUBLISHED_BAUD).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn the_block_crc_reproduces_the_crc16_ccitt_false_catalogue_check_value() {
+        assert_eq!(
+            crc(CRC16_CCITT_FALSE_CATALOGUE_INPUT),
+            CRC16_CCITT_FALSE_CATALOGUE_CHECK
+        );
+    }
+
+    #[test]
+    fn a_lane_corrects_the_published_byte_limit_and_no_more() {
+        let code = reed_solomon();
+        let n = message_len(STANDARD_LEN) + PARITY_LEN;
+        for errors in [
+            PUBLISHED_CORRECTABLE_BYTES_PER_LANE,
+            PUBLISHED_CORRECTABLE_BYTES_PER_LANE + 1,
+        ] {
+            let mut frame = [0u8; EXTENDED_LEN];
+            for index in 0..errors {
+                frame[MESSAGE_POS + 2 * index] = 0x5A + index as u8;
+            }
+            let mut codeword = gather(&frame, STANDARD_LEN, 0);
+            let outcome = code.decode(&mut codeword[..n]);
+            let recovered = codeword[..n].iter().all(|&byte| byte == 0);
+            if errors <= PUBLISHED_CORRECTABLE_BYTES_PER_LANE {
+                assert_eq!(outcome, Some(errors as u32), "{errors} errors");
+                assert!(recovered, "{errors} errors left the lane damaged");
+            } else {
+                assert!(
+                    outcome.is_none() || !recovered,
+                    "{errors} errors were silently corrected"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_block_too_short_for_its_fields_is_rejected_instead_of_read() {
         let mut frames = Rs41Frames::new();

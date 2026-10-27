@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { DENOISE_MODELS_KEY } from "../lib/api";
 import type { AudioProcessing, DenoiseModelsResponse } from "../lib/types";
-import { AudioControls } from "./AudioControls";
+import { AudioControls, NotchFields } from "./AudioControls";
 
 function render(audio: AudioProcessing, models?: DenoiseModelsResponse): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -54,5 +54,22 @@ describe("AudioControls", () => {
     });
     expect(html).not.toContain("no model");
     expect(html).toContain("50%");
+  });
+});
+
+describe("NotchFields", () => {
+  it("clamps the notch width in hertz and says so in the field", () => {
+    const html = renderToStaticMarkup(
+      <NotchFields
+        name="Notch 1"
+        notch={{ freq_hz: 1_000, width_hz: 100 }}
+        onEdit={() => undefined}
+        onRemove={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Notch 1 width"');
+    expect(html).not.toContain("wide");
+    expect(html.match(/Hz/g)).toHaveLength(2);
   });
 });

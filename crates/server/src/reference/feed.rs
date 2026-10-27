@@ -198,7 +198,7 @@ pub(crate) async fn fetch(
         .map_err(|error| format!("could not build the HTTP client: {error}"))?;
     let address = reqwest::Url::parse_with_params(url, params)
         .map_err(|error| format!("could not build a request to {url}: {error}"))?;
-    let mut response = client
+    let response = client
         .get(address)
         .send()
         .await
@@ -207,7 +207,15 @@ pub(crate) async fn fetch(
     if !status.is_success() {
         return Err(format!("{url} answered {status}"));
     }
-    let too_big = || format!("{url} sent more than {max_bytes} bytes");
+    body_within(response, url, max_bytes).await
+}
+
+pub(crate) async fn body_within(
+    mut response: reqwest::Response,
+    label: &str,
+    max_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    let too_big = || format!("{label} sent more than {max_bytes} bytes");
     if response
         .content_length()
         .is_some_and(|length| length > max_bytes as u64)
@@ -218,7 +226,7 @@ pub(crate) async fn fetch(
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|error| format!("could not read {url}: {error}"))?
+        .map_err(|error| format!("could not read {label}: {error}"))?
     {
         if body.len() + chunk.len() > max_bytes {
             return Err(too_big());

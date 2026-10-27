@@ -1,7 +1,9 @@
 use std::ffi::c_int;
 
 use sdrmm_device::DeviceError;
-use sdrmm_wire::{Capabilities, DeviceSettings, ExtraSetting, GainKind, GainStage, GainValue};
+use sdrmm_wire::{
+    Capabilities, DeviceSettings, ExtraSetting, GainKind, GainStage, GainValue, any_range_holds,
+};
 
 use crate::{
     api::{Cr8Api, DevHandle},
@@ -62,6 +64,21 @@ fn gain_steps(
         });
     }
     Ok(steps)
+}
+
+fn tune_step(freq_hz: f64, capabilities: &Capabilities) -> Result<Step, DeviceError> {
+    if !freq_hz.is_finite() || !any_range_holds(&capabilities.freq_ranges, freq_hz) {
+        return Err(DeviceError::Unsupported(format!(
+            "the CR-8 tunes {} to {} MHz, not {} MHz",
+            caps::MIN_FREQ_HZ / 1e6,
+            caps::MAX_FREQ_HZ / 1e6,
+            freq_hz / 1e6
+        )));
+    }
+    Ok(Step::Tune {
+        channels: ffi::CHAN_ALL,
+        freq_hz,
+    })
 }
 
 fn clock_step(
@@ -127,14 +144,10 @@ pub fn plan(
             rate / 1e6
         )));
     }
-    let centre = settings.center_hz.or(current.center_hz);
-    if let Some(freq_hz) = centre
+    if let Some(freq_hz) = settings.center_hz.or(current.center_hz)
         && settings.center_hz.is_some()
     {
-        steps.push(Step::Tune {
-            channels: ffi::CHAN_ALL,
-            freq_hz,
-        });
+        steps.push(tune_step(freq_hz, capabilities)?);
     }
     steps.extend(gain_steps(
         ffi::CHAN_ALL,

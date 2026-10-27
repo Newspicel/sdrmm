@@ -10,7 +10,7 @@ use axum::{
         State,
         ws::{CloseFrame, Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
     },
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use futures::{SinkExt, StreamExt};
 use sdrmm_dsp::{DbWindowSmoother, SpanFloor, adaptive_db_window, decimate_signal, quantize_db};
@@ -54,13 +54,30 @@ const POSE_FAILED: &str = "could not publish the pose";
 const NOT_FOR_PHONES: &str = "Not open to phones";
 const LIMIT_ERROR_EVERY: Duration = Duration::from_secs(1);
 const CLOSE_FLUSH: Duration = Duration::from_secs(1);
+const MAX_INCOMING_BYTES: usize = 1 << 20;
+const DRAIN_LIMIT: usize = 128;
+pub(crate) const MAX_SOCKETS: u32 = 64;
+const TOO_MANY_SOCKETS: &str = "Too many clients";
 
 pub(crate) async fn handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
 ) -> Response {
+    if state.clients.load(atomic::Ordering::Relaxed) >= MAX_SOCKETS {
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(sdrmm_wire::ApiError {
+                error: TOO_MANY_SOCKETS.to_owned(),
+                detail: None,
+                code: Some(sdrmm_wire::ErrorCode::Unavailable),
+            }),
+        )
+            .into_response();
+    }
     ws.protocols([WS_SUBPROTOCOL])
+        .max_message_size(MAX_INCOMING_BYTES)
+        .max_frame_size(MAX_INCOMING_BYTES)
         .on_upgrade(move |socket| handle_socket(socket, state, identity, String::new()))
 }
 
@@ -152,7 +169,7 @@ impl Session {
             ClientCommand::UnsubscribePort { node, port } => {
                 self.unsubscribe_port(&node, &port).await;
             }
-            ClientCommand::SubscribeSink { node } => self.subscribe_sink(node),
+            ClientCommand::SubscribeSink { node } => self.subscribe_sink(node).await,
             ClientCommand::UnsubscribeSink { node } => self.unsubscribe_sink(&node),
             ClientCommand::PublishPose { fix, error } => self.publish_pose(fix, error).await,
             ClientCommand::Present { author, name } => self.present(&author, &name).await,
@@ -316,6 +333,21 @@ fn flatten_join<T>(
     }
 }
 
+fn newest<T: Clone>(rx: &mut broadcast::Receiver<T>, held: &mut T) -> u64 {
+    let mut skipped = 0;
+    for _ in 0..DRAIN_LIMIT {
+        match rx.try_recv() {
+            Ok(next) => {
+                *held = next;
+                skipped += 1;
+            }
+            Err(broadcast::error::TryRecvError::Lagged(count)) => skipped += count,
+            Err(_) => break,
+        }
+    }
+    skipped
+}
+
 fn alloc_stream_id(
     next: &mut u16,
     range: std::ops::RangeInclusive<u16>,
@@ -457,13 +489,7 @@ fn spawn_spectrum(
         loop {
             match rx.recv().await {
                 Ok(mut snap) => {
-                    for _ in 0..128 {
-                        match rx.try_recv() {
-                            Ok(next) => snap = next,
-                            Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
-                            Err(_) => break,
-                        }
-                    }
+                    out_tx.dropped(newest(&mut rx, &mut snap));
                     if !throttle.admit(snap.timestamp, snap.span_hz) {
                         continue;
                     }
@@ -486,7 +512,7 @@ fn spawn_spectrum(
                     }
                     .encode();
 
-                    if out_tx.send(Message::Binary(frame.into())).await.is_err() {
+                    if out_tx.send_frame(frame).await.is_err() {
                         break;
                     }
                 }
@@ -539,7 +565,7 @@ fn spawn_audio(
                     }
                     .encode();
 
-                    if out_tx.send(Message::Binary(frame.into())).await.is_err() {
+                    if out_tx.send_frame(frame).await.is_err() {
                         break;
                     }
                 }
@@ -569,16 +595,7 @@ fn spawn_symbols(
         loop {
             match rx.recv().await {
                 Ok(mut block) => {
-                    for _ in 0..128 {
-                        match rx.try_recv() {
-                            Ok(next) => {
-                                block = next;
-                                out_tx.dropped(1);
-                            }
-                            Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
-                            Err(_) => break,
-                        }
-                    }
+                    out_tx.dropped(newest(&mut rx, &mut block));
                     let frame = SymbolFrame {
                         stream_id,
                         seq: block.seq,
@@ -594,7 +611,7 @@ fn spawn_symbols(
                     }
                     .encode();
 
-                    if out_tx.send(Message::Binary(frame.into())).await.is_err() {
+                    if out_tx.send_frame(frame).await.is_err() {
                         break;
                     }
                 }
@@ -625,16 +642,7 @@ fn spawn_iq(
         loop {
             match rx.recv().await {
                 Ok(mut block) => {
-                    for _ in 0..128 {
-                        match rx.try_recv() {
-                            Ok(next) => {
-                                block = next;
-                                out_tx.dropped(1);
-                            }
-                            Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
-                            Err(_) => break,
-                        }
-                    }
+                    out_tx.dropped(newest(&mut rx, &mut block));
                     interleaved.clear();
                     interleaved.reserve(block.samples.len() * 2);
                     for sample in block.samples.iter() {
@@ -651,7 +659,7 @@ fn spawn_iq(
                     }
                     .encode();
 
-                    if out_tx.send(Message::Binary(frame.into())).await.is_err() {
+                    if out_tx.send_frame(frame).await.is_err() {
                         break;
                     }
                 }
@@ -681,16 +689,7 @@ fn spawn_video(
         loop {
             match rx.recv().await {
                 Ok(mut packet) => {
-                    for _ in 0..128 {
-                        match rx.try_recv() {
-                            Ok(next) => {
-                                packet = next;
-                                out_tx.dropped(1);
-                            }
-                            Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
-                            Err(_) => break,
-                        }
-                    }
+                    out_tx.dropped(newest(&mut rx, &mut packet));
                     let frame = VideoFrame {
                         stream_id,
                         seq: packet.seq,
@@ -705,7 +704,7 @@ fn spawn_video(
                     }
                     .encode();
 
-                    if out_tx.send(Message::Binary(frame.into())).await.is_err() {
+                    if out_tx.send_frame(frame).await.is_err() {
                         break;
                     }
                 }

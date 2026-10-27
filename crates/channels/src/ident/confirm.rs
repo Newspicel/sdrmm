@@ -79,8 +79,14 @@ struct Live {
     seen: bool,
 }
 
+struct Refused {
+    type_id: String,
+    why: String,
+}
+
 pub(crate) struct Confirmer {
     live: Vec<Live>,
+    refused: Vec<Refused>,
     tuned: Vec<Complex<f32>>,
     filtered: Vec<Complex<f32>>,
     out: ChannelOutputs,
@@ -90,6 +96,7 @@ impl Confirmer {
     pub(crate) fn new() -> Self {
         Self {
             live: Vec::new(),
+            refused: Vec::new(),
             tuned: Vec::new(),
             filtered: Vec::new(),
             out: ChannelOutputs::default(),
@@ -98,6 +105,7 @@ impl Confirmer {
 
     pub(crate) fn forget(&mut self) {
         self.live.clear();
+        self.refused.clear();
     }
 
     pub(crate) fn sweep(&mut self) {
@@ -127,13 +135,21 @@ impl Confirmer {
             if candidate.confirmed || self.is_live(&type_id, band) {
                 continue;
             }
+            if let Some(why) = self.refusal(&type_id) {
+                candidate.why = why.to_owned();
+                continue;
+            }
             trials += 1;
             for settings in variants(&type_id, frequency_hz) {
                 if self.live.len() >= MAX_LIVE {
                     break;
                 }
-                let Ok(live) = start(&type_id, settings, rate, band) else {
-                    continue;
+                let live = match start(&type_id, settings, rate, band) {
+                    Ok(live) => live,
+                    Err(error) => {
+                        self.refuse(&type_id, candidate, &error);
+                        break;
+                    }
                 };
                 self.live.push(live);
                 let last = self.live.len() - 1;
@@ -197,6 +213,22 @@ impl Confirmer {
             confirmed_any = true;
         }
         confirmed_any
+    }
+
+    fn refusal(&self, type_id: &str) -> Option<&str> {
+        self.refused
+            .iter()
+            .find(|refused| refused.type_id == type_id)
+            .map(|refused| refused.why.as_str())
+    }
+
+    fn refuse(&mut self, type_id: &str, candidate: &mut ProtocolMatch, error: &ChannelError) {
+        let why = format!("the {} decoder will not start: {error}", candidate.name);
+        candidate.why = why.clone();
+        self.refused.push(Refused {
+            type_id: type_id.to_owned(),
+            why,
+        });
     }
 
     fn is_live(&self, type_id: &str, band: &Band) -> bool {
@@ -281,4 +313,56 @@ fn start(
         channel,
         seen: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn band() -> Band {
+        Band {
+            center_hz: 0.0,
+            bandwidth_hz: 12_500.0,
+            snr_db: 20.0,
+            carrier_db: 12.0,
+            flatness: 0.5,
+            skew: 0.0,
+            peak_hz: 0.0,
+        }
+    }
+
+    fn pocsag() -> ProtocolMatch {
+        ProtocolMatch {
+            name: "POCSAG".to_owned(),
+            type_id: Some("pocsag".to_owned()),
+            score: 0.5,
+            confirmed: false,
+            why: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_decoder_that_will_not_start_is_explained_and_not_tried_again() {
+        let mut confirmer = Confirmer::new();
+        let mut candidates = vec![pocsag()];
+        let iq = vec![Complex::new(0.0, 0.0); 4_096];
+        let unusable_rate = f64::NAN;
+
+        confirmer.confirm(&mut candidates, &iq, unusable_rate, &band(), 148_000_000.0);
+        assert!(
+            candidates[0].why.contains("will not start"),
+            "nothing said why: {:?}",
+            candidates[0].why
+        );
+        assert_eq!(confirmer.refused.len(), 1);
+
+        confirmer.sweep();
+        candidates[0].why.clear();
+        confirmer.confirm(&mut candidates, &iq, unusable_rate, &band(), 148_000_000.0);
+        assert_eq!(confirmer.refused.len(), 1, "the decoder was started again");
+        assert!(
+            !candidates[0].why.is_empty(),
+            "the refusal went unreported on the second window"
+        );
+    }
 }

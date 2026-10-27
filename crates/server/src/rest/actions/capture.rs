@@ -1,61 +1,16 @@
 use sdrmm_wire::{
-    BASEBAND_PORT, DeviceSet, IQ_PORT, NetworkExportAction, NetworkExportSettings,
-    NetworkExportStatus, NodeBody, PlaybackRequest, PlaybackStatus, StateScope, StateSnapshot,
-    TimeMachineAction, TimeMachineStatus,
+    BASEBAND_PORT, DeviceRef, DeviceSet, IQ_PORT, NetworkExportAction, NetworkExportSettings,
+    NetworkExportStatus, NodeBody, PlaybackRequest, PlaybackStatus,
 };
 
 use super::{node_of, takes_no_such_action};
-use crate::{
-    AppState,
-    resolved::Resolved,
-    rest::{AppError, lock_gate, reconcile_recordings},
-};
+use crate::{AppState, resolved::Resolved, rest::AppError};
 
-const ARM_IT: &str = "Arm it first";
-
-pub(super) fn time_machine(
-    state: &AppState,
-    node: &str,
-    action: TimeMachineAction,
-) -> Result<TimeMachineStatus, AppError> {
-    let resolved = state.resolved.current();
-    if !matches!(node_of(&resolved, node)?.body, NodeBody::TimeMachine(_)) {
-        return Err(takes_no_such_action(node));
+fn plays_a_recording(body: &NodeBody) -> bool {
+    match body {
+        NodeBody::Device(device) => device.device.as_ref().is_some_and(DeviceRef::is_recording),
+        _ => false,
     }
-    let set = holding_history(&state.engine.snapshot(), node)
-        .ok_or_else(|| AppError::bad_request(ARM_IT))?;
-    let status = drive_history(state, node, set, action)?;
-    state.gps.route_current(state);
-    Ok(status)
-}
-
-fn drive_history(
-    state: &AppState,
-    node: &str,
-    set: u32,
-    action: TimeMachineAction,
-) -> Result<TimeMachineStatus, AppError> {
-    let finalizes = matches!(action, TimeMachineAction::Stop);
-    let status = state.engine.control_time_machine(set, node, action)?;
-    if finalizes && let Some(dir) = state.engine.recordings_dir() {
-        {
-            let _gate = lock_gate(&state.recordings_gate);
-            reconcile_recordings(dir, &state.store)?;
-        }
-        state.engine.emit_scope(StateScope::Recordings);
-    }
-    Ok(status)
-}
-
-fn holding_history(live: &StateSnapshot, node: &str) -> Option<u32> {
-    live.device_sets
-        .iter()
-        .find(|set| {
-            set.time_machine
-                .as_ref()
-                .is_some_and(|held| held.node == node)
-        })
-        .map(|set| set.id)
 }
 
 fn fed_lane(resolved: &Resolved, node: &str) -> Option<(u32, u32)> {
@@ -141,7 +96,7 @@ pub(super) fn playback(
     request: &PlaybackRequest,
 ) -> Result<PlaybackStatus, AppError> {
     let resolved = state.resolved.current();
-    if !matches!(node_of(&resolved, node)?.body, NodeBody::Recording(_)) {
+    if !plays_a_recording(&node_of(&resolved, node)?.body) {
         return Err(takes_no_such_action(node));
     }
     let set = resolved

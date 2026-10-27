@@ -411,18 +411,21 @@ pub(super) async fn read_radio(
 ) -> Result<Json<CpsJob>, AppError> {
     let hub = state.cps.clone();
     let store = state.store.clone();
-    let name = req
-        .name
-        .clone()
-        .unwrap_or_else(|| format!("Read from {}", req.model_id));
-    let job = hub.read(
-        &store,
-        &req.model_id,
-        &req.port,
-        &name,
-        req.device_id,
-        req.user_id,
-    )?;
+    let job = tokio::task::spawn_blocking(move || {
+        let name = req
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("Read from {}", req.model_id));
+        hub.read(
+            &store,
+            &req.model_id,
+            &req.port,
+            &name,
+            req.device_id,
+            req.user_id,
+        )
+    })
+    .await??;
     Ok(Json(job))
 }
 
@@ -442,20 +445,23 @@ pub(super) async fn write_radio(
 ) -> Result<Json<CpsJob>, AppError> {
     let hub = state.cps.clone();
     let store = state.store.clone();
-    let user = match req.user_id {
-        Some(id) => Some(store.cps_user(id)?),
-        None => None,
-    };
-    let job = hub.write(
-        &store,
-        &req.model_id,
-        &req.port,
-        req.codeplug_id,
-        user,
-        req.device_id,
-        req.confirm,
-        req.restore_image,
-    )?;
+    let job = tokio::task::spawn_blocking(move || {
+        let user = match req.user_id {
+            Some(id) => Some(store.cps_user(id)?),
+            None => None,
+        };
+        hub.write(
+            &store,
+            &req.model_id,
+            &req.port,
+            req.codeplug_id,
+            user,
+            req.device_id,
+            req.confirm,
+            req.restore_image,
+        )
+    })
+    .await??;
     Ok(Json(job))
 }
 

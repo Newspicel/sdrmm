@@ -4,7 +4,9 @@ use std::sync::{
 };
 
 use num_complex::Complex;
-use sdrmm_wire::{AgcGain, Capabilities, DeviceInfo, DeviceSettings, Readout, StreamScope};
+use sdrmm_wire::{
+    AgcGain, Capabilities, DeviceInfo, DeviceSettings, DoctorCheck, Readout, StreamScope,
+};
 
 pub type Sample = Complex<f32>;
 
@@ -289,7 +291,7 @@ impl std::fmt::Debug for RxSink {
 }
 
 pub trait DeviceDriver: Send + Sync {
-    fn id(&self) -> &'static str;
+    fn id(&self) -> DeviceBackend;
 
     fn probe(&self) -> Vec<DeviceInfo>;
 
@@ -300,6 +302,10 @@ pub trait DeviceDriver: Send + Sync {
     fn open(&self, info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError>;
 
     fn resolve(&self, _key: &str) -> Option<DeviceInfo> {
+        None
+    }
+
+    fn health(&self) -> Option<DoctorCheck> {
         None
     }
 
@@ -416,7 +422,7 @@ pub use pool::{Block, BlockPool};
 pub use registry::DeviceRegistry;
 pub use restart::{Recovery, RestartPolicy, SILENT_STREAM_TIMEOUT};
 pub use schedule::Latency;
-pub use sdrmm_wire::{Direction, Duplex};
+pub use sdrmm_wire::{DeviceBackend, Direction, Duplex};
 pub use sweep::{SweepBand, SweepPlan, SweepSink};
 pub use worker::Worker;
 
@@ -780,6 +786,7 @@ mod tests {
             retune_keeps_phase: false,
             rx_inputs: Vec::new(),
             clean_fraction: None,
+            bank: None,
         }
     }
 

@@ -1,8 +1,9 @@
+import { AUDIO_RATE_HZ } from "../limits";
 import { JitterBuffer } from "./jitter";
 
 export const PROCESSOR_NAME = "sdr-audio-playback";
 
-export const SAMPLE_RATE = 48_000;
+export const SAMPLE_RATE = AUDIO_RATE_HZ;
 export const CHANNELS = 2;
 export const TARGET_FRAMES = 4_800;
 export const MAX_FRAMES = 19_200;

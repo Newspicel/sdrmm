@@ -15,9 +15,10 @@ docker compose pull
 docker compose up -d
 ```
 
-Open `http://<host>:8080`. The service restarts automatically and keeps `sdrmm.db`, `recordings`
-and the self-signed certificate in `tls` under `/data`, in the `sdrmm-data` volume. Keep and back
-up that volume.
+Set a [token](#token) first: the container binds every interface and refuses to start without
+one. Open `http://<host>:8080`. The service restarts automatically and keeps `sdrmm.db`,
+`recordings` and the self-signed certificate in `tls` under `/data`, in the `sdrmm-data` volume.
+Keep and back up that volume.
 
 The image is `ghcr.io/newspicel/sdrmm`. `:latest` is the newest release; version tags such as
 `:2.0` pin one. Use `:nightly` only to test unreleased changes.
@@ -73,7 +74,8 @@ ipc: host
 
 ### Token
 
-Put the token in a `.env` file kept out of version control:
+The container listens on `0.0.0.0:8080`, so it needs a token or it refuses to start. Put it in a
+`.env` file kept out of version control:
 
 ```text
 SDRMM_TOKEN=replace-with-a-long-random-secret
@@ -127,8 +129,8 @@ Run the portable server under its own user with USB access and fixed paths:
   --recordings-dir /var/lib/sdrmm/recordings
 ```
 
-Stop it with a normal termination signal so recordings can finish. Set `SDRMM_TOKEN` and
-[HTTPS](configuration.md#https).
+Stop it with a normal termination signal so recordings can finish. A bind other machines can
+reach needs `SDRMM_TOKEN`; add [HTTPS](configuration.md#https) too.
 
 ## Before leaving it unattended
 

@@ -1,5 +1,5 @@
 use std::{
-    ffi::{CStr, CString, c_char, c_int, c_void},
+    ffi::{CString, c_char, c_int, c_void},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, PoisonError},
     time::{Duration, Instant},
@@ -116,6 +116,26 @@ impl LoadedApi {
     }
 }
 
+fn listed_count(count: c_int) -> Result<usize, DeviceError> {
+    let listed = usize::try_from(count).unwrap_or(0);
+    if listed > ffi::MAX_DEVICES {
+        return Err(DeviceError::Io(format!(
+            "the CR-8 library listed {listed} devices, more than the {} it can hold",
+            ffi::MAX_DEVICES
+        )));
+    }
+    Ok(listed)
+}
+
+fn serial_text(serial: &[c_char; ffi::SERIAL_LEN + 1]) -> String {
+    let text: Vec<u8> = serial
+        .iter()
+        .take_while(|byte| **byte != 0)
+        .map(|byte| *byte as u8)
+        .collect();
+    String::from_utf8_lossy(&text).trim().to_owned()
+}
+
 fn check(code: c_int, action: &str) -> Result<(), DeviceError> {
     if code == 0 {
         return Ok(());
@@ -137,13 +157,11 @@ impl Cr8Api for LoadedApi {
         if list.is_null() {
             return Ok(Vec::new());
         }
-        let mut serials = Vec::with_capacity(count as usize);
-        for index in 0..count as usize {
+        let listed = listed_count(count)?;
+        let mut serials = Vec::with_capacity(listed);
+        for index in 0..listed {
             let info = unsafe { &*list.add(index) };
-            let serial = unsafe { CStr::from_ptr(info.serial.as_ptr()) }
-                .to_string_lossy()
-                .trim()
-                .to_owned();
+            let serial = serial_text(&info.serial);
             if !serial.is_empty() {
                 serials.push(serial);
             }
@@ -356,13 +374,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_serial_that_fills_its_array_is_not_read_past() {
+        let mut full = [b'A' as c_char; ffi::SERIAL_LEN + 1];
+        assert_eq!(serial_text(&full), "A".repeat(ffi::SERIAL_LEN + 1));
+        full[4] = 0;
+        assert_eq!(serial_text(&full), "AAAA");
+        let mut padded = [0 as c_char; ffi::SERIAL_LEN + 1];
+        for (slot, byte) in padded.iter_mut().zip(b" DL0001  ") {
+            *slot = *byte as c_char;
+        }
+        assert_eq!(serial_text(&padded), "DL0001");
+    }
+
+    #[test]
+    fn a_device_count_the_library_cannot_mean_is_refused() {
+        assert_eq!(listed_count(0).expect("none"), 0);
+        assert_eq!(listed_count(-1).expect("a refusal is counted before"), 0);
+        assert_eq!(
+            listed_count(ffi::MAX_DEVICES as c_int).expect("a full bus"),
+            ffi::MAX_DEVICES
+        );
+        assert!(listed_count(c_int::MAX).is_err());
+    }
+
+    #[test]
     fn candidates_are_offered_for_this_platform() {
         assert!(!library_candidates().is_empty());
     }
 
+    /// The environment writes are sound here: this test is single threaded and reads the
+    /// variable back itself.
     #[test]
     fn an_override_is_looked_at_before_the_usual_places() {
-        // SAFETY: single-threaded test, and the variable is read again below in the same test.
         unsafe { std::env::set_var("SDRMM_DLCR_LIBRARY", "/tmp/libdlcr.dylib") };
         assert_eq!(
             library_candidates().first(),

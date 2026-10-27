@@ -12,7 +12,14 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 num-complex = "0.4"
 serde_json = "1"
-sdrmm-channels = { path = "../crates/channels", features = ["synth"] }
+sdrmm-channels = { path = "../crates/channels", features = ["fuzzing", "synth"] }
+sdrmm-cps = { path = "../crates/cps" }
+sdrmm-device-kiwisdr = { path = "../crates/device-kiwisdr", features = ["fuzzing"] }
+sdrmm-device-rtltcp = { path = "../crates/device-rtltcp", features = ["fuzzing"] }
+sdrmm-device-sdrconnect = { path = "../crates/device-sdrconnect", features = ["fuzzing"] }
+sdrmm-device-spyserver = { path = "../crates/device-spyserver", features = ["fuzzing"] }
+sdrmm-iqlink = { path = "../crates/iqlink" }
+sdrmm-recorder = { path = "../crates/recorder" }
 sdrmm-wire = { path = "../crates/wire" }
 
 [lints.clippy]
@@ -34,8 +41,50 @@ doc = false
 bench = false
 
 [[bin]]
+name = "cps_image"
+path = "fuzz_targets/cps_image.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "dv_voice"
 path = "fuzz_targets/dv_voice.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "iqlink_header"
+path = "fuzz_targets/iqlink_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "media_bitstream"
+path = "fuzz_targets/media_bitstream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "net_radio_proto"
+path = "fuzz_targets/net_radio_proto.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "recorder_import"
+path = "fuzz_targets/recorder_import.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "workspace_import"
+path = "fuzz_targets/workspace_import.rs"
 test = false
 doc = false
 bench = false

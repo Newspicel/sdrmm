@@ -36,7 +36,7 @@ async fn live_position_survives_a_channel_rate_rebuild() {
     let mut registry = DeviceRegistry::new();
     registry.register(VIRTUAL_PRIORITY, Box::new(AdsbTestDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("test-adsb:surface").unwrap();
+    let ds = engine.create_device_set("airspy:surface").unwrap();
     let ch = engine
         .add_channel(
             ds,
@@ -337,7 +337,7 @@ async fn ring_overrun_surfaces_in_state_and_emits_event() {
     registry.register(50, Box::new(FloodingDriver));
     let engine = Engine::with_registry(registry, None);
     let mut events = engine.subscribe_events();
-    let ds = engine.create_device_set("mock:flood").unwrap();
+    let ds = engine.create_device_set("rtlsdr:flood").unwrap();
 
     let snap = engine.snapshot();
     assert!(

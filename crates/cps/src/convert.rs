@@ -64,7 +64,9 @@ fn rename_all(
                 format!("renamed to {claimed:?} to fit this radio"),
             );
         }
-        renames.insert(name.clone(), claimed.clone());
+        renames
+            .entry(name.clone())
+            .or_insert_with(|| claimed.clone());
         mapped.push(claimed);
     }
     (mapped, Renames(renames))
@@ -107,87 +109,114 @@ pub fn fit(
     let mut out = source.clone();
     out.version = sdrmm_wire::cps::CODEPLUG_VERSION;
 
+    drop_what_does_not_fit(&mut out, limits, &mut issues);
+    let renamed = rename_everything(&mut out, limits, &mut issues);
+    fit_group_lists(&mut out, limits, &renamed, &mut issues);
+    fit_zones(&mut out, limits, &renamed, &mut issues);
+    fit_scan_lists(&mut out, limits, &renamed, &mut issues);
+    fit_channels(&mut out, limits, &renamed, &mut issues);
+
+    let report = ConversionReport {
+        target_model: target_model.to_owned(),
+        source_model: source.meta.source_model.clone(),
+        before,
+        after: out.counts(),
+        issues: coalesce(issues.0),
+    };
+    (out, report)
+}
+
+struct Renamed {
+    radio_ids: Renames,
+    contacts: Renames,
+    group_lists: Renames,
+    scan_lists: Renames,
+    channels: Renames,
+}
+
+fn drop_what_does_not_fit(out: &mut Codeplug, limits: &RadioLimits, issues: &mut Issues) {
     keep(
         &mut out.radio_ids,
         limits.radio_ids,
         IssueScope::RadioId,
-        &mut issues,
+        issues,
         "radio IDs",
     );
     keep(
         &mut out.contacts,
         limits.contacts,
         IssueScope::Contact,
-        &mut issues,
+        issues,
         "contacts",
     );
     keep(
         &mut out.group_lists,
         limits.group_lists,
         IssueScope::GroupList,
-        &mut issues,
+        issues,
         "group lists",
     );
     keep(
         &mut out.zones,
         limits.zones,
         IssueScope::Zone,
-        &mut issues,
+        issues,
         "zones",
     );
     keep(
         &mut out.scan_lists,
         limits.scan_lists,
         IssueScope::ScanList,
-        &mut issues,
+        issues,
         "scan lists",
     );
-
     out.channels
-        .retain(|channel| retain_channel(channel, limits, &mut issues));
+        .retain(|channel| retain_channel(channel, limits, issues));
     keep(
         &mut out.channels,
         limits.channels,
         IssueScope::Channel,
-        &mut issues,
+        issues,
         "channels",
     );
+}
 
+fn rename_everything(out: &mut Codeplug, limits: &RadioLimits, issues: &mut Issues) -> Renamed {
     let (radio_id_names, radio_ids) = rename_all(
         &names_of(out.radio_ids.iter().map(|item| &item.name)),
         limits.radio_id_name_len,
         IssueScope::RadioId,
-        &mut issues,
+        issues,
     );
     let (contact_names, contacts) = rename_all(
         &names_of(out.contacts.iter().map(|item| &item.name)),
         limits.contact_name_len,
         IssueScope::Contact,
-        &mut issues,
+        issues,
     );
     let (group_names, group_lists) = rename_all(
         &names_of(out.group_lists.iter().map(|item| &item.name)),
         limits.group_list_name_len,
         IssueScope::GroupList,
-        &mut issues,
+        issues,
     );
     let (zone_names, _zones) = rename_all(
         &names_of(out.zones.iter().map(|item| &item.name)),
         limits.zone_name_len,
         IssueScope::Zone,
-        &mut issues,
+        issues,
     );
     let (scan_names, scan_lists) = rename_all(
         &names_of(out.scan_lists.iter().map(|item| &item.name)),
         limits.scan_list_name_len,
         IssueScope::ScanList,
-        &mut issues,
+        issues,
     );
     let (channel_names, channels) = rename_all(
         &names_of(out.channels.iter().map(|item| &item.name)),
         limits.channel_name_len,
         IssueScope::Channel,
-        &mut issues,
+        issues,
     );
 
     apply_names(
@@ -218,12 +247,27 @@ pub fn fit(
         .as_deref()
         .and_then(|name| radio_ids.resolve(name).cloned());
 
+    Renamed {
+        radio_ids,
+        contacts,
+        group_lists,
+        scan_lists,
+        channels,
+    }
+}
+
+fn fit_group_lists(
+    out: &mut Codeplug,
+    limits: &RadioLimits,
+    renamed: &Renamed,
+    issues: &mut Issues,
+) {
     for list in &mut out.group_lists {
         let before = list.contacts.len();
         list.contacts = list
             .contacts
             .iter()
-            .filter_map(|name| contacts.resolve(name).cloned())
+            .filter_map(|name| renamed.contacts.resolve(name).cloned())
             .take(limits.group_list_members as usize)
             .collect();
         if list.contacts.len() != before {
@@ -239,7 +283,9 @@ pub fn fit(
             );
         }
     }
+}
 
+fn fit_zones(out: &mut Codeplug, limits: &RadioLimits, renamed: &Renamed, issues: &mut Issues) {
     for zone in &mut out.zones {
         if !limits.features.dual_zone_lists && !zone.channels_b.is_empty() {
             issues.push(
@@ -256,13 +302,13 @@ pub fn fit(
         zone.channels_a = zone
             .channels_a
             .iter()
-            .filter_map(|name| channels.resolve(name).cloned())
+            .filter_map(|name| renamed.channels.resolve(name).cloned())
             .take(limits.zone_channels as usize)
             .collect();
         zone.channels_b = zone
             .channels_b
             .iter()
-            .filter_map(|name| channels.resolve(name).cloned())
+            .filter_map(|name| renamed.channels.resolve(name).cloned())
             .take(limits.zone_channels as usize)
             .collect();
         if zone.channels_a.len() != before {
@@ -278,7 +324,14 @@ pub fn fit(
             );
         }
     }
+}
 
+fn fit_scan_lists(
+    out: &mut Codeplug,
+    limits: &RadioLimits,
+    renamed: &Renamed,
+    issues: &mut Issues,
+) {
     if !limits.features.scan_lists && !out.scan_lists.is_empty() {
         issues.push(
             IssueSeverity::Dropped,
@@ -295,7 +348,7 @@ pub fn fit(
         list.channels = list
             .channels
             .iter()
-            .filter_map(|name| channels.resolve(name).cloned())
+            .filter_map(|name| renamed.channels.resolve(name).cloned())
             .take(limits.scan_list_members as usize)
             .collect();
         if list.channels.len() != before {
@@ -310,10 +363,12 @@ pub fn fit(
                 ),
             );
         }
-        list.primary = resolve_target(list.primary.take(), &channels);
-        list.secondary = resolve_target(list.secondary.take(), &channels);
+        list.primary = resolve_target(list.primary.take(), &renamed.channels);
+        list.secondary = resolve_target(list.secondary.take(), &renamed.channels);
     }
+}
 
+fn fit_channels(out: &mut Codeplug, limits: &RadioLimits, renamed: &Renamed, issues: &mut Issues) {
     for channel in &mut out.channels {
         channel.rx_hz = round_to_step(channel.rx_hz, limits.frequency_step_hz);
         channel.tx_hz = round_to_step(channel.tx_hz, limits.frequency_step_hz);
@@ -331,57 +386,53 @@ pub fn fit(
         channel.scan_list = channel
             .scan_list
             .as_deref()
-            .and_then(|name| scan_lists.resolve(name).cloned());
-        match &mut channel.mode {
-            ChannelMode::Fm(fm) => {
-                if !limits.features.dcs_tones {
-                    for (tone, field) in
-                        [(&mut fm.rx_tone, "rx_tone"), (&mut fm.tx_tone, "tx_tone")]
-                    {
-                        if matches!(tone, Some(Tone::Dcs { .. })) {
-                            issues.push(
-                                IssueSeverity::Dropped,
-                                IssueScope::Channel,
-                                &channel.name,
-                                Some(field),
-                                "this radio has no DCS codes".to_owned(),
-                            );
-                            *tone = None;
-                        }
-                    }
-                }
+            .and_then(|name| renamed.scan_lists.resolve(name).cloned());
+        fit_channel_mode(channel, limits, renamed, issues);
+    }
+}
+
+fn fit_channel_mode(
+    channel: &mut Channel,
+    limits: &RadioLimits,
+    renamed: &Renamed,
+    issues: &mut Issues,
+) {
+    let name = channel.name.clone();
+    match &mut channel.mode {
+        ChannelMode::Fm(fm) => {
+            if limits.features.dcs_tones {
+                return;
             }
-            ChannelMode::Dmr(dmr) => {
-                dmr.contact = dmr
-                    .contact
-                    .as_deref()
-                    .and_then(|name| contacts.resolve(name).cloned());
-                dmr.group_list = dmr
-                    .group_list
-                    .as_deref()
-                    .and_then(|name| group_lists.resolve(name).cloned());
-                dmr.radio_id = if limits.features.per_channel_radio_id {
-                    dmr.radio_id
-                        .as_deref()
-                        .and_then(|name| radio_ids.resolve(name).cloned())
-                } else {
-                    None
-                };
-                if !limits.features.group_lists {
-                    dmr.group_list = None;
+            for (tone, field) in [(&mut fm.rx_tone, "rx_tone"), (&mut fm.tx_tone, "tx_tone")] {
+                if matches!(tone, Some(Tone::Dcs { .. })) {
+                    issues.push(
+                        IssueSeverity::Dropped,
+                        IssueScope::Channel,
+                        &name,
+                        Some(field),
+                        "this radio has no DCS codes".to_owned(),
+                    );
+                    *tone = None;
                 }
             }
         }
+        ChannelMode::Dmr(dmr) => {
+            dmr.contact = dmr
+                .contact
+                .as_deref()
+                .and_then(|name| renamed.contacts.resolve(name).cloned());
+            dmr.group_list = dmr
+                .group_list
+                .as_deref()
+                .and_then(|name| renamed.group_lists.resolve(name).cloned())
+                .filter(|_| limits.features.group_lists);
+            dmr.radio_id = dmr
+                .radio_id
+                .as_deref()
+                .and_then(|name| renamed.radio_ids.resolve(name).cloned())
+                .filter(|_| limits.features.per_channel_radio_id);
+        }
     }
-
-    let report = ConversionReport {
-        target_model: target_model.to_owned(),
-        source_model: source.meta.source_model.clone(),
-        before,
-        after: out.counts(),
-        issues: coalesce(issues.0),
-    };
-    (out, report)
 }
 
 const REPEAT_LIMIT: usize = 5;
@@ -591,6 +642,21 @@ mod tests {
         );
         assert!(fitted.zones[0].channels_b.is_empty());
         assert!(report.adjusted() >= 2);
+    }
+
+    #[test]
+    fn a_reference_to_a_repeated_name_keeps_the_first_entry() {
+        let mut source = Codeplug::empty();
+        source.channels = vec![fm("Local", 145_600_000), fm("Local", 145_500_000)];
+        source.zones = vec![Zone {
+            name: "Vienna".to_owned(),
+            channels_a: vec!["Local".to_owned()],
+            channels_b: Vec::new(),
+        }];
+        let (fitted, _) = fit(&source, "target", &narrow_limits());
+        assert_eq!(fitted.channels[0].name, "Local");
+        assert_eq!(fitted.channels[1].name, "Local (2)");
+        assert_eq!(fitted.zones[0].channels_a, vec!["Local".to_owned()]);
     }
 
     #[test]

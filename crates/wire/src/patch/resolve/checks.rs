@@ -1,6 +1,6 @@
 use super::{
     super::{
-        IqOrigin, MAX_EDGES, MAX_NODE_ID_LEN, MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ,
+        DeviceRef, IqOrigin, MAX_EDGES, MAX_NODE_ID_LEN, MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ,
         MAX_SIGNAL_MAP_OFFSET_HZ, Multi, NodeBody, PatchEdge, PatchError, PatchGraph, PatchNode,
         Payload, PortDirection, PortRef, PortSpec, Refusal, check_geometry, valid_host_port,
         validate_gps_source,
@@ -46,15 +46,6 @@ pub(super) fn structure(
 fn settings(node: &PatchNode, channels: Option<&[ChannelDescriptor]>) -> Result<(), PatchError> {
     let refused = || Err(PatchError::NodeSettings(node.id.clone()));
     match &node.body {
-        NodeBody::Device(device) => {
-            if device
-                .device
-                .as_ref()
-                .is_some_and(|r| r.backend.is_empty() || r.backend.len() > MAX_NAME_LEN)
-            {
-                return Err(PatchError::Backend(node.id.clone()));
-            }
-        }
         NodeBody::Channel(channel) => {
             if let Some(descriptors) = channels
                 && !descriptors
@@ -93,13 +84,13 @@ fn settings(node: &PatchNode, channels: Option<&[ChannelDescriptor]>) -> Result<
 
 fn settings_valid(body: &NodeBody) -> bool {
     match body {
-        NodeBody::Recording(recording) => recording.valid(),
+        NodeBody::Device(device) => device.device.as_ref().is_none_or(DeviceRef::valid),
         NodeBody::EventFilter(settings) => settings.valid(),
         NodeBody::Note(note) => note.valid(),
         NodeBody::AudioFx(fx) => fx.settings.validate().is_ok(),
         NodeBody::SpectrumMonitor(settings) => settings.valid(),
         NodeBody::Propagation(settings) => settings.valid(),
-        NodeBody::TimeMachine(settings) => settings.valid(),
+        NodeBody::Recorder(settings) => settings.valid(),
         NodeBody::DmrTrunk(settings) => settings.valid(),
         NodeBody::EventOutput(settings) => settings.target.valid(),
         NodeBody::Satellite(satellite) => satellite.valid(),
@@ -107,6 +98,7 @@ fn settings_valid(body: &NodeBody) -> bool {
         NodeBody::Array(array) => array.valid(),
         NodeBody::Hunt(hunt) => hunt.sweep.problem().is_none(),
         NodeBody::Triangulation(triangulation) => triangulation.settings.problem().is_none(),
+        NodeBody::Scanner(scanner) => scanner.settings.problem().is_none(),
         body => body.processor_params().is_none_or(|params| params.valid()),
     }
 }

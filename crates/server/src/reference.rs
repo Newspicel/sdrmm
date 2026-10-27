@@ -9,7 +9,7 @@ use sdrmm_wire::{Callsign, CatalogSatellite, SATELLITE_CATALOG_URL, TRANSMITTER_
 
 use crate::satellites::catalog;
 
-mod feed;
+pub(crate) mod feed;
 mod prefixes;
 
 use feed::Source;

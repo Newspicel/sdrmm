@@ -124,3 +124,13 @@ fn vallado_verification_values_are_reproduced() {
         );
     }
 }
+
+#[test]
+fn a_time_the_integrator_cannot_reach_is_refused_instead_of_looping() {
+    let (_, line1, line2) = SETS[4];
+    let propagator = ours(line1, line2);
+    for minutes in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e12] {
+        assert!(propagator.propagate(minutes).is_err(), "{minutes}");
+    }
+    assert!(propagator.propagate(1_440.0).is_ok());
+}

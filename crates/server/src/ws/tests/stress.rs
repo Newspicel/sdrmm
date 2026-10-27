@@ -3,7 +3,9 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use sdrmm_device::{DeviceDriver, DeviceError, RxSink, SdrDevice, playback::PlaybackShared};
+use sdrmm_device::{
+    DeviceBackend, DeviceDriver, DeviceError, RxSink, SdrDevice, playback::PlaybackShared,
+};
 
 use super::*;
 
@@ -89,13 +91,13 @@ struct PacedDriver {
 }
 
 impl DeviceDriver for PacedDriver {
-    fn id(&self) -> &'static str {
-        "paced"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Sdrconnect
     }
 
     fn probe(&self) -> Vec<sdrmm_wire::DeviceInfo> {
         vec![sdrmm_wire::DeviceInfo {
-            driver: "paced".to_string(),
+            driver: DeviceBackend::Sdrconnect,
             key: "band".to_string(),
             label: "Paced band".to_string(),
             serial: None,
@@ -306,7 +308,7 @@ fn paced_engine(pace: Arc<Pace>) -> Arc<Engine> {
 async fn simultaneous_socket_listeners_keep_audio_continuous_during_retunes() {
     let names: Vec<String> = (0..8).map(|index| format!("ch{index}")).collect();
     let mut nodes = vec![
-        radio_of("paced", "band"),
+        radio_of(DeviceBackend::Sdrconnect, "band"),
         of("scope", sdrmm_wire::NodeKind::Scope),
         of("spk", sdrmm_wire::NodeKind::Speaker),
     ];

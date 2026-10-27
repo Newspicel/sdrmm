@@ -51,6 +51,17 @@ pub struct AppDecode {
     pub app: Option<AcarsApp>,
 }
 
+impl AppDecode {
+    pub fn is_empty(&self) -> bool {
+        self.sublabel.is_none()
+            && self.mfi.is_none()
+            && self.oooi.is_none()
+            && self.position.is_none()
+            && self.met.is_none()
+            && self.app.is_none()
+    }
+}
+
 pub fn decode(label: &str, text: &str, downlink: bool) -> AppDecode {
     let mut out = AppDecode::default();
     let mut body = text;

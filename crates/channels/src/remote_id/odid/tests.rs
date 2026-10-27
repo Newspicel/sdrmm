@@ -148,14 +148,19 @@ fn a_single_message_needs_no_pack() {
 
 #[test]
 fn unknown_values_decode_as_absent() {
-    let mut raw = encode::message(&RemoteIdMessage::Location(location()));
-    raw[1] |= 0x03;
-    raw[2] = 181;
-    raw[3] = 255;
-    raw[4] = 126;
-    raw[5..13].fill(0);
-    raw[13..19].fill(0);
-    raw[21..23].copy_from_slice(&0xFFFFu16.to_le_bytes());
+    let unknown = RemoteIdLocation {
+        track_deg: None,
+        speed_mps: None,
+        vertical_speed_mps: None,
+        lat: None,
+        lon: None,
+        pressure_altitude_m: None,
+        geodetic_altitude_m: None,
+        height_m: None,
+        seconds_after_hour: None,
+        ..location()
+    };
+    let raw = encode::message(&RemoteIdMessage::Location(unknown));
     let [RemoteIdMessage::Location(decoded)] = &parse(&raw).unwrap()[..] else {
         panic!("not a location");
     };
@@ -165,6 +170,40 @@ fn unknown_values_decode_as_absent() {
     assert_eq!((decoded.lat, decoded.lon), (None, None));
     assert_eq!(decoded.geodetic_altitude_m, None);
     assert_eq!(decoded.seconds_after_hour, None);
+}
+
+#[test]
+fn a_westward_track_keeps_its_half_turn_flag() {
+    for degrees in [0.0, 1.0, 179.0, 180.0, 271.0, 359.0] {
+        let turned = RemoteIdLocation {
+            track_deg: Some(degrees),
+            ..location()
+        };
+        let raw = encode::message(&RemoteIdMessage::Location(turned));
+        let [RemoteIdMessage::Location(decoded)] = &parse(&raw).unwrap()[..] else {
+            panic!("not a location");
+        };
+        assert_eq!(decoded.track_deg, Some(degrees), "{degrees} degrees");
+    }
+}
+
+#[test]
+fn accuracy_codes_bound_the_error_from_above() {
+    for (measured, reported) in [(5.0, 10.0), (0.5, 1.0), (20.0, 30.0), (3.0, 3.0)] {
+        let measured_location = RemoteIdLocation {
+            horizontal_accuracy_m: Some(measured),
+            ..location()
+        };
+        let raw = encode::message(&RemoteIdMessage::Location(measured_location));
+        let [RemoteIdMessage::Location(decoded)] = &parse(&raw).unwrap()[..] else {
+            panic!("not a location");
+        };
+        assert_eq!(
+            decoded.horizontal_accuracy_m,
+            Some(reported),
+            "{measured} metres"
+        );
+    }
 }
 
 #[test]

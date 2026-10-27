@@ -400,6 +400,7 @@ pub(crate) fn capabilities(front: &Front, layout: &Layout) -> Capabilities {
             Vec::new()
         },
         clean_fraction: Some(clean_fraction()),
+        bank: None,
     };
     stream_lanes(&mut capabilities, 1, layout);
     capabilities

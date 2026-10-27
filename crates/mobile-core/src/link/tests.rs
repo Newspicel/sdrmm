@@ -846,6 +846,7 @@ fn radar_frame() -> Vec<u8> {
     }
     .frame()
     .encode()
+    .expect("radar frame")
 }
 
 #[tokio::test(start_paused = true)]
@@ -863,7 +864,8 @@ async fn an_unknown_frame_kind_is_noticed_once() {
         floor_db: -90.0,
         bins: &[1, 2, 3],
     }
-    .encode();
+    .encode()
+    .expect("spectrum frame");
     let radar = radar_frame();
     for bytes in [spectrum.clone(), spectrum, radar.clone(), vec![9, 9]] {
         server.send(Message::binary(bytes)).await.expect("sent");

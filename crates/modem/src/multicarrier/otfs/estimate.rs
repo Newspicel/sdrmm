@@ -68,32 +68,41 @@ impl DelayDopplerFit {
         known: &[Complex<f32>],
         noise_var: f64,
         channel: &mut [Complex<f32>],
-    ) -> f64 {
+    ) -> Option<f64> {
         debug_assert_eq!(received.len(), self.symbols * self.occupied);
         debug_assert_eq!(known.len(), received.len());
         debug_assert_eq!(channel.len(), received.len());
         self.active.clear();
         self.active.extend(0..self.taps);
-        self.pass(received, known, noise_var);
+        self.pass(received, known, noise_var)?;
         self.select_taps();
-        self.pass(received, known, noise_var);
+        if self.active.is_empty() {
+            return None;
+        }
+        self.pass(received, known, noise_var)?;
         self.synthesise(channel);
-        residual_noise(received, known, channel, self.dof())
+        Some(residual_noise(received, known, channel, self.dof()))
     }
 
     fn dof(&self) -> f64 {
         self.active.len() as f64 * self.doppler_dof
     }
 
-    fn pass(&mut self, received: &[Complex<f32>], known: &[Complex<f32>], noise_var: f64) {
+    fn pass(
+        &mut self,
+        received: &[Complex<f32>],
+        known: &[Complex<f32>],
+        noise_var: f64,
+    ) -> Option<()> {
         let o = self.occupied;
         self.tap_noise.fill(0.0);
         self.gains.fill(Complex::new(0.0, 0.0));
         for symbol in 0..self.symbols {
             let rows = symbol * o..(symbol + 1) * o;
-            self.fit_symbol(&received[rows.clone()], &known[rows], symbol, noise_var);
+            self.fit_symbol(&received[rows.clone()], &known[rows], symbol, noise_var)?;
         }
         self.smooth();
+        Some(())
     }
 
     fn fit_symbol(
@@ -102,7 +111,7 @@ impl DelayDopplerFit {
         known: &[Complex<f32>],
         symbol: usize,
         noise_var: f64,
-    ) {
+    ) -> Option<()> {
         let a = self.accumulate(received, known);
         let scale = (0..a).map(|k| self.normal[k * a + k].re).sum::<f64>() / a.max(1) as f64;
         let ridge = (noise_var * a as f64)
@@ -111,15 +120,14 @@ impl DelayDopplerFit {
         for k in 0..a {
             self.normal[k * a + k] += ridge;
         }
-        if cholesky(&mut self.normal[..a * a], a).is_none() {
-            return;
-        }
+        cholesky(&mut self.normal[..a * a], a)?;
         solve(&self.normal[..a * a], a, &mut self.rhs[..a]);
         let t = self.taps;
         for (k, &tap) in self.active.iter().enumerate() {
             self.gains[symbol * t + tap] = self.rhs[k];
             self.tap_noise[tap] += noise_var * inverse_diagonal(&self.normal[..a * a], a, k);
         }
+        Some(())
     }
 
     fn accumulate(&mut self, received: &[Complex<f32>], known: &[Complex<f32>]) -> usize {
@@ -364,7 +372,7 @@ mod tests {
             .collect();
         let received: Vec<Complex<f32>> = truth.iter().zip(&known).map(|(h, x)| h * x).collect();
         let mut channel = vec![Complex::new(0.0, 0.0); truth.len()];
-        let noise = fit.fit(&received, &known, 1e-6, &mut channel);
+        let noise = fit.fit(&received, &known, 1e-6, &mut channel).unwrap();
         let worst = truth
             .iter()
             .zip(&channel)
@@ -372,6 +380,20 @@ mod tests {
             .fold(0.0f32, f32::max);
         assert!(worst < 0.02, "worst channel error {worst}");
         assert!(noise < 1e-3, "residual {noise}");
+    }
+
+    #[test]
+    fn a_fit_with_no_significant_tap_keeps_the_channel_it_was_given() {
+        let offsets = offsets();
+        let symbols = 16;
+        let mut fit = DelayDopplerFit::new(&offsets, 64, symbols, support());
+        let known = symbols_of(symbols * offsets.len());
+        let received = vec![Complex::new(0.0f32, 0.0); known.len()];
+        let kept = Complex::new(0.5f32, -0.25);
+        let mut channel = vec![kept; known.len()];
+        assert_eq!(fit.fit(&received, &known, 1e-3, &mut channel), None);
+        assert_eq!(fit.active_taps(), 0);
+        assert!(channel.iter().all(|&h| h == kept), "the channel was erased");
     }
 
     #[test]

@@ -1,8 +1,8 @@
 use sdrmm_device::DeviceRegistry;
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    ChannelNode, ChannelParams, ChannelSettings, DeviceRef, NodeBody, PatchEdge, PatchNode,
-    PortRef, Position, UpdateWorkspaceRequest, WorkspaceSnapshot,
+    ChannelNode, ChannelParams, ChannelSettings, DeviceBackend, DeviceRef, NodeBody, PatchEdge,
+    PatchNode, PortRef, Position, UpdateWorkspaceRequest, WorkspaceSnapshot,
 };
 
 use super::*;
@@ -106,7 +106,7 @@ fn live_channel_workspace(
         panic!("the starter's radio is a device node");
     };
     device.device = Some(DeviceRef {
-        backend: "virtual".to_owned(),
+        backend: DeviceBackend::Virtual,
         serial: None,
         key: Some("band".to_owned()),
     });

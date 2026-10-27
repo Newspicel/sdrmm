@@ -41,20 +41,28 @@ impl ToneBank {
         self.window
     }
 
-    pub fn energies(&self, samples: &[Complex<f32>], at: usize, out: &mut [f32]) {
+    #[must_use]
+    pub fn energies(&self, samples: &[Complex<f32>], at: usize, out: &mut [f32]) -> bool {
         assert_eq!(out.len(), self.m, "one energy per tone");
+        let window = at
+            .checked_add(self.window)
+            .and_then(|end| samples.get(at..end));
+        let Some(window) = window else {
+            out.fill(0.0);
+            return false;
+        };
         for (k, slot) in out.iter_mut().enumerate() {
             let rotors = &self.rotors[k * self.window..(k + 1) * self.window];
             let mut re = 0.0f64;
             let mut im = 0.0f64;
-            for (n, rotor) in rotors.iter().enumerate() {
-                let Some(x) = samples.get(at + n) else { break };
+            for (x, rotor) in window.iter().zip(rotors) {
                 let product = x * rotor;
                 re += f64::from(product.re);
                 im += f64::from(product.im);
             }
             *slot = ((re * re + im * im) * self.scale) as f32;
         }
+        true
     }
 }
 
@@ -79,7 +87,7 @@ mod tests {
         let mut energies = vec![0.0f32; 8];
         for k in 0..8u8 {
             let wave = tone(&params, k, 4);
-            bank.energies(&wave, 0, &mut energies);
+            assert!(bank.energies(&wave, 0, &mut energies));
             assert!(
                 (energies[k as usize] - 16.0).abs() < 1e-3,
                 "tone {k}: {energies:?}"
@@ -90,6 +98,19 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_window_the_samples_do_not_cover_reads_no_energy() {
+        let params = MfskParams::orthogonal(8, 16.0);
+        let bank = ToneBank::new(&params);
+        let wave = tone(&params, 3, 2);
+        let mut energies = vec![0.0f32; 8];
+        assert!(bank.energies(&wave, 0, &mut energies));
+        assert!(energies[3] > 0.0);
+        assert!(!bank.energies(&wave[..bank.window() - 1], 0, &mut energies));
+        assert!(energies.iter().all(|&e| e == 0.0), "{energies:?}");
+        assert!(!bank.energies(&wave, usize::MAX, &mut energies));
     }
 
     #[test]
@@ -106,7 +127,7 @@ mod tests {
             let mut energies = vec![0.0f32; 4];
             let mut sum = 0.0f64;
             for s in 0..symbols {
-                bank.energies(&noise, s * params.window(), &mut energies);
+                assert!(bank.energies(&noise, s * params.window(), &mut energies));
                 sum += energies.iter().map(|&e| f64::from(e)).sum::<f64>();
             }
             let mean = sum / (symbols * 4) as f64;
@@ -124,8 +145,8 @@ mod tests {
         let wave = tone(&params, 2, 4);
         let mut aligned = vec![0.0f32; 4];
         let mut offset = vec![0.0f32; 4];
-        bank.energies(&wave, 16, &mut aligned);
-        bank.energies(&wave, 24, &mut offset);
+        assert!(bank.energies(&wave, 16, &mut aligned));
+        assert!(bank.energies(&wave, 24, &mut offset));
         assert!((aligned[2] - 16.0).abs() < 1e-3, "{aligned:?}");
         assert!(offset[2] <= aligned[2] + 1e-3, "{offset:?} vs {aligned:?}");
     }

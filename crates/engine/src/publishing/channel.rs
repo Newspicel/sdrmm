@@ -31,7 +31,7 @@ const PUBLICATION_BUDGET_BYTES: usize = 8 << 20;
 const BLOCK_SLACK: usize = 64;
 const OVERFLOW_REPORT_EVERY: Duration = Duration::from_secs(1);
 
-fn iq_capacity(input_rate: f64, device_rate: f64) -> usize {
+pub(crate) fn iq_capacity(input_rate: f64, device_rate: f64) -> usize {
     (dsp_block_len(device_rate) as f64 * input_rate / device_rate.max(1.0)).ceil() as usize
         + BLOCK_SLACK
 }
@@ -226,15 +226,14 @@ impl ChannelPublisher {
     }
 
     pub(crate) fn recover(&mut self, receiver: &mut Box<dyn ChannelRx>) -> bool {
-        if self.retired_rx.slots() == 0 {
+        let Ok(retired) = self.retired_rx.write_chunk_uninit(1) else {
             return false;
-        }
+        };
         let Ok(mut fresh) = self.fresh_rx.pop() else {
             return false;
         };
         std::mem::swap(receiver, &mut fresh);
-        let result = self.retired_rx.push(fresh);
-        debug_assert!(result.is_ok());
+        retired.fill_from_iter(std::iter::once(fresh));
         true
     }
 

@@ -14,8 +14,8 @@ const LANES = 5;
 
 const take: PatchNode = {
   id: "rec",
-  kind: "recording",
-  data: { recording: "take" },
+  kind: "device",
+  data: { device: { backend: "recording", key: "take" } },
   position: { x: 0, y: 0 },
 };
 
@@ -69,7 +69,7 @@ describe("RecordingFace", () => {
         direction: "out",
       }),
     );
-    const resolved = resolvedPatch([resolvedNodeOf("rec", "recording", lanes)]);
+    const resolved = resolvedPatch([resolvedNodeOf("rec", "device", lanes)]);
     const context = stubWorkspace({ graph: alone, resolved }).context;
     expect(nodePorts(context, take).map((port) => port.name)).toEqual([
       "iq",

@@ -10,7 +10,6 @@ members = [
     "crates/device",
     "crates/device-virtual",
     "crates/device-recording",
-    "crates/device-siggen",
     "crates/device-ad936x",
     "crates/device-airspy",
     "crates/device-airspyhf",
@@ -26,6 +25,7 @@ members = [
     "crates/device-rtltcp",
     "crates/device-spyserver",
     "crates/usb-stream",
+    "crates/serial",
     "crates/iqlink",
     "crates/channels",
     "crates/cps",
@@ -51,7 +51,6 @@ default-members = [
     "crates/device",
     "crates/device-virtual",
     "crates/device-recording",
-    "crates/device-siggen",
     "crates/device-ad936x",
     "crates/device-airspy",
     "crates/device-airspyhf",
@@ -67,6 +66,7 @@ default-members = [
     "crates/device-rtltcp",
     "crates/device-spyserver",
     "crates/usb-stream",
+    "crates/serial",
     "crates/iqlink",
     "crates/channels",
     "crates/cps",
@@ -101,7 +101,6 @@ sdrmm-modem-test-support = { path = "crates/modem-test-support" }
 sdrmm-device = { path = "crates/device" }
 sdrmm-device-virtual = { path = "crates/device-virtual" }
 sdrmm-device-recording = { path = "crates/device-recording" }
-sdrmm-device-siggen = { path = "crates/device-siggen" }
 sdrmm-device-ad936x = { path = "crates/device-ad936x" }
 sdrmm-device-airspy = { path = "crates/device-airspy" }
 sdrmm-device-airspyhf = { path = "crates/device-airspyhf" }
@@ -117,6 +116,7 @@ sdrmm-device-hackrf = { path = "crates/device-hackrf" }
 sdrmm-device-rtltcp = { path = "crates/device-rtltcp" }
 sdrmm-device-spyserver = { path = "crates/device-spyserver" }
 sdrmm-usb-stream = { path = "crates/usb-stream" }
+sdrmm-serial = { path = "crates/serial" }
 sdrmm-iqlink = { path = "crates/iqlink" }
 sdrmm-channels = { path = "crates/channels" }
 sdrmm-cps = { path = "crates/cps" }

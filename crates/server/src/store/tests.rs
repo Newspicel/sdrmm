@@ -1,6 +1,6 @@
 use sdrmm_wire::{
     AdsbMessage, AprsPacket, ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent,
-    DeviceSettings, NfmParams, PRESET_SNAPSHOT_VERSION, PresetDevice,
+    DeviceBackend, DeviceSettings, NfmParams, PRESET_SNAPSHOT_VERSION, PresetDevice,
 };
 
 use super::*;
@@ -40,6 +40,58 @@ fn migration_is_idempotent() {
 }
 
 #[test]
+fn a_file_database_waits_for_other_writers_and_keeps_a_write_ahead_log() {
+    let file = tempfile::NamedTempFile::new().expect("temp db");
+    let store = Store::open(Some(file.path())).expect("open");
+    let number = |name: &str| -> i64 {
+        store
+            .hold()
+            .query_row(&format!("PRAGMA {name}"), [], |row| row.get(0))
+            .expect("pragma")
+    };
+    let journal: String = store
+        .hold()
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .expect("pragma");
+    assert_eq!(journal, "wal");
+    assert_eq!(
+        number("busy_timeout"),
+        i64::try_from(BUSY_TIMEOUT.as_millis()).expect("millis")
+    );
+    assert_eq!(number("foreign_keys"), 1);
+    let second = Store::open(Some(file.path())).expect("a second process opens it too");
+    second
+        .create_preset("from elsewhere", &snapshot())
+        .expect("a second connection writes");
+}
+
+#[test]
+fn a_deleted_operator_leaves_no_radio_pointing_at_them() {
+    let store = Store::open(None).expect("in-memory store");
+    let user = store
+        .create_cps_user(&sdrmm_wire::cps::CpsUserRequest {
+            name: "Ada".to_owned(),
+            callsign: None,
+            dmr_id: None,
+            note: None,
+        })
+        .expect("operator");
+    let device = store
+        .create_cps_device(&sdrmm_wire::cps::CpsDeviceRequest {
+            name: "handheld".to_owned(),
+            model_id: "anytone-d890uv".to_owned(),
+            port: None,
+            serial_number: None,
+            firmware: None,
+            owner_id: Some(user),
+            note: None,
+        })
+        .expect("radio");
+    store.delete_cps_user(user).expect("delete");
+    assert_eq!(store.cps_device(device).expect("radio").owner_id, None);
+}
+
+#[test]
 fn server_id_is_stable_across_opens() {
     let file = tempfile::NamedTempFile::new().expect("temp db");
     let first = Store::open(Some(file.path())).expect("first open");
@@ -54,6 +106,13 @@ fn server_id_is_stable_across_opens() {
     );
     let other = Store::open(None).expect("in memory");
     assert_ne!(other.server_id(), id);
+}
+
+#[test]
+fn the_kinds_the_snapshot_migrations_retire_are_no_longer_node_kinds() {
+    for legacy in [LEGACY_CHAT_OUTPUT, LEGACY_CALL_BUFFER, LEGACY_SIGNAL_FINDER] {
+        assert!(NodeKind::parse(legacy).is_none(), "{legacy} is live again");
+    }
 }
 
 #[test]
@@ -2278,14 +2337,18 @@ fn a_stored_recording_device_reopens_as_a_recording_node() {
     let migrated = parse_workspace_snapshot(&value.to_string()).expect("migrated");
     migrated.validate().expect("valid");
 
-    let sdrmm_wire::NodeBody::Recording(played) =
-        &migrated.graph.node("played").expect("played").body
-    else {
-        panic!("a played recording is a Recording node");
+    let played = migrated.graph.node("played").expect("played");
+    let sdrmm_wire::NodeBody::Device(device) = &played.body else {
+        panic!("a played recording is a Device node");
     };
-    assert_eq!(played.recording.as_deref(), Some("take-1"));
+    let pinned = device.device.as_ref().expect("a pinned recording");
+    assert_eq!(pinned.backend, DeviceBackend::Recording);
+    assert_eq!(pinned.key.as_deref(), Some("take-1"));
     assert_eq!(
-        played.device_ref().and_then(|reference| reference.key),
+        played
+            .body
+            .device_ref("played")
+            .and_then(|reference| reference.key),
         Some("take-1".to_owned())
     );
 
@@ -2456,7 +2519,7 @@ fn a_recorder_saved_before_it_had_a_switch_opens_idle() {
         vec![
             sdrmm_wire::NodeBody::Recorder(off),
             sdrmm_wire::NodeBody::AudioRecorder(sdrmm_wire::AudioRecorderNode::default()),
-            sdrmm_wire::NodeBody::BasebandRecorder(off),
+            sdrmm_wire::NodeBody::BasebandRecorder(sdrmm_wire::BasebandRecorderNode::default()),
         ]
     );
 }
@@ -2637,7 +2700,7 @@ fn forgetting_a_radio_drops_the_settings_it_left_on_the_node() {
         (node.id.clone(), snapshot)
     };
     let tcp = sdrmm_wire::DeviceRef {
-        backend: "rtltcp".to_string(),
+        backend: DeviceBackend::Rtltcp,
         serial: None,
         key: Some("192.168.4.104:1234".to_string()),
     };

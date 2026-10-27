@@ -1,10 +1,11 @@
 use std::{
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use rustix::io::Errno;
+use sdrmm_device::lock;
 
 use crate::{
     discovery,
@@ -36,13 +37,50 @@ const SAMPLING_FREQ_CONTROL: u16 = 0x0100;
 
 pub(crate) use crate::raw::{BLOCK_SAMPLES, FORMAT, RawStream as Stream};
 
+struct Pinned {
+    urbs: Box<[IsoUrb]>,
+    buffers: Vec<Box<[u8]>>,
+}
+
+unsafe impl Send for Pinned {}
+
+impl std::fmt::Debug for Pinned {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pinned")
+            .field("transfers", &self.urbs.len())
+            .field("buffers", &self.buffers.len())
+            .finish()
+    }
+}
+
 #[derive(Debug)]
-struct Claimed(UsbFs);
+struct Claimed {
+    node: UsbFs,
+    pinned: Mutex<Vec<Pinned>>,
+}
+
+impl Claimed {
+    fn new(node: UsbFs) -> Self {
+        Self {
+            node,
+            pinned: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn keep(&self, pinned: Pinned) {
+        lock(&self.pinned).push(pinned);
+    }
+
+    #[cfg(test)]
+    fn pinned(&self) -> usize {
+        lock(&self.pinned).len()
+    }
+}
 
 impl Drop for Claimed {
     fn drop(&mut self) {
         for interface in INTERFACES {
-            self.0.release_and_reconnect(interface);
+            self.node.release_and_reconnect(interface);
         }
     }
 }
@@ -56,9 +94,9 @@ fn node(info: &nusb::DeviceInfo) -> PathBuf {
 }
 
 pub(crate) fn open(key: &str) -> Result<(Control, Port)> {
-    let usb = Claimed(UsbFs::open(&node(&discovery::find(key)?))?);
+    let usb = Claimed::new(UsbFs::open(&node(&discovery::find(key)?))?);
     for interface in INTERFACES {
-        usb.0.disconnect_claim(interface)?;
+        usb.node.disconnect_claim(interface)?;
     }
     let usb = Arc::new(usb);
     Ok((Control { usb: usb.clone() }, Port { usb }))
@@ -71,7 +109,7 @@ pub(crate) struct Control {
 impl Link for Control {
     fn exchange(&mut self, request: &Report) -> Result<Report> {
         let mut out = *request;
-        self.usb.0.transfer(HID_OUT, &mut out, HID_TIMEOUT)?;
+        self.usb.node.transfer(HID_OUT, &mut out, HID_TIMEOUT)?;
         let deadline = Instant::now() + HID_TIMEOUT;
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
@@ -83,7 +121,7 @@ impl Link for Control {
                 return Err(timeout);
             }
             let mut reply = [0u8; REPORT_LEN];
-            match self.usb.0.transfer(HID_IN, &mut reply, left) {
+            match self.usb.node.transfer(HID_IN, &mut reply, left) {
                 Ok(_) if reply[0] == request[0] => return Ok(reply),
                 Ok(_) => {}
                 Err(Error::Usbfs {
@@ -102,9 +140,9 @@ pub(crate) struct Port {
 
 impl Port {
     pub(crate) fn start(&self) -> Result<Stream> {
-        self.usb.0.set_interface(STREAM_INTERFACE, STREAM_ALT)?;
+        self.usb.node.set_interface(STREAM_INTERFACE, STREAM_ALT)?;
         let mut rate = protocol::SAMPLE_RATE_HZ.to_le_bytes()[..3].to_vec();
-        if let Err(error) = self.usb.0.control_out(
+        if let Err(error) = self.usb.node.control_out(
             CLASS_ENDPOINT_OUT,
             SET_CUR,
             SAMPLING_FREQ_CONTROL,
@@ -175,7 +213,7 @@ impl IsoPump {
             actual_length: 0,
             status: 0,
         });
-        unsafe { self.usb.0.submit(&raw mut *urb) }?;
+        unsafe { self.usb.node.submit(&raw mut *urb) }?;
         self.in_flight[index] = true;
         Ok(())
     }
@@ -208,22 +246,30 @@ impl IsoPump {
         Ok(())
     }
 
-    fn drain(&mut self) {
+    fn drain(&mut self) -> bool {
         for index in 0..TRANSFERS {
             if self.in_flight[index] {
-                unsafe { self.usb.0.discard(&raw mut self.urbs[index]) };
+                unsafe { self.usb.node.discard(&raw mut self.urbs[index]) };
             }
         }
         let deadline = Instant::now() + DRAIN;
         while self.in_flight.contains(&true) && Instant::now() < deadline {
-            if self.usb.0.wait(POLL).is_err() {
+            if self.usb.node.wait(POLL).is_err() {
                 break;
             }
-            while let Ok(Some(urb)) = self.usb.0.reap() {
+            while let Ok(Some(urb)) = self.usb.node.reap() {
                 if self.reaped(urb).is_err() {
                     break;
                 }
             }
+        }
+        !self.in_flight.contains(&true)
+    }
+
+    fn abandoned(&mut self) -> Pinned {
+        Pinned {
+            urbs: std::mem::replace(&mut self.urbs, Vec::new().into_boxed_slice()),
+            buffers: std::mem::take(&mut self.buffers),
         }
     }
 }
@@ -231,8 +277,8 @@ impl IsoPump {
 impl Pump for IsoPump {
     fn run(mut self, assembler: &mut Assembler, state: &PumpState) -> Result<()> {
         while !state.stopping() && !assembler.is_closed() {
-            self.usb.0.wait(POLL)?;
-            while let Some(urb) = self.usb.0.reap()? {
+            self.usb.node.wait(POLL)?;
+            while let Some(urb) = self.usb.node.reap()? {
                 let index = self.reaped(urb)?;
                 self.complete(index, assembler)?;
                 if !self.in_flight.contains(&true) {
@@ -250,9 +296,39 @@ impl Pump for IsoPump {
 
 impl Drop for IsoPump {
     fn drop(&mut self) {
-        self.drain();
-        if let Err(error) = self.usb.0.set_interface(STREAM_INTERFACE, 0) {
+        if !self.drain() {
+            tracing::warn!(
+                "funcube transfers stayed with the kernel; their buffers are held until the device is closed"
+            );
+            let abandoned = self.abandoned();
+            self.usb.keep(abandoned);
+        }
+        if let Err(error) = self.usb.node.set_interface(STREAM_INTERFACE, 0) {
             tracing::debug!("funcube stream interface left streaming: {error}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transfers_the_kernel_still_owns_outlive_the_pump() {
+        let claimed = Claimed::new(
+            UsbFs::open(std::path::Path::new("/dev/null")).expect("a node to hold them against"),
+        );
+        assert_eq!(claimed.pinned(), 0);
+        claimed.keep(Pinned {
+            urbs: (0..TRANSFERS).map(|_| empty_urb()).collect(),
+            buffers: (0..TRANSFERS)
+                .map(|_| vec![0u8; PACKETS * PACKET_BYTES].into_boxed_slice())
+                .collect(),
+        });
+        assert_eq!(
+            claimed.pinned(),
+            1,
+            "buffers the kernel may still write to are freed with the file descriptor"
+        );
     }
 }

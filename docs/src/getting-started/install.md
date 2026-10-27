@@ -34,11 +34,12 @@ then run it:
 ./sdrmm
 ```
 
-On Windows, run `sdrmm.exe`. Open <http://localhost:8080> on the server, or
-`http://<server>:8080` from another computer. `--bind` picks another address or port.
+On Windows, run `sdrmm.exe`. Open <http://localhost:8080> on the server. `--bind` picks another
+address or port.
 
-The server listens on every network interface with no password. Set up
-[a token and HTTPS](../server/configuration.md) before untrusted devices can reach it.
+The server stays on this machine. To reach it from another computer, set
+[a token and HTTPS](../server/configuration.md) and start it with
+`--bind 0.0.0.0:8080`; without a token it refuses that bind.
 
 ## Homebrew
 
@@ -121,8 +122,9 @@ docker compose up -d
 
 Without the pull, Compose builds the image from the checkout.
 
-Open <http://localhost:8080>. Data lives in the `sdrmm-data` volume. For USB radios, tokens, and
-HTTPS, see [Deployment](../server/deployment.md#docker-compose).
+The container listens on every interface, so set `SDRMM_TOKEN` first or it refuses to start.
+Then open <http://localhost:8080>. Data lives in the `sdrmm-data` volume. For USB radios, tokens,
+and HTTPS, see [Deployment](../server/deployment.md#docker-compose).
 
 ## Stable or nightly
 

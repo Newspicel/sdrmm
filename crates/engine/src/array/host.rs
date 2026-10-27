@@ -46,6 +46,7 @@ pub(crate) struct ProcessorStats {
     pub(crate) gated_samples: AtomicU64,
     pub(crate) dropped_samples: AtomicU64,
     pub(crate) dropped_reports: AtomicU64,
+    pub(crate) dropped_surfaces: AtomicU64,
     pub(crate) lane_overflows: AtomicU64,
     pub(crate) gate: AtomicU8,
     pub(crate) alive: AtomicBool,
@@ -64,6 +65,7 @@ impl Default for ProcessorStats {
             gated_samples: AtomicU64::new(0),
             dropped_samples: AtomicU64::new(0),
             dropped_reports: AtomicU64::new(0),
+            dropped_surfaces: AtomicU64::new(0),
             lane_overflows: AtomicU64::new(0),
             gate: AtomicU8::new(0),
             alive: AtomicBool::new(true),
@@ -139,6 +141,7 @@ impl ProcessorStats {
             gated_samples: self.gated_samples.load(Ordering::Relaxed),
             dropped_samples: self.dropped_samples.load(Ordering::Relaxed),
             dropped_reports: self.dropped_reports.load(Ordering::Relaxed),
+            dropped_surfaces: self.dropped_surfaces.load(Ordering::Relaxed),
             lane_overflows: self.lane_overflows.load(Ordering::Relaxed),
             lane_mismatch: self.lane_mismatch.load(Ordering::Relaxed),
             solver_failures: self.solver_failures.load(Ordering::Relaxed),
@@ -458,15 +461,16 @@ impl Outputs {
     }
 
     fn deliver(&mut self, tally: OutputTally) {
-        let mut dropped = tally.dropped_reports;
+        let mut reports_lost = tally.dropped_reports;
         if tally.report
             && !self.publisher.submit(|packet| {
                 packet.out = Out::Report;
                 std::mem::swap(&mut packet.reading, &mut self.report);
             })
         {
-            dropped += 1;
+            reports_lost += 1;
         }
+        let mut surfaces_lost = tally.dropped_surfaces;
         if tally.surface {
             self.surface_seq = self.surface_seq.wrapping_add(1);
             let seq = self.surface_seq;
@@ -475,13 +479,18 @@ impl Outputs {
                 packet.seq = seq;
                 std::mem::swap(&mut packet.surface, &mut self.surface);
             }) {
-                dropped += 1;
+                surfaces_lost += 1;
             }
         }
-        if dropped > 0 {
+        if reports_lost > 0 {
             self.stats
                 .dropped_reports
-                .fetch_add(dropped, Ordering::Relaxed);
+                .fetch_add(reports_lost, Ordering::Relaxed);
+        }
+        if surfaces_lost > 0 {
+            self.stats
+                .dropped_surfaces
+                .fetch_add(surfaces_lost, Ordering::Relaxed);
         }
         let mut lost = tally.dropped_events;
         for event in self.events.iter_mut().take(tally.events) {

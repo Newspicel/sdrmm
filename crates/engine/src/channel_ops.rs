@@ -153,6 +153,7 @@ impl Engine {
                 .get_mut(&ds)
                 .ok_or(EngineError::DeviceSetNotFound(ds))?;
             state.check_stream(stream)?;
+            state.check_room(stream)?;
             let id = state.next_channel_id;
             state.next_channel_id += 1;
             (state.lane_rate(stream), state.lane_center(stream), id)
@@ -183,7 +184,10 @@ impl Engine {
             let Some(state) = inner.device_sets.get_mut(&ds) else {
                 break Err(EngineError::DeviceSetNotFound(ds));
             };
-            if let Err(e) = state.check_stream(stream) {
+            if let Err(e) = state
+                .check_stream(stream)
+                .and_then(|()| state.check_room(stream))
+            {
                 break Err(e);
             }
             let current_rate = state.lane_rate(stream);

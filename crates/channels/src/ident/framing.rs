@@ -4,7 +4,10 @@ use sdrmm_modem::cpm::{CpmDemod, TIMING_BW_BURST};
 use sdrmm_wire::{Modulation, ProtocolMatch};
 
 use super::detect::Band;
-use crate::dv::{INPUT_RATE_HZ, MODE_SIGNATURES, ModeSignature};
+use crate::{
+    ChannelError,
+    dv::{INPUT_RATE_HZ, MODE_SIGNATURES, ModeSignature},
+};
 
 const SEARCH_SECONDS: f64 = 0.55;
 
@@ -88,9 +91,18 @@ fn confirm_with(
     if searchable.is_empty() {
         return;
     }
-    let Some(baseband) = baseband(iq, rate, band) else {
-        return;
+    let baseband = match baseband(iq, rate, band) {
+        Ok(samples) => samples,
+        Err(error) => {
+            for &(index, mode) in &searchable {
+                candidates[index].why = format!("no {} frame search here: {error}", mode.name);
+            }
+            return;
+        }
     };
+    if baseband.len() <= SETTLE * 2 {
+        return;
+    }
 
     let mut confirmed_any = false;
     let mut soft = Vec::new();
@@ -142,13 +154,18 @@ fn confirm_with(
     }
 }
 
-fn baseband(iq: &[Complex<f32>], rate: f64, band: &Band) -> Option<Vec<Complex<f32>>> {
+fn baseband(
+    iq: &[Complex<f32>],
+    rate: f64,
+    band: &Band,
+) -> Result<Vec<Complex<f32>>, ChannelError> {
     let wanted = (SEARCH_SECONDS * rate) as usize;
     let tail = &iq[iq.len().saturating_sub(wanted)..];
-    let mut ddc = Ddc::new(rate, INPUT_RATE_HZ, band.center_hz).ok()?;
+    let mut ddc = Ddc::new(rate, INPUT_RATE_HZ, band.center_hz)
+        .map_err(|e| ChannelError::InvalidSettings(e.to_string()))?;
     let mut out = Vec::with_capacity((tail.len() as f64 * INPUT_RATE_HZ / rate) as usize + 1);
     ddc.process(tail, &mut out);
-    (out.len() > SETTLE * 2).then_some(out)
+    Ok(out)
 }
 
 fn plausible(mode: &ModeSignature, hits: u32, positions: usize, rigour: Rigour) -> bool {
@@ -189,7 +206,7 @@ fn hits(soft: &[f32], mode: &ModeSignature) -> u32 {
     for (position, &symbol) in soft.iter().enumerate() {
         register =
             register << bits_per_symbol | u64::from(mapping.slice((symbol - offset) * scale));
-        if (position + 1) * bits_per_symbol as usize <= mode.sync_bits as usize {
+        if (position + 1) * (bits_per_symbol as usize) < mode.sync_bits as usize {
             continue;
         }
         if mode
@@ -246,4 +263,69 @@ fn group_by_waveform<'a>(
 
 fn same_waveform(a: &ModeSignature, b: &ModeSignature) -> bool {
     a.baud == b.baud && a.deviation_hz == b.deviation_hz && a.receive_filter == b.receive_filter
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mode(type_id: &str) -> &'static ModeSignature {
+        MODE_SIGNATURES
+            .iter()
+            .find(|mode| mode.type_id == type_id)
+            .expect("the mode is one of the searched signatures")
+    }
+
+    fn sync_symbols(mode: &ModeSignature, pattern: u64) -> Vec<f32> {
+        let mapping = mode.params.mapping();
+        let per_symbol = mapping.bits_per_symbol();
+        (0..mode.sync_bits / per_symbol)
+            .map(|symbol| {
+                let shift = mode.sync_bits - (symbol + 1) * per_symbol;
+                let index = (pattern >> shift) & ((1u64 << per_symbol) - 1);
+                mapping.level(index as u8)
+            })
+            .collect()
+    }
+
+    fn band() -> Band {
+        Band {
+            center_hz: 0.0,
+            bandwidth_hz: 12_500.0,
+            snr_db: 20.0,
+            carrier_db: 12.0,
+            flatness: 0.5,
+            skew: 0.0,
+            peak_hz: 0.0,
+        }
+    }
+
+    #[test]
+    fn a_sync_word_at_the_very_start_of_the_window_is_found() {
+        let dmr = mode("dmr");
+        let soft = sync_symbols(dmr, dmr.patterns[0]);
+        assert_eq!(
+            hits(&soft, dmr),
+            1,
+            "the sync word filling the register was skipped"
+        );
+    }
+
+    #[test]
+    fn a_frame_search_that_cannot_run_says_why() {
+        let mut candidates = vec![ProtocolMatch {
+            name: mode("dmr").name.to_owned(),
+            type_id: Some("dmr".to_owned()),
+            score: 0.5,
+            confirmed: false,
+            why: String::new(),
+        }];
+        let iq = vec![Complex::new(0.0, 0.0); 4_096];
+        confirm(&mut candidates, &iq, f64::NAN, &band());
+        assert!(
+            candidates[0].why.contains("frame search"),
+            "nothing said why: {:?}",
+            candidates[0].why
+        );
+    }
 }

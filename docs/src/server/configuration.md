@@ -1,13 +1,14 @@
 # Configuration and security
 
 `sdrmm` runs the interface, the receiver, and the REST, WebSocket, and MCP APIs in one process.
-Out of the box it listens on `0.0.0.0:8080` with **no authentication**.
+Out of the box it listens on `127.0.0.1:8080` with **no authentication**, so only this machine
+reaches it. A bind other machines can reach needs `--token`, or startup is refused.
 
 ## Options
 
 | Option | Default | Sets |
 |---|---|---|
-| `--bind <ADDRESS>` | `0.0.0.0:8080` | Listen address |
+| `--bind <ADDRESS>` | `127.0.0.1:8080` | Listen address; a non-loopback one needs `--token` |
 | `--db <PATH>` | `sdrmm/sdrmm.db` in the platform data folder | SQLite database |
 | `--recordings-dir <PATH>` | `sdrmm/recordings` in the platform data folder | Recording folder |
 | `--token <TOKEN>` | None | Shared access token |
@@ -118,7 +119,8 @@ list it under **Nearby**. Let the phone port through your firewall.
 ## Reverse proxy
 
 - Bind SDR-- to loopback, or firewall its port.
-- Set a token. Without one, a loopback bind answers only `localhost` names.
+- Set a token. Without one, the server answers only requests addressed to an IP literal, a
+  `localhost` or `.local` name, or a `--tls-name`.
 - Serve it at the root of the origin.
 - Pass the original `Host` header. Browser requests whose `Origin` differs are refused.
 - Forward WebSocket upgrades on `/api/ws`, and `/mcp` for MCP clients.

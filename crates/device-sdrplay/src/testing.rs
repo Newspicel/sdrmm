@@ -29,6 +29,7 @@ pub struct FakeApi {
     path: PathBuf,
     selected: AtomicBool,
     streaming: AtomicBool,
+    refuse_uninit: AtomicBool,
     pending_inits: AtomicU32,
     updates: Mutex<Vec<(c_int, c_uint, c_uint)>>,
     callbacks: Mutex<Option<(ffi::CallbackFnsT, ContextPtr)>>,
@@ -77,6 +78,7 @@ impl FakeApi {
             path: PathBuf::from("/usr/local/lib/libsdrplay_api.so.3"),
             selected: AtomicBool::new(false),
             streaming: AtomicBool::new(false),
+            refuse_uninit: AtomicBool::new(false),
             pending_inits: AtomicU32::new(0),
             updates: Mutex::new(Vec::new()),
             callbacks: Mutex::new(None),
@@ -136,6 +138,10 @@ impl FakeApi {
 
     pub fn require_master_before_start(&self, inits: u32) {
         self.pending_inits.store(inits, Ordering::Release);
+    }
+
+    pub fn refuse_uninit(&self) {
+        self.refuse_uninit.store(true, Ordering::Release);
     }
 
     #[must_use]
@@ -287,6 +293,9 @@ impl Sdrplay for FakeApi {
     }
 
     fn uninit(&self, _dev: DevHandle) -> Result<(), DeviceError> {
+        if self.refuse_uninit.load(Ordering::Acquire) {
+            return Err(DeviceError::Io("stopping the SDRplay stream".to_string()));
+        }
         self.streaming.store(false, Ordering::Release);
         *lock(&self.callbacks) = None;
         Ok(())

@@ -12,9 +12,9 @@ use sdrmm_device_virtual::VirtualDriver;
 use sdrmm_wire::{
     ArrayGeometry, ArrayNode, ArrayOrientation, ArrayRecordingRequest, ArrayTuneRequest,
     ArrayTuningMode, Attitude, ChannelParams, ChannelSettings, Coherence, DecoderEvent,
-    DeviceSettings, DfParams, DfReading, GainValue, HeldLane, NfmParams, PositionFix,
-    ProcessorGate, ProcessorParams, ProcessorReading, RdsUpdate, StreamSettings, VirtualLane,
-    Winding, array::ArrayElement,
+    DeviceBackend, DeviceSettings, DfParams, DfReading, GainValue, HeldLane, NfmParams,
+    PositionFix, ProcessorGate, ProcessorParams, ProcessorReading, RdsUpdate, StreamSettings,
+    VirtualLane, Winding, array::ArrayElement,
 };
 
 use super::{pose::PoseTrack, tuning::restore, *};
@@ -354,6 +354,61 @@ fn a_plausible_phone_clock_places_a_late_pose_at_its_own_time() {
         clamped.host_ns <= received,
         "a pose never lands in the future"
     );
+}
+
+#[test]
+fn a_lane_whose_radio_restarted_is_a_lease_to_replace() {
+    let (engine, ds) = bench();
+    let caps = engine
+        .capabilities(ds)
+        .expect("the bench radio reports itself");
+    let (kept, _kept_writer) = TapPort::new();
+    let (fresh, _fresh_writer) = TapPort::new();
+    let (dead, _dead_writer) = TapPort::new();
+    let member = |slot: usize, port: &Arc<TapPort>| members::Member {
+        slot,
+        lane: LaneRef {
+            device_set: ds,
+            stream: slot as u32,
+        },
+        caps: caps.clone(),
+        settings: DeviceSettings::default(),
+        running: true,
+        port: Some(port.clone()),
+        in_flight: 0,
+        streams: 2,
+    };
+    let survey = members::Survey {
+        lanes: vec![
+            Some(LaneRef {
+                device_set: ds,
+                stream: 0,
+            }),
+            Some(LaneRef {
+                device_set: ds,
+                stream: 1,
+            }),
+        ],
+        members: vec![member(0, &kept), member(1, &fresh)],
+        positions: Vec::new(),
+    };
+    let held = vec![
+        Some(Lease {
+            port: kept.clone(),
+            id: 1,
+        }),
+        Some(Lease {
+            port: dead.clone(),
+            id: 1,
+        }),
+    ];
+    assert_eq!(survey.restarted(&held), vec![1]);
+    let matched = vec![
+        Some(Lease { port: kept, id: 1 }),
+        Some(Lease { port: fresh, id: 1 }),
+    ];
+    assert!(survey.restarted(&matched).is_empty());
+    engine.remove_device_set(ds).expect("closes");
 }
 
 #[test]
@@ -1292,7 +1347,7 @@ struct Watching {
 }
 
 impl sdrmm_device::DeviceDriver for Watching {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         self.inner.id()
     }
 
@@ -1488,7 +1543,7 @@ struct Stalling {
 }
 
 impl sdrmm_device::DeviceDriver for Stalling {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         self.inner.id()
     }
 

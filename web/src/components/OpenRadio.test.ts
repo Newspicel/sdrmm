@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DeviceInfo } from "../lib/types";
+import type { DeviceBackend, DeviceInfo } from "../lib/types";
 import {
   deviceHint,
   deviceId,
@@ -13,7 +13,7 @@ import {
   visibleDevices,
 } from "./devices";
 
-function device(driver: string, key: string, label = `${driver} ${key}`): DeviceInfo {
+function device(driver: DeviceBackend, key: string, label = `${driver} ${key}`): DeviceInfo {
   return { driver, key, label };
 }
 
@@ -39,7 +39,7 @@ describe("visibleDevices", () => {
     device("virtual", "band", "Test band"),
     device("virtual", "array4", "Coherent Array"),
     device("recording", "airband", "airband"),
-    device("siggen", "signal_gen-a1b2", "Signal generator"),
+    device("virtual", "gen-signal_gen-a1b2", "Signal generator"),
     device("rtlsdr", "00000001", "RTL-SDR 00000001"),
   ];
 
@@ -102,14 +102,15 @@ describe("sourceTabs", () => {
     expect(tabs.map((tab) => [tab.value, tab.label])).toEqual([
       ["radios", "Radios"],
       ["network", "Network"],
+      ["recording", "Recording"],
       ["virtual", "Virtual (1)"],
     ]);
     expect(tabs.every((tab) => (tab.title ?? "") !== "")).toBe(true);
   });
 
-  it("offers no virtual tab in a build without virtual radios", () => {
+  it("keeps the virtual tab without synthetic radios, for the signal generator", () => {
     const tabs = sourceTabs({ ...groups, virtual: [] });
-    expect(tabs.map((tab) => tab.label)).toEqual(["Radios", "Network"]);
+    expect(tabs.map((tab) => tab.label)).toEqual(["Radios", "Network", "Recording", "Virtual"]);
   });
 });
 

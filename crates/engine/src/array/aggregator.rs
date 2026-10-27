@@ -36,6 +36,7 @@ pub(crate) const PARK: Duration = Duration::from_millis(2);
 const POSE_SLOTS: usize = 64;
 const POSE_HOLD_NS: i64 = 2_000_000_000;
 const SPILL: usize = 8;
+const RETIRE_WAITS: usize = 64;
 const RETIRE_ROOM: usize = MAX_LANES + 4;
 const SOLUTION_SLOTS: usize = 4;
 const JOB_SLOTS: usize = 2;
@@ -337,6 +338,7 @@ impl Aggregator {
     pub(crate) fn step(&mut self) -> Step {
         self.flush_spill();
         self.drain_commands();
+        self.drop_stopped_lanes();
         self.drain_solutions();
         if self.priors != 0 {
             self.seed_offsets();
@@ -384,6 +386,15 @@ impl Aggregator {
             }
         }
         self.aligner.set_offsets(&offsets[..lanes]);
+    }
+
+    fn drop_stopped_lanes(&mut self) {
+        while let Some(lane) = self.aligner.stopped_lane() {
+            if let Some(feed) = self.aligner.swap_feed(lane, None) {
+                self.retire(Retired::Feed(feed));
+            }
+            self.event(AggregatorEvent::LaneStopped { lane });
+        }
     }
 
     fn tell_end(&mut self) {
@@ -868,7 +879,10 @@ impl Aggregator {
 
     fn recalibrate(&mut self) {
         self.bump_generation();
-        self.corrector.clear_to_identity(self.generation);
+        if !self.corrector.clear_to_identity(self.generation) {
+            self.board.set_cal(CalPhase::Stale);
+            tracing::error!("the array correction refused to clear; it still applies old taps");
+        }
         if let Some(stage) = self.stage.as_mut() {
             stage.load();
         }
@@ -983,29 +997,50 @@ impl Aggregator {
 
     fn retire(&mut self, item: Retired) {
         self.flush_spill();
-        if self.io.spill.iter().all(Option::is_none) && self.io.reclaimer.room() > 0 {
-            self.io.reclaimer.retire(item);
+        if self.io.spill.iter().all(Option::is_none)
+            && let Some(slot) = self.io.reclaimer.slot()
+        {
+            slot.retire(item);
             return;
         }
-        match self.io.spill.iter_mut().find(|slot| slot.is_none()) {
-            Some(slot) => *slot = Some(item),
-            None => {
-                self.board.busy.store(true, Ordering::Relaxed);
-                drop(item);
+        let Some(stuck) = park_in_spill(&mut self.io.spill, item) else {
+            return;
+        };
+        self.board.busy.store(true, Ordering::Relaxed);
+        if stuck.blocks_on_release() {
+            self.hand_over(stuck);
+        } else {
+            stuck.release();
+        }
+    }
+
+    fn hand_over(&mut self, item: Retired) {
+        let mut item = Some(item);
+        for _ in 0..RETIRE_WAITS {
+            self.flush_spill();
+            if let Some(slot) = self.io.reclaimer.slot()
+                && let Some(held) = item.take()
+            {
+                slot.retire(held);
+                return;
             }
+            std::thread::park_timeout(PARK);
+        }
+        if let Some(held) = item {
+            held.release();
         }
     }
 
     fn flush_spill(&mut self) {
-        for slot in &mut self.io.spill {
-            if slot.is_none() {
+        for index in 0..SPILL {
+            if self.io.spill[index].is_none() {
                 continue;
             }
-            if self.io.reclaimer.room() == 0 {
+            let Some(slot) = self.io.reclaimer.slot() else {
                 return;
-            }
-            if let Some(item) = slot.take() {
-                self.io.reclaimer.retire(item);
+            };
+            if let Some(item) = self.io.spill[index].take() {
+                slot.retire(item);
             }
         }
     }
@@ -1202,6 +1237,23 @@ pub(crate) fn spawn(
             }
         })
         .map_err(|error| EngineError::Processor(format!("start array aggregator: {error}")))
+}
+
+fn park_in_spill(spill: &mut [Option<Retired>; SPILL], item: Retired) -> Option<Retired> {
+    if let Some(slot) = spill.iter_mut().find(|slot| slot.is_none()) {
+        *slot = Some(item);
+        return None;
+    }
+    if !item.blocks_on_release() {
+        return Some(item);
+    }
+    match spill
+        .iter_mut()
+        .find(|held| held.as_ref().is_some_and(|held| !held.blocks_on_release()))
+    {
+        Some(slot) => slot.replace(item),
+        None => Some(item),
+    }
 }
 
 fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {

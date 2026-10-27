@@ -415,6 +415,87 @@ pub(crate) fn pack_bytes(bits: &[bool], out: &mut Vec<u8>) {
 }
 
 #[cfg(test)]
+mod tests {
+    use num_complex::Complex;
+    use sdrmm_wire::ChannelSettings;
+
+    use super::INPUT_RATE_HZ;
+    use crate::{ChannelCtx, ChannelOutputs, ChannelRx, synth::dv as tx};
+
+    fn channel(type_id: &str) -> Box<dyn ChannelRx> {
+        let settings = ChannelSettings::default_for(type_id).expect("channel settings");
+        crate::create(
+            ChannelCtx {
+                input_rate: INPUT_RATE_HZ,
+            },
+            &settings,
+        )
+        .expect("channel")
+    }
+
+    fn rejects(chan: &mut dyn ChannelRx, iq: &[Complex<f32>]) -> u32 {
+        let mut out = ChannelOutputs::default();
+        for block in iq.chunks(4_096) {
+            out.reset();
+            chan.process(block, &mut out);
+        }
+        chan.rejected()
+    }
+
+    fn hissing(clean: &[Complex<f32>], seed: u32) -> Vec<Complex<f32>> {
+        let hiss = crate::testutil::complex_noise(seed, 0.9, clean.len());
+        clean
+            .iter()
+            .zip(hiss)
+            .map(|(&sample, noise)| sample + noise)
+            .collect()
+    }
+
+    fn time_slipped(clean: &[Complex<f32>]) -> Vec<Complex<f32>> {
+        const SLIP: usize = 60;
+        let cut = clean.len() / 4;
+        let mut out = clean[..cut].to_vec();
+        out.extend_from_slice(&clean[cut + SLIP..]);
+        out
+    }
+
+    #[test]
+    fn a_damaged_transmission_is_reported_as_rejected() {
+        let modes = [
+            (
+                "dmr",
+                tx::dmr::transmission(&tx::dmr::Call::default(), INPUT_RATE_HZ),
+            ),
+            ("p25", tx::p25::trunking(0x2A, INPUT_RATE_HZ)),
+            (
+                "ysf",
+                tx::ysf::transmission(&tx::ysf::Fich::default(), INPUT_RATE_HZ),
+            ),
+            (
+                "nxdn",
+                tx::nxdn::transmission(&tx::nxdn::Shape::default(), 1, true, INPUT_RATE_HZ),
+            ),
+            ("m17", tx::m17::transmission("ALL", "DL1ABC", INPUT_RATE_HZ)),
+        ];
+        let silent: Vec<&str> = modes
+            .iter()
+            .enumerate()
+            .filter(|(index, (type_id, clean))| {
+                let seed = 0x11 * (*index as u32 + 1);
+                rejects(channel(type_id).as_mut(), &hissing(clean, seed)) == 0
+                    && rejects(channel(type_id).as_mut(), &time_slipped(clean)) == 0
+            })
+            .map(|(_, (type_id, _))| *type_id)
+            .collect();
+
+        assert!(
+            silent.is_empty(),
+            "these modes threw frames away without saying so: {silent:?}"
+        );
+    }
+}
+
+#[cfg(test)]
 pub(crate) mod testutil {
     use num_complex::Complex;
     use sdrmm_wire::{DecoderEvent, DvFrame};

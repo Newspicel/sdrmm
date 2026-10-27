@@ -46,12 +46,33 @@ pub fn transmission(call: &Call, rate: f64) -> Vec<Complex<f32>> {
 }
 
 #[must_use]
+pub fn transmission_with_unreadable_header(call: &Call, rate: f64) -> Vec<Complex<f32>> {
+    keyed_transmission(call, &[[false; 72]; 32], false, rate)
+}
+
+#[must_use]
 pub fn transmission_with_voice(call: &Call, voice: &[[bool; 72]], rate: f64) -> Vec<Complex<f32>> {
+    keyed_transmission(call, voice, true, rate)
+}
+
+fn keyed_transmission(
+    call: &Call,
+    voice: &[[bool; 72]],
+    readable_header: bool,
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    let head = |seed: u32| {
+        if readable_header {
+            header_info(call)
+        } else {
+            filler(header_info(call).len(), seed)
+        }
+    };
     let mut symbols = dibits(&filler(400, 67));
     symbols.extend(dibits(&bits(FS1, 48)));
-    symbols.extend(dibits(&header_info(call)));
+    symbols.extend(dibits(&head(101)));
     symbols.extend(dibits(&channel_code(call.channel_code)));
-    symbols.extend(dibits(&header_info(call)));
+    symbols.extend(dibits(&head(103)));
 
     for frames in voice.chunks(16) {
         symbols.extend(dibits(&bits(FS2, 24)));

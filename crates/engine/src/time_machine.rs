@@ -30,14 +30,22 @@ fn feed_capacity(sample_rate: f64) -> usize {
 #[repr(u8)]
 enum FeedFault {
     Overflow = 1,
-    RetuneOverflow = 2,
+    MarkOverflow = 2,
     KeeperStopped = 3,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct CenterMark {
-    at: u64,
-    center_hz: f64,
+enum FeedMark {
+    Center { at: u64, center_hz: f64 },
+    Gap { at: u64, missing: u64 },
+}
+
+impl FeedMark {
+    const fn at(&self) -> u64 {
+        match *self {
+            Self::Center { at, .. } | Self::Gap { at, .. } => at,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -81,8 +89,8 @@ impl TimeMachineShared {
                     "history feed overflowed: {} samples never reached the buffer",
                     self.lost.load(Ordering::Relaxed)
                 )),
-                code if code == FeedFault::RetuneOverflow as u8 => {
-                    Some("history retune queue overflow: keeper too slow".to_owned())
+                code if code == FeedFault::MarkOverflow as u8 => {
+                    Some("history mark queue overflow: keeper too slow".to_owned())
                 }
                 code if code == FeedFault::KeeperStopped as u8 => {
                     Some("the history keeper stopped".to_owned())
@@ -98,7 +106,7 @@ impl TimeMachineShared {
 
 pub(crate) struct TimeMachineTap {
     samples: Producer<Complex<f32>>,
-    marks: Producer<CenterMark>,
+    marks: Producer<FeedMark>,
     shared: Arc<TimeMachineShared>,
     pushed: u64,
     center_hz: f64,
@@ -107,7 +115,7 @@ pub(crate) struct TimeMachineTap {
 impl TimeMachineTap {
     #[must_use]
     pub(crate) fn push(&mut self, samples: &[Complex<f32>], center_hz: f64) -> bool {
-        if self.shared.feed_fault.load(Ordering::Acquire) >= FeedFault::RetuneOverflow as u8 {
+        if self.shared.feed_fault.load(Ordering::Acquire) >= FeedFault::MarkOverflow as u8 {
             return false;
         }
         if samples.is_empty() {
@@ -120,14 +128,11 @@ impl TimeMachineTap {
             return false;
         }
         if center_hz != self.center_hz {
-            let mark = CenterMark {
+            let mark = FeedMark::Center {
                 at: self.pushed,
                 center_hz,
             };
-            if self.marks.push(mark).is_err() {
-                self.shared
-                    .feed_fault
-                    .store(FeedFault::RetuneOverflow as u8, Ordering::Release);
+            if !self.mark(mark) {
                 return false;
             }
             self.center_hz = center_hz;
@@ -142,7 +147,20 @@ impl TimeMachineTap {
         self.shared
             .feed_fault
             .store(FeedFault::Overflow as u8, Ordering::Release);
-        true
+        self.mark(FeedMark::Gap {
+            at: self.pushed,
+            missing: samples.len() as u64,
+        })
+    }
+
+    fn mark(&mut self, mark: FeedMark) -> bool {
+        if self.marks.push(mark).is_ok() {
+            return true;
+        }
+        self.shared
+            .feed_fault
+            .store(FeedFault::MarkOverflow as u8, Ordering::Release);
+        false
     }
 }
 
@@ -167,7 +185,7 @@ impl TimeMachineControl {
 
 struct Marks {
     base_hz: f64,
-    list: VecDeque<CenterMark>,
+    list: VecDeque<FeedMark>,
 }
 
 impl Marks {
@@ -178,7 +196,7 @@ impl Marks {
         }
     }
 
-    fn push(&mut self, mark: CenterMark) {
+    fn push(&mut self, mark: FeedMark) {
         self.list.push_back(mark);
     }
 
@@ -186,21 +204,37 @@ impl Marks {
         self.list
             .iter()
             .rev()
-            .find(|mark| mark.at <= at)
-            .map_or(self.base_hz, |mark| mark.center_hz)
+            .find_map(|mark| match *mark {
+                FeedMark::Center {
+                    at: when,
+                    center_hz,
+                } if when <= at => Some(center_hz),
+                _ => None,
+            })
+            .unwrap_or(self.base_hz)
+    }
+
+    fn missing_at(&self, at: u64) -> u64 {
+        self.list
+            .iter()
+            .filter_map(|mark| match *mark {
+                FeedMark::Gap { at: when, missing } if when == at => Some(missing),
+                _ => None,
+            })
+            .sum()
     }
 
     fn next_after(&self, at: u64) -> Option<u64> {
         self.list
             .iter()
-            .find(|mark| mark.at > at)
-            .map(|mark| mark.at)
+            .find(|mark| mark.at() > at)
+            .map(FeedMark::at)
     }
 
     fn trim(&mut self, before: u64) {
-        while self.list.front().is_some_and(|mark| mark.at <= before) {
-            if let Some(mark) = self.list.pop_front() {
-                self.base_hz = mark.center_hz;
+        while self.list.front().is_some_and(|mark| mark.at() <= before) {
+            if let Some(FeedMark::Center { center_hz, .. }) = self.list.pop_front() {
+                self.base_hz = center_hz;
             }
         }
     }
@@ -227,6 +261,17 @@ impl Epoch {
 struct Capture {
     writer: SigmfWriter,
     center_hz: f64,
+    missing: u64,
+}
+
+impl Capture {
+    fn gap(&mut self, missing: u64, at: &str) {
+        self.missing += missing;
+        let global = self.writer.samples_written() + self.missing;
+        let capture = self.writer.capture_here();
+        capture.global_index = Some(global);
+        capture.datetime = Some(at.to_owned());
+    }
 }
 
 pub(crate) struct TimeMachineHandle {
@@ -296,7 +341,7 @@ pub(crate) fn start(
     ring.resize(held, Complex::new(0.0, 0.0));
 
     let (samples_tx, mut samples_rx) = RingBuffer::<Complex<f32>>::new(feed_capacity(sample_rate));
-    let (marks_tx, mut marks_rx) = RingBuffer::<CenterMark>::new(MARK_CAPACITY);
+    let (marks_tx, mut marks_rx) = RingBuffer::<FeedMark>::new(MARK_CAPACITY);
     let (control_tx, control_rx) = mpsc::channel();
     let shared = Arc::new(TimeMachineShared::default());
     let tap = TimeMachineTap {
@@ -355,7 +400,7 @@ impl Keeper {
     fn run(
         mut self,
         samples: &mut Consumer<Complex<f32>>,
-        marks: &mut Consumer<CenterMark>,
+        marks: &mut Consumer<FeedMark>,
         control: &mpsc::Receiver<TimeMachineCommand>,
     ) {
         loop {
@@ -386,7 +431,7 @@ impl Keeper {
         }
     }
 
-    fn drain_marks(&mut self, marks: &mut Consumer<CenterMark>) {
+    fn drain_marks(&mut self, marks: &mut Consumer<FeedMark>) {
         while let Ok(mark) = marks.pop() {
             self.marks.push(mark);
         }
@@ -395,7 +440,7 @@ impl Keeper {
     fn drain_samples(
         &mut self,
         samples: &mut Consumer<Complex<f32>>,
-        marks: &mut Consumer<CenterMark>,
+        marks: &mut Consumer<FeedMark>,
     ) -> bool {
         let available = samples.slots();
         if available == 0 {
@@ -449,6 +494,7 @@ impl Keeper {
         let mut capture = Capture {
             writer,
             center_hz: self.marks.center_at(first),
+            missing: 0,
         };
         capture.writer.stamp_capture(&self.epoch.time_of(first));
         capture.writer.set_position(self.position.as_ref());
@@ -532,6 +578,10 @@ fn emit(
     let mut offset = 0usize;
     while offset < samples.len() {
         let position = at + offset as u64;
+        let missing = marks.missing_at(position);
+        if missing > 0 {
+            capture.gap(missing, &epoch.time_of(position));
+        }
         let center_hz = marks.center_at(position);
         if center_hz != capture.center_hz {
             capture.writer.add_capture(center_hz);
@@ -561,7 +611,7 @@ mod tests {
     fn feed(
         capacity: usize,
         marks_capacity: usize,
-    ) -> (TimeMachineTap, Consumer<Complex<f32>>, Consumer<CenterMark>) {
+    ) -> (TimeMachineTap, Consumer<Complex<f32>>, Consumer<FeedMark>) {
         let (samples, reader) = RingBuffer::new(capacity);
         let (marks, marker) = RingBuffer::new(marks_capacity);
         (
@@ -648,7 +698,30 @@ mod tests {
         marks.pop().expect("first retune");
         assert!(!tap.push(&samples, 103e6));
         assert_eq!(reader.slots(), 3);
-        assert!(tap.shared.error().expect("overflow").contains("retune"));
+        assert!(tap.shared.error().expect("overflow").contains("mark"));
+    }
+
+    #[test]
+    fn an_overflowing_feed_marks_the_gap_it_spliced_over() {
+        let dir = TempDir::new().expect("tempdir");
+        let stem = dir.path().join("spliced-history");
+        let (mut tap, mut samples, mut marks) = feed(4, 4);
+        let mut keeper = keeper(16, tap.shared.clone());
+        keeper.begin(SigmfWriter::create(&stem, RATE, 100e6, "test").expect("writer"));
+        assert!(tap.push(&ramp(0, 4), 100e6));
+        assert!(tap.push(&ramp(4, 3), 100e6));
+        assert!(keeper.drain_samples(&mut samples, &mut marks));
+        assert!(tap.push(&ramp(7, 2), 100e6));
+        assert!(keeper.drain_samples(&mut samples, &mut marks));
+        keeper.close();
+        let reader = SigmfReader::open(&stem).expect("recording");
+        let captures = &reader.meta().captures;
+        assert_eq!(captures.len(), 2);
+        assert_eq!(captures[1].sample_start, 4);
+        assert_eq!(captures[1].global_index, Some(7));
+        assert!(captures[1].datetime.is_some());
+        assert_eq!(reader.total_samples(), 6);
+        assert!(tap.shared.error().expect("overflow").contains("3 samples"));
     }
 
     #[test]

@@ -302,7 +302,7 @@ mod tests {
         assert!(matches!(
             body("radio"),
             Some(NodeBody::Device(device))
-                if device.device.as_ref().is_some_and(|radio| radio.backend == "virtual")
+                if device.device.as_ref().is_some_and(|radio| radio.backend == sdrmm_wire::DeviceBackend::Virtual)
         ));
         assert!(matches!(body("voice"), Some(NodeBody::Channel(_))));
         assert!(matches!(body("hunt"), Some(NodeBody::Hunt(_))));

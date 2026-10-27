@@ -89,6 +89,20 @@ pub fn check(code: ffi::ErrT, action: &str) -> Result<(), DeviceError> {
     }
 }
 
+enum Claim {
+    Held,
+    Refused(DeviceError),
+    Locked(DeviceError),
+}
+
+fn claimed(selected: Result<(), DeviceError>, unlocked: Result<(), DeviceError>) -> Claim {
+    match (selected, unlocked) {
+        (Err(refused), _) => Claim::Refused(refused),
+        (Ok(()), Err(locked)) => Claim::Locked(locked),
+        (Ok(()), Ok(())) => Claim::Held,
+    }
+}
+
 pub fn claim_error(error: DeviceError) -> DeviceError {
     match error {
         DeviceError::Io(message) => DeviceError::InUse(message),
@@ -268,9 +282,21 @@ impl Sdrplay for LoadedApi {
         self.describe(unsafe { (self.entries.lock)() }, "locking the SDRplay API")?;
         let code = unsafe { (self.entries.select_device)(&raw mut *device) };
         let unlocked = unsafe { (self.entries.unlock)() };
-        self.describe(code, "opening the SDRplay device")
-            .map_err(claim_error)?;
-        self.describe(unlocked, "unlocking the SDRplay API")
+        let claim = claimed(
+            self.describe(code, "opening the SDRplay device")
+                .map_err(claim_error),
+            self.describe(unlocked, "unlocking the SDRplay API"),
+        );
+        match claim {
+            Claim::Held => Ok(()),
+            Claim::Refused(error) => Err(error),
+            Claim::Locked(error) => {
+                if let Err(release) = self.release_device(device) {
+                    tracing::error!(%release, "the SDRplay receiver stays claimed by this process");
+                }
+                Err(error)
+            }
+        }
     }
 
     fn release_device(&self, device: &mut ffi::DeviceT) -> Result<(), DeviceError> {
@@ -551,6 +577,17 @@ mod tests {
             2,
             "the window expiring allows another attempt"
         );
+    }
+
+    #[test]
+    fn a_receiver_selected_behind_a_stuck_lock_is_released_again() {
+        let stuck = || Err(DeviceError::Io("unlocking the SDRplay API".to_string()));
+        assert!(matches!(claimed(Ok(()), stuck()), Claim::Locked(_)));
+        assert!(matches!(claimed(Ok(()), Ok(())), Claim::Held));
+        assert!(matches!(
+            claimed(Err(DeviceError::InUse("taken".to_string())), stuck()),
+            Claim::Refused(_),
+        ));
     }
 
     #[test]

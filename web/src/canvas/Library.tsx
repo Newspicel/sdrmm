@@ -42,14 +42,9 @@ export function Library({
   const target = libraryTarget(workspace.graph, workspace.devices, workspace.selected);
 
   const openRecording = (recording: RecordingInfo): void => {
-    const id = newNodeId("recording", nodeIds(workspace.graph));
-    workspace.edit((snapshot) => ({
-      ...snapshot,
-      graph: addNode(
-        snapshot.graph,
-        recordingNodeFor(recording, id, placeNode(snapshot.graph, "recording")),
-      ),
-    }));
+    const id = newNodeId("device", nodeIds(workspace.graph));
+    const node = recordingNodeFor(recording, id, placeNode(workspace.graph, "device"));
+    workspace.edit((snapshot) => ({ ...snapshot, graph: addNode(snapshot.graph, node) }));
     workspace.select(id);
     workspace.apply();
   };

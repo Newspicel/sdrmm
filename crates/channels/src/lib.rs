@@ -88,6 +88,8 @@ mod fixtures;
 #[cfg(test)]
 mod testutil;
 
+#[cfg(any(test, feature = "fixtures"))]
+pub mod reference_data;
 #[cfg(any(test, feature = "synth"))]
 pub mod synth;
 
@@ -100,6 +102,10 @@ pub use apt::AptChannel;
 pub use atv::AtvChannel;
 pub use audio_chain::{AudioChain, ClickProfile};
 pub use ble::BleChannel;
+#[cfg(feature = "fuzzing")]
+pub use broadcast_audio::decode_layer_two;
+#[cfg(feature = "fuzzing")]
+pub use broadcast_media::decode_bitstream;
 pub use cw_skimmer::CwSkimmerChannel;
 pub use dab::DabChannel;
 #[cfg(any(test, feature = "synth"))]
@@ -165,7 +171,7 @@ pub use wfm::WfmChannel;
 pub use wifi::WifiOccupancyChannel;
 pub use wmbus::WmbusChannel;
 
-pub const AUDIO_RATE: u32 = 48_000;
+pub const AUDIO_RATE: u32 = sdrmm_wire::audio::AUDIO_RATE_HZ;
 
 #[must_use]
 pub fn audio_channels(params: &ChannelParams) -> u8 {
@@ -958,92 +964,16 @@ mod tests {
     use std::collections::HashSet;
 
     use sdrmm_wire::{
-        AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, AtvColor, AtvParams,
-        CallGate, ChannelParams, CwSkimmerParams, DabParams, DatvParams, DectParams, DmrParams,
-        DpmrParams, DrmParams, DscParams, DstarParams, EotParams, ErmesParams, EventKind,
-        FlexParams, FreeDvParams, GnssParams, HfdlParams, IdentParams, IlsParams,
-        InmarsatAeroParams, InmarsatStdcParams, IridiumParams, LrptParams, M17Params, MorseParams,
-        NavtexParams, NfmParams, NxdnParams, P25Params, PocsagParams, PskParams, RadioClockParams,
-        RadiosondeParams, RttyParams, SelcallParams, SsbParams, SstvParams, TetraParams,
-        Vdl2Params, VorParams, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
+        AmParams, AtvColor, AtvParams, CallGate, ChannelParams, DatvParams, EventKind, NfmParams,
+        SsbParams, WfmParams,
     };
 
     use super::*;
     use crate::testutil::settings;
 
     fn default_params(type_id: &str) -> ChannelParams {
-        match type_id {
-            "nfm" => ChannelParams::Nfm(NfmParams::default()),
-            "selcall" => ChannelParams::Selcall(SelcallParams::default()),
-            "am" => ChannelParams::Am(AmParams::default()),
-            "ssb" => ChannelParams::Ssb(SsbParams::default()),
-            "wfm" => ChannelParams::Wfm(WfmParams::default()),
-            "pocsag" => ChannelParams::Pocsag(PocsagParams::default()),
-            "flex" => ChannelParams::Flex(FlexParams::default()),
-            "ermes" => ChannelParams::Ermes(ErmesParams::default()),
-            "eot" => ChannelParams::Eot(EotParams::default()),
-            "sarsat" => ChannelParams::Sarsat(sdrmm_wire::SarsatParams::default()),
-            "tetrapol" => ChannelParams::Tetrapol(sdrmm_wire::TetrapolParams::default()),
-            "adsb" => ChannelParams::Adsb(AdsbParams::default()),
-            "ais" => ChannelParams::Ais(AisParams::default()),
-            "aprs" => ChannelParams::Aprs(AprsParams::default()),
-            "rtty" => ChannelParams::Rtty(RttyParams::default()),
-            "morse" => ChannelParams::Morse(MorseParams::default()),
-            "cw_skimmer" => ChannelParams::CwSkimmer(CwSkimmerParams::default()),
-            "navtex" => ChannelParams::Navtex(NavtexParams::default()),
-            "acars" => ChannelParams::Acars(AcarsParams::default()),
-            "atv" => ChannelParams::Atv(AtvParams::default()),
-            "sstv" => ChannelParams::Sstv(SstvParams::default()),
-            "dab" => ChannelParams::Dab(DabParams::default()),
-            "datv" => ChannelParams::Datv(DatvParams::default()),
-            "dvbt" => ChannelParams::Dvbt(sdrmm_wire::DvbtParams::default()),
-            "drm" => ChannelParams::Drm(DrmParams::default()),
-            "dmr" => ChannelParams::Dmr(DmrParams::default()),
-            "dstar" => ChannelParams::Dstar(DstarParams::default()),
-            "ysf" => ChannelParams::Ysf(YsfParams::default()),
-            "nxdn" => ChannelParams::Nxdn(NxdnParams::default()),
-            "p25" => ChannelParams::P25(P25Params::default()),
-            "dpmr" => ChannelParams::Dpmr(DpmrParams::default()),
-            "m17" => ChannelParams::M17(M17Params::default()),
-            "tetra" => ChannelParams::Tetra(TetraParams::default()),
-            "ft8" => ChannelParams::Ft8(WsjtParams::default()),
-            "ft4" => ChannelParams::Ft4(WsjtParams::default()),
-            "psk" => ChannelParams::Psk(PskParams::default()),
-            "wspr" => ChannelParams::Wspr(WsprParams::default()),
-            "freedv" => ChannelParams::Freedv(FreeDvParams::default()),
-            "ident" => ChannelParams::Ident(IdentParams::default()),
-            "radio_clock" => ChannelParams::RadioClock(RadioClockParams::default()),
-            "gnss" => ChannelParams::Gnss(GnssParams::default()),
-            "vor" => ChannelParams::Vor(VorParams::default()),
-            "ils" => ChannelParams::Ils(IlsParams::default()),
-            "dsc" => ChannelParams::Dsc(DscParams::default()),
-            "inmarsat_stdc" => ChannelParams::InmarsatStdc(InmarsatStdcParams::default()),
-            "inmarsat_aero" => ChannelParams::InmarsatAero(InmarsatAeroParams::default()),
-            "vdl2" => ChannelParams::Vdl2(Vdl2Params::default()),
-            "hfdl" => ChannelParams::Hfdl(HfdlParams::default()),
-            "iridium" => ChannelParams::Iridium(IridiumParams::default()),
-            "dect" => ChannelParams::Dect(DectParams::default()),
-            "gsm" => ChannelParams::Gsm(sdrmm_wire::GsmParams::default()),
-            "apt" => ChannelParams::Apt(AptParams::default()),
-            "lrpt" => ChannelParams::Lrpt(LrptParams::default()),
-            "wefax" => ChannelParams::Wefax(WefaxParams::default()),
-            "same" => ChannelParams::Same(sdrmm_wire::SameParams::default()),
-            "radiosonde" => ChannelParams::Radiosonde(RadiosondeParams::default()),
-            "lora" => ChannelParams::Lora(sdrmm_wire::LoraParams::default()),
-            "remote_id" => ChannelParams::RemoteId(sdrmm_wire::RemoteIdParams::default()),
-            "ble" => ChannelParams::Ble(sdrmm_wire::BleParams::default()),
-            "wifi_occupancy" => {
-                ChannelParams::WifiOccupancy(sdrmm_wire::WifiOccupancyParams::default())
-            }
-            "ism_survey" => ChannelParams::IsmSurvey(sdrmm_wire::IsmSurveyParams::default()),
-            "ism" => ChannelParams::Ism(sdrmm_wire::IsmParams::default()),
-            "wmbus" => ChannelParams::Wmbus(sdrmm_wire::WmbusParams::default()),
-            "noise_figure" => ChannelParams::NoiseFigure(sdrmm_wire::NoiseFigureParams::default()),
-            "per" => ChannelParams::Per(sdrmm_wire::PerParams::default()),
-            "sid" => ChannelParams::Sid(sdrmm_wire::SidParams::default()),
-            "stanag" => ChannelParams::Stanag(sdrmm_wire::StanagParams::default()),
-            other => panic!("unexpected type id {other}"),
-        }
+        ChannelParams::default_for(type_id)
+            .unwrap_or_else(|| panic!("unexpected type id {type_id}"))
     }
 
     #[test]
@@ -1094,75 +1024,8 @@ mod tests {
         assert_eq!(ids.len(), all.len());
         assert_eq!(
             ids,
-            HashSet::from([
-                "nfm",
-                "selcall",
-                "am",
-                "ssb",
-                "wfm",
-                "pocsag",
-                "flex",
-                "ermes",
-                "eot",
-                "sarsat",
-                "tetrapol",
-                "adsb",
-                "ais",
-                "aprs",
-                "rtty",
-                "morse",
-                "cw_skimmer",
-                "navtex",
-                "acars",
-                "atv",
-                "sstv",
-                "dab",
-                "datv",
-                "dvbt",
-                "drm",
-                "dmr",
-                "dstar",
-                "ysf",
-                "nxdn",
-                "p25",
-                "dpmr",
-                "m17",
-                "tetra",
-                "freedv",
-                "ft8",
-                "ft4",
-                "psk",
-                "wspr",
-                "ident",
-                "radio_clock",
-                "gnss",
-                "vor",
-                "ils",
-                "dsc",
-                "inmarsat_stdc",
-                "inmarsat_aero",
-                "vdl2",
-                "hfdl",
-                "iridium",
-                "dect",
-                "gsm",
-                "apt",
-                "lrpt",
-                "wefax",
-                "same",
-                "radiosonde",
-                "lora",
-                "remote_id",
-                "ble",
-                "wifi_occupancy",
-                "ism_survey",
-                "ism",
-                "wmbus",
-                "noise_figure",
-                "per",
-                "sid",
-                "stanag",
-            ])
+            sdrmm_wire::CHANNEL_TYPE_IDS.iter().copied().collect(),
+            "a decoder named in the wire table must be registered here, and the other way round"
         );
         for d in &all {
             let (bandwidth, rate) = match d.type_id.as_str() {

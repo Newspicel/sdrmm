@@ -97,6 +97,39 @@ fn a_french_beacon_goes_through_the_frame_parser() {
 
 const DJI_BEACON: &str = "80000000ffffffffffff60601f2977cc60601f7a388320007b1db44ab18c73ed66000431000e4d415649435f4149525f5245414c010882848b960c121824dd180050f2020101000003a4000027a4000042435e0062322f00dd5e26371258621310024d06331f455055475430373837475753354949365a66140044b77c005900e400100e480de803b01d68757c1c00000000ec29bc00066cc60159b7ddff489b5cffdc0700383434323633360000000000000000000000006f548482";
 
+fn refused(mpdu: &[u8]) -> u32 {
+    let mut tracker = Tracker::default();
+    let found = frame(
+        &Mpdu {
+            bytes: mpdu,
+            phy: RemoteIdPhy::Dsss1m,
+            channel: None,
+            level_dbfs: 0.0,
+        },
+        &mut tracker,
+    );
+    assert!(found.is_none(), "{found:?}");
+    tracker.rejected()
+}
+
+#[test]
+fn a_drone_id_beacon_that_will_not_parse_is_counted() {
+    let mut mpdu = bytes(DJI_BEACON);
+    let at = mpdu
+        .windows(4)
+        .position(|window| window == [0xDD, 0x5E, 0x26, 0x37])
+        .expect("the drone id element");
+    mpdu[at + 1] -= 1;
+    mpdu.remove(at + 2 + 93);
+    assert_eq!(refused(&mpdu), 1);
+}
+
+#[test]
+fn a_french_beacon_that_will_not_parse_is_counted() {
+    let mpdu = build::french_beacon([2, 0, 0, 0, 0, 1], "FR", &[1, 1, 2]);
+    assert_eq!(refused(&mpdu), 1);
+}
+
 #[test]
 fn a_dji_drone_id_beacon_names_the_serial() {
     let mpdu = bytes(DJI_BEACON);

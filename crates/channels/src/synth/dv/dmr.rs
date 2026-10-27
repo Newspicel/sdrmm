@@ -2,7 +2,10 @@ use num_complex::Complex;
 use sdrmm_dsp::{Bptc128, Bptc196, CyclicCode, crc16_msb, rs129_parity};
 
 use super::{bits, dibits, filler};
-use crate::dv::dmr::{TRELLIS_DATA_BITS, TRELLIS_DIBITS, TRELLIS_MAP, TRELLIS_NEXT, trellis_slot};
+use crate::dv::dmr::{
+    RATE_ONE_CODED_BITS, RATE_ONE_DATA_BITS, RATE_ONE_PAD_AT, RATE_ONE_PAD_BITS, TRELLIS_DATA_BITS,
+    TRELLIS_DIBITS, TRELLIS_MAP, TRELLIS_NEXT, trellis_slot,
+};
 
 const VOICE_SYNC: u64 = 0x5D57_7F77_57FF;
 const DATA_SYNC: u64 = 0xF7FD_D5DD_FD55;
@@ -16,7 +19,9 @@ const DT_TERMINATOR_WITH_LC: u8 = 0x2;
 const DT_CSBK: u8 = 0x3;
 const DT_MBC_HEADER: u8 = 0x4;
 const DT_MBC_CONTINUATION: u8 = 0x5;
+const DT_RATE_HALF_DATA: u8 = 0x7;
 const DT_RATE_THREE_QUARTER_DATA: u8 = 0x8;
+const DT_RATE_ONE_DATA: u8 = 0xA;
 
 const BAUD: f64 = 4_800.0;
 const DEVIATION_HZ: f64 = 1_944.0;
@@ -361,6 +366,55 @@ pub fn rate_three_quarter_data(
         tx.burst(&trellis_burst(&call, payload));
     }
     tx.modulate(rate)
+}
+
+#[must_use]
+pub fn rate_half_data(
+    color_code: u8,
+    payload: &[bool; Bptc196::DATA_BITS],
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    let call = Call {
+        color_code,
+        ..Call::default()
+    };
+    let mut tx = Keyed::default();
+    for _ in 0..3 {
+        tx.burst(&data_burst(&call, DT_RATE_HALF_DATA, payload));
+    }
+    tx.modulate(rate)
+}
+
+#[must_use]
+pub fn rate_one_data(
+    color_code: u8,
+    payload: &[bool; RATE_ONE_DATA_BITS],
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    let call = Call {
+        color_code,
+        ..Call::default()
+    };
+    let mut tx = Keyed::default();
+    for _ in 0..3 {
+        tx.burst(&uncoded_burst(&call, payload));
+    }
+    tx.modulate(rate)
+}
+
+fn uncoded_burst(call: &Call, payload: &[bool; RATE_ONE_DATA_BITS]) -> Vec<bool> {
+    let mut coded = [false; RATE_ONE_CODED_BITS];
+    coded[..RATE_ONE_PAD_AT].copy_from_slice(&payload[..RATE_ONE_PAD_AT]);
+    coded[RATE_ONE_PAD_AT + RATE_ONE_PAD_BITS..].copy_from_slice(&payload[RATE_ONE_PAD_AT..]);
+    let slot_type = CyclicCode::GOLAY_20_8
+        .encode(u32::from(call.color_code) << 4 | u32::from(DT_RATE_ONE_DATA));
+
+    let mut burst = coded[..98].to_vec();
+    burst.extend(bits(slot_type >> 10, 10));
+    burst.extend(bits(DATA_SYNC, 48));
+    burst.extend(bits(slot_type & 0x3FF, 10));
+    burst.extend(&coded[98..]);
+    burst
 }
 
 fn trellis_burst(call: &Call, payload: &[bool; TRELLIS_DATA_BITS]) -> Vec<bool> {

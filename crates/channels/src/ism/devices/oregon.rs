@@ -55,6 +55,25 @@ fn bcd_ok(nibbles: &[u8]) -> bool {
     nibbles.iter().all(|&nibble| nibble <= 9)
 }
 
+fn temperature_digits(msg: &[u8]) -> [u8; 3] {
+    [msg[5] >> 4, msg[4] & 0x0f, msg[4] >> 4]
+}
+
+fn thermo_hygro_digits(msg: &[u8]) -> [u8; 5] {
+    [
+        msg[5] >> 4,
+        msg[4] & 0x0f,
+        msg[4] >> 4,
+        msg[6] & 0x0f,
+        msg[6] >> 4,
+    ]
+}
+
+fn plausible_temperature(msg: &[u8], digits: &[u8]) -> Option<f32> {
+    let value = temperature(msg);
+    (bcd_ok(digits) && (-50.0..=70.0).contains(&value)).then_some(value)
+}
+
 fn base(model: &str, msg: &[u8], bits: usize) -> IsmMessage {
     let device = (msg[2] & 0x0f) | (msg[3] & 0xf0);
     IsmMessage {
@@ -96,10 +115,13 @@ fn v2(bits: &Bits, found: &mut Found) -> Outcome {
                 _ => "Oregon-THGR122N",
             };
             Outcome::checked(valid, || {
+                let Some(value) = plausible_temperature(&msg, &thermo_hygro_digits(&msg)) else {
+                    return Outcome::Skip;
+                };
                 Outcome::emit(
                     found,
                     IsmMessage {
-                        temperature_c: Some(temperature(&msg)),
+                        temperature_c: Some(value),
                         humidity_pct: Some(humidity(&msg)),
                         ..base(model, &msg, len)
                     },
@@ -107,12 +129,9 @@ fn v2(bits: &Bits, found: &mut Found) -> Outcome {
             })
         }
         THN132N if len == 64 => Outcome::checked(checksum(&msg, 12), || {
-            let value = temperature(&msg);
-            if !bcd_ok(&[msg[5] >> 4, msg[4] & 0x0f, msg[4] >> 4])
-                || !(-50.0..=70.0).contains(&value)
-            {
+            let Some(value) = plausible_temperature(&msg, &temperature_digits(&msg)) else {
                 return Outcome::Skip;
-            }
+            };
             Outcome::emit(
                 found,
                 IsmMessage {
@@ -182,17 +201,9 @@ fn wgr800(msg: &[u8], found: &mut Found) -> Outcome {
 }
 
 fn thgr810(msg: &[u8], found: &mut Found) -> Outcome {
-    let value = temperature(msg);
-    let digits = [
-        msg[5] >> 4,
-        msg[4] & 0x0f,
-        msg[4] >> 4,
-        msg[6] & 0x0f,
-        msg[6] >> 4,
-    ];
-    if !bcd_ok(&digits) || !(-50.0..=70.0).contains(&value) {
+    let Some(value) = plausible_temperature(msg, &thermo_hygro_digits(msg)) else {
         return Outcome::Skip;
-    }
+    };
     Outcome::emit(
         found,
         IsmMessage {
@@ -201,4 +212,59 @@ fn thgr810(msg: &[u8], found: &mut Found) -> Outcome {
             ..base("Oregon-THGR810", msg, 68)
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ism::bits::from_rows;
+    use crate::ism::device::tenths_c;
+
+    const THGR122N_ROW: &str = "010101010101010101010101010101011001100101101010011001011001101010101010011010100101100110011010101010101010011001011010100110101010101001010110011001101010101001011010010110101010101010101010";
+    const IMPLAUSIBLE_ROW: &str = "010101010101010101010101010101011001100101101010011001011001101010101010011010100101100110011010101010100110011001010101101010011010101001010110011001101010101010010110101001101010101010101010";
+    const THGR810_ROW: &str = "000000000000000000000101111100000100001010000101010000000010110001000000111010100000111011000000";
+
+    fn decode(row: &str) -> Found {
+        let mut bits = from_rows(&[row]);
+        let mut found = Found::new();
+        oregon(&mut bits, &mut found);
+        found
+    }
+
+    fn only(row: &str) -> IsmMessage {
+        let mut found = decode(row);
+        assert_eq!(found.len(), 1, "{found:?}");
+        found.remove(0)
+    }
+
+    #[test]
+    fn a_thgr122n_frame_reads_its_bcd_temperature_and_humidity() {
+        let message = only(THGR122N_ROW);
+        assert_eq!(message.model, "Oregon-THGR122N");
+        assert_eq!(message.id, "43");
+        assert_eq!(message.channel.as_deref(), Some("1"));
+        assert_eq!(message.battery_ok, Some(true));
+        assert_eq!(tenths_c(&message), Some(23.4));
+        assert_eq!(message.humidity_pct, Some(57));
+        assert_eq!(message.raw, "1d201b20432075033000");
+        assert_eq!(message.bits, 76);
+    }
+
+    #[test]
+    fn a_thgr122n_frame_whose_temperature_is_not_bcd_is_dropped() {
+        assert!(decode(IMPLAUSIBLE_ROW).is_empty());
+    }
+
+    #[test]
+    fn a_thgr810_frame_reads_its_temperature_and_humidity() {
+        let message = only(THGR810_ROW);
+        assert_eq!(message.model, "Oregon-THGR810");
+        assert_eq!(message.id, "42");
+        assert_eq!(message.channel.as_deref(), Some("1"));
+        assert_eq!(message.battery_ok, Some(true));
+        assert_eq!(tenths_c(&message), Some(23.4));
+        assert_eq!(message.humidity_pct, Some(57));
+        assert_eq!(message.raw, "f0241a204320750730");
+        assert_eq!(message.bits, 68);
+    }
 }

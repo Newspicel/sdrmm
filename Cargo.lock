@@ -5945,10 +5945,11 @@ dependencies = [
 name = "sdrmm-cps"
 version = "0.0.0"
 dependencies = [
+ "sdrmm-serial",
  "sdrmm-wire",
  "serde_json",
- "serialport",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -6058,10 +6059,10 @@ version = "0.0.0"
 dependencies = [
  "sdrmm-device",
  "sdrmm-dsp",
+ "sdrmm-serial",
  "sdrmm-wire",
  "serde",
  "serde_json",
- "serialport",
  "tracing",
 ]
 
@@ -6174,21 +6175,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "sdrmm-device-siggen"
-version = "0.0.0"
-dependencies = [
- "arc-swap",
- "num-complex",
- "sdrmm-channels",
- "sdrmm-device",
- "sdrmm-wire",
- "serde_json",
-]
-
-[[package]]
 name = "sdrmm-device-soapy"
 version = "0.0.0"
 dependencies = [
+ "getrandom 0.4.3",
  "libloading 0.9.0",
  "num-complex",
  "sdrmm-device",
@@ -6218,8 +6208,11 @@ dependencies = [
  "num-complex",
  "sdrmm-device",
  "sdrmm-dsp",
+ "sdrmm-modem",
  "sdrmm-wire",
+ "serde_json",
  "tempfile",
+ "tracing",
 ]
 
 [[package]]
@@ -6261,7 +6254,6 @@ dependencies = [
  "sdrmm-device-rtltcp",
  "sdrmm-device-sdrconnect",
  "sdrmm-device-sdrplay",
- "sdrmm-device-siggen",
  "sdrmm-device-soapy",
  "sdrmm-device-spyserver",
  "sdrmm-device-virtual",
@@ -6367,6 +6359,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdrmm-serial"
+version = "0.0.0"
+dependencies = [
+ "serialport",
+]
+
+[[package]]
 name = "sdrmm-server"
 version = "0.0.0"
 dependencies = [
@@ -6395,21 +6394,17 @@ dependencies = [
  "sdrmm-channels",
  "sdrmm-cps",
  "sdrmm-device",
- "sdrmm-device-cr8",
  "sdrmm-device-recording",
- "sdrmm-device-sdrplay",
- "sdrmm-device-siggen",
- "sdrmm-device-soapy",
  "sdrmm-device-virtual",
  "sdrmm-dsp",
  "sdrmm-engine",
  "sdrmm-orbit",
  "sdrmm-recorder",
+ "sdrmm-serial",
  "sdrmm-tools",
  "sdrmm-wire",
  "serde",
  "serde_json",
- "serialport",
  "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
@@ -6442,8 +6437,8 @@ name = "sdrmm-tools"
 version = "0.0.0"
 dependencies = [
  "num-complex",
+ "sdrmm-serial",
  "sdrmm-wire",
- "serialport",
  "thiserror 2.0.21",
 ]
 

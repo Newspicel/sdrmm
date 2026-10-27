@@ -105,8 +105,13 @@ fn damaged_spectral_data_is_reported() {
 }
 
 #[test]
-#[ignore = "rewrites fixtures/drm/*.drm"]
-fn regenerate_drm_frame_fixtures() {
+#[ignore = "writes fixtures/drm/*.drm; run with SDRMM_WRITE_FIXTURES=1"]
+fn write_drm_frame_fixtures() {
+    assert_eq!(
+        std::env::var("SDRMM_WRITE_FIXTURES").as_deref(),
+        Ok("1"),
+        "set SDRMM_WRITE_FIXTURES=1 to overwrite fixtures/drm/*.drm"
+    );
     let names = [
         "drm_he_mono_24k",
         "drm_he_ps_24k",

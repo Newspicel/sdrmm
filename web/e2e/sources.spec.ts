@@ -1,5 +1,22 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { addNode } from "./canvas";
+
+async function pickGenerator(page: Page) {
+  await addNode(page, "Device");
+  const device = page.locator('.react-flow__node[data-id^="device:"]').last();
+  await device.locator("header").click();
+  await device.getByRole("radio", { name: /Virtual/ }).click();
+  await device.getByRole("button", { name: "Signal generator" }).click();
+  return device;
+}
+
+async function pickRecording(page: Page) {
+  await addNode(page, "Device");
+  const device = page.locator('.react-flow__node[data-id^="device:"]').last();
+  await device.locator("header").click();
+  await device.getByRole("radio", { name: "Recording" }).click();
+  return device;
+}
 
 test.describe("the source nodes", () => {
   test.describe.configure({ mode: "serial" });
@@ -9,10 +26,9 @@ test.describe("the source nodes", () => {
     await page.goto("/");
   });
 
-  test("a signal generator starts as soon as it is drawn", async ({ page }) => {
-    await addNode(page, "Signal generator");
+  test("a signal generator starts as soon as it is picked", async ({ page }) => {
+    const generator = await pickGenerator(page);
 
-    const generator = page.locator('.react-flow__node[data-id^="signal_gen:"]').last();
     await expect(generator).toBeVisible();
     await expect(generator.getByRole("button", { name: "Start" })).toHaveCount(0);
     await expect(generator.locator('[id^="frequency-dial"]')).toBeVisible();
@@ -20,9 +36,8 @@ test.describe("the source nodes", () => {
   });
 
   test("the signal list is searchable rather than one long scroll", async ({ page }) => {
-    await addNode(page, "Signal generator");
+    const generator = await pickGenerator(page);
 
-    const generator = page.locator('.react-flow__node[data-id^="signal_gen:"]').last();
     await expect(generator.locator("header")).not.toContainText("CTCSS");
 
     await generator.getByRole("button", { name: "Signal", exact: true }).click();
@@ -42,11 +57,9 @@ test.describe("the source nodes", () => {
     await expect(generator.getByRole("button", { name: "Sample rate" })).toContainText("2 MS/s");
   });
 
-  test("a recording node picks from the library and plays what it is given", async ({ page }) => {
-    await addNode(page, "Recording");
+  test("a device node picks from the library and plays what it is given", async ({ page }) => {
+    const recording = await pickRecording(page);
 
-    const recording = page.locator('.react-flow__node[data-id^="recording:"]').last();
-    await recording.locator("header").click();
     await expect(recording.getByRole("searchbox", { name: "Search recordings" })).toBeVisible();
     await expect(recording.getByRole("button", { name: "Upload SigMF" })).toBeVisible();
 
@@ -64,13 +77,13 @@ test.describe("the source nodes", () => {
     await expect(recording).toContainText("Length");
   });
 
-  test("the device node no longer offers recordings", async ({ page }) => {
+  test("one device node offers every source", async ({ page }) => {
     await addNode(page, "Device");
 
     const device = page.locator('.react-flow__node[data-id^="device:"]').last();
     await device.locator("header").click();
     const source = device.getByRole("group", { name: "Radio source" });
     await expect(source).toBeVisible();
-    await expect(source.getByText(/Recordings/)).toHaveCount(0);
+    await expect(source.getByRole("radio", { name: "Recording" })).toBeVisible();
   });
 });

@@ -1567,72 +1567,6 @@
       "revision": 0
     }
   },
-  "135510001a6f3bd7": {
-    "patch": {
-      "edges": [],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "dev",
-          "kind": "device",
-          "label": "Device",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0
-            }
-          ],
-          "runs": {
-            "device_set": 1,
-            "runs": "radio"
-          }
-        },
-        {
-          "id": "rec",
-          "kind": "recorder",
-          "label": "Recorder",
-          "ports": [
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio",
-                  "synthetic",
-                  "derived"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            }
-          ],
-          "runs": {
-            "runs": "server"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
   "14778e8adace676c": {
     "patch": {
       "edges": [
@@ -2105,6 +2039,378 @@
                 "type": "iq"
               },
               "port_type": "iq"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "1b1a206ba900f4a5": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq2"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane2"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq3"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane3"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq4"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane4"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq5"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane5"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "rec",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane",
+                  "sink": "arr",
+                  "stream": 0
+                }
+              ],
+              "stream": 0
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq2",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane2",
+                  "sink": "arr",
+                  "stream": 1
+                }
+              ],
+              "stream": 1
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq3",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane3",
+                  "sink": "arr",
+                  "stream": 2
+                }
+              ],
+              "stream": 2
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq4",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane4",
+                  "sink": "arr",
+                  "stream": 3
+                }
+              ],
+              "stream": 3
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq5",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane5",
+                  "sink": "arr",
+                  "stream": 4
+                }
+              ],
+              "stream": 4
+            }
+          ],
+          "runs": {
+            "reason": "radio_absent",
+            "runs": "unbound"
+          }
+        },
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq",
+                  "source": "rec",
+                  "stream": 0
+                }
+              ],
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq2",
+                  "source": "rec",
+                  "stream": 1
+                }
+              ],
+              "multi": "one",
+              "name": "lane2",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 1,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq3",
+                  "source": "rec",
+                  "stream": 2
+                }
+              ],
+              "multi": "one",
+              "name": "lane3",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 2,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq4",
+                  "source": "rec",
+                  "stream": 3
+                }
+              ],
+              "multi": "one",
+              "name": "lane4",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 3,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq5",
+                  "source": "rec",
+                  "stream": 4
+                }
+              ],
+              "multi": "one",
+              "name": "lane5",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 4,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane6",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 5,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
             }
           ],
           "runs": {
@@ -2757,7 +3063,40 @@
       "revision": 0
     }
   },
-  "33686f33dea06a73": {
+  "319167db8dc75af7": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "rec",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0
+            }
+          ],
+          "runs": {
+            "device_set": 7,
+            "runs": "radio"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "3321c99dfe3c3f4b": {
     "patch": {
       "edges": [
         {
@@ -2820,8 +3159,8 @@
       "nodes": [
         {
           "id": "rec",
-          "kind": "recording",
-          "label": "Recording",
+          "kind": "device",
+          "label": "Device",
           "ports": [
             {
               "direction": "out",
@@ -3148,141 +3487,6 @@
           ],
           "runs": {
             "runs": "engine"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "33bc745ffed5fd95": {
-    "patch": {
-      "edges": [],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "rec",
-          "kind": "recording",
-          "label": "Recording",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0
-            }
-          ],
-          "runs": {
-            "reason": "radio_closed",
-            "runs": "unbound"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "3c5fcc511da7aeb4": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "dev",
-            "port": "iq"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "rec",
-            "port": "iq"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "dev",
-          "kind": "device",
-          "label": "Device",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "iq",
-                  "sink": "rec"
-                }
-              ],
-              "stream": 0
-            }
-          ],
-          "runs": {
-            "device_set": 1,
-            "runs": "radio"
-          }
-        },
-        {
-          "id": "rec",
-          "kind": "recorder",
-          "label": "Recorder",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq",
-                  "source": "dev",
-                  "stream": 0,
-                  "tap": {
-                    "device_set": 1,
-                    "stream": 0,
-                    "tap": "lane"
-                  }
-                }
-              ],
-              "multi": "one",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio",
-                  "synthetic",
-                  "derived"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            }
-          ],
-          "runs": {
-            "runs": "server"
           }
         }
       ],
@@ -6427,7 +6631,7 @@
       "revision": 0
     }
   },
-  "87ef59c3c1eaa89d": {
+  "854ddadf53cd6bb9": {
     "patch": {
       "edges": [
         {
@@ -6499,6 +6703,72 @@
                   }
                 }
               ],
+              "multi": "one",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "8f4bb7e0986fc712": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0
+            }
+          ],
+          "runs": {
+            "device_set": 1,
+            "runs": "radio"
+          }
+        },
+        {
+          "id": "rec",
+          "kind": "recorder",
+          "label": "Recorder",
+          "ports": [
+            {
+              "direction": "in",
               "multi": "one",
               "name": "iq",
               "payload": {
@@ -6732,116 +7002,6 @@
           ],
           "runs": {
             "runs": "engine"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "93b76df9dad5b11b": {
-    "patch": {
-      "edges": [],
-      "epoch": 0,
-      "nodes": [
-        {
-          "array_offer": {
-            "offer": "ready",
-            "wires": [
-              {
-                "from": "iq",
-                "to": "lane"
-              },
-              {
-                "from": "iq2",
-                "to": "lane2"
-              },
-              {
-                "from": "iq3",
-                "to": "lane3"
-              },
-              {
-                "from": "iq4",
-                "to": "lane4"
-              },
-              {
-                "from": "iq5",
-                "to": "lane5"
-              }
-            ]
-          },
-          "id": "rec",
-          "kind": "recording",
-          "label": "Recording",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq2",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 1
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq3",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 2
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq4",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 3
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq5",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 4
-            }
-          ],
-          "runs": {
-            "device_set": 7,
-            "runs": "radio"
           }
         }
       ],
@@ -7245,6 +7405,108 @@
       "revision": 0
     }
   },
+  "9b2f04c11db32a95": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "rec",
+            "port": "iq"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "iq",
+                  "sink": "rec"
+                }
+              ],
+              "stream": 0
+            }
+          ],
+          "runs": {
+            "device_set": 1,
+            "runs": "radio"
+          }
+        },
+        {
+          "id": "rec",
+          "kind": "recorder",
+          "label": "Recorder",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq",
+                  "source": "dev",
+                  "stream": 0,
+                  "tap": {
+                    "device_set": 1,
+                    "stream": 0,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "a809188b4251a807": {
     "patch": {
       "edges": [],
@@ -7323,6 +7585,108 @@
                 "type": "events"
               },
               "port_type": "events"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "af3112225caa7792": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "rec",
+            "port": "iq"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "iq",
+                  "sink": "rec"
+                }
+              ],
+              "stream": 0
+            }
+          ],
+          "runs": {
+            "device_set": 1,
+            "runs": "radio"
+          }
+        },
+        {
+          "id": "rec",
+          "kind": "recorder",
+          "label": "Recorder",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq",
+                  "source": "dev",
+                  "stream": 0,
+                  "tap": {
+                    "device_set": 1,
+                    "stream": 0,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
             }
           ],
           "runs": {
@@ -8093,6 +8457,116 @@
           ],
           "runs": {
             "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "bcd7e224e83dec53": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "array_offer": {
+            "offer": "ready",
+            "wires": [
+              {
+                "from": "iq",
+                "to": "lane"
+              },
+              {
+                "from": "iq2",
+                "to": "lane2"
+              },
+              {
+                "from": "iq3",
+                "to": "lane3"
+              },
+              {
+                "from": "iq4",
+                "to": "lane4"
+              },
+              {
+                "from": "iq5",
+                "to": "lane5"
+              }
+            ]
+          },
+          "id": "rec",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq2",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 1
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq3",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 2
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq4",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 3
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq5",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 4
+            }
+          ],
+          "runs": {
+            "device_set": 7,
+            "runs": "radio"
           }
         }
       ],
@@ -9379,39 +9853,6 @@
       "revision": 0
     }
   },
-  "d7e12858c5ced43f": {
-    "patch": {
-      "edges": [],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "rec",
-          "kind": "recording",
-          "label": "Recording",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0
-            }
-          ],
-          "runs": {
-            "device_set": 7,
-            "runs": "radio"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
   "d844cf33a4c32879": {
     "patch": {
       "edges": [
@@ -9588,6 +10029,39 @@
           ],
           "runs": {
             "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "dc0d153f3cd9df0d": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "rec",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0
+            }
+          ],
+          "runs": {
+            "reason": "radio_absent",
+            "runs": "unbound"
           }
         }
       ],
@@ -10152,480 +10626,6 @@
           "runs": {
             "device_set": 1,
             "runs": "radio"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "ed125192ad892410": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "dev",
-            "port": "iq"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "rec",
-            "port": "iq"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "dev",
-          "kind": "device",
-          "label": "Device",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "iq",
-                  "sink": "rec"
-                }
-              ],
-              "stream": 0
-            }
-          ],
-          "runs": {
-            "device_set": 1,
-            "runs": "radio"
-          }
-        },
-        {
-          "id": "rec",
-          "kind": "recorder",
-          "label": "Recorder",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq",
-                  "source": "dev",
-                  "stream": 0,
-                  "tap": {
-                    "device_set": 1,
-                    "stream": 0,
-                    "tap": "lane"
-                  }
-                }
-              ],
-              "multi": "one",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio",
-                  "synthetic",
-                  "derived"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            }
-          ],
-          "runs": {
-            "runs": "server"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "f05ddd37e5c30ead": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq2"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane2"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq3"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane3"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq4"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane4"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq5"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane5"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "rec",
-          "kind": "recording",
-          "label": "Recording",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane",
-                  "sink": "arr",
-                  "stream": 0
-                }
-              ],
-              "stream": 0
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq2",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane2",
-                  "sink": "arr",
-                  "stream": 1
-                }
-              ],
-              "stream": 1
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq3",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane3",
-                  "sink": "arr",
-                  "stream": 2
-                }
-              ],
-              "stream": 2
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq4",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane4",
-                  "sink": "arr",
-                  "stream": 3
-                }
-              ],
-              "stream": 3
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq5",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane5",
-                  "sink": "arr",
-                  "stream": 4
-                }
-              ],
-              "stream": 4
-            }
-          ],
-          "runs": {
-            "reason": "radio_closed",
-            "runs": "unbound"
-          }
-        },
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq",
-                  "source": "rec",
-                  "stream": 0
-                }
-              ],
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq2",
-                  "source": "rec",
-                  "stream": 1
-                }
-              ],
-              "multi": "one",
-              "name": "lane2",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 1,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq3",
-                  "source": "rec",
-                  "stream": 2
-                }
-              ],
-              "multi": "one",
-              "name": "lane3",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 2,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq4",
-                  "source": "rec",
-                  "stream": 3
-                }
-              ],
-              "multi": "one",
-              "name": "lane4",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 3,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq5",
-                  "source": "rec",
-                  "stream": 4
-                }
-              ],
-              "multi": "one",
-              "name": "lane5",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 4,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane6",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 5,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
           }
         }
       ],

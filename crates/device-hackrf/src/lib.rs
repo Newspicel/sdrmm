@@ -12,13 +12,13 @@ use sdrmm_device::{
     single_rx_sink,
 };
 use sdrmm_usb_stream::{NusbBulkOut, RxStream};
-use sdrmm_wire::{Capabilities, DeviceInfo, DeviceSettings};
+use sdrmm_wire::{Capabilities, DeviceBackend, DeviceInfo, DeviceSettings};
 
 mod caps;
 mod convert;
 mod driver;
 
-const DRIVER_ID: &str = "hackrf";
+const DRIVER_ID: DeviceBackend = DeviceBackend::Hackrf;
 const SWEEP_READ_TIMEOUT: Duration = Duration::from_millis(100);
 const SWEEP_MAX_RANGES: usize = 10;
 const NOSERIAL_KEY_PREFIX: &str = "noserial-";
@@ -60,14 +60,15 @@ fn device_label(descriptor: &DeviceDescriptor) -> String {
     }
 }
 
+/// A radio with no serial is keyed by its bus/address pair rather than its enumeration index:
+/// the pair is stable while the radio stays in the same port, where an index moves as soon as
+/// another device is plugged or unplugged and would rebind a stored workspace to a different
+/// radio.
 fn device_info(descriptor: &DeviceDescriptor) -> DeviceInfo {
     let serial = descriptor.serial.map(full_serial);
-    // The bus/address pair rather than the enumeration index: it is stable while the radio stays
-    // in the same port, where an index moves as soon as another device is plugged or unplugged
-    // and would rebind a stored workspace to a different radio.
     let location = format!("{}/{}", descriptor.bus, descriptor.address);
     DeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: serial
             .clone()
             .unwrap_or_else(|| format!("{NOSERIAL_KEY_PREFIX}{location}")),
@@ -97,7 +98,7 @@ impl HackRfDriver {
 }
 
 impl DeviceDriver for HackRfDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 
@@ -117,11 +118,11 @@ impl DeviceDriver for HackRfDriver {
 }
 
 impl HackRfDriver {
+    /// Opening "the first HackRF" would be the wrong radio as soon as two are attached, and on
+    /// this device that means driving the wrong transmitter.
     pub fn open_device(&self, info: &DeviceInfo) -> Result<HackRfDevice, DeviceError> {
         let device = match (key_serial(&info.key), key_location(&info.key)) {
             (Some(serial), _) => HackRf::open_serial(serial),
-            // Opening "the first HackRF" would be the wrong radio as soon as two are attached,
-            // and on this device that means driving the wrong transmitter.
             (None, Some((bus, address))) => HackRf::open_at(bus, address),
             (None, None) => {
                 return Err(DeviceError::NotFound(format!(
@@ -269,7 +270,7 @@ impl SdrDevice for HackRfDevice {
             self.radio.clone(),
             convert::converter(),
             sink,
-            CaptureConfig::new("sdrmm-hackrf-rx", DRIVER_ID)
+            CaptureConfig::new("sdrmm-hackrf-rx", DRIVER_ID.as_str())
                 .with_sample_rate(self.settings.sample_rate),
         );
         if started.is_err() {
@@ -570,7 +571,7 @@ mod tests {
     #[test]
     fn key_is_the_full_usb_serial_so_the_registry_can_merge() {
         let info = device_info(&descriptor(Some(SERIAL), None));
-        assert_eq!(info.driver, "hackrf");
+        assert_eq!(info.driver, DeviceBackend::Hackrf);
         assert_eq!(info.key, "0000000000000000675c62dc3b2d4b8b");
         assert_eq!(
             info.serial.as_deref(),

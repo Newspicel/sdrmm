@@ -78,14 +78,19 @@ pub struct UniqueNames {
 impl UniqueNames {
     pub fn claim(&mut self, wanted: &str, fallback: &str) -> String {
         let base = if wanted.is_empty() { fallback } else { wanted };
-        let count = self.seen.entry(base.to_owned()).or_insert(0);
-        *count += 1;
-        if *count == 1 {
-            base.to_owned()
-        } else {
-            let candidate = format!("{base} ({count})");
-            self.seen.entry(candidate.clone()).or_insert(1);
-            candidate
+        let mut count = self.seen.get(base).copied().unwrap_or(0);
+        loop {
+            count += 1;
+            let candidate = if count == 1 {
+                base.to_owned()
+            } else {
+                format!("{base} ({count})")
+            };
+            if !self.seen.contains_key(&candidate) {
+                self.seen.insert(base.to_owned(), count);
+                self.seen.entry(candidate.clone()).or_insert(1);
+                return candidate;
+            }
         }
     }
 }
@@ -110,5 +115,15 @@ mod tests {
         assert_eq!(names.claim("Local", "Channel"), "Local (2)");
         assert_eq!(names.claim("", "Channel"), "Channel");
         assert_eq!(names.claim("", "Channel"), "Channel (2)");
+    }
+
+    #[test]
+    fn a_generated_name_never_repeats_one_already_handed_out() {
+        let mut names = UniqueNames::default();
+        assert_eq!(names.claim("Local (2)", "Channel"), "Local (2)");
+        assert_eq!(names.claim("Local", "Channel"), "Local");
+        assert_eq!(names.claim("Local", "Channel"), "Local (3)");
+        assert_eq!(names.claim("Local (2)", "Channel"), "Local (2) (2)");
+        assert_eq!(names.claim("Local", "Channel"), "Local (4)");
     }
 }

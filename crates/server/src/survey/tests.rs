@@ -6,13 +6,13 @@ use std::{
 use axum::http::StatusCode;
 use sdrmm_engine::SpectrumSnapshot;
 use sdrmm_wire::{
-    ApiError, DeviceRef, GpsNode, NodeBody, PatchEdge, PatchNode, PortRef, Position, PositionFix,
-    PositionSource, SignalMapNode, SurveyCell, SurveyGrid, SurveyStop, WorkspaceSnapshot,
-    survey::MAX_SURVEY_CELLS,
+    ApiError, DeviceBackend, DeviceRef, GpsNode, NodeBody, PatchEdge, PatchNode, PortRef, Position,
+    PositionFix, PositionSource, SignalMapNode, WorkspaceSnapshot,
+    survey::{MAX_SURVEY_CELLS, SurveyCell, SurveyGrid, SurveyStop, cell_key},
 };
 
 use super::{
-    measure::{Merged, cell_key, measure_dbfs, merge},
+    measure::{Merged, measure_dbfs, merge},
     *,
 };
 use crate::{
@@ -258,7 +258,7 @@ fn surveyed(with_position: bool) -> WorkspaceSnapshot {
     for patch in &mut snapshot.graph.nodes {
         if let NodeBody::Device(device) = &mut patch.body {
             device.device = Some(DeviceRef {
-                backend: "virtual".to_owned(),
+                backend: DeviceBackend::Virtual,
                 serial: None,
                 key: Some("band".to_owned()),
             });

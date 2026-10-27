@@ -174,7 +174,15 @@ pub fn scan_collections(dir: &Path) -> Result<Vec<PathBuf>, SigmfError> {
 }
 
 fn meta_hash(stem: &Path) -> Result<String, SigmfError> {
-    let digest = Sha512::digest(fs::read(meta_path(stem))?);
+    hash_of(&meta_path(stem))
+}
+
+fn staged_hash(stem: &Path) -> Result<String, SigmfError> {
+    hash_of(&tmp_meta_path(stem))
+}
+
+fn hash_of(path: &Path) -> Result<String, SigmfError> {
+    let digest = Sha512::digest(fs::read(path)?);
     Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
@@ -302,18 +310,22 @@ impl CollectionWriter {
     }
 
     pub fn finalize(self) -> Result<(), SigmfError> {
+        let mut staged = Vec::with_capacity(self.lanes.len());
         let mut streams = Vec::with_capacity(self.lanes.len());
         for writer in self.lanes {
-            let stem = writer.stem().to_path_buf();
-            writer.finalize()?;
+            let lane = writer.stage()?;
             streams.push(StreamTuple {
-                name: stream_name(&stem)?,
-                hash: meta_hash(&stem)?,
+                name: stream_name(lane.stem())?,
+                hash: staged_hash(lane.stem())?,
             });
+            staged.push(lane);
         }
         let tmp = tmp_collection_path(&self.stem);
         write_collection(File::create(&tmp)?, &body(streams, self.record))?;
         fs::rename(&tmp, collection_path(&self.stem))?;
+        for lane in staged {
+            lane.publish()?;
+        }
         Ok(())
     }
 
@@ -735,7 +747,7 @@ fn capture_events(metas: &[SigmfMeta]) -> Result<Vec<(u64, Event)>, SigmfError> 
     let mut global = first.global_index.unwrap_or(first.sample_start);
     for (index, pair) in captures.windows(2).enumerate() {
         let (previous, capture) = (&pair[0], &pair[1]);
-        let expected = global + (capture.sample_start - previous.sample_start);
+        let expected = expected_global(global, previous, capture)?;
         let missing = gap_before(capture, expected)?;
         global = expected + missing;
         if missing > 0 {
@@ -752,6 +764,23 @@ fn capture_events(metas: &[SigmfMeta]) -> Result<Vec<(u64, Event)>, SigmfError> 
         }
     }
     Ok(events)
+}
+
+fn expected_global(
+    global: u64,
+    previous: &SigmfCapture,
+    capture: &SigmfCapture,
+) -> Result<u64, SigmfError> {
+    capture
+        .sample_start
+        .checked_sub(previous.sample_start)
+        .and_then(|step| global.checked_add(step))
+        .ok_or_else(|| {
+            SigmfError::Malformed(format!(
+                "capture at {} does not follow the one at {}",
+                capture.sample_start, previous.sample_start
+            ))
+        })
 }
 
 fn gap_before(capture: &SigmfCapture, expected: u64) -> Result<u64, SigmfError> {

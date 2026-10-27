@@ -29,6 +29,8 @@ pub fn claim(latency: Latency) {
     }
 }
 
+/// Raises this thread's Windows scheduling class. The pseudo handle from `GetCurrentThread`
+/// names this thread, needs no closing, and both calls take it by value.
 #[cfg(target_os = "windows")]
 pub fn claim(latency: Latency) {
     use windows_sys::Win32::System::Threading::{
@@ -39,8 +41,6 @@ pub fn claim(latency: Latency) {
         Latency::Critical => THREAD_PRIORITY_HIGHEST,
         Latency::Interactive => THREAD_PRIORITY_ABOVE_NORMAL,
     };
-    // SAFETY: the pseudo handle from GetCurrentThread names this thread, needs no closing, and
-    // both calls take it by value.
     if unsafe { SetThreadPriority(GetCurrentThread(), priority) } == 0 {
         tracing::warn!(
             ?latency,

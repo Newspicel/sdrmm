@@ -122,3 +122,41 @@ fn lacrosse_it(bits: &Bits, found: &mut Found, model: &str) -> Outcome {
         })
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ism::bits::from_rows;
+    use crate::ism::device::tenths_c;
+
+    const TX141TH_ROW: &str = "1101010111101101001010101100100001100001";
+
+    #[test]
+    fn a_tx141th_frame_passes_its_reflected_digest_and_reads_humidity() {
+        let mut bits = from_rows(&[TX141TH_ROW; 3]);
+        let mut found = Found::new();
+        assert_eq!(tx141(&mut bits, &mut found), Outcome::Decoded);
+        let [message] = found.as_slice() else {
+            panic!("{found:?}");
+        };
+        assert_eq!(message.model, "LaCrosse-TX141THBv2");
+        assert_eq!(message.id, "42");
+        assert_eq!(message.channel.as_deref(), Some("1"));
+        assert_eq!(message.battery_ok, Some(true));
+        assert_eq!(tenths_c(message), Some(22.5));
+        assert_eq!(message.humidity_pct, Some(55));
+        assert_eq!(message.integrity, IsmIntegrity::Crc);
+        assert_eq!(message.raw, "2a12d5379e");
+        assert_eq!(message.bits, 40);
+    }
+
+    #[test]
+    fn a_tx141th_frame_with_a_broken_digest_reports_a_failed_check() {
+        let mut row = TX141TH_ROW.to_owned();
+        row.replace_range(39..40, "0");
+        let mut bits = from_rows(&[row.as_str(); 3]);
+        let mut found = Found::new();
+        assert_eq!(tx141(&mut bits, &mut found), Outcome::Mic);
+        assert!(found.is_empty());
+    }
+}

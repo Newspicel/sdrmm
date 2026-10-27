@@ -117,6 +117,10 @@ impl ChannelRx for DpmrChannel {
             self.decoder.push(symbol, out);
         }
     }
+
+    fn rejected(&self) -> u32 {
+        self.decoder.rejected()
+    }
 }
 
 struct Decoder {
@@ -128,6 +132,7 @@ struct Decoder {
     voice_call: bool,
     inverted: bool,
     vocoder: MbeDecoder,
+    rejected: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -147,7 +152,12 @@ impl Decoder {
             voice_call: false,
             inverted: false,
             vocoder: MbeDecoder::half_rate(),
+            rejected: 0,
         }
+    }
+
+    fn rejected(&self) -> u32 {
+        self.rejected
     }
 
     fn reset(&mut self) {
@@ -166,13 +176,14 @@ impl Decoder {
             self.countdown -= 1;
             if self.countdown == 0 {
                 match self.pending.take() {
-                    Some(Pending::Header { fs4 }) => {
-                        if let Some((frame, voice_call)) = self.header(fs4) {
+                    Some(Pending::Header { fs4 }) => match self.header(fs4) {
+                        Some((frame, voice_call)) => {
                             self.in_call = true;
                             self.voice_call = voice_call;
                             out.events.push(DecoderEvent::Dv(frame));
                         }
-                    }
+                        None => self.rejected = self.rejected.saturating_add(1),
+                    },
                     Some(Pending::Superframe) => self.superframe(out),
                     None => {}
                 }
@@ -363,6 +374,23 @@ mod tests {
     }
 
     #[test]
+    fn a_header_that_cannot_be_read_is_reported_as_rejected() {
+        let iq = tx::transmission_with_unreadable_header(&tx::Call::default(), INPUT_RATE_HZ);
+        let mut chan = channel();
+
+        let frames = decode(&mut chan, &iq);
+
+        assert!(
+            frames.iter().all(|frame| frame.kind != DvFrameKind::Header),
+            "an unreadable header was reported: {frames:?}"
+        );
+        assert!(
+            chan.rejected() > 0,
+            "an unreadable header was dropped in silence"
+        );
+    }
+
+    #[test]
     fn decodes_a_header_and_its_end_frame() {
         let call = tx::Call::default();
         let iq = tx::transmission(&call, INPUT_RATE_HZ);
@@ -411,28 +439,130 @@ mod tests {
         );
     }
 
+    const SPEC_CHANNEL_CODES: [u32; 63] = [
+        0x57_7577, 0x57_DD75, 0x57_F775, 0x55_577D, 0x55_7D7D, 0x55_D57F, 0x55_FF7F, 0x5F_555F,
+        0x5F_7F5F, 0x5F_D75D, 0x5F_FD5D, 0x5D_5D55, 0x5D_7755, 0x5D_DF57, 0x5D_F557, 0x77_5DD7,
+        0x77_77D7, 0x77_DFD5, 0x77_F5D5, 0x75_55DD, 0x75_7FDD, 0x75_D7DF, 0x75_FDDF, 0x7F_57FF,
+        0x7F_7DFF, 0x7F_D5FD, 0x7F_FFFD, 0x7D_5FF5, 0x7D_75F5, 0x7D_DDF7, 0x7D_F7F7, 0xD7_55F7,
+        0xD7_7FF7, 0xD7_D7F5, 0xD7_FDF5, 0xD5_5DFD, 0xD5_77FD, 0xD5_DFFF, 0xD5_F5FF, 0xDF_5FDF,
+        0xDF_75DF, 0xDF_DDDD, 0xDF_F7DD, 0xDD_57D5, 0xDD_7DD5, 0xDD_D5D7, 0xDD_FFD7, 0xF7_5757,
+        0xF7_7D57, 0xF7_D555, 0xF7_FF55, 0xF5_5F5D, 0xF5_755D, 0xF5_DD5F, 0xF5_F75F, 0xFF_5D7F,
+        0xFF_777F, 0xFF_DF7D, 0xFF_F57D, 0xFD_5575, 0xFD_7F75, 0xFD_D777, 0xFD_FD77,
+    ];
+
     #[test]
-    fn channel_codes_match_the_spec_table() {
-        for (number, code) in [
-            (0, 0x57_5F77),
-            (2, 0x57_DD75),
-            (48, 0xF7_5757),
-            (63, 0xFD_FD77),
-        ] {
-            assert_eq!(channel_code(number), code);
+    fn the_frame_syncs_match_the_etsi_ts_102_490_sequences() {
+        assert_eq!(FS1, 0x57FF_5F75_D577);
+        assert_eq!(FS2, 0x5F_F77D);
+        assert_eq!(FS3, 0x7D_DFF5);
+        assert_eq!(FS4, 0xFD55_F5DF_7FDD);
+    }
+
+    #[test]
+    fn the_channel_codes_match_the_etsi_ts_102_490_table() {
+        for (index, &code) in SPEC_CHANNEL_CODES.iter().enumerate() {
+            let number = index as u8 + 1;
+            assert_eq!(channel_code(number), code, "channel code {number}");
+            assert_eq!(channel_code_number(code), Some(u16::from(number)));
             assert_eq!(channel_code_number(code ^ 0x80), Some(u16::from(number)));
+        }
+        for number in 0..64u8 {
+            let code = channel_code(number);
+            for pair in 0..12 {
+                assert!(
+                    matches!(code >> (pair * 2) & 0b11, 0b01 | 0b11),
+                    "channel code {number} is not di-bit coded"
+                );
+            }
         }
     }
 
     #[test]
-    fn scrambler_starts_with_the_all_ones_preset() {
-        let mut sequence = [false; 18];
+    fn the_header_checksum_matches_the_published_crc_8_check_value() {
+        assert_eq!(crc8(b"123456789"), 0xF4);
+    }
+
+    #[test]
+    fn the_scrambler_matches_the_etsi_ts_102_490_polynomial() {
+        const SPEC_STAGES: usize = 9;
+        const SPEC_TAP: usize = 5;
+        const PERIOD: usize = (1 << SPEC_STAGES) - 1;
+        let mut expected = [true; PERIOD];
+        for step in SPEC_STAGES..PERIOD {
+            expected[step] = expected[step - SPEC_STAGES] ^ expected[step - SPEC_TAP];
+        }
+        let mut sequence = [false; PERIOD];
         scramble(&mut sequence);
-        assert_eq!(&sequence[..9], &[true; 9]);
+        assert_eq!(sequence, expected);
+        assert_eq!(expected.iter().filter(|bit| **bit).count(), PERIOD / 2 + 1);
+    }
+
+    #[test]
+    fn a_header_built_to_the_etsi_ts_102_490_coding_rules_decodes() {
+        const SPEC_GENERATOR: [[u8; 4]; 8] = [
+            [1, 1, 1, 0],
+            [0, 1, 1, 1],
+            [1, 0, 1, 0],
+            [0, 1, 0, 1],
+            [1, 0, 1, 1],
+            [1, 1, 0, 0],
+            [0, 1, 1, 0],
+            [0, 0, 1, 1],
+        ];
+        const SPEC_HEADER: [u8; HI_BITS / 8] =
+            [0x5A, 0x3C, 0x96, 0xE1, 0x0F, 0xF0, 0x12, 0x34, 0xAB];
+        let information: [bool; HI_BITS] =
+            std::array::from_fn(|i| SPEC_HEADER[i / 8] >> (7 - i % 8) & 1 == 1);
+        const SPEC_CRC_TAPS: [u8; 3] = [2, 1, 0];
+        let mut remainder = 0u8;
+        for &bit in &information {
+            let feedback = bit != (remainder & 0x80 != 0);
+            remainder <<= 1;
+            if feedback {
+                remainder = SPEC_CRC_TAPS
+                    .iter()
+                    .fold(remainder, |value, &tap| value ^ 1 << tap);
+            }
+        }
+        let mut bytes = [0u8; HI_BLOCKS];
+        bytes[..9].copy_from_slice(&SPEC_HEADER);
+        bytes[9] = remainder;
+
+        let mut blocks = [false; HI_CODED_BITS];
+        for (block, &byte) in bytes.iter().enumerate() {
+            let data: [bool; 8] = std::array::from_fn(|bit| byte >> (7 - bit) & 1 == 1);
+            let word = &mut blocks[block * HAMMING_WORD_BITS..(block + 1) * HAMMING_WORD_BITS];
+            word[..8].copy_from_slice(&data);
+            for check in 0..4 {
+                word[8 + check] = data
+                    .iter()
+                    .zip(SPEC_GENERATOR)
+                    .fold(false, |parity, (&bit, row)| {
+                        parity ^ (bit && row[check] == 1)
+                    });
+            }
+        }
+
+        let mut coded = [false; HI_CODED_BITS];
+        for row in 0..HAMMING_WORD_BITS {
+            for column in 0..HI_BLOCKS {
+                coded[row * HI_BLOCKS + column] = blocks[column * HAMMING_WORD_BITS + row];
+            }
+        }
+        scramble(&mut coded);
+
+        assert_eq!(header_info(&coded).as_deref(), Some(&information[..]));
+        let mut single_error = coded;
+        single_error[37] = !single_error[37];
         assert_eq!(
-            &sequence[9..],
-            &[false, false, false, false, false, true, true, true, true]
+            header_info(&single_error).as_deref(),
+            Some(&information[..])
         );
+        let mut wrong_checksum = coded;
+        wrong_checksum[9] = !wrong_checksum[9];
+        wrong_checksum[19] = !wrong_checksum[19];
+        wrong_checksum[29] = !wrong_checksum[29];
+        assert_eq!(header_info(&wrong_checksum), None);
     }
 
     #[test]

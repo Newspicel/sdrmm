@@ -60,7 +60,7 @@ pub(crate) fn identify<T: Transport>(chip: &Chip<T>) -> Result<TunerKind> {
     if let Some(name) = recognise(chip, &BEFORE_RESET) {
         return Err(Error::ForeignTuner(name));
     }
-    pulse_reset(chip);
+    pulse_reset(chip)?;
     match recognise(chip, &AFTER_RESET) {
         Some(name) => Err(Error::ForeignTuner(name)),
         None => Err(Error::NoTuner),
@@ -77,10 +77,10 @@ fn recognise<T: Transport>(chip: &Chip<T>, signatures: &[Signature]) -> Option<&
         .map(|sig| sig.name)
 }
 
-fn pulse_reset<T: Transport>(chip: &Chip<T>) {
-    chip.make_output(RESET_PIN).ok();
-    chip.drive_pin(RESET_PIN, true).ok();
-    chip.drive_pin(RESET_PIN, false).ok();
+fn pulse_reset<T: Transport>(chip: &Chip<T>) -> Result<()> {
+    chip.make_output(RESET_PIN)?;
+    chip.drive_pin(RESET_PIN, true)?;
+    chip.drive_pin(RESET_PIN, false)
 }
 
 #[cfg(test)]
@@ -132,6 +132,17 @@ mod tests {
             .filter(|(addr, _)| *addr == 0x3001)
             .collect();
         assert_eq!(gpo, [(0x3001, vec![0x10]), (0x3001, vec![0x00])]);
+    }
+
+    #[test]
+    fn a_reset_that_never_happened_is_not_blamed_on_the_tuner() {
+        let fake = Fake::answering_at(None);
+        fake.fail_writes(0x3004, 0x0200);
+        let error = probe(&fake).unwrap_err();
+        assert!(
+            matches!(error, Error::Control { .. }),
+            "a stalled GPIO write must surface, got {error}"
+        );
     }
 
     #[test]

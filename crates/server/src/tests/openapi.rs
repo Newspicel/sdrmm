@@ -72,7 +72,7 @@ fn openapi_registers_paths_and_ws_schemas() {
         "NetworkExportStatus",
         "NodeAction",
         "NodeActed",
-        "TimeMachineStatus",
+        "PreRollStatus",
         "RecordingInfo",
         "DecoderLogEntry",
         "DecoderLogResponse",

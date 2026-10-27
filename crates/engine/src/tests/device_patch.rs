@@ -1,4 +1,5 @@
 use super::*;
+use sdrmm_wire::DeviceBackend;
 
 #[tokio::test]
 async fn validate_honors_configured_bandwidth_and_sideband() {
@@ -81,7 +82,7 @@ async fn faulted_set_reconnects_and_restores_its_channels() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(FaultOnDemandDriver { die: die.clone() }));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:ondemand").unwrap();
+    let ds = engine.create_device_set("rtlsdr:ondemand").unwrap();
     engine
         .patch_device(
             ds,
@@ -140,7 +141,7 @@ async fn a_patch_reports_what_the_device_holds_not_what_was_asked() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SnappingDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:snapping").unwrap();
+    let ds = engine.create_device_set("rtlsdr:snapping").unwrap();
 
     engine
         .patch_device(
@@ -189,7 +190,7 @@ async fn a_device_that_reports_no_sample_rate_is_refused() {
     registry.register(50, Box::new(RatelessDriver));
     let engine = Engine::with_registry(registry, None);
 
-    let err = engine.create_device_set("mock:rateless").unwrap_err();
+    let err = engine.create_device_set("rtlsdr:rateless").unwrap_err();
     assert!(err.to_string().contains("sample rate"), "{err}");
     assert!(engine.snapshot().device_sets.is_empty());
 }
@@ -199,7 +200,7 @@ async fn a_snapped_rate_is_what_channels_are_rebuilt_on() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SnappingDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:snapping").unwrap();
+    let ds = engine.create_device_set("rtlsdr:snapping").unwrap();
     let channel = engine
         .add_channel(ds, 0, nfm_settings(0.0))
         .expect("hosted channel");
@@ -234,7 +235,7 @@ async fn raising_the_rate_grows_the_capture_ring_to_hold_a_block_at_the_new_rate
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(HeldSinkDriver { sink: sink.clone() }));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:held").unwrap();
+    let ds = engine.create_device_set("rtlsdr:held").unwrap();
     engine
         .patch_device(
             ds,
@@ -269,7 +270,7 @@ async fn a_faulted_set_releases_its_device_so_the_replug_can_reopen_it() {
         }),
     );
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:exclusive").unwrap();
+    let ds = engine.create_device_set("rtlsdr:exclusive").unwrap();
     assert!(claimed.load(Ordering::SeqCst), "the open must claim it");
 
     let mut events = engine.subscribe_events();
@@ -305,7 +306,7 @@ async fn reconnect_failure_reports_once_and_keeps_the_set_faulted() {
         }),
     );
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:refuse").unwrap();
+    let ds = engine.create_device_set("rtlsdr:refuse").unwrap();
     engine.mark_device_fault(ds, DeviceError::Io("unplugged".to_string()));
     let mut events = engine.subscribe_events();
 
@@ -348,7 +349,7 @@ async fn a_channel_added_mid_tune_does_not_drag_the_radio_back_to_where_it_was()
         }),
     );
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:slow-tuner").unwrap();
+    let ds = engine.create_device_set("rtlsdr:slow-tuner").unwrap();
 
     let patch = {
         let engine = engine.clone();
@@ -469,8 +470,8 @@ async fn tuning_through_a_converter_reaches_what_the_radio_alone_cannot() {
 struct BiasTeeRefusingDriver;
 
 impl DeviceDriver for BiasTeeRefusingDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -519,7 +520,7 @@ async fn a_setting_the_radio_refuses_stays_on_the_set_until_one_is_taken() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(BiasTeeRefusingDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:refusing").unwrap();
+    let ds = engine.create_device_set("rtlsdr:refusing").unwrap();
     let bias_tee = |on: bool| DeviceSettings {
         bias_tee: Some(on),
         ..DeviceSettings::default()
@@ -543,8 +544,8 @@ async fn a_setting_the_radio_refuses_stays_on_the_set_until_one_is_taken() {
 struct AgcDriver;
 
 impl DeviceDriver for AgcDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -613,7 +614,7 @@ async fn a_running_radio_reports_its_readouts_every_tick() {
     registry.register(50, Box::new(AgcDriver));
     let engine = Engine::with_registry(registry, None);
     let mut events = engine.subscribe_events();
-    let ds = engine.create_device_set("mock:agc").unwrap();
+    let ds = engine.create_device_set("rtlsdr:agc").unwrap();
     engine.sink_tick();
     let readouts = std::iter::from_fn(|| events.try_recv().ok())
         .find_map(|event| match event {
@@ -633,7 +634,7 @@ async fn the_gain_an_agc_settled_on_is_read_back_while_it_runs() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(AgcDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:agc").unwrap();
+    let ds = engine.create_device_set("rtlsdr:agc").unwrap();
     let tick = || engine.hotplug_tick_for_test(&mut None, &mut HashSet::new());
 
     tick();

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   dialDigits,
   dialPlaces,
+  digitDirection,
   formatStep,
   inTuningRange,
   isTunable,
@@ -192,5 +193,19 @@ describe("dialId", () => {
   it("names each lane of a multi-stream radio apart", () => {
     expect(dialId("radio", 1)).toBe("frequency-dial:radio:1");
     expect(dialId("radio", 0)).toBe(dialId("radio"));
+  });
+});
+
+describe("digitDirection", () => {
+  const rect = { top: 100, height: 40 };
+
+  it("steps up from the top half and down from the bottom", () => {
+    expect(digitDirection({ button: 0, clientY: 110 }, rect)).toBe(1);
+    expect(digitDirection({ button: 0, clientY: 130 }, rect)).toBe(-1);
+  });
+
+  it("ignores a right or middle click, so a context menu never retunes", () => {
+    expect(digitDirection({ button: 1, clientY: 110 }, rect)).toBeNull();
+    expect(digitDirection({ button: 2, clientY: 130 }, rect)).toBeNull();
   });
 });

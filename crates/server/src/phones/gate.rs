@@ -1,5 +1,5 @@
 use std::{
-    net::{IpAddr, Ipv4Addr},
+    net::Ipv4Addr,
     sync::{
         Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak,
         atomic::{AtomicBool, Ordering},
@@ -119,8 +119,10 @@ impl PhoneGate {
         }
     }
 
-    pub(crate) fn main_bound(&self) -> Option<IpAddr> {
-        self.main.get().map(|main| main.record.bound)
+    pub(crate) fn main_names(&self) -> &[String] {
+        self.main
+            .get()
+            .map_or(&[], |main| main.record.names.as_slice())
     }
 
     pub(crate) fn status(&self) -> PhoneAccessStatus {

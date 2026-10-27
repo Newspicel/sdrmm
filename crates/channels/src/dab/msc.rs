@@ -6,8 +6,16 @@ pub const CU_BITS: usize = 64;
 pub const CUS_PER_CIF: usize = 864;
 pub const CIF_BITS: usize = CU_BITS * CUS_PER_CIF;
 pub const DEPTH: usize = 16;
+pub const PADDING_BITS: usize = 8;
 
 const MAP: [usize; DEPTH] = [0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fragment {
+    Filling,
+    Ready,
+    WrongSize { expected: usize, got: usize },
+}
 
 pub struct TimeDeinterleaver {
     lines: Vec<Vec<Soft>>,
@@ -30,9 +38,13 @@ impl TimeDeinterleaver {
         self.filled > DEPTH
     }
 
-    pub fn push(&mut self, fragment: &[Soft], out: &mut Vec<Soft>) -> bool {
-        if fragment.len() != self.lines[0].len() {
-            return false;
+    pub fn push(&mut self, fragment: &[Soft], out: &mut Vec<Soft>) -> Fragment {
+        let expected = self.lines[0].len();
+        if fragment.len() != expected {
+            return Fragment::WrongSize {
+                expected,
+                got: fragment.len(),
+            };
         }
         out.clear();
         out.reserve(fragment.len());
@@ -43,7 +55,11 @@ impl TimeDeinterleaver {
         }
         self.at = (self.at + 1) % DEPTH;
         self.filled = (self.filled + 1).min(DEPTH * 2);
-        self.ready()
+        if self.ready() {
+            Fragment::Ready
+        } else {
+            Fragment::Filling
+        }
     }
 }
 
@@ -99,12 +115,19 @@ impl SubChannelDecoder {
         }
     }
 
-    pub fn frame(&mut self, fragment: &[Soft], out: &mut Vec<u8>) -> bool {
+    pub fn frame(&mut self, fragment: &[Soft], out: &mut Vec<u8>) -> Fragment {
+        let coded = self.protection.coded_bits();
+        let Some(fragment) = without_padding(fragment, coded) else {
+            return Fragment::WrongSize {
+                expected: coded,
+                got: fragment.len(),
+            };
+        };
         let mut aligned = std::mem::take(&mut self.aligned);
-        let ready = self.deinterleaver.push(fragment, &mut aligned);
+        let state = self.deinterleaver.push(fragment, &mut aligned);
         self.aligned = aligned;
-        if !ready {
-            return false;
+        if state != Fragment::Ready {
+            return state;
         }
         self.mother.clear();
         self.protection.depuncture(&self.aligned, &mut self.mother);
@@ -114,8 +137,12 @@ impl SubChannelDecoder {
         Prbs::new(DAB_DISPERSAL).apply_bits(&mut self.bits);
         out.clear();
         out.extend_from_slice(&pack_msb(&self.bits));
-        true
+        Fragment::Ready
     }
+}
+
+fn without_padding(fragment: &[Soft], coded: usize) -> Option<&[Soft]> {
+    (fragment.len().checked_sub(coded)? <= PADDING_BITS).then(|| &fragment[..coded])
 }
 
 #[cfg(any(test, feature = "synth"))]
@@ -175,7 +202,7 @@ mod tests {
     use sdrmm_dsp::soft;
 
     use super::*;
-    use crate::dab::protection::Eep;
+    use crate::dab::protection::{Eep, uep_size_cu};
 
     fn payload(len: usize, seed: u32) -> Vec<u8> {
         let mut state = seed | 1;
@@ -207,7 +234,7 @@ mod tests {
             interleaver.push(frame, &mut sent);
             let softs: Vec<Soft> = sent.iter().copied().map(soft).collect();
             let mut out = Vec::new();
-            if deinterleaver.push(&softs, &mut out) && index >= DEPTH {
+            if deinterleaver.push(&softs, &mut out) == Fragment::Ready && index >= DEPTH {
                 restored.push(out.iter().map(|&value| value > 0).collect::<Vec<bool>>());
             }
         }
@@ -230,7 +257,56 @@ mod tests {
             encoder.frame(frame, &mut sent);
             let softs: Vec<Soft> = sent.iter().copied().map(soft).collect();
             let mut out = Vec::new();
-            if decoder.frame(&softs, &mut out) && index >= DEPTH {
+            if decoder.frame(&softs, &mut out) == Fragment::Ready && index >= DEPTH {
+                decoded.push(out);
+            }
+        }
+        assert!(decoded.len() >= 10);
+        for (index, frame) in decoded.iter().enumerate() {
+            assert_eq!(*frame, frames[index], "logical frame {index}");
+        }
+    }
+
+    #[test]
+    fn a_fragment_of_the_wrong_length_is_rejected_with_both_sizes() {
+        let protection = Protection::eep(64, Eep::A, 3).expect("EEP-A 3 at 64 kbit/s");
+        let coded = protection.coded_bits();
+        let mut decoder = SubChannelDecoder::new(protection);
+        let mut out = Vec::new();
+        for length in [coded - CU_BITS, coded + CU_BITS, coded + PADDING_BITS + 4] {
+            assert_eq!(
+                decoder.frame(&vec![0; length], &mut out),
+                Fragment::WrongSize {
+                    expected: coded,
+                    got: length,
+                }
+            );
+        }
+        for length in [coded, coded + 4, coded + PADDING_BITS] {
+            assert_eq!(decoder.frame(&vec![0; length], &mut out), Fragment::Filling);
+        }
+    }
+
+    #[test]
+    fn the_padding_of_an_unequal_error_subchannel_is_not_decoded() {
+        let table_index = 4;
+        let protection = Protection::uep(table_index).expect("UEP index 4");
+        let capacity = CU_BITS * usize::from(uep_size_cu(table_index).unwrap_or(0));
+        let padding = capacity - protection.coded_bits();
+        assert!(padding > 0);
+        let mut encoder = SubChannelEncoder::new(protection.clone());
+        let mut decoder = SubChannelDecoder::new(protection.clone());
+        let frames: Vec<Vec<u8>> = (0..30)
+            .map(|index| payload(protection.frame_bits() / 8, 11 + index))
+            .collect();
+        let mut decoded = Vec::new();
+        for (index, frame) in frames.iter().enumerate() {
+            let mut sent = Vec::new();
+            encoder.frame(frame, &mut sent);
+            let mut softs: Vec<Soft> = sent.iter().copied().map(soft).collect();
+            softs.resize(capacity, 0);
+            let mut out = Vec::new();
+            if decoder.frame(&softs, &mut out) == Fragment::Ready && index >= DEPTH {
                 decoded.push(out);
             }
         }

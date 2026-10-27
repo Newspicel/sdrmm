@@ -41,12 +41,15 @@ export function AudioSpectrogramView({
       setError(thrown instanceof Error ? thrown.message : String(thrown));
       return;
     }
-    renderer.setColormap(colormap);
     rendererRef.current = renderer;
     return () => {
       renderer.dispose();
       rendererRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    rendererRef.current?.setColormap(colormap);
   }, [colormap]);
 
   useEffect(() => {

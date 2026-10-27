@@ -181,3 +181,41 @@ fn txc609(bits: &mut Bits, found: &mut Found) -> Outcome {
         )
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ism::bits::from_rows;
+    use crate::ism::device::tenths_c;
+
+    const TX606_ROW: &str = "00101010100011111100101110111111";
+
+    #[test]
+    fn a_606tx_frame_reads_its_signed_twelve_bit_temperature() {
+        let rows = [TX606_ROW; 3];
+        let mut bits = from_rows(&rows);
+        let mut found = Found::new();
+        assert_eq!(tx606(&mut bits, &mut found), Outcome::Decoded);
+        let [message] = found.as_slice() else {
+            panic!("{found:?}");
+        };
+        assert_eq!(message.model, "Acurite-606TX");
+        assert_eq!(message.id, "42");
+        assert_eq!(message.channel.as_deref(), Some("1"));
+        assert_eq!(message.battery_ok, Some(true));
+        assert_eq!(tenths_c(message), Some(-5.3));
+        assert_eq!(message.raw, "2a8fcbbf");
+        assert_eq!(message.bits, 32);
+    }
+
+    #[test]
+    fn a_606tx_frame_with_a_broken_digest_reports_a_failed_check() {
+        let mut row = TX606_ROW.to_owned();
+        row.replace_range(31..32, "0");
+        let rows = [row.as_str(); 3];
+        let mut bits = from_rows(&rows);
+        let mut found = Found::new();
+        assert_eq!(tx606(&mut bits, &mut found), Outcome::Mic);
+        assert!(found.is_empty());
+    }
+}

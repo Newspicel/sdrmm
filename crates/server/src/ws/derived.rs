@@ -8,7 +8,6 @@ use sdrmm_wire::{SPECTRUM_SIGNAL_MARGIN_DB, ServerEvent, SpectrumFrame, StreamKi
 use tokio::sync::broadcast;
 
 use super::{FrameThrottle, MAX_BINS, MAX_FPS, MIN_BINS, Outbox, text_event};
-use axum::extract::ws::Message;
 
 pub(super) const IQ_FFT: usize = 2048;
 pub(super) const AUDIO_FFT: usize = 1024;
@@ -163,7 +162,7 @@ pub(super) fn spawn_iq_spectrum(
                         bins: quant,
                     }
                     .encode();
-                    if out_tx.send(Message::Binary(frame.into())).await.is_err() {
+                    if out_tx.send_frame(frame).await.is_err() {
                         break;
                     }
                 }
@@ -236,7 +235,7 @@ pub(super) fn spawn_pcm_spectrum(
                         bins: quant,
                     }
                     .encode();
-                    if out_tx.send(Message::Binary(frame.into())).await.is_err() {
+                    if out_tx.send_frame(frame).await.is_err() {
                         break;
                     }
                 }

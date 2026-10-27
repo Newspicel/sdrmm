@@ -281,6 +281,9 @@ fn plan_fir(port: &str, rate: f64, writes: &mut Vec<Write>) {
     }
 }
 
+/// The transmit filter has a narrower reach than the receive one, so a width the receiver takes
+/// is clamped for the transmitter rather than refused for a direction the operator did not ask
+/// about.
 fn plan_bandwidth(
     delta: &DeviceSettings,
     capabilities: &Capabilities,
@@ -308,8 +311,6 @@ fn plan_bandwidth(
         RF_BANDWIDTH,
         whole(hz),
     ));
-    // The transmit filter has a narrower reach than the receive one, so a width the receiver
-    // takes is clamped rather than refused for a direction the operator did not ask about.
     if let (Some(port), Some(range)) = (layout.port(true, 0), front.tx_bandwidth) {
         writes.push(Write::channel(
             true,

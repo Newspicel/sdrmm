@@ -11,18 +11,64 @@ use super::{
     types::{ArgInfo, Direction, Error, ErrorCode, Range, arg_info, required_string},
 };
 
+/// SoapySDR requires every device method implementation to be thread safe, which is what makes
+/// the `Send` and `Sync` implementations below sound.
 struct Inner {
     handle: ffi::Device,
     library: Arc<Library>,
 }
 
-// SoapySDR requires every device method implementation to be thread safe.
 unsafe impl Send for Inner {}
 unsafe impl Sync for Inner {}
 
 impl Drop for Inner {
     fn drop(&mut self) {
         unsafe { (self.library.entries.unmake)(self.handle) };
+    }
+}
+
+struct Owned<T, F: FnMut(*mut T, usize)> {
+    pointer: *mut T,
+    length: usize,
+    free: F,
+}
+
+impl<T, F: FnMut(*mut T, usize)> Owned<T, F> {
+    const fn new(pointer: *mut T, length: usize, free: F) -> Self {
+        Self {
+            pointer,
+            length,
+            free,
+        }
+    }
+}
+
+impl<T, F: FnMut(*mut T, usize)> Drop for Owned<T, F> {
+    fn drop(&mut self) {
+        if !self.pointer.is_null() {
+            (self.free)(self.pointer, self.length);
+        }
+    }
+}
+
+struct Clear<T, F: FnMut(*mut T)> {
+    held: *mut T,
+    clear: F,
+}
+
+impl<T, F: FnMut(*mut T)> Clear<T, F> {
+    const fn new(held: *mut T, clear: F) -> Self {
+        Self { held, clear }
+    }
+
+    const fn held(&mut self) -> &mut T {
+        unsafe { &mut *self.held }
+    }
+}
+
+impl<T, F: FnMut(*mut T)> Drop for Clear<T, F> {
+    fn drop(&mut self) {
+        (self.clear)(self.held);
     }
 }
 
@@ -84,13 +130,15 @@ impl Device {
     }
 
     fn string(&self, pointer: *mut c_char) -> Result<String, Error> {
-        let pointer = self.check(pointer)?;
-        if pointer.is_null() {
+        let entries = self.entries();
+        let owned = Owned::new(pointer, 1, |pointer, _| unsafe {
+            (entries.free)(pointer.cast::<c_void>());
+        });
+        self.check(())?;
+        if owned.pointer.is_null() {
             return Ok(String::new());
         }
-        let text = unsafe { required_string(pointer) };
-        unsafe { (self.entries().free)(pointer.cast::<c_void>()) };
-        Ok(text)
+        Ok(unsafe { required_string(owned.pointer) })
     }
 
     fn strings(
@@ -98,27 +146,35 @@ impl Device {
         call: impl FnOnce(*mut usize) -> *mut *mut c_char,
     ) -> Result<Vec<String>, Error> {
         let mut length: usize = 0;
-        let mut pointer = self.check(call(&raw mut length))?;
-        if pointer.is_null() {
+        let entries = self.entries();
+        let owned = Owned::new(
+            call(&raw mut length),
+            length,
+            |mut pointer, length| unsafe {
+                (entries.strings_clear)(&raw mut pointer, length);
+            },
+        );
+        self.check(())?;
+        if owned.pointer.is_null() {
             return Ok(Vec::new());
         }
-        let found = unsafe { std::slice::from_raw_parts(pointer, length) }
+        Ok(unsafe { std::slice::from_raw_parts(owned.pointer, length) }
             .iter()
             .map(|&text| unsafe { required_string(text) })
-            .collect();
-        unsafe { (self.entries().strings_clear)(&raw mut pointer, length) };
-        Ok(found)
+            .collect())
     }
 
     fn ranges(&self, call: impl FnOnce(*mut usize) -> *mut Range) -> Result<Vec<Range>, Error> {
         let mut length: usize = 0;
-        let pointer = self.check(call(&raw mut length))?;
-        if pointer.is_null() {
+        let entries = self.entries();
+        let owned = Owned::new(call(&raw mut length), length, |pointer, _| unsafe {
+            (entries.free)(pointer.cast::<c_void>());
+        });
+        self.check(())?;
+        if owned.pointer.is_null() {
             return Ok(Vec::new());
         }
-        let found = unsafe { std::slice::from_raw_parts(pointer, length) }.to_vec();
-        unsafe { (self.entries().free)(pointer.cast::<c_void>()) };
-        Ok(found)
+        Ok(unsafe { std::slice::from_raw_parts(owned.pointer, length) }.to_vec())
     }
 
     fn arg_infos(
@@ -126,23 +182,28 @@ impl Device {
         call: impl FnOnce(*mut usize) -> *mut ffi::ArgInfo,
     ) -> Result<Vec<ArgInfo>, Error> {
         let mut length: usize = 0;
-        let pointer = self.check(call(&raw mut length))?;
-        if pointer.is_null() {
+        let entries = self.entries();
+        let owned = Owned::new(call(&raw mut length), length, |pointer, length| unsafe {
+            (entries.arg_info_list_clear)(pointer, length);
+        });
+        self.check(())?;
+        if owned.pointer.is_null() {
             return Ok(Vec::new());
         }
-        let found = unsafe { std::slice::from_raw_parts(pointer, length) }
+        Ok(unsafe { std::slice::from_raw_parts(owned.pointer, length) }
             .iter()
             .map(|raw| unsafe { arg_info(raw) })
-            .collect();
-        unsafe { (self.entries().arg_info_list_clear)(pointer, length) };
-        Ok(found)
+            .collect())
     }
 
     fn kwargs(&self, raw: ffi::Kwargs) -> Result<Args, Error> {
-        let mut raw = self.check(raw)?;
-        let args = unsafe { Args::from_kwargs(&raw) };
-        unsafe { (self.entries().kwargs_clear)(&raw mut raw) };
-        Ok(args)
+        let mut raw = raw;
+        let entries = self.entries();
+        let mut clear = Clear::new(&raw mut raw, |raw| unsafe {
+            (entries.kwargs_clear)(raw);
+        });
+        self.check(())?;
+        Ok(unsafe { Args::from_kwargs(clear.held()) })
     }
 
     pub fn num_channels(&self, direction: Direction) -> Result<usize, Error> {
@@ -556,5 +617,33 @@ impl Tuning {
             _key_pointers: key_pointers,
             _value_pointers: value_pointers,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn a_vendor_list_is_freed_on_every_path_out() {
+        let freed = Cell::new(None);
+        let mut value = 7u32;
+        {
+            let _owned = Owned::new(&raw mut value, 3, |pointer, length| {
+                freed.set(Some((unsafe { *pointer }, length)));
+            });
+        }
+        assert_eq!(freed.get(), Some((7, 3)));
+    }
+
+    #[test]
+    fn a_list_the_driver_never_allocated_is_not_freed() {
+        let freed = Cell::new(false);
+        {
+            let _owned = Owned::new(std::ptr::null_mut::<u32>(), 0, |_, _| freed.set(true));
+        }
+        assert!(!freed.get());
     }
 }

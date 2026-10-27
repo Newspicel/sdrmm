@@ -63,7 +63,7 @@ const FIXTURES: &[(EventKind, &str)] = &[
     ),
     (
         EventKind::Acars,
-        r#"{"mode":"2","registration":".D-ABCD","label":"H1","block_id":"1","downlink":true,"flight":"LH400","text":"POS","more":false}"#,
+        r#"{"mode":"2","registration":".D-ABCD","label":"H1","block_id":"1","downlink":true,"flight":"LH400","text":"POS","more":false,"lat":52.5,"lon":13.4}"#,
     ),
     (EventKind::Tone, r#"{"ctcss_hz":88.5,"open":true}"#),
     (

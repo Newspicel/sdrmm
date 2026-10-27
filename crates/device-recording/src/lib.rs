@@ -2,14 +2,14 @@ use std::path::{Path, PathBuf};
 
 use sdrmm_device::{DeviceDriver, DeviceError, SdrDevice};
 use sdrmm_recorder::{Stored, scan_library};
-use sdrmm_wire::{DeviceInfo, RECORDING_DRIVER_ID, recording_stem_valid};
+use sdrmm_wire::{DeviceBackend, DeviceInfo, recording_stem_valid};
 
 mod collection;
 mod playback;
 pub use collection::CollectionPlayback;
 pub use playback::{FilePlayback, LOOP_SETTING};
 
-pub(crate) const DRIVER_ID: &str = RECORDING_DRIVER_ID;
+pub(crate) const DRIVER_ID: DeviceBackend = DeviceBackend::Recording;
 pub(crate) const BLOCK_SECS: f64 = 0.025;
 
 pub struct RecordingDriver {
@@ -55,7 +55,7 @@ impl RecordingDriver {
 
     fn info(stem: &str) -> DeviceInfo {
         DeviceInfo {
-            driver: DRIVER_ID.to_string(),
+            driver: DRIVER_ID,
             key: stem.to_string(),
             label: stem.to_string(),
             serial: None,
@@ -65,7 +65,7 @@ impl RecordingDriver {
 }
 
 impl DeviceDriver for RecordingDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 

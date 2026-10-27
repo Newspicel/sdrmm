@@ -8,8 +8,9 @@ use sdrmm_device::{
     DeviceDriver, DeviceError, DuplexState, RxSink, Sample, SdrDevice, TxStream, Worker, lock,
 };
 use sdrmm_wire::{
-    AgcSetting, BandwidthSetting, Capabilities, ChannelCapabilities, DeviceInfo, DeviceSettings,
-    Direction as WireDirection, DirectionalCapabilities, GainValue, StreamSettings,
+    AgcSetting, BandwidthSetting, Capabilities, ChannelCapabilities, DeviceBackend, DeviceInfo,
+    DeviceSettings, Direction as WireDirection, DirectionalCapabilities, DoctorCheck, GainValue,
+    StreamSettings,
 };
 use soapy::{Direction, ErrorCode};
 
@@ -24,7 +25,7 @@ use capture::{Quiesce, RxPlan};
 pub use probe::enable_isolated_probes;
 pub use runtime::{RuntimeInfo, runtime_info};
 
-const DRIVER_ID: &str = "soapy";
+const DRIVER_ID: DeviceBackend = DeviceBackend::Soapy;
 
 #[cfg(test)]
 #[global_allocator]
@@ -77,7 +78,7 @@ fn device_info(args: &soapy::Args) -> DeviceInfo {
     let serial = args.get("serial").map(str::to_string);
     let label = args.get("label").map_or_else(
         || {
-            let driver = args.get("driver").unwrap_or(DRIVER_ID);
+            let driver = args.get("driver").unwrap_or(DRIVER_ID.as_str());
             serial
                 .as_ref()
                 .map_or_else(|| driver.to_string(), |serial| format!("{driver} {serial}"))
@@ -85,7 +86,7 @@ fn device_info(args: &soapy::Args) -> DeviceInfo {
         str::to_string,
     );
     DeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: args_key(args),
         label,
         serial,
@@ -97,10 +98,11 @@ fn device_info(args: &soapy::Args) -> DeviceInfo {
 struct ProbeIdentity {
     filter: String,
     key: String,
+    hidden: Vec<String>,
 }
 
 impl ProbeIdentity {
-    fn from_args(args: &soapy::Args) -> Self {
+    fn from_args(args: &soapy::Args, hidden: &[String]) -> Self {
         let filter = match (args.get("driver"), args.get("serial"), args.get("mode")) {
             (Some(driver), Some(serial), Some(mode)) => {
                 format!("driver={driver},serial={serial},mode={mode}")
@@ -112,11 +114,13 @@ impl ProbeIdentity {
         Self {
             filter,
             key: args_key(args),
+            hidden: hidden.to_vec(),
         }
     }
 
     fn is_present(&self) -> Result<bool, DeviceError> {
-        Ok(probe::devices(&self.filter, probe::Scope::Deep, None)?
+        let modules = probe::allowed_modules(&self.hidden);
+        Ok(probe::devices(&self.filter, probe::Scope::Deep, modules)?
             .iter()
             .any(|found| found.info.key == self.key))
     }
@@ -165,7 +169,7 @@ impl SoapyDriver {
 }
 
 impl DeviceDriver for SoapyDriver {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         DRIVER_ID
     }
 
@@ -177,6 +181,10 @@ impl DeviceDriver for SoapyDriver {
         self.listed(probe::Scope::Deep)
     }
 
+    fn health(&self) -> Option<DoctorCheck> {
+        Some(runtime::health(&runtime_info()))
+    }
+
     fn open(&self, info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
         let found = self
             .visible(probe::Scope::Deep)?
@@ -184,7 +192,7 @@ impl DeviceDriver for SoapyDriver {
             .find(|found| found.info.key == info.key)
             .ok_or_else(|| DeviceError::NotFound(info.id()))?;
         let args = soapy::Args::from(found.args.as_str());
-        let identity = ProbeIdentity::from_args(&args);
+        let identity = ProbeIdentity::from_args(&args, &self.excluded);
         let device = soapy::Device::new(args).map_err(map_err)?;
         Ok(Box::new(SoapyDevice::from_device(device, identity)?))
     }
@@ -389,54 +397,66 @@ impl RxChannels for soapy::Device {
     }
 }
 
-fn read_channel_settings(radio: &impl RxChannels, channel: &ChannelCapabilities) -> DeviceSettings {
+fn offered<T>(
+    declared: bool,
+    read: impl FnOnce() -> Result<T, soapy::Error>,
+) -> Result<Option<T>, DeviceError> {
+    if !declared {
+        return Ok(None);
+    }
+    read().map(Some).map_err(map_err)
+}
+
+fn read_channel_settings(
+    radio: &impl RxChannels,
+    channel: &ChannelCapabilities,
+) -> Result<DeviceSettings, DeviceError> {
     let index = channel.channel as usize;
+    let rates = !channel.sample_rates.is_empty() || !channel.sample_rate_ranges.is_empty();
     let mut settings = DeviceSettings {
-        center_hz: radio.frequency(index).ok(),
-        sample_rate: radio.sample_rate(index).ok(),
-        antenna: radio.antenna(index).ok(),
-        bandwidth: radio
-            .bandwidth(index)
-            .ok()
-            .filter(|bandwidth| *bandwidth > 0.0)
-            .map(|hz| BandwidthSetting::Manual { hz }),
+        center_hz: Some(radio.frequency(index).map_err(map_err)?),
+        sample_rate: offered(rates, || radio.sample_rate(index))?,
+        antenna: offered(!channel.antennas.is_empty(), || radio.antenna(index))?,
+        bandwidth: offered(!channel.bandwidth_ranges.is_empty(), || {
+            radio.bandwidth(index)
+        })?
+        .filter(|bandwidth| *bandwidth > 0.0)
+        .map(|hz| BandwidthSetting::Manual { hz }),
         ..DeviceSettings::default()
     };
     for stage in &channel.gains {
-        if let Ok(value_db) = radio.gain(index, stage.name.as_str()) {
-            settings.gains.push(GainValue {
-                stage: stage.name.clone(),
-                value_db,
-            });
-        }
+        settings.gains.push(GainValue {
+            stage: stage.name.clone(),
+            value_db: radio.gain(index, stage.name.as_str()).map_err(map_err)?,
+        });
     }
-    settings
+    Ok(settings)
 }
 
-fn rx_streams(radio: &impl RxChannels, capabilities: &Capabilities) -> Vec<StreamSettings> {
+fn rx_streams(
+    radio: &impl RxChannels,
+    capabilities: &Capabilities,
+) -> Result<Vec<StreamSettings>, DeviceError> {
     let scope = capabilities.per_stream;
     let Some(directional) = &capabilities.directional else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    directional
-        .rx
-        .iter()
-        .skip(1)
-        .map(|channel| {
-            let read = read_channel_settings(radio, channel);
-            StreamSettings {
-                stream: channel.channel,
-                center_hz: read.center_hz.filter(|_| scope.tuning),
-                tuning: None,
-                gains: if scope.gain { read.gains } else { Vec::new() },
-                antenna: read.antenna.filter(|_| scope.antenna),
-                agc: None,
-            }
-        })
-        .filter(|stream| {
-            stream.center_hz.is_some() || !stream.gains.is_empty() || stream.antenna.is_some()
-        })
-        .collect()
+    let mut streams = Vec::new();
+    for channel in directional.rx.iter().skip(1) {
+        let read = read_channel_settings(radio, channel)?;
+        let stream = StreamSettings {
+            stream: channel.channel,
+            center_hz: read.center_hz.filter(|_| scope.tuning),
+            tuning: None,
+            gains: if scope.gain { read.gains } else { Vec::new() },
+            antenna: read.antenna.filter(|_| scope.antenna),
+            agc: None,
+        };
+        if stream.center_hz.is_some() || !stream.gains.is_empty() || stream.antenna.is_some() {
+            streams.push(stream);
+        }
+    }
+    Ok(streams)
 }
 
 fn apply_rx_settings(
@@ -476,14 +496,17 @@ fn apply_rx_settings(
     Ok(())
 }
 
-fn read_settings(device: &soapy::Device, capabilities: &Capabilities) -> DeviceSettings {
+fn read_settings(
+    device: &soapy::Device,
+    capabilities: &Capabilities,
+) -> Result<DeviceSettings, DeviceError> {
     let Some(directional) = &capabilities.directional else {
-        return DeviceSettings::default();
+        return Ok(DeviceSettings::default());
     };
     let Some(primary) = directional.rx.first() else {
-        return DeviceSettings::default();
+        return Ok(DeviceSettings::default());
     };
-    let mut settings = read_channel_settings(device, primary);
+    let mut settings = read_channel_settings(device, primary)?;
     settings.agc = capabilities
         .agc
         .offered()
@@ -491,7 +514,7 @@ fn read_settings(device: &soapy::Device, capabilities: &Capabilities) -> DeviceS
     settings.bias_tee = caps::bias_tee_key(capabilities)
         .and_then(|key| device.read_setting(key).ok())
         .map(|value| caps::is_true(&value));
-    settings.streams = rx_streams(device, capabilities);
+    settings.streams = rx_streams(device, capabilities)?;
     for extra in &capabilities.extra {
         let name = extra.name();
         if let Ok(value) = device.read_setting(name) {
@@ -511,7 +534,7 @@ fn read_settings(device: &soapy::Device, capabilities: &Capabilities) -> DeviceS
             });
         }
     }
-    settings
+    Ok(settings)
 }
 
 const RATE_COERCION_TOLERANCE: f64 = 1e-6;
@@ -599,7 +622,7 @@ impl SoapyDevice {
     fn from_device(device: soapy::Device, identity: ProbeIdentity) -> Result<Self, DeviceError> {
         let capabilities = query_capabilities(&device)?;
         seed_sample_rates(&device, &capabilities)?;
-        let settings = read_settings(&device, &capabilities);
+        let settings = read_settings(&device, &capabilities)?;
         let duplex = Arc::new(Mutex::new(DuplexState::new(capabilities.duplex)));
         Ok(Self {
             device,
@@ -690,7 +713,10 @@ impl SoapyDevice {
         }
         self.restore_extras(&undo.extras);
         self.capabilities = query_capabilities(&self.device).unwrap_or(undo.capabilities);
-        self.settings = read_settings(&self.device, &self.capabilities);
+        match read_settings(&self.device, &self.capabilities) {
+            Ok(settings) => self.settings = settings,
+            Err(error) => tracing::warn!("soapy settings could not be read back: {error}"),
+        }
     }
 
     fn automatic_gain_is_on(&self) -> bool {
@@ -762,7 +788,7 @@ impl SdrDevice for SoapyDevice {
             return Err(error);
         }
         self.settings.merge_from(delta);
-        let actual = read_settings(&self.device, &self.capabilities);
+        let actual = read_settings(&self.device, &self.capabilities)?;
         warn_coerced_rate(delta.sample_rate, actual.sample_rate);
         self.settings.merge_from(&actual);
         Ok(())
@@ -1067,10 +1093,28 @@ mod tests {
         gains: Mutex<BTreeMap<(usize, String), f64>>,
         antennas: Mutex<BTreeMap<usize, String>>,
         frequencies: Mutex<BTreeMap<usize, f64>>,
+        faulty: Option<&'static str>,
+    }
+
+    impl FakeRadio {
+        fn faulting(control: &'static str) -> Self {
+            Self {
+                faulty: Some(control),
+                ..Self::default()
+            }
+        }
+
+        fn fault(&self, control: &str) -> Result<(), soapy::Error> {
+            if self.faulty == Some(control) {
+                return Err(error(ErrorCode::Other));
+            }
+            Ok(())
+        }
     }
 
     impl RxChannels for FakeRadio {
         fn frequency(&self, channel: usize) -> Result<f64, soapy::Error> {
+            self.fault("frequency")?;
             Ok(lock(&self.frequencies)
                 .get(&channel)
                 .copied()
@@ -1078,10 +1122,12 @@ mod tests {
         }
 
         fn sample_rate(&self, _channel: usize) -> Result<f64, soapy::Error> {
+            self.fault("sample_rate")?;
             Ok(2.4e6)
         }
 
         fn antenna(&self, channel: usize) -> Result<String, soapy::Error> {
+            self.fault("antenna")?;
             Ok(lock(&self.antennas)
                 .get(&channel)
                 .cloned()
@@ -1178,7 +1224,7 @@ mod tests {
         assert_eq!(radio.antenna(0).expect("read"), "RX1");
         assert_eq!(radio.antenna(1).expect("read"), "RX2");
 
-        let published = rx_streams(&radio, &capabilities);
+        let published = rx_streams(&radio, &capabilities).expect("published");
         assert_eq!(
             published,
             vec![StreamSettings {
@@ -1193,6 +1239,7 @@ mod tests {
                 &radio,
                 &two_channel_capabilities().directional.unwrap().rx[0],
             )
+            .expect("read")
             .gains,
             streams: published,
             ..DeviceSettings::default()
@@ -1224,10 +1271,37 @@ mod tests {
         radio.set_frequency(1, 433.92e6).expect("set");
         assert!(
             rx_streams(&radio, &capabilities)
+                .expect("published")
                 .iter()
                 .all(|stream| stream.center_hz.is_none()),
             "a tuning the radio would refuse is never published"
         );
+    }
+
+    #[test]
+    fn a_control_the_radio_lacks_reads_as_none_and_a_fault_on_one_it_has_surfaces() {
+        let bare = ChannelCapabilities {
+            channel: 0,
+            ..ChannelCapabilities::default()
+        };
+        let read = read_channel_settings(&FakeRadio::faulting("antenna"), &bare)
+            .expect("a radio that offers no antenna is never asked for one");
+        assert_eq!(read.sample_rate, None);
+        assert_eq!(read.antenna, None);
+        assert_eq!(read.bandwidth, None);
+        assert_eq!(read.center_hz, Some(100e6));
+
+        let offered = two_channel_capabilities().directional.unwrap().rx.remove(0);
+        for control in ["frequency", "sample_rate", "antenna"] {
+            let error =
+                read_channel_settings(&FakeRadio::faulting(control), &offered).expect_err(control);
+            assert!(matches!(error, DeviceError::Io(_)), "{control}: {error}");
+        }
+        assert!(
+            read_channel_settings(&FakeRadio::faulting("frequency"), &bare).is_err(),
+            "every radio has a frequency, so a fault reading it is a fault"
+        );
+        assert!(read_channel_settings(&FakeRadio::default(), &offered).is_ok());
     }
 
     fn gain(stage: &str, value_db: f64) -> GainValue {
@@ -1380,9 +1454,21 @@ mod tests {
     fn info_prefers_label_and_serial_key() {
         let args = soapy::Args::from("driver=rtlsdr, serial=00000001, label=Generic RTL2832U");
         let info = device_info(&args);
-        assert_eq!(info.driver, "soapy");
+        assert_eq!(info.driver, DeviceBackend::Soapy);
         assert_eq!(info.key, "00000001");
         assert_eq!(info.label, "Generic RTL2832U");
+    }
+
+    #[test]
+    fn a_watchdog_probe_hides_the_drivers_the_enumeration_hides() {
+        let driver = SoapyDriver::excluding(["rtlsdr", "airspy"]);
+        let args = soapy::Args::from("driver=uhd, serial=123456");
+        let identity = ProbeIdentity::from_args(&args, &driver.excluded);
+        assert_eq!(identity.hidden, driver.excluded);
+        assert!(
+            !identity.hidden.is_empty(),
+            "a stall on one radio must not enumerate the natively handled ones"
+        );
     }
 
     #[test]
@@ -1394,7 +1480,7 @@ mod tests {
         assert_eq!(device_info(&single).key, "123456@ST");
         assert_eq!(device_info(&dual).key, "123456@DT");
         assert_eq!(
-            ProbeIdentity::from_args(&dual).filter,
+            ProbeIdentity::from_args(&dual, &[]).filter,
             "driver=example,serial=123456,mode=DT"
         );
     }

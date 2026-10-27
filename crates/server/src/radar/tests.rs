@@ -4,10 +4,10 @@ use axum::{Router, http::StatusCode};
 use sdrmm_dsp::radar::bistatic::{self, Geodetic};
 use sdrmm_engine::ArrayEvent;
 use sdrmm_wire::{
-    AdsbTruth, ArrayNode, ArrayOrientation, DeviceNode, DeviceRef, GpsNode, PassiveRadarNode,
-    PatchEdge, PatchNode, PortRef, Position, PositionSource, RadarAoa, RadarAxes, RadarDetection,
-    RadarHealth, ReferenceHealth, TrackChange, TrackState, WorkspaceSnapshot, patch::stream_port,
-    radar::LIGHT_SPEED_M_S,
+    AdsbTruth, ArrayNode, ArrayOrientation, DeviceBackend, DeviceNode, DeviceRef, GpsNode,
+    PassiveRadarNode, PatchEdge, PatchNode, PortRef, Position, PositionSource, RadarAoa, RadarAxes,
+    RadarDetection, RadarHealth, ReferenceHealth, TrackChange, TrackState, WorkspaceSnapshot,
+    patch::stream_port, radar::LIGHT_SPEED_M_S,
 };
 use tokio::sync::broadcast::error::RecvError;
 
@@ -452,7 +452,7 @@ fn graph(wiring: Wiring) -> PatchGraph {
                 "radio",
                 NodeBody::Device(DeviceNode {
                     device: Some(DeviceRef {
-                        backend: "virtual".to_owned(),
+                        backend: DeviceBackend::Virtual,
                         serial: None,
                         key: Some("kraken5".to_owned()),
                     }),

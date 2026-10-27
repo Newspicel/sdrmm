@@ -34,6 +34,7 @@ pub struct WidebandDecoder {
     active: Vec<Burst>,
     spare: Vec<Vec<Complex<f32>>>,
     found: Vec<usize>,
+    rejected: u32,
 }
 
 pub fn decimation(input_rate: f64) -> Result<usize, ChannelError> {
@@ -64,7 +65,12 @@ impl WidebandDecoder {
             active: Vec::new(),
             spare: Vec::new(),
             found: Vec::new(),
+            rejected: 0,
         })
+    }
+
+    pub fn rejected(&self) -> u32 {
+        self.rejected
     }
 
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<IridiumFrame>) {
@@ -145,7 +151,9 @@ impl WidebandDecoder {
                 freq: center_hz + demodulated.cfo_hz,
                 center_hz,
             };
-            reassemble(&mut self.reassembly, &demodulated, &heard, out);
+            if !reassemble(&mut self.reassembly, &demodulated, &heard, out) {
+                self.rejected = self.rejected.saturating_add(1);
+            }
         }
     }
 }

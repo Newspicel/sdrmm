@@ -4,7 +4,7 @@
       "kind": "device",
       "name": "Device",
       "category": "source",
-      "summary": "A radio, where every patch starts",
+      "summary": "A radio, a recording or a generator: where a patch starts",
       "role": {
         "role": "opens_radio"
       },
@@ -31,73 +31,6 @@
       "default_body": {
         "kind": "device",
         "data": {}
-      }
-    },
-    {
-      "kind": "recording",
-      "name": "Recording",
-      "category": "source",
-      "summary": "Plays back a recorded IQ file",
-      "role": {
-        "role": "opens_radio"
-      },
-      "face": {
-        "width": 420,
-        "dial": true
-      },
-      "ports": [
-        {
-          "name": "iq",
-          "port_type": "iq",
-          "direction": "out",
-          "payload": {
-            "type": "iq",
-            "origins": [
-              "radio"
-            ]
-          },
-          "multi": "many",
-          "repeat": "per_rx_stream"
-        }
-      ],
-      "needs_channel_type": false,
-      "default_body": {
-        "kind": "recording",
-        "data": {}
-      }
-    },
-    {
-      "kind": "signal_gen",
-      "name": "Signal generator",
-      "category": "source",
-      "summary": "Test signals without a radio",
-      "role": {
-        "role": "opens_radio"
-      },
-      "face": {
-        "width": 420,
-        "dial": true
-      },
-      "ports": [
-        {
-          "name": "iq",
-          "port_type": "iq",
-          "direction": "out",
-          "payload": {
-            "type": "iq",
-            "origins": [
-              "synthetic"
-            ]
-          },
-          "multi": "many"
-        }
-      ],
-      "needs_channel_type": false,
-      "default_body": {
-        "kind": "signal_gen",
-        "data": {
-          "running": true
-        }
       }
     },
     {
@@ -498,6 +431,7 @@
               "adsb",
               "ais",
               "aprs",
+              "acars",
               "dv",
               "dsc",
               "inmarsat_stdc",
@@ -1393,7 +1327,7 @@
       "kind": "recorder",
       "name": "Recorder",
       "category": "output",
-      "summary": "Records a radio's full IQ",
+      "summary": "Records a radio's full IQ, with an optional pre-roll",
       "role": {
         "role": "plain"
       },
@@ -1430,7 +1364,8 @@
       "default_body": {
         "kind": "recorder",
         "data": {
-          "recording": false
+          "recording": false,
+          "pre_roll_s": 0
         }
       }
     },
@@ -1494,52 +1429,6 @@
         "kind": "baseband_recorder",
         "data": {
           "recording": false
-        }
-      }
-    },
-    {
-      "kind": "time_machine",
-      "name": "Time machine",
-      "category": "output",
-      "summary": "Saves IQ from before you pressed record",
-      "role": {
-        "role": "plain"
-      },
-      "face": {
-        "width": 360,
-        "dial": false
-      },
-      "ports": [
-        {
-          "name": "iq",
-          "port_type": "iq",
-          "direction": "in",
-          "payload": {
-            "type": "iq",
-            "origins": [
-              "radio",
-              "synthetic",
-              "derived"
-            ]
-          },
-          "multi": "one"
-        },
-        {
-          "name": "position",
-          "port_type": "position",
-          "direction": "in",
-          "payload": {
-            "type": "position"
-          },
-          "multi": "one"
-        }
-      ],
-      "needs_channel_type": false,
-      "default_body": {
-        "kind": "time_machine",
-        "data": {
-          "history_seconds": 10,
-          "armed": false
         }
       }
     },
@@ -2506,7 +2395,8 @@
     {
       "port_type": "baseband",
       "name": "Baseband",
-      "hue": "cyan"
+      "hue": "cyan",
+      "note": "One channel, filtered and decimated"
     },
     {
       "port_type": "audio",
@@ -2523,22 +2413,26 @@
     {
       "port_type": "video",
       "name": "Video",
-      "hue": "orange"
+      "hue": "orange",
+      "note": "Decoded video frames and pictures"
     },
     {
       "port_type": "control",
       "name": "Control",
-      "hue": "violet"
+      "hue": "violet",
+      "note": "Commands that retune a decoder or point a rotator"
     },
     {
       "port_type": "position",
       "name": "Position",
-      "hue": "accent"
+      "hue": "accent",
+      "note": "A live fix and the heading it comes with"
     },
     {
       "port_type": "array",
       "name": "Array",
-      "hue": "indigo"
+      "hue": "indigo",
+      "note": "One lane per antenna element"
     },
     {
       "port_type": "bearing",
@@ -2780,8 +2674,10 @@
       "noun": "Aircraft",
       "caps": [
         "log",
-        "station"
+        "station",
+        "geo"
       ],
+      "symbol": "plane",
       "hue": "teal",
       "lifetime": {
         "type": "sighting",

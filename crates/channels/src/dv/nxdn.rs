@@ -27,6 +27,7 @@ const LICH_SYMBOLS: usize = 8;
 const FSW_SYMBOLS: usize = FSW_BITS as usize / 2;
 
 const FRAME_SYMBOLS: u64 = 192;
+const HELD_RELEASE_SYMBOLS: u64 = FRAME_SYMBOLS * 3;
 const POST_FSW_SYMBOLS: usize = FRAME_SYMBOLS as usize - FSW_SYMBOLS;
 const SACCH_SYMBOLS: usize = 30;
 const VOICE_START: usize = LICH_SYMBOLS + SACCH_SYMBOLS;
@@ -145,6 +146,10 @@ impl ChannelRx for NxdnChannel {
             self.decoder.push(symbol, out);
         }
     }
+
+    fn rejected(&self) -> u32 {
+        self.decoder.rejected()
+    }
 }
 
 struct Decoder {
@@ -162,12 +167,15 @@ struct Decoder {
     sacch: SacchAssembler,
     alias: AliasAssembler,
     inverted: bool,
+    in_run: bool,
+    rejected: u32,
 }
 
 struct Held {
     at: u64,
     frame: DvFrame,
     voice: Vec<[bool; 72]>,
+    confirmed: bool,
 }
 
 impl Decoder {
@@ -187,7 +195,13 @@ impl Decoder {
             sacch: SacchAssembler::default(),
             alias: AliasAssembler::default(),
             inverted: false,
+            in_run: false,
+            rejected: 0,
         }
+    }
+
+    fn rejected(&self) -> u32 {
+        self.rejected
     }
 
     fn reset(&mut self) {
@@ -202,6 +216,7 @@ impl Decoder {
         self.sacch.reset();
         self.alias = AliasAssembler::default();
         self.inverted = false;
+        self.in_run = false;
     }
 
     fn push(&mut self, symbol: f32, out: &mut ChannelOutputs) {
@@ -215,9 +230,18 @@ impl Decoder {
                     at: self.sync_at,
                     frame,
                     voice,
+                    confirmed: self.in_run,
                 });
             }
             return;
+        }
+        if self
+            .held
+            .as_ref()
+            .is_some_and(|held| self.clock > held.at + HELD_RELEASE_SYMBOLS)
+        {
+            self.release(false, out);
+            self.in_run = false;
         }
         let Some(fsw) = self.hunting_sync() else {
             return;
@@ -227,23 +251,40 @@ impl Decoder {
         {
             return;
         }
-        if let Some(held) = self.held.take()
-            && on_cadence(self.clock - held.at)
+        match self
+            .held
+            .as_ref()
+            .map(|held| on_cadence(self.clock - held.at))
         {
-            self.emit(held.frame, out);
-            for frame in held.voice {
-                self.vocoder.decode_half_code_vectors(
-                    half_rate_code_vectors(&frame, &AMBE_3600_INTERLEAVE),
-                    false,
-                    out,
-                );
+            Some(cadence) => {
+                self.release(cadence, out);
+                self.in_run = cadence;
             }
+            None => self.in_run = false,
         }
         self.window.anchor(fsw, FSW_BITS);
         self.inverted = fsw != FSW;
         self.hunting = false;
         self.sync_at = self.clock;
         self.countdown = POST_FSW_SYMBOLS;
+    }
+
+    fn release(&mut self, trailing_sync_on_cadence: bool, out: &mut ChannelOutputs) {
+        let Some(held) = self.held.take() else {
+            return;
+        };
+        if !trailing_sync_on_cadence && !held.confirmed {
+            self.rejected = self.rejected.saturating_add(1);
+            return;
+        }
+        self.emit(held.frame, out);
+        for frame in held.voice {
+            self.vocoder.decode_half_code_vectors(
+                half_rate_code_vectors(&frame, &AMBE_3600_INTERLEAVE),
+                false,
+                out,
+            );
+        }
     }
 
     fn hunting_sync(&self) -> Option<u64> {
@@ -554,7 +595,7 @@ fn channel_name(rf_channel: u32) -> &'static str {
     match rf_channel {
         0 => "control channel",
         1 => "traffic channel",
-        2 => "composite channel",
+        2 => "direct channel",
         _ => "traffic channel (composite control)",
     }
 }
@@ -617,6 +658,45 @@ mod tests {
             std::array::from_fn(|frame| std::array::from_fn(|slot| encoded[frame * 4 + slot]));
         let iq = tx::transmission_with_voice(&tx::Shape::default(), 1, true, &voice, INPUT_RATE_HZ);
         let (_, audio) = decode_with_audio(&mut channel(NxdnBandwidth::Narrow), &iq);
+        assert_tone_audio(&audio, 16);
+    }
+
+    #[test]
+    fn the_last_voice_frame_of_an_over_still_reaches_the_speaker() {
+        let encoded = half_rate_frames(20);
+        let voice: [[[bool; 72]; 4]; 5] =
+            std::array::from_fn(|frame| std::array::from_fn(|slot| encoded[frame * 4 + slot]));
+        let mut iq =
+            tx::transmission_with_voice(&tx::Shape::default(), 1, true, &voice, INPUT_RATE_HZ);
+        iq.extend(crate::testutil::complex_noise(0x4E58, 0.01, 48_000));
+
+        let (_, audio) = decode_with_audio(&mut channel(NxdnBandwidth::Narrow), &iq);
+
+        assert_tone_audio(&audio, 20);
+    }
+
+    #[test]
+    fn a_sync_lost_mid_transmission_does_not_delete_the_frame_before_it() {
+        const PREAMBLE_SYMBOLS: usize = 200;
+        const JITTER_SYMBOLS: usize = 4;
+        let encoded = half_rate_frames(20);
+        let voice: [[[bool; 72]; 4]; 5] =
+            std::array::from_fn(|frame| std::array::from_fn(|slot| encoded[frame * 4 + slot]));
+        let clean =
+            tx::transmission_with_voice(&tx::Shape::default(), 1, true, &voice, INPUT_RATE_HZ);
+        let samples_per_symbol = (INPUT_RATE_HZ / 2_400.0) as usize;
+        let last_sync = (PREAMBLE_SYMBOLS + 4 * FRAME_SYMBOLS as usize) * samples_per_symbol;
+        let mut jittered = clean[..last_sync].to_vec();
+        jittered.extend(crate::testutil::complex_noise(
+            0x9A17,
+            0.01,
+            samples_per_symbol * JITTER_SYMBOLS,
+        ));
+        jittered.extend_from_slice(&clean[last_sync..]);
+        jittered.extend(crate::testutil::complex_noise(0x4E58, 0.01, 48_000));
+
+        let (_, audio) = decode_with_audio(&mut channel(NxdnBandwidth::Narrow), &jittered);
+
         assert_tone_audio(&audio, 16);
     }
 
@@ -692,6 +772,201 @@ mod tests {
             assert!(lich_parity_holds(&octet_bits(octet)), "{octet:#04x}");
             assert!(!lich_parity_holds(&octet_bits(octet ^ 1)), "{octet:#04x}");
         }
+    }
+
+    fn spec_symbol(dibit: usize) -> f32 {
+        const SPEC_SYMBOL_FOR_DIBIT: [f32; 4] = [1.0, 3.0, -1.0, -3.0];
+        SPEC_SYMBOL_FOR_DIBIT[dibit]
+    }
+
+    fn message_bits(value: u32, width: usize, out: &mut Vec<bool>) {
+        out.extend((0..width).rev().map(|shift| value >> shift & 1 == 1));
+    }
+
+    fn convolutional(message: &[bool]) -> Vec<bool> {
+        const SPEC_G1: [usize; 3] = [0, 3, 4];
+        const SPEC_G2: [usize; 4] = [0, 1, 2, 4];
+        let tapped = |step: usize, taps: &[usize]| {
+            taps.iter().fold(false, |acc, &delay| {
+                acc ^ (step >= delay && message[step - delay])
+            })
+        };
+        (0..message.len())
+            .flat_map(|step| [tapped(step, &SPEC_G1), tapped(step, &SPEC_G2)])
+            .collect()
+    }
+
+    fn erased(first_row: &[u8], second_row: &[u8], coded_bits: usize) -> Vec<usize> {
+        let period = first_row.len() * 2;
+        (0..coded_bits)
+            .filter(|index| {
+                let slot = index % period;
+                let row = if slot.is_multiple_of(2) {
+                    first_row
+                } else {
+                    second_row
+                };
+                row[slot / 2] == 0
+            })
+            .collect()
+    }
+
+    fn punctured(coded: &[bool], first_row: &[u8], second_row: &[u8]) -> Vec<bool> {
+        let period = first_row.len() * 2;
+        coded
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| {
+                let slot = index % period;
+                let row = if slot.is_multiple_of(2) {
+                    first_row
+                } else {
+                    second_row
+                };
+                row[slot / 2] == 1
+            })
+            .map(|(_, &bit)| bit)
+            .collect()
+    }
+
+    fn interleaved(payload: &[bool], depth: usize) -> Vec<i16> {
+        let columns = payload.len() / depth;
+        (0..payload.len())
+            .map(|slot| payload[(slot % depth) * columns + slot / depth])
+            .map(|bit| if bit { CONFIDENT } else { -CONFIDENT })
+            .collect()
+    }
+
+    #[test]
+    fn the_frame_sync_word_matches_the_nxdn_ts_1_a_symbol_table() {
+        const SPEC_SYMBOLS: [f32; FSW_SYMBOLS] =
+            [-3.0, 1.0, -3.0, 3.0, -3.0, -3.0, 3.0, 3.0, -1.0, 3.0];
+        let symbols: [f32; FSW_SYMBOLS] = std::array::from_fn(|i| {
+            spec_symbol((FSW >> (FSW_BITS as usize - 2 - i * 2)) as usize & 0b11)
+        });
+        assert_eq!(symbols, SPEC_SYMBOLS);
+    }
+
+    #[test]
+    fn the_check_polynomials_match_their_published_check_values() {
+        let bits: Vec<bool> = b"123456789"
+            .iter()
+            .flat_map(|byte| (0..8).rev().map(move |shift| byte >> shift & 1 == 1))
+            .collect();
+        assert_eq!(crc_msb(0x27, 0x3F, &bits), 0x0D);
+        assert_eq!(crc_msb(0x80F, 0, &bits).reverse_bits() >> 20, 0xDAF);
+    }
+
+    #[test]
+    fn the_lich_conformance_vectors_of_nxdn_ts_2_b_name_their_channels() {
+        const SPEC_LICH: [(u16, &str); 23] = [
+            (0x5D77, "control channel outbound"),
+            (0x5F7D, "control channel inbound"),
+            (0x577F, "control channel inbound"),
+            (0xD5DF, "direct channel inbound"),
+            (0x75DF, "traffic channel inbound"),
+            (0xD5D7, "direct channel outbound"),
+            (0x75D7, "traffic channel outbound"),
+            (0xDD7D, "direct channel inbound"),
+            (0x7D7D, "traffic channel inbound"),
+            (0xDD75, "direct channel outbound"),
+            (0x7D75, "traffic channel outbound"),
+            (0xD57F, "direct channel inbound"),
+            (0x757F, "traffic channel inbound"),
+            (0xD577, "direct channel outbound"),
+            (0x7577, "traffic channel outbound"),
+            (0xDF7F, "direct channel inbound"),
+            (0x7F7F, "traffic channel inbound"),
+            (0xDF77, "direct channel outbound"),
+            (0x7F77, "traffic channel outbound"),
+            (0xDFDF, "direct channel inbound"),
+            (0x7FDF, "traffic channel inbound"),
+            (0xDFD7, "direct channel outbound"),
+            (0x7FD7, "traffic channel outbound"),
+        ];
+        for (scrambled, expected) in SPEC_LICH {
+            let mut decoder = Decoder::new();
+            for position in 0..POST_FSW_SYMBOLS {
+                let dibit = if position < LICH_SYMBOLS {
+                    (scrambled >> (14 - position * 2)) as usize & 0b11
+                } else {
+                    0
+                };
+                decoder.window.push(spec_symbol(dibit));
+            }
+            let (frame, _) = decoder.frame().expect("conformant LICH");
+            assert_eq!(frame.opcode.as_deref(), Some(expected), "{scrambled:#06X}");
+        }
+    }
+
+    #[test]
+    fn a_sacch_built_to_the_nxdn_ts_1_a_coding_rules_decodes() {
+        const SPEC_FIRST_ROW: [u8; 6] = [1, 1, 1, 1, 1, 1];
+        const SPEC_SECOND_ROW: [u8; 6] = [1, 1, 0, 1, 1, 0];
+        const SPEC_DEPTH: usize = 5;
+        const STRUCTURE: u32 = 0b01;
+        const RAN: u32 = 0b10_1010;
+        let data: [bool; 18] = std::array::from_fn(|i| i.is_multiple_of(3));
+
+        let mut message = Vec::new();
+        message_bits(STRUCTURE, 2, &mut message);
+        message_bits(RAN, 6, &mut message);
+        message.extend(data);
+        let check = crc_msb(0x27, 0x3F, &message);
+        message_bits(check, 6, &mut message);
+        message.extend([false; 4]);
+
+        assert_eq!(
+            erased(&SPEC_FIRST_ROW, &SPEC_SECOND_ROW, 72),
+            SACCH_PUNCTURES
+        );
+        let coded = punctured(&convolutional(&message), &SPEC_FIRST_ROW, &SPEC_SECOND_ROW);
+        assert_eq!(coded.len(), SACCH_BITS);
+        let channel = interleaved(&coded, SPEC_DEPTH);
+
+        let sacch = decode_sacch(&channel, &mut Viterbi5::new()).expect("conformant SACCH");
+        assert_eq!(u32::from(sacch.structure), STRUCTURE);
+        assert_eq!(u32::from(sacch.ran), RAN);
+        assert_eq!(sacch.data, data);
+
+        let mut wrong_check = message.clone();
+        wrong_check[26] = !wrong_check[26];
+        let broken = interleaved(
+            &punctured(
+                &convolutional(&wrong_check),
+                &SPEC_FIRST_ROW,
+                &SPEC_SECOND_ROW,
+            ),
+            SPEC_DEPTH,
+        );
+        assert!(decode_sacch(&broken, &mut Viterbi5::new()).is_none());
+    }
+
+    #[test]
+    fn a_facch1_built_to_the_nxdn_ts_1_a_coding_rules_decodes() {
+        const SPEC_FIRST_ROW: [u8; 2] = [1, 1];
+        const SPEC_SECOND_ROW: [u8; 2] = [0, 1];
+        const SPEC_DEPTH: usize = 9;
+        let layer3: [bool; FACCH_INFO_BITS] = std::array::from_fn(|i| i % 5 < 2);
+
+        let mut message = layer3.to_vec();
+        let check = crc_msb(0x080F, 0x0FFF, &message);
+        message_bits(check, 12, &mut message);
+        message.extend([false; 4]);
+
+        assert_eq!(
+            erased(&SPEC_FIRST_ROW, &SPEC_SECOND_ROW, 192),
+            FACCH_PUNCTURES
+        );
+        let coded = punctured(&convolutional(&message), &SPEC_FIRST_ROW, &SPEC_SECOND_ROW);
+        assert_eq!(coded.len(), FACCH_BITS);
+        let channel = interleaved(&coded, SPEC_DEPTH);
+
+        assert_eq!(
+            decode_facch(&channel, &mut Viterbi5::new()),
+            Some(layer3),
+            "conformant FACCH1"
+        );
     }
 
     #[test]

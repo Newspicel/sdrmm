@@ -600,21 +600,19 @@ describe("capturesOn", () => {
         settings: { address: "127.0.0.1:7355", format: "cf32_le", transport: "udp" },
         stream: 0,
       },
-      time_machine: {
-        node: "tm",
+      pre_roll: {
+        node: "rec",
         capacity_samples: 1,
         center_hz: 145_500_000,
         held_samples: 1,
-        history_seconds: 30,
+        pre_roll_s: 30,
         overruns: 0,
         sample_rate: 2_048_000,
         stream: 0,
       },
     });
-    expect(capturesOn(busy)).toEqual(["a network export", "its time machine"]);
-    expect(stopSaid(busy)).toBe(
-      "Closing this radio also stops a network export and its time machine",
-    );
+    expect(capturesOn(busy)).toEqual(["a network export", "its pre-roll"]);
+    expect(stopSaid(busy)).toBe("Closing this radio also stops a network export and its pre-roll");
   });
 });
 

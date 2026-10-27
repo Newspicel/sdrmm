@@ -108,6 +108,101 @@ fn only_an_open_bound_names_itself() {
     assert_eq!(json["beamformer"]["nulls"], 3);
     assert_eq!(json["band_seed_hz"], 200_000.0);
     assert_eq!(json["spectrum_signal_margin_db"], 10.0);
+    assert_eq!(json["scan"]["targets"], crate::MAX_SCAN_TARGETS);
+}
+
+#[test]
+fn the_published_limits_name_their_wire_constants() {
+    let json = parsed(&generated().expect("limits serialize"));
+    assert_eq!(json["filter"]["kinds"], crate::filter::MAX_FILTER_KINDS);
+    assert_eq!(
+        json["filter"]["text_len"],
+        crate::filter::MAX_FILTER_TEXT_LEN
+    );
+    assert_eq!(
+        json["patch"]["channels_per_radio"],
+        crate::patch::MAX_CHANNELS_PER_RADIO
+    );
+    assert_eq!(
+        json["patch"]["monitors_per_radio"],
+        crate::patch::MAX_MONITORS_PER_RADIO
+    );
+    assert_eq!(json["wmbus"]["meter_digits"], crate::wmbus::METER_DIGITS);
+    assert_eq!(json["wmbus"]["key_digits"], crate::wmbus::KEY_DIGITS);
+    assert_eq!(json["wmbus"]["keys"], crate::wmbus::MAX_WMBUS_KEYS);
+    assert_eq!(json["audio"]["rate_hz"], crate::audio::AUDIO_RATE_HZ);
+    assert_eq!(json["audio"]["notches"], crate::audio::MAX_AUDIO_NOTCHES);
+    assert_eq!(
+        json["audio"]["blanker_threshold_seed"],
+        crate::audio::DEFAULT_BLANKER_THRESHOLD
+    );
+    assert_eq!(
+        json["audio"]["click_threshold_seed"],
+        crate::audio::DEFAULT_CLICK_THRESHOLD
+    );
+    assert_eq!(
+        json["audio"]["squelch_auto_margin_seed_db"],
+        crate::channel::DEFAULT_SQUELCH_AUTO_MARGIN_DB
+    );
+    assert_eq!(
+        json["audio"]["denoise_strength_seed"],
+        crate::audio::DEFAULT_DENOISE_STRENGTH
+    );
+    assert_eq!(
+        json["audio"]["filter_low_seed_hz"],
+        crate::audio::DEFAULT_FILTER_LOW_HZ
+    );
+    assert_eq!(
+        json["audio"]["filter_high_seed_hz"],
+        crate::audio::DEFAULT_FILTER_HIGH_HZ
+    );
+    assert_eq!(
+        json["audio"]["notch_freq_seed_hz"],
+        crate::audio::DEFAULT_NOTCH_FREQ_HZ
+    );
+    assert_eq!(
+        json["audio"]["notch_width_seed_hz"],
+        crate::audio::DEFAULT_NOTCH_WIDTH_HZ
+    );
+    assert_eq!(
+        json["channel_frequency_seed_hz"],
+        crate::channel::DEFAULT_FREQUENCY_HZ
+    );
+    assert_eq!(json["survey"]["cell_m"], crate::survey::SURVEY_CELL_M);
+    assert_eq!(
+        json["survey"]["metres_per_degree_lon"],
+        crate::survey::METRES_PER_DEGREE_LON
+    );
+    assert_eq!(
+        json["survey"]["metres_per_degree_lat"],
+        crate::survey::METRES_PER_DEGREE_LAT
+    );
+    assert_eq!(json["survey"]["min_cos_lat"], crate::survey::MIN_COS_LAT);
+    assert_eq!(json["survey"]["cells"], crate::survey::MAX_SURVEY_CELLS);
+    assert_eq!(
+        json["workspace_state_version"],
+        crate::workspace_state::WORKSPACE_STATE_VERSION
+    );
+}
+
+#[test]
+fn the_audio_seeds_sit_inside_the_published_bounds() {
+    let limits = AUDIO_LIMITS;
+    assert!(
+        limits
+            .blanker_threshold
+            .contains(limits.blanker_threshold_seed)
+    );
+    assert!(limits.click_threshold.contains(limits.click_threshold_seed));
+    assert!(
+        limits
+            .squelch_auto_margin_db
+            .contains(limits.squelch_auto_margin_seed_db)
+    );
+    assert!(limits.notch_width_hz.contains(limits.notch_width_seed_hz));
+    assert!(limits.tone_hz.contains(limits.notch_freq_seed_hz));
+    assert!(limits.tone_hz.contains(limits.filter_low_seed_hz));
+    assert!(limits.tone_hz.contains(limits.filter_high_seed_hz));
 }
 
 #[test]

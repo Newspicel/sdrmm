@@ -15,17 +15,22 @@ import {
   recordingTitle,
 } from "../../components/recordings";
 import { recordingsQuery } from "../../lib/api";
-import type { PatchNode, PatchNodeOf, RecordingInfo } from "../../lib/types";
+import type { DeviceRef, PatchNode, RecordingInfo } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { pinnedRef, recordingRef } from "./deviceNode";
 import { MakeArrayButton } from "./MakeArrayButton";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 import { claimedRecordings, recordingChoices } from "./recordingNode";
 import { SourceHealth } from "./SourceHealth";
 
-type RecordingNodeData = PatchNodeOf<"recording">["data"];
-
-function Library({ node, onPick }: { node: string; onPick: (recording: RecordingInfo) => void }) {
+export function Library({
+  node,
+  onPick,
+}: {
+  node: string;
+  onPick: (recording: RecordingInfo) => void;
+}) {
   const workspace = useWorkspaceContext();
   const library = useQuery(recordingsQuery());
   const [search, setSearch] = useState("");
@@ -103,25 +108,27 @@ export function RecordingFacts({ recording }: { recording: RecordingInfo }) {
 export function RecordingFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const library = useQuery(recordingsQuery());
-  const stem = node.kind === "recording" ? (node.data.recording ?? null) : null;
+  const stem = pinnedRef(node)?.key ?? null;
   const set = workspace.devices.get(node.id) ?? null;
   const known =
     stem === null
       ? null
       : (library.data?.recordings.find((recording) => recording.file === stem) ?? null);
 
-  const editNode = (next: Partial<RecordingNodeData>): void =>
+  const pin = (chosen: DeviceRef | null): void =>
     workspace.edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (stored) =>
-        stored.kind === "recording" ? { ...stored, data: { ...stored.data, ...next } } : stored,
+        stored.kind === "device"
+          ? { ...stored, data: { ...stored.data, device: chosen, stopped: false } }
+          : stored,
       ),
     }));
 
-  const forget = (): void => editNode({ recording: null });
+  const forget = (): void => pin(null);
 
   const pick = (recording: RecordingInfo): void => {
-    editNode({ recording: recording.file });
+    pin(recordingRef(recording.file));
     workspace.apply();
   };
 

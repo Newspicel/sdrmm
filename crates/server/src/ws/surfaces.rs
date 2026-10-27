@@ -1,9 +1,8 @@
 use std::{collections::HashMap, time::Duration};
 
-use axum::extract::ws::Message;
 use sdrmm_wire::{
-    FusionGridOwned, RangeDopplerOwned, ServerEvent, SpatialSpectrumOwned, StreamKind, SurfaceFit,
-    SurfaceFrame, SurfaceRefusal, VisibilityOwned,
+    FrameError, FusionGridOwned, RangeDopplerOwned, ServerEvent, SpatialSpectrumOwned, StreamKind,
+    SurfaceFit, SurfaceFrame, SurfaceRefusal, VisibilityOwned,
 };
 use tokio::{
     sync::broadcast::{self, error::RecvError},
@@ -143,7 +142,7 @@ async fn forward(stream: SurfaceStream, mut frames: broadcast::Receiver<SurfaceI
         match frames.recv().await {
             Ok((_, frame)) => {
                 let bytes = encode(&frame, stream.stream_id, stream.fit);
-                if out.send(Message::Binary(bytes.into())).await.is_err() {
+                if out.send_frame(bytes).await.is_err() {
                     break;
                 }
             }
@@ -171,7 +170,11 @@ async fn forward(stream: SurfaceStream, mut frames: broadcast::Receiver<SurfaceI
     }
 }
 
-pub(super) fn encode(frame: &SurfaceFrame, stream_id: u16, fit: Option<SurfaceFit>) -> Vec<u8> {
+pub(super) fn encode(
+    frame: &SurfaceFrame,
+    stream_id: u16,
+    fit: Option<SurfaceFit>,
+) -> Result<Vec<u8>, FrameError> {
     match fit.and_then(|fit| fitted(frame, fit)) {
         Some(pooled) => pooled.encode(stream_id),
         None => frame.encode(stream_id),

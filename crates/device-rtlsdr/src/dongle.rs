@@ -23,7 +23,10 @@ pub(crate) use demod::DIRECT_MAX_HZ;
 pub(crate) use demod::PPM_LIMIT;
 pub(crate) use eeprom::valid_serial;
 pub(crate) use error::Error;
-pub(crate) use radio::{DirectSampling, Dongle};
-pub(crate) use stream::{IN_FLIGHT_SAMPLES, Release, TRANSFER_BYTES};
+#[cfg(test)]
+pub(crate) use fake::Fake;
+pub(crate) use radio::{DirectSampling, Dongle, Radio};
+pub(crate) use stream::{IN_FLIGHT_SAMPLES, TRANSFER_BYTES};
 #[cfg(test)]
 pub(crate) use tuner::GAINS;
+pub(crate) use usb::Transport;

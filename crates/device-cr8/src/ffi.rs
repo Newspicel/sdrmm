@@ -2,6 +2,7 @@ use std::ffi::{c_char, c_double, c_int, c_void};
 
 pub const CHANNEL_COUNT: usize = 8;
 pub const SERIAL_LEN: usize = 16;
+pub const MAX_DEVICES: usize = 32;
 pub const SAMPLE_RATE_HZ: f64 = 12.5e6;
 
 pub const CHAN_ALL: c_int = 0xFF;

@@ -1,9 +1,9 @@
 use sdrmm_dsp::{Decimator, design_lowpass};
-use sdrmm_wire::DataLinkMessage;
+use sdrmm_wire::{DataLinkMessage, MAX_NAVAID_REPORT_MS, MIN_NAVAID_REPORT_MS};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use crate::ChannelFilter;
+use crate::{ChannelError, ChannelFilter};
 
 const SERIALIZATION_ERROR: &str = "serialization_error";
 const CHANNEL_TAPS: usize = 129;
@@ -21,6 +21,15 @@ pub fn channel_filter(rate: f64, half_bandwidth: f64) -> ChannelFilter {
         &design_lowpass(CHANNEL_TAPS, half_bandwidth / rate),
         1,
     ))
+}
+
+pub fn check_navaid_report_ms(report_ms: u32) -> Result<(), ChannelError> {
+    if (MIN_NAVAID_REPORT_MS..=MAX_NAVAID_REPORT_MS).contains(&report_ms) {
+        return Ok(());
+    }
+    Err(ChannelError::InvalidSettings(format!(
+        "navaid report interval must be in [{MIN_NAVAID_REPORT_MS}, {MAX_NAVAID_REPORT_MS}] ms, got {report_ms}"
+    )))
 }
 
 pub fn message<T: Serialize + ?Sized>(

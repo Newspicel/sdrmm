@@ -6,9 +6,9 @@
   "packageManager": "pnpm@12.8.0",
   "scripts": {
     "dev": "vite",
-    "build": "tsgo --noEmit && vite build",
+    "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "record:resolved": "node scripts/record-resolved.mjs",
     "e2e": "playwright test",
@@ -40,13 +40,12 @@
     "@types/babel__core": "^7.20.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "@vitejs/plugin-react": "6.1.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "openapi-typescript": "7.13.0",
     "oxlint": "1.86.0",
     "oxlint-tsgolint": "7.0.2003",
     "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
     "vite": "8.3.1",
     "vitest": "5.0.2"
   }

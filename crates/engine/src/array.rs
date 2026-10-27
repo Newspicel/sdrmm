@@ -278,6 +278,13 @@ pub(crate) enum Retired {
 }
 
 impl Retired {
+    pub(crate) const fn blocks_on_release(&self) -> bool {
+        matches!(
+            self,
+            Self::Host(_) | Self::Runner(_) | Self::Prepared(Prepared::Rebuild(_))
+        )
+    }
+
     pub(crate) fn release(self) {
         match self {
             Self::Runner(runner) | Self::Prepared(Prepared::Rebuild(runner)) => {
@@ -337,6 +344,9 @@ pub(crate) enum AggregatorEvent {
     Clipped {
         lane: usize,
     },
+    LaneStopped {
+        lane: usize,
+    },
     Ended,
     Resumed,
 }
@@ -353,6 +363,7 @@ pub(crate) struct RuntimeSetup {
 
 pub(crate) struct ArrayRuntime {
     commands: Arc<CommandQueue>,
+    board: Arc<StatusBoard>,
     stop: Arc<AtomicBool>,
     aggregator: Option<JoinHandle<AggregatorExit>>,
     worker: Option<JoinHandle<()>>,
@@ -428,7 +439,7 @@ impl ArrayRuntime {
         let aggregator = aggregator::Aggregator::new(
             feeds,
             Box::new(frame),
-            board,
+            board.clone(),
             commands,
             wiring.aggregator,
             Some(worker.thread().clone()),
@@ -454,6 +465,7 @@ impl ArrayRuntime {
         queue.wake(aggregator.thread().clone());
         Ok(Self {
             commands: queue,
+            board,
             stop,
             aggregator: Some(aggregator),
             worker: Some(worker),
@@ -491,10 +503,10 @@ impl ArrayRuntime {
             join_quietly(controller, "array controller");
         }
         self.stop.store(true, Ordering::Release);
-        let exit = self.aggregator.take().and_then(|aggregator| {
-            aggregator.thread().unpark();
-            aggregator.join().ok()
-        });
+        let exit = match self.aggregator.take() {
+            Some(aggregator) => joined_exit(aggregator, &self.board),
+            None => None,
+        };
         if let Some(worker) = self.worker.take() {
             worker.thread().unpark();
             join_quietly(worker, "array sync worker");
@@ -510,6 +522,20 @@ impl ArrayRuntime {
 impl Drop for ArrayRuntime {
     fn drop(&mut self) {
         drop(self.halt());
+    }
+}
+
+fn joined_exit(
+    aggregator: JoinHandle<AggregatorExit>,
+    board: &StatusBoard,
+) -> Option<AggregatorExit> {
+    aggregator.thread().unpark();
+    match aggregator.join() {
+        Ok(exit) => Some(exit),
+        Err(_) => {
+            board.stopped("the array aggregator panicked while handing its lanes back".to_owned());
+            None
+        }
     }
 }
 

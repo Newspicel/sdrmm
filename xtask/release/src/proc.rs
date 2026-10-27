@@ -7,6 +7,11 @@ pub fn run(program: &str, args: &[&str], cwd: &Path) -> Result<()> {
     run_with_env(program, args, cwd, &[])
 }
 
+pub fn utf8(path: &Path) -> Result<&str> {
+    path.to_str()
+        .with_context(|| format!("{} is not UTF-8, so no command can take it", path.display()))
+}
+
 pub fn run_with_env(program: &str, args: &[&str], cwd: &Path, env: &[(&str, &str)]) -> Result<()> {
     println!("$ {program} {}", args.join(" "));
     let status = Command::new(program)

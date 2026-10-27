@@ -703,6 +703,8 @@ pub struct ProcessorStatus {
     pub gated_samples: u64,
     pub dropped_samples: u64,
     pub dropped_reports: u64,
+    #[serde(default)]
+    pub dropped_surfaces: u64,
     pub lane_overflows: u64,
     pub lane_mismatch: u64,
     pub solver_failures: u64,

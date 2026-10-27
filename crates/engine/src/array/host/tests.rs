@@ -79,6 +79,7 @@ pub(crate) struct Talk {
     pub(crate) steer: Option<f64>,
     pub(crate) refuse_retune: bool,
     pub(crate) lanes: bool,
+    pub(crate) surface: bool,
 }
 
 pub(crate) struct Talker {
@@ -134,6 +135,9 @@ impl Talker {
             reading.eigenvalues_db.extend((0..16).map(|at| at as f32));
             sdrmm_channels::array_processor::stamp_at(&mut reading.at, block.unix_ns);
             out.publish_report();
+        }
+        if self.talk.surface && out.surface().is_some() {
+            out.publish_surface();
         }
         if self.talk.event
             && let Some(DecoderEvent::Df(bearing)) = out.event()
@@ -415,6 +419,30 @@ fn a_full_report_pool_counts_dropped_reports() {
     }
     let status = stats.status("df-full", "df", None);
     assert_eq!(status.dropped_reports, 4);
+}
+
+#[test]
+fn a_surface_a_processor_cannot_have_is_not_counted_as_a_lost_report() {
+    let taps = taps(0);
+    let (host, _log) = talker_host(
+        "df-surface",
+        Talk {
+            surface: true,
+            ..Talk::default()
+        },
+        &taps.sinks,
+    );
+    let stats = host.stats().clone();
+    let mut hosts = HostList::new();
+    assert!(hosts.add(host).is_ok());
+    for block in 0..3 {
+        run(&mut hosts, block * 256, &[Complex::new(0.1, 0.0); 256]);
+    }
+    assert_eq!(stats.dropped_surfaces.load(Ordering::Relaxed), 3);
+    assert_eq!(stats.dropped_reports.load(Ordering::Relaxed), 0);
+    let status = stats.status("df-surface", "df", None);
+    assert_eq!(status.dropped_surfaces, 3);
+    assert_eq!(status.dropped_reports, 0);
 }
 
 #[test]

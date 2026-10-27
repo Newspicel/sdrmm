@@ -1,4 +1,5 @@
 use super::*;
+use sdrmm_wire::DeviceBackend;
 
 #[tokio::test]
 async fn applying_a_workspace_opens_its_radio_and_adds_its_channels_once() {
@@ -95,7 +96,7 @@ async fn applying_a_workspace_reports_an_absent_radio() {
         panic!("the default workspace opens with a receiver")
     };
     node.device = Some(sdrmm_wire::DeviceRef {
-        backend: "hackrf".to_string(),
+        backend: DeviceBackend::Hackrf,
         serial: Some("deadbeef".to_string()),
         key: None,
     });
@@ -373,7 +374,7 @@ async fn workspace_crud_over_http() {
 #[tokio::test]
 async fn a_workspace_comes_back_tuned_the_way_it_was_left() {
     let (app, state) = test_router_with_state();
-    let workspace = store_siggen_workspace(&app).await;
+    let workspace = store_band_workspace(&app).await;
     assert_eq!(apply(&app, workspace).await.created, 1);
 
     let ds = get_state(&app).await.device_sets[0].id;
@@ -424,7 +425,7 @@ async fn a_workspace_comes_back_tuned_the_way_it_was_left() {
 #[tokio::test]
 async fn a_hand_picked_radio_comes_up_with_the_nodes_stored_settings() {
     let (app, state) = test_router_with_state();
-    let workspace = store_siggen_workspace(&app).await;
+    let workspace = store_band_workspace(&app).await;
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
     let (status, _) = patch_node_device(
@@ -470,7 +471,7 @@ async fn a_partial_restore_lands_what_fits_and_keeps_remembering_the_rest() {
         .store
         .put_workspace_state(workspace, &planted)
         .expect("plant the stored settings");
-    assert_eq!(store_siggen_workspace(&app).await, workspace);
+    assert_eq!(store_band_workspace(&app).await, workspace);
 
     let report = apply(&app, workspace).await;
     assert!(
@@ -500,7 +501,7 @@ async fn a_partial_restore_lands_what_fits_and_keeps_remembering_the_rest() {
 #[tokio::test]
 async fn applying_a_workspace_does_not_retune_an_open_radio() {
     let (app, state) = test_router_with_state();
-    let workspace = store_siggen_workspace(&app).await;
+    let workspace = store_band_workspace(&app).await;
     apply(&app, workspace).await;
 
     let ds = get_state(&app).await.device_sets[0].id;
@@ -528,7 +529,7 @@ async fn applying_a_workspace_does_not_retune_an_open_radio() {
 #[tokio::test]
 async fn switching_workspaces_closes_the_radios_the_new_one_does_not_name() {
     let (app, _state) = test_router_with_state();
-    let workspace = store_siggen_workspace(&app).await;
+    let workspace = store_band_workspace(&app).await;
     apply(&app, workspace).await;
     assert_eq!(get_state(&app).await.device_sets.len(), 1);
 
@@ -552,7 +553,7 @@ async fn switching_workspaces_closes_the_radios_the_new_one_does_not_name() {
 #[tokio::test]
 async fn switching_between_workspaces_sharing_a_radio_restores_each_ones_settings() {
     let (app, _state) = test_router_with_state();
-    let first = store_siggen_workspace(&app).await;
+    let first = store_band_workspace(&app).await;
     apply(&app, first).await;
     let ds = get_state(&app).await.device_sets[0].id;
 
@@ -605,14 +606,14 @@ async fn switching_between_workspaces_sharing_a_radio_restores_each_ones_setting
 #[tokio::test]
 async fn a_time_machine_follows_its_workspace_in_and_out() {
     let (app, _state) = test_router_with_state();
-    let first = store_siggen_workspace(&app).await;
+    let first = store_band_workspace(&app).await;
     apply(&app, first).await;
     let ds = get_state(&app).await.device_sets[0].id;
     let radio = radio_at(&app, ds).await;
     draw(
         &app,
         "history",
-        history_node(true),
+        pre_roll_node(1, false),
         &[[&radio, "iq", "history", "iq"]],
     )
     .await;
@@ -628,7 +629,7 @@ async fn a_time_machine_follows_its_workspace_in_and_out() {
     draw(
         &app,
         "other-history",
-        history_node(true),
+        pre_roll_node(1, false),
         &[[&radio, "iq", "other-history", "iq"]],
     )
     .await;
@@ -649,7 +650,7 @@ async fn a_time_machine_follows_its_workspace_in_and_out() {
 #[tokio::test]
 async fn a_capture_without_the_radio_keeps_its_stored_settings() {
     let (app, state) = test_router_with_state();
-    let workspace = store_siggen_workspace(&app).await;
+    let workspace = store_band_workspace(&app).await;
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
     let (status, _) = patch_node_device(
@@ -1357,7 +1358,7 @@ fn two_radio_snapshot(taps: &[(&str, &str)]) -> sdrmm_wire::WorkspaceSnapshot {
         id: "device2".to_string(),
         body: sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
             device: Some(sdrmm_wire::DeviceRef {
-                backend: "virtual".to_string(),
+                backend: DeviceBackend::Virtual,
                 serial: None,
                 key: Some("halfduplex".to_string()),
             }),
@@ -1642,7 +1643,7 @@ async fn a_second_stream_on_the_same_radio_can_carry_a_decoder() {
 #[tokio::test]
 async fn a_converter_offset_follows_the_radio_into_another_workspace() {
     let (app, state) = test_router_with_state();
-    let first = store_siggen_workspace(&app).await;
+    let first = store_band_workspace(&app).await;
     apply(&app, first).await;
     let ds = get_state(&app).await.device_sets[0].id;
     let (status, _) = patch_node_device(

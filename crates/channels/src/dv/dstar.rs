@@ -24,9 +24,11 @@ pub(crate) const BANDWIDTH_HZ: f64 = 6_250.0;
 pub(crate) const SYNC: u32 = 0x00AA_B468;
 pub(crate) const SYNC_BITS: u32 = 24;
 pub(crate) const SYNC_TOLERANCE: u32 = 2;
+const SYNC_MASK: u128 = (1 << SYNC_BITS) - 1;
 
 const FRAME_BITS: usize = 96;
 const DATA_BITS: usize = 24;
+const VOICE_BITS: usize = FRAME_BITS - DATA_BITS;
 const FRAMES_PER_SUPERFRAME: usize = 21;
 
 const COHERENT_LOOP_BW: f64 = 0.01;
@@ -41,6 +43,11 @@ const TYPE_HEADER: u8 = 0x5;
 
 const HEADER_BYTES: usize = 41;
 const CALLSIGN_LEN: usize = 8;
+const PACKET_BYTES: usize = 6;
+const SEGMENT_BYTES: usize = PACKET_BYTES - 1;
+const MESSAGE_BLOCKS: usize = 4;
+const MESSAGE_LEN: usize = MESSAGE_BLOCKS * SEGMENT_BYTES;
+const ALL_BLOCKS: u8 = (1 << MESSAGE_BLOCKS) - 1;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "dstar".to_owned(),
@@ -166,6 +173,13 @@ impl ChannelRx for DstarChannel {
         );
         self.tap(out);
     }
+
+    fn rejected(&self) -> u32 {
+        match self.source {
+            Source::Discriminator => self.decoder.rejected(),
+            Source::Coherent => self.coherent_decoder.rejected(),
+        }
+    }
 }
 
 fn feed(decoder: &mut Decoder, soft: &[f32], slicer: &Mapping, out: &mut ChannelOutputs) {
@@ -216,18 +230,22 @@ impl DstarChannel {
 }
 
 struct Decoder {
-    register: u32,
+    register: u128,
     bit: usize,
     frame: usize,
     synced: bool,
     expecting: usize,
     data: u32,
-    voice_bits: [bool; 72],
+    voice_bits: [bool; VOICE_BITS],
     packet: Vec<u8>,
     header: Vec<u8>,
-    text: [u8; 20],
+    heard: Vec<u8>,
+    text: [u8; MESSAGE_LEN],
+    blocks: u8,
     reported: Option<String>,
+    announced: Option<String>,
     vocoder: DstarVocoder,
+    rejected: u32,
 }
 
 impl Decoder {
@@ -239,17 +257,29 @@ impl Decoder {
             synced: false,
             expecting: 0,
             data: 0,
-            voice_bits: [false; 72],
-            packet: Vec::with_capacity(6),
+            voice_bits: [false; VOICE_BITS],
+            packet: Vec::with_capacity(PACKET_BYTES),
             header: Vec::with_capacity(HEADER_BYTES),
-            text: [b' '; 20],
+            heard: Vec::with_capacity(HEADER_BYTES),
+            text: [b' '; MESSAGE_LEN],
+            blocks: 0,
             reported: None,
+            announced: None,
             vocoder: DstarVocoder::new(),
+            rejected: 0,
         }
+    }
+
+    fn rejected(&self) -> u32 {
+        self.rejected
     }
 
     fn adopt(&mut self, other: &Self) {
         self.reported.clone_from(&other.reported);
+        self.announced.clone_from(&other.announced);
+        self.heard.clone_from(&other.heard);
+        self.text = other.text;
+        self.blocks = other.blocks;
     }
 
     fn reset(&mut self) {
@@ -260,35 +290,36 @@ impl Decoder {
         self.frame = 0;
         self.packet.clear();
         self.header.clear();
+        self.heard.clear();
+        self.text = [b' '; MESSAGE_LEN];
+        self.blocks = 0;
         self.reported = None;
+        self.announced = None;
         self.vocoder.reset();
     }
 
     fn push(&mut self, bit: bool, out: &mut ChannelOutputs) {
-        self.register = self.register << 1 | u32::from(bit);
+        self.register = self.register << 1 | u128::from(bit);
         if !self.synced {
-            let mask = (1u32 << SYNC_BITS) - 1;
-            let tolerance = if self.expecting > 0 {
-                SYNC_TOLERANCE
-            } else {
-                0
-            };
+            let expected = self.expecting > 0;
+            let tolerance = if expected { SYNC_TOLERANCE } else { 0 };
             self.expecting = self.expecting.saturating_sub(1);
-            if hamming_distance(u64::from(self.register & mask), u64::from(SYNC & mask))
-                <= tolerance
-            {
+            if hamming_distance((self.register & SYNC_MASK) as u64, u64::from(SYNC)) <= tolerance {
                 self.synced = true;
                 self.bit = 0;
                 self.frame = 1;
                 self.packet.clear();
+                if expected {
+                    self.sync_frame_voice(out);
+                }
             }
             return;
         }
         self.bit += 1;
-        if self.bit <= FRAME_BITS - DATA_BITS {
+        if self.bit <= VOICE_BITS {
             self.voice_bits[self.bit - 1] = bit;
         }
-        if self.bit > FRAME_BITS - DATA_BITS {
+        if self.bit > VOICE_BITS {
             self.data = self.data << 1 | u32::from(bit);
         }
         if self.bit < FRAME_BITS {
@@ -307,16 +338,24 @@ impl Decoder {
         }
     }
 
+    fn sync_frame_voice(&mut self, out: &mut ChannelOutputs) {
+        let voice = self.register >> SYNC_BITS;
+        for (index, slot) in self.voice_bits.iter_mut().enumerate() {
+            *slot = voice >> (VOICE_BITS - 1 - index) & 1 == 1;
+        }
+        self.vocoder.decode(&self.voice_bits, false, out);
+    }
+
     fn slow_data(&mut self, frame: usize, out: &mut ChannelOutputs) {
         for (i, mask) in SCRAMBLER.into_iter().enumerate() {
             self.packet
                 .push(((self.data >> (16 - i * 8)) as u8).reverse_bits() ^ mask);
         }
-        if frame.is_multiple_of(2) && self.packet.len() >= 6 {
-            let packet: Vec<u8> = self.packet.drain(..6).collect();
+        if frame.is_multiple_of(2) && self.packet.len() >= PACKET_BYTES {
+            let packet: Vec<u8> = self.packet.drain(..PACKET_BYTES).collect();
             self.packet.clear();
             self.packet_complete(&packet, out);
-        } else if self.packet.len() > 6 {
+        } else if self.packet.len() > PACKET_BYTES {
             self.packet.clear();
         }
     }
@@ -337,43 +376,61 @@ impl Decoder {
                 }
             }
             TYPE_TEXT => {
-                let slot = usize::from(packet[0] & 0x03) * 5;
-                for (i, &byte) in packet[1..5].iter().enumerate() {
-                    if slot + i < self.text.len() {
-                        self.text[slot + i] = byte;
-                    }
+                let block = usize::from(packet[0] & 0x03);
+                let slot = block * SEGMENT_BYTES;
+                self.text[slot..slot + SEGMENT_BYTES].copy_from_slice(&packet[1..PACKET_BYTES]);
+                self.blocks |= 1 << block;
+                if let Some(frame) = self.message_frame() {
+                    out.events.push(DecoderEvent::Dv(frame));
                 }
             }
             _ => {}
         }
     }
 
+    fn call(&self, offset: usize, len: usize) -> Option<String> {
+        let field = self.heard.get(offset..offset + len)?;
+        let text = String::from_utf8_lossy(field).trim().to_owned();
+        (!text.is_empty()).then_some(text)
+    }
+
+    fn call_frame(&self, kind: DvFrameKind) -> DvFrame {
+        let mut frame = DvFrame::new(DvMode::Dstar, kind);
+        frame.destination_call = self.call(19, CALLSIGN_LEN);
+        frame.source_call = self.call(27, CALLSIGN_LEN);
+        frame.via = self.call(3, CALLSIGN_LEN);
+        frame.group_call = Some(frame.destination_call.as_deref() == Some("CQCQCQ"));
+        frame
+    }
+
+    fn message_frame(&mut self) -> Option<DvFrame> {
+        if self.blocks != ALL_BLOCKS || self.heard.is_empty() {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&self.text).trim().to_owned();
+        if text.is_empty() || self.announced.as_deref() == Some(text.as_str()) {
+            return None;
+        }
+        self.announced = Some(text.clone());
+        let mut frame = self.call_frame(DvFrameKind::Data);
+        frame.text = Some(text);
+        Some(frame)
+    }
+
     fn header_frame(&mut self) -> Option<DvFrame> {
         let header = std::mem::take(&mut self.header);
         let (body, crc) = header.split_at(HEADER_BYTES - 2);
         if crc16_x25(body) != u16::from_le_bytes([crc[0], crc[1]]) {
+            self.rejected = self.rejected.saturating_add(1);
             return None;
         }
-        let call = |offset: usize, len: usize| {
-            let text = String::from_utf8_lossy(&header[offset..offset + len])
-                .trim()
-                .to_owned();
-            (!text.is_empty()).then_some(text)
-        };
-        let source = call(27, CALLSIGN_LEN);
+        self.heard = header;
+        let source = self.call(27, CALLSIGN_LEN);
         if self.reported == source && source.is_some() {
             return None;
         }
         self.reported.clone_from(&source);
-
-        let mut frame = DvFrame::new(DvMode::Dstar, DvFrameKind::Header);
-        frame.destination_call = call(19, CALLSIGN_LEN);
-        frame.source_call = source;
-        frame.via = call(3, CALLSIGN_LEN);
-        frame.group_call = Some(frame.destination_call.as_deref() == Some("CQCQCQ"));
-        let text = String::from_utf8_lossy(&self.text).trim().to_owned();
-        frame.text = (!text.is_empty()).then_some(text);
-        Some(frame)
+        Some(self.call_frame(DvFrameKind::Header))
     }
 }
 
@@ -417,25 +474,143 @@ mod tests {
     #[test]
     fn a_repeated_header_is_reported_once() {
         let iq = tx::transmission(&tx::Call::default(), INPUT_RATE_HZ);
-        assert_eq!(decode(&mut channel(), &iq).len(), 1);
+        let frames = decode(&mut channel(), &iq);
+        assert_eq!(
+            frames
+                .iter()
+                .filter(|frame| frame.kind == DvFrameKind::Header)
+                .count(),
+            1,
+            "{frames:?}"
+        );
     }
 
     #[test]
     fn decodes_ambe_voice_to_audio() {
-        let iq = tx::transmission(&tx::Call::default(), INPUT_RATE_HZ);
+        let superframes = 4;
+        let iq = tx::repeated_transmission(&tx::Call::default(), superframes, INPUT_RATE_HZ);
         let (_, audio) = decode_with_audio(&mut channel(), &iq);
-        assert!(
-            audio.len() >= 40 * 960,
-            "missing D-STAR audio: {}",
-            audio.len()
+        let acquired_without_voice = 1;
+        let expected = superframes * FRAMES_PER_SUPERFRAME - acquired_without_voice;
+        assert_eq!(
+            audio.len(),
+            expected * 960,
+            "the frame carrying the superframe sync lost its voice"
         );
         assert!(audio.iter().all(|sample| sample.is_finite()));
         assert!(audio.iter().all(|sample| sample.abs() <= 1.0));
     }
 
     #[test]
-    fn frame_sync_is_the_on_air_bit_string() {
-        assert_eq!(SYNC, 0b1010_1010_1011_0100_0110_1000);
+    fn a_header_that_fails_its_checksum_is_reported_as_rejected() {
+        let iq = tx::transmission_with_broken_header(&tx::Call::default(), INPUT_RATE_HZ);
+        let mut chan = channel();
+
+        let frames = decode(&mut chan, &iq);
+
+        assert!(
+            frames.is_empty(),
+            "a broken header was reported: {frames:?}"
+        );
+        assert!(
+            chan.rejected() > 0,
+            "a broken header was dropped in silence"
+        );
+    }
+
+    #[test]
+    fn the_frame_sync_is_the_published_preamble_and_two_maximal_length_sequences() {
+        const SPEC_TEN_BIT_SYNC: &str = "1010101010";
+        const SPEC_MAXIMAL_LENGTH_SEQUENCE: &str = "1101000";
+        let on_air = format!(
+            "{SPEC_TEN_BIT_SYNC}{SPEC_MAXIMAL_LENGTH_SEQUENCE}{SPEC_MAXIMAL_LENGTH_SEQUENCE}"
+        );
+        assert_eq!(on_air.len(), SYNC_BITS as usize);
+        let expected = on_air
+            .bytes()
+            .fold(0u32, |word, bit| word << 1 | u32::from(bit == b'1'));
+        assert_eq!(SYNC, expected);
+    }
+
+    #[test]
+    fn the_slow_data_scrambler_is_the_published_seven_stage_sequence() {
+        const SPEC_STAGES: usize = 7;
+        const SPEC_TAP: usize = 4;
+        let mut history = [true; SPEC_STAGES];
+        let mut on_air = [0u8; SCRAMBLER.len()];
+        for index in 0..SCRAMBLER.len() * 8 {
+            let bit = history[SPEC_STAGES - 1] ^ history[SPEC_TAP - 1];
+            history.rotate_right(1);
+            history[0] = bit;
+            on_air[index / 8] |= u8::from(bit) << (7 - index % 8);
+        }
+        let descrambled: [u8; SCRAMBLER.len()] = std::array::from_fn(|i| on_air[i].reverse_bits());
+        assert_eq!(descrambled, SCRAMBLER);
+    }
+
+    #[test]
+    fn slow_data_built_to_the_jarl_mini_header_rules_reports_the_call_and_its_message() {
+        const SPEC_MESSAGE: &str = "hello from SDR--";
+        let mut header = vec![0u8, 0, 0];
+        for field in ["DB0ABC B", "DB0ABC B", "CQCQCQ  ", "DL1ABC  "] {
+            header.extend_from_slice(field.as_bytes());
+        }
+        header.extend_from_slice(b"SDR ");
+        header.extend_from_slice(&crc16_x25(&header).to_le_bytes());
+        assert_eq!(header.len(), HEADER_BYTES);
+
+        let mut decoder = Decoder::new();
+        let mut out = ChannelOutputs::default();
+        for segment in header.chunks(SEGMENT_BYTES) {
+            let mut packet = [0x66u8; PACKET_BYTES];
+            packet[0] = TYPE_HEADER << 4 | segment.len() as u8;
+            packet[1..=segment.len()].copy_from_slice(segment);
+            decoder.packet_complete(&packet, &mut out);
+        }
+        let padded = format!("{SPEC_MESSAGE:<MESSAGE_LEN$}");
+        for (block, segment) in padded.as_bytes().chunks(SEGMENT_BYTES).enumerate() {
+            let mut packet = [0x66u8; PACKET_BYTES];
+            packet[0] = TYPE_TEXT << 4 | block as u8;
+            packet[1..PACKET_BYTES].copy_from_slice(segment);
+            decoder.packet_complete(&packet, &mut out);
+        }
+
+        let frames: Vec<&DvFrame> = out
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                DecoderEvent::Dv(frame) => Some(frame),
+                _ => None,
+            })
+            .collect();
+        let header_frame = frames
+            .iter()
+            .find(|frame| frame.kind == DvFrameKind::Header)
+            .expect("a header frame");
+        assert_eq!(header_frame.source_call.as_deref(), Some("DL1ABC"));
+        assert_eq!(header_frame.destination_call.as_deref(), Some("CQCQCQ"));
+        assert_eq!(header_frame.via.as_deref(), Some("DB0ABC B"));
+
+        let message = frames
+            .iter()
+            .find(|frame| frame.text.is_some())
+            .expect("the slow data message never reached a frame");
+        assert_eq!(message.text.as_deref(), Some(SPEC_MESSAGE));
+        assert_eq!(message.source_call.as_deref(), Some("DL1ABC"));
+
+        let before = out.events.len();
+        for (block, segment) in padded.as_bytes().chunks(SEGMENT_BYTES).enumerate() {
+            let mut packet = [0x66u8; PACKET_BYTES];
+            packet[0] = TYPE_TEXT << 4 | block as u8;
+            packet[1..PACKET_BYTES].copy_from_slice(segment);
+            decoder.packet_complete(&packet, &mut out);
+        }
+        assert_eq!(out.events.len(), before, "the message repeated");
+    }
+
+    #[test]
+    fn the_header_checksum_matches_the_published_crc_ccitt_check_value() {
+        assert_eq!(crc16_x25(b"123456789"), 0x906E);
     }
 
     #[test]

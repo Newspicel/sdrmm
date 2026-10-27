@@ -6,12 +6,13 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+publish = false
 
 [lints]
 workspace = true
 
 [dependencies]
 num-complex.workspace = true
+sdrmm-serial.workspace = true
 sdrmm-wire.workspace = true
-serialport.workspace = true
 thiserror.workspace = true

@@ -1,4 +1,5 @@
 use super::*;
+use sdrmm_wire::DeviceBackend;
 
 #[tokio::test]
 async fn templates_report_the_radios_that_can_run_them() {
@@ -256,7 +257,7 @@ struct HidesOpenRadios {
 }
 
 impl sdrmm_device::DeviceDriver for HidesOpenRadios {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> DeviceBackend {
         self.inner.id()
     }
 

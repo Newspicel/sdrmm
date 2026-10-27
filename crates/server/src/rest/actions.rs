@@ -49,9 +49,6 @@ pub(crate) fn act(
         }
         NodeAction::Retype { channel_type } => retype::retype(state, node, &channel_type, author)
             .map(|dropped| NodeActed::Retyped { dropped }),
-        NodeAction::TimeMachine(action) => {
-            capture::time_machine(state, node, action).map(NodeActed::TimeMachine)
-        }
         NodeAction::Playback(request) => {
             capture::playback(state, node, &request).map(NodeActed::Playback)
         }

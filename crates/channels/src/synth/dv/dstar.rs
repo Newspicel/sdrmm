@@ -41,14 +41,32 @@ pub fn transmission(call: &Call, rate: f64) -> Vec<Complex<f32>> {
 }
 
 #[must_use]
+pub fn transmission_with_broken_header(call: &Call, rate: f64) -> Vec<Complex<f32>> {
+    keyed_transmission(call, 2, true, rate)
+}
+
+#[must_use]
 pub fn repeated_transmission(call: &Call, superframes: usize, rate: f64) -> Vec<Complex<f32>> {
-    let header = header(call);
+    keyed_transmission(call, superframes, false, rate)
+}
+
+fn keyed_transmission(
+    call: &Call,
+    superframes: usize,
+    break_header: bool,
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    let mut header = header(call);
+    if break_header {
+        let last = header.len() - 1;
+        header[last] ^= 0xFF;
+    }
     let mut slow = Vec::new();
     for chunk in header.chunks(5) {
         slow.push(build_packet(0x50 | chunk.len() as u8, chunk));
     }
     let text = format!("{:<20}", call.text);
-    for (i, chunk) in text.as_bytes().chunks(4).take(4).enumerate() {
+    for (i, chunk) in text.as_bytes().chunks(5).take(4).enumerate() {
         slow.push(build_packet(0x40 | i as u8, chunk));
     }
 

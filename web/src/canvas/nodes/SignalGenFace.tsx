@@ -6,14 +6,12 @@ import { FaceFault } from "../../components/face/Fault";
 import { formatMhz } from "../../components/format";
 import { RadioSettings } from "../../components/RadioSettings";
 import { TuneTo } from "../../components/TuneTo";
-import type { PatchNode, PatchNodeOf } from "../../lib/types";
+import type { PatchNode } from "../../lib/types";
 import { useDevicePatch } from "../../lib/useDevicePatch";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
 import { SourceHealth } from "./SourceHealth";
-
-type SignalGenNodeData = PatchNodeOf<"signal_gen">["data"];
 
 export function SignalGenFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
@@ -21,20 +19,20 @@ export function SignalGenFace({ node }: { node: PatchNode }) {
   const active = useFaceActive();
   const set = workspace.devices.get(node.id) ?? null;
 
-  const editNode = (next: Partial<SignalGenNodeData>): void =>
+  const hold = (stopped: boolean): void =>
     workspace.edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (stored) =>
-        stored.kind === "signal_gen" ? { ...stored, data: { ...stored.data, ...next } } : stored,
+        stored.kind === "device" ? { ...stored, data: { ...stored.data, stopped } } : stored,
       ),
     }));
 
   const start = (): void => {
-    editNode({ running: true });
+    hold(false);
     workspace.apply();
   };
 
-  const stop = (): void => editNode({ running: false });
+  const stop = (): void => hold(true);
 
   if (set === null) {
     return (

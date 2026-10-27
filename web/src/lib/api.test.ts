@@ -4,8 +4,10 @@ import {
   client,
   decoderLogExportUrl,
   NMEA_DEVICES_KEY,
+  SERIAL_PORTS_KEY,
   nanoVnaMeasurementQuery,
   nmeaDevicesQuery,
+  serialPortsQuery,
   recordingDownloadUrl,
   saveNanoVnaMeasurement,
   TOOL_RUN_KEY,
@@ -61,6 +63,19 @@ describe("nmeaDevicesQuery", () => {
     await expect(query.queryFn?.({} as never)).resolves.toEqual(response);
     expect(get).toHaveBeenCalledOnce();
     expect(get).toHaveBeenCalledWith("/api/position/nmea-devices");
+  });
+
+  it("asks for every serial port, not the receivers the GPS picker narrows to", async () => {
+    const response = { devices: [{ path: "/dev/cu.usbserial-A901" }] };
+    const get = vi.spyOn(client, "GET").mockResolvedValue({
+      data: response,
+      response: new Response(null, { status: 200 }),
+    });
+    const query = serialPortsQuery();
+
+    expect(query.queryKey).toBe(SERIAL_PORTS_KEY);
+    await expect(query.queryFn?.({} as never)).resolves.toEqual(response);
+    expect(get).toHaveBeenCalledWith("/api/serial/ports");
   });
 });
 

@@ -1,5 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
+import { Button } from "../components/BaseControls";
+import { deepEqual } from "../lib/deepEqual";
 import type { PatchNode, RackLayout } from "../lib/types";
 import { useWorkspaceContext } from "./context";
 import {
@@ -15,6 +17,13 @@ import {
 import { FACES, faceSize } from "./nodes";
 
 const SETTLE_MS = 500;
+
+const NUDGES: Record<string, { dx: number; dy: number }> = {
+  ArrowLeft: { dx: -1, dy: 0 },
+  ArrowRight: { dx: 1, dy: 0 },
+  ArrowUp: { dx: 0, dy: -1 },
+  ArrowDown: { dx: 0, dy: 1 },
+};
 
 interface Preview {
   layout: RackLayout;
@@ -35,9 +44,7 @@ export function Rack() {
   const gesture = useRef<Gesture | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
 
-  if (preview?.dropped === true && sameRack(workspace.rack, preview.layout)) {
-    setPreview(null);
-  }
+  const landed = preview !== null && preview.dropped && sameRack(workspace.rack, preview.layout);
 
   useEffect(() => {
     if (preview === null || !preview.dropped) {
@@ -98,6 +105,9 @@ export function Rack() {
   );
 
   const begin = (event: React.PointerEvent, node: string, mode: Gesture["mode"]) => {
+    if (event.button !== 0) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -110,7 +120,24 @@ export function Rack() {
     };
   };
 
-  const slots = (preview?.layout ?? workspace.rack).slots ?? [];
+  const nudge = (event: React.KeyboardEvent, node: string, mode: Gesture["mode"]) => {
+    const step = NUDGES[event.key];
+    if (step === undefined) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    workspace.edit((snapshot) => ({
+      ...snapshot,
+      rack: applyGesture(
+        { node, mode, originX: 0, originY: 0, base: snapshot.rack ?? {} },
+        step.dx,
+        step.dy,
+      ),
+    }));
+  };
+
+  const slots = (landed ? workspace.rack : (preview?.layout ?? workspace.rack)).slots ?? [];
   if (slots.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center bg-bg">
@@ -148,7 +175,7 @@ export function Rack() {
           >
             <div className="relative max-h-full max-w-full" style={faceSize(node)}>
               <RackFace node={node} />
-              <Grips node={slot.node} onBegin={begin} />
+              <Grips node={slot.node} onBegin={begin} onNudge={nudge} />
             </div>
           </div>
         );
@@ -165,36 +192,61 @@ const RackFace = memo(function RackFace({ node }: { node: PatchNode }) {
 function Grips({
   node,
   onBegin,
+  onNudge,
 }: {
   node: string;
   onBegin: (event: React.PointerEvent, node: string, mode: Gesture["mode"]) => void;
+  onNudge: (event: React.KeyboardEvent, node: string, mode: Gesture["mode"]) => void;
 }) {
-  const edge = (mode: RackEdge, className: string, label: string) => (
-    <span
-      aria-hidden
-      title={label}
+  const grip = (mode: Gesture["mode"], className: string, label: string, hint: string) => (
+    <Button
+      type="button"
+      aria-label={`${label} ${node}`}
+      aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
+      title={hint}
       className={`absolute ${className}`}
       onPointerDown={(event) => onBegin(event, node, mode)}
+      onKeyDown={(event) => onNudge(event, node, mode)}
     />
   );
   return (
     <>
-      {edge("n", "inset-x-0 top-0 h-1.5 cursor-ns-resize", "Drag the boundary above")}
-      {edge("s", "inset-x-0 bottom-0 h-1.5 cursor-ns-resize", "Drag the boundary below")}
-      {edge("w", "inset-y-0 left-0 w-1.5 cursor-ew-resize", "Drag the boundary to the left")}
-      {edge("e", "inset-y-0 right-0 w-1.5 cursor-ew-resize", "Drag the boundary to the right")}
-      <span
-        aria-hidden
-        title="Move: drop on another face to trade places"
-        className="absolute top-1.5 right-14 left-1.5 h-5 cursor-move"
-        onPointerDown={(event) => onBegin(event, node, "move")}
-      />
-      <span
-        aria-hidden
-        title="Resize"
-        className="absolute right-0 bottom-0 size-3.5 cursor-se-resize border-r-2 border-b-2 border-line-strong"
-        onPointerDown={(event) => onBegin(event, node, "corner")}
-      />
+      {grip(
+        "n",
+        "inset-x-0 top-0 h-1.5 cursor-ns-resize",
+        "Boundary above",
+        "Drag the boundary above",
+      )}
+      {grip(
+        "s",
+        "inset-x-0 bottom-0 h-1.5 cursor-ns-resize",
+        "Boundary below",
+        "Drag the boundary below",
+      )}
+      {grip(
+        "w",
+        "inset-y-0 left-0 w-1.5 cursor-ew-resize",
+        "Boundary left of",
+        "Drag the boundary to the left",
+      )}
+      {grip(
+        "e",
+        "inset-y-0 right-0 w-1.5 cursor-ew-resize",
+        "Boundary right of",
+        "Drag the boundary to the right",
+      )}
+      {grip(
+        "move",
+        "top-1.5 right-14 left-1.5 h-5 cursor-move",
+        "Move",
+        "Move: drop on another face to trade places",
+      )}
+      {grip(
+        "corner",
+        "right-0 bottom-0 size-3.5 cursor-se-resize border-r-2 border-b-2 border-line-strong",
+        "Resize",
+        "Resize",
+      )}
     </>
   );
 }
@@ -235,5 +287,5 @@ function clamp(value: number, low: number, high: number): number {
 }
 
 function sameRack(a: RackLayout, b: RackLayout): boolean {
-  return JSON.stringify(a.slots ?? []) === JSON.stringify(b.slots ?? []);
+  return deepEqual(a.slots ?? [], b.slots ?? []);
 }

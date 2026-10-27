@@ -635,7 +635,9 @@ fn read_route_information(p: &mut Per) -> Option<String> {
 }
 
 fn read_route_clearance(p: &mut Per) -> Option<Value> {
-    let present: Vec<bool> = (0..9).map(|_| p.bit() == Some(1)).collect();
+    let present: Vec<bool> = (0..9)
+        .map(|_| p.bit().map(|bit| bit == 1))
+        .collect::<Option<Vec<bool>>>()?;
     let mut out = serde_json::Map::new();
     if present[0] {
         out.insert("departure_airport".into(), json!(p.ia5(4, 4)?));
@@ -1895,6 +1897,19 @@ mod tests {
 #[cfg(test)]
 mod route_tests {
     use super::*;
+
+    #[test]
+    fn a_route_clearance_that_runs_out_of_presence_bits_is_rejected() {
+        let mut store = Vec::new();
+        let mut truncated = Per::new(&[0x00], &mut store);
+        assert_eq!(read_route_clearance(&mut truncated), None);
+        let mut store = Vec::new();
+        let mut whole = Per::new(&[0x00, 0x00], &mut store);
+        assert_eq!(
+            read_route_clearance(&mut whole),
+            Some(Value::Object(serde_json::Map::new()))
+        );
+    }
 
     #[test]
     fn cleared_route_decodes() {

@@ -49,6 +49,17 @@ const DT_UNIFIED_SINGLE_BLOCK_DATA: u8 = 0xB;
 /// trusted. Every row and column of the BPTC block still has to check out either way, which is a
 /// hundred parity bits of evidence. Insisting on an untouched block on top of that would drop
 /// about one burst in thirty off the air, and a channel grant is a single burst.
+const LCSS_FIRST: u32 = 0b01;
+const LCSS_LAST: u32 = 0b10;
+const LCSS_CONTINUATION: u32 = 0b11;
+
+const SHORT_LC_BITS: usize = 68;
+
+pub(crate) const RATE_ONE_CODED_BITS: usize = 196;
+pub(crate) const RATE_ONE_DATA_BITS: usize = 192;
+pub(crate) const RATE_ONE_PAD_AT: usize = 96;
+pub(crate) const RATE_ONE_PAD_BITS: usize = RATE_ONE_CODED_BITS - RATE_ONE_DATA_BITS;
+
 const MAX_UNVERIFIED_REPAIRS: u32 = 4;
 
 /// How many control blocks in a row have to arrive whole yet fail the checksum before the site is
@@ -207,6 +218,10 @@ impl ChannelRx for DmrChannel {
             self.decoder.push(symbol, out);
         }
     }
+
+    fn rejected(&self) -> u32 {
+        self.decoder.rejected()
+    }
 }
 
 impl DmrChannel {
@@ -256,6 +271,7 @@ struct Decoder {
     speaking_hold: usize,
     tier_three: bool,
     masked_sums: u32,
+    rejected: u32,
 }
 
 #[derive(Clone)]
@@ -314,7 +330,16 @@ impl Decoder {
             speaking_hold: 0,
             tier_three: false,
             masked_sums: 0,
+            rejected: 0,
         }
+    }
+
+    fn rejected(&self) -> u32 {
+        self.rejected.saturating_add(self.short_lc.rejected())
+    }
+
+    fn reject(&mut self) {
+        self.rejected = self.rejected.saturating_add(1);
     }
 
     fn reset(&mut self) {
@@ -330,6 +355,8 @@ impl Decoder {
         self.mbc_headers.fill(None);
         self.speaking = None;
         self.speaking_hold = 0;
+        self.masked_sums = 0;
+        self.tier_three = false;
     }
 
     fn push(&mut self, symbol: f32, out: &mut ChannelOutputs) {
@@ -378,8 +405,7 @@ impl Decoder {
                 };
                 self.countdown = TRAILING_SYMBOLS;
                 if let Some(index) = slot_index(slot) {
-                    self.slots[index].embedded.clear();
-                    self.slots[index].embedded_errors = 0;
+                    self.drop_embedded(index);
                     self.followers[index] = 0;
                     self.follower_countdown[index] = 0;
                 }
@@ -514,7 +540,10 @@ impl Decoder {
     fn data_burst(&mut self, index: usize, slot: Option<u8>) -> Option<DvFrame> {
         let slot_type = u64::from(bits_to_u32(&self.bits, 98, 10)) << 10
             | u64::from(bits_to_u32(&self.bits, 156, 10));
-        let (info, slot_errors) = CyclicCode::GOLAY_20_8.decode(slot_type)?;
+        let Some((info, slot_errors)) = CyclicCode::GOLAY_20_8.decode(slot_type) else {
+            self.reject();
+            return None;
+        };
         let colour = (info >> 4) as u16 & 0x0F;
         let data_type = info as u8 & 0x0F;
 
@@ -542,7 +571,10 @@ impl Decoder {
             frame.errors_corrected = slot_errors;
             return Some(frame);
         }
-        let (payload, payload_errors) = Bptc196::decode(&coded)?;
+        let Some((payload, payload_errors)) = Bptc196::decode(&coded) else {
+            self.reject();
+            return None;
+        };
         let errors = slot_errors + payload_errors;
 
         let mut frame = match data_type {
@@ -589,6 +621,7 @@ impl Decoder {
         let expected = dmr_crc16(&self.bytes) ^ mask;
         let verified = expected == bits_to_u32(payload, 80, 16) as u16;
         if !self.keep_unverified(verified, errors, MAX_UNVERIFIED_REPAIRS) {
+            self.reject();
             return None;
         }
         let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
@@ -625,6 +658,7 @@ impl Decoder {
             *byte ^= m;
         }
         if rs129_parity(lc) != received {
+            self.reject();
             return None;
         }
         let mut frame = self.decode_lc(index, payload);
@@ -814,11 +848,8 @@ impl Decoder {
         let lcss = info & 0b11;
 
         match lcss {
-            0b01 => {
-                self.slots[index].embedded.clear();
-                self.slots[index].embedded_errors = 0;
-            }
-            0b10 | 0b11 if !self.slots[index].embedded.is_empty() => {}
+            LCSS_FIRST => self.drop_embedded(index),
+            LCSS_LAST | LCSS_CONTINUATION if !self.slots[index].embedded.is_empty() => {}
             _ => return None,
         }
         self.slots[index]
@@ -826,13 +857,21 @@ impl Decoder {
             .extend(self.bits[116..148].iter().copied());
         self.slots[index].embedded_errors += errors;
 
-        if lcss != 0b10 {
+        if lcss != LCSS_LAST {
+            if self.slots[index].embedded.len() >= Bptc128::CODED_BITS {
+                self.drop_embedded(index);
+                self.reject();
+            }
             return None;
         }
-        let coded: [bool; Bptc128::CODED_BITS] =
-            self.slots[index].embedded.as_slice().try_into().ok()?;
-        let (data, bptc_errors) = Bptc128::decode(&coded)?;
-        self.slots[index].embedded.clear();
+        let assembled: Option<[bool; Bptc128::CODED_BITS]> =
+            self.slots[index].embedded.as_slice().try_into().ok();
+        let fragment_errors = self.slots[index].embedded_errors;
+        self.drop_embedded(index);
+        let Some((data, bptc_errors)) = assembled.and_then(|coded| Bptc128::decode(&coded)) else {
+            self.reject();
+            return None;
+        };
 
         let mut lc = [false; LC_BITS];
         let mut checksum = 0u32;
@@ -848,6 +887,7 @@ impl Decoder {
         pack_bytes(&lc, &mut self.bytes);
         let sum = self.bytes.iter().map(|&b| u32::from(b)).sum::<u32>() % 31;
         if sum != checksum {
+            self.reject();
             return None;
         }
         let mut frame = self.decode_lc(index, &lc);
@@ -855,8 +895,13 @@ impl Decoder {
         frame.kind = DvFrameKind::Voice;
         frame.slot = slot;
         frame.color_code = Some(colour);
-        frame.errors_corrected = self.slots[index].embedded_errors + bptc_errors;
+        frame.errors_corrected = fragment_errors + bptc_errors;
         Some(frame)
+    }
+
+    fn drop_embedded(&mut self, index: usize) {
+        self.slots[index].embedded.clear();
+        self.slots[index].embedded_errors = 0;
     }
 }
 
@@ -868,6 +913,7 @@ fn slot_index(slot: Option<u8>) -> Option<usize> {
 #[derive(Default)]
 struct ShortLc {
     payload: Vec<bool>,
+    rejected: u32,
 }
 
 impl ShortLc {
@@ -875,47 +921,67 @@ impl ShortLc {
         self.payload.clear();
     }
 
+    fn rejected(&self) -> u32 {
+        self.rejected
+    }
+
+    fn reject(&mut self) {
+        self.rejected = self.rejected.saturating_add(1);
+    }
+
     fn push(&mut self, lcss: u8, payload: [bool; 17]) -> Option<DvFrame> {
-        match lcss {
-            0b01 => self.payload.clear(),
-            0b11 | 0b10 if !self.payload.is_empty() => {}
+        match u32::from(lcss) {
+            LCSS_FIRST => self.payload.clear(),
+            LCSS_CONTINUATION | LCSS_LAST if !self.payload.is_empty() => {}
             _ => return None,
         }
         self.payload.extend(payload);
-        if lcss != 0b10 || self.payload.len() != 68 {
+        if u32::from(lcss) != LCSS_LAST {
+            if self.payload.len() >= SHORT_LC_BITS {
+                self.payload.clear();
+                self.reject();
+            }
             return None;
         }
-
-        let mut matrix = [[false; 17]; 4];
-        for column in 0..17 {
-            for (row, cells) in matrix.iter_mut().enumerate() {
-                cells[column] = self.payload[column * 4 + row];
-            }
-        }
+        let assembled: Option<[bool; SHORT_LC_BITS]> = self.payload.as_slice().try_into().ok();
         self.payload.clear();
-        for row in &mut matrix[..3] {
-            ParityCode::HAMMING_17_12.decode(row)?;
+        let frame = assembled.as_ref().and_then(short_lc_message);
+        if frame.is_none() {
+            self.reject();
         }
-        for column in 0..17 {
-            if matrix
-                .iter()
-                .fold(false, |parity, row| parity ^ row[column])
-            {
-                return None;
-            }
+        frame
+    }
+}
+
+fn short_lc_message(payload: &[bool; SHORT_LC_BITS]) -> Option<DvFrame> {
+    let mut matrix = [[false; 17]; 4];
+    for column in 0..17 {
+        for (row, cells) in matrix.iter_mut().enumerate() {
+            cells[column] = payload[column * 4 + row];
         }
-        let mut message = [false; 36];
-        for (target, bit) in message
-            .iter_mut()
-            .zip(matrix[..3].iter().flat_map(|row| &row[..12]))
+    }
+    for row in &mut matrix[..3] {
+        ParityCode::HAMMING_17_12.decode(row)?;
+    }
+    for column in 0..17 {
+        if matrix
+            .iter()
+            .fold(false, |parity, row| parity ^ row[column])
         {
-            *target = *bit;
-        }
-        if crc8_dmr(&message[..28]) != bits_to_u32(&message, 28, 8) as u8 {
             return None;
         }
-        Some(decode_short_lc(&message[..28]))
     }
+    let mut message = [false; 36];
+    for (target, bit) in message
+        .iter_mut()
+        .zip(matrix[..3].iter().flat_map(|row| &row[..12]))
+    {
+        *target = *bit;
+    }
+    if crc8_dmr(&message[..28]) != bits_to_u32(&message, 28, 8) as u8 {
+        return None;
+    }
+    Some(decode_short_lc(&message[..28]))
 }
 
 fn crc8_dmr(bits: &[bool]) -> u8 {
@@ -1216,15 +1282,19 @@ fn decode_capacity_plus_status(frame: &mut DvFrame, payload: &[bool]) {
     });
 }
 
+/// Advantage mode packs its two shortened talkgroups straight after the channel number rather
+/// than starting them on the next byte.
+fn advantage_mode_talkgroups(payload: &[bool]) -> [u32; 2] {
+    [bits_to_u32(payload, 28, 10), bits_to_u32(payload, 38, 10)]
+}
+
 fn decode_capacity_max_update(frame: &mut DvFrame, opcode: u8, payload: &[bool]) {
     let channel = bits_to_u32(payload, 16, 12) as u16;
     frame.channel = Some(channel);
     let talkgroups = if opcode == 33 {
         [bits_to_u32(payload, 32, 24), bits_to_u32(payload, 56, 24)]
     } else {
-        // Advantage mode packs its two shortened talkgroups straight after the channel number
-        // rather than starting them on the next byte.
-        [bits_to_u32(payload, 28, 10), bits_to_u32(payload, 38, 10)]
+        advantage_mode_talkgroups(payload)
     };
     for (index, destination) in talkgroups.into_iter().enumerate() {
         if destination == 0 {
@@ -1601,10 +1671,10 @@ fn decode_rate_three_quarter(burst: &[bool]) -> Option<[bool; TRELLIS_DATA_BITS]
     Some(out)
 }
 
-fn decode_rate_one(coded: &[bool; 196]) -> [bool; 192] {
-    let mut out = [false; 192];
-    out[..96].copy_from_slice(&coded[..96]);
-    out[96..].copy_from_slice(&coded[100..]);
+fn decode_rate_one(coded: &[bool; RATE_ONE_CODED_BITS]) -> [bool; RATE_ONE_DATA_BITS] {
+    let mut out = [false; RATE_ONE_DATA_BITS];
+    out[..RATE_ONE_PAD_AT].copy_from_slice(&coded[..RATE_ONE_PAD_AT]);
+    out[RATE_ONE_PAD_AT..].copy_from_slice(&coded[RATE_ONE_PAD_AT + RATE_ONE_PAD_BITS..]);
     out
 }
 

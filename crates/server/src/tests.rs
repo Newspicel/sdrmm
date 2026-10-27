@@ -8,9 +8,9 @@ use http_body_util::BodyExt;
 use sdrmm_wire::{
     AdsbMessage, ApiError, AprsPacket, Bookmark, CapturedImagesResponse, ChannelParams,
     ChannelSettings, ChannelTypesResponse, CreatedRowId, DecodedRecord, DecoderEvent,
-    DecoderLogEntry, DecoderLogResponse, DeletedCount, DeviceSettings, NetworkExportStatus,
-    NfmParams, NmeaDevicesResponse, PresetInfo, PresetSnapshot, RecordingStatus,
-    RecordingsResponse, SavedRadio, StateSnapshot, TimeMachineStatus,
+    DecoderLogEntry, DecoderLogResponse, DeletedCount, DeviceBackend, DeviceSettings,
+    DevicesResponse, NetworkExportStatus, NfmParams, PreRollStatus, PresetInfo, PresetSnapshot,
+    RecordingStatus, RecordingsResponse, SavedRadio, SerialDevicesResponse, StateSnapshot,
 };
 use tower::ServiceExt;
 
@@ -122,8 +122,13 @@ fn tls_router_with_state() -> (Router, AppState) {
 
 pub(crate) fn state_over(store: Arc<Store>) -> AppState {
     let mut registry = sdrmm_device::DeviceRegistry::new();
-    registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
-    registry.register(1, Box::new(sdrmm_device_siggen::SigGenDriver::new()));
+    registry.register(
+        1,
+        Box::new(
+            sdrmm_device_virtual::VirtualDriver::new()
+                .with_signals(&sdrmm_channels::synth::catalog::CATALOG),
+        ),
+    );
     let mut state = AppState::new(Engine::with_registry(registry, None), store);
     let mut tools = sdrmm_tools::ToolRegistry::default();
     tools
@@ -193,8 +198,13 @@ fn recording_router(dir: &Path) -> Router {
 
 fn recording_state(dir: &Path) -> AppState {
     let mut registry = sdrmm_device::DeviceRegistry::new();
-    registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
-    registry.register(1, Box::new(sdrmm_device_siggen::SigGenDriver::new()));
+    registry.register(
+        1,
+        Box::new(
+            sdrmm_device_virtual::VirtualDriver::new()
+                .with_signals(&sdrmm_channels::synth::catalog::CATALOG),
+        ),
+    );
     registry.register(
         1,
         Box::new(sdrmm_device_recording::RecordingDriver::new(Some(
@@ -265,27 +275,22 @@ fn radio_node(device_id: &str) -> String {
 }
 
 async fn open_radio(app: &Router, device_id: &str) -> u32 {
-    let (backend, key) = device_id
+    let (driver, key) = device_id
         .split_once(':')
         .expect("a device id is driver:key");
+    let backend = DeviceBackend::parse(driver).expect("a known backend");
     let node = radio_node(device_id);
     let workspace = workspaces(app).await.active.expect("seeded workspace");
     let mut snapshot = workspace_detail(app, workspace).await.snapshot;
     if snapshot.graph.node(&node).is_none() {
-        let body = if backend == sdrmm_wire::RECORDING_DRIVER_ID {
-            sdrmm_wire::NodeBody::Recording(sdrmm_wire::RecordingNode {
-                recording: Some(key.to_owned()),
-            })
-        } else {
-            sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
-                device: Some(sdrmm_wire::DeviceRef {
-                    backend: backend.to_owned(),
-                    serial: None,
-                    key: Some(key.to_owned()),
-                }),
-                ..sdrmm_wire::DeviceNode::default()
-            })
-        };
+        let body = sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
+            device: Some(sdrmm_wire::DeviceRef {
+                backend,
+                serial: None,
+                key: Some(key.to_owned()),
+            }),
+            ..sdrmm_wire::DeviceNode::default()
+        });
         snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
             id: node,
             body,
@@ -513,7 +518,10 @@ async fn record(app: &Router, ds: u32, on: bool) -> Option<sdrmm_wire::Recording
     }
     snapshot.graph.nodes.push(at(
         &recorder,
-        sdrmm_wire::NodeBody::Recorder(sdrmm_wire::RecorderNode { recording: on }),
+        sdrmm_wire::NodeBody::Recorder(sdrmm_wire::RecorderNode {
+            recording: on,
+            pre_roll_s: 0,
+        }),
     ));
     snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
         from: sdrmm_wire::PortRef {
@@ -747,10 +755,10 @@ async fn wait_for_baseband_samples(app: &Router, ds: u32, ch: u32, min: u64) {
     }
 }
 
-fn history_node(armed: bool) -> sdrmm_wire::NodeBody {
-    sdrmm_wire::NodeBody::TimeMachine(sdrmm_wire::TimeMachineNode {
-        history_seconds: 1,
-        armed,
+fn pre_roll_node(pre_roll_s: u32, recording: bool) -> sdrmm_wire::NodeBody {
+    sdrmm_wire::NodeBody::Recorder(sdrmm_wire::RecorderNode {
+        recording,
+        pre_roll_s,
     })
 }
 
@@ -767,25 +775,22 @@ async fn edit_node(app: &Router, id: &str, body: sdrmm_wire::NodeBody) {
     put_workspace(app, &snapshot).await;
 }
 
-async fn history_of(app: &Router, ds: u32) -> Option<TimeMachineStatus> {
+async fn history_of(app: &Router, ds: u32) -> Option<PreRollStatus> {
     get_state(app)
         .await
         .device_sets
         .iter()
         .find(|set| set.id == ds)
-        .and_then(|set| set.time_machine.clone())
+        .and_then(|set| set.pre_roll.clone())
 }
 
-async fn wait_for_history(app: &Router, ds: u32) -> TimeMachineStatus {
+async fn wait_for_history(app: &Router, ds: u32) -> PreRollStatus {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if let Some(history) = history_of(app, ds).await {
             return history;
         }
-        assert!(
-            Instant::now() < deadline,
-            "the patch never armed the time machine"
-        );
+        assert!(Instant::now() < deadline, "the patch never held a pre-roll");
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
@@ -795,19 +800,10 @@ async fn wait_for_no_history(app: &Router, ds: u32) {
     while history_of(app, ds).await.is_some() {
         assert!(
             Instant::now() < deadline,
-            "the time machine never let go of the radio"
+            "the recorder never let go of the radio"
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-}
-
-async fn time_machine(app: &Router, node: &str, action: &str) -> (StatusCode, Bytes) {
-    act_on(
-        app,
-        node,
-        serde_json::json!({"action": "time_machine", "with": action}),
-    )
-    .await
 }
 
 fn adsb_record(at: &str, device_set: u32, icao: &str, callsign: &str) -> DecodedRecord {
@@ -846,6 +842,18 @@ fn awkward_record(at: &str) -> DecodedRecord {
             ..AprsPacket::default()
         }),
         view: None,
+    }
+}
+
+fn formula_record(at: &str) -> DecodedRecord {
+    DecodedRecord {
+        event: DecoderEvent::Aprs(AprsPacket {
+            source: "=1+1".to_string(),
+            destination: "APRS".to_string(),
+            tnc2: "=1+1>APRS:hi".to_string(),
+            ..AprsPacket::default()
+        }),
+        ..awkward_record(at)
     }
 }
 
@@ -943,7 +951,7 @@ fn virtual_snapshot(key: &str, taps: &[(&str, &str, &str)]) -> sdrmm_wire::Works
         panic!("the default workspace opens with a receiver")
     };
     node.device = Some(sdrmm_wire::DeviceRef {
-        backend: "virtual".to_string(),
+        backend: DeviceBackend::Virtual,
         serial: None,
         key: Some(key.to_string()),
     });
@@ -993,7 +1001,7 @@ async fn put_workspace(app: &Router, snapshot: &sdrmm_wire::WorkspaceSnapshot) -
     workspace
 }
 
-async fn store_siggen_workspace(app: &Router) -> i64 {
+async fn store_band_workspace(app: &Router) -> i64 {
     put_active_workspace(app, &virtual_snapshot("band", &[("voice", "nfm", "iq")])).await
 }
 

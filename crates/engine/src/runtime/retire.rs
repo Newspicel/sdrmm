@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use rtrb::{Producer, RingBuffer};
+use rtrb::{Producer, RingBuffer, chunks::WriteChunkUninit};
 
 pub(crate) struct Reclaimer<T> {
     queue: Producer<T>,
@@ -15,9 +15,11 @@ pub(crate) struct Reclaimer<T> {
     worker: Option<JoinHandle<()>>,
 }
 
+pub(crate) const QUEUE: usize = 64;
+
 impl<T: Send + 'static> Reclaimer<T> {
     pub(crate) fn new(mut release: impl FnMut(T) + Send + 'static) -> std::io::Result<Self> {
-        let (queue, mut receiver) = RingBuffer::new(64);
+        let (queue, mut receiver) = RingBuffer::new(QUEUE);
         let stopped = Arc::new(AtomicBool::new(false));
         let stop = stopped.clone();
         let worker = std::thread::Builder::new()
@@ -43,12 +45,13 @@ impl<T: Send + 'static> Reclaimer<T> {
         })
     }
 
-    pub(crate) fn available(&mut self) -> bool {
-        self.queue.slots() > 0
-            && self
-                .worker
-                .as_ref()
-                .is_some_and(|worker| !worker.is_finished())
+    pub(crate) fn slot(&mut self) -> Option<Slot<'_, T>> {
+        let worker = self.worker.as_ref()?;
+        if worker.is_finished() {
+            return None;
+        }
+        let chunk = self.queue.write_chunk_uninit(1).ok()?;
+        Some(Slot { chunk, worker })
     }
 
     pub(crate) fn room(&self) -> usize {
@@ -62,13 +65,18 @@ impl<T: Send + 'static> Reclaimer<T> {
             0
         }
     }
+}
 
-    pub(crate) fn retire(&mut self, value: T) {
-        let result = self.queue.push(value);
-        debug_assert!(result.is_ok());
-        if let Some(worker) = &self.worker {
-            worker.thread().unpark();
-        }
+pub(crate) struct Slot<'a, T> {
+    chunk: WriteChunkUninit<'a, T>,
+    worker: &'a JoinHandle<()>,
+}
+
+impl<T> Slot<'_, T> {
+    pub(crate) fn retire(self, value: T) {
+        let Self { chunk, worker } = self;
+        chunk.fill_from_iter(std::iter::once(value));
+        worker.thread().unpark();
     }
 }
 
@@ -105,12 +113,36 @@ mod tests {
         let (entered, waiting) = mpsc::channel();
         let (release, resume) = mpsc::channel();
         let mut reclaimer = Reclaimer::new(drop).expect("worker");
-        assert!(reclaimer.available());
-        reclaimer.retire(BlockingDrop(entered, resume));
+        let slot = reclaimer.slot().expect("a free slot");
+        slot.retire(BlockingDrop(entered, resume));
         waiting
             .recv_timeout(Duration::from_secs(5))
             .expect("cleanup started");
-        assert!(reclaimer.available());
+        assert!(reclaimer.slot().is_some());
+        release.send(()).expect("release cleanup");
+        drop(reclaimer);
+    }
+
+    #[test]
+    fn a_full_queue_hands_out_no_slot_so_nothing_is_released_by_the_caller() {
+        let (entered, waiting) = mpsc::channel();
+        let (release, resume) = mpsc::channel();
+        let mut reclaimer = Reclaimer::new(drop).expect("worker");
+        reclaimer
+            .slot()
+            .expect("a free slot")
+            .retire(Some(BlockingDrop(entered, resume)));
+        waiting
+            .recv_timeout(Duration::from_secs(5))
+            .expect("cleanup started");
+        let mut queued = 0;
+        while let Some(slot) = reclaimer.slot() {
+            slot.retire(None);
+            queued += 1;
+            assert!(queued <= QUEUE, "the queue never filled");
+        }
+        assert_eq!(reclaimer.room(), 0);
+        assert!(reclaimer.slot().is_none());
         release.send(()).expect("release cleanup");
         drop(reclaimer);
     }

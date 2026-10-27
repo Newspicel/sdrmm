@@ -7,8 +7,12 @@
       "nodes": [
         {
           "id": "file",
-          "kind": "recording",
-          "data": {},
+          "kind": "device",
+          "data": {
+            "device": {
+              "backend": "recording"
+            }
+          },
           "position": {
             "x": 0.0,
             "y": 0.0
@@ -55,10 +59,10 @@
         },
         {
           "id": "tm",
-          "kind": "time_machine",
+          "kind": "recorder",
           "data": {
-            "history_seconds": 30,
-            "armed": false
+            "recording": false,
+            "pre_roll_s": 30
           },
           "position": {
             "x": 520.0,
@@ -77,7 +81,7 @@
           "id": "note",
           "kind": "note",
           "data": {
-            "text": "## Record and replay\n\n**Recording** plays an IQ file back as if it were a radio. Pick a file on it to start: nothing else here needs hardware.\n\n**Scope** draws the file's spectrum. Scrub the Recording node and the waterfall follows.\n\n**Channel** demodulates one signal out of it.\n\n**Baseband scope** shows the channel's constellation and eye. This is how you tell a locked decoder from a guessing one.\n\n**Baseband recorder** keeps just that channel, already down-converted, which is far smaller than the whole band. Record an hour of one channel rather than an hour of the whole window.\n\n**Time machine** holds the last 30 seconds of IQ so you can go back over something you just missed. It is wired here to show you where it goes, but it earns its place on a live Device, not on a file that you can already scrub.\n\n**Speaker** plays the audio.\n\nSwap the Recording node for a Device and this becomes a live receiver that keeps what it hears."
+            "text": "## Record and replay\n\nThe **Device** node plays an IQ file back as if it were a radio. Pick a recording on it to start: nothing else here needs hardware.\n\n**Scope** draws the file's spectrum. Scrub the Device node and the waterfall follows.\n\n**Channel** demodulates one signal out of it.\n\n**Baseband scope** shows the channel's constellation and eye. This is how you tell a locked decoder from a guessing one.\n\n**Baseband recorder** keeps just that channel, already down-converted, which is far smaller than the whole band. Record an hour of one channel rather than an hour of the whole window.\n\n**Recorder** with a 30 s **Pre-roll** holds the last seconds of IQ, so Record saves what you just missed. It is wired here to show you where it goes, but it earns its place on a live Device, not on a file you can already scrub.\n\n**Speaker** plays the audio.\n\nPick a radio on the Device instead of a file and this becomes a live receiver that keeps what it hears."
           },
           "position": {
             "x": 0.0,

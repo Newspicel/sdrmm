@@ -1,10 +1,16 @@
 import { useState } from "react";
 import { FaceStats, Stat } from "../../components/face/Stats";
-import { type VideoSignal, VideoView, videoSignalText } from "../../components/VideoView";
+import {
+  useVideoDrops,
+  type VideoSignal,
+  VideoView,
+  videoSignalText,
+} from "../../components/VideoView";
 import { capturedImageUrl } from "../../lib/api";
 import { useInputs } from "../../lib/resolved";
 import { useSinkFeed } from "../../lib/sinks";
 import type { CapturedImage, PatchNode } from "../../lib/types";
+import type { VideoInput } from "../../lib/video";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 import { useInputName } from "./sinkInputs";
 
@@ -45,10 +51,28 @@ export function VideoFace({ node }: { node: PatchNode }) {
                 </Stat>
               );
             })}
+            {inputs.map((input) => (
+              <DroppedPictures
+                key={input.source}
+                scope={{ node: node.id, port: "video", source: input.source }}
+              />
+            ))}
           </FaceStats>
         </FaceFooter>
       )}
     </NodeShell>
+  );
+}
+
+function DroppedPictures({ scope }: { scope: VideoInput }) {
+  const dropped = useVideoDrops(scope);
+  if (dropped === 0) {
+    return null;
+  }
+  return (
+    <Stat label="Dropped" tone="warn" title="Pictures that arrived faster than this face drew them">
+      {dropped}
+    </Stat>
   );
 }
 

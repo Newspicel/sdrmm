@@ -6,7 +6,7 @@ async fn device_fault_surfaces_and_removal_completes() {
     registry.register(50, Box::new(DyingDriver));
     let engine = Engine::with_registry(registry, None);
     let mut events = engine.subscribe_events();
-    let ds = engine.create_device_set("mock:dying").unwrap();
+    let ds = engine.create_device_set("rtlsdr:dying").unwrap();
 
     wait_for_deviceset_event(&mut events, ds).await;
 
@@ -41,7 +41,7 @@ async fn fault_raised_before_insert_still_surfaces() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(InstantFailDriver));
     let engine = Engine::with_registry(registry, None);
-    let ds = engine.create_device_set("mock:instafail").unwrap();
+    let ds = engine.create_device_set("rtlsdr:instafail").unwrap();
 
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
@@ -84,7 +84,7 @@ async fn probe_disappearance_faults_running_set_after_two_misses() {
     );
     let engine = Engine::with_registry(registry, None);
     let mut events = engine.subscribe_events();
-    let ds = engine.create_device_set("mock:vanish").unwrap();
+    let ds = engine.create_device_set("rtlsdr:vanish").unwrap();
 
     let mut known = None;
     let mut missing_once = HashSet::new();
@@ -125,7 +125,7 @@ async fn a_radio_another_program_holds_is_refused_by_name() {
     registry.register(50, Box::new(BusyDriver));
     let engine = Engine::with_registry(registry, None);
 
-    let refused = engine.create_device_set("mock:busy").unwrap_err();
+    let refused = engine.create_device_set("rtlsdr:busy").unwrap_err();
     assert!(refused.is_conflict(), "{refused}");
     assert!(
         refused.to_string().contains("in use by another program"),

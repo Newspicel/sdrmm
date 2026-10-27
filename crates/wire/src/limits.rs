@@ -91,9 +91,15 @@ pub struct Limits {
     pub presence: PresenceLimits,
     pub rotator: RotatorLimits,
     pub patch: PatchLimits,
+    pub scan: ScanLimits,
     pub name_len: usize,
     pub note_len: usize,
     pub filter: FilterLimits,
+    pub channel_frequency_seed_hz: f64,
+    pub audio: AudioLimits,
+    pub survey: SurveyLimits,
+    pub wmbus: WmbusLimits,
+    pub workspace_state_version: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -101,14 +107,104 @@ pub struct PatchLimits {
     pub nodes: usize,
     pub wires: usize,
     pub streams: u32,
+    pub channels_per_radio: usize,
+    pub monitors_per_radio: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct ScanLimits {
+    pub targets: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct FilterLimits {
+    pub kinds: usize,
     pub ids: usize,
     pub duration_ms: u32,
     pub text_len: usize,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct AudioLimits {
+    pub rate_hz: u32,
+    pub notches: usize,
+    pub blanker_threshold: Bounds<f32>,
+    pub blanker_threshold_seed: f32,
+    pub click_threshold: Bounds<f32>,
+    pub click_threshold_seed: f32,
+    pub squelch_auto_margin_db: Bounds<f32>,
+    pub squelch_auto_margin_seed_db: f32,
+    pub tone_hz: Bounds<f64>,
+    pub notch_width_hz: Bounds<f64>,
+    pub notch_freq_seed_hz: f64,
+    pub notch_width_seed_hz: f64,
+    pub denoise_strength_seed: f32,
+    pub filter_low_seed_hz: f64,
+    pub filter_high_seed_hz: f64,
+}
+
+pub const AUDIO_LIMITS: AudioLimits = AudioLimits {
+    rate_hz: crate::audio::AUDIO_RATE_HZ,
+    notches: crate::audio::MAX_AUDIO_NOTCHES,
+    blanker_threshold: Bounds::new(
+        crate::audio::MIN_BLANKER_THRESHOLD,
+        crate::audio::MAX_BLANKER_THRESHOLD,
+    ),
+    blanker_threshold_seed: crate::audio::DEFAULT_BLANKER_THRESHOLD,
+    click_threshold: Bounds::new(
+        crate::audio::MIN_CLICK_THRESHOLD,
+        crate::audio::MAX_CLICK_THRESHOLD,
+    ),
+    click_threshold_seed: crate::audio::DEFAULT_CLICK_THRESHOLD,
+    squelch_auto_margin_db: Bounds::new(
+        crate::channel::MIN_SQUELCH_AUTO_MARGIN_DB,
+        crate::channel::MAX_SQUELCH_AUTO_MARGIN_DB,
+    ),
+    squelch_auto_margin_seed_db: crate::channel::DEFAULT_SQUELCH_AUTO_MARGIN_DB,
+    tone_hz: Bounds::new(
+        crate::audio::MIN_AUDIO_TONE_HZ,
+        crate::audio::MAX_AUDIO_TONE_HZ,
+    ),
+    notch_width_hz: Bounds::new(
+        crate::audio::MIN_NOTCH_WIDTH_HZ,
+        crate::audio::MAX_NOTCH_WIDTH_HZ,
+    ),
+    notch_freq_seed_hz: crate::audio::DEFAULT_NOTCH_FREQ_HZ,
+    notch_width_seed_hz: crate::audio::DEFAULT_NOTCH_WIDTH_HZ,
+    denoise_strength_seed: crate::audio::DEFAULT_DENOISE_STRENGTH,
+    filter_low_seed_hz: crate::audio::DEFAULT_FILTER_LOW_HZ,
+    filter_high_seed_hz: crate::audio::DEFAULT_FILTER_HIGH_HZ,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct SurveyLimits {
+    pub cells: usize,
+    pub cell_m: f64,
+    pub metres_per_degree_lon: f64,
+    pub metres_per_degree_lat: f64,
+    pub min_cos_lat: f64,
+}
+
+pub const SURVEY_LIMITS: SurveyLimits = SurveyLimits {
+    cells: crate::survey::MAX_SURVEY_CELLS,
+    cell_m: crate::survey::SURVEY_CELL_M,
+    metres_per_degree_lon: crate::survey::METRES_PER_DEGREE_LON,
+    metres_per_degree_lat: crate::survey::METRES_PER_DEGREE_LAT,
+    min_cos_lat: crate::survey::MIN_COS_LAT,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct WmbusLimits {
+    pub keys: usize,
+    pub meter_digits: usize,
+    pub key_digits: usize,
+}
+
+pub const WMBUS_LIMITS: WmbusLimits = WmbusLimits {
+    keys: crate::wmbus::MAX_WMBUS_KEYS,
+    meter_digits: crate::wmbus::METER_DIGITS,
+    key_digits: crate::wmbus::KEY_DIGITS,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct RotatorLimits {
@@ -448,14 +544,25 @@ pub const LIMITS: Limits = Limits {
         nodes: crate::patch::MAX_NODES,
         wires: crate::patch::MAX_EDGES,
         streams: crate::patch::MAX_STREAMS,
+        channels_per_radio: crate::patch::MAX_CHANNELS_PER_RADIO,
+        monitors_per_radio: crate::patch::MAX_MONITORS_PER_RADIO,
+    },
+    scan: ScanLimits {
+        targets: crate::scan::MAX_SCAN_TARGETS,
     },
     name_len: crate::workspace::MAX_NAME_LEN,
     note_len: crate::note::MAX_NOTE_LEN,
     filter: FilterLimits {
+        kinds: crate::filter::MAX_FILTER_KINDS,
         ids: crate::filter::MAX_FILTER_IDS,
         duration_ms: crate::filter::MAX_FILTER_DURATION_MS,
         text_len: crate::filter::MAX_FILTER_TEXT_LEN,
     },
+    channel_frequency_seed_hz: crate::channel::DEFAULT_FREQUENCY_HZ,
+    audio: AUDIO_LIMITS,
+    survey: SURVEY_LIMITS,
+    wmbus: WMBUS_LIMITS,
+    workspace_state_version: crate::workspace_state::WORKSPACE_STATE_VERSION,
 };
 
 pub fn generated() -> Result<String, serde_json::Error> {

@@ -730,14 +730,11 @@ fn write_perf(name: &str, measured: &[PerfBaseline]) {
 }
 
 fn compare_perf(name: &str, measured: &[PerfBaseline]) {
-    let committed = perf::load_baselines(&baseline_path(name)).unwrap();
-    if committed.iter().any(|b| b.host != perf::host_id()) {
-        eprintln!(
-            "skipping the perf gate: baseline host is not {}",
-            perf::host_id()
-        );
-        return;
-    }
+    let committed = perf::committed_for_host(
+        &perf::load_baselines(&baseline_path(name)).unwrap(),
+        name,
+        "cargo test -p sdrmm-modem --release --test gmsk_msk_afsk_bundles write_gmsk_perf_baseline -- --ignored",
+    );
     match perf::compare_perf(measured, &committed, perf::REGRESSION_FRACTION) {
         Ok(changes) => {
             for c in changes {

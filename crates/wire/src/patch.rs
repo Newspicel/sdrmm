@@ -5,7 +5,7 @@ use crate::{
     EventOutputNode, GpsNode, MAX_NMEA_BAUD, MAX_NMEA_UPDATE_INTERVAL_MS,
     MAX_POSITION_ENDPOINT_LEN, MIN_NMEA_BAUD, MIN_NMEA_UPDATE_INTERVAL_MS, PositionSource,
     channel::{ChannelDescriptor, ChannelParams},
-    device::{DeviceInfo, RECORDING_DRIVER_ID, SIGGEN_DRIVER_ID, recording_stem_valid},
+    device::{DeviceBackend, DeviceInfo, GENERATOR_PREFIX, recording_stem_valid},
     fusion::TriangulationParams,
     hunt::HuntSweepParams,
     workspace::MAX_NAME_LEN,
@@ -33,6 +33,8 @@ pub const MAX_NODE_SIZE: f32 = 10_000.0;
 pub const RACK_COLS: u16 = 12;
 pub const RACK_ROWS: u16 = 8;
 pub const MAX_STREAMS: u32 = 16;
+pub const MAX_CHANNELS_PER_RADIO: usize = 64;
+pub const MAX_MONITORS_PER_RADIO: usize = 128;
 
 #[must_use]
 pub fn stream_port(base: &str, index: u32) -> String {
@@ -44,16 +46,26 @@ pub fn stream_port(base: &str, index: u32) -> String {
 }
 
 #[must_use]
-pub fn port_stream(base: &str, name: &str) -> Option<u32> {
+pub fn port_index(base: &str, name: &str, limit: u32) -> Option<u32> {
     if name == base {
         return Some(0);
     }
     let suffix = name.strip_prefix(base)?;
     let n: u32 = suffix.parse().ok()?;
-    if !(2..=MAX_STREAMS).contains(&n) || suffix != n.to_string() {
+    if !(2..=limit).contains(&n) || suffix != n.to_string() {
         return None;
     }
     Some(n - 1)
+}
+
+#[must_use]
+pub fn port_stream(base: &str, name: &str) -> Option<u32> {
+    port_index(base, name, MAX_STREAMS)
+}
+
+#[must_use]
+pub fn port_lane(base: &str, name: &str) -> Option<u32> {
+    port_index(base, name, crate::array::MAX_ARRAY_LANES)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -67,7 +79,7 @@ pub enum NodeCategory {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DeviceRef {
-    pub backend: String,
+    pub backend: DeviceBackend,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub serial: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -83,10 +95,49 @@ impl DeviceRef {
                 .is_some_and(|suffix| suffix.starts_with('@'))
         });
         Self {
-            backend: info.driver.clone(),
+            backend: info.driver,
             serial: info.serial.clone(),
             key: (info.serial.is_none() || variant).then(|| info.key.clone()),
         }
+    }
+
+    #[must_use]
+    pub fn is_generator(&self) -> bool {
+        self.backend == DeviceBackend::Virtual
+            && self
+                .key
+                .as_deref()
+                .is_some_and(|key| key.starts_with(GENERATOR_PREFIX))
+    }
+
+    #[must_use]
+    pub fn is_recording(&self) -> bool {
+        self.backend == DeviceBackend::Recording
+    }
+
+    /// A generator belongs to the node that names it, so a copied node opens its own rather than
+    /// fighting the original for one device.
+    #[must_use]
+    pub fn owned_by(self, node_id: &str) -> Self {
+        if !self.is_generator() {
+            return self;
+        }
+        Self {
+            key: Some(generator_key(node_id)),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        !self.is_recording() || self.key.as_deref().is_none_or(recording_stem_valid)
+    }
+
+    /// Whether this names a device to open. A recording pinned without a file is a node waiting
+    /// for the operator to pick one from the library.
+    #[must_use]
+    pub fn opens(&self) -> bool {
+        !self.is_recording() || self.key.is_some()
     }
 
     #[must_use]
@@ -126,47 +177,9 @@ impl DeviceNode {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct RecordingNode {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recording: Option<String>,
-}
-
-impl RecordingNode {
-    #[must_use]
-    pub fn valid(&self) -> bool {
-        self.recording.as_deref().is_none_or(recording_stem_valid)
-    }
-
-    #[must_use]
-    pub fn device_ref(&self) -> Option<DeviceRef> {
-        let stem = self
-            .recording
-            .as_deref()
-            .filter(|stem| recording_stem_valid(stem))?;
-        Some(DeviceRef {
-            backend: RECORDING_DRIVER_ID.to_owned(),
-            serial: None,
-            key: Some(stem.to_owned()),
-        })
-    }
-}
-
 #[must_use]
-pub fn siggen_key(node_id: &str) -> String {
-    node_id.replace(':', "-")
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(default)]
-pub struct SignalGenNode {
-    pub running: bool,
-}
-
-impl Default for SignalGenNode {
-    fn default() -> Self {
-        Self { running: true }
-    }
+pub fn generator_key(node_id: &str) -> String {
+    format!("{GENERATOR_PREFIX}{}", node_id.replace(':', "-"))
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -299,6 +312,23 @@ pub const MAX_SIGNAL_MAP_BANDWIDTH_HZ: u64 = 100_000_000;
 #[serde(default)]
 pub struct RecorderNode {
     pub recording: bool,
+    /// Seconds of IQ kept in memory ahead of the record button, so a saved file starts before the
+    /// press. Zero records from the press on.
+    #[serde(default)]
+    pub pre_roll_s: u32,
+}
+
+impl RecorderNode {
+    #[must_use]
+    pub const fn valid(&self) -> bool {
+        crate::preroll::pre_roll_valid(self.pre_roll_s)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct BasebandRecorderNode {
+    pub recording: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -379,13 +409,11 @@ impl NodeBody {
     #[must_use]
     pub fn device_ref(&self, node_id: &str) -> Option<DeviceRef> {
         match self {
-            Self::Device(device) => device.device.clone().filter(|_| !device.stopped),
-            Self::Recording(recording) => recording.device_ref(),
-            Self::SignalGen(generator) => generator.running.then(|| DeviceRef {
-                backend: SIGGEN_DRIVER_ID.to_owned(),
-                serial: None,
-                key: Some(siggen_key(node_id)),
-            }),
+            Self::Device(device) => device
+                .device
+                .clone()
+                .filter(|pinned| !device.stopped && pinned.valid() && pinned.opens())
+                .map(|pinned| pinned.owned_by(node_id)),
             _ => None,
         }
     }
@@ -394,7 +422,6 @@ impl NodeBody {
     pub const fn stopped(&self) -> bool {
         match self {
             Self::Device(device) => device.stopped && device.device.is_some(),
-            Self::SignalGen(generator) => !generator.running,
             _ => false,
         }
     }
@@ -472,7 +499,6 @@ pub enum PatchError {
     DuplicateNode(String),
     Label(String),
     Geometry(String),
-    Backend(String),
     Gps(String),
     ChannelType(String),
     NodeSettings(String),
@@ -504,7 +530,6 @@ impl std::fmt::Display for PatchError {
             Self::DuplicateNode(id) => write!(f, "duplicate node id {id}"),
             Self::Label(id) => write!(f, "label of node {id} is longer than {MAX_NAME_LEN}"),
             Self::Geometry(id) => write!(f, "node {id} sits outside the canvas bounds"),
-            Self::Backend(id) => write!(f, "node {id} names no backend"),
             Self::Gps(reason) => write!(f, "invalid GPS source: {reason}"),
             Self::ChannelType(ty) => write!(f, "unknown channel type {ty:?}"),
             Self::NodeSettings(id) => write!(f, "invalid settings for node {id}"),
@@ -556,7 +581,7 @@ impl PatchGraph {
         self.edges
             .iter()
             .filter(|edge| edge.to.node == array)
-            .filter_map(|edge| port_stream(ARRAY_LANE_PORT, &edge.to.port))
+            .filter_map(|edge| port_lane(ARRAY_LANE_PORT, &edge.to.port))
             .filter_map(|lane| usize::try_from(lane).ok())
             .map(|lane| lane + 1)
             .max()

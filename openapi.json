@@ -3135,6 +3135,16 @@
               }
             }
           },
+          "400": {
+            "description": "The graph is larger than a workspace may hold",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Malformed request body",
             "content": {
@@ -3605,7 +3615,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NmeaDevicesResponse"
+                  "$ref": "#/components/schemas/SerialDevicesResponse"
                 }
               }
             }
@@ -4339,6 +4349,33 @@
           },
           "404": {
             "description": "Saved radio not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/serial/ports": {
+      "get": {
+        "operationId": "get_serial_ports",
+        "responses": {
+          "200": {
+            "description": "Every serial port a node can open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SerialDevicesResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Serial device discovery failed",
             "content": {
               "application/json": {
                 "schema": {
@@ -5565,9 +5602,16 @@
               "null"
             ]
           },
+          "assstat": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "block_id": {
             "type": "string"
           },
+          "decoded": {},
           "downlink": {
             "type": "boolean"
           },
@@ -5580,6 +5624,26 @@
           "label": {
             "type": "string"
           },
+          "lat": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "lon": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "mfi": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "mode": {
             "type": "string"
           },
@@ -5590,6 +5654,12 @@
             "type": "string"
           },
           "seq_no": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sublabel": {
             "type": [
               "string",
               "null"
@@ -9058,6 +9128,15 @@
           }
         ]
       },
+      "BasebandRecorderNode": {
+        "type": "object",
+        "properties": {
+          "recording": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
       "Baseline": {
         "type": "object",
         "required": [
@@ -10363,6 +10442,16 @@
               "type": "number",
               "format": "double"
             }
+          },
+          "bank": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClockBank"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "bias_tee": {
             "type": "boolean"
@@ -12382,7 +12471,6 @@
       "ChannelSettings": {
         "type": "object",
         "required": [
-          "frequency_hz",
           "params"
         ],
         "properties": {
@@ -12803,6 +12891,29 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "ClockBank": {
+        "type": "object",
+        "required": [
+          "id",
+          "lane",
+          "lanes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "lane": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "lanes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -16323,6 +16434,28 @@
           }
         }
       },
+      "DeviceBackend": {
+        "type": "string",
+        "description": "Which driver opens a radio. The one name a backend has, shared by the device crates,\nthe stored patch, the doctor and the browser.",
+        "enum": [
+          "virtual",
+          "recording",
+          "rtlsdr",
+          "hackrf",
+          "airspy",
+          "airspyhf",
+          "funcube",
+          "cr8",
+          "sdrplay",
+          "soapy",
+          "rtltcp",
+          "spyserver",
+          "sdrconnect",
+          "kiwisdr",
+          "ad936x",
+          "espsdr"
+        ]
+      },
       "DeviceClaim": {
         "type": "object",
         "required": [
@@ -16357,7 +16490,7 @@
         ],
         "properties": {
           "driver": {
-            "type": "string"
+            "$ref": "#/components/schemas/DeviceBackend"
           },
           "key": {
             "type": "string"
@@ -16422,6 +16555,16 @@
           "tx_streams"
         ],
         "properties": {
+          "bank": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClockBank"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "coherence": {
             "$ref": "#/components/schemas/Coherence"
           },
@@ -16472,7 +16615,7 @@
         ],
         "properties": {
           "backend": {
-            "type": "string"
+            "$ref": "#/components/schemas/DeviceBackend"
           },
           "key": {
             "type": [
@@ -16591,6 +16734,16 @@
               }
             ]
           },
+          "pre_roll": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PreRollStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "recording": {
             "oneOf": [
               {
@@ -16623,16 +16776,6 @@
           },
           "status": {
             "$ref": "#/components/schemas/DeviceSetStatus"
-          },
-          "time_machine": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/TimeMachineStatus"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "virtual_lanes": {
             "type": "array",
@@ -16763,7 +16906,8 @@
       "DevicesResponse": {
         "type": "object",
         "required": [
-          "devices"
+          "devices",
+          "synthetic"
         ],
         "properties": {
           "claims": {
@@ -16777,6 +16921,9 @@
             "items": {
               "$ref": "#/components/schemas/DeviceInfo"
             }
+          },
+          "synthetic": {
+            "type": "boolean"
           }
         }
       },
@@ -25565,65 +25712,6 @@
           "dcs"
         ]
       },
-      "NmeaDeviceInfo": {
-        "type": "object",
-        "required": [
-          "path"
-        ],
-        "properties": {
-          "manufacturer": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "path": {
-            "type": "string"
-          },
-          "product": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "serial": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "usb_pid": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
-          },
-          "usb_vid": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
-      "NmeaDevicesResponse": {
-        "type": "object",
-        "required": [
-          "devices"
-        ],
-        "properties": {
-          "devices": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/NmeaDeviceInfo"
-            }
-          }
-        }
-      },
       "NodeActed": {
         "oneOf": [
           {
@@ -25687,24 +25775,6 @@
                     }
                   }
                 }
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "with",
-              "result"
-            ],
-            "properties": {
-              "result": {
-                "type": "string",
-                "enum": [
-                  "time_machine"
-                ]
-              },
-              "with": {
-                "$ref": "#/components/schemas/TimeMachineStatus"
               }
             }
           },
@@ -25847,24 +25917,6 @@
               "action": {
                 "type": "string",
                 "enum": [
-                  "time_machine"
-                ]
-              },
-              "with": {
-                "$ref": "#/components/schemas/TimeMachineAction"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "with",
-              "action"
-            ],
-            "properties": {
-              "action": {
-                "type": "string",
-                "enum": [
                   "playback"
                 ]
               },
@@ -25909,42 +25961,6 @@
                 "type": "string",
                 "enum": [
                   "device"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/RecordingNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "recording"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/SignalGenNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "signal_gen"
                 ]
               }
             }
@@ -26275,30 +26291,12 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/RecorderNode"
+                "$ref": "#/components/schemas/BasebandRecorderNode"
               },
               "kind": {
                 "type": "string",
                 "enum": [
                   "baseband_recorder"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/TimeMachineNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "time_machine"
                 ]
               }
             }
@@ -26584,8 +26582,6 @@
         "type": "string",
         "enum": [
           "device",
-          "recording",
-          "signal_gen",
           "gps",
           "array",
           "channel",
@@ -26606,7 +26602,6 @@
           "recorder",
           "audio_recorder",
           "baseband_recorder",
-          "time_machine",
           "network_export",
           "export",
           "scanner",
@@ -28845,6 +28840,75 @@
           "max"
         ]
       },
+      "PreRollStatus": {
+        "type": "object",
+        "description": "What a recorder holds in memory ahead of the record button, and what it has written since the\nbutton went down.",
+        "required": [
+          "node",
+          "stream",
+          "pre_roll_s",
+          "sample_rate",
+          "center_hz",
+          "held_samples",
+          "capacity_samples",
+          "overruns"
+        ],
+        "properties": {
+          "capacity_samples": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "capture": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RecordingStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "center_hz": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "held_samples": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "node": {
+            "type": "string"
+          },
+          "overruns": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pre_roll_s": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sample_rate": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "stream": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "Presentation": {
         "type": "object",
         "required": [
@@ -29220,6 +29284,11 @@
             "minimum": 0
           },
           "dropped_samples": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "dropped_surfaces": {
             "type": "integer",
             "format": "int64",
             "minimum": 0
@@ -31152,6 +31221,13 @@
       "RecorderNode": {
         "type": "object",
         "properties": {
+          "pre_roll_s": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Seconds of IQ kept in memory ahead of the record button, so a saved file starts before the\npress. Zero records from the press on.",
+            "default": 0,
+            "minimum": 0
+          },
           "recording": {
             "type": "boolean",
             "default": false
@@ -31263,17 +31339,6 @@
             "items": {
               "type": "string"
             }
-          }
-        }
-      },
-      "RecordingNode": {
-        "type": "object",
-        "properties": {
-          "recording": {
-            "type": [
-              "string",
-              "null"
-            ]
           }
         }
       },
@@ -33512,6 +33577,65 @@
           "zvei1"
         ]
       },
+      "SerialDeviceInfo": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "manufacturer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "product": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "serial": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "usb_pid": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "usb_vid": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "SerialDevicesResponse": {
+        "type": "object",
+        "required": [
+          "devices"
+        ],
+        "properties": {
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SerialDeviceInfo"
+            }
+          }
+        }
+      },
       "ServerEvent": {
         "oneOf": [
           {
@@ -34782,15 +34906,6 @@
           "usb",
           "lsb"
         ]
-      },
-      "SignalGenNode": {
-        "type": "object",
-        "properties": {
-          "running": {
-            "type": "boolean",
-            "default": true
-          }
-        }
       },
       "SignalMapNode": {
         "type": "object",
@@ -37066,96 +37181,6 @@
           }
         }
       },
-      "TimeMachineAction": {
-        "type": "string",
-        "enum": [
-          "capture",
-          "stop"
-        ]
-      },
-      "TimeMachineNode": {
-        "type": "object",
-        "properties": {
-          "armed": {
-            "type": "boolean",
-            "default": false
-          },
-          "history_seconds": {
-            "type": "integer",
-            "format": "int32",
-            "default": 10,
-            "minimum": 0
-          }
-        }
-      },
-      "TimeMachineStatus": {
-        "type": "object",
-        "required": [
-          "node",
-          "stream",
-          "history_seconds",
-          "sample_rate",
-          "center_hz",
-          "held_samples",
-          "capacity_samples",
-          "overruns"
-        ],
-        "properties": {
-          "capacity_samples": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "capture": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/RecordingStatus"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "center_hz": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "error": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "held_samples": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "history_seconds": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "node": {
-            "type": "string"
-          },
-          "overruns": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "sample_rate": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "stream": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
       "TimeSlot": {
         "type": "string",
         "enum": [
@@ -39041,6 +39066,35 @@
                 "type": "string",
                 "enum": [
                   "cleared_gps"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "nodes"
+                ],
+                "properties": {
+                  "nodes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cleared_devices"
                 ]
               }
             }

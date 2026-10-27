@@ -91,11 +91,11 @@ fn serves_iio(info: &nusb::DeviceInfo) -> bool {
         || (info.vendor_id() == VENDOR_ID && info.product_id() == PRODUCT_ID)
 }
 
+/// A radio with no serial is named by where it is plugged in, which is stable while it stays in
+/// that port; an enumeration index moves as soon as anything else is plugged in.
 pub(crate) fn usb_key(info: &nusb::DeviceInfo) -> String {
     match info.serial_number() {
         Some(serial) if !serial.trim().is_empty() => format!("{USB_PREFIX}{}", serial.trim()),
-        // A radio with no serial is named by where it is plugged in, which is stable while it
-        // stays in that port; an enumeration index moves as soon as anything else is plugged in.
         _ => format!("{USB_PREFIX}{}-{}", info.bus_id(), info.device_address()),
     }
 }

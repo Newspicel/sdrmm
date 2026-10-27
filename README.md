@@ -46,7 +46,7 @@ through it. [Radios](https://sdrmm.com/docs/hardware) covers other hardware.
   and DVB](https://sdrmm.com/docs/user-guide/decoders#catalog).
 - **Displays:** [spectrum, waterfalls, maps, decoded messages, and video](https://sdrmm.com/docs/getting-started/workspace).
 - **Recording:** [device IQ, channel baseband, audio, and each call](https://sdrmm.com/docs/user-guide/recording),
-  with a time machine and SigMF playback.
+  with a pre-roll and SigMF playback.
 - **Finding signals:** [scanning, signal identification, band monitoring, and transmitter
   hunting](https://sdrmm.com/docs/user-guide/scanning).
 - **Arrays:** [coherent arrays](https://sdrmm.com/docs/user-guide/arrays),

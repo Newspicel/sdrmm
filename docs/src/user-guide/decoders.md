@@ -7,26 +7,28 @@ covers the modes that need more than a frequency.
 
 **+ Add** lists every mode under Decoders, grouped as below.
 
-| Group | Tested on air | Fixture only | Experimental |
-|---|---|---|---|
-| Analog voice | AM, NFM, SSB, WFM (broadcast) | | |
-| Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17, [TETRA](#tetra) | [Tetrapol](#tetrapol) | |
-| Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium), [Drone Remote ID](#drone-remote-id) | VOR, ILS localizer / glideslope |
-| Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC, [406 MHz beacons](#406-mhz-beacons) | |
-| Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
-| Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager, [End-of-Train](#end-of-train) | |
-| Pictures and video | [SSTV](#sstv) | ATV | |
-| Weather and satellites | [WEFAX](#wefax), [Meteor LRPT, NOAA APT](#weather-satellites), [Radiosonde](#radiosondes) | [SAME alerts](#same-alerts) | |
-| Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy), [HF modems](#hf-modems), [Wireless M-Bus](#wireless-m-bus) | [ISM sensors](#ism-sensors), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
+| Group | Tested on air | Reference fixture | Own modulator | Experimental |
+|---|---|---|---|---|
+| Analog voice | | | AM, NFM, SSB, WFM (broadcast) | |
+| Digital voice | DMR, FreeDV 1600, [TETRA](#tetra), [Tetrapol](#tetrapol) | | D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | |
+| Aviation | ADS-B (1090ES), ACARS, [Inmarsat Classic Aero](#inmarsat-and-iridium) | [Drone Remote ID](#drone-remote-id) | VDL Mode 2, High Frequency Data Link | VOR, ILS localizer / glideslope |
+| Marine | Digital Selective Calling, Inmarsat STD-C / EGC | | AIS, NAVTEX, [406 MHz beacons](#406-mhz-beacons) | |
+| Amateur and HF | FT8 | | CW skimmer, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | |
+| Paging and telemetry | FLEX pager, Radio clock (DCF77 / WWVB / MSF / JJY), [End-of-Train](#end-of-train) | | POCSAG, Selcall (CCIR/ZVEI), ERMES pager | |
+| Pictures and video | | | [SSTV](#sstv), ATV | |
+| Weather and satellites | [Meteor LRPT](#weather-satellites) | | [WEFAX](#wefax), [NOAA APT](#weather-satellites), [Radiosonde](#radiosondes), [SAME alerts](#same-alerts) | |
+| Broadcast digital | | [DAB / DAB+](#dab-and-dab), [DRM30, DRM+](#drm) | | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy), [HF modems](#hf-modems), [Wireless M-Bus](#wireless-m-bus), [ISM sensors](#ism-sensors) | [Iridium bursts](#inmarsat-and-iridium) | [DECT](#dect), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
-| Tested on air | Verified on real off-air signals, live or recorded |
-| Fixture only | Verified on recordings, generated IQ, or reference vectors, not yet live |
+| Tested on air | Verified on a real off-air signal, live or recorded |
+| Reference fixture | Verified on another implementation's waveform or published vectors |
+| Own modulator | Verified only against this project's own modulator |
 | Experimental | Works with the limits below |
 
-Fixtures catch decoding bugs but say little about drift, fading, or interference. The
+A fixture catches decoding bugs but says little about drift, fading, or interference; the project's
+own modulator says nothing about what a real transmitter sends. The
 [fixture library](https://github.com/Newspicel/sdrmm/blob/main/fixtures/README.md) lists where each
 recording came from.
 
@@ -109,7 +111,7 @@ widths. A burst whose checksum fails in every decoder counts under **Rejected**.
 ## Wireless M-Bus
 
 Reads water, heat, gas and electricity meters (EN 13757-4). One channel decodes modes T and C on
-868.95 MHz; tune 868.3 MHz for mode S, which is tested on generated IQ only. Each frame shows the meter's manufacturer, ID and type, and
+868.95 MHz; tune 868.3 MHz for mode S, which only our own modulator has tested. Each frame shows the meter's manufacturer, ID and type, and
 the radio it came through when a repeater forwards it.
 
 Most meters encrypt their readings. Add the meter ID and its AES key under **Keys** to open them;

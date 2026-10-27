@@ -1,7 +1,7 @@
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 
-const KEYS: [&str; 2] = ["id", "node"];
+const KEYS: [&str; 5] = ["id", "node", "stage", "name", "stream"];
 const TAGS: [&str; 2] = ["kind", "type"];
 
 pub(crate) fn merge3(base: &Value, ours: &Value, theirs: &Value) -> Value {
@@ -85,8 +85,12 @@ fn shared_key(base: &[Value], ours: &[Value], theirs: &[Value]) -> Option<&'stat
         base.iter()
             .chain(ours)
             .chain(theirs)
-            .all(|item| item.get(key).is_some_and(Value::is_string))
+            .all(|item| item.get(key).is_some_and(identifies))
     })
+}
+
+fn identifies(key: &Value) -> bool {
+    key.is_string() || key.is_number()
 }
 
 fn all_objects(base: &[Value], ours: &[Value], theirs: &[Value]) -> bool {

@@ -89,6 +89,7 @@ export function ChannelControls({
       {audio && <MarginChip settings={settings} onEdit={onEdit} />}
       <ModeChips
         params={settings.params}
+        defaults={descriptor?.defaults?.params}
         broadcast={broadcast}
         limits={descriptor?.limits ?? []}
         choices={descriptor?.choices ?? []}

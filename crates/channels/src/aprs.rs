@@ -685,11 +685,12 @@ fn mic_e_destination(call: &str) -> Option<MicEDestination> {
     let degrees = f64::from(digits[0]) * 10.0 + f64::from(digits[1]);
     let minutes = f64::from(digits[2]) * 10.0 + f64::from(digits[3]);
     let hundredths = f64::from(digits[4]) * 10.0 + f64::from(digits[5]);
-    if degrees > 90.0 || minutes >= 60.0 {
+    let lat = degrees + (minutes + hundredths / 100.0) / 60.0;
+    if minutes >= 60.0 || !(0.0..=90.0).contains(&lat) {
         return None;
     }
     Some(MicEDestination {
-        lat: degrees + (minutes + hundredths / 100.0) / 60.0,
+        lat,
         north: indicators[0],
         lon_offset: indicators[1],
         west: indicators[2],
@@ -811,10 +812,10 @@ fn symbol(table: u8, code: u8) -> Option<String> {
 fn parse_latitude(field: &[u8]) -> Option<f64> {
     let degrees = f64::from(ascii_u32(field.get(..2)?)?);
     let minutes = parse_minutes(field.get(2..7)?)?;
-    if degrees > 90.0 {
+    let value = degrees + minutes / 60.0;
+    if !(0.0..=90.0).contains(&value) {
         return None;
     }
-    let value = degrees + minutes / 60.0;
     match *field.get(7)? {
         b'N' => Some(value),
         b'S' => Some(-value),
@@ -825,10 +826,10 @@ fn parse_latitude(field: &[u8]) -> Option<f64> {
 fn parse_longitude(field: &[u8]) -> Option<f64> {
     let degrees = f64::from(ascii_u32(field.get(..3)?)?);
     let minutes = parse_minutes(field.get(3..8)?)?;
-    if degrees > 180.0 {
+    let value = degrees + minutes / 60.0;
+    if !(0.0..=180.0).contains(&value) {
         return None;
     }
-    let value = degrees + minutes / 60.0;
     match *field.get(8)? {
         b'E' => Some(value),
         b'W' => Some(-value),
@@ -1460,6 +1461,16 @@ mod tests {
                 "{mode:?} split-dependent"
             );
         }
+    }
+
+    #[test]
+    fn degrees_plus_minutes_past_the_pole_or_the_meridian_are_rejected() {
+        assert_eq!(parse_latitude(b"9059.99N"), None);
+        assert_eq!(parse_latitude(b"9000.00N"), Some(90.0));
+        assert_eq!(parse_longitude(b"18059.99E"), None);
+        assert_eq!(parse_longitude(b"18000.00E"), Some(180.0));
+        assert!(mic_e_destination("905959").is_none());
+        assert!(mic_e_destination("900000").is_some());
     }
 
     #[test]

@@ -23,6 +23,8 @@ pub(crate) use worker::Waker;
 
 pub(crate) const DSP_BLOCK: usize = 2048;
 pub(crate) const MAX_DSP_BLOCK: usize = 8192;
+pub(crate) const MAX_LANE_CHANNELS: usize = sdrmm_wire::MAX_CHANNELS_PER_RADIO;
+pub(crate) const MAX_LANE_MONITORS: usize = sdrmm_wire::MAX_MONITORS_PER_RADIO;
 
 pub(crate) fn dsp_block_len(sample_rate: f64) -> usize {
     if sample_rate >= MAX_DSP_BLOCK as f64 * 1000.0 {

@@ -205,7 +205,7 @@ async fn device_fault_finalizes_the_recording() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(FaultOnDemandDriver { die: die.clone() }));
     let engine = Engine::with_registry(registry, Some(dir.path().to_path_buf()));
-    let ds = engine.create_device_set("mock:ondemand").unwrap();
+    let ds = engine.create_device_set("rtlsdr:ondemand").unwrap();
 
     engine.start_recording(ds, 0, None).unwrap();
     let live = wait_for_recorded_samples(&engine, ds, 1).await;
@@ -289,7 +289,7 @@ async fn start_during_rate_patch_cannot_commit_a_wrong_rate_recording() {
         }),
     );
     let engine = Engine::with_registry(registry, Some(dir.path().to_path_buf()));
-    let ds = engine.create_device_set("mock:blocking").unwrap();
+    let ds = engine.create_device_set("rtlsdr:blocking").unwrap();
 
     let patch = {
         let engine = engine.clone();

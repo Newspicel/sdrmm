@@ -11,6 +11,7 @@ use sdrmm_device::{
     DeviceError, RxSink, SdrDevice,
     schedule::{self, Latency},
 };
+use sdrmm_dsp::scene::Scene;
 use sdrmm_wire::{
     Agc, Capabilities, DeviceInfo, DeviceSettings, Duplex, ExtraSetting, ExtraValue, GainKind,
     GainStage, GainValue, NoiseSource, Range,
@@ -19,7 +20,7 @@ use sdrmm_wire::{
 use super::{
     BEARING_SETTING, BLOCK_LEN, BenchWorld, RADIUS_SETTING,
     lane::{self, LaneContext},
-    scene::{BenchDeviceSpec, Scene},
+    scene::BenchDeviceSpec,
 };
 use crate::{DRIVER_ID, validate_tune};
 
@@ -143,12 +144,13 @@ pub(crate) fn capabilities(spec: &BenchDeviceSpec) -> Capabilities {
         retune_keeps_phase: spec.retune_keeps_phase,
         rx_inputs: Vec::new(),
         clean_fraction: None,
+        bank: None,
     }
 }
 
 pub(crate) fn info(spec: &BenchDeviceSpec) -> DeviceInfo {
     DeviceInfo {
-        driver: DRIVER_ID.to_string(),
+        driver: DRIVER_ID,
         key: spec.key.clone(),
         label: spec.label.clone(),
         serial: None,

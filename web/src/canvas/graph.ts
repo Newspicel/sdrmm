@@ -1,4 +1,5 @@
 import { catalogType } from "../lib/catalog";
+import { deepEqual } from "../lib/deepEqual";
 import { randomHex } from "../lib/hex";
 import { MAX_STREAMS } from "../lib/limits";
 import type {
@@ -213,7 +214,7 @@ export function patchNode(
 }
 
 export function sameGraph(a: PatchGraph, b: PatchGraph): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return deepEqual(a, b);
 }
 
 export const RACK_COLS = 12;

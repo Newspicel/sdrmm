@@ -162,6 +162,7 @@ mod tests {
     #[test]
     fn the_crc_matches_known_vectors() {
         assert_eq!(crc(0x1021, 16, byte_bits(b"123456789")), 0xD64E);
+        assert_eq!(crc(0x1D, 8, byte_bits(b"123456789")), 0x4B);
         let mut reader = BitReader::new(&[0b1011_0011, 0xFF]);
         assert_eq!(reader.read(3), Some(0b101));
         assert_eq!(reader.read(9), Some(0b1_0011_1111));

@@ -34,9 +34,9 @@ for (const system of ["dab", "dvbt", "dvbs", "dvbs2", "dvbs2x", "dvbs2sf"] as co
         nodes: [
           {
             id: "source",
-            kind: "recording",
+            kind: "device",
             position: { x: 0, y: 0 },
-            data: { recording: key },
+            data: { device: { backend: "recording", key } },
           },
           {
             id: "broadcast",

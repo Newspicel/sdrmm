@@ -3,10 +3,10 @@ use utoipa::ToSchema;
 
 use super::{
     ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioRecorderNode, BASEBAND_PORT, BEAM_PORT,
-    BEARING_PORT, CONTROL_PORT, ChannelNode, DecoderLogNode, DeviceNode, DmrTrunkNode, EVENTS_PORT,
-    EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps, NodeCategory, POSITION_PORT,
-    Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo, RADAR_TRUTH_PORT, RADAR_TX_PORT,
-    RecorderNode, RecordingNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalGenNode,
+    BEARING_PORT, BasebandRecorderNode, CONTROL_PORT, ChannelNode, DecoderLogNode, DeviceNode,
+    DmrTrunkNode, EVENTS_PORT, EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps,
+    NodeCategory, POSITION_PORT, Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo,
+    RADAR_TRUTH_PORT, RADAR_TX_PORT, RecorderNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode,
     SignalMapNode, TriangulationNode, VIDEO_PORT, input, output,
 };
 use crate::{
@@ -21,7 +21,6 @@ use crate::{
     propagation::PropagationNode,
     rotator::RotatorNode,
     satellite::SatelliteNode,
-    timemachine::TimeMachineNode,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -352,17 +351,10 @@ macro_rules! node_registry {
         probe: ($probe:ident, $probe_id:literal, $probe_params:ty) $(,)?
     ) => {
         nodes! {
-            (Device(DeviceNode), "device", Source, "Device", "A radio, where every patch starts",
+            (Device(DeviceNode), "device", Source, "Device",
+                "A radio, a recording or a generator: where a patch starts",
                 Role::OpensRadio, Face::fit(420).dial(), [
                 iq_out(RADIO_IQ).repeated(PortRepeat::PerRxStream),
-            ]),
-            (Recording(RecordingNode), "recording", Source, "Recording",
-                "Plays back a recorded IQ file", Role::OpensRadio, Face::fit(420).dial(), [
-                iq_out(RADIO_IQ).repeated(PortRepeat::PerRxStream),
-            ]),
-            (SignalGen(SignalGenNode), "signal_gen", Source, "Signal generator",
-                "Test signals without a radio", Role::OpensRadio, Face::fit(420).dial(), [
-                iq_out(&[IqOrigin::Synthetic]),
             ]),
             (Gps(GpsNode), "gps", Source, "GPS position", "Your station location, live or fixed",
                 Role::Plain, Face::fit(360), [
@@ -464,7 +456,8 @@ macro_rules! node_registry {
                 Face::sized(380, 320).min(240, 200), [
                 input(VIDEO_PORT, Payload::Video).many().keeps(Keeps::Pictures),
             ]),
-            (Recorder(RecorderNode), "recorder", Output, "Recorder", "Records a radio's full IQ",
+            (Recorder(RecorderNode), "recorder", Output, "Recorder",
+                "Records a radio's full IQ, with an optional pre-roll",
                 Role::Plain, Face::fit(340), [
                 iq_in(),
                 position_in(),
@@ -473,14 +466,10 @@ macro_rules! node_registry {
                 "Records channel audio to WAV", Role::Plain, Face::fit(340), [
                 audio_in(),
             ]),
-            (BasebandRecorder(RecorderNode), "baseband_recorder", Output, "Baseband recorder",
+            (BasebandRecorder(BasebandRecorderNode), "baseband_recorder", Output,
+                "Baseband recorder",
                 "Records one channel's IQ", Role::Plain, Face::fit(340), [
                 input(BASEBAND_PORT, Payload::Baseband).many(),
-            ]),
-            (TimeMachine(TimeMachineNode), "time_machine", Output, "Time machine",
-                "Saves IQ from before you pressed record", Role::Plain, Face::fit(360), [
-                iq_in(),
-                position_in(),
             ]),
             (NetworkExport(NetworkExportNode), "network_export", Output, "Network IQ",
                 "Streams IQ to other programs", Role::Plain, Face::fit(380), [
@@ -612,6 +601,7 @@ impl NodeBody {
     pub fn ports(&self, descriptors: Option<&[ChannelDescriptor]>) -> Vec<PortSpec> {
         let declared = self.kind().declared();
         match self {
+            Self::Device(device) => narrow_device(declared, device.device.as_ref()),
             Self::Channel(channel) => narrow_channel(
                 declared,
                 descriptors.and_then(|all| {
@@ -652,6 +642,20 @@ impl NodeKind {
 #[must_use]
 pub fn channel_ports(descriptor: &ChannelDescriptor) -> Vec<PortSpec> {
     narrow_channel(NodeKind::Channel.declared(), Some(descriptor))
+}
+
+/// A generator makes its own samples, so its lane is synthetic rather than a radio's.
+fn narrow_device(declared: Vec<PortSpec>, pinned: Option<&super::DeviceRef>) -> Vec<PortSpec> {
+    if !pinned.is_some_and(super::DeviceRef::is_generator) {
+        return declared;
+    }
+    declared
+        .into_iter()
+        .map(|port| match port.payload {
+            Payload::Iq { .. } => port.carrying(Payload::iq(&[IqOrigin::Synthetic])),
+            _ => port,
+        })
+        .collect()
 }
 
 fn narrow_channel(

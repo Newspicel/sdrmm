@@ -78,7 +78,6 @@ pub struct MlseDetector {
     soft_scale: f32,
     response: SymbolResponse,
     states: usize,
-    shift_mask: usize,
     branch: Vec<f32>,
     decides: Vec<u8>,
     tail: usize,
@@ -122,7 +121,6 @@ impl MlseDetector {
                     * mapping.min_spacing()
                     * response.taps.iter().map(|&c| c * c).sum::<f32>()),
             states,
-            shift_mask: m.pow(taps.saturating_sub(2) as u32),
             branch: vec![0.0; states * m],
             decides: vec![0; states * m],
             tail: training_tail(taps),
@@ -212,7 +210,6 @@ impl MlseDetector {
         let Self {
             m,
             states,
-            shift_mask,
             branch,
             decides,
             pending,
@@ -226,7 +223,7 @@ impl MlseDetector {
             soft_scale,
             ..
         } = self;
-        let (m, states, shift_mask) = (*m, *states, *shift_mask);
+        let (m, states) = (*m, *states);
 
         for k in 0..len {
             let (done, ahead) = alpha.split_at_mut((k + 1) * states);
@@ -238,7 +235,7 @@ impl MlseDetector {
                 for sym in 0..m {
                     let error = y - gain * branch[state * m + sym];
                     let metric = from + error * error;
-                    let to = sym + (state % shift_mask) * m;
+                    let to = (state * m + sym) % states;
                     if metric < next[to] {
                         next[to] = metric;
                     }
@@ -260,7 +257,7 @@ impl MlseDetector {
                 let behind = alpha[k * states + state];
                 for sym in 0..m {
                     let error = y - gain * branch[state * m + sym];
-                    let onward = error * error + beta_next[sym + (state % shift_mask) * m];
+                    let onward = error * error + beta_next[(state * m + sym) % states];
                     if onward < beta[state] {
                         beta[state] = onward;
                     }
@@ -467,6 +464,14 @@ mod tests {
             response.taps()
         );
         assert_eq!(MlseDetector::new(&params, &rx).states(), 1);
+
+        let sent = symbols(400, 0x4e11, 4);
+        let observed = model_stream(&response, params.mapping(), &sent);
+        let got = detect(&mut MlseDetector::new(&params, &rx), &observed);
+        assert_eq!(
+            got, sent,
+            "an ISI-free trellis decided a different sequence"
+        );
     }
 
     #[test]

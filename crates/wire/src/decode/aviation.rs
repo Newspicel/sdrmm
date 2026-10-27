@@ -47,4 +47,16 @@ pub struct AcarsMessage {
     pub flight: Option<String>,
     pub text: String,
     pub more: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sublabel: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mfi: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assstat: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lat: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lon: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decoded: Option<serde_json::Value>,
 }

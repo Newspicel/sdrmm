@@ -72,7 +72,7 @@ impl MobileCore {
             }
         };
         let replaced = self.retire_live(&record.server_id).await;
-        let stored = self.inner.vault.store(&record);
+        self.inner.vault.store(&record)?;
         let restart = match (replaced, previous) {
             (true, _) => Some(record.clone()),
             (false, Some(previous)) if resume => Some(resumed(record.clone(), previous)),
@@ -81,7 +81,6 @@ impl MobileCore {
         if let Some(restart) = restart {
             self.inner.resume_link(restart);
         }
-        stored?;
         Ok(record.saved())
     }
 }
@@ -203,6 +202,40 @@ mod tests {
             )
             .expect("link");
         assert_eq!(offered.fingerprint.as_deref(), Some(stub.pin.as_str()));
+        core.shutdown();
+    }
+
+    #[tokio::test]
+    async fn a_token_the_vault_refuses_starts_no_session() {
+        let stub =
+            StubServer::start(|_: &StubRequest| StubResponse::json(200, &reply(testing::PHONE_ID)))
+                .await;
+        let (vault, core) = core();
+        let offer = PairOffer {
+            hosts: vec![stub.host()],
+            code: "12345678".to_owned(),
+            fingerprint: Some(stub.pin.clone()),
+            fingerprint_short: None,
+            protocol: API_PROTOCOL,
+            server_name: None,
+        };
+
+        core.pair(offer.clone(), "iPhone".to_owned())
+            .await
+            .expect("paired");
+        core.connect(testing::SERVER_ID.to_owned())
+            .await
+            .expect("connected");
+        assert!(core.inner.link().is_some());
+        vault.refuse_stores();
+
+        let refused = core
+            .pair(offer, "iPhone".to_owned())
+            .await
+            .expect_err("the vault refused the token");
+
+        assert!(matches!(refused, CoreError::Vault { .. }), "{refused}");
+        assert!(core.inner.link().is_none());
         core.shutdown();
     }
 }

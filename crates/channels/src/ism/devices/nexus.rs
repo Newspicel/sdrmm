@@ -199,3 +199,108 @@ fn alecto(bits: &mut Bits, found: &mut Found) -> Outcome {
         )
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ism::bits::from_rows;
+    use crate::ism::device::{Decode, tenths_c};
+
+    const RUBICSON_ROW: &str = "110001011000111101001110111100000100";
+    const NEXUS_T_ROW: &str = "000100001000000011001111111100000000";
+    const PROLOGUE_ROW: &str = "100110100011100111111000010101000101";
+    const ALECTO_TEMPERATURE_ROW: &str = "010101000000010101110000101000100100";
+    const ALECTO_RAIN_ROW: &str = "010101000110110011011110000000000111";
+    const ALECTO_SYNC_ROW: &str = "11111111";
+
+    fn only(decode: Decode, rows: &[&str]) -> IsmMessage {
+        let mut bits = from_rows(rows);
+        let mut found = Found::new();
+        assert_eq!(decode(&mut bits, &mut found), Outcome::Decoded);
+        assert_eq!(found.len(), 1, "{found:?}");
+        found.remove(0)
+    }
+
+    fn alecto_rows(frame: &str) -> [&str; 7] {
+        [ALECTO_SYNC_ROW, frame, frame, frame, frame, frame, frame]
+    }
+
+    #[test]
+    fn a_rubicson_frame_passes_its_crc_and_reads_a_negative_temperature() {
+        let message = only(rubicson, &[RUBICSON_ROW; 3]);
+        assert_eq!(message.model, "Rubicson-Temperature");
+        assert_eq!(message.id, "197");
+        assert_eq!(message.channel.as_deref(), Some("1"));
+        assert_eq!(message.battery_ok, Some(true));
+        assert_eq!(tenths_c(&message), Some(-17.8));
+        assert_eq!(message.raw, "c58f4ef040");
+        assert_eq!(message.bits, 36);
+    }
+
+    #[test]
+    fn a_rubicson_frame_with_a_broken_crc_reports_a_failed_check() {
+        let mut row = RUBICSON_ROW.to_owned();
+        row.replace_range(35..36, "1");
+        let mut bits = from_rows(&[row.as_str(); 3]);
+        let mut found = Found::new();
+        assert_eq!(rubicson(&mut bits, &mut found), Outcome::Mic);
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn a_nexus_frame_without_humidity_reports_the_temperature_only_model() {
+        let message = only(nexus, &[NEXUS_T_ROW; 3]);
+        assert_eq!(message.model, "Nexus-T");
+        assert_eq!(message.id, "16");
+        assert_eq!(message.channel.as_deref(), Some("1"));
+        assert_eq!(message.battery_ok, Some(true));
+        assert_eq!(tenths_c(&message), Some(20.7));
+        assert_eq!(message.humidity_pct, None);
+        assert_eq!(message.raw, "1080cff000");
+    }
+
+    #[test]
+    fn a_prologue_frame_reads_its_nibble_packed_temperature_and_humidity() {
+        let message = only(prologue, &[PROLOGUE_ROW; 4]);
+        assert_eq!(message.model, "Prologue-TH");
+        assert_eq!(message.id, "163");
+        assert_eq!(message.channel.as_deref(), Some("2"));
+        assert_eq!(message.battery_ok, Some(true));
+        assert_eq!(tenths_c(&message), Some(-12.3));
+        assert_eq!(message.humidity_pct, Some(69));
+        assert_eq!(message.raw, "9a39f85450");
+        assert_eq!(message.bits, 36);
+    }
+
+    #[test]
+    fn an_alecto_temperature_frame_reads_reversed_bytes_and_bcd_humidity() {
+        let message = only(alecto, &alecto_rows(ALECTO_TEMPERATURE_ROW));
+        assert_eq!(message.model, "AlectoV1-Temperature");
+        assert_eq!(message.id, "42");
+        assert_eq!(message.channel.as_deref(), Some("1"));
+        assert_eq!(message.battery_ok, Some(true));
+        assert_eq!(tenths_c(&message), Some(23.4));
+        assert_eq!(message.humidity_pct, Some(45));
+        assert_eq!(message.raw, "540570a240");
+    }
+
+    #[test]
+    fn an_alecto_rain_frame_counts_quarter_millimetre_tips() {
+        let message = only(alecto, &alecto_rows(ALECTO_RAIN_ROW));
+        assert_eq!(message.model, "AlectoV1-Rain");
+        assert_eq!(message.id, "42");
+        assert_eq!(message.rain_mm, Some(30.75));
+        assert_eq!(message.temperature_c, None);
+        assert_eq!(message.raw, "546cde0070");
+    }
+
+    #[test]
+    fn an_alecto_frame_with_a_broken_checksum_reports_a_failed_check() {
+        let mut row = ALECTO_TEMPERATURE_ROW.to_owned();
+        row.replace_range(35..36, "1");
+        let mut bits = from_rows(&alecto_rows(row.as_str()));
+        let mut found = Found::new();
+        assert_eq!(alecto(&mut bits, &mut found), Outcome::Mic);
+        assert!(found.is_empty());
+    }
+}

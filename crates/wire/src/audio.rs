@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+pub const AUDIO_RATE_HZ: u32 = 48_000;
+
 pub const MAX_AUDIO_NOTCHES: usize = 4;
 
 pub const MIN_BLANKER_THRESHOLD: f32 = 1.5;
@@ -15,32 +17,40 @@ pub const MAX_AUDIO_FX_CHAIN: usize = 16;
 pub const DENOISE_MODELS_PREFIX: &str = "denoise/v1";
 pub const DENOISE_MODELS_URL: &str = "https://downloads.sdrmm.com/denoise/v1";
 
-fn default_blanker_threshold() -> f32 {
-    5.0
+pub const DEFAULT_BLANKER_THRESHOLD: f32 = 5.0;
+pub const DEFAULT_DENOISE_STRENGTH: f32 = 0.5;
+pub const DEFAULT_CLICK_THRESHOLD: f32 = 6.0;
+pub const DEFAULT_FILTER_LOW_HZ: f64 = 300.0;
+pub const DEFAULT_FILTER_HIGH_HZ: f64 = 3_000.0;
+pub const DEFAULT_NOTCH_WIDTH_HZ: f64 = 100.0;
+pub const DEFAULT_NOTCH_FREQ_HZ: f64 = 1_000.0;
+
+const fn default_blanker_threshold() -> f32 {
+    DEFAULT_BLANKER_THRESHOLD
 }
 
-fn default_denoise_strength() -> f32 {
-    0.5
+const fn default_denoise_strength() -> f32 {
+    DEFAULT_DENOISE_STRENGTH
 }
 
-fn default_click_threshold() -> f32 {
-    6.0
+const fn default_click_threshold() -> f32 {
+    DEFAULT_CLICK_THRESHOLD
 }
 
-fn default_filter_low_hz() -> f64 {
-    300.0
+const fn default_filter_low_hz() -> f64 {
+    DEFAULT_FILTER_LOW_HZ
 }
 
-fn default_filter_high_hz() -> f64 {
-    3_000.0
+const fn default_filter_high_hz() -> f64 {
+    DEFAULT_FILTER_HIGH_HZ
 }
 
-fn default_notch_width_hz() -> f64 {
-    100.0
+const fn default_notch_width_hz() -> f64 {
+    DEFAULT_NOTCH_WIDTH_HZ
 }
 
-fn default_notch_freq_hz() -> f64 {
-    1_000.0
+const fn default_notch_freq_hz() -> f64 {
+    DEFAULT_NOTCH_FREQ_HZ
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

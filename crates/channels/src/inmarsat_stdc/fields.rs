@@ -410,8 +410,8 @@ pub fn rectangular_geometry(payload: &[u8]) -> Option<Value> {
             "lat_deg": signed(i32::from(lat & 0x7F), lat & 0x80 != 0),
             "lon_deg": signed(i32::from(lon), north & 0x80 != 0),
         },
-        "north_extent_nm": i32::from(north & 0x7F),
-        "east_extent_nm": i32::from(east),
+        "north_extent_deg": i32::from(north & 0x7F),
+        "east_extent_deg": i32::from(east),
         "lat_hemisphere": lat_hemisphere,
         "lon_hemisphere": lon_hemisphere,
     }))
@@ -615,12 +615,21 @@ mod tests {
     }
 
     #[test]
+    fn rectangular_extents_cover_the_full_degree_range() {
+        let widest = rectangular_geometry(&[0x00, 0x00, 0x5A, 0xB4]).expect("rectangle");
+        assert_eq!(widest["north_extent_deg"], 90);
+        assert_eq!(widest["east_extent_deg"], 180);
+        assert!(widest["north_extent_nm"].is_null());
+        assert!(widest["east_extent_nm"].is_null());
+    }
+
+    #[test]
     fn geometry_matches_manual_worked_examples() {
         let rectangle = rectangular_geometry(&[0x3C, 0x0A, 0x9E, 0x19]).expect("rectangle");
         assert_eq!(rectangle["sw_corner"]["lat_deg"], 60);
         assert_eq!(rectangle["sw_corner"]["lon_deg"], -10);
-        assert_eq!(rectangle["north_extent_nm"], 30);
-        assert_eq!(rectangle["east_extent_nm"], 25);
+        assert_eq!(rectangle["north_extent_deg"], 30);
+        assert_eq!(rectangle["east_extent_deg"], 25);
         let circle = circular_geometry(&[0x0E, 0x42, 0x81, 0x2C]).expect("circle");
         assert_eq!(circle["center"]["lat_deg"], 14);
         assert_eq!(circle["center"]["lon_deg"], -66);

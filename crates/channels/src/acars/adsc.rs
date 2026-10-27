@@ -520,6 +520,16 @@ fn parse_uplink(mut buf: &[u8], msg: &mut AdscMessage) {
     }
 }
 
+fn reporting_interval_secs(field: u8) -> Option<u32> {
+    let scale = match field >> 6 {
+        1 => 1u32,
+        2 => 8,
+        3 => 64,
+        _ => return None,
+    };
+    Some(scale * (u32::from(field & 0x3F) + 1))
+}
+
 fn parse_request_groups(buf: &mut &[u8]) -> Vec<RequestGroup> {
     let mut groups = Vec::new();
     loop {
@@ -531,11 +541,10 @@ fn parse_request_groups(buf: &mut &[u8]) -> Vec<RequestGroup> {
             10 => take(&mut b, 1).map(|x| RequestGroup::LateralDeviationThreshold {
                 nm: x[0] as f64 / 8.0,
             }),
-            11 => take(&mut b, 1).map(|x| {
-                let sf = [0u32, 1, 8, 64][(x[0] >> 6) as usize];
-                RequestGroup::ReportingInterval {
-                    seconds: sf * ((x[0] & 0x3F) as u32 + 1),
-                }
+            11 => take(&mut b, 1).and_then(|x| {
+                Some(RequestGroup::ReportingInterval {
+                    seconds: reporting_interval_secs(x[0])?,
+                })
             }),
             12 => take(&mut b, 1).map(|x| RequestGroup::FlightIdModulus { every_n: x[0] }),
             13 => take(&mut b, 1).map(|x| RequestGroup::PredictedRouteModulus { every_n: x[0] }),
@@ -564,5 +573,30 @@ fn parse_request_groups(buf: &mut &[u8]) -> Vec<RequestGroup> {
             }
             None => return groups,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reporting_interval_scale_never_decodes_to_zero_seconds() {
+        for value in 0..64u8 {
+            assert_eq!(reporting_interval_secs(value), None, "scale code 0");
+        }
+        assert_eq!(reporting_interval_secs(0x40), Some(1));
+        assert_eq!(reporting_interval_secs(0x40 | 0x3F), Some(64));
+        assert_eq!(reporting_interval_secs(0x80), Some(8));
+        assert_eq!(reporting_interval_secs(0xC0), Some(64));
+        for field in 0..=u8::MAX {
+            assert_ne!(reporting_interval_secs(field), Some(0), "{field:#04x}");
+        }
+    }
+
+    #[test]
+    fn a_rejected_reporting_interval_stops_the_request_groups() {
+        let mut buf: &[u8] = &[11, 0x00, 12, 4];
+        assert!(parse_request_groups(&mut buf).is_empty());
     }
 }

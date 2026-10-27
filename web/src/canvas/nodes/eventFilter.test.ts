@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_FILTER_IDS } from "../../lib/limits";
+import { MAX_FILTER_IDS, MAX_FILTER_KINDS, MAX_FILTER_TEXT_LEN } from "../../lib/limits";
 import type { EventKind, Feed } from "../../lib/types";
 import { CATALOG } from "../../test/catalog";
 import {
@@ -9,6 +9,7 @@ import {
   offeredBy,
   parseIds,
   parseWords,
+  textLength,
   predicatesFor,
   sectionsFor,
   stationLabel,
@@ -196,5 +197,23 @@ describe("sectionsFor", () => {
       ["Position", ["adsb"]],
       ["Voice", ["call"]],
     ]);
+  });
+});
+
+describe("filter words", () => {
+  it("are measured in the characters wire counts, not utf-16 units", () => {
+    const wide = "\u8def".repeat(MAX_FILTER_TEXT_LEN);
+    expect(textLength(wide)).toBe(MAX_FILTER_TEXT_LEN);
+    expect(parseWords(wide)).toEqual([wide]);
+    const pairs = "\u{1f680}".repeat(MAX_FILTER_TEXT_LEN);
+    expect(pairs.length).toBe(MAX_FILTER_TEXT_LEN * 2);
+    expect(parseWords(pairs)).toEqual([pairs]);
+    expect(parseWords("\u8def".repeat(MAX_FILTER_TEXT_LEN + 1))).toEqual([]);
+  });
+});
+
+describe("the kind cap", () => {
+  it("leaves room for every kind the catalog offers", () => {
+    expect(CATALOG.event_kinds.length).toBeLessThanOrEqual(MAX_FILTER_KINDS);
   });
 });

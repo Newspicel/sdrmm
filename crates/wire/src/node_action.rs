@@ -3,7 +3,7 @@ use utoipa::ToSchema;
 
 use crate::{
     ControlAck, HuntAction, NetworkExportAction, NetworkExportStatus, NoticeWire, PlaybackRequest,
-    PlaybackStatus, ScanAction, TimeMachineAction, TimeMachineStatus,
+    PlaybackStatus, ScanAction,
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -13,7 +13,6 @@ pub enum NodeAction {
     Retype { channel_type: String },
     Scan(ScanAction),
     Hunt(HuntAction),
-    TimeMachine(TimeMachineAction),
     Playback(PlaybackRequest),
     NetworkExport(NetworkExportAction),
 }
@@ -24,7 +23,6 @@ pub enum NodeActed {
     Controlled(Vec<ControlAck>),
     Tuned,
     Retyped { dropped: Vec<NoticeWire> },
-    TimeMachine(TimeMachineStatus),
     Playback(PlaybackStatus),
     NetworkExport(NetworkExportStatus),
 }

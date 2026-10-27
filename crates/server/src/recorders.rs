@@ -6,7 +6,7 @@ use std::{
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
     AUDIO_PORT, AudioRoute, BASEBAND_PORT, IQ_PORT, NodeBody, NodeKind, NodeProblem, PatchGraph,
-    ProblemSource, ResolvedPatch, StateScope, StateSnapshot, TimeMachineNode,
+    ProblemSource, RecorderNode, ResolvedPatch, StateScope, StateSnapshot,
 };
 
 use crate::{
@@ -26,7 +26,7 @@ pub(crate) struct Hooks {
 
 const ONE_TAKE_PER_CHANNEL: &str = "Records each channel once";
 const ONE_TAKE_PER_RADIO: &str = "Another recorder holds this radio";
-const ONE_HISTORY_PER_RADIO: &str = "Another time machine holds this radio";
+const ONE_HISTORY_PER_RADIO: &str = "Another recorder holds this radio's pre-roll";
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct AudioTake {
@@ -87,8 +87,8 @@ impl Recorders {
             &snapshot,
             &mut wanted_targets,
         );
-        self.iq(&mut tick, iq, &snapshot, &mut wanted_targets);
         self.history(&mut tick, history, &snapshot, &mut wanted_targets);
+        self.iq(&mut tick, iq, &snapshot, &mut wanted_targets);
         self.failures
             .retain(|target, _| wanted_targets.contains(target));
         tick.finish();
@@ -189,10 +189,10 @@ impl Recorders {
             if wanted.get(&device_set) == Some(hold) {
                 continue;
             }
-            match tick.engine.disarm_time_machine(device_set, &hold.node) {
+            match tick.engine.drop_pre_roll(device_set, &hold.node) {
                 Ok(status) => tick.finished |= status.capture.is_some(),
                 Err(error) => {
-                    tracing::warn!(device_set, %error, "could not let go of a time machine");
+                    tracing::warn!(device_set, %error, "could not let go of a pre-roll");
                 }
             }
         }
@@ -200,13 +200,9 @@ impl Recorders {
             if current.get(&device_set) == Some(want) {
                 continue;
             }
-            let settings = TimeMachineNode {
-                history_seconds: want.history_seconds,
-                armed: true,
-            };
             let result = tick
                 .engine
-                .arm_time_machine(device_set, want.node.clone(), want.stream, settings)
+                .arm_pre_roll(device_set, want.node.clone(), want.stream, want.pre_roll_s)
                 .map(|_| ());
             self.outcome(Target::History { device_set }, result);
         }
@@ -229,8 +225,15 @@ impl Recorders {
             if wanted.get(&device_set) == Some(take) {
                 continue;
             }
-            match tick.engine.stop_recording(device_set) {
-                Ok(_) => {
+            let stopped = match take.held_by() {
+                Some(node) => tick
+                    .engine
+                    .stop_pre_roll_capture(device_set, node)
+                    .map(|_| ()),
+                None => tick.engine.stop_recording(device_set).map(|_| ()),
+            };
+            match stopped {
+                Ok(()) => {
                     tick.finished = true;
                     tick.moved_iq = true;
                 }
@@ -241,9 +244,16 @@ impl Recorders {
             if current.get(&device_set) == Some(take) {
                 continue;
             }
-            let result = tick
-                .engine
-                .start_recording(device_set, take.stream, take.node.as_deref());
+            let result = match take.held_by() {
+                Some(node) => tick
+                    .engine
+                    .start_pre_roll_capture(device_set, node)
+                    .map(|_| ()),
+                None => tick
+                    .engine
+                    .start_recording(device_set, take.stream, take.node.as_deref())
+                    .map(|_| ()),
+            };
             if result.is_ok() {
                 tick.moved_iq = true;
             }
@@ -292,7 +302,8 @@ impl Tick<'_> {
 
 fn recording(body: &NodeBody) -> bool {
     match body {
-        NodeBody::Recorder(recorder) | NodeBody::BasebandRecorder(recorder) => recorder.recording,
+        NodeBody::Recorder(recorder) => recorder.recording,
+        NodeBody::BasebandRecorder(recorder) => recorder.recording,
         NodeBody::AudioRecorder(recorder) => recorder.recording,
         _ => false,
     }
@@ -398,6 +409,17 @@ fn wanted_baseband(graph: &PatchGraph, patch: &ResolvedPatch) -> HashSet<(u32, u
 struct Take {
     stream: u32,
     node: Option<String>,
+    pre_roll_s: u32,
+}
+
+impl Take {
+    /// The recorder whose pre-roll carries this take, so the capture goes through the ring rather
+    /// than straight from the live lane.
+    fn held_by(&self) -> Option<&str> {
+        (self.pre_roll_s > 0)
+            .then_some(self.node.as_deref())
+            .flatten()
+    }
 }
 
 fn running_iq(snapshot: &StateSnapshot) -> HashMap<u32, Take> {
@@ -405,10 +427,19 @@ fn running_iq(snapshot: &StateSnapshot) -> HashMap<u32, Take> {
         .device_sets
         .iter()
         .filter_map(|set| {
+            if let Some(held) = set.pre_roll.as_ref().filter(|held| held.capture.is_some()) {
+                let take = Take {
+                    stream: held.stream,
+                    node: Some(held.node.clone()),
+                    pre_roll_s: held.pre_roll_s,
+                };
+                return Some((set.id, take));
+            }
             set.recording.as_ref().map(|status| {
                 let take = Take {
                     stream: status.stream,
                     node: status.node.clone(),
+                    pre_roll_s: 0,
                 };
                 (set.id, take)
             })
@@ -420,6 +451,7 @@ fn wanted_iq(graph: &PatchGraph, patch: &ResolvedPatch) -> (HashMap<u32, Take>, 
     let mut wanted: HashMap<u32, Take> = HashMap::new();
     let mut held = Vec::new();
     for node in switched_on(graph, NodeKind::Recorder) {
+        let pre_roll_s = pre_roll_of(&node.body).map_or(0, |recorder| recorder.pre_roll_s);
         let mut shut_out = false;
         for (device_set, stream) in patch
             .feeds(&node.id, IQ_PORT)
@@ -429,6 +461,7 @@ fn wanted_iq(graph: &PatchGraph, patch: &ResolvedPatch) -> (HashMap<u32, Take>, 
             let take = wanted.entry(device_set).or_insert_with(|| Take {
                 stream,
                 node: Some(node.id.clone()),
+                pre_roll_s,
             });
             shut_out |= take.node.as_deref() != Some(node.id.as_str());
         }
@@ -447,7 +480,7 @@ fn wanted_iq(graph: &PatchGraph, patch: &ResolvedPatch) -> (HashMap<u32, Take>, 
 struct Hold {
     node: String,
     stream: u32,
-    history_seconds: u32,
+    pre_roll_s: u32,
 }
 
 fn held_history(snapshot: &StateSnapshot) -> HashMap<u32, Hold> {
@@ -455,11 +488,11 @@ fn held_history(snapshot: &StateSnapshot) -> HashMap<u32, Hold> {
         .device_sets
         .iter()
         .filter_map(|set| {
-            set.time_machine.as_ref().map(|held| {
+            set.pre_roll.as_ref().map(|held| {
                 let hold = Hold {
                     node: held.node.clone(),
                     stream: held.stream,
-                    history_seconds: held.history_seconds,
+                    pre_roll_s: held.pre_roll_s,
                 };
                 (set.id, hold)
             })
@@ -467,11 +500,15 @@ fn held_history(snapshot: &StateSnapshot) -> HashMap<u32, Hold> {
         .collect()
 }
 
-fn armed_history(body: &NodeBody) -> Option<&TimeMachineNode> {
+fn pre_roll_of(body: &NodeBody) -> Option<&RecorderNode> {
     match body {
-        NodeBody::TimeMachine(history) if history.armed => Some(history),
+        NodeBody::Recorder(recorder) => Some(recorder),
         _ => None,
     }
+}
+
+fn holding_pre_roll(body: &NodeBody) -> Option<&RecorderNode> {
+    pre_roll_of(body).filter(|recorder| recorder.pre_roll_s > 0)
 }
 
 fn wanted_history(
@@ -481,7 +518,7 @@ fn wanted_history(
     let mut wanted: HashMap<u32, Hold> = HashMap::new();
     let mut taken = Vec::new();
     for node in &graph.nodes {
-        let Some(history) = armed_history(&node.body) else {
+        let Some(recorder) = holding_pre_roll(&node.body) else {
             continue;
         };
         let mut shut_out = false;
@@ -493,7 +530,7 @@ fn wanted_history(
             let hold = wanted.entry(device_set).or_insert_with(|| Hold {
                 node: node.id.clone(),
                 stream,
-                history_seconds: history.history_seconds,
+                pre_roll_s: recorder.pre_roll_s,
             });
             shut_out |= hold.node != node.id;
         }
@@ -510,6 +547,10 @@ fn wanted_history(
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_wire::BasebandRecorderNode;
+
+    use sdrmm_wire::DeviceBackend;
+
     use sdrmm_wire::{
         AudioRecorderNode, ChannelNode, DeviceNode, DeviceRef, PatchEdge, PatchNode, PortRef,
         Position, RecorderNode,
@@ -555,13 +596,16 @@ mod tests {
     }
 
     fn on(recording: bool) -> RecorderNode {
-        RecorderNode { recording }
+        RecorderNode {
+            recording,
+            pre_roll_s: 0,
+        }
     }
 
-    fn history_node(armed: bool) -> TimeMachineNode {
-        TimeMachineNode {
-            history_seconds: 1,
-            armed,
+    fn held(pre_roll_s: u32) -> RecorderNode {
+        RecorderNode {
+            recording: false,
+            pre_roll_s,
         }
     }
 
@@ -612,7 +656,7 @@ mod tests {
                     "dev",
                     NodeBody::Device(DeviceNode {
                         device: Some(DeviceRef {
-                            backend: "virtual".to_owned(),
+                            backend: DeviceBackend::Virtual,
                             serial: None,
                             key: None,
                         }),
@@ -621,7 +665,10 @@ mod tests {
                 ),
                 channel("ch"),
                 node("iq", NodeBody::Recorder(on(recording))),
-                node("base", NodeBody::BasebandRecorder(on(recording))),
+                node(
+                    "base",
+                    NodeBody::BasebandRecorder(BasebandRecorderNode { recording }),
+                ),
                 node("audio", NodeBody::AudioRecorder(audio_on(recording))),
             ],
             edges: vec![
@@ -746,9 +793,7 @@ mod tests {
         let (engine, ds, _) = radio(&dir);
         let mut graph = patch(false);
         for id in ["history", "late"] {
-            graph
-                .nodes
-                .push(node(id, NodeBody::TimeMachine(history_node(true))));
+            graph.nodes.push(node(id, NodeBody::Recorder(held(1))));
             graph.edges.push(wire(("dev", "iq"), (id, "iq")));
         }
         let resolved = resolved(Some(graph), &engine);
@@ -774,34 +819,34 @@ mod tests {
         let (engine, ds, _) = radio(&dir);
         let hooks = hooks();
         let mut recorders = Recorders::default();
-        let drawn = |armed: bool| {
+        let drawn = |pre_roll_s: u32| {
             let mut graph = patch(false);
             graph
                 .nodes
-                .push(node("history", NodeBody::TimeMachine(history_node(armed))));
+                .push(node("history", NodeBody::Recorder(held(pre_roll_s))));
             graph.edges.push(wire(("dev", "iq"), ("history", "iq")));
             graph
         };
         let holder = || {
             engine.snapshot().device_sets[0]
-                .time_machine
+                .pre_roll
                 .as_ref()
                 .map(|held| held.node.clone())
         };
 
-        recorders.reconcile(&engine, &resolved(Some(drawn(true)), &engine), &hooks);
+        recorders.reconcile(&engine, &resolved(Some(drawn(1)), &engine), &hooks);
         assert_eq!(holder().as_deref(), Some("history"));
-        recorders.reconcile(&engine, &resolved(Some(drawn(true)), &engine), &hooks);
+        recorders.reconcile(&engine, &resolved(Some(drawn(1)), &engine), &hooks);
         assert_eq!(
             holder().as_deref(),
             Some("history"),
             "a second tick re-armed"
         );
 
-        recorders.reconcile(&engine, &resolved(Some(drawn(false)), &engine), &hooks);
+        recorders.reconcile(&engine, &resolved(Some(drawn(0)), &engine), &hooks);
         assert_eq!(holder(), None);
 
-        recorders.reconcile(&engine, &resolved(Some(drawn(true)), &engine), &hooks);
+        recorders.reconcile(&engine, &resolved(Some(drawn(1)), &engine), &hooks);
         recorders.reconcile(&engine, &resolved(Some(patch(false)), &engine), &hooks);
         assert_eq!(
             holder(),

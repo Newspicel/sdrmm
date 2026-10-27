@@ -111,10 +111,15 @@ impl Propagator {
     }
 
     pub fn propagate(&self, minutes: f64) -> Result<State, OrbitError> {
+        if !minutes.is_finite() {
+            return Err(OrbitError::Elements(
+                "a propagation time that is not finite",
+            ));
+        }
         let near = &self.near;
         let (mut mean, secular) = near.secular(minutes);
         if let Some(deep) = &self.deep {
-            deep.secular(minutes, &mut mean);
+            deep.secular(minutes, &mut mean)?;
         }
         if mean.nm <= 0.0 {
             return Err(OrbitError::Decayed("mean motion fell to zero"));

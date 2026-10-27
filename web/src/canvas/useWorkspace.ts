@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
@@ -8,32 +8,17 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  activateWorkspace,
-  applyWorkspace,
-  cloneWorkspace,
-  createWorkspace,
-  deleteWorkspace,
-  importWorkspace,
-  STATE_KEY,
-  stepWorkspace,
-  updateWorkspace,
-  WORKSPACES_KEY,
-  workspaceQuery,
-  workspacesQuery,
-} from "../lib/api";
+import { WORKSPACES_KEY, workspaceQuery, workspacesQuery } from "../lib/api";
 import type {
   ChannelSettings,
   WorkspaceDetail,
   WorkspaceInfo,
   WorkspaceSnapshot,
 } from "../lib/types";
-import { retryNodeState } from "../lib/useNodeStateSync";
 import { pruneRack } from "./graph";
 import { savedChannelsOf } from "./savedChannels";
-import { useSwitchStore } from "./switches";
-import { type Edit, newer, WorkspaceEdits } from "./workspaceEdits";
-import { parseWorkspaceExport } from "./workspaceExport";
+import { type Edit, WorkspaceEdits } from "./workspaceEdits";
+import { useWorkspaceMutations } from "./workspaceMutations";
 
 export interface WorkspaceStore {
   workspaces: WorkspaceInfo[];
@@ -65,77 +50,9 @@ export function useWorkspace(): WorkspaceStore {
   const [edits] = useState(() => new WorkspaceEdits(fitRack));
   const [, bump] = useReducer((count: number) => count + 1, 0);
 
-  const store = useCallback(
-    (stored: WorkspaceDetail) =>
-      queryClient.setQueryData<WorkspaceDetail>([...WORKSPACES_KEY, stored.id], (cached) =>
-        newer(cached, stored),
-      ),
-    [queryClient],
-  );
-  const update = useMutation({
-    mutationFn: (variables: { id: number; revision: number; snapshot: WorkspaceSnapshot }) =>
-      updateWorkspace(variables.id, {
-        revision: variables.revision,
-        snapshot: variables.snapshot,
-      }),
-    onSuccess: store,
-  });
-  const renameMut = useMutation({
-    mutationFn: (variables: { id: number; name: string }) =>
-      updateWorkspace(variables.id, {
-        revision:
-          queryClient.getQueryData<WorkspaceDetail>([...WORKSPACES_KEY, variables.id])?.revision ??
-          0,
-        name: variables.name,
-      }),
-    onSuccess: store,
-    onSettled: () => queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY }),
-  });
-  const cloneMut = useMutation({
-    mutationFn: cloneWorkspace,
-    onSettled: () => queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY }),
-  });
-  const activateMut = useMutation({
-    mutationFn: (id: number) => {
-      useSwitchStore.getState().expect(id);
-      return activateWorkspace(id);
-    },
-    onSuccess: (report) => {
-      useSwitchStore.getState().publish(report);
-      retryNodeState(queryClient);
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY }),
-  });
-  const createMut = useMutation({
-    mutationFn: (name: string) => createWorkspace(name),
-    onSuccess: (id) => activateMut.mutate(id),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY }),
-  });
-  const importMut = useMutation({
-    mutationFn: async (file: File) => importWorkspace(parseWorkspaceExport(await file.text())),
-    onSuccess: (id) => activateMut.mutate(id),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY }),
-  });
-  const removeMut = useMutation({
-    mutationFn: deleteWorkspace,
-    onSettled: () => queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY }),
-  });
-  const applyMut = useMutation({
-    mutationFn: applyWorkspace,
-    onSuccess: (report) => {
-      useSwitchStore.getState().publish(report);
-      retryNodeState(queryClient);
-    },
-  });
+  const mutations = useWorkspaceMutations(queryClient);
+  const { update, apply: applyMut, step: stepMut, rename: renameMut, clone: cloneMut } = mutations;
   const applyAsync = applyMut.mutateAsync;
-  const stepMut = useMutation({
-    mutationFn: (variables: { id: number; step: "undo" | "redo" }) =>
-      stepWorkspace(variables.id, variables.step),
-    onSuccess: (stepped, variables) => {
-      queryClient.setQueryData<WorkspaceDetail>([...WORKSPACES_KEY, variables.id], stepped);
-      void queryClient.invalidateQueries({ queryKey: STATE_KEY });
-    },
-  });
   const stepAsync = stepMut.mutateAsync;
 
   const queried = detail.data ?? null;
@@ -254,22 +171,14 @@ export function useWorkspace(): WorkspaceStore {
   return {
     workspaces: list.data?.workspaces ?? [],
     active,
-    error:
-      errorOf(update.error) ??
-      errorOf(createMut.error) ??
-      errorOf(renameMut.error) ??
-      errorOf(cloneMut.error) ??
-      errorOf(importMut.error) ??
-      errorOf(removeMut.error) ??
-      errorOf(applyMut.error) ??
-      errorOf(stepMut.error),
+    error: mutations.error,
     save,
-    activate: activateMut.mutate,
-    create: createMut.mutate,
+    activate: mutations.activate.mutate,
+    create: mutations.create.mutate,
     rename,
     clone,
-    importFile: importMut.mutate,
-    remove: removeMut.mutate,
+    importFile: mutations.importFile.mutate,
+    remove: mutations.remove.mutate,
     apply,
     undo,
     redo,

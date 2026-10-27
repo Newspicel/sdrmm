@@ -6,7 +6,7 @@ import {
   identOverview,
   modulationLabel,
   signalFrequency,
-} from "./decoderViews";
+} from "./decoders/ident";
 
 function signal(overrides: Partial<IdentSignal> = {}): IdentSignal {
   return {

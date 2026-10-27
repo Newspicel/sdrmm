@@ -18,4 +18,10 @@ for f in bundles/*.app.tar.gz; do
 done
 
 test -n "$(find bundles -name '*.sig')" || { echo "no .sig files, is TAURI_SIGNING_PRIVATE_KEY set?" >&2; exit 1; }
+case "$target" in
+  *-apple-darwin)
+    test -n "$(find bundles -maxdepth 1 -name '*.dmg' -print -quit)" ||
+      { echo "no .dmg for $target: the release would ship macOS without a disk image" >&2; exit 1; }
+    ;;
+esac
 ls -l bundles

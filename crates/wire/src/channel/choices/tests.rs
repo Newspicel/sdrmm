@@ -104,6 +104,13 @@ fn enum_fields(schemas: &Schemas, settings: &str) -> Vec<(String, BTreeSet<Strin
         .collect()
 }
 
+fn settings_fields(schemas: &Schemas, settings: &str) -> BTreeSet<String> {
+    let Some(Schema::Object(object)) = named(schemas, settings) else {
+        return BTreeSet::new();
+    };
+    object.properties.keys().cloned().collect()
+}
+
 fn offered(choice: &ParamChoice) -> BTreeSet<String> {
     choice
         .options
@@ -220,6 +227,32 @@ fn titles_explain_the_terse_labels() {
     assert_eq!(vhf.value, "vhf");
     assert_eq!(vhf.title.as_deref(), Some("70 to 87 MHz systems"));
     assert!(SstvMode::Pd50.choice_title().is_none());
+}
+
+#[test]
+fn every_published_limit_names_a_setting_the_decoder_accepts() {
+    let schemas = schemas();
+    let mut checked = 0;
+    for params in all_params() {
+        let limits = crate::channel::param_limits(params.type_id());
+        if limits.is_empty() {
+            continue;
+        }
+        let settings = settings_schema(&params)
+            .unwrap_or_else(|| panic!("{} has no settings schema", params.type_id()));
+        let fields = settings_fields(&schemas, &settings);
+        for limit in &limits {
+            assert!(limit.min < limit.max, "{} {}", params.type_id(), limit.name);
+            assert!(
+                fields.contains(&limit.name),
+                "{} limits {} which it does not accept",
+                params.type_id(),
+                limit.name
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 30, "only {checked} limits found");
 }
 
 #[test]

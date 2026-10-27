@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DecoderEvent, Entity, Hue, Presentation } from "../lib/types";
 import { sinkEntity } from "../test/sinks";
-import { entityCollection, type HueColors, shapeCollections } from "./mapLayers";
+import { entityCollection, type HueColors, installSinkLayers, shapeCollections } from "./mapLayers";
 
 const COLORS = {
   accent: "#0000ff",
@@ -106,5 +106,74 @@ describe("map layers from a sink feed", () => {
     const [ray] = shapeCollections([entity], COLORS, NOW).lines;
 
     expect(ray?.properties.opacity).toBeCloseTo(0.4, 5);
+  });
+});
+
+interface FakeLayer {
+  id: string;
+  source: string;
+}
+
+function fakeMap() {
+  const layers = new Map<string, FakeLayer>();
+  const sources = new Set<string>();
+  const images = new Set<string>();
+  return {
+    layers,
+    sources,
+    getLayer: (id: string) => layers.get(id),
+    addLayer: (layer: FakeLayer) => {
+      if (!sources.has(layer.source)) {
+        throw new Error(`no source ${layer.source}`);
+      }
+      layers.set(layer.id, layer);
+    },
+    removeLayer: (id: string) => {
+      if (!layers.delete(id)) {
+        throw new Error(`no layer ${id}`);
+      }
+    },
+    getSource: (id: string) => (sources.has(id) ? {} : undefined),
+    addSource: (id: string) => {
+      if (sources.has(id)) {
+        throw new Error(`source ${id} is already added`);
+      }
+      sources.add(id);
+    },
+    removeSource: (id: string) => {
+      for (const layer of layers.values()) {
+        if (layer.source === id) {
+          throw new Error(`source ${id} is still used by ${layer.id}`);
+        }
+      }
+      sources.delete(id);
+    },
+    hasImage: (name: string) => images.has(name),
+    addImage: (name: string) => images.add(name),
+  };
+}
+
+describe("installSinkLayers", () => {
+  beforeEach(() => {
+    vi.stubGlobal("document", { createElement: () => ({ getContext: () => null }) });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("takes the dashed lines down with their source, so a re-install stays up", () => {
+    const map = fakeMap();
+    installSinkLayers(map as never, "#111111", "#222222", true);
+    expect(map.layers.has("sink-dashed")).toBe(true);
+
+    expect(() => installSinkLayers(map as never, "#111111", "#222222", true)).not.toThrow();
+    expect(map.layers.has("sink-dashed")).toBe(true);
+    expect(map.sources.size).toBe(5);
+  });
+
+  it("leaves no source behind when the feed is switched off", () => {
+    const map = fakeMap();
+    installSinkLayers(map as never, "#111111", "#222222", true);
+    installSinkLayers(map as never, "#111111", "#222222", false);
+    expect(map.layers.size).toBe(0);
+    expect(map.sources.size).toBe(0);
   });
 });

@@ -171,10 +171,26 @@ fn clearing_to_identity_needs_no_new_set() {
         .iter_mut()
         .for_each(|bin| *bin *= Complex::new(0.0, 1.0));
     assert!(corrector.swap(Box::new(set)).is_ok());
-    corrector.clear_to_identity(7);
+    assert!(corrector.clear_to_identity(7));
     assert_eq!(corrector.active().generation, 7);
     let view = corrector.view(48_000.0);
     assert!((view.response(1, 1_000.0) - Complex::new(1.0, 0.0)).norm() < 1e-5);
+}
+
+#[test]
+fn a_refused_clear_does_not_advertise_an_identity_the_convolvers_never_took() {
+    let mut corrector = Corrector::new(2);
+    let mut set = CorrectionSet::identity(2);
+    set.generation = 3;
+    set.spectra[1]
+        .iter_mut()
+        .for_each(|bin| *bin *= Complex::new(0.0, 1.0));
+    assert!(corrector.swap(Box::new(set)).is_ok());
+    corrector.identity.spectra[1].truncate(CORR_FFT - 1);
+    assert!(!corrector.clear_to_identity(11));
+    assert_eq!(corrector.active().generation, 3);
+    let view = corrector.view(48_000.0);
+    assert!((view.response(1, 1_000.0) - Complex::new(1.0, 0.0)).norm() > 1e-3);
 }
 
 #[test]

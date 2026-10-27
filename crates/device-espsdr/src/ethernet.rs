@@ -110,7 +110,7 @@ impl SdrDevice for EspSdrNetDevice {
             self.radio.clone(),
             converter(),
             single_rx_sink(sinks)?,
-            CaptureConfig::new("sdrmm-espsdr-net-rx", DRIVER_ID)
+            CaptureConfig::new("sdrmm-espsdr-net-rx", DRIVER_ID.as_str())
                 .with_sample_rate(self.settings.sample_rate),
         )
     }

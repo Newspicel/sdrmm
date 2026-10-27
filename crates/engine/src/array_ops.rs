@@ -162,6 +162,10 @@ pub(crate) struct Lease {
 }
 
 impl Lease {
+    fn holds(&self, port: &Arc<TapPort>) -> bool {
+        Arc::ptr_eq(&self.port, port)
+    }
+
     fn release(&self) {
         self.port.release(self.id);
         self.port.collect();

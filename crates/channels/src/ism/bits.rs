@@ -147,7 +147,7 @@ impl Bits {
     pub(super) fn manchester(&self, row: usize, start: usize, max: usize, out: &mut Packed) {
         let len = self.len(row).min(start + 2 * max);
         let mut at = start;
-        while at < len {
+        while at + 1 < len {
             let (first, second) = (self.bit(row, at), self.bit(row, at + 1));
             at += 2;
             if first == second {
@@ -235,25 +235,26 @@ pub(super) fn hex(bytes: &[u8]) -> String {
 }
 
 #[cfg(test)]
+pub(super) fn from_rows(rows: &[&str]) -> Box<Bits> {
+    let mut bits = Bits::new();
+    for (k, row) in rows.iter().enumerate() {
+        if k > 0 {
+            bits.new_row();
+        }
+        for c in row.chars() {
+            bits.push(c == '1');
+        }
+    }
+    bits
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    fn bits_from(rows: &[&str]) -> Box<Bits> {
-        let mut bits = Bits::new();
-        for (k, row) in rows.iter().enumerate() {
-            if k > 0 {
-                bits.new_row();
-            }
-            for c in row.chars() {
-                bits.push(c == '1');
-            }
-        }
-        bits
-    }
-
     #[test]
     fn rows_fill_msb_first_and_clear_completely() {
-        let mut bits = bits_from(&["1010000011", "11"]);
+        let mut bits = from_rows(&["1010000011", "11"]);
         assert_eq!(bits.rows(), 2);
         assert_eq!(bits.len(0), 10);
         assert_eq!(bits.row(0)[..2], [0xA0, 0xC0]);
@@ -265,14 +266,14 @@ mod tests {
 
     #[test]
     fn inverting_keeps_unused_bits_zero() {
-        let mut bits = bits_from(&["101"]);
+        let mut bits = from_rows(&["101"]);
         bits.invert();
         assert_eq!(bits.row(0)[0], 0x40);
     }
 
     #[test]
     fn a_repeated_row_needs_identical_length_and_content() {
-        let bits = bits_from(&["1100", "1101", "1101", "11010", "1101"]);
+        let bits = from_rows(&["1100", "1101", "1101", "11010", "1101"]);
         assert_eq!(bits.repeated_row(3, 4), Some(1));
         assert_eq!(bits.repeated_row(4, 4), None);
         assert_eq!(bits.repeated_prefix(4, 4), Some(1));
@@ -280,7 +281,7 @@ mod tests {
 
     #[test]
     fn search_finds_unaligned_patterns() {
-        let bits = bits_from(&["0001011010"]);
+        let bits = from_rows(&["0001011010"]);
         assert_eq!(bits.search(0, 0, &[0xB4], 6), 3);
         assert_eq!(bits.search(0, 0, &[0xFF], 8), 10);
         let mut out = [0u8; 1];
@@ -290,11 +291,19 @@ mod tests {
 
     #[test]
     fn manchester_pairs_take_their_second_bit_until_a_violation() {
-        let bits = bits_from(&["0110011011"]);
+        let bits = from_rows(&["0110011011"]);
         let mut out = Packed::new();
         bits.manchester(0, 0, 16, &mut out);
         assert_eq!(out.len(), 4);
         assert_eq!(out.bytes()[0], 0xA0);
+    }
+
+    #[test]
+    fn manchester_drops_a_lone_trailing_half_bit() {
+        let bits = from_rows(&["0110011"]);
+        let mut out = Packed::new();
+        bits.manchester(0, 0, 16, &mut out);
+        assert_eq!((out.len(), out.bytes()[0]), (3, 0xA0));
     }
 
     #[test]

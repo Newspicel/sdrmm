@@ -14,15 +14,15 @@ use std::{
 use sdrmm_channels::ChannelError;
 use sdrmm_device::{DeviceError, DeviceRegistry, PlaybackShared};
 use sdrmm_device_recording::RecordingDriver;
-use sdrmm_device_siggen::SigGenDriver;
 use sdrmm_device_virtual::VirtualDriver;
+pub use sdrmm_device_virtual::synthetic_devices_offered;
 use sdrmm_recorder::{data_path, meta_path};
 use sdrmm_wire::{
     AudioRecordingStatus, AudioRoute, BandMiss, Capabilities, ChannelInfo, ChannelSettings,
-    DecodedRecord, DecoderEvent, DeviceFault, DeviceInfo, DeviceSet, DeviceSetStatus,
-    DeviceSettings, EventOrigin, HeldLane, NetworkExportSettings, NetworkExportStatus, PositionFix,
-    RecordingStatus, ServerEvent, SettingsRefused, StateScope, StateSnapshot, StreamScope,
-    TrunkSystemStatus, VirtualLane,
+    DecodedRecord, DecoderEvent, DeviceBackend, DeviceFault, DeviceInfo, DeviceSet,
+    DeviceSetStatus, DeviceSettings, EventOrigin, HeldLane, NetworkExportSettings,
+    NetworkExportStatus, PositionFix, RecordingStatus, ServerEvent, SettingsRefused, StateScope,
+    StateSnapshot, StreamScope, TrunkSystemStatus, VirtualLane,
 };
 use tokio::sync::broadcast;
 
@@ -128,26 +128,40 @@ pub fn channel_types() -> Vec<sdrmm_wire::ChannelDescriptor> {
     sdrmm_channels::descriptors()
 }
 
+/// Every backend this build drives itself, so the SoapySDR driver can hide the radios a native
+/// one already lists.
 #[must_use]
-pub fn soapy_handled_natively() -> Vec<&'static str> {
+pub fn native_backends() -> Vec<DeviceBackend> {
     [
+        #[cfg(feature = "cr8")]
+        DeviceBackend::Cr8,
         #[cfg(feature = "rtlsdr")]
-        "rtlsdr",
+        DeviceBackend::Rtlsdr,
         #[cfg(feature = "hackrf")]
-        "hackrf",
+        DeviceBackend::Hackrf,
         #[cfg(feature = "airspy")]
-        "airspy",
+        DeviceBackend::Airspy,
         #[cfg(feature = "airspyhf")]
-        "airspyhf",
+        DeviceBackend::Airspyhf,
         #[cfg(all(
             feature = "funcube",
             any(target_os = "macos", target_os = "linux", target_os = "windows")
         ))]
-        "fcdpp",
+        DeviceBackend::Funcube,
+        #[cfg(feature = "espsdr")]
+        DeviceBackend::Espsdr,
         #[cfg(feature = "ad936x")]
-        "plutosdr",
+        DeviceBackend::Ad936x,
     ]
     .to_vec()
+}
+
+#[must_use]
+pub fn soapy_handled_natively() -> Vec<&'static str> {
+    native_backends()
+        .into_iter()
+        .filter_map(DeviceBackend::soapy_module)
+        .collect()
 }
 
 #[must_use]
@@ -161,12 +175,14 @@ pub fn builtin_registry_accelerated(
     playback_speed: f64,
 ) -> DeviceRegistry {
     let mut registry = DeviceRegistry::new();
-    registry.register(VIRTUAL_PRIORITY, Box::new(VirtualDriver::for_build()));
+    registry.register(
+        VIRTUAL_PRIORITY,
+        Box::new(VirtualDriver::for_build().with_signals(&sdrmm_channels::synth::catalog::CATALOG)),
+    );
     registry.register(
         VIRTUAL_PRIORITY,
         Box::new(RecordingDriver::accelerated(recordings_dir, playback_speed)),
     );
-    registry.register(VIRTUAL_PRIORITY, Box::new(SigGenDriver::new()));
     #[cfg(feature = "soapy")]
     registry.register(
         SOAPY_PRIORITY,
@@ -185,16 +201,10 @@ pub fn builtin_registry_accelerated(
         Box::new(sdrmm_device_cr8::Cr8Driver::new()),
     );
     #[cfg(feature = "rtlsdr")]
-    {
-        registry.register(
-            NATIVE_PRIORITY,
-            Box::new(sdrmm_device_rtlsdr::RtlSdrDriver::new()),
-        );
-        registry.register(
-            NATIVE_PRIORITY,
-            Box::new(sdrmm_device_rtlsdr::KrakenDriver::new()),
-        );
-    }
+    registry.register(
+        NATIVE_PRIORITY,
+        Box::new(sdrmm_device_rtlsdr::RtlSdrDriver::new()),
+    );
     #[cfg(feature = "hackrf")]
     registry.register(
         NATIVE_PRIORITY,
@@ -650,7 +660,7 @@ struct DeviceSetState {
     baseband_recordings: HashMap<u32, ChannelBasebandRecording>,
     channel_exports: HashMap<u32, NetworkExportState>,
     network_export: Option<NetworkExportState>,
-    time_machine: Option<TimeMachineState>,
+    pre_roll: Option<TimeMachineState>,
     scanners: HashMap<u32, ScannerState>,
     hunts: HashMap<u32, HuntState>,
     rate_patches: u32,
@@ -794,8 +804,8 @@ impl DeviceSetState {
                 .network_export
                 .as_ref()
                 .map(|export| export.status(overruns)),
-            time_machine: self
-                .time_machine
+            pre_roll: self
+                .pre_roll
                 .as_ref()
                 .map(|history| history.status(overruns)),
             scanners: self.scanner_statuses(),
@@ -852,6 +862,19 @@ impl DeviceSetState {
             Ok(())
         } else {
             Err(self.out_of_range(stream))
+        }
+    }
+
+    fn check_room(&self, stream: u32) -> Result<(), EngineError> {
+        let hosted = self
+            .channels
+            .iter()
+            .filter(|channel| channel.stream == stream)
+            .count();
+        if hosted < crate::runtime::MAX_LANE_CHANNELS {
+            Ok(())
+        } else {
+            Err(ChannelError::Refused("Radio is full of channels").into())
         }
     }
 
@@ -1300,7 +1323,7 @@ impl Engine {
             if let Some(export) = &network_export {
                 state.send_dsp(export.stream, DspCommand::StopNetworkExport);
             }
-            let history = state.time_machine.take();
+            let history = state.pre_roll.take();
             if let Some(history) = &history {
                 state.send_dsp(history.stream, DspCommand::StopTimeMachine);
             }
@@ -1665,7 +1688,7 @@ fn teardown_set(mut removed: DeviceSetState) -> bool {
     if let Some(mut export) = removed.network_export.take() {
         export.join();
     }
-    if let Some(history) = removed.time_machine.take() {
+    if let Some(history) = removed.pre_roll.take() {
         finalized |= history.capture.is_some();
         history.handle.join();
     }

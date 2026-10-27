@@ -12,7 +12,6 @@ use crate::problems::ProblemBoard;
 pub(crate) enum PositionTarget {
     Decoder(ChannelAddr),
     IqRecording { device_set: u32 },
-    IqHistory { device_set: u32 },
     Sink { node: String },
 }
 
@@ -70,9 +69,6 @@ fn target_of(patch: &ResolvedPatch, node: &ResolvedNode) -> Option<PositionTarge
         NodeKind::Recorder => PositionTarget::IqRecording {
             device_set: lane()?,
         },
-        NodeKind::TimeMachine => PositionTarget::IqHistory {
-            device_set: lane()?,
-        },
         _ => PositionTarget::Sink {
             node: node.id.clone(),
         },
@@ -94,31 +90,19 @@ pub(crate) fn push(
                 .map_err(|error| error.to_string()),
             PositionTarget::IqRecording { device_set } => {
                 let live = live.get_or_insert_with(|| engine.snapshot());
-                if live
-                    .device_sets
-                    .iter()
-                    .any(|set| set.id == *device_set && set.recording.is_some())
-                {
-                    engine
+                let set = live.device_sets.iter().find(|set| set.id == *device_set);
+                let mut result = Ok(());
+                if set.is_some_and(|set| set.recording.is_some()) {
+                    result = engine
                         .update_recording_position(*device_set, fix.cloned())
-                        .map_err(|error| error.to_string())
-                } else {
-                    Ok(())
+                        .map_err(|error| error.to_string());
                 }
-            }
-            PositionTarget::IqHistory { device_set } => {
-                let live = live.get_or_insert_with(|| engine.snapshot());
-                if live
-                    .device_sets
-                    .iter()
-                    .any(|set| set.id == *device_set && set.time_machine.is_some())
-                {
-                    engine
-                        .update_time_machine_position(*device_set, fix.cloned())
-                        .map_err(|error| error.to_string())
-                } else {
-                    Ok(())
+                if result.is_ok() && set.is_some_and(|set| set.pre_roll.is_some()) {
+                    result = engine
+                        .update_pre_roll_position(*device_set, fix.cloned())
+                        .map_err(|error| error.to_string());
                 }
+                result
             }
             PositionTarget::Sink { .. } => Ok(()),
         };

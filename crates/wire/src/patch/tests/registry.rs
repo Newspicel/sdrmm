@@ -2,8 +2,6 @@ use super::*;
 
 const OLD_FACES: &[(&str, Face)] = &[
     ("device", Face::fit(420).dial()),
-    ("recording", Face::fit(420).dial()),
-    ("signal_gen", Face::fit(420).dial()),
     ("gps", Face::fit(360)),
     ("channel", Face::fit(440).dial()),
     ("event_output", Face::fit(420)),
@@ -23,7 +21,6 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("recorder", Face::fit(340)),
     ("audio_recorder", Face::fit(340)),
     ("baseband_recorder", Face::fit(340)),
-    ("time_machine", Face::fit(360)),
     ("network_export", Face::fit(380)),
     ("export", Face::fit(320)),
     ("scanner", Face::fit(400)),
@@ -114,10 +111,7 @@ fn every_kind_has_a_role_and_a_face() {
         .copied()
         .filter(|kind| kind.role() == Role::OpensRadio)
         .collect();
-    assert_eq!(
-        radios,
-        [NodeKind::Device, NodeKind::Recording, NodeKind::SignalGen]
-    );
+    assert_eq!(radios, [NodeKind::Device], "one node picks a radio");
     assert_eq!(NodeKind::EventFilter.role(), Role::Pass(PortType::Events));
     assert_eq!(NodeKind::AudioFx.role(), Role::Pass(PortType::Audio));
 }

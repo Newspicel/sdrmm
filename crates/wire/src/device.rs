@@ -3,9 +3,13 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+mod backend;
+
+pub use backend::{BackendEntry, BackendReach, DeviceBackend, backend_table};
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct DeviceInfo {
-    pub driver: String,
+    pub driver: DeviceBackend,
     pub key: String,
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -29,6 +33,8 @@ pub struct DeviceProfile {
     pub coherence: Coherence,
     #[serde(default)]
     pub noise_source: NoiseSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bank: Option<ClockBank>,
 }
 
 impl DeviceProfile {
@@ -202,6 +208,12 @@ impl Range {
 
 fn reaches(ranges: &[Range], hz: f64) -> bool {
     ranges.is_empty() || any_range_holds(ranges, hz)
+}
+
+fn runs_at(capabilities: &Capabilities, rate: f64) -> bool {
+    (capabilities.sample_rates.is_empty() && capabilities.sample_rate_ranges.is_empty())
+        || capabilities.sample_rates.contains(&rate)
+        || any_range_holds(&capabilities.sample_rate_ranges, rate)
 }
 
 fn supported_gains(gains: &[GainValue], capabilities: &Capabilities) -> Vec<GainValue> {
@@ -894,6 +906,8 @@ pub struct Capabilities {
     pub rx_inputs: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clean_fraction: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bank: Option<ClockBank>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, ToSchema)]
@@ -959,6 +973,13 @@ impl Coherence {
     pub const fn has_phase(self) -> bool {
         matches!(self, Self::PhaseCoherent)
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ClockBank {
+    pub id: String,
+    pub lane: u32,
+    pub lanes: u32,
 }
 
 const fn one_stream() -> u32 {
@@ -1029,12 +1050,12 @@ impl Capabilities {
             per_stream: self.per_stream,
             coherence: self.coherence,
             noise_source: self.noise_source,
+            bank: self.bank.clone(),
         }
     }
 }
 
-pub const RECORDING_DRIVER_ID: &str = "recording";
-pub const SIGGEN_DRIVER_ID: &str = "siggen";
+pub const GENERATOR_PREFIX: &str = "gen-";
 pub const MAX_RECORDING_STEM_LEN: usize = 200;
 
 #[must_use]
@@ -1228,10 +1249,7 @@ impl DeviceSettings {
                 .center_hz
                 .filter(|hz| reaches(&capabilities.freq_ranges, *hz - offset)),
             tuning: self.tuning,
-            sample_rate: self.sample_rate.filter(|rate| {
-                capabilities.sample_rates.contains(rate)
-                    || any_range_holds(&capabilities.sample_rate_ranges, *rate)
-            }),
+            sample_rate: self.sample_rate.filter(|rate| runs_at(capabilities, *rate)),
             ppm: self.ppm.filter(|_| capabilities.ppm),
             offset_hz,
             antenna: self
@@ -1453,6 +1471,7 @@ mod tests {
             retune_keeps_phase: false,
             rx_inputs: Vec::new(),
             clean_fraction: None,
+            bank: None,
         }
     }
 
@@ -1725,7 +1744,7 @@ mod tests {
     #[test]
     fn identity_drops_the_probe_time_profile() {
         let probed = DeviceInfo {
-            driver: "rtlsdr".to_string(),
+            driver: DeviceBackend::Rtlsdr,
             key: "00000001".to_string(),
             label: "RTL-SDR 00000001".to_string(),
             serial: Some("00000001".to_string()),
@@ -1739,19 +1758,19 @@ mod tests {
 
     #[test]
     fn a_radio_is_its_serial_or_else_its_address() {
-        let radio = |driver: &str, key: &str, serial: Option<&str>| DeviceInfo {
-            driver: driver.to_string(),
+        let radio = |driver: DeviceBackend, key: &str, serial: Option<&str>| DeviceInfo {
+            driver,
             key: key.to_string(),
             label: String::new(),
             serial: serial.map(str::to_string),
             profile: None,
         };
         assert_eq!(
-            radio("rtlsdr", "0@rx", Some("00000001")).radio(),
+            radio(DeviceBackend::Rtlsdr, "0@rx", Some("00000001")).radio(),
             "rtlsdr:00000001"
         );
         assert_eq!(
-            radio("rtltcp", "10.0.0.5:1234", None).radio(),
+            radio(DeviceBackend::Rtltcp, "10.0.0.5:1234", None).radio(),
             "rtltcp:10.0.0.5:1234"
         );
     }
@@ -2052,6 +2071,32 @@ mod tests {
             stored.supported_by(&capabilities).rx_inputs,
             None,
             "a radio with fixed inputs takes none"
+        );
+    }
+
+    #[test]
+    fn a_radio_that_advertises_no_rates_keeps_the_stored_one() {
+        let silent = caps(Vec::new(), Vec::new(), Duplex::RxOnly);
+        let stored = DeviceSettings {
+            center_hz: Some(145_500_000.0),
+            sample_rate: Some(2.048e6),
+            ..DeviceSettings::default()
+        };
+        let taken = stored.supported_by(&silent);
+        assert_eq!(
+            taken.center_hz,
+            Some(145_500_000.0),
+            "an empty tuning range is unconstrained"
+        );
+        assert_eq!(
+            taken.sample_rate,
+            Some(2.048e6),
+            "an empty rate menu is unconstrained too"
+        );
+        assert_eq!(
+            silent.profile().rate_for(2.048e6),
+            Some(2.048e6),
+            "rates_in agrees"
         );
     }
 

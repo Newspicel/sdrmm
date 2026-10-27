@@ -104,9 +104,8 @@ from 0.8. They accept up to 75% clipped samples and add 2° to the calibration s
 
 | Check | Result |
 |---|---|
-| Start spread, 20 starts at 1.024, 2.4, 2.56 MS/s | 6.5 to 7.8 ms, about 1.7 ms per lane. Coarse search reaches 256 to 437 ms. |
-| Lane 3 failed on purpose | Every lane reports `Rearmed` and streams again after 76 to 80 ms, offsets moved by up to 10 ms. |
-| 2.88 MS/s | Refused: `KrakenSDR runs at most 2.56 MS/s` |
+| Start spread, 20 starts at 1.024, 2.4, 2.56 MS/s | One start per lane, printed by the test. Coarse search reaches 256 to 437 ms. |
+| 2.88 MS/s | Refused: `sample_rate 2880000 outside the windows 225001-300000 and 900001-2560000 Hz` |
 | Noise source off | Back at the noise floor within 1,024 samples |
 | Noise source on exit | Off after a drop, a drop while streaming, a panic, and a server stop |
 | Array, 433.92 MHz, 30 dB | Locked and solved in 2.3 s. 18 checks in 3 minutes: delay within 0.007 samples, phase within 0.9°. |

@@ -11,6 +11,8 @@ use super::{Outbox, Session, text_event};
 use crate::sinks::SinkHub;
 
 const NOT_A_SINK: &str = "Not a sink";
+const TOO_MANY: &str = "Too many sinks watched";
+pub(super) const MAX_WATCHED: usize = 32;
 
 #[derive(Default)]
 pub(super) struct Sinks {
@@ -24,6 +26,10 @@ impl Sinks {
         }
     }
 
+    fn reap(&mut self) {
+        self.watching.retain(|_, task| !task.is_finished());
+    }
+
     pub(super) fn abort(self) {
         for task in self.watching.into_values() {
             task.abort();
@@ -32,8 +38,13 @@ impl Sinks {
 }
 
 impl Session {
-    pub(super) fn subscribe_sink(&mut self, node: String) {
+    pub(super) async fn subscribe_sink(&mut self, node: String) {
         self.sinks.stop(&node);
+        self.sinks.reap();
+        if self.sinks.watching.len() >= MAX_WATCHED {
+            self.send_error(TOO_MANY).await;
+            return;
+        }
         let task = spawn(node.clone(), self.out.clone(), self.state.sinks.clone());
         self.sinks.watching.insert(node, task);
     }

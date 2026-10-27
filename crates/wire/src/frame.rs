@@ -51,6 +51,8 @@ pub enum FrameError {
     Length,
     #[error("frame cells do not match its shape")]
     Shape,
+    #[error("frame field of {0} bytes does not fit a 16 bit length prefix")]
+    Oversize(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -222,6 +224,10 @@ fn cells_fit(cells: usize, rows: u16, cols: u16) -> bool {
     rows > 0 && cols > 0 && cells == usize::from(rows) * usize::from(cols)
 }
 
+fn prefix_len(len: usize) -> Result<u16, FrameError> {
+    u16::try_from(len).map_err(|_| FrameError::Oversize(len))
+}
+
 mod schema;
 pub use schema::typescript_frames;
 
@@ -258,7 +264,7 @@ macro_rules! write_field {
         $buf.extend_from_slice($value)
     };
     ($buf:ident, $value:expr, bytes16) => {{
-        $buf.extend_from_slice(&($value.len() as u16).to_le_bytes());
+        $buf.extend_from_slice(&prefix_len($value.len())?.to_le_bytes());
         $buf.extend_from_slice($value);
     }};
     ($buf:ident, $value:expr, floats) => {
@@ -267,7 +273,7 @@ macro_rules! write_field {
         }
     };
     ($buf:ident, $value:expr, floats16) => {{
-        $buf.extend_from_slice(&($value.len() as u16).to_le_bytes());
+        $buf.extend_from_slice(&prefix_len($value.len())?.to_le_bytes());
         for value in $value {
             $buf.extend_from_slice(&value.to_le_bytes());
         }
@@ -354,8 +360,10 @@ macro_rules! define_frame {
             pub fn encoded_len(&self) -> usize {
                 HEADER_LEN $(+ field_len!(self.$field, $ty))*
             }
-            #[must_use]
-            pub fn encode(&self) -> Vec<u8> {
+            pub fn encode(&self) -> Result<Vec<u8>, FrameError> {
+                if !Shaped::shape_holds(self) {
+                    return Err(FrameError::Shape);
+                }
                 let mut buf = Vec::with_capacity(self.encoded_len());
                 buf.push(PROTOCOL_VERSION);
                 buf.push(frame_kind!($kind, self) as u8);
@@ -363,7 +371,7 @@ macro_rules! define_frame {
                 buf.extend_from_slice(&self.seq.to_le_bytes());
                 buf.extend_from_slice(&self.timestamp.to_le_bytes());
                 $(write_field!(buf, self.$field, $ty);)*
-                buf
+                Ok(buf)
             }
             fn fields() -> &'static [(&'static str, &'static str)] {
                 &[$((stringify!($field), stringify!($ty))),*]
@@ -458,6 +466,18 @@ impl Shaped for AudioFrame<'_> {
     }
 }
 
+impl Shaped for IqFrame<'_> {
+    fn shape_holds(&self) -> bool {
+        true
+    }
+}
+
+impl Shaped for SymbolFrame<'_> {
+    fn shape_holds(&self) -> bool {
+        true
+    }
+}
+
 impl Shaped for VideoFrame<'_> {
     fn shape_holds(&self) -> bool {
         let pixels = usize::from(self.width) * usize::from(self.height);
@@ -511,8 +531,7 @@ impl SurfaceFrame {
         }
     }
 
-    #[must_use]
-    pub fn encode(&self, stream_id: u16) -> Vec<u8> {
+    pub fn encode(&self, stream_id: u16) -> Result<Vec<u8>, FrameError> {
         match self {
             Self::RangeDoppler(owned) => RangeDopplerFrame {
                 stream_id,

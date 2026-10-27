@@ -25,6 +25,7 @@ const STATUS_STRIDE: usize = 72;
 
 const NID_BITS: usize = 64;
 const NID_SYMBOLS: usize = (NID_BITS + 2) / 2;
+const NID_ROUND_OUT_BIT: u64 = 1;
 const MAX_FRAME_BITS: usize = 1_728;
 const MAX_FRAME_SYMBOLS: usize = MAX_FRAME_BITS / 2;
 
@@ -108,6 +109,10 @@ impl ChannelRx for P25Channel {
             self.decoder.push(symbol, out);
         }
     }
+
+    fn rejected(&self) -> u32 {
+        self.decoder.rejected()
+    }
 }
 
 struct Decoder {
@@ -122,6 +127,7 @@ struct Decoder {
     encrypted: bool,
     vocoder: MbeDecoder,
     logical: Vec<bool>,
+    rejected: u32,
 }
 
 impl Decoder {
@@ -138,7 +144,12 @@ impl Decoder {
             encrypted: false,
             vocoder: MbeDecoder::full_rate(),
             logical: Vec::with_capacity(MAX_FRAME_BITS),
+            rejected: 0,
         }
+    }
+
+    fn rejected(&self) -> u32 {
+        self.rejected
     }
 
     fn reset(&mut self) {
@@ -195,6 +206,10 @@ impl Decoder {
         }
     }
 
+    fn reject(&mut self) {
+        self.rejected = self.rejected.saturating_add(1);
+    }
+
     fn nid(&mut self) -> Option<(u8, Option<DvFrame>)> {
         self.window.bits(0, NID_SYMBOLS, &mut self.bits);
         let mut word = 0u64;
@@ -205,7 +220,12 @@ impl Decoder {
             }
             word = word << 1 | u64::from(bit);
         }
-        let (info, errors) = CyclicCode::BCH_63_16.decode(word)?;
+        let Some((info, _)) = CyclicCode::BCH_63_16.decode(word) else {
+            self.reject();
+            return None;
+        };
+        let errors =
+            ((CyclicCode::BCH_63_16.encode(info) ^ word) & !NID_ROUND_OUT_BIT).count_ones();
         let nac = (info >> 4) as u16 & 0x0FFF;
         let duid = info as u8 & 0x0F;
 
@@ -303,8 +323,14 @@ impl Decoder {
     }
 
     fn ldu_link_control(&mut self) -> Option<DvFrame> {
-        let (symbols, hamming_errors) = self.signalling_symbols()?;
-        let (data, rs_errors) = rs64_decode(&symbols, 12)?;
+        let Some((symbols, hamming_errors)) = self.signalling_symbols() else {
+            self.reject();
+            return None;
+        };
+        let Some((data, rs_errors)) = rs64_decode(&symbols, 12) else {
+            self.reject();
+            return None;
+        };
         let bits = symbols_to_bits(&data);
         let mut frame = decode_p25_link_control(&bits);
         frame.kind = DvFrameKind::Voice;
@@ -316,8 +342,14 @@ impl Decoder {
     }
 
     fn ldu_encryption_sync(&mut self) -> Option<DvFrame> {
-        let (symbols, hamming_errors) = self.signalling_symbols()?;
-        let (data, rs_errors) = rs64_decode(&symbols, 16)?;
+        let Some((symbols, hamming_errors)) = self.signalling_symbols() else {
+            self.reject();
+            return None;
+        };
+        let Some((data, rs_errors)) = rs64_decode(&symbols, 16) else {
+            self.reject();
+            return None;
+        };
         let bits = symbols_to_bits(&data);
         let mut frame = DvFrame::new(DvMode::P25, DvFrameKind::Voice);
         frame.opcode = Some("encryption synchronization".to_owned());
@@ -356,7 +388,7 @@ impl Decoder {
         Some(frame)
     }
 
-    fn trunking_blocks(&self) -> Vec<DvFrame> {
+    fn trunking_blocks(&mut self) -> Vec<DvFrame> {
         const BODY_START: usize = SYNC_BITS as usize + NID_BITS;
         let mut frames = Vec::new();
         for block in 0..3 {
@@ -365,6 +397,7 @@ impl Decoder {
                 break;
             };
             let Some(payload) = decode_p25_trellis(coded) else {
+                self.rejected = self.rejected.saturating_add(1);
                 continue;
             };
             let bytes: Vec<u8> = payload[..80]
@@ -375,6 +408,7 @@ impl Decoder {
                 .collect();
             let found = bits_value(&payload[80..96]) as u16;
             if crc16_msb(0x1021, 0, &bytes) ^ 0xFFFF != found {
+                self.rejected = self.rejected.saturating_add(1);
                 continue;
             }
             let mut frame = decode_tsbk(&payload);
@@ -761,6 +795,101 @@ mod tests {
         assert_eq!(hdu.key_id, Some(0x1234));
         assert!(!audio.is_empty());
         assert!(audio.iter().all(|&sample| sample == 0.0));
+    }
+
+    fn spec_symbol(dibit: u8) -> f32 {
+        const SPEC_SYMBOL_FOR_DIBIT: [f32; 4] = [1.0, 3.0, -1.0, -3.0];
+        SPEC_SYMBOL_FOR_DIBIT[usize::from(dibit)]
+    }
+
+    fn is_status(frame_bit: usize) -> bool {
+        frame_bit >= STATUS_START && (frame_bit - STATUS_START) % STATUS_STRIDE < 2
+    }
+
+    #[test]
+    fn the_frame_sync_expands_the_tia_102_baaa_a_sync_word_sequence() {
+        const SPEC_SYNC: u32 = 0x04_CF5F;
+        const SPEC_SYNC_BITS: u32 = 24;
+        let expanded = (0..SPEC_SYNC_BITS).rev().fold(0u64, |word, shift| {
+            let dibit = if SPEC_SYNC >> shift & 1 == 1 {
+                0b11
+            } else {
+                0b01
+            };
+            word << 2 | dibit
+        });
+        assert_eq!(SPEC_SYNC_BITS * 2, SYNC_BITS);
+        assert_eq!(expanded, SYNC);
+    }
+
+    #[test]
+    fn the_status_symbols_follow_every_seventy_information_bits() {
+        assert_eq!(STATUS_START + 2, STATUS_STRIDE);
+        for (duid, expected) in [
+            (DUID_HEADER, 11),
+            (DUID_LDU1, 24),
+            (DUID_LDU2, 24),
+            (DUID_TERMINATOR, 2),
+            (DUID_TERMINATOR_LC, 6),
+        ] {
+            let inserted = (0..frame_bits(duid)).filter(|&bit| is_status(bit)).count();
+            assert_eq!(inserted, expected * 2, "data unit {duid:#X}");
+        }
+    }
+
+    #[test]
+    fn a_network_identifier_from_the_tia_102_baaa_a_generator_matrix_decodes() {
+        const SPEC_PARITY: [u64; 16] = [
+            0o6331141367235452,
+            0o5265521614723276,
+            0o4603711461164164,
+            0o2301744630472072,
+            0o7271623073000466,
+            0o5605650752635660,
+            0o2702724365316730,
+            0o1341352172547354,
+            0o0560565075263566,
+            0o6141333751704220,
+            0o3060555764742110,
+            0o1430266772361044,
+            0o0614133375170422,
+            0o6037114611641642,
+            0o5326507063515373,
+            0o4662302756473127,
+        ];
+        const SPEC_STATUS_IDLE: u8 = 0b11;
+        for (nac, duid, kind) in [
+            (0x293u32, DUID_HEADER, DvFrameKind::Header),
+            (0x293, DUID_TERMINATOR, DvFrameKind::Terminator),
+            (0xFFF, DUID_TSDU, DvFrameKind::Control),
+            (0x001, DUID_PDU, DvFrameKind::Data),
+        ] {
+            let info = nac << 4 | u32::from(duid);
+            let word = (0..16)
+                .filter(|bit| info >> bit & 1 == 1)
+                .fold(u64::from(info) << 48, |word, bit| {
+                    word ^ SPEC_PARITY[15 - bit]
+                });
+
+            let mut decoder = Decoder::new();
+            let mut taken = 0;
+            for symbol in 0..NID_SYMBOLS {
+                let dibit = if is_status(SYNC_BITS as usize + symbol * 2) {
+                    SPEC_STATUS_IDLE
+                } else {
+                    taken += 2;
+                    (word >> (NID_BITS - taken)) as u8 & 0b11
+                };
+                decoder.window.push(spec_symbol(dibit));
+            }
+
+            let (decoded, frame) = decoder.nid().expect("conformant network identifier");
+            assert_eq!(decoded, duid, "NAC {nac:#05X}");
+            let frame = frame.expect("network identifier metadata");
+            assert_eq!(frame.kind, kind);
+            assert_eq!(frame.color_code, Some(nac as u16));
+            assert_eq!(frame.errors_corrected, 0, "NAC {nac:#05X}");
+        }
     }
 
     #[test]

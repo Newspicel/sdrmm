@@ -1,5 +1,6 @@
 import { Autocomplete as Primitive } from "@base-ui/react/autocomplete";
 import { ChevronDown } from "lucide-react";
+import type { ReactElement } from "react";
 import { useState } from "react";
 import { commitText, FIELD, SURFACE } from "./controls";
 import { Icon } from "./Icon";
@@ -77,30 +78,33 @@ export function TextAutocomplete({
               </span>
             </Primitive.Empty>
             <Primitive.List className="flex max-h-[var(--available-height)] flex-col overflow-y-auto p-0.5">
-              {(suggestion: AutocompleteSuggestion) => (
-                <Primitive.Item
-                  value={suggestion}
-                  className={(state) =>
-                    "flex cursor-default flex-col items-start rounded-control px-2 py-1 text-xs " +
-                    "leading-tight " +
-                    (suggestion.value === value
-                      ? "bg-accent/15 text-accent"
-                      : state.highlighted
-                        ? "bg-panel-2 text-ink"
-                        : "text-ink")
-                  }
-                >
-                  <span className="font-mono">{suggestion.value}</span>
-                  {suggestion.detail !== undefined && (
-                    <span className="opacity-60">{suggestion.detail}</span>
-                  )}
-                </Primitive.Item>
-              )}
+              {(suggestion: AutocompleteSuggestion) => suggestionItem(suggestion, value)}
             </Primitive.List>
           </Primitive.Popup>
         </Primitive.Positioner>
       </Primitive.Portal>
     </Primitive.Root>
+  );
+}
+
+export function suggestionItem(suggestion: AutocompleteSuggestion, chosen: string): ReactElement {
+  return (
+    <Primitive.Item
+      key={suggestion.value}
+      value={suggestion}
+      className={(state) =>
+        "flex cursor-default flex-col items-start rounded-control px-2 py-1 text-xs " +
+        "leading-tight " +
+        (suggestion.value === chosen
+          ? "bg-accent/15 text-accent"
+          : state.highlighted
+            ? "bg-panel-2 text-ink"
+            : "text-ink")
+      }
+    >
+      <span className="font-mono">{suggestion.value}</span>
+      {suggestion.detail !== undefined && <span className="opacity-60">{suggestion.detail}</span>}
+    </Primitive.Item>
   );
 }
 

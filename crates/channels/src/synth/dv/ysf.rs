@@ -23,6 +23,8 @@ const VFR_INTERLEAVE: [usize; 144] = [
     94, 118, 142, 47, 23, 95, 71, 143, 119,
 ];
 
+const VFR_CODE_WIDTHS: [usize; 8] = [23, 23, 23, 23, 15, 15, 15, 7];
+
 pub struct Fich {
     pub frame_type: u8,
     pub frame_number: u8,
@@ -243,22 +245,13 @@ fn vfr_voice(annex_h: &[bool; 144]) -> [bool; 144] {
     let dibits: [u8; 72] =
         std::array::from_fn(|i| u8::from(annex_h[i * 2]) << 1 | u8::from(annex_h[i * 2 + 1]));
     let code = fullrate::fec::deinterleave(&dibits);
-    let widths = [23usize, 23, 23, 23, 15, 15, 15, 7];
     let mut raw = [false; 144];
     let mut offset = 0;
-    for (&word, width) in code.iter().zip(widths) {
+    for (&word, width) in code.iter().zip(VFR_CODE_WIDTHS) {
         for bit in 0..width {
             raw[offset + bit] = word >> (width - 1 - bit) & 1 == 1;
         }
         offset += width;
-    }
-    let seed = raw[..12]
-        .iter()
-        .fold(0u16, |acc, &bit| acc << 1 | u16::from(bit));
-    let mut state = seed << 4;
-    for bit in &mut raw[23..137] {
-        state = state.wrapping_mul(173).wrapping_add(13_849);
-        *bit ^= state >> 15 != 0;
     }
     std::array::from_fn(|i| raw[VFR_INTERLEAVE[i]])
 }

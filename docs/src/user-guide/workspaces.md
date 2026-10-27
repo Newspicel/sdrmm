@@ -35,8 +35,8 @@ The server keeps 100 steps per workspace.
 ### Copy and paste
 
 Select nodes, then `Ctrl`/`⌘ C` and `Ctrl`/`⌘ V`. Copies land beside the originals with the wires
-between them. Pasted Device and Recording nodes need a radio or file picked. The clipboard works
-across workspaces while the tab stays open.
+between them. A pasted Device node needs its radio, recording or generator picked again. The
+clipboard works across workspaces while the tab stays open.
 
 ### Notes
 
@@ -67,14 +67,14 @@ arrives with its own.
 
 Each row says what the example needs, and names the nodes it uses, so you can go the other way and
 find the example that shows a node you have not used. Nothing is greyed out: an example you lack
-the radios for still imports, and its Device and Recording nodes stand empty and say so, ready for
+the radios for still imports, and its Device nodes stand empty and say so, ready for
 you to pick replacements.
 
 Every example carries a **Note** naming each of its nodes and why it is there. The note travels
 with the workspace, so it survives your changes and an export.
 
-**No radio** runs on a Signal generator, so there is something to take apart before any hardware
-arrives.
+**No radio** runs on a Device node pinned to the signal generator, so there is something to take
+apart before any hardware arrives.
 
 ## Presets
 

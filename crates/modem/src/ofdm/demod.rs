@@ -174,7 +174,10 @@ impl OfdmDemod {
         assert_eq!(out.len(), points.len() * bits);
         for (index, (&point, slot)) in points.iter().zip(out.chunks_exact_mut(bits)).enumerate() {
             let bin = self.params.map().data()[index].bin;
-            max_log_llrs(point, table, self.channel.bin_noise_var(bin), slot);
+            match self.channel.bin_noise_var(bin) {
+                Some(noise_var) => max_log_llrs(point, table, noise_var, slot),
+                None => slot.fill(Llr(0.0)),
+            }
         }
     }
 
@@ -389,6 +392,17 @@ mod tests {
         let mut out = Vec::new();
         demod.demodulate(wave, SYMBOLS, &mut out);
         out
+    }
+
+    #[test]
+    fn a_bin_with_no_gain_erases_instead_of_amplifying() {
+        let params = OfdmParams::wifi_like();
+        let table = table();
+        let demod = OfdmDemod::new(params.clone());
+        let points = vec![table.points()[0]; params.data_subcarriers()];
+        let mut out = vec![Llr(0.0); points.len() * table.bits_per_symbol()];
+        demod.llrs(&points, &table, &mut out);
+        assert!(out.iter().all(|llr| llr.0 == 0.0), "a dead channel decided");
     }
 
     #[test]

@@ -90,17 +90,30 @@ pub(crate) struct SpectrumFrame {
 }
 
 impl SpectrumAnalyzer {
+    pub(crate) fn size(&self) -> usize {
+        match self {
+            Self::Cpu(analyzer) => analyzer.size(),
+            #[cfg(feature = "gpu-fft")]
+            Self::Gpu { fallback, .. } => fallback.size(),
+        }
+    }
+
     pub(crate) fn power_db(
         &mut self,
         input: &[Complex<f32>],
         out: &mut [f32],
         frame: SpectrumFrame,
     ) -> Option<SpectrumFrame> {
-        assert_eq!(
-            input.len(),
-            out.len(),
-            "spectrum input/output length mismatch"
-        );
+        let size = self.size();
+        if input.len() != size || out.len() != size {
+            tracing::error!(
+                input = input.len(),
+                out = out.len(),
+                size,
+                "spectrum buffers do not fit the transform; frame dropped"
+            );
+            return None;
+        }
         match self {
             Self::Cpu(analyzer) => {
                 analyzer.power_db(input, out);
@@ -147,6 +160,22 @@ use crate::gpu;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn buffers_that_do_not_fit_the_transform_drop_the_frame_instead_of_panicking() {
+        let mut analyzer = SpectrumAnalyzer::Cpu(cpu_analyzer(64));
+        let frame = SpectrumFrame {
+            timestamp: 7,
+            center_hz: 100e6,
+            span_hz: 48_000.0,
+        };
+        let input = vec![Complex::new(0.0, 0.0); 32];
+        let mut out = vec![0.0; 32];
+        assert_eq!(analyzer.power_db(&input, &mut out, frame), None);
+        let input = vec![Complex::new(0.0, 0.0); 64];
+        let mut out = vec![0.0; 64];
+        assert_eq!(analyzer.power_db(&input, &mut out, frame), Some(frame));
+    }
 
     #[test]
     fn gpu_selection_only_targets_expensive_workloads() {

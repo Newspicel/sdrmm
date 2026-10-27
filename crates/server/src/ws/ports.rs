@@ -16,6 +16,8 @@ const NO_PORT: &str = "No such port";
 const NOT_WIRED: &str = "Not wired";
 const NOT_RUNNING: &str = "Not running";
 const NO_STREAM_IDS: &str = "Too many streams";
+const TOO_MANY: &str = "Too many ports watched";
+pub(super) const MAX_WATCHED: usize = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) enum Tapped {
@@ -254,6 +256,10 @@ impl Session {
         let retuned = match self.ports.subs.get_mut(&key) {
             Some(sub) => std::mem::replace(&mut sub.params, params) != params,
             None => {
+                if self.ports.subs.len() >= MAX_WATCHED {
+                    self.send_error(TOO_MANY).await;
+                    return;
+                }
                 self.ports.subs.insert(
                     key.clone(),
                     PortSub {
@@ -354,7 +360,11 @@ impl Session {
                 refusal = Some(reason);
             }
         }
+        let vanished = refusal.as_deref() == Some(NO_NODE);
         self.refuse(&key, refusal).await;
+        if vanished {
+            self.ports.subs.remove(&key);
+        }
     }
 
     async fn refuse(&mut self, key: &(String, String), refusal: Option<String>) {

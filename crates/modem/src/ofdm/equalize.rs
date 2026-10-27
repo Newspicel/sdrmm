@@ -112,13 +112,9 @@ impl ChannelEstimate {
     }
 
     #[must_use]
-    pub fn bin_noise_var(&self, bin: usize) -> f64 {
+    pub fn bin_noise_var(&self, bin: usize) -> Option<f64> {
         let gain = f64::from(self.gain[bin]);
-        if gain > 0.0 {
-            self.noise_var / gain
-        } else {
-            f64::INFINITY
-        }
+        (gain > 0.0).then(|| self.noise_var / gain)
     }
 }
 
@@ -195,7 +191,9 @@ impl DelaySmoother {
                 *slot += a.conj() * h[c.bin];
             }
         }
-        self.solver.solve(&mut self.response);
+        if self.solver.solve(&mut self.response).is_err() {
+            return;
+        }
         for (c, row) in occupied.iter().zip(self.basis.chunks_exact(self.taps)) {
             h[c.bin] = row.iter().zip(&self.response).map(|(&a, &g)| a * g).sum();
         }
@@ -618,8 +616,9 @@ mod tests {
             estimate.equalize(dead, Complex::new(0.4, -0.2)),
             Complex::new(0.0, 0.0)
         );
-        assert!(estimate.bin_noise_var(dead).is_infinite());
+        assert_eq!(estimate.bin_noise_var(dead), None);
         let live = map.data()[4].bin;
-        assert!((estimate.bin_noise_var(live) - 0.01).abs() < 1e-9);
+        let noise_var = estimate.bin_noise_var(live).unwrap();
+        assert!((noise_var - 0.01).abs() < 1e-9);
     }
 }

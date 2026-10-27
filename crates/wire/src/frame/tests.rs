@@ -92,7 +92,7 @@ fn surfaces() -> [SurfaceFrame; 4] {
 fn spectrum_roundtrip() {
     let bins: Vec<u8> = (0..64u16).map(|i| (i * 4) as u8).collect();
     let frame = spectrum(&bins);
-    let buf = frame.encode();
+    let buf = frame.encode().expect("encode");
     assert_eq!(buf.len(), frame.encoded_len());
     assert_eq!(SpectrumFrame::decode(&buf), Ok(frame));
 }
@@ -108,7 +108,7 @@ fn audio_roundtrip_in_both_layouts() {
             ch_layout,
             opus: &opus,
         };
-        let buf = frame.encode();
+        let buf = frame.encode().expect("encode");
         assert_eq!(buf.len(), frame.encoded_len());
         assert_eq!(AudioFrame::decode(&buf), Ok(frame));
     }
@@ -131,7 +131,7 @@ fn symbols_roundtrip_carrying_both_the_cloud_and_its_reference() {
         reference: &reference,
         symbols: &symbols,
     };
-    let buf = frame.encode();
+    let buf = frame.encode().expect("encode");
     assert_eq!(buf.len(), frame.encoded_len());
     let header = peek_header(&buf).expect("header");
     assert_eq!(header.kind, FrameKind::Symbols);
@@ -170,7 +170,7 @@ fn a_level_plane_frame_needs_no_reference_pairs() {
         reference: &symbols,
         symbols: &symbols,
     };
-    let buf = frame.encode();
+    let buf = frame.encode().expect("encode");
     assert_eq!(buf.len(), frame.encoded_len());
     assert_eq!(SymbolPlane::from_u8(buf[16]), Some(SymbolPlane::Level));
 }
@@ -186,7 +186,7 @@ fn iq_roundtrip() {
         center_hz: 145_800_000.0,
         samples: &samples,
     };
-    let buf = frame.encode();
+    let buf = frame.encode().expect("encode");
     assert_eq!(buf.len(), frame.encoded_len());
     let header = peek_header(&buf).expect("header");
     assert_eq!(header.kind, FrameKind::IqF32);
@@ -214,7 +214,7 @@ fn video_roundtrip() {
         height: 4,
         data: VideoData::Gray(&luma),
     };
-    let buf = frame.encode();
+    let buf = frame.encode().expect("encode");
     assert_eq!(buf.len(), frame.encoded_len());
     assert_eq!(VideoFrame::decode(&buf), Ok(frame));
 }
@@ -230,7 +230,7 @@ fn rgb_video_roundtrip() {
         height: 2,
         data: VideoData::Rgb(&rgb),
     };
-    let buf = frame.encode();
+    let buf = frame.encode().expect("encode");
     let decoded = VideoFrame::decode(&buf).expect("decode");
     assert_eq!(decoded.data, VideoData::Rgb(&rgb));
     let mut short = buf.clone();
@@ -241,7 +241,7 @@ fn rgb_video_roundtrip() {
 #[test]
 fn a_range_doppler_surface_encodes_its_shape_ahead_of_its_cells() {
     let owned = range_doppler();
-    let buf = owned.frame().encode();
+    let buf = owned.frame().encode().expect("encode");
     assert_eq!(buf.len(), owned.frame().encoded_len());
     assert_eq!(FrameKind::from_u8(buf[1]), Some(FrameKind::RangeDoppler));
     assert_eq!(u16::from_le_bytes([buf[16], buf[17]]), 4);
@@ -255,15 +255,21 @@ fn a_range_doppler_surface_encodes_its_shape_ahead_of_its_cells() {
 fn range_doppler_frame_round_trips() {
     let owned = range_doppler();
     let frame = owned.frame();
-    assert_eq!(RangeDopplerFrame::decode(&frame.encode()), Ok(frame));
+    assert_eq!(
+        RangeDopplerFrame::decode(&frame.encode().expect("encode")),
+        Ok(frame)
+    );
     let surface = SurfaceFrame::RangeDoppler(owned.clone());
-    assert_eq!(surface.encode(9), owned.frame().encode());
+    assert_eq!(
+        surface.encode(9).expect("encode"),
+        owned.frame().encode().expect("encode")
+    );
 }
 
 #[test]
 fn range_doppler_frame_decode_checks_shape() {
     let owned = range_doppler();
-    let buf = owned.frame().encode();
+    let buf = owned.frame().encode().expect("encode");
     assert_eq!(RangeDopplerFrame::decode(&buf), Ok(owned.frame()));
     let mut short = buf.clone();
     short.pop();
@@ -274,56 +280,86 @@ fn range_doppler_frame_decode_checks_shape() {
         cells: Vec::new(),
         ..range_doppler()
     };
-    assert_eq!(
-        RangeDopplerFrame::decode(&empty.frame().encode()),
-        Err(FrameError::Shape)
-    );
+    assert_eq!(empty.frame().encode(), Err(FrameError::Shape));
 }
 
 #[test]
 fn spatial_visibility_and_fusion_frames_round_trip() {
     let spatial = spatial();
-    let buf = spatial.frame().encode();
+    let buf = spatial.frame().encode().expect("encode");
     assert_eq!(SpatialSpectrumFrame::decode(&buf), Ok(spatial.frame()));
     let visibility = visibility();
-    let buf = visibility.frame().encode();
+    let buf = visibility.frame().encode().expect("encode");
     assert_eq!(VisibilityFrame::decode(&buf), Ok(visibility.frame()));
     let grid = fusion_grid();
-    let buf = grid.frame().encode();
+    let buf = grid.frame().encode().expect("encode");
     assert_eq!(FusionGridFrame::decode(&buf), Ok(grid.frame()));
 }
 
 #[test]
 fn a_frame_with_short_cells_is_refused() {
+    let whole = spatial().frame().encode().expect("encode");
+    assert_eq!(
+        SpatialSpectrumFrame::decode(&whole[..whole.len() - 1]),
+        Err(FrameError::Shape)
+    );
     let mut spatial = spatial();
     spatial.cells.pop();
-    assert_eq!(
-        SpatialSpectrumFrame::decode(&spatial.frame().encode()),
-        Err(FrameError::Shape)
-    );
+    assert_eq!(spatial.frame().encode(), Err(FrameError::Shape));
     let mut visibility = visibility();
     visibility.phase.pop();
-    assert_eq!(
-        VisibilityFrame::decode(&visibility.frame().encode()),
-        Err(FrameError::Shape)
-    );
+    assert_eq!(visibility.frame().encode(), Err(FrameError::Shape));
     let big = FusionGridOwned {
         cols: FUSION_FRAME_CELLS + 1,
         rows: 1,
         cells: vec![0; usize::from(FUSION_FRAME_CELLS) + 1],
         ..fusion_grid()
     };
-    assert_eq!(
-        FusionGridFrame::decode(&big.frame().encode()),
-        Err(FrameError::Shape)
-    );
+    assert_eq!(big.frame().encode(), Err(FrameError::Shape));
+}
+
+#[test]
+fn a_visibility_frame_past_the_length_prefix_is_refused_at_encode() {
+    let bins = u16::MAX;
+    let over = VisibilityOwned {
+        baselines: 2,
+        bins,
+        amplitude: vec![0; usize::from(bins) * 2],
+        phase: vec![0; usize::from(bins) * 2],
+        ..visibility()
+    };
+    let cells = usize::from(bins) * 2;
+    assert_eq!(over.frame().encode(), Err(FrameError::Oversize(cells)));
+}
+
+#[test]
+fn a_symbol_reference_past_the_length_prefix_is_refused_at_encode() {
+    let reference = vec![0.0f32; usize::from(u16::MAX) + 1];
+    let symbols = [0.5f32, -0.5];
+    let frame = SymbolFrame {
+        stream_id: 1,
+        seq: 0,
+        timestamp: 0,
+        plane: SymbolPlane::Complex,
+        symbol_rate: 4800.0,
+        evm: 0.0,
+        mer_db: 0.0,
+        margin: 0.0,
+        freq_error_hz: 0.0,
+        reference: &reference,
+        symbols: &symbols,
+    };
+    assert_eq!(frame.encode(), Err(FrameError::Oversize(reference.len())));
 }
 
 #[test]
 fn every_decodable_frame_round_trips() {
     let bins = [0u8, 127, 255];
     let spectrum = spectrum(&bins);
-    assert_eq!(SpectrumFrame::decode(&spectrum.encode()), Ok(spectrum));
+    assert_eq!(
+        SpectrumFrame::decode(&spectrum.encode().expect("encode")),
+        Ok(spectrum)
+    );
     let opus = [1u8, 2, 3];
     let audio = AudioFrame {
         stream_id: 1,
@@ -332,7 +368,10 @@ fn every_decodable_frame_round_trips() {
         ch_layout: 2,
         opus: &opus,
     };
-    assert_eq!(AudioFrame::decode(&audio.encode()), Ok(audio));
+    assert_eq!(
+        AudioFrame::decode(&audio.encode().expect("encode")),
+        Ok(audio)
+    );
     let pixels = [1u8, 2];
     let video = VideoFrame {
         stream_id: 1,
@@ -342,9 +381,12 @@ fn every_decodable_frame_round_trips() {
         height: 1,
         data: VideoData::Gray(&pixels),
     };
-    assert_eq!(VideoFrame::decode(&video.encode()), Ok(video));
+    assert_eq!(
+        VideoFrame::decode(&video.encode().expect("encode")),
+        Ok(video)
+    );
     for surface in surfaces() {
-        let buf = surface.encode(31);
+        let buf = surface.encode(31).expect("encode");
         let header = peek_header(&buf).expect("header");
         assert_eq!(header.stream_id, 31);
         let decoded = match &surface {
@@ -400,20 +442,20 @@ fn surfaces_name_their_stream_kind() {
 #[test]
 fn a_short_frame_is_short() {
     let bins = [1u8, 2, 3];
-    let buf = spectrum(&bins).encode();
+    let buf = spectrum(&bins).encode().expect("encode");
     for len in 0..HEADER_LEN {
         assert_eq!(SpectrumFrame::decode(&buf[..len]), Err(FrameError::Short));
         assert_eq!(peek_header(&buf[..len]), Err(FrameError::Short));
     }
     assert_eq!(SpectrumFrame::decode(&buf[..20]), Err(FrameError::Short));
-    let grid = fusion_grid().frame().encode();
+    let grid = fusion_grid().frame().encode().expect("encode");
     assert_eq!(FusionGridFrame::decode(&grid[..30]), Err(FrameError::Short));
 }
 
 #[test]
 fn a_wrong_kind_is_refused() {
     let bins = [1u8, 2, 3];
-    let buf = spectrum(&bins).encode();
+    let buf = spectrum(&bins).encode().expect("encode");
     assert_eq!(
         RangeDopplerFrame::decode(&buf),
         Err(FrameError::Kind(FrameKind::Spectrum as u8))
@@ -430,13 +472,13 @@ fn a_wrong_kind_is_refused() {
 #[test]
 fn a_bad_bytes16_length_is_length() {
     let bins = [1u8, 2, 3];
-    let mut buf = spectrum(&bins).encode();
+    let mut buf = spectrum(&bins).encode().expect("encode");
     buf[40] = 9;
     assert_eq!(SpectrumFrame::decode(&buf), Err(FrameError::Length));
-    let mut trailing = spectrum(&bins).encode();
+    let mut trailing = spectrum(&bins).encode().expect("encode");
     trailing.push(0);
     assert_eq!(SpectrumFrame::decode(&trailing), Err(FrameError::Length));
-    let mut visibility = visibility().frame().encode();
+    let mut visibility = visibility().frame().encode().expect("encode");
     let at = HEADER_LEN + 8 + 4 + 2 + 2 + 4 + 4;
     visibility[at] = 200;
     assert_eq!(
@@ -447,7 +489,7 @@ fn a_bad_bytes16_length_is_length() {
 
 #[test]
 fn peek_header_reads_without_decoding() {
-    let mut buf = range_doppler().frame().encode();
+    let mut buf = range_doppler().frame().encode().expect("encode");
     buf.truncate(HEADER_LEN);
     let header = peek_header(&buf).expect("header");
     assert_eq!(

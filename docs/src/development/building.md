@@ -120,6 +120,44 @@ CI runs these on every push and pull request, plus the mobile, iPhone, Android, 
 and Nix jobs. The nightly workflow adds sanitizers, four hours of fuzzing per target, iPhone UI and
 end-to-end runs, Android device tests, and measurement suites.
 
+## Performance baselines
+
+Throughput gates compare a measurement with a committed baseline:
+
+| Gate | Baseline |
+|---|---|
+| `ber::perf::tests::compare_perf_baseline` in `sdrmm-modem-test-support` | `crates/modem/baselines/perf_phase0.json`, rows tagged by host |
+| `survey_every_channel_search_path` in `sdrmm-channels` | `crates/channels/baselines/channel_perf/<arch>-<os>.json` |
+
+Every row carries the host it was measured on, `<arch>-<os>`. Both gates compare only the rows of
+the host they run on and fail when they find none, so a new runner architecture cannot quietly
+switch them off. `perf_phase0.json` holds `aarch64-macos` only, so the nightly `x86_64-linux` modem
+gate fails until that host is recorded. The per-modulation gates in `crates/modem/tests` still skip
+instead, and want the same treatment.
+
+Record on a quiet machine, in release, and commit the file:
+
+```sh
+cargo test -p sdrmm-modem-test-support --release -- --ignored --exact ber::perf::tests::write_perf_baseline
+cargo test -p sdrmm-channels --release --test channel_perf -- --ignored --exact write_perf_baseline
+```
+
+For a CI host, dispatch the `Perf baseline` workflow (or push to the `perf-baseline` branch),
+download its artifacts, and commit them. Recording replaces the rows of the host that measured them
+and keeps every other host's.
+
+Each baseline also stores a reference kernel measurement, so a faster or slower machine of the same
+host shifts the expectation instead of failing the gate. Run a gate on a machine that is otherwise
+idle: the kernel is cache resident and barely notices a busy host, while a decoder reading tens of
+megabytes does.
+
+The modem gate allows 10% below the expectation on its one bench. The channel survey allows 35%,
+because it compares every registered channel at once, so a wobble anywhere fails it, and because
+`ft8`, `ft4`, `wspr` and `stanag` are timed over a single pass whose deferred decode slot may or may
+not fire inside the measured window: four consecutive runs on one host read `ft8` at 1588, 1697,
+1724 and 4294 MS/s. Tightening it means timing those four over several passes first, which moves
+their numbers and needs both hosts recorded again.
+
 ## Generated files
 
 Regenerate and commit these with the change that caused them:

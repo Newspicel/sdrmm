@@ -13,6 +13,7 @@ import {
   loraKeyText,
   withLoraKeyText,
 } from "./modeOptions";
+import { rowKeys } from "./rowKeys";
 import { TextField } from "./TextField";
 
 const KEYS_TITLE = "Extra keys; Meshtastic defaults and MeshCore Public are built in";
@@ -48,6 +49,7 @@ function LoraKeysEditor({
   keys: readonly LoraKey[];
   onChange: (keys: LoraKey[]) => void;
 }) {
+  const rows = rowKeys(keys);
   const [draft, setDraft] = useState<LoraKey | null>(null);
   const editDraft = (next: LoraKey) => {
     if (loraKeyComplete(next)) {
@@ -61,7 +63,7 @@ function LoraKeysEditor({
     <div className="flex flex-col gap-2">
       {keys.map((entry, index) => (
         <LoraKeyRow
-          key={index}
+          key={rows[index]}
           entry={entry}
           name={`Key ${index + 1}`}
           onEdit={(next) => onChange(keys.with(index, next))}

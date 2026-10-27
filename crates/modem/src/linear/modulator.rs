@@ -27,11 +27,12 @@ impl LinearMod {
     #[must_use]
     pub fn point(&self, k: u64, label: u32) -> Complex<f32> {
         let table = self.params.constellation();
-        let index = table
-            .labels()
-            .iter()
-            .position(|&l| l == label)
-            .unwrap_or_default();
+        let Some(index) = table.index_of(label) else {
+            panic!(
+                "label {label} is not one of the {} table points",
+                table.len()
+            )
+        };
         let p = table.points()[index];
         if self.params.rotation_rad() == 0.0 {
             return p;
@@ -106,6 +107,13 @@ mod tests {
         (0..n)
             .map(|_| (rng.next_u64() % u64::from(m)) as u32)
             .collect()
+    }
+
+    #[test]
+    #[should_panic(expected = "is not one of the")]
+    fn a_label_outside_the_table_is_refused() {
+        let m = LinearMod::new(params(4));
+        let _ = m.point(0, 9);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 import { Collapsible } from "@base-ui/react/collapsible";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookmarkPlus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
   deleteSavedRadio,
   devicesQuery,
@@ -200,16 +200,20 @@ export function DeviceChoices({
   busy = false,
   error = null,
   claimant,
+  recordings = null,
+  generator = null,
 }: {
   onChoose: Choose;
   onAddNetwork: (deviceId: string) => void;
   busy?: boolean;
   error?: string | null;
   claimant?: string;
+  recordings?: ReactNode;
+  generator?: ReactNode;
 }) {
   const devices = useQuery(devicesQuery());
   const [tab, setTab] = useState<SourceTab>("radios");
-  const visible = visibleDevices(devices.data?.devices ?? []);
+  const visible = visibleDevices(devices.data?.devices ?? [], devices.data?.synthetic ?? false);
   const found =
     claimant === undefined
       ? visible
@@ -243,8 +247,12 @@ export function DeviceChoices({
           <AddNetworkRadio onAdd={onAddNetwork} busy={busy} />
         </>
       )}
+      {shown === "recording" && recordings}
       {shown === "virtual" && (
-        <RadioList devices={groups.virtual} busy={busy} onChoose={onChoose} />
+        <>
+          <RadioList devices={groups.virtual} busy={busy} onChoose={onChoose} />
+          {generator}
+        </>
       )}
     </div>
   );

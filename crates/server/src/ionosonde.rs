@@ -12,6 +12,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const FRESH_FOR: Duration = Duration::from_secs(15 * 60);
 const RETRY_AFTER: Duration = Duration::from_secs(60);
 const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
+const FEED_LABEL: &str = "the ionosonde feed";
 const MAX_READING_AGE: jiff::SignedDuration = jiff::SignedDuration::from_hours(6);
 const MIN_MUF_MHZ: f64 = 1.0;
 const MAX_MUF_MHZ: f64 = 100.0;
@@ -132,16 +133,7 @@ async fn fetch(url: &str, now_utc: jiff::Timestamp) -> Result<IonosondeReport, S
     if !status.is_success() {
         return Err(format!("the ionosonde feed answered {status}"));
     }
-    let body = response
-        .bytes()
-        .await
-        .map_err(|error| format!("could not read the ionosonde feed: {error}"))?;
-    if body.len() > MAX_BODY_BYTES {
-        return Err(format!(
-            "the ionosonde feed returned {} bytes, over the {MAX_BODY_BYTES} byte budget",
-            body.len()
-        ));
-    }
+    let body = crate::reference::feed::body_within(response, FEED_LABEL, MAX_BODY_BYTES).await?;
     let entries: Vec<FeedEntry> = serde_json::from_slice(&body)
         .map_err(|error| format!("could not read the ionosonde feed as JSON: {error}"))?;
     Ok(normalize(entries, now_utc))
@@ -343,6 +335,28 @@ mod tests {
         assert!(report.stations.is_empty());
         assert!(report.error.is_some(), "the failure was swallowed");
         assert_eq!(report.source, IONOSONDE_SOURCE);
+    }
+
+    #[tokio::test]
+    async fn an_oversized_feed_is_refused_while_it_is_still_arriving() {
+        let flood = "x".repeat(MAX_BODY_BYTES + 1024);
+        let app = axum::Router::new().route(
+            "/stations.json",
+            axum::routing::get(move || {
+                let flood = flood.clone();
+                async move { flood }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let address = listener.local_addr().expect("address");
+        tokio::spawn(async move { axum::serve(listener, app).await });
+
+        let error = fetch(&format!("http://{address}/stations.json"), now())
+            .await
+            .expect_err("refused");
+        assert!(error.contains("sent more than"), "{error}");
     }
 
     #[tokio::test]

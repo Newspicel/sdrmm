@@ -1,7 +1,6 @@
 use sdrmm_wire::{
-    DeviceSetStatus, MAX_TIME_MACHINE_BYTES, MAX_TIME_MACHINE_SECONDS, MIN_TIME_MACHINE_SECONDS,
-    RecordingStatus, ServerEvent, StateScope, TimeMachineAction, TimeMachineNode,
-    TimeMachineStatus, history_capacity_samples,
+    DeviceSetStatus, MAX_PRE_ROLL_BYTES, MAX_PRE_ROLL_S, MIN_PRE_ROLL_S, PreRollStatus,
+    RecordingStatus, ServerEvent, StateScope, pre_roll_capacity_samples,
 };
 
 use crate::{
@@ -21,7 +20,7 @@ pub(crate) struct TimeMachineCapture {
 pub(crate) struct TimeMachineState {
     pub(crate) node: String,
     pub(crate) stream: u32,
-    pub(crate) history_seconds: u32,
+    pub(crate) pre_roll_s: u32,
     pub(crate) sample_rate: u64,
     pub(crate) center_hz: i64,
     pub(crate) handle: TimeMachineHandle,
@@ -33,12 +32,12 @@ pub(crate) struct TimeMachineState {
 }
 
 impl TimeMachineState {
-    pub(crate) fn status(&self, overruns_now: u64) -> TimeMachineStatus {
+    pub(crate) fn status(&self, overruns_now: u64) -> PreRollStatus {
         let shared = self.handle.shared();
-        TimeMachineStatus {
+        PreRollStatus {
             node: self.node.clone(),
             stream: self.stream,
-            history_seconds: self.history_seconds,
+            pre_roll_s: self.pre_roll_s,
             sample_rate: self.sample_rate,
             center_hz: self.center_hz,
             held_samples: shared.held(),
@@ -82,26 +81,22 @@ fn named(node: &str) -> Result<(), EngineError> {
 }
 
 impl Engine {
-    pub fn arm_time_machine(
+    pub fn arm_pre_roll(
         &self,
         ds: u32,
         node: String,
         stream: u32,
-        settings: TimeMachineNode,
-    ) -> Result<TimeMachineStatus, EngineError> {
+        pre_roll_s: u32,
+    ) -> Result<PreRollStatus, EngineError> {
         named(&node)?;
-        let status = self.arm_history(ds, node, stream, settings)?;
+        let status = self.arm_history(ds, node, stream, pre_roll_s)?;
         self.emit(ServerEvent::StateChanged {
             scope: StateScope::DeviceSet(ds),
         });
         Ok(status)
     }
 
-    pub fn disarm_time_machine(
-        &self,
-        ds: u32,
-        node: &str,
-    ) -> Result<TimeMachineStatus, EngineError> {
+    pub fn drop_pre_roll(&self, ds: u32, node: &str) -> Result<PreRollStatus, EngineError> {
         named(node)?;
         let status = self.disarm_history(ds, node)?;
         self.emit(ServerEvent::StateChanged {
@@ -110,17 +105,22 @@ impl Engine {
         Ok(status)
     }
 
-    pub fn control_time_machine(
+    pub fn start_pre_roll_capture(
         &self,
         ds: u32,
         node: &str,
-        action: TimeMachineAction,
-    ) -> Result<TimeMachineStatus, EngineError> {
+    ) -> Result<PreRollStatus, EngineError> {
         named(node)?;
-        let status = match action {
-            TimeMachineAction::Capture => self.capture_time_machine(ds, node)?,
-            TimeMachineAction::Stop => self.stop_time_machine_capture(ds, node)?,
-        };
+        let status = self.capture_time_machine(ds, node)?;
+        self.emit(ServerEvent::StateChanged {
+            scope: StateScope::DeviceSet(ds),
+        });
+        Ok(status)
+    }
+
+    pub fn stop_pre_roll_capture(&self, ds: u32, node: &str) -> Result<PreRollStatus, EngineError> {
+        named(node)?;
+        let status = self.stop_time_machine_capture(ds, node)?;
         self.emit(ServerEvent::StateChanged {
             scope: StateScope::DeviceSet(ds),
         });
@@ -132,12 +132,11 @@ impl Engine {
         ds: u32,
         node: String,
         stream: u32,
-        settings: TimeMachineNode,
-    ) -> Result<TimeMachineStatus, EngineError> {
-        if !settings.valid() {
+        pre_roll_s: u32,
+    ) -> Result<PreRollStatus, EngineError> {
+        if !(MIN_PRE_ROLL_S..=MAX_PRE_ROLL_S).contains(&pre_roll_s) {
             return Err(EngineError::Recording(format!(
-                "a history of {} s is outside {MIN_TIME_MACHINE_SECONDS}..={MAX_TIME_MACHINE_SECONDS} s",
-                settings.history_seconds
+                "a pre-roll of {pre_roll_s} s is outside {MIN_PRE_ROLL_S}..={MAX_PRE_ROLL_S} s"
             )));
         }
         let (rate, center) = {
@@ -147,9 +146,9 @@ impl Engine {
                 .get(&ds)
                 .ok_or(EngineError::DeviceSetNotFound(ds))?;
             state.check_physical(stream)?;
-            if state.time_machine.is_some() {
+            if state.pre_roll.is_some() {
                 return Err(EngineError::Recording(
-                    "a time machine is already holding this radio's history".to_owned(),
+                    "a recorder is already holding this radio's pre-roll".to_owned(),
                 ));
             }
             if state.status != DeviceSetStatus::Running {
@@ -164,18 +163,16 @@ impl Engine {
                 .unwrap_or(DEFAULT_CENTER_HZ);
             (sample_rate_of(&state.settings), center)
         };
-        let capacity = history_capacity_samples(settings.history_seconds, rate);
+        let capacity = pre_roll_capacity_samples(pre_roll_s, rate);
         let bytes = capacity * sdrmm_recorder::BYTES_PER_SAMPLE;
-        if bytes > MAX_TIME_MACHINE_BYTES {
-            let fits =
-                MAX_TIME_MACHINE_BYTES as f64 / (rate * sdrmm_recorder::BYTES_PER_SAMPLE as f64);
+        if bytes > MAX_PRE_ROLL_BYTES {
+            let fits = MAX_PRE_ROLL_BYTES as f64 / (rate * sdrmm_recorder::BYTES_PER_SAMPLE as f64);
             return Err(EngineError::Recording(format!(
-                "{} s at {:.3} MS/s needs {} MiB of memory, above the {} MiB the history buffer \
+                "{pre_roll_s} s at {:.3} MS/s needs {} MiB of memory, above the {} MiB a pre-roll \
                  may take: this radio's rate leaves room for {:.0} s",
-                settings.history_seconds,
                 rate / 1e6,
                 bytes / (1 << 20),
-                MAX_TIME_MACHINE_BYTES / (1 << 20),
+                MAX_PRE_ROLL_BYTES / (1 << 20),
                 fits.floor().max(0.0),
             )));
         }
@@ -191,7 +188,7 @@ impl Engine {
             match inner.device_sets.get_mut(&ds) {
                 Some(state)
                     if state.status == DeviceSetStatus::Running
-                        && state.time_machine.is_none()
+                        && state.pre_roll.is_none()
                         && state.rate_patches == 0
                         && state.check_physical(stream).is_ok()
                         && sample_rate_of(&state.settings) == rate =>
@@ -199,7 +196,7 @@ impl Engine {
                     let history = TimeMachineState {
                         node,
                         stream,
-                        history_seconds: settings.history_seconds,
+                        pre_roll_s,
                         sample_rate: rate.round() as u64,
                         center_hz: center.round() as i64,
                         handle,
@@ -210,7 +207,7 @@ impl Engine {
                         error_seen: false,
                     };
                     let status = history.status(state.overruns_total());
-                    state.time_machine = Some(history);
+                    state.pre_roll = Some(history);
                     state.send_dsp(stream, DspCommand::StartTimeMachine { tap: Box::new(tap) });
                     inner.revision += 1;
                     Ok(status)
@@ -219,7 +216,10 @@ impl Engine {
                     handle,
                     "a sample-rate change is in flight; retry once it completes",
                 )),
-                _ => Err((handle, "the radio stopped before its history could be held")),
+                _ => Err((
+                    handle,
+                    "the radio stopped before its pre-roll could be held",
+                )),
             }
         };
         committed.map_err(|(handle, reason)| {
@@ -228,7 +228,7 @@ impl Engine {
         })
     }
 
-    fn capture_time_machine(&self, ds: u32, node: &str) -> Result<TimeMachineStatus, EngineError> {
+    fn capture_time_machine(&self, ds: u32, node: &str) -> Result<PreRollStatus, EngineError> {
         let (control, shared, rate, center, hardware, stream) = {
             let inner = self.lock();
             let state = inner
@@ -276,7 +276,7 @@ impl Engine {
                 .get_mut(&ds)
                 .ok_or(EngineError::DeviceSetNotFound(ds))?;
             let overruns = state.overruns_total();
-            let Some(history) = state.time_machine.as_mut() else {
+            let Some(history) = state.pre_roll.as_mut() else {
                 return Err(EngineError::Recording(
                     "the time machine was disarmed while its capture started".to_owned(),
                 ));
@@ -293,11 +293,7 @@ impl Engine {
         Ok(status)
     }
 
-    fn stop_time_machine_capture(
-        &self,
-        ds: u32,
-        node: &str,
-    ) -> Result<TimeMachineStatus, EngineError> {
+    fn stop_time_machine_capture(&self, ds: u32, node: &str) -> Result<PreRollStatus, EngineError> {
         let shared = {
             let inner = self.lock();
             let state = inner
@@ -321,7 +317,7 @@ impl Engine {
                 .get_mut(&ds)
                 .ok_or(EngineError::DeviceSetNotFound(ds))?;
             let overruns = state.overruns_total();
-            let Some(history) = state.time_machine.as_mut() else {
+            let Some(history) = state.pre_roll.as_mut() else {
                 return Err(EngineError::Recording(
                     "the time machine was disarmed while its capture stopped".to_owned(),
                 ));
@@ -337,17 +333,14 @@ impl Engine {
         Ok(status)
     }
 
-    fn disarm_history(&self, ds: u32, node: &str) -> Result<TimeMachineStatus, EngineError> {
+    fn disarm_history(&self, ds: u32, node: &str) -> Result<PreRollStatus, EngineError> {
         let (history, overruns) = {
             let mut inner = self.lock();
             let state = inner
                 .device_sets
                 .get_mut(&ds)
                 .ok_or(EngineError::DeviceSetNotFound(ds))?;
-            let owner = state
-                .time_machine
-                .as_ref()
-                .map(|history| history.node.clone());
+            let owner = state.pre_roll.as_ref().map(|history| history.node.clone());
             match owner {
                 Some(owner) if owner == node => {}
                 Some(owner) => {
@@ -361,7 +354,7 @@ impl Engine {
                     ));
                 }
             }
-            let Some(history) = state.time_machine.take() else {
+            let Some(history) = state.pre_roll.take() else {
                 return Err(EngineError::Recording(
                     "the time machine vanished while disarming".to_owned(),
                 ));
@@ -387,7 +380,7 @@ impl Engine {
         state: &'a DeviceSetState,
         node: &str,
     ) -> Result<&'a TimeMachineState, EngineError> {
-        let history = state.time_machine.as_ref().ok_or_else(|| {
+        let history = state.pre_roll.as_ref().ok_or_else(|| {
             EngineError::Recording("no time machine is holding this radio's history".to_owned())
         })?;
         if history.node == node {

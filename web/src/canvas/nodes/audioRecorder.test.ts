@@ -48,7 +48,11 @@ describe("recorder edits", () => {
   });
 
   it("only audio recorders skip silence", () => {
-    const iq: PatchNode = { ...placed, kind: "recorder", data: { recording: false } };
+    const iq: PatchNode = {
+      ...placed,
+      kind: "recorder",
+      data: { recording: false, pre_roll_s: 0 },
+    };
     expect(withSkipSilence(iq, true)).toBe(iq);
     expect(withRecording(iq, true)).toMatchObject({ data: { recording: true } });
   });

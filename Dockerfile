@@ -1,5 +1,5 @@
 # --- web UI ------------------------------------------------------------------------------
-FROM node:26-slim AS web
+FROM node:26-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS web
 WORKDIR /web
 RUN npm install -g pnpm@12.8.0
 
@@ -13,7 +13,7 @@ RUN test -f dist/index.html
 
 
 # --- workspace skeleton ------------------------------------------------------------------
-FROM debian:trixie-slim AS planner
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS planner
 WORKDIR /plan
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY .cargo .cargo
@@ -41,7 +41,7 @@ RUN find crates apps xtask -type f ! -name Cargo.toml -delete \
 
 
 # --- server binary -----------------------------------------------------------------------
-FROM debian:trixie-slim AS builder
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS builder
 # cc + cmake: opusic-sys builds vendored libopus through the cmake crate. Nothing here needs
 # SoapySDR: the backend opens it at runtime and links nothing at build time.
 RUN apt-get update \
@@ -88,7 +88,7 @@ RUN test -f web/dist/index.html \
 
 
 # --- runtime -----------------------------------------------------------------------------
-FROM debian:trixie-slim AS runtime
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
 LABEL org.opencontainers.image.url="https://sdrmm.com" \
       org.opencontainers.image.source="https://github.com/newspicel/sdrmm" \
       org.opencontainers.image.description="SDR--: headless SDR server with embedded web UI" \

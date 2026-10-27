@@ -89,6 +89,19 @@ impl CoherentMskDemod {
         self.have_previous = true;
     }
 
+    pub(super) fn reset(&mut self) {
+        self.lowpass.reset();
+        self.filtered.clear();
+        self.bit_samples.clear();
+        self.theta = 0.0;
+        self.freq_offset = 0.0;
+        self.previous_sample = Complex::new(0.0, 0.0);
+        self.previous_discriminator = 0.0;
+        self.timing = 0.0;
+        self.magnitude = 1e-3;
+        self.have_previous = false;
+    }
+
     pub(super) fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<(f32, u8)>) {
         self.filtered.clear();
         self.lowpass.process(input, &mut self.filtered);

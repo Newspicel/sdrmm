@@ -407,6 +407,21 @@ fn a_noise_burst_calibrates_through_its_threads() {
     drop(runtime.stop());
 }
 
+#[test]
+fn a_panicking_aggregator_stops_the_board_instead_of_vanishing() {
+    let board = StatusBoard::new(2);
+    let aggregator = std::thread::Builder::new()
+        .name("sdrmm-test-aggregator".to_owned())
+        .spawn(|| -> AggregatorExit { panic!("a drop panicked on the way out") })
+        .expect("a test aggregator");
+    assert!(joined_exit(aggregator, &board).is_none());
+    assert!(!board.alive());
+    assert!(matches!(
+        board.control().failure,
+        Some(sdrmm_wire::ArrayFailure::Stopped { .. })
+    ));
+}
+
 fn crosses_threads<T: Send>() {}
 
 fn shared_between_threads<T: Send + Sync>() {}

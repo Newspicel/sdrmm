@@ -1,3 +1,4 @@
+import { MAX_SCAN_TARGETS } from "../lib/limits";
 import type {
   BandChannel,
   BandPlan,
@@ -24,18 +25,33 @@ export function rangeProblem(settings: ScanSettings): string | null {
     return "add a range";
   }
   const reversed = ranges.findIndex((range) => range.stop_hz < range.start_hz);
-  if (reversed < 0) {
-    return null;
+  if (reversed >= 0) {
+    return `${rangeLine(ranges, reversed)}the stop frequency is below the start`;
   }
-  const line = ranges.length > 1 ? `range ${reversed + 1}: ` : "";
-  return `${line}the stop frequency is below the start`;
+  const unstepped = ranges.findIndex((range) => !(range.step_hz > 0));
+  if (unstepped >= 0) {
+    return `${rangeLine(ranges, unstepped)}the step has to be above zero`;
+  }
+  if (targetCount(settings) > MAX_SCAN_TARGETS) {
+    return `over ${MAX_SCAN_TARGETS} targets: widen the step or narrow the range`;
+  }
+  return null;
+}
+
+function rangeLine(ranges: readonly ScanRange[], index: number): string {
+  return ranges.length > 1 ? `range ${index + 1}: ` : "";
+}
+
+function rangeTargets(range: ScanRange): number {
+  if (!(range.step_hz > 0)) {
+    return 0;
+  }
+  const steps = Math.floor((range.stop_hz - range.start_hz) / range.step_hz);
+  return Number.isFinite(steps) ? Math.max(0, steps + 1) : 0;
 }
 
 export function targetCount(settings: ScanSettings): number {
-  const swept = (settings.ranges ?? []).reduce(
-    (total, r) => total + Math.max(0, Math.floor((r.stop_hz - r.start_hz) / r.step_hz) + 1),
-    0,
-  );
+  const swept = (settings.ranges ?? []).reduce((total, r) => total + rangeTargets(r), 0);
   return swept + (settings.frequencies ?? []).length;
 }
 

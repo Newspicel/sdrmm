@@ -32,7 +32,7 @@ Only the `.pcm` files that tests read are kept.
 reversed at the frame end), each with a two-byte length. The project's DRM encoder writes them:
 
 ```sh
-cargo test -p sdrmm-channels --lib drm::aac::tests::regenerate -- --ignored
+SDRMM_WRITE_FIXTURES=1 cargo test -p sdrmm-channels --lib drm::aac::tests::write_drm_frame_fixtures -- --ignored
 ```
 
 FDK's own DRM decoder (`TT_DRM`) checks them independently. Its output matched the `.pcm`

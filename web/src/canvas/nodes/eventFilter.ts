@@ -29,11 +29,15 @@ export function formatIds(ids: readonly number[] | undefined): string {
   return (ids ?? []).join(", ");
 }
 
+export function textLength(text: string): number {
+  return Array.from(text).length;
+}
+
 export function parseWords(text: string): string[] {
   const seen = new Set<string>();
   for (const token of text.split(/[\s,]+/)) {
     const word = token.trim();
-    if (word !== "" && word.length <= MAX_FILTER_TEXT_LEN) {
+    if (word !== "" && textLength(word) <= MAX_FILTER_TEXT_LEN) {
       seen.add(word);
     }
   }

@@ -62,6 +62,7 @@ const NAME_AT: usize = 0x20;
 pub const NAME_LEN: usize = 16;
 
 const RX_ONLY: u8 = 1;
+const NO_CONTACT: u16 = u16::MAX;
 const HZ_PER_UNIT: u64 = 10;
 
 const TONE_NONE: u16 = 0x0fff;
@@ -211,9 +212,10 @@ fn decode_dmr(record: &[u8], links: &Links) -> (ChannelMode, Option<u32>) {
         } else {
             TimeSlot::One
         },
-        contact: links
-            .contacts
-            .name(usize::from(get_u16_le(record, CONTACT_AT))),
+        contact: match get_u16_le(record, CONTACT_AT) {
+            NO_CONTACT => None,
+            slot => links.contacts.name(usize::from(slot)),
+        },
         group_list,
         radio_id: None,
         admit: dmr_admit(DMR_ADMIT.get(record)),
@@ -267,7 +269,14 @@ fn encode_dmr(record: &mut [u8], dmr: &DmrChannel, targets: &Targets) {
     set_u16_le(record, TX_TONE_AT, TONE_NONE);
     SECOND_SLOT.flag(record, dmr.time_slot == TimeSlot::Two);
     COLOUR_CODE.set(record, dmr.color_code);
-    set_u16_le(record, CONTACT_AT, targets.contact.unwrap_or(0));
+    set_u16_le(
+        record,
+        CONTACT_AT,
+        targets
+            .contact
+            .filter(|slot| *slot != NO_CONTACT)
+            .unwrap_or(NO_CONTACT),
+    );
     set_u8(
         record,
         GROUP_LIST_AT,
@@ -396,6 +405,35 @@ mod tests {
         let decoded = decode(&record, &links).expect("decode");
         assert_eq!(decoded.channel, channel);
         assert_eq!(decoded.own_id, Some(2_628_002));
+    }
+
+    #[test]
+    fn a_dmr_channel_without_a_contact_points_at_no_slot() {
+        let channel = Channel {
+            name: "Scanner".to_owned(),
+            rx_hz: 438_500_000,
+            tx_hz: 438_500_000,
+            mode: ChannelMode::Dmr(DmrChannel {
+                color_code: 1,
+                ..DmrChannel::default()
+            }),
+            ..Default::default()
+        };
+        let mut record = [0u8; RECORD];
+        let targets = Targets {
+            contact: None,
+            group_list: None,
+            own_id: None,
+        };
+        encode(&mut record, &channel, &targets);
+        assert_eq!(get_u16_le(&record, CONTACT_AT), NO_CONTACT);
+        let names = named_slots();
+        let links = Links {
+            contacts: &names,
+            group_lists: &names,
+        };
+        let decoded = decode(&record, &links).expect("decode");
+        assert_eq!(decoded.channel.mode, channel.mode);
     }
 
     #[test]

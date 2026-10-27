@@ -42,6 +42,55 @@ fn decodes_a_trellis_coded_data_block() {
     assert_eq!(block.data.as_deref(), Some(hex(&payload).as_str()));
 }
 
+#[test]
+fn decodes_a_bptc_coded_rate_half_data_block() {
+    let payload: [bool; Bptc196::DATA_BITS] =
+        std::array::from_fn(|index| (index * 5 + index / 3) % 4 == 0);
+    let iq = tx::rate_half_data(5, &payload, INPUT_RATE_HZ);
+
+    let frames = decode(&mut channel(DmrSlots::Both), &iq);
+
+    let block = frames
+        .iter()
+        .find(|frame| frame.opcode.as_deref() == Some("rate 1/2 data"))
+        .expect("a rate 1/2 data block");
+    assert_eq!(block.color_code, Some(5));
+    assert_eq!(block.data.as_deref(), Some(hex(&payload).as_str()));
+}
+
+#[test]
+fn an_uncoded_rate_one_block_drops_only_the_four_pad_bits() {
+    let payload: [bool; RATE_ONE_DATA_BITS] =
+        std::array::from_fn(|index| (index * 11 + index / 7) % 3 != 0);
+    let iq = tx::rate_one_data(9, &payload, INPUT_RATE_HZ);
+
+    let frames = decode(&mut channel(DmrSlots::Both), &iq);
+
+    let block = frames
+        .iter()
+        .find(|frame| frame.opcode.as_deref() == Some("rate 1 data"))
+        .expect("a rate 1 data block");
+    assert_eq!(block.color_code, Some(9));
+    assert_eq!(block.data.as_deref(), Some(hex(&payload).as_str()));
+}
+
+#[test]
+fn the_rate_one_pad_sits_where_the_transmit_bit_order_puts_it() {
+    let mut coded = [false; RATE_ONE_CODED_BITS];
+    for (index, bit) in coded.iter_mut().enumerate() {
+        *bit = index % 2 == 0;
+    }
+    coded[RATE_ONE_PAD_AT..RATE_ONE_PAD_AT + RATE_ONE_PAD_BITS].fill(false);
+
+    let decoded = decode_rate_one(&coded);
+
+    assert_eq!(decoded[..RATE_ONE_PAD_AT], coded[..RATE_ONE_PAD_AT]);
+    assert_eq!(
+        decoded[RATE_ONE_PAD_AT..],
+        coded[RATE_ONE_PAD_AT + RATE_ONE_PAD_BITS..]
+    );
+}
+
 fn hex(bits: &[bool]) -> String {
     bits.chunks(4)
         .map(|nibble| {
@@ -956,6 +1005,97 @@ fn one_unsummed_block_is_dropped_and_a_run_of_them_is_read() {
         decoder.checked_block(&payload, CSBK_MASK, 1).is_none(),
         "a block that needed repair was read on a masked site's evidence"
     );
+}
+
+#[test]
+fn retuning_forgets_the_masked_checksum_run_and_the_trunking_tier() {
+    let payload = [false; 96];
+    let mut decoder = Decoder::new(DmrParams::default());
+    for _ in 1..MASKED_SUM_RUN {
+        assert!(decoder.checked_block(&payload, CSBK_MASK, 0).is_none());
+    }
+    decoder.tier_three = true;
+    decoder.reset();
+
+    assert!(
+        !decoder.tier_three,
+        "the last site's trunking tier survived the retune"
+    );
+    assert!(
+        decoder.checked_block(&payload, CSBK_MASK, 0).is_none(),
+        "the masked run from the last site was carried onto the next one"
+    );
+}
+
+fn embedded_burst_bits(color_code: u8, lcss: u32, fragment: &[bool; 32]) -> Vec<bool> {
+    let emb = CyclicCode::QR_16_7.encode(u32::from(color_code) << 3 | lcss);
+    let mut bits = vec![false; BURST_BITS];
+    put(&mut bits, 108, 8, emb >> 8);
+    bits[116..148].copy_from_slice(fragment);
+    put(&mut bits, 148, 8, emb & 0xFF);
+    bits
+}
+
+#[test]
+fn an_embedded_link_control_that_never_terminates_stops_growing() {
+    let mut decoder = Decoder::new(DmrParams::default());
+    decoder.bits = embedded_burst_bits(1, LCSS_FIRST, &[true; 32]);
+    assert!(decoder.embedded_signalling(0, Some(1)).is_none());
+    for _ in 0..200 {
+        decoder.bits = embedded_burst_bits(1, LCSS_CONTINUATION, &[true; 32]);
+        assert!(decoder.embedded_signalling(0, Some(1)).is_none());
+    }
+
+    assert!(
+        decoder.slots[0].embedded.len() <= Bptc128::CODED_BITS,
+        "the embedded buffer grew past one link control: {}",
+        decoder.slots[0].embedded.len()
+    );
+    assert!(decoder.rejected() > 0, "the overrun was never reported");
+}
+
+#[test]
+fn an_embedded_last_fragment_at_the_wrong_length_clears_the_buffer() {
+    let mut decoder = Decoder::new(DmrParams::default());
+    decoder.bits = embedded_burst_bits(1, LCSS_FIRST, &[true; 32]);
+    decoder.embedded_signalling(0, Some(1));
+    decoder.bits = embedded_burst_bits(1, LCSS_LAST, &[true; 32]);
+
+    assert!(decoder.embedded_signalling(0, Some(1)).is_none());
+    assert!(
+        decoder.slots[0].embedded.is_empty(),
+        "a short link control was left for the next one to append to"
+    );
+    assert_eq!(decoder.rejected(), 1);
+}
+
+#[test]
+fn a_short_lc_that_never_terminates_stops_growing() {
+    let mut assembler = ShortLc::default();
+    assembler.push(0b01, [true; 17]);
+    for _ in 0..200 {
+        assembler.push(0b11, [true; 17]);
+    }
+
+    assert!(
+        assembler.payload.len() <= SHORT_LC_BITS,
+        "the short link control buffer grew past one message: {}",
+        assembler.payload.len()
+    );
+    assert!(assembler.rejected() > 0, "the overrun was never reported");
+}
+
+#[test]
+fn a_short_lc_last_fragment_at_the_wrong_length_clears_the_buffer() {
+    let mut assembler = ShortLc::default();
+    assembler.push(0b01, [true; 17]);
+
+    assert!(assembler.push(0b10, [true; 17]).is_none());
+    assert!(
+        assembler.payload.is_empty(),
+        "a short message was left for the next one to append to"
+    );
+    assert_eq!(assembler.rejected(), 1);
 }
 
 #[test]

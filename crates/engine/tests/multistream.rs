@@ -21,9 +21,9 @@ use sdrmm_device_recording::RecordingDriver;
 use sdrmm_device_virtual::{VirtualDriver, stream_marker_offset_hz};
 use sdrmm_engine::{Engine, SpectrumSnapshot};
 use sdrmm_wire::{
-    Capabilities, ChannelParams, ChannelSettings, DcArtifact, DecoderEvent, DeviceInfo,
-    DeviceSettings, Duplex, GainValue, NfmParams, PocsagBaud, PocsagParams, ScanSettings,
-    StreamScope, StreamSettings, Tuning,
+    Capabilities, ChannelParams, ChannelSettings, DcArtifact, DecoderEvent, DeviceBackend,
+    DeviceInfo, DeviceSettings, Duplex, GainValue, NfmParams, PocsagBaud, PocsagParams,
+    ScanSettings, StreamScope, StreamSettings, Tuning,
 };
 use tokio::sync::broadcast;
 
@@ -560,13 +560,13 @@ struct PagingDriver {
 }
 
 impl DeviceDriver for PagingDriver {
-    fn id(&self) -> &'static str {
-        "mock"
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::Rtlsdr
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
         vec![DeviceInfo {
-            driver: "mock".to_string(),
+            driver: DeviceBackend::Rtlsdr,
             key: "paging".to_string(),
             label: "Paging mock".to_string(),
             serial: None,
@@ -606,6 +606,7 @@ impl DeviceDriver for PagingDriver {
                 retune_keeps_phase: false,
                 rx_inputs: Vec::new(),
                 clean_fraction: None,
+                bank: None,
             },
             settings: DeviceSettings {
                 center_hz: Some(DEFAULT_CENTER_HZ),
@@ -699,7 +700,7 @@ async fn a_decoded_frame_reports_its_lanes_absolute_frequency() {
     registry.register(10, Box::new(PagingDriver { iq: Arc::new(iq) }));
     let engine = Engine::with_registry(registry, None);
     let mut rx = engine.subscribe_decoded();
-    let ds = engine.create_device_set("mock:paging").unwrap();
+    let ds = engine.create_device_set("rtlsdr:paging").unwrap();
     engine
         .patch_device(
             ds,

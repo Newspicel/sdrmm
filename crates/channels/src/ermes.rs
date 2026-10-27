@@ -63,6 +63,7 @@ pub struct ErmesChannel {
     message: Vec<u32>,
     message_errors: u32,
     message_dropped: bool,
+    rejected: u32,
 }
 
 fn mapping() -> Mapping {
@@ -126,7 +127,6 @@ impl ErmesChannel {
     }
 
     fn bit(&mut self, bit: bool, out: &mut ChannelOutputs) {
-        let bit = bit ^ self.invert;
         if self.sync.push(bit) {
             self.state = State::System {
                 bits: 0,
@@ -223,7 +223,12 @@ impl ErmesChannel {
     }
 
     fn flush(&mut self, out: &mut ChannelOutputs) {
-        if self.message_dropped || self.message.len() < 2 {
+        if self.message_dropped {
+            self.rejected = self.rejected.saturating_add(1);
+            self.start_message();
+            return;
+        }
+        if self.message.len() < 2 {
             self.start_message();
             return;
         }
@@ -339,6 +344,7 @@ impl ChannelRx for ErmesChannel {
             message: Vec::new(),
             message_errors: 0,
             message_dropped: false,
+            rejected: 0,
         })
     }
 
@@ -358,11 +364,16 @@ impl ChannelRx for ErmesChannel {
         let mut soft = std::mem::take(&mut self.soft);
         self.demod.process(iq, &mut soft);
         for symbol in soft.drain(..) {
-            let symbol = self.mapping.slice(symbol);
-            self.bit(symbol >> 1 & 1 == 1, out);
-            self.bit(symbol & 1 == 1, out);
+            let symbol = if self.invert { -symbol } else { symbol };
+            let index = self.mapping.slice(symbol);
+            self.bit(index >> 1 & 1 == 1, out);
+            self.bit(index & 1 == 1, out);
         }
         self.soft = soft;
+    }
+
+    fn rejected(&self) -> u32 {
+        self.rejected
     }
 }
 
@@ -422,6 +433,51 @@ mod tests {
         assert_eq!(messages[0].alert, 5);
     }
 
+    fn page() -> synth::ermes::Page {
+        synth::ermes::Page {
+            local_address: 234_567,
+            message_number: 3,
+            text: "ERMES ALPHA PAGE".to_owned(),
+            urgent: true,
+            alert: 5,
+        }
+    }
+
+    fn pages(invert: bool, iq: &[Complex<f32>]) -> Vec<ErmesMessage> {
+        let mut channel = ErmesChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(ChannelParams::Ermes(ErmesParams {
+                invert,
+                ..ErmesParams::default()
+            })),
+        )
+        .unwrap();
+        let mut out = ChannelOutputs::default();
+        for chunk in iq.chunks(997) {
+            channel.process(chunk, &mut out);
+        }
+        out.events
+            .into_iter()
+            .filter_map(|event| match event {
+                DecoderEvent::Ermes(message) => Some(message),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_spectrum_inverted_transmission_decodes_only_when_inverted() {
+        let iq: Vec<Complex<f32>> = synth::ermes::transmission(&page(), RATE)
+            .into_iter()
+            .map(|sample| sample.conj())
+            .collect();
+        let inverted = pages(true, &iq);
+        assert_eq!(inverted.len(), 1, "{inverted:?}");
+        assert_eq!(inverted[0].text, "ERMES ALPHA PAGE");
+        assert_eq!(inverted[0].local_address, 234_567);
+        assert!(pages(false, &iq).is_empty());
+    }
+
     #[test]
     fn a_broken_header_word_emits_no_page() {
         let page = synth::ermes::Page {
@@ -453,5 +509,6 @@ mod tests {
             "{:?}",
             out.events
         );
+        assert_eq!(ChannelRx::rejected(&channel), 1);
     }
 }

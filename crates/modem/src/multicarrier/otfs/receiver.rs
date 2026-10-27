@@ -217,15 +217,15 @@ impl OtfsReceiver {
     fn refine(&mut self) {
         self.precoder.spread(&self.decided, &mut self.tf);
         self.fill_known();
-        self.noise_var = self
-            .fit
-            .fit(
-                &self.received,
-                &self.known,
-                self.noise_var,
-                &mut self.channel,
-            )
-            .max(MIN_NOISE_VAR);
+        let fitted = self.fit.fit(
+            &self.received,
+            &self.known,
+            self.noise_var,
+            &mut self.channel,
+        );
+        if let Some(noise_var) = fitted {
+            self.noise_var = noise_var.max(MIN_NOISE_VAR);
+        }
     }
 
     fn fill_known(&mut self) {

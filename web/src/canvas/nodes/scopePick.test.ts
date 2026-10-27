@@ -5,6 +5,7 @@ import {
   bookmarkDraft,
   channelTypeAt,
   dragTuneHz,
+  markerAt,
   pickAt,
   pickText,
   streamChannels,
@@ -178,5 +179,24 @@ describe("creation tunes", () => {
 
   it("knows nothing about a node that was not drawn at a frequency", () => {
     expect(takeCreationTune("channel:never")).toBeUndefined();
+  });
+});
+
+const tuned = (id: number, hz: number): ChannelInfo => ({
+  ...channel({ type: "nfm", settings: {} }),
+  id,
+  settings: { frequency_hz: hz, params: { type: "nfm", settings: {} } },
+});
+
+describe("markerAt", () => {
+  const listed = [tuned(1, 99_500_000), tuned(2, 100_500_000)];
+
+  it("grabs the nearest marker inside the grab width", () => {
+    expect(markerAt(listed, undefined, FULL_VIEW, 100e6, 2e6, 0.25, 0.05)?.id).toBe(1);
+    expect(markerAt(listed, undefined, FULL_VIEW, 100e6, 2e6, 0.75, 0.05)?.id).toBe(2);
+  });
+
+  it("grabs nothing from the empty space between markers", () => {
+    expect(markerAt(listed, undefined, FULL_VIEW, 100e6, 2e6, 0.5, 0.05)).toBeNull();
   });
 });

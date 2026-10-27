@@ -30,11 +30,19 @@ export const ROTATOR_LIMITS = limits.rotator;
 export const MAX_NODES = limits.patch.nodes;
 export const MAX_EDGES = limits.patch.wires;
 export const MAX_STREAMS = limits.patch.streams;
+export const MAX_SCAN_TARGETS = limits.scan.targets;
 export const MAX_NAME_LEN = limits.name_len;
 export const MAX_NOTE_LEN = limits.note_len;
+export const MAX_FILTER_KINDS = limits.filter.kinds;
 export const MAX_FILTER_IDS = limits.filter.ids;
 export const MAX_FILTER_DURATION_MS = limits.filter.duration_ms;
 export const MAX_FILTER_TEXT_LEN = limits.filter.text_len;
+export const CHANNEL_FREQUENCY_SEED_HZ = limits.channel_frequency_seed_hz;
+export const AUDIO = limits.audio;
+export const AUDIO_RATE_HZ = limits.audio.rate_hz;
+export const SURVEY_LIMITS = limits.survey;
+export const WMBUS_LIMITS = limits.wmbus;
+export const WORKSPACE_STATE_VERSION = limits.workspace_state_version;
 
 export function lowest(bounds: Bounds, step: number): number {
   return bounds.above === true ? bounds.min + step : bounds.min;

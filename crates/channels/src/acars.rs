@@ -19,7 +19,6 @@ pub(crate) mod position;
 pub(crate) mod qseries;
 #[cfg(test)]
 mod real_messages;
-#[cfg(test)]
 pub(crate) mod reasm;
 pub(crate) mod sublabel;
 #[cfg(test)]
@@ -27,13 +26,13 @@ mod xng_equivalence;
 
 #[cfg(test)]
 pub(crate) use app::summary;
-pub(crate) use app::{AcarsApp, decode};
+pub(crate) use app::{AcarsApp, AppDecode, decode};
 pub(crate) use message::AcarsCore;
 
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{DcBlocker, Decimator, crc16_ccitt, design_lowpass};
+use sdrmm_dsp::{DcBlocker, Decimator, design_lowpass};
 use sdrmm_modem::cpm::MskDetector;
 use sdrmm_wire::{
     AcarsMessage, AcarsParams, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
@@ -42,6 +41,10 @@ use sdrmm_wire::{
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
 
+use block::AcarsBlock;
+use miam::FileReassembler;
+use reasm::{Reasm, Reassembler};
+
 const CHANNEL_TAPS: usize = 65;
 
 const BAUD: f64 = 2_400.0;
@@ -49,23 +52,12 @@ const CENTRE_HZ: f64 = 1_800.0;
 
 const SYN: u8 = 0x16;
 const SOH: u8 = 0x01;
-const STX: u8 = 0x02;
 const ETX: u8 = 0x83;
 const ETB: u8 = 0x97;
-const ETB_DATA: u8 = ETB & 0x7F;
-const NAK: u8 = 0x15;
-const DEL: u8 = 0x7F;
 
-const MIN_BLOCK: usize = 13;
-const MAX_BLOCK: usize = 240;
-
-const ADDRESS: std::ops::Range<usize> = 1..8;
-const ACK: usize = 8;
-const LABEL: std::ops::Range<usize> = 9..11;
-const BLOCK_ID: usize = 11;
-const BLOCK_START: usize = 12;
-const SEQ_LEN: usize = 4;
-const FLIGHT_LEN: usize = 6;
+const MAX_BLOCK_OCTETS: usize = 1 + 240;
+const REASSEMBLY_TIMEOUT_SECS: f64 = 120.0;
+const MIAM_LABEL: &str = "MA";
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "acars".to_owned(),
@@ -146,7 +138,9 @@ impl ChannelRx for AcarsChannel {
     }
 
     fn retuned(&mut self) {
+        let rejected = self.framer.rejected;
         self.framer = Framer::new();
+        self.framer.rejected = rejected;
         self.detector.reset();
     }
 
@@ -159,6 +153,10 @@ impl ChannelRx for AcarsChannel {
         for &bit in &self.bits {
             self.framer.push(bit, out);
         }
+    }
+
+    fn rejected(&self) -> u32 {
+        self.framer.rejected
     }
 }
 
@@ -176,9 +174,12 @@ struct Framer {
     inverted: bool,
     state: State,
     bits_to_byte: u32,
-    block: Vec<u8>,
-    crc: [u8; 2],
+    bits_seen: u64,
+    octets: Vec<u8>,
     crc_len: usize,
+    blocks: Reassembler,
+    files: FileReassembler,
+    rejected: u32,
 }
 
 impl Framer {
@@ -188,20 +189,28 @@ impl Framer {
             inverted: false,
             state: State::Hunt,
             bits_to_byte: 1,
-            block: Vec::new(),
-            crc: [0; 2],
+            bits_seen: 0,
+            octets: Vec::new(),
             crc_len: 0,
+            blocks: Reassembler::new(REASSEMBLY_TIMEOUT_SECS),
+            files: FileReassembler::new(),
+            rejected: 0,
         }
     }
 
     fn restart(&mut self) {
         self.state = State::Hunt;
         self.bits_to_byte = 1;
-        self.block.clear();
+        self.octets.clear();
         self.crc_len = 0;
     }
 
+    fn elapsed_secs(&self) -> f64 {
+        self.bits_seen as f64 / BAUD
+    }
+
     fn push(&mut self, bit: bool, out: &mut ChannelOutputs) {
+        self.bits_seen += 1;
         let bit = bit != self.inverted;
         self.reg = (self.reg >> 1) | (u8::from(bit) << 7);
         self.bits_to_byte -= 1;
@@ -216,26 +225,28 @@ impl Framer {
             State::Soh => {
                 if byte == SOH {
                     self.state = State::Text;
-                    self.block.clear();
+                    self.octets.clear();
+                    self.octets.push(SOH);
                 } else {
                     self.restart();
                 }
             }
             State::Text => {
-                self.block.push(byte);
+                self.octets.push(byte);
                 if byte == ETX || byte == ETB {
                     self.state = State::Crc;
                     self.crc_len = 0;
-                } else if self.block.len() > MAX_BLOCK {
+                } else if self.octets.len() > MAX_BLOCK_OCTETS {
                     self.restart();
                 }
             }
             State::Crc => {
-                self.crc[self.crc_len] = byte;
+                self.octets.push(byte);
                 self.crc_len += 1;
                 if self.crc_len == 2 {
-                    if let Some(message) = self.decode() {
-                        out.events.push(DecoderEvent::Acars(message));
+                    match self.decode() {
+                        Some(message) => out.events.push(DecoderEvent::Acars(message)),
+                        None => self.rejected = self.rejected.saturating_add(1),
                     }
                     self.restart();
                 }
@@ -267,80 +278,61 @@ impl Framer {
         };
     }
 
-    fn decode(&self) -> Option<AcarsMessage> {
-        if self.block.len() < MIN_BLOCK {
+    fn decode(&mut self) -> Option<AcarsMessage> {
+        let parsed = block::parse(&self.octets)?;
+        if !parsed.crc_ok || parsed.parity_errors > 0 {
             return None;
         }
-        if self.block.iter().any(|b| b.count_ones() % 2 == 0) {
-            return None;
+        let now = self.elapsed_secs();
+        let status = self.blocks.push(&parsed.core, now);
+        let text = match &status {
+            Reasm::Complete(joined) => joined.clone(),
+            _ => parsed.core.text.clone(),
+        };
+        let tail = parsed.core.tail.as_deref().unwrap_or_default();
+        let file = (parsed.core.label == MIAM_LABEL)
+            .then(|| self.files.push(tail, &text, now))
+            .flatten();
+        let mut decoded = decode(&parsed.core.label, &text, parsed.downlink);
+        if let Some(pdu) = file {
+            decoded.app = Some(AcarsApp::Miam {
+                frame: miam::MiamFrame::SingleTransfer(pdu),
+            });
         }
-        let mut checked = self.block.clone();
-        checked.extend_from_slice(&self.crc);
-        if crc16_ccitt(&checked) != 0 {
-            return None;
-        }
-
-        let text: Vec<u8> = self.block.iter().map(|b| b & 0x7F).collect();
-        let block_id = char::from(text[BLOCK_ID]);
-        let downlink = block_id.is_ascii_digit();
-        let terminator = *text.last()?;
-
-        let mut body = text
-            .get(BLOCK_START + 1..text.len() - 1)
-            .unwrap_or_default();
-        let (mut seq_no, mut flight) = (None, None);
-        if text[BLOCK_START] == STX && downlink && body.len() >= SEQ_LEN + FLIGHT_LEN {
-            seq_no = Some(field(&body[..SEQ_LEN]));
-            flight = Some(field(&body[SEQ_LEN..SEQ_LEN + FLIGHT_LEN]));
-            body = &body[SEQ_LEN + FLIGHT_LEN..];
-        }
-
-        Some(AcarsMessage {
-            mode: char::from(text[0]),
-            registration: field(&text[ADDRESS]).replace('.', ""),
-            ack: (text[ACK] != NAK).then(|| char::from(text[ACK])),
-            label: label(&text[LABEL]),
-            block_id,
-            downlink,
-            seq_no,
-            flight,
-            text: if text[BLOCK_START] == STX {
-                printable(body)
-            } else {
-                String::new()
-            },
-            more: terminator == ETB_DATA,
-        })
+        message(&parsed, text, &status, &decoded)
     }
 }
 
-fn label(raw: &[u8]) -> String {
-    let spelled: Vec<u8> = raw
-        .iter()
-        .map(|&b| if b == DEL { b'd' } else { b })
-        .collect();
-    field(&spelled)
-}
-
-fn field(raw: &[u8]) -> String {
-    printable(raw).trim().to_owned()
-}
-
-fn printable(raw: &[u8]) -> String {
-    let mut out = String::with_capacity(raw.len());
-    for &b in raw {
-        match b {
-            b'\r' | b'\n' => {
-                if !out.ends_with('\n') {
-                    out.push('\n');
-                }
-            }
-            b'\t' => out.push('\t'),
-            0x20..=0x7E => out.push(char::from(b)),
-            _ => {}
-        }
-    }
-    out.trim_end().to_owned()
+fn message(
+    parsed: &AcarsBlock,
+    text: String,
+    status: &Reasm,
+    decoded: &AppDecode,
+) -> Option<AcarsMessage> {
+    let (lat, lon) = match decoded.position {
+        Some(at) => (Some(at.latitude), Some(at.longitude)),
+        None => (None, None),
+    };
+    Some(AcarsMessage {
+        mode: parsed.core.mode,
+        registration: parsed.core.tail.clone().unwrap_or_default(),
+        ack: parsed.core.ack,
+        label: parsed.core.label.clone(),
+        block_id: parsed.core.block_id?,
+        downlink: parsed.downlink,
+        seq_no: parsed.core.msg_num.clone(),
+        flight: parsed.core.flight.clone(),
+        text,
+        more: parsed.core.more_to_come,
+        sublabel: decoded.sublabel.clone(),
+        mfi: decoded.mfi.clone(),
+        assstat: (!matches!(status, Reasm::Skipped)).then(|| status.assstat().to_owned()),
+        lat,
+        lon,
+        decoded: (!decoded.is_empty())
+            .then(|| serde_json::to_value(decoded).ok())
+            .flatten(),
+    })
 }
 
 #[cfg(test)]
@@ -597,6 +589,142 @@ mod tests {
             assert_eq!(core.text, m.text);
             assert_eq!(core.more_to_come, m.more);
         }
+    }
+
+    fn framed(blocks: &[Block<'_>]) -> (Framer, Vec<AcarsMessage>) {
+        let mut framer = Framer::new();
+        let mut out = ChannelOutputs::default();
+        for block in blocks {
+            feed_bytes(&mut framer, &synth::acars::block_bytes(block), &mut out);
+        }
+        let messages = out
+            .events
+            .iter()
+            .map(|event| match event {
+                DecoderEvent::Acars(message) => message.clone(),
+                other => panic!("unexpected event {other:?}"),
+            })
+            .collect();
+        (framer, messages)
+    }
+
+    #[test]
+    fn the_vhf_path_decodes_the_same_application_layer_as_vdl2() {
+        let adsc = Block {
+            label: "B6",
+            seq_no: Some("M11A"),
+            flight: Some("AI0142"),
+            text: "/BOMASAI.ADS.VT-ANB072501A070A988CA73248F0E5DC10200000F5EE1ABC000102B885E0A19F5",
+            ..downlink()
+        };
+        let (_, messages) = framed(&[adsc]);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        let decoded = messages[0].decoded.as_ref().expect("application layer");
+        assert_eq!(decoded["app"]["app"], "adsc");
+        assert_eq!(decoded["app"]["crc_ok"], true);
+
+        let octets = synth::acars::block_bytes(&adsc);
+        let shared = block::parse(&octets[2..]).expect("shared parser");
+        assert_eq!(decoded["app"], shared.core.app.expect("shared app"));
+    }
+
+    #[test]
+    fn a_label_20_position_downlink_reaches_the_map() {
+        let report = Block {
+            label: "20",
+            text: "POSN38160W077075,,211733,360,OTT,212041,,N42,19689,40,544",
+            ..downlink()
+        };
+        let (_, messages) = framed(&[report]);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        let message = &messages[0];
+        let (lat, lon) = (message.lat.expect("lat"), message.lon.expect("lon"));
+        assert!((lat - 38.16).abs() < 0.001, "{lat}");
+        assert!((lon + 77.075).abs() < 0.001, "{lon}");
+    }
+
+    #[test]
+    fn two_blocks_reassemble_into_one_payload() {
+        let first = Block {
+            block_id: '2',
+            seq_no: Some("M01A"),
+            text: "FIRST-",
+            more: true,
+            ..downlink()
+        };
+        let second = Block {
+            block_id: '3',
+            seq_no: Some("M01B"),
+            text: "SECOND",
+            more: false,
+            ..downlink()
+        };
+        let (_, messages) = framed(&[first, second]);
+        assert_eq!(messages.len(), 2, "{messages:?}");
+        assert_eq!(messages[0].assstat.as_deref(), Some("in progress"));
+        assert_eq!(messages[1].text, "FIRST-SECOND");
+        assert_eq!(messages[1].assstat.as_deref(), Some("complete"));
+    }
+
+    #[test]
+    fn a_miam_file_transfer_reassembles_into_a_core_pdu() {
+        let core = miam::testing::plain_data_pdu("HELLO FILE WORLD");
+        let (head, tail) = core.split_at(core.len() / 2);
+        let request = format!("F007{:06}", core.len());
+        let first = format!("S007001{head}");
+        let second = format!("S007002{tail}");
+        let blocks: Vec<Block<'_>> = [request.as_str(), first.as_str(), second.as_str()]
+            .iter()
+            .enumerate()
+            .map(|(index, text)| Block {
+                label: "MA",
+                block_id: char::from(b'A' + index as u8),
+                seq_no: None,
+                flight: None,
+                text,
+                ..uplink()
+            })
+            .collect();
+        let (_, messages) = framed(&blocks);
+        assert_eq!(messages.len(), 3, "{messages:?}");
+        let decoded = messages[2].decoded.as_ref().expect("application layer");
+        assert_eq!(decoded["app"]["app"], "miam");
+        assert_eq!(decoded["app"]["frame"], "single_transfer");
+        assert_eq!(decoded["app"]["text"], "HELLO FILE WORLD");
+    }
+
+    #[test]
+    fn a_single_block_reports_no_reassembly() {
+        let (_, messages) = framed(&[downlink()]);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert_eq!(messages[0].assstat, None);
+    }
+
+    #[test]
+    fn rejected_blocks_are_counted() {
+        let good = synth::acars::block_bytes(&downlink());
+        let (framer, messages) = framed(&[downlink()]);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(framer.rejected, 0);
+
+        for corrupt_at in [4usize, 12, 20, good.len() - 3] {
+            let mut broken = good.clone();
+            broken[corrupt_at] ^= 0x03;
+            let mut framer = Framer::new();
+            let mut out = ChannelOutputs::default();
+            feed_bytes(&mut framer, &broken, &mut out);
+            assert!(out.events.is_empty(), "corrupted at {corrupt_at}");
+            assert_eq!(framer.rejected, 1, "corrupted at {corrupt_at}");
+        }
+
+        let mut chan = channel();
+        let mut iq = transmission(&downlink(), RATE);
+        for sample in iq.iter_mut().skip(4_000).take(200) {
+            *sample = Complex::new(0.0, 0.0);
+        }
+        let mut out = ChannelOutputs::default();
+        chan.process(&iq, &mut out);
+        assert_eq!(chan.rejected(), chan.framer.rejected);
     }
 
     #[test]

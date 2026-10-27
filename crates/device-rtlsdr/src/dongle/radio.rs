@@ -1,3 +1,7 @@
+use std::sync::{Arc, atomic::AtomicBool};
+
+use sdrmm_usb_stream::Pauser;
+
 use super::{
     board::Board,
     chip::Chip,
@@ -55,6 +59,8 @@ pub(crate) struct Radio<T: Transport> {
     center_hz: Option<u32>,
     direct: DirectSampling,
     bias_tee_at_start: bool,
+    pauser: Option<Pauser>,
+    pause_for_control: Arc<AtomicBool>,
 }
 
 impl<T: Transport> Radio<T> {
@@ -82,11 +88,31 @@ impl<T: Transport> Radio<T> {
             center_hz: None,
             direct: DirectSampling::Off,
             bias_tee_at_start,
+            pauser: None,
+            pause_for_control: Arc::new(AtomicBool::new(false)),
         })
     }
 
     pub(crate) const fn chip(&self) -> &Chip<T> {
         &self.chip
+    }
+
+    pub(crate) fn pauser(&self) -> Option<Pauser> {
+        self.pauser.clone()
+    }
+
+    pub(crate) fn set_pauser(&mut self, pauser: Option<Pauser>) {
+        self.pauser = pauser;
+    }
+
+    pub(crate) fn pause_flag(&self) -> Arc<AtomicBool> {
+        self.pause_for_control.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pauses_control(&self) -> bool {
+        self.pause_for_control
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     pub(crate) const fn board(&self) -> Board {

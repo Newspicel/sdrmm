@@ -2,6 +2,7 @@ import { Button } from "../../components/BaseControls";
 import { broadcastTitle } from "../../components/broadcastStatus";
 import { ChannelControls, ChannelDial } from "../../components/ChannelControls";
 import {
+  channelFrequencyHz,
   channelHasAudio,
   channelWidthHz,
   radioWindowHz,
@@ -61,7 +62,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
   const settings = channelSettingsOf(workspace, node.id);
   const onEdit = (edit: ChannelEdit): void => editChannel(node.id, edit);
   const level = live === null ? undefined : levels?.[live.id];
-  const frequencyHz = settings === null ? null : heardHz(settings.frequency_hz, level);
+  const frequencyHz = settings === null ? null : heardHz(channelFrequencyHz(settings), level);
   const spanHz = set === null ? undefined : laneRateHz(set, source?.stream ?? 0);
   const window = radioWindowHz(centerHz, spanHz, descriptor);
   const miss = bandMissOf({
@@ -109,7 +110,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
         {settings !== null && (
           <div className="@container flex flex-col gap-1 border-b border-line p-2">
             <ChannelDial
-              hz={heardHz(settings.frequency_hz, level)}
+              hz={heardHz(channelFrequencyHz(settings), level)}
               descriptor={descriptor}
               spanHz={spanHz ?? null}
               centerHz={centerHz}

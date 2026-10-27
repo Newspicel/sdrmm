@@ -1,16 +1,26 @@
 import { Circle } from "lucide-react";
 import { Button } from "../../components/BaseControls";
 import { BTN_DANGER, BTN_PRIMARY } from "../../components/controls";
-import { Chips, ToggleChip } from "../../components/face/Chips";
+import { Chips, NumberChip, ToggleChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { DROPS_HINT, formatBytes, formatCount } from "../../components/format";
 import { Icon } from "../../components/Icon";
+import {
+  DEFAULT_PRE_ROLL_S,
+  heldSeconds,
+  MAX_PRE_ROLL_S,
+  MIN_PRE_ROLL_S,
+  PRE_ROLL_BYTES_PER_SAMPLE,
+  preRollFill,
+  type PreRollPhase,
+  preRollPhase,
+} from "../../components/preRoll";
 import { formatDuration, recordingElapsedS } from "../../components/recordings";
 import { SAMPLE_RATE as AUDIO_RATE_HZ } from "../../lib/audio/worklet";
 import { useInputs } from "../../lib/resolved";
-import type { PatchNode, PatchNodeOf, RecordingStatus } from "../../lib/types";
+import type { PatchNode, PatchNodeOf, PreRollStatus, RecordingStatus } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
@@ -113,29 +123,89 @@ export function RecorderFace({ node }: { node: PatchNode }) {
 function IqRecorder({ node }: { node: PatchNodeOf<"recorder"> }) {
   const workspace = useWorkspaceContext();
   const set = runningSetOf(workspace, node.id);
-  const status = set?.recording?.node === node.id ? set.recording : null;
+  const preRollS = node.data?.pre_roll_s ?? 0;
+  const phase = preRollPhase(set, node.id);
+  const held = phase.kind === "held" || phase.kind === "capturing" ? phase.status : null;
+  const status = held?.capture ?? (set?.recording?.node === node.id ? set.recording : null);
   const recording = node.data?.recording ?? false;
+
+  const setPreRoll = (pre_roll_s: number) => {
+    workspace.edit((snapshot) => ({
+      ...snapshot,
+      graph: patchNode(snapshot.graph, node.id, (current) =>
+        current.kind === "recorder"
+          ? { ...current, data: { ...current.data, pre_roll_s } }
+          : current,
+      ),
+    }));
+  };
+
   return (
     <NodeShell node={node} title="Recorder" category="output">
       <FaceBody>
+        <Chips>
+          <ToggleChip
+            label="Pre-roll"
+            title="Keep the seconds before the press, so the file starts early"
+            on={preRollS > 0}
+            disabled={recording}
+            onChange={(on) => setPreRoll(on ? DEFAULT_PRE_ROLL_S : 0)}
+          />
+          {preRollS > 0 && (
+            <NumberChip
+              label="Keep"
+              title="Seconds held in memory ahead of the press"
+              value={preRollS}
+              unit="s"
+              min={MIN_PRE_ROLL_S}
+              max={MAX_PRE_ROLL_S}
+              step={1}
+              disabled={recording}
+              onCommit={setPreRoll}
+            />
+          )}
+        </Chips>
         <Readouts ruled={false}>
           {status === null ? (
             <Readout label="File">{recording && set !== null ? "Waiting" : IDLE}</Readout>
           ) : (
             <FileReadout label="File" file={status.file} />
           )}
+          {held !== null && <PreRollReadout status={held} />}
         </Readouts>
         {status?.error != null && <FaceFault message={status.error} />}
+        {held?.error != null && <FaceFault message={held.error} />}
       </FaceBody>
       <FaceFooter>
         <IqRecordStats status={status} sampleRate={set?.settings.sample_rate ?? 0} />
         <RecorderSwitch
           node={node}
           title="Record IQ to a SigMF pair"
-          unwired={set === null ? "Wire a device's IQ in" : null}
+          unwired={unwiredSaid(phase, set === null)}
         />
       </FaceFooter>
     </NodeShell>
+  );
+}
+
+function unwiredSaid(phase: PreRollPhase, noSet: boolean): string | null {
+  if (phase.kind === "busy") {
+    return "Another recorder holds this radio's pre-roll";
+  }
+  return noSet ? "Wire a device's IQ in" : null;
+}
+
+function PreRollReadout({ status }: { status: PreRollStatus }) {
+  return (
+    <>
+      <Readout label="Held">
+        {formatDuration(heldSeconds(status))} · {(preRollFill(status) * 100).toFixed(0)}% of{" "}
+        {status.pre_roll_s} s
+      </Readout>
+      <Readout label="Memory">
+        {formatBytes(status.capacity_samples * PRE_ROLL_BYTES_PER_SAMPLE)}
+      </Readout>
+    </>
   );
 }
 

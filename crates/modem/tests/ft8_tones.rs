@@ -164,20 +164,20 @@ fn the_costas_arrays_locate_the_frame_under_noise() {
 
     let demod = MfskDemod::new(plan());
     let mut energies = [0.0f32; TONES];
-    let score = |at: usize, energies: &mut [f32]| -> f64 {
-        COSTAS
-            .iter()
-            .enumerate()
-            .map(|(k, &tone)| {
-                demod.energies(&wave, delay_samples(), at + k, energies);
-                let total: f64 = energies.iter().map(|&e| f64::from(e)).sum();
-                let want = f64::from(energies[tone as usize]);
-                want - (total - want) / (TONES - 1) as f64
-            })
-            .sum()
+    let score = |at: usize, energies: &mut [f32]| -> Option<f64> {
+        let mut sum = 0.0f64;
+        for (k, &tone) in COSTAS.iter().enumerate() {
+            if !demod.energies(&wave, delay_samples(), at + k, energies) {
+                return None;
+            }
+            let total: f64 = energies.iter().map(|&e| f64::from(e)).sum();
+            let want = f64::from(energies[tone as usize]);
+            sum += want - (total - want) / (TONES - 1) as f64;
+        }
+        Some(sum)
     };
     let mut scored: Vec<(usize, f64)> = (0..FRAME_SYMBOLS + lead)
-        .map(|at| (at, score(at, &mut energies)))
+        .filter_map(|at| score(at, &mut energies).map(|value| (at, value)))
         .collect();
     scored.sort_by(|a, b| b.1.total_cmp(&a.1));
     let mut best: Vec<usize> = scored[..3].iter().map(|&(at, _)| at).collect();
@@ -216,7 +216,7 @@ fn the_raw_symbol_error_rate_at_the_published_threshold_matches_theory() {
         let mut wave = clean.clone();
         add_noise(&mut wave, 0x7e57 + trial, es / es_over_n0);
         for (k, &sent) in symbols.iter().enumerate() {
-            demod.energies(&wave, delay_samples(), k, &mut energies);
+            assert!(demod.energies(&wave, delay_samples(), k, &mut energies));
             trials += 1;
             if argmax(&energies) != sent {
                 errors += 1;

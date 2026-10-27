@@ -27,18 +27,15 @@ import { PropagationFace } from "./PropagationFace";
 import { RadarFace } from "./RadarFace";
 import { ReadoutFace } from "./ReadoutFace";
 import { AudioRecorderFace, BasebandRecorderFace, RecorderFace } from "./RecorderFaces";
-import { RecordingFace } from "./RecordingFace";
 import { RotatorFace } from "./RotatorFace";
 import { SatelliteFace } from "./SatelliteFace";
 import { ScannerFace } from "./ScannerFace";
 import { ScopeFace } from "./ScopeFace";
-import { SignalGenFace } from "./SignalGenFace";
 import { SignalMapFace } from "./SignalMapFace";
 import { SpatialSpectrumFace } from "./SpatialSpectrumFace";
 import { SpeakerFace } from "./SpeakerFace";
 import { SpectrumMonitorFace } from "./SpectrumMonitorFace";
 import { StitchFace } from "./StitchFace";
-import { TimeMachineFace } from "./TimeMachineFace";
 import { TriangulationFace } from "./TriangulationFace";
 import { VideoFace } from "./VideoFace";
 
@@ -56,8 +53,6 @@ function mount(Face: Face) {
 
 export const NODE_TYPES: Record<NodeKind, ComponentType<NodeProps<Node<FlowData>>>> = {
   device: mount(DeviceFace),
-  recording: mount(RecordingFace),
-  signal_gen: mount(SignalGenFace),
   gps: mount(GpsFace),
   channel: mount(ChannelFace),
   event_output: mount(EventOutputFace),
@@ -77,7 +72,6 @@ export const NODE_TYPES: Record<NodeKind, ComponentType<NodeProps<Node<FlowData>
   recorder: mount(RecorderFace),
   audio_recorder: mount(AudioRecorderFace),
   baseband_recorder: mount(BasebandRecorderFace),
-  time_machine: mount(TimeMachineFace),
   network_export: mount(NetworkExportFace),
   export: mount(ExportFace),
   scanner: mount(ScannerFace),
@@ -98,8 +92,6 @@ export const NODE_TYPES: Record<NodeKind, ComponentType<NodeProps<Node<FlowData>
 
 export const FACES: Record<NodeKind, Face> = {
   device: DeviceFace,
-  recording: RecordingFace,
-  signal_gen: SignalGenFace,
   gps: GpsFace,
   channel: ChannelFace,
   event_output: EventOutputFace,
@@ -119,7 +111,6 @@ export const FACES: Record<NodeKind, Face> = {
   recorder: RecorderFace,
   audio_recorder: AudioRecorderFace,
   baseband_recorder: BasebandRecorderFace,
-  time_machine: TimeMachineFace,
   network_export: NetworkExportFace,
   export: ExportFace,
   scanner: ScannerFace,

@@ -69,6 +69,16 @@ export function stepDial(hz: number, place: number, direction: number, range: Ra
   return clamp(Math.round(hz) + direction * 10 ** place, range);
 }
 
+export function digitDirection(
+  event: { button: number; clientY: number },
+  rect: { top: number; height: number },
+): number | null {
+  if (event.button !== 0) {
+    return null;
+  }
+  return event.clientY < rect.top + rect.height / 2 ? 1 : -1;
+}
+
 export function setDialDigit(hz: number, place: number, digit: number, range: Range): number {
   const unit = 10 ** place;
   const whole = Math.max(0, Math.round(hz));

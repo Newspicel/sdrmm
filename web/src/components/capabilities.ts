@@ -30,6 +30,14 @@ export function gainUnit(stage: Pick<GainStage, "unit">): string {
   return (stage.unit ?? "db") === "index" ? "" : "dB";
 }
 
+export function switchReadout(stage: Pick<GainStage, "unit" | "range">, on: boolean): string {
+  if (!on) {
+    return "0";
+  }
+  const top = Math.round(stage.range.max);
+  return gainUnit(stage) === "" ? `${top}` : `+${top}`;
+}
+
 export function formatGain(stage: Pick<GainStage, "unit">, value: number): string {
   return (stage.unit ?? "db") === "index" ? String(Math.round(value)) : value.toFixed(1);
 }

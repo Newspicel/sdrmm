@@ -1,14 +1,34 @@
-import type { DeviceClaim, DeviceInfo } from "../lib/types";
+import backends from "../generated/backends.json";
+import type { DeviceBackend, DeviceClaim, DeviceInfo, DevicesResponse } from "../lib/types";
 import type { Options } from "./controls";
 
-const NODE_OWNED_DRIVERS = ["recording", "siggen"];
+export type BackendEntry = (typeof backends)[number];
+
+const GENERATOR_KEY_PREFIX = "gen-";
+
+const BY_ID = new Map<string, BackendEntry>(backends.map((entry) => [entry.backend, entry]));
+
+export function backendEntry(driver: string): BackendEntry | undefined {
+  return BY_ID.get(driver);
+}
+
+function reach(device: DeviceInfo): string | undefined {
+  return BY_ID.get(device.driver)?.reach;
+}
+
+function nodeOwned(device: DeviceInfo): boolean {
+  return (
+    reach(device) === "playback" ||
+    (isVirtualDevice(device) && device.key.startsWith(GENERATOR_KEY_PREFIX))
+  );
+}
 
 function deviceRank(device: DeviceInfo): number {
-  return device.driver === "virtual" ? 1 : 0;
+  return isVirtualDevice(device) ? 1 : 0;
 }
 
 export function isVirtualDevice(device: DeviceInfo): boolean {
-  return device.driver === "virtual";
+  return reach(device) === "synthetic";
 }
 
 export function rankDevices(devices: readonly DeviceInfo[]): readonly DeviceInfo[] {
@@ -19,9 +39,9 @@ export function rankDevices(devices: readonly DeviceInfo[]): readonly DeviceInfo
 
 export function visibleDevices(
   devices: readonly DeviceInfo[],
-  showSynthetic = import.meta.env.DEV || import.meta.env.VITE_ENABLE_SYNTHETIC_DEVICES === "true",
+  showSynthetic: DevicesResponse["synthetic"],
 ): readonly DeviceInfo[] {
-  const pickable = devices.filter((device) => !NODE_OWNED_DRIVERS.includes(device.driver));
+  const pickable = devices.filter((device) => !nodeOwned(device));
   return rankDevices(
     showSynthetic ? pickable : pickable.filter((device) => !isVirtualDevice(device)),
   );
@@ -48,7 +68,7 @@ export function groupDevices(devices: readonly DeviceInfo[]): {
   };
 }
 
-export type SourceTab = "radios" | "network" | "virtual";
+export type SourceTab = "radios" | "network" | "recording" | "virtual";
 
 function counted(label: string, count: number): string {
   return count > 0 ? `${label} (${count})` : label;
@@ -65,14 +85,13 @@ export function sourceTabs(groups: {
       label: "Network",
       title: "rtl_tcp, SpyServer, SDRconnect, KiwiSDR, AntSDR or Pluto",
     },
-  ];
-  if (groups.virtual.length > 0) {
-    tabs.push({
+    { value: "recording", label: "Recording", title: "Play a recorded IQ file back" },
+    {
       value: "virtual",
       label: counted("Virtual", groups.virtual.length),
-      title: "Synthetic radios for development and tests",
-    });
-  }
+      title: "Synthetic radios and the signal generator",
+    },
+  ];
   return tabs;
 }
 
@@ -80,14 +99,15 @@ export function deviceId(device: DeviceInfo): string {
   return `${device.driver}:${device.key}`;
 }
 
-export const NETWORK_BACKENDS = [
-  { driver: "rtltcp", label: "rtl_tcp", placeholder: "192.168.1.5:1234" },
-  { driver: "spyserver", label: "SpyServer", placeholder: "192.168.1.5:5555" },
-  { driver: "sdrconnect", label: "SDRconnect", placeholder: "192.168.1.5:5454" },
-  { driver: "kiwisdr", label: "KiwiSDR", placeholder: "kiwi.example.org:8073" },
-  { driver: "ad936x", label: "AntSDR / Pluto", placeholder: "192.168.1.10:30431" },
-  { driver: "espsdr", label: "ESP-SDR", placeholder: "192.168.1.20:80" },
-] as const;
+export type NetworkBackend = { driver: DeviceBackend; label: string; placeholder: string };
+
+export const NETWORK_BACKENDS: readonly [NetworkBackend, ...NetworkBackend[]] = backends
+  .filter((entry) => entry.reach === "network")
+  .map((entry) => ({
+    driver: entry.backend as DeviceBackend,
+    label: entry.label,
+    placeholder: entry.address_hint ?? "",
+  })) as unknown as readonly [NetworkBackend, ...NetworkBackend[]];
 
 export function networkDeviceId(driver: string, address: string): string | null {
   const scheme = /^([a-z][a-z0-9+._-]*):\/\//i.exec(address.trim());

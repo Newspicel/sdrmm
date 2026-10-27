@@ -21,11 +21,11 @@ use sdrmm_wire::{
     DecoderLogEntry, DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount,
     DeviceInfo, DeviceSettings, DevicesResponse, DfFusionState, DiagnosticsReport, DoctorReport,
     ErrorCode, ExamplesResponse, ExportFormat, IonosondeReport, LicenseTextResponse, LocateQuery,
-    LogGroupKey, MAX_RECORDING_UPLOAD_BYTES, MAX_SATELLITE_QUERY_LEN, NmeaDevicesResponse,
-    NodeBody, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchApplyReport, PatchCatalog,
-    PatchChannelRequest, PatchGraph, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
-    RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
-    SatelliteCatalogQuery, SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScannerStatus,
+    LogGroupKey, MAX_RECORDING_UPLOAD_BYTES, MAX_SATELLITE_QUERY_LEN, NodeBody, OccupancyReport,
+    PRESET_SNAPSHOT_VERSION, PatchApplyReport, PatchCatalog, PatchChannelRequest, PatchGraph,
+    PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation, RecordingDownloadQuery,
+    RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse, SatelliteCatalogQuery,
+    SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScannerStatus, SerialDevicesResponse,
     ServerEvent, ServerStatus, StateScope, StateSnapshot, TemplateInfo, TemplatesResponse,
     ToolRequest, ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest,
     WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot, WorkspacesResponse, WriteSerialRequest,
@@ -409,6 +409,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(get_devices))
         .routes(routes!(write_serial))
         .routes(routes!(get_nmea_devices))
+        .routes(routes!(get_serial_ports))
         .routes(routes!(get_channel_types))
         .routes(routes!(call_audio))
         .routes(routes!(list_images))

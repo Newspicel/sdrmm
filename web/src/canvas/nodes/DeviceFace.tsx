@@ -47,12 +47,16 @@ import {
   clippingLanes,
   deviceRefOf,
   faultSaid,
+  generatorRef,
   type Hearing,
   hearing,
+  isGeneratorRef,
+  isRecordingRef,
   lanesMerged,
   lockAll,
   lockStream,
   lossSaid,
+  recordingRef,
   refLabel,
   refusalSaid,
   stopSaid,
@@ -61,6 +65,8 @@ import {
 } from "./deviceNode";
 import { MakeArrayButton } from "./MakeArrayButton";
 import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
+import { Library, RecordingFace } from "./RecordingFace";
+import { SignalGenFace } from "./SignalGenFace";
 import { SourceHealth } from "./SourceHealth";
 
 type DeviceNodeData = PatchNodeOf<"device">["data"];
@@ -430,6 +436,11 @@ export function DeviceFace({ node }: { node: PatchNode }) {
     onSettled: () => void queryClient.invalidateQueries({ queryKey: STATE_KEY }),
   });
 
+  const pin = (chosen: DeviceRef): void => {
+    nameRadio(chosen);
+    workspace.apply();
+  };
+
   if (reference === null) {
     return (
       <NodeShell node={node} title="Device" category="source">
@@ -441,11 +452,32 @@ export function DeviceFace({ node }: { node: PatchNode }) {
               busy={openNetwork.isPending}
               error={openNetwork.error?.message ?? null}
               claimant={node.id}
+              recordings={
+                <Library node={node.id} onPick={(take) => pin(recordingRef(take.file))} />
+              }
+              generator={
+                <Button
+                  type="button"
+                  className={BTN_PRIMARY}
+                  title="Generate a decodable signal to try a decoder without a radio"
+                  onClick={() => pin(generatorRef(node.id))}
+                >
+                  Signal generator
+                </Button>
+              }
             />
           </div>
         </FaceBody>
       </NodeShell>
     );
+  }
+
+  if (isRecordingRef(reference)) {
+    return <RecordingFace node={node} />;
+  }
+
+  if (isGeneratorRef(reference)) {
+    return <SignalGenFace node={node} />;
   }
 
   if (set === null) {

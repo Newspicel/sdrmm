@@ -7,8 +7,8 @@ use crate::{
     device::{AgcGain, Capabilities, DeviceInfo, DeviceSettings},
     hunt::HuntStatus,
     network::NetworkExportStatus,
+    preroll::PreRollStatus,
     scan::ScannerStatus,
-    timemachine::TimeMachineStatus,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -101,7 +101,7 @@ pub struct DeviceSet {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network_export: Option<NetworkExportStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub time_machine: Option<TimeMachineStatus>,
+    pub pre_roll: Option<PreRollStatus>,
     /// One scan per decoder that is being driven.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scanners: Vec<ScannerStatus>,

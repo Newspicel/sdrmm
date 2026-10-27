@@ -168,3 +168,47 @@ describe("VideoHub", () => {
     expect(fake.sent).toEqual([{ type: "SubscribePort", data: { node: "video", port: "video" } }]);
   });
 });
+
+describe("VideoHub pending frames", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("counts the frames it throws away so a face can show them", () => {
+    const { fake, hub } = bench();
+    const remove = registerMediaLatency("sstv", () => 5_000);
+    const scope = input("sstv");
+    fake.started(1, "sstv");
+    hub.subscribe(scope, () => {});
+    expect(hub.droppedFrames(scope)).toBe(0);
+
+    const drops: number[] = [];
+    const stop = hub.onDrop(() => drops.push(hub.droppedFrames(scope)));
+    for (let frame = 0; frame < 40; frame++) {
+      fake.push(1);
+    }
+    stop();
+    remove();
+
+    expect(hub.droppedFrames(scope)).toBe(8);
+    expect(drops).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it("holds no more than its byte budget of pictures", () => {
+    const { fake, hub } = bench();
+    const remove = registerMediaLatency("atv", () => 5_000);
+    const scope = input("atv");
+    fake.started(2, "atv");
+    hub.subscribe(scope, () => {});
+    for (let frame = 0; frame < 8; frame++) {
+      fake.push(2, 2_048, 2_048);
+    }
+    remove();
+
+    expect(hub.droppedFrames(scope)).toBe(4);
+  });
+});

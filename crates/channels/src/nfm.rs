@@ -1,7 +1,12 @@
-use std::{f64::consts::TAU, sync::LazyLock};
+use std::{
+    f64::consts::{FRAC_1_SQRT_2, TAU},
+    sync::LazyLock,
+};
 
 use num_complex::Complex;
-use sdrmm_dsp::{Compander, Decimator, Highpass, RealDecimator, design_lowpass};
+use sdrmm_dsp::{
+    Biquad, Compander, Decimator, Deemphasis, RealDecimator, design_lowpass, one_pole_coeff,
+};
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
@@ -25,6 +30,9 @@ const COMPANDER_RANGE_DB: f32 = 40.0;
 const COMPANDER_HEADROOM_DB: f32 = 9.0;
 const AUDIO_TAPS: usize = 129;
 const CHANNEL_TAPS: usize = 129;
+const EMPHASIS_TAU_US: f32 = 750.0;
+const EMPHASIS_REFERENCE_HZ: f64 = 1_000.0;
+const SUBAUDIBLE_SECTIONS: usize = 2;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "nfm".to_owned(),
@@ -41,61 +49,105 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 
 pub struct NfmChannel {
     demod: AngleDemod,
+    subaudible_cut: SubaudibleCut,
+    deemphasis: AudioDeemphasis,
     audio_lp: RealDecimator,
     demod_buf: Vec<f32>,
     tone: Option<Tone>,
     scrambler: Option<Scrambler>,
-    expander: Option<Expander>,
+    expander: Option<Compander>,
 }
 
-struct Expander {
-    subaudible_cut: Option<Highpass>,
-    key: Vec<f32>,
-    compander: Compander,
+struct SubaudibleCut {
+    sections: [Biquad; SUBAUDIBLE_SECTIONS],
 }
 
-impl Expander {
-    fn new(p: &NfmParams) -> Self {
+impl SubaudibleCut {
+    fn new(rate: f64) -> Self {
         Self {
-            subaudible_cut: subaudible_cut(p),
-            key: Vec::new(),
-            compander: Compander::expander(
-                DESCRIPTOR.input_rate_hz,
-                COMPANDER_REFERENCE_RMS,
-                COMPANDER_RANGE_DB,
-                COMPANDER_HEADROOM_DB,
-            ),
-        }
-    }
-
-    fn configure(&mut self, p: &NfmParams) {
-        if self.subaudible_cut.is_some() != (p.tone_mode == NfmToneMode::Off) {
-            self.subaudible_cut = subaudible_cut(p);
+            sections: std::array::from_fn(|_| {
+                Biquad::highpass(rate, AUDIO_CORNER_HZ, FRAC_1_SQRT_2)
+            }),
         }
     }
 
     fn reset(&mut self) {
-        if let Some(cut) = &mut self.subaudible_cut {
-            cut.reset();
+        for section in &mut self.sections {
+            section.reset();
         }
-        self.compander.reset();
     }
 
-    fn step(&mut self, audio: &mut [f32]) {
-        let Some(cut) = &mut self.subaudible_cut else {
-            self.compander.process(audio);
-            return;
-        };
-        self.key.clear();
-        self.key.extend_from_slice(audio);
-        cut.process(&mut self.key);
-        self.compander.process_keyed(audio, &self.key);
+    fn process(&mut self, audio: &mut [f32]) {
+        for section in &mut self.sections {
+            section.process(audio);
+        }
     }
 }
 
-fn subaudible_cut(p: &NfmParams) -> Option<Highpass> {
-    (p.tone_mode == NfmToneMode::Off)
-        .then(|| Highpass::new(DESCRIPTOR.input_rate_hz, AUDIO_CORNER_HZ))
+fn emphasis_pole(rate: f64) -> f32 {
+    one_pole_coeff(rate, f64::from(EMPHASIS_TAU_US) * 1e-6)
+}
+
+fn emphasis_reference_gain(rate: f64) -> f32 {
+    let pole = f64::from(emphasis_pole(rate));
+    let kept = 1.0 - pole;
+    let turn = TAU * EMPHASIS_REFERENCE_HZ / rate;
+    (pole / (1.0 - kept * turn.cos()).hypot(kept * turn.sin())) as f32
+}
+
+struct AudioDeemphasis {
+    rate: f64,
+    filter: Deemphasis,
+    gain: f32,
+}
+
+impl AudioDeemphasis {
+    fn new(rate: f64) -> Self {
+        Self {
+            rate,
+            filter: Deemphasis::new(rate, EMPHASIS_TAU_US),
+            gain: 1.0 / emphasis_reference_gain(rate),
+        }
+    }
+
+    fn reset(&mut self) {
+        self.filter = Deemphasis::new(self.rate, EMPHASIS_TAU_US);
+    }
+
+    fn process(&mut self, audio: &mut [f32]) {
+        self.filter.process(audio);
+        for s in audio {
+            *s *= self.gain;
+        }
+    }
+}
+
+struct AudioPreemphasis {
+    kept: f32,
+    scale: f32,
+    previous: f32,
+}
+
+impl AudioPreemphasis {
+    fn new(rate: f64) -> Self {
+        let pole = emphasis_pole(rate);
+        Self {
+            kept: 1.0 - pole,
+            scale: emphasis_reference_gain(rate) / pole,
+            previous: 0.0,
+        }
+    }
+
+    fn process(&mut self, audio: &mut [f32]) {
+        if !self.previous.is_finite() {
+            self.previous = 0.0;
+        }
+        for s in audio {
+            let sample = if s.is_finite() { *s } else { 0.0 };
+            *s = self.scale * (sample - self.kept * self.previous);
+            self.previous = sample;
+        }
+    }
 }
 
 struct Scrambler {
@@ -178,7 +230,6 @@ struct Tone {
     ctcss_hz: Option<f64>,
     dcs_code: Option<u16>,
     detector: ToneSquelch,
-    highpass: Highpass,
     reported: ToneSquelchStatus,
 }
 
@@ -189,7 +240,6 @@ impl Tone {
             ctcss_hz: p.ctcss_hz,
             dcs_code: p.dcs_code,
             detector: ToneSquelch::new(),
-            highpass: Highpass::new(DESCRIPTOR.input_rate_hz, AUDIO_CORNER_HZ),
             reported: ToneSquelchStatus {
                 ctcss_hz: None,
                 dcs_code: None,
@@ -206,12 +256,10 @@ impl Tone {
 
     fn reset(&mut self) {
         self.detector.reset();
-        self.highpass.reset();
     }
 
-    fn step(&mut self, demodulated: &mut [f32], out: &mut ChannelOutputs) -> bool {
+    fn step(&mut self, demodulated: &[f32], out: &mut ChannelOutputs) -> bool {
         let heard = self.detector.process(demodulated);
-        self.highpass.process(demodulated);
         let open = match self.mode {
             NfmToneMode::Off | NfmToneMode::Detect => true,
             NfmToneMode::Ctcss => match (heard.ctcss_hz, self.ctcss_hz) {
@@ -319,6 +367,15 @@ fn audio_lowpass() -> RealDecimator {
     )
 }
 
+fn expander() -> Compander {
+    Compander::expander(
+        DESCRIPTOR.input_rate_hz,
+        COMPANDER_REFERENCE_RMS,
+        COMPANDER_RANGE_DB,
+        COMPANDER_HEADROOM_DB,
+    )
+}
+
 impl ChannelRx for NfmChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
@@ -330,11 +387,13 @@ impl ChannelRx for NfmChannel {
         check_params(p)?;
         Ok(Self {
             demod: discriminator(ctx.input_rate, p),
+            subaudible_cut: SubaudibleCut::new(ctx.input_rate),
+            deemphasis: AudioDeemphasis::new(ctx.input_rate),
             audio_lp: audio_lowpass(),
             demod_buf: Vec::new(),
             tone: (p.tone_mode != NfmToneMode::Off).then(|| Tone::new(p)),
             scrambler: (p.scrambler_mode != NfmScramblerMode::Off).then(|| Scrambler::new(p)),
-            expander: p.compander.then(|| Expander::new(p)),
+            expander: p.compander.then(expander),
         })
     }
 
@@ -354,13 +413,15 @@ impl ChannelRx for NfmChannel {
         }
         match (&mut self.expander, p.compander) {
             (_, false) => self.expander = None,
-            (Some(expander), true) => expander.configure(p),
-            (none, true) => *none = Some(Expander::new(p)),
+            (Some(_), true) => {}
+            (none, true) => *none = Some(expander()),
         }
         Ok(())
     }
 
     fn retuned(&mut self) {
+        self.subaudible_cut.reset();
+        self.deemphasis.reset();
         if let Some(tone) = &mut self.tone {
             tone.reset();
         }
@@ -380,13 +441,15 @@ impl ChannelRx for NfmChannel {
         self.demod.process(iq, &mut self.demod_buf);
         let mut open = true;
         if let Some(tone) = &mut self.tone {
-            open = tone.step(&mut self.demod_buf, out);
+            open = tone.step(&self.demod_buf, out);
         }
+        self.subaudible_cut.process(&mut self.demod_buf);
+        self.deemphasis.process(&mut self.demod_buf);
         if let Some(scrambler) = &mut self.scrambler {
             scrambler.step(&mut self.demod_buf, out);
         }
         if let Some(expander) = &mut self.expander {
-            expander.step(&mut self.demod_buf);
+            expander.process(&mut self.demod_buf);
         }
         self.audio_lp.process(&self.demod_buf, &mut out.audio_pcm);
         clamp_full_scale(&mut out.audio_pcm);
@@ -406,6 +469,7 @@ pub struct NfmTx {
     audio_lp: RealDecimator,
     compressor: Option<Compander>,
     inverter: Option<VoiceInverter>,
+    preemphasis: AudioPreemphasis,
     filtered: Vec<f32>,
     burst: Burst,
     phase: f64,
@@ -449,6 +513,7 @@ impl ChannelTx for NfmTx {
             audio_lp: audio_lowpass(),
             compressor: tx_compressor(p, f64::from(AUDIO_RATE)),
             inverter: tx_inverter(p, f64::from(AUDIO_RATE)),
+            preemphasis: AudioPreemphasis::new(f64::from(AUDIO_RATE)),
             filtered: Vec::new(),
             burst: Burst::new(ctx.input_rate),
             phase: 0.0,
@@ -479,6 +544,7 @@ impl ChannelTx for NfmTx {
         if let Some(inverter) = &mut self.inverter {
             inverter.process(&mut self.filtered);
         }
+        self.preemphasis.process(&mut self.filtered);
         clamp_full_scale(&mut self.filtered);
         self.queue.extend(self.filtered.iter().copied());
         Ok(())
@@ -515,7 +581,9 @@ mod tests {
             nfm::{ctcss_audio, dcs_audio, mix, speech_audio},
             tone_audio,
         },
-        testutil::{complex_noise, dominant_tone, fm_iq, rms, run_ragged, settings},
+        testutil::{
+            complex_noise, dominant_tone, fm_iq, rms, run_ragged, settings, tone_amplitude,
+        },
         tx::MAX_QUEUE_S,
     };
 
@@ -607,6 +675,85 @@ mod tests {
             settings(ChannelParams::Nfm(NfmParams::default())),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
+    }
+
+    const EMPHASIS_PROBES: [f64; 5] = [200.0, 500.0, 1_000.0, 2_000.0, 3_000.0];
+    const LINK_TOP_HZ: f64 = 2_400.0;
+
+    fn curve_db(hz: f64) -> f64 {
+        let turn = |hz: f64| TAU * hz * f64::from(EMPHASIS_TAU_US) * 1e-6;
+        10.0 * ((1.0 + turn(EMPHASIS_REFERENCE_HZ).powi(2)) / (1.0 + turn(hz).powi(2))).log10()
+    }
+
+    fn response_db(hz: f64, mut through: impl FnMut(&mut [f32])) -> f64 {
+        let mut audio = tone_audio(hz, 0.2, RATE, 48_000);
+        through(&mut audio);
+        let heard = tone_amplitude(&audio[24_000..], hz, RATE);
+        20.0 * f64::from(heard / 0.2).log10()
+    }
+
+    #[test]
+    fn de_emphasis_follows_the_published_750_us_curve() {
+        for hz in EMPHASIS_PROBES {
+            let mut filter = AudioDeemphasis::new(RATE);
+            let measured = response_db(hz, |audio| filter.process(audio));
+            let want = curve_db(hz);
+            assert!(
+                (measured - want).abs() < 0.3,
+                "{hz} Hz: {measured:.2} dB against the curve's {want:.2} dB"
+            );
+        }
+    }
+
+    #[test]
+    fn pre_emphasis_is_the_mirror_image_of_de_emphasis() {
+        for hz in EMPHASIS_PROBES {
+            let mut lift = AudioPreemphasis::new(RATE);
+            let measured = response_db(hz, |audio| lift.process(audio));
+            let want = -curve_db(hz);
+            assert!(
+                (measured - want).abs() < 0.3,
+                "{hz} Hz: {measured:.2} dB against the curve's {want:.2} dB"
+            );
+            let mut lift = AudioPreemphasis::new(RATE);
+            let mut fall = AudioDeemphasis::new(RATE);
+            let paired = response_db(hz, |audio| {
+                lift.process(audio);
+                fall.process(audio);
+            });
+            assert!(paired.abs() < 0.1, "{hz} Hz: the pair tilts {paired:.2} dB");
+        }
+    }
+
+    #[test]
+    fn a_flat_transmission_arrives_with_its_highs_rolled_off() {
+        let heard = |hz: f64| {
+            let audio = run_ragged(&mut channel(), &fm_iq(RATE, hz, DEVIATION_HZ, 96_000));
+            20.0 * f64::from(tone_amplitude(&audio[48_000..], hz, RATE)).log10()
+        };
+        let tilt = heard(LINK_TOP_HZ) - heard(EMPHASIS_REFERENCE_HZ);
+        let want = curve_db(LINK_TOP_HZ);
+        assert!(
+            (tilt - want).abs() < 1.0,
+            "flat air arrives tilted {tilt:.2} dB, not {want:.2} dB"
+        );
+    }
+
+    #[test]
+    fn the_transmitter_lifts_the_highs_the_receiver_takes_back_out() {
+        let heard = |hz: f64| {
+            let mut tx = transmitter();
+            tx.submit(TxPayload::Audio(tone_audio(hz, 0.3, RATE, 96_000)))
+                .unwrap();
+            let iq = burst(&mut tx);
+            let audio = run_ragged(&mut channel(), &iq);
+            20.0 * f64::from(tone_amplitude(&audio[48_000..], hz, RATE)).log10()
+        };
+        let tilt = heard(LINK_TOP_HZ) - heard(EMPHASIS_REFERENCE_HZ);
+        assert!(
+            tilt.abs() < 1.0,
+            "the link tilts {tilt:.2} dB between 1 kHz and {LINK_TOP_HZ} Hz"
+        );
     }
 
     const SUBAUDIBLE: f32 = 0.15;
@@ -747,32 +894,27 @@ mod tests {
     }
 
     #[test]
-    fn the_subaudible_tone_is_taken_out_of_the_audio_it_opens() {
+    fn the_subaudible_tone_is_taken_out_of_the_audio_in_every_tone_mode() {
         let iq = signalling_iq(&ctcss_audio(88.5, SUBAUDIBLE, RATE, TONE_LEN));
-        let mut chan = tone_channel(tone_params(NfmToneMode::Ctcss, Some(88.5), None));
-        let (_, audio) = run_tone(&mut chan, &iq);
-        let settled = &audio[audio.len() / 2..];
-        let (freq, ratio) = dominant_tone(settled, RATE);
-        assert!((995.0..1_005.0).contains(&freq), "dominant {freq} Hz");
-        assert!(ratio > 10.0, "voice-to-rest ratio {ratio}");
-
-        let mut plain = channel();
-        let (_, plain_audio) = run_tone(&mut plain, &iq);
-        let plain_settled = &plain_audio[plain_audio.len() / 2..];
-        assert!(
-            subaudible_rms(plain_settled) > 4.0 * subaudible_rms(settled),
-            "highpass removed {:.4} -> {:.4}",
-            subaudible_rms(plain_settled),
-            subaudible_rms(settled)
-        );
-    }
-
-    fn subaudible_rms(audio: &[f32]) -> f32 {
-        let mut correlator = sdrmm_dsp::ToneCorrelator::new(RATE, 88.5, (RATE * 0.1) as usize);
-        audio
-            .iter()
-            .map(|&s| correlator.push(s))
-            .fold(0.0, f32::max)
+        for p in [
+            tone_params(NfmToneMode::Ctcss, Some(88.5), None),
+            NfmParams::default(),
+        ] {
+            let mut chan = tone_channel(p.clone());
+            let (_, audio) = run_tone(&mut chan, &iq);
+            let settled = &audio[audio.len() / 2..];
+            let (freq, ratio) = dominant_tone(settled, RATE);
+            assert!(
+                (995.0..1_005.0).contains(&freq),
+                "{p:?}: dominant {freq} Hz"
+            );
+            assert!(ratio > 10.0, "{p:?}: voice-to-rest ratio {ratio}");
+            let rumble = tone_amplitude(settled, 88.5, RATE);
+            assert!(
+                rumble < SUBAUDIBLE / 10.0,
+                "{p:?}: 88.5 Hz still at {rumble}"
+            );
+        }
     }
 
     #[test]
