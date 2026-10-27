@@ -17,7 +17,8 @@ use sdrmm_modem_test_support::ber::{
     impair::{ClockError, Impairment},
     perf::{
         CountingAlloc, PerfBaseline, REGRESSION_FRACTION, assert_no_alloc, committed_for_host,
-        compare_perf, host_id, load_baselines, measure_throughput, save_baselines,
+        compare_perf, host_id, load_baselines, measure_throughput, require_baseline_write,
+        save_baselines,
     },
     rng::Rng,
 };
@@ -328,6 +329,7 @@ fn hopping_allocates_nothing() {
 #[test]
 #[ignore = "rewrites the committed baseline; run explicitly in release on the reference host"]
 fn write_spread_perf_baseline() {
+    require_baseline_write("spread throughput");
     if cfg!(debug_assertions) {
         panic!("a debug-profile number must never become the committed baseline");
     }

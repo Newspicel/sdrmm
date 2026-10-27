@@ -76,6 +76,42 @@ fn random_bits(rng: &mut Rng, n: usize) -> Vec<bool> {
     bits
 }
 
+/// A curve point stops at a fixed trial cap, so its tail carries few errors and its own Poisson
+/// spread is wider than any flat tolerance. Both counts are drawn from the same physics, so the
+/// ratio is allowed the spread the two counts actually support, never less than the flat floor.
+const CURVE_SIGMAS: f64 = 5.0;
+const CURVE_FLOOR_LOG10: f64 = 0.1;
+
+#[must_use]
+pub fn curve_tolerance_log10(measured_errors: u64, committed_errors: u64) -> f64 {
+    let spread = |errors: u64| 1.0 / errors.max(1) as f64;
+    let sigma = (spread(measured_errors) + spread(committed_errors)).sqrt();
+    (1.0 + CURVE_SIGMAS * sigma).log10().max(CURVE_FLOOR_LOG10)
+}
+
+pub fn assert_curve_matches(name: &str, measured: &Curve, committed: &Curve) {
+    assert_eq!(
+        measured.points.len(),
+        committed.points.len(),
+        "{name}: grid changed"
+    );
+    for (m, c) in measured.points.iter().zip(&committed.points) {
+        assert!((m.ebn0_db - c.ebn0_db).abs() < 1e-9, "{name}: grid changed");
+        let ratio = (m.rate().max(1e-12) / c.rate().max(1e-12)).log10().abs();
+        let allowed = curve_tolerance_log10(m.errors, c.errors);
+        assert!(
+            ratio < allowed,
+            "{name} at {} dB: committed BER {:.3e} over {} errors, measured {:.3e} over {} \
+             errors, {ratio:.3} decades apart against {allowed:.3} allowed",
+            c.ebn0_db,
+            c.rate(),
+            c.errors,
+            m.rate(),
+            m.errors,
+        );
+    }
+}
+
 pub fn save_json(curve: &Curve, path: &Path) -> io::Result<()> {
     let mut text = serde_json::to_string_pretty(curve).map_err(io::Error::other)?;
     text.push('\n');
@@ -386,5 +422,60 @@ mod tests {
         assert_eq!(back.points, curve.points);
         assert_eq!(back.label, "curve");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn point(ebn0_db: f64, errors: u64, trials: u64) -> CurvePoint {
+        CurvePoint {
+            ebn0_db,
+            errors,
+            trials,
+        }
+    }
+
+    fn curve_of(points: Vec<CurvePoint>) -> Curve {
+        Curve {
+            label: "curve".to_owned(),
+            points,
+        }
+    }
+
+    #[test]
+    fn a_well_measured_point_keeps_the_flat_tolerance() {
+        assert!((curve_tolerance_log10(2_000, 2_000) - CURVE_FLOOR_LOG10).abs() < 1e-12);
+        assert!((curve_tolerance_log10(946, 946) - CURVE_FLOOR_LOG10).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_tail_point_is_allowed_the_spread_its_error_count_supports() {
+        let tail = curve_tolerance_log10(73, 73);
+        assert!(tail > CURVE_FLOOR_LOG10, "{tail}");
+        assert!(tail < 0.3, "{tail}");
+        assert!(
+            curve_tolerance_log10(73, 73) > curve_tolerance_log10(287, 287),
+            "fewer errors have to be allowed more spread"
+        );
+    }
+
+    #[test]
+    fn a_tail_that_only_resampled_its_marginal_decisions_still_matches() {
+        let committed = curve_of(vec![point(16.0, 73, 6_008_832)]);
+        let measured = curve_of(vec![point(16.0, 95, 6_008_832)]);
+        assert_curve_matches("cpm/mfsk4_cpfsk_awgn", &measured, &committed);
+    }
+
+    #[test]
+    #[should_panic(expected = "decades apart")]
+    fn a_decoder_that_doubled_its_errors_is_still_caught() {
+        let committed = curve_of(vec![point(12.0, 2_001, 1_462_272)]);
+        let measured = curve_of(vec![point(12.0, 4_002, 1_462_272)]);
+        assert_curve_matches("cpm/mfsk4_cpfsk_awgn", &measured, &committed);
+    }
+
+    #[test]
+    #[should_panic(expected = "decades apart")]
+    fn a_tail_that_moved_further_than_its_counts_allow_is_caught() {
+        let committed = curve_of(vec![point(16.0, 73, 6_008_832)]);
+        let measured = curve_of(vec![point(16.0, 400, 6_008_832)]);
+        assert_curve_matches("cpm/mfsk4_cpfsk_awgn", &measured, &committed);
     }
 }

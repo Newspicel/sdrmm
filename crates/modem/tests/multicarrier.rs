@@ -18,6 +18,7 @@ use sdrmm_modem_test_support::ber::{
     e2e::{Payloads, channel_at_margin, loopback},
     impair::{Cfo, ChannelSpec, ClockError, Drift, IqImbalance, TimingOffset},
     limits::{self, CompositeProfile, Criterion, LimitRow, LimitsTable, penalty_criterion},
+    perf::require_baseline_write,
     sweep::{self, Link, sweep_ber},
 };
 
@@ -412,7 +413,8 @@ fn every_committed_limits_table_still_holds() {
 
 #[test]
 #[ignore = "full sweep; run to (re)generate the committed curves"]
-fn measure_all_curves_full() {
+fn write_all_multicarrier_curves() {
+    require_baseline_write("multicarrier BER curve");
     for m in measurements() {
         let curve = measure(m, true);
         println!("--- {}", m.stem);
@@ -436,7 +438,8 @@ fn measure_all_curves_full() {
 
 #[test]
 #[ignore = "full limits run; run to (re)generate the committed tables"]
-fn measure_all_limits_full() {
+fn write_all_multicarrier_limits() {
+    require_baseline_write("multicarrier limits");
     for (stem, entry, build, seed) in TABLES {
         let table = measure_table(entry, &build(), seed);
         println!("--- {entry}: {table:#?}");

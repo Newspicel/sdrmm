@@ -25,5 +25,7 @@
 - User-visible changes add a changeset: `cargo xtask changeset <patch|minor|major> "..."`.
 - Always Format, Lint, Check & Test at the End of Every Change. But only test what you changed, full test suite will run in the CI.
 - Max 3000 lines per file, 200 lines per function. Split large files into modules, large functions into helpers.
-- Never long text on a node. A face carries controls and readouts; what a setting means belongs in a title attribute or the docs, not in a paragraph on the canvas.
+- Never long text of ours on a node. A face carries controls and readouts; what a setting means
+  belongs in a title attribute or the docs, not in a paragraph on the canvas. Text the
+  operator writes about their own patch is theirs, and the Note node is where it lives.
 - Always write text, commits, docs as short as possible. Always try to reduce words, keep useless text out of the ui. And always write short and coherend text. That on which you are currently working on is not the most important thing in the world, you don't need to write everywhere about it. And never include an em dash.

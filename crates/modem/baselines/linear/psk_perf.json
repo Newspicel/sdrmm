@@ -1,35 +1,35 @@
 [
   {
     "bench": "linear_qpsk_burst",
-    "msamples_per_s": 15.100496396012726,
-    "realtime_factor": 314.59367491693183,
+    "msamples_per_s": 18.35941815887434,
+    "realtime_factor": 382.4878783098821,
     "config": "4-QAM, 8 S/sym, RRC α=0.35 span 8, feedforward timing, decision-directed Costas (bw 0.003), held power estimate",
     "host": "aarch64-macos"
   },
   {
     "bench": "linear_qam16_burst",
-    "msamples_per_s": 14.683497382861994,
-    "realtime_factor": 305.90619547629154,
+    "msamples_per_s": 16.937658865877935,
+    "realtime_factor": 352.8678930391236,
     "config": "16-QAM, 8 S/sym, RRC α=0.35 span 8, feedforward timing, decision-directed Costas (bw 0.003), held power estimate",
     "host": "aarch64-macos"
   },
   {
     "bench": "linear_qam1024_burst",
-    "msamples_per_s": 4.52772892529424,
-    "realtime_factor": 94.32768594363,
+    "msamples_per_s": 1.6946701753738662,
+    "realtime_factor": 35.305628653622215,
     "config": "1024-QAM, 8 S/sym, RRC α=0.35 span 8, feedforward timing, decision-directed Costas (bw 0.0003), held power estimate",
     "host": "aarch64-macos"
   },
   {
     "bench": "linear_qam16_tracked",
-    "msamples_per_s": 15.336869822514858,
-    "realtime_factor": 319.5181213023929,
+    "msamples_per_s": 74.06157408315838,
+    "realtime_factor": 1542.9494600657995,
     "config": "16-QAM, 8 S/sym, RRC α=0.35 span 8, SymbolSync (bw 0.015), decision-directed Costas",
     "host": "aarch64-macos"
   },
   {
     "bench": "__calibration",
-    "msamples_per_s": 1874.0618082804829,
+    "msamples_per_s": 2124.9549100430027,
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "aarch64-macos"

@@ -72,6 +72,21 @@ pub fn missing_host_baseline(what: &str, record_command: &str) -> String {
     )
 }
 
+/// A baseline writer runs in the same sweep as the gate that reads it, so it has to be asked for
+/// by name or it would quietly bless whatever the run just measured.
+pub const WRITE_BASELINES: &str = "SDRMM_WRITE_BASELINES";
+
+pub fn require_baseline_write(what: &str) {
+    assert_eq!(
+        std::env::var(WRITE_BASELINES).as_deref(),
+        Ok("1"),
+        "set {WRITE_BASELINES}=1 to rewrite the committed {what} baseline"
+    );
+    if cfg!(debug_assertions) {
+        panic!("a debug-profile number must never become the committed {what} baseline");
+    }
+}
+
 #[must_use]
 pub fn committed_for_host(
     rows: &[PerfBaseline],
@@ -477,9 +492,7 @@ mod tests {
     #[test]
     #[ignore = "rewrites the committed baseline; run explicitly in release on the reference host"]
     fn write_perf_baseline() {
-        if cfg!(debug_assertions) {
-            panic!("a debug-profile number must never become the committed baseline");
-        }
+        require_baseline_write("modem throughput");
         let path = committed_baseline_path();
         let mut rows: Vec<PerfBaseline> = rows_for_host(&load_baselines(&path).unwrap_or_default())
             .into_iter()

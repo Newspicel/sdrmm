@@ -6,7 +6,7 @@ use sdrmm_modem_test_support::ber::{
     catalog::mfsk::{PERF, RATE, mfsk4_burst, modulate},
     perf::{
         PerfBaseline, REGRESSION_FRACTION, committed_for_host, compare_perf, host_id,
-        load_baselines, measure_throughput, save_baselines, test_dibits,
+        load_baselines, measure_throughput, require_baseline_write, save_baselines, test_dibits,
     },
 };
 
@@ -44,6 +44,7 @@ fn committed_path() -> std::path::PathBuf {
 #[test]
 #[ignore = "rewrites the committed baseline; run explicitly in release on the reference host"]
 fn write_cpm_perf_baseline() {
+    require_baseline_write("CPM throughput");
     if cfg!(debug_assertions) {
         panic!("a debug-profile number must never become the committed baseline");
     }

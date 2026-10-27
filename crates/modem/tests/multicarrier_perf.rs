@@ -9,7 +9,8 @@ use sdrmm_modem_test_support::ber::{
     catalog::{multicarrier::gfdm_params, ofdm::RATE},
     perf::{
         CountingAlloc, PerfBaseline, REGRESSION_FRACTION, assert_no_alloc, committed_for_host,
-        compare_perf, host_id, load_baselines, measure_throughput, save_baselines,
+        compare_perf, host_id, load_baselines, measure_throughput, require_baseline_write,
+        save_baselines,
     },
 };
 
@@ -286,6 +287,7 @@ fn the_otfs_precoder_allocates_nothing() {
 #[test]
 #[ignore = "rewrites the committed baseline; run explicitly in release on the reference host"]
 fn write_multicarrier_perf_baseline() {
+    require_baseline_write("multicarrier throughput");
     if cfg!(debug_assertions) {
         panic!("a debug-profile number must never become the committed baseline");
     }

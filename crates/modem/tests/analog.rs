@@ -15,6 +15,7 @@ use sdrmm_modem_test_support::ber::{
     },
     impair::{Cfo, ChannelSpec, ClockError, Drift, IqImbalance, PhaseNoise, TimingOffset},
     limits::{self, ANALOG_SINAD_DB, Criterion, LimitRow, LimitsTable, sinad_penalty_criterion},
+    perf::require_baseline_write,
 };
 
 fn baseline_path(stem: &str) -> PathBuf {
@@ -377,8 +378,9 @@ fn write_curve(curve: &SinadCurve, stem: &str) {
 }
 
 #[test]
-#[ignore = "full sweep; run to (re)generate the committed SINAD curves"]
-fn measure_all_curves_full() {
+#[ignore = "rewrites the committed SINAD curves; needs SDRMM_WRITE_BASELINES=1"]
+fn write_all_analog_curves() {
+    require_baseline_write("analog SINAD curve");
     for m in measurements() {
         let curve = measure(m, true);
         for p in &curve.points {
@@ -392,8 +394,9 @@ fn measure_all_curves_full() {
 }
 
 #[test]
-#[ignore = "full limits run; run to (re)generate the committed tables"]
-fn measure_all_limits_full() {
+#[ignore = "rewrites the committed limits tables; needs SDRMM_WRITE_BASELINES=1"]
+fn write_all_analog_limits() {
+    require_baseline_write("analog limits");
     for (stem, entry, link, grid, seed) in table_stems() {
         let table = measure_table(entry, &link(), grid, seed);
         println!("--- {entry}: {table:#?}");

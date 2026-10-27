@@ -12,7 +12,8 @@ use sdrmm_modem_test_support::ber::{
     },
     perf::{
         CountingAlloc, PerfBaseline, REGRESSION_FRACTION, assert_no_alloc, committed_for_host,
-        compare_perf, host_id, load_baselines, measure_throughput, save_baselines,
+        compare_perf, host_id, load_baselines, measure_throughput, require_baseline_write,
+        save_baselines,
     },
 };
 
@@ -156,6 +157,7 @@ fn the_magnitude_scan_path_allocates_nothing() {
 #[test]
 #[ignore = "rewrites the committed baselines; run explicitly in release on the reference host"]
 fn write_phase5_perf_baselines() {
+    require_baseline_write("orthogonal and PPM throughput");
     if cfg!(debug_assertions) {
         panic!("a debug-profile number must never become the committed baseline");
     }

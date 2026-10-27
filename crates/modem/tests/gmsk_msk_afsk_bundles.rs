@@ -757,12 +757,14 @@ fn compare_perf(name: &str, measured: &[PerfBaseline]) {
 #[test]
 #[ignore = "rewrites the committed baseline; run explicitly in release on the reference host"]
 fn write_gmsk_perf_baseline() {
+    perf::require_baseline_write("GMSK throughput");
     write_perf(gmsk::PERF, &measured_gmsk_perf());
 }
 
 #[test]
 #[ignore = "rewrites the committed baseline; run explicitly in release on the reference host"]
 fn write_gmsk_mlse_perf_baseline() {
+    perf::require_baseline_write("GMSK MLSE throughput");
     write_perf(gmsk::MLSE_PERF, &measured_gmsk_mlse_perf());
 }
 
@@ -779,12 +781,14 @@ fn compare_gmsk_mlse_perf_baseline() {
 #[test]
 #[ignore = "rewrites the committed baseline; run explicitly in release on the reference host"]
 fn write_msk_perf_baseline() {
+    perf::require_baseline_write("MSK throughput");
     write_perf(msk::PERF, &measured_msk_perf());
 }
 
 #[test]
 #[ignore = "rewrites the committed baseline; run explicitly in release on the reference host"]
 fn write_afsk_perf_baseline() {
+    perf::require_baseline_write("AFSK throughput");
     write_perf(afsk::PERF, &measured_afsk_perf());
 }
 
@@ -832,22 +836,7 @@ fn remeasure_curve(link: &Link, template: &ChannelSpec, grid: &[f64], seed: u64,
     let path = baseline_path(name);
     if path.exists() {
         let committed: Curve = sweep::load_json(&path).unwrap();
-        assert_eq!(
-            curve.points.len(),
-            committed.points.len(),
-            "{name}: grid changed"
-        );
-        for (m, c) in curve.points.iter().zip(&committed.points) {
-            assert!((m.ebn0_db - c.ebn0_db).abs() < 1e-9, "{name}: grid changed");
-            let ratio = (m.rate().max(1e-12) / c.rate().max(1e-12)).log10().abs();
-            assert!(
-                ratio < 0.1,
-                "{name} at {} dB: committed BER {:.3e}, measured {:.3e}",
-                c.ebn0_db,
-                c.rate(),
-                m.rate()
-            );
-        }
+        sweep::assert_curve_matches(name, &curve, &committed);
     } else {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         sweep::save_json(&curve, &path).unwrap();

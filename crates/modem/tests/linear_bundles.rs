@@ -594,6 +594,7 @@ fn compare_perf_baseline(stem: &str, measured: &[PerfBaseline]) {
 #[test]
 #[ignore = "rewrites the committed baseline; run explicitly in release on the reference host"]
 fn write_perf_baselines() {
+    perf::require_baseline_write("linear throughput");
     write_perf(catalog::psk::PSK_PERF, &measured_coherent_perf());
     write_perf(catalog::ask::ASK_PERF, &measured_envelope_perf());
 }
@@ -640,7 +641,8 @@ fn write_curve(m: &Measurement) {
 
 #[test]
 #[ignore = "full sweeps; run in release to (re)generate every committed linear curve"]
-fn measure_every_curve_full() {
+fn write_every_linear_curve() {
+    perf::require_baseline_write("linear BER curve");
     for m in linear_measurements() {
         write_curve(m);
     }
@@ -664,7 +666,8 @@ fn diag_probe_budget() {
 
 #[test]
 #[ignore = "full limits run; run in release to (re)generate the committed tables"]
-fn measure_limits_full() {
+fn write_linear_limits() {
+    perf::require_baseline_write("linear limits");
     for (stem, link, grid, seed) in limits_targets() {
         let table = measure_limits(stem, &link, grid, seed);
         println!("{stem}: {table:#?}");

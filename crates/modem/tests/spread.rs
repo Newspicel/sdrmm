@@ -736,22 +736,7 @@ fn remeasure_curve(link: &Link, grid: &[f64], seed: u64, name: &str) -> Curve {
     let path = baseline_path(name);
     if path.exists() {
         let committed: Curve = sweep::load_json(&path).unwrap();
-        assert_eq!(
-            curve.points.len(),
-            committed.points.len(),
-            "{name}: grid changed"
-        );
-        for (m, c) in curve.points.iter().zip(&committed.points) {
-            assert!((m.ebn0_db - c.ebn0_db).abs() < 1e-9, "{name}: grid changed");
-            let ratio = (m.rate().max(1e-12) / c.rate().max(1e-12)).log10().abs();
-            assert!(
-                ratio < 0.1,
-                "{name} at {} dB: committed BER {:.3e}, measured {:.3e}",
-                c.ebn0_db,
-                c.rate(),
-                m.rate()
-            );
-        }
+        sweep::assert_curve_matches(name, &curve, &committed);
     } else {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         sweep::save_json(&curve, &path).unwrap();

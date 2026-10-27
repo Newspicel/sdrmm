@@ -1,14 +1,14 @@
 [
   {
     "bench": "linear_ook_envelope",
-    "msamples_per_s": 16.590720641054272,
-    "realtime_factor": 345.64001335529736,
+    "msamples_per_s": 105.64065977399692,
+    "realtime_factor": 2200.847078624936,
     "config": "OOK, 8 S/sym, RRC α=0.35 span 8, magnitude + DC removal + tracking timing",
     "host": "aarch64-macos"
   },
   {
     "bench": "__calibration",
-    "msamples_per_s": 1874.0601335785432,
+    "msamples_per_s": 2012.7010755701517,
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "aarch64-macos"

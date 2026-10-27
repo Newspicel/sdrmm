@@ -32,7 +32,7 @@ jobs:
         with:
           cache: nightly
       - name: Modem gates
-        run: cargo test -p sdrmm-modem -p sdrmm-modem-test-support --release -- --ignored --skip write_perf_baseline
+        run: cargo test -p sdrmm-modem -p sdrmm-modem-test-support --release -- --ignored --skip write_
       - name: Fetch the xng bench captures
         env:
           GH_TOKEN: ${{ github.token }}
