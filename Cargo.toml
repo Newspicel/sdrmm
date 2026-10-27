@@ -249,7 +249,7 @@ tempfile = "3"
 
 criterion = "0.8"
 
-resvg = { version = "0.48", default-features = false }
+resvg = { version = "0.49", default-features = false }
 
 # PNG encoding for the captured-picture store; the same version resvg already pulls in.
 png = { version = "0.18", default-features = false }
