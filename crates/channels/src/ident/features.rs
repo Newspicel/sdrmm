@@ -32,6 +32,7 @@ const MIN_CLOCK_SEGMENTS: usize = 3;
 
 const MAX_HARMONIC: usize = 8;
 const SUBHARMONIC_FRACTION: f32 = 0.5;
+const HARMONIC_TOLERANCE: f64 = 0.03;
 
 const KEYED_FRACTION: f32 = 0.35;
 const BOTTOM: f32 = 0.10;
@@ -449,25 +450,37 @@ impl Meter {
         }
     }
 
+    /// Detectors disagree by an octave as often as they agree: squaring a two-level series
+    /// answers at twice the clock the difference detector finds, and on a clean signal the two
+    /// lines sit within a decibel of each other. Taking the loudest would then read the symbol
+    /// rate off a coin toss, so a line the loudest is a harmonic of wins whenever it clears the
+    /// same margin `fundamental` allows inside one spectrum.
     fn symbol_rate(&mut self, rate: f64, levels: u8) -> Option<f64> {
         let series: &[Series] = if levels >= 2 {
             &[Series::Frequency]
         } else {
             &[Series::Envelope, Series::Frequency]
         };
-        let mut best: Option<(f64, f32)> = None;
+        let mut lines: Vec<(f64, f32)> = Vec::new();
         for &series in series {
             for &detector in &[Detector::Square, Detector::Difference] {
                 self.build_edge(series, detector);
-                if let Some((hz, db)) = self.line_search(rate)
-                    && best.is_none_or(|(_, previous)| db > previous)
-                {
-                    best = Some((hz, db));
+                if let Some(line) = self.line_search(rate) {
+                    lines.push(line);
                 }
             }
         }
-        best.filter(|&(_, db)| db >= LINE_THRESHOLD_DB)
-            .map(|(hz, _)| hz)
+        lines.retain(|&(_, db)| db >= LINE_THRESHOLD_DB);
+        let (loudest_hz, loudest_db) = lines
+            .iter()
+            .copied()
+            .reduce(|best, line| if line.1 > best.1 { line } else { best })?;
+        let floor = loudest_db + 10.0 * SUBHARMONIC_FRACTION.log10();
+        lines
+            .iter()
+            .filter(|&&(hz, db)| db >= floor && divides(hz, loudest_hz))
+            .map(|&(hz, _)| hz)
+            .reduce(f64::min)
     }
 
     fn build_edge(&mut self, series: Series, detector: Detector) {
@@ -809,6 +822,17 @@ fn interpolate(power: &[f32], peak: usize, center: usize, bin_hz: f64) -> f64 {
     (peak as f64 - center as f64 + shift) * bin_hz
 }
 
+/// Whether `line` is one of the first `MAX_HARMONIC` harmonics of `fundamental`, within the
+/// error two interpolated peaks can carry between them.
+fn divides(fundamental: f64, line: f64) -> bool {
+    if fundamental <= 0.0 {
+        return false;
+    }
+    let ratio = line / fundamental;
+    let order = ratio.round();
+    order >= 1.0 && order <= MAX_HARMONIC as f64 && (ratio - order).abs() <= HARMONIC_TOLERANCE
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -979,6 +1003,17 @@ mod tests {
         let baud = w.symbol_rate_hz.expect("keying has a clock");
         assert!((baud - 4_800.0).abs() < 250.0, "baud {baud}");
         assert!(w.keying_gap < 0.05, "gap {}", w.keying_gap);
+    }
+
+    #[test]
+    fn a_line_counts_as_a_harmonic_only_up_to_the_order_the_search_walks_down() {
+        assert!(divides(2_400.0, 2_400.0));
+        assert!(divides(2_400.0, 4_799.5));
+        assert!(divides(2_400.0, 2_400.0 * MAX_HARMONIC as f64));
+        assert!(!divides(2_400.0, 2_400.0 * (MAX_HARMONIC + 1) as f64));
+        assert!(!divides(2_400.0, 3_600.0));
+        assert!(!divides(4_800.0, 2_400.0));
+        assert!(!divides(0.0, 2_400.0));
     }
 
     #[test]
