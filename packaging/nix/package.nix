@@ -61,7 +61,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
     hash =
       {
         aarch64-linux = "sha256-G7IihJxn7EsVljCqfl6/CKartMAokBbehofE17cqwSc=";
-        x86_64-linux = "sha256-MMmC+DihKSdmq5ZnxZlcXLNc3aJBBDhxtQur1R+8kBo=";
+        x86_64-linux = "sha256-G7IihJxn7EsVljCqfl6/CKartMAokBbehofE17cqwSc=";
       }
       .${stdenv.hostPlatform.system};
   };
