@@ -293,8 +293,8 @@ pub const SIGNALS: &[Signal] = &[
         tail_seconds: 4.0,
         cu8_rate: None,
         unique: true,
-        decodes: Show::Noted("Two SDR-- decodes are unconfirmed."),
-        speed: Show::Noted("SDR-- re-decodes overlapping windows."),
+        decodes: Show::Noted("Two SDRmm decodes are unconfirmed."),
+        speed: Show::Noted("SDRmm re-decodes overlapping windows."),
         noise: Ladder {
             high_db: 20.0,
             low_db: -5.0,

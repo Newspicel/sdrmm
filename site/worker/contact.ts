@@ -19,9 +19,9 @@ const STATUS: Record<ContactOutcome, number> = {
 export function contactEmail(message: ContactMessage, mailbox: Mailbox): EmailMessageBuilder {
   return {
     to: mailbox.CONTACT_TO,
-    from: { email: mailbox.CONTACT_FROM, name: "SDR-- contact form" },
+    from: { email: mailbox.CONTACT_FROM, name: "SDRmm contact form" },
     replyTo: { email: message.email, name: message.name },
-    subject: `SDR--: ${message.name}`,
+    subject: `SDRmm: ${message.name}`,
     text: `${message.message}\n\n${message.name} <${message.email}>`,
   };
 }

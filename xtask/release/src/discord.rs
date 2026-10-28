@@ -29,7 +29,7 @@ pub fn payload(version: &str, notes: &Path, out: &Path) -> Result<()> {
     }
     let payload = Payload {
         embeds: [Embed {
-            title: format!("SDR-- {version}"),
+            title: format!("SDRmm {version}"),
             url,
             description,
         }],

@@ -61,7 +61,7 @@ fn ready(signal: &Signal, stem: &Path) -> bool {
 }
 
 fn write(stem: &Path) -> Result<()> {
-    let mut sigmf = sdrmm_recorder::SigmfWriter::create(stem, RATE, CENTER_HZ, "SDR-- compare")
+    let mut sigmf = sdrmm_recorder::SigmfWriter::create(stem, RATE, CENTER_HZ, "SDRmm compare")
         .context("create the comparison recording")?;
     let mut source = Source::new();
     let mut block = vec![Complex::default(); BLOCK];

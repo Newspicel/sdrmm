@@ -371,7 +371,7 @@ async fn about_names_this_build() {
     let (status, body) = request(router, "GET", "/api/about", None).await;
     assert_eq!(status, StatusCode::OK);
     let about: sdrmm_wire::AboutResponse = serde_json::from_slice(&body).expect("json");
-    assert_eq!(about.name, "SDR--");
+    assert_eq!(about.name, "SDRmm");
     assert_eq!(about.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(about.protocol, sdrmm_wire::about::API_PROTOCOL);
     assert_eq!(about.server_id, &*state.server_id);

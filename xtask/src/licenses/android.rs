@@ -149,7 +149,7 @@ pub(crate) fn notices(root: &Path) -> Result<String> {
         Ok(text.trim_start_matches(['\n', '\r']).trim_end().to_owned())
     };
     let mut out = String::from(
-        "SDR-- for Android ships these components beside the Rust core listed above.\n\n",
+        "SDRmm for Android ships these components beside the Rust core listed above.\n\n",
     );
     for component in COMPONENTS {
         out.push_str(&component_block(component, &versions)?);

@@ -178,9 +178,9 @@ pub(super) fn ours(iq: &[Complex<f32>]) -> Vec<DataLinkMessage> {
 pub(super) fn reference(iq: &[Complex<f32>]) -> Vec<DataLinkMessage> {
     let mut decoder = xng_mode_aero::AeroChannelDecoder::new(INPUT_RATE, 0.0).expect("xng");
     let source = xng_types::Provenance {
-        station: xng_types::StationIdentity::new("SDR--"),
+        station: xng_types::StationIdentity::new("SDRmm"),
         app: xng_types::AppInfo {
-            name: "SDR--".to_owned(),
+            name: "SDRmm".to_owned(),
             version: String::new(),
         },
         sdr: None,

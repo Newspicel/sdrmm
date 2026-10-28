@@ -1,6 +1,6 @@
 # Nodes and wires
 
-Everything in SDR-- is a node, and every flow between nodes is a wire you can see. The set of
+Everything in SDRmm is a node, and every flow between nodes is a wire you can see. The set of
 nodes, wires, and settings is a **workspace**. It lives on the server and every client shares it.
 
 ## Patch and Rack

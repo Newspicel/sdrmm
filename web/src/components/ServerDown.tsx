@@ -53,7 +53,7 @@ export function ServerDown({
       >
         <div className="flex items-center gap-2">
           <img src="/icon.svg" alt="" width={28} height={28} className="shrink-0" />
-          <div className="font-mono text-lg font-semibold text-accent">SDR--</div>
+          <div className="font-mono text-lg font-semibold text-accent">SDRmm</div>
         </div>
         <div>
           <h1 className="text-sm font-semibold text-ink">Can't reach the server</h1>

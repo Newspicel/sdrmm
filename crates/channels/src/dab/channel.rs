@@ -785,7 +785,7 @@ mod tests {
         }
         let status = status(&out);
         assert!(status.locked, "{status:?}");
-        assert_eq!(status.ensemble_label.as_deref(), Some("SDR-- test"));
+        assert_eq!(status.ensemble_label.as_deref(), Some("SDRmm test"));
         assert_eq!(status.ensemble_id, Some(0x10CD));
         assert_eq!(status.services.len(), 2);
         assert_eq!(status.services[0].label, "Rust FM");
@@ -827,7 +827,7 @@ mod tests {
             "{:?}",
             channel.media.audio_error
         );
-        assert_eq!(channel.media.dynamic_label.as_deref(), Some("SDR-- live"));
+        assert_eq!(channel.media.dynamic_label.as_deref(), Some("SDRmm live"));
         assert!(out.events.iter().any(|event| matches!(event, DecoderEvent::BroadcastData(data) if data.name == "slide.png" && data.bytes == include_bytes!("../../../../fixtures/broadcast_audio/slideshow.png"))), "{:?}", channel.media.data_error);
         assert!(out.audio_pcm.iter().any(|sample| sample.abs() > 0.01));
     }
@@ -1038,7 +1038,7 @@ mod tests {
             }
             let status = status(&out);
             assert!(status.locked, "{snr_db} dB: {status:?}");
-            assert_eq!(status.ensemble_label.as_deref(), Some("SDR-- test"));
+            assert_eq!(status.ensemble_label.as_deref(), Some("SDRmm test"));
             assert!(
                 (floor_db..=snr_db + 1.0).contains(&status.snr_db),
                 "{snr_db} dB in, {} dB reported",
@@ -1320,7 +1320,7 @@ mod tests {
             let status = status(&out);
             assert!(status.locked, "{transmission:?}: {status:?}");
             assert_eq!(status.transmission_mode, Some(transmission));
-            assert_eq!(status.ensemble_label.as_deref(), Some("SDR-- test"));
+            assert_eq!(status.ensemble_label.as_deref(), Some("SDRmm test"));
             let blocks = channel.fic.blocks_ok + channel.fic.blocks_bad;
             assert!(
                 blocks >= ((frames - 3) * mode.cifs * mode.fibs_per_block) as u32,

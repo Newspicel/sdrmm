@@ -156,7 +156,7 @@ function cell(value: number | undefined): string {
 
 function header(source: ExportSource, context: ExportContext): string[] {
   return [
-    "! Measured with SDR-- (https://github.com/Newspicel/sdrmm)",
+    "! Measured with SDRmm (https://github.com/Newspicel/sdrmm)",
     ...(context.recordedAt === undefined ? [] : [`! Recorded ${context.recordedAt}`]),
     ...source.notes.map((note) => `! ${note}`),
   ];

@@ -104,7 +104,7 @@ impl Head {
         }
         if len > MAX_PAYLOAD {
             return Err(format!(
-                "frame payload of {len} bytes exceeds the {MAX_PAYLOAD} SDR-- will buffer"
+                "frame payload of {len} bytes exceeds the {MAX_PAYLOAD} SDRmm will buffer"
             ));
         }
         let mask = self.masked.then(|| [rest[0], rest[1], rest[2], rest[3]]);

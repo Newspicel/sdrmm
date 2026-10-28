@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "SDR-- API",
+    "title": "SDRmm API",
     "description": "",
     "contact": {
       "name": "Julian Haag"

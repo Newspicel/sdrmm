@@ -558,7 +558,7 @@ fn writable(dir: &Path) -> std::io::Result<()> {
 
 #[must_use]
 pub fn render(report: &DoctorReport) -> String {
-    let mut out = format!("SDR-- {} ({})\n\n", report.version, report.platform);
+    let mut out = format!("SDRmm {} ({})\n\n", report.version, report.platform);
     for check in &report.checks {
         let mark = match check.status {
             CheckStatus::Ok => "ok  ",
@@ -757,7 +757,7 @@ mod tests {
             ],
         };
         let text = render(&report);
-        assert!(text.starts_with("SDR-- 1.2.3 (linux/aarch64)"));
+        assert!(text.starts_with("SDRmm 1.2.3 (linux/aarch64)"));
         assert!(text.contains("[ok  ] Check a"));
         assert!(text.contains("[warn] Check b"));
         assert!(text.contains("[FAIL] Check c"));

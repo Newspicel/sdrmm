@@ -350,10 +350,10 @@ Load command 13
     #[test]
     fn an_app_in_the_checked_folder_runs_from_its_own_contents() {
         let root = Path::new("bundle/macos");
-        let macos = root.join("SDR--.app/Contents/MacOS");
+        let macos = root.join("SDRmm.app/Contents/MacOS");
         for image in [
             macos.join("sdrmm-desktop"),
-            root.join("SDR--.app/Contents/Frameworks/libavcodec.63.dylib"),
+            root.join("SDRmm.app/Contents/Frameworks/libavcodec.63.dylib"),
         ] {
             assert_eq!(executable_dir(root, &image), macos);
         }

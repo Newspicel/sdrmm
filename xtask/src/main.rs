@@ -45,7 +45,7 @@ mod units;
 mod wires;
 
 #[derive(Parser)]
-#[command(name = "xtask", about = "SDR-- workspace tasks")]
+#[command(name = "xtask", about = "SDRmm workspace tasks")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -1389,7 +1389,7 @@ fn fixtures(root: &Path) -> Result<()> {
             &(recipe.iq)(),
             recipe.rate,
             CENTER_HZ,
-            "SDR-- reference modulator",
+            "SDRmm reference modulator",
             recipe.note,
         )?;
     }

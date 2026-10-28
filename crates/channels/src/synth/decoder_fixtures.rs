@@ -38,19 +38,19 @@ pub const RECIPES: &[Recipe] = &[
     Recipe {
         stem: "pocsag_1200_240k",
         rate: NARROW,
-        note: "pocsag channel at +50 kHz -> address 1234567 \"SDR-- FIXTURE\"",
+        note: "pocsag channel at +50 kHz -> address 1234567 \"SDRmm FIXTURE\"",
         iq: pocsag_page,
     },
     Recipe {
         stem: "flex_1600_2_240k",
         rate: NARROW,
-        note: "flex channel at +30 kHz -> address 1234567 \"SDR-- FLEX FIXTURE\", cycle 7 frame 83",
+        note: "flex channel at +30 kHz -> address 1234567 \"SDRmm FLEX FIXTURE\", cycle 7 frame 83",
         iq: flex_page,
     },
     Recipe {
         stem: "ermes_alpha_240k",
         rate: NARROW,
-        note: "ermes channel at -30 kHz -> address 234567 \"SDR-- ERMES FIXTURE\", urgent alert 5",
+        note: "ermes channel at -30 kHz -> address 234567 \"SDRmm ERMES FIXTURE\", urgent alert 5",
         iq: ermes_page,
     },
     Recipe {
@@ -128,7 +128,7 @@ pub const RECIPES: &[Recipe] = &[
     Recipe {
         stem: "acars_downlink_240k",
         rate: NARROW,
-        note: "acars channel at -40 kHz -> D-AIBC / LH0400 [H1] \"SDR-- FIXTURE\"",
+        note: "acars channel at -40 kHz -> D-AIBC / LH0400 [H1] \"SDRmm FIXTURE\"",
         iq: acars_downlink,
     },
     Recipe {
@@ -172,7 +172,7 @@ fn pocsag_page() -> Vec<Complex<f32>> {
     let page = pocsag::Page {
         address: 1_234_567,
         function: 3,
-        text: "SDR-- FIXTURE".to_string(),
+        text: "SDRmm FIXTURE".to_string(),
         numeric: false,
     };
     at(
@@ -185,7 +185,7 @@ fn pocsag_page() -> Vec<Complex<f32>> {
 fn flex_page() -> Vec<Complex<f32>> {
     let page = flex::Page {
         address: 1_234_567,
-        text: "SDR-- FLEX FIXTURE".to_string(),
+        text: "SDRmm FLEX FIXTURE".to_string(),
     };
     at(flex::transmission(&page, 7, 83, NARROW), 30_000.0, NARROW)
 }
@@ -194,7 +194,7 @@ fn ermes_page() -> Vec<Complex<f32>> {
     let page = ermes::Page {
         local_address: 234_567,
         message_number: 3,
-        text: "SDR-- ERMES FIXTURE".to_string(),
+        text: "SDRmm ERMES FIXTURE".to_string(),
         urgent: true,
         alert: 5,
     };
@@ -257,7 +257,7 @@ fn aprs_packet() -> Vec<Complex<f32>> {
         "DL1ABC-9",
         "APRS",
         &["WIDE1-1"],
-        "!5230.00N/01324.00E>SDR-- fixture",
+        "!5230.00N/01324.00E>SDRmm fixture",
     )))
     .expect("a ui frame is a payload the modulator carries");
     at(
@@ -325,7 +325,7 @@ fn rds_station() -> Vec<Complex<f32>> {
     let station = rds::Station {
         pi: 0xD3C2,
         ps: "SDR-M4  ".to_string(),
-        radiotext: "SDR-- reference fixture".to_string(),
+        radiotext: "SDRmm reference fixture".to_string(),
         pty: 10,
         tp: true,
         ta: false,
@@ -356,7 +356,7 @@ fn acars_downlink() -> Vec<Complex<f32>> {
         block_id: '3',
         seq_no: Some("M01A"),
         flight: Some("LH0400"),
-        text: "SDR-- FIXTURE",
+        text: "SDRmm FIXTURE",
         more: false,
     };
     at(acars::transmission(&block, NARROW), -40_000.0, NARROW)

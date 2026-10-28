@@ -96,7 +96,7 @@ fn pair_uri_carries_no_token() {
 #[test]
 fn pair_uri_carries_an_optional_name() {
     let named = PairUri {
-        name: Some("SDR-- Shack & Co".to_owned()),
+        name: Some("SDRmm Shack & Co".to_owned()),
         ..uri()
     };
     let text = named.to_uri();

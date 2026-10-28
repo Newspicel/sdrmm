@@ -1,6 +1,6 @@
 [book]
-title = "SDR--"
-description = "Install, operate, and develop SDR--, a software-defined radio application for desktop and browser."
+title = "SDRmm"
+description = "Install, operate, and develop SDRmm, a software-defined radio application for desktop and browser."
 authors = ["Julian Haag"]
 src = "src"
 language = "en"

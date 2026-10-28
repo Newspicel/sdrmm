@@ -198,7 +198,7 @@ impl Staging {
     fn new(context: &Context, bytes: u64) -> Self {
         Self {
             buffer: context.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("SDR-- CAF window staging"),
+                label: Some("SDRmm CAF window staging"),
                 size: bytes,
                 usage: wgpu::BufferUsages::MAP_WRITE | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: true,
@@ -286,13 +286,13 @@ impl Eca {
         let bytes = values as u64 * COMPLEX_BYTES;
         let totals = buffer(
             &context.device,
-            "SDR-- CAF group sums",
+            "SDRmm CAF group sums",
             bytes,
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         );
         let weights = buffer(
             &context.device,
-            "SDR-- CAF weights",
+            "SDRmm CAF weights",
             table.spectra().len() as u64 * COMPLEX_BYTES,
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         );
@@ -318,7 +318,7 @@ impl Eca {
             table,
             energy: vec![0.0; shape.lanes],
             totals,
-            readback: Readback::new(context, "SDR-- CAF group sums readback", bytes),
+            readback: Readback::new(context, "SDRmm CAF group sums readback", bytes),
             weights: weights.clone(),
             kernel,
         };
@@ -406,19 +406,19 @@ impl GpuCaf {
         let storage = wgpu::BufferUsages::STORAGE;
         let window = buffer(
             &context.device,
-            "SDR-- CAF window",
+            "SDRmm CAF window",
             footprint.window,
             storage | wgpu::BufferUsages::COPY_DST,
         );
         let spectra = buffer(
             &context.device,
-            "SDR-- CAF spectra",
+            "SDRmm CAF spectra",
             footprint.spectra,
             storage,
         );
         let cube = buffer(
             &context.device,
-            "SDR-- CAF cube",
+            "SDRmm CAF cube",
             footprint.cube,
             storage | wgpu::BufferUsages::COPY_SRC,
         );
@@ -430,7 +430,7 @@ impl GpuCaf {
         let layout = context
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("SDR-- CAF layout"),
+                label: Some("SDRmm CAF layout"),
                 contents: bytemuck::bytes_of(&layout),
                 usage: wgpu::BufferUsages::UNIFORM,
             });
@@ -515,7 +515,7 @@ impl GpuCaf {
                 grid(count(&[k, r, nb / 2]), THREADS)?,
             ),
         };
-        let readback = Readback::new(&context, "SDR-- CAF cube readback", footprint.cube);
+        let readback = Readback::new(&context, "SDRmm CAF cube readback", footprint.cube);
         let staging = Staging::new(&context, footprint.window);
         Ok(Self {
             context,
@@ -614,7 +614,7 @@ impl GpuCaf {
         self.context
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("SDR-- CAF"),
+                label: Some("SDRmm CAF"),
             })
     }
 

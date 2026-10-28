@@ -557,7 +557,7 @@ fn pocsag() -> Vec<Complex<f32>> {
     let pages = [synth::pocsag::Page {
         address: 1_234_567,
         function: 3,
-        text: "SDR-- signal generator".to_owned(),
+        text: "SDRmm signal generator".to_owned(),
         numeric: false,
     }];
     synth::pocsag::transmission(&pages, 1_200, 4_500.0, NARROW)
@@ -566,7 +566,7 @@ fn pocsag() -> Vec<Complex<f32>> {
 fn flex() -> Vec<Complex<f32>> {
     let page = synth::flex::Page {
         address: 1_234_567,
-        text: "SDR-- signal generator".to_owned(),
+        text: "SDRmm signal generator".to_owned(),
     };
     synth::flex::transmission(&page, 4, 72, NARROW)
 }
@@ -575,7 +575,7 @@ fn ermes() -> Vec<Complex<f32>> {
     let page = synth::ermes::Page {
         local_address: 4_242,
         message_number: 1,
-        text: "SDR-- signal generator".to_owned(),
+        text: "SDRmm signal generator".to_owned(),
         urgent: false,
         alert: 1,
     };
@@ -637,18 +637,18 @@ fn acars() -> Vec<Complex<f32>> {
         block_id: '4',
         seq_no: Some("M01A"),
         flight: Some("LH0400"),
-        text: "SDR-- signal generator",
+        text: "SDRmm signal generator",
         more: false,
     };
     synth::acars::transmission(&block, NARROW)
 }
 
 fn aprs() -> Vec<Complex<f32>> {
-    aprs_packet("SDR-- signal generator")
+    aprs_packet("SDRmm signal generator")
 }
 
 fn aprs_weather() -> Vec<Complex<f32>> {
-    aprs_packet("!4903.50N/07201.75W_220/004g005t077r000p000P000h50b09900SDR--")
+    aprs_packet("!4903.50N/07201.75W_220/004g005t077r000p000P000h50b09900SDRmm")
 }
 
 fn aprs_packet(text: &str) -> Vec<Complex<f32>> {
@@ -725,19 +725,19 @@ fn mode_s() -> Vec<Complex<f32>> {
 }
 
 fn morse() -> Vec<Complex<f32>> {
-    synth::morse::transmission("CQ CQ DE SDR-- K", 20.0, 800.0, AUDIO)
+    synth::morse::transmission("CQ CQ DE SDRmm K", 20.0, 800.0, AUDIO)
 }
 
 fn rtty() -> Vec<Complex<f32>> {
-    synth::rtty::transmission("RYRYRY DE SDR-- ", 45.45, 170.0, 1.5, AUDIO)
+    synth::rtty::transmission("RYRYRY DE SDRmm ", 45.45, 170.0, 1.5, AUDIO)
 }
 
 fn navtex() -> Vec<Complex<f32>> {
-    synth::navtex::transmission("ZCZC FA01 SDR-- SIGNAL GENERATOR NNNN", AUDIO)
+    synth::navtex::transmission("ZCZC FA01 SDRmm SIGNAL GENERATOR NNNN", AUDIO)
 }
 
 fn psk31() -> Vec<Complex<f32>> {
-    let iq = synth::psk::transmission("CQ CQ DE SDR-- \n", PskBaud::Psk31.rate());
+    let iq = synth::psk::transmission("CQ CQ DE SDRmm \n", PskBaud::Psk31.rate());
     synth::resample(&iq, 8_000.0, AUDIO)
 }
 

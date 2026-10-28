@@ -142,7 +142,7 @@ fn a_kiwi_streams_iq_and_follows_retunes() {
     eventually("the auth and audio-rate ack", || {
         saw(&heard, "SET AR OK in=12000")
     });
-    eventually("the ident", || saw(&heard, "SET ident_user=SDR--"));
+    eventually("the ident", || saw(&heard, "SET ident_user=SDRmm"));
     eventually("the first tune", || {
         saw(
             &heard,

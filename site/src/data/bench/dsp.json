@@ -13,7 +13,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "nightly-34-gfca2368b",
           "value": 199.313525
         },
@@ -42,7 +42,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "nightly-34-gfca2368b",
           "value": 734.216582
         },
@@ -72,7 +72,7 @@
       "note": "Each library's default filter design.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "nightly-34-gfca2368b",
           "value": 187.360724
         },
@@ -101,7 +101,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "nightly-34-gfca2368b",
           "value": 5028.105269
         },
@@ -131,7 +131,7 @@
       "note": "Each library's own chain, same passband.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "nightly-34-gfca2368b",
           "value": 1257.077319
         },
@@ -160,7 +160,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "nightly-34-gfca2368b",
           "value": 602.692124
         },
@@ -189,7 +189,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "nightly-34-gfca2368b",
           "value": 1234.908986
         },

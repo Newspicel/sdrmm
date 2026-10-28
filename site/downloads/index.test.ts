@@ -32,7 +32,7 @@ afterEach(() => {
 describe("download counter", () => {
   it("sorts paths by what they mean", () => {
     expect(kind("/releases/latest.json")).toBe("update");
-    expect(kind("/releases/v2.2.1/SDR--_2.2.1_aarch64.dmg")).toBe("download");
+    expect(kind("/releases/v2.2.1/SDRmm_2.2.1_aarch64.dmg")).toBe("download");
     expect(kind("/packages/deb/dists/stable/InRelease")).toBe("repo");
     expect(kind("/packages/rpm/repodata/repomd.xml")).toBe("repo");
     expect(kind("/packages/deb/pool/main/sdrmm_2.2.1_amd64.deb")).toBe("package");
@@ -71,10 +71,10 @@ describe("download counter", () => {
   it("takes the version of a download from its path", async () => {
     const { env, points } = environment();
     origin();
-    await send("/releases/v2.2.1/SDR--_2.2.1_x64-setup.exe", env);
+    await send("/releases/v2.2.1/SDRmm_2.2.1_x64-setup.exe", env);
     expect(points[0]?.blobs?.slice(0, 3)).toEqual([
       "download",
-      "/releases/v2.2.1/SDR--_2.2.1_x64-setup.exe",
+      "/releases/v2.2.1/SDRmm_2.2.1_x64-setup.exe",
       "v2.2.1",
     ]);
   });

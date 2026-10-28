@@ -417,9 +417,9 @@ impl SdrMcp {
 impl ServerHandler for SdrMcp {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("SDR--", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("SDRmm", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Drive the SDR-- canvas: what you change here is what every user sees. Read \
+                "Drive the SDRmm canvas: what you change here is what every user sees. Read \
                  get_workspace first. Build with put_node and connect: a device node opens a \
                  radio, a channel node wired from its iq port decodes on it. Every tool takes \
                  node ids. Frequencies are in Hz.",

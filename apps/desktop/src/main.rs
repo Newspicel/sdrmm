@@ -64,7 +64,7 @@ fn main() -> anyhow::Result<()> {
             });
 
             WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
-                .title("SDR--")
+                .title("SDRmm")
                 .inner_size(1280.0, 800.0)
                 .on_new_window(browser::open_in_browser)
                 .on_download(download::handler())
@@ -74,7 +74,7 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .context("failed to start SDR-- desktop")?
+        .context("failed to start SDRmm desktop")?
         .run(|app, event| {
             if matches!(event, RunEvent::Exit)
                 && let Some(engine) = app.try_state::<Arc<Engine>>()

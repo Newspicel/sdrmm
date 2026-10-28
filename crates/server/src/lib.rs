@@ -538,7 +538,7 @@ pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<Serve
         .push(spawn_task("sdrmm-reference", move || reference.run()));
     let app = app(&state, auth::ListenerRole::Main, served.is_some());
     let scheme = if served.is_some() { "https" } else { "http" };
-    tracing::info!(%local_addr, scheme, "SDR-- server listening");
+    tracing::info!(%local_addr, scheme, "SDRmm server listening");
     let task = match served {
         Some(served) => {
             let server = axum_server::from_tcp_rustls(

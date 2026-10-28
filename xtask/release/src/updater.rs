@@ -188,12 +188,12 @@ mod tests {
 
     fn release() -> Vec<(String, String)> {
         [
-            "SDR--_1.2.3_aarch64.app.tar.gz",
-            "SDR--_1.2.3_x86_64.app.tar.gz",
-            "SDR--_1.2.3_aarch64.AppImage",
-            "SDR--_1.2.3_amd64.AppImage",
-            "SDR--_1.2.3_arm64-setup.exe",
-            "SDR--_1.2.3_x64-setup.exe",
+            "SDRmm_1.2.3_aarch64.app.tar.gz",
+            "SDRmm_1.2.3_x86_64.app.tar.gz",
+            "SDRmm_1.2.3_aarch64.AppImage",
+            "SDRmm_1.2.3_amd64.AppImage",
+            "SDRmm_1.2.3_arm64-setup.exe",
+            "SDRmm_1.2.3_x64-setup.exe",
         ]
         .iter()
         .map(|file| (format!("{file}.sig"), format!("sig-of-{file}\n")))
@@ -212,15 +212,15 @@ mod tests {
     fn url_is_the_artifact_beside_the_signature() {
         let manifest = build(&release(), "1.2.3", &format!("{BASE}/")).unwrap();
         let linux = &manifest.platforms["linux-x86_64"];
-        assert_eq!(linux.url, format!("{BASE}/SDR--_1.2.3_amd64.AppImage"));
-        assert_eq!(linux.signature, "sig-of-SDR--_1.2.3_amd64.AppImage");
+        assert_eq!(linux.url, format!("{BASE}/SDRmm_1.2.3_amd64.AppImage"));
+        assert_eq!(linux.signature, "sig-of-SDRmm_1.2.3_amd64.AppImage");
     }
 
     #[test]
     fn prefers_nsis_over_msi() {
         let mut sigs = release();
         sigs.push((
-            "SDR--_1.2.3_x64_en-US.msi.sig".to_string(),
+            "SDRmm_1.2.3_x64_en-US.msi.sig".to_string(),
             "sig-of-msi".to_string(),
         ));
         sigs.sort();
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn rejects_the_unrenamed_macos_artifact() {
-        let sigs = vec![("SDR--.app.tar.gz.sig".to_string(), "sig".to_string())];
+        let sigs = vec![("SDRmm.app.tar.gz.sig".to_string(), "sig".to_string())];
         let err = build(&sigs, "1.2.3", BASE).unwrap_err().to_string();
         assert!(err.contains("names no architecture"), "{err}");
     }
@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn ignores_a_known_non_updater_signature() {
         let mut sigs = release();
-        sigs.push(("SDR--_1.2.3_amd64.deb.sig".to_string(), "sig".to_string()));
+        sigs.push(("SDRmm_1.2.3_amd64.deb.sig".to_string(), "sig".to_string()));
         let manifest = build(&sigs, "1.2.3", BASE).unwrap();
         assert!(
             manifest.platforms["linux-x86_64"]
@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn rejects_an_unknown_signed_artifact() {
         let mut sigs = release();
-        sigs.push(("SDR--_1.2.3_amd64.pkg.sig".to_string(), "sig".to_string()));
+        sigs.push(("SDRmm_1.2.3_amd64.pkg.sig".to_string(), "sig".to_string()));
         let err = build(&sigs, "1.2.3", BASE).unwrap_err().to_string();
         assert!(err.contains("not an updater artifact"), "{err}");
     }

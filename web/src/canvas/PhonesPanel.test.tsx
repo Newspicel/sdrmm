@@ -18,7 +18,7 @@ const READY: PhoneAccessStatus = {
   access: { enabled: true, port: 8443 },
   listener: { state: "on", port: 8443 },
   endpoint: ENDPOINT,
-  mdns: { state: "on", instance: "SDR-- shack" },
+  mdns: { state: "on", instance: "SDRmm shack" },
   protocol: 1,
 };
 

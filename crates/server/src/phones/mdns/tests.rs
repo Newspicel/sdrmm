@@ -20,7 +20,7 @@ fn endpoint() -> PhoneEndpoint {
 #[test]
 fn advert_carries_protocol_id_pin_and_name() {
     let advert = advert("0123456789abcdef0123456789abcdef", "shack", &endpoint());
-    assert_eq!(advert.instance, "SDR-- shack");
+    assert_eq!(advert.instance, "SDRmm shack");
     assert_eq!(advert.port, 8443);
     assert_eq!(advert.host, format!("{}.local.", crate::net::host_label()));
     assert_eq!(

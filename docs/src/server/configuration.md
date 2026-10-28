@@ -118,7 +118,7 @@ list it under **Nearby**. Let the phone port through your firewall.
 
 ## Reverse proxy
 
-- Bind SDR-- to loopback, or firewall its port.
+- Bind SDRmm to loopback, or firewall its port.
 - Set a token. Without one, the server answers only requests addressed to an IP literal, a
   `localhost` or `.local` name, or a `--tls-name`.
 - Serve it at the root of the origin.

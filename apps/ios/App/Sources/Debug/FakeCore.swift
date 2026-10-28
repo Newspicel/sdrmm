@@ -110,7 +110,7 @@ nonisolated final class FakeCore: CoreService {
     func about() -> CoreAbout { CoreAbout(coreVersion: "demo", protocol: 1) }
 
     func notices() -> [LicenseEntry] {
-        [LicenseEntry(name: "SDR--", version: nil, license: "AGPL-3.0-or-later", text: "Demo data")]
+        [LicenseEntry(name: "SDRmm", version: nil, license: "AGPL-3.0-or-later", text: "Demo data")]
     }
 
     func savedServers() throws -> [SavedServer] {

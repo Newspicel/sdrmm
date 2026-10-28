@@ -30,7 +30,7 @@ impl Default for Call {
             urcall: "CQCQCQ".to_owned(),
             mycall: "DL1ABC".to_owned(),
             repeater: "DB0ABC B".to_owned(),
-            text: "hello from SDR--".to_owned(),
+            text: "hello from SDRmm".to_owned(),
         }
     }
 }

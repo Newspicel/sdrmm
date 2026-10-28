@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn slow_data_built_to_the_jarl_mini_header_rules_reports_the_call_and_its_message() {
-        const SPEC_MESSAGE: &str = "hello from SDR--";
+        const SPEC_MESSAGE: &str = "hello from SDRmm";
         let mut header = vec![0u8, 0, 0];
         for field in ["DB0ABC B", "DB0ABC B", "CQCQCQ  ", "DL1ABC  "] {
             header.extend_from_slice(field.as_bytes());

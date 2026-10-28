@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>SDR--</string>
+	<string>SDRmm</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -44,7 +44,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Scans the pairing QR code.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Finds and connects to SDR-- servers on your network.</string>
+	<string>Finds and connects to SDRmm servers on your network.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Keeps sending your position while another app is in front.</string>
 	<key>NSLocationRequireExplicitServiceSession</key>
@@ -55,7 +55,7 @@
 		<string>Bearings need your exact position.</string>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Sends your position and heading to your SDR-- server during a mission.</string>
+	<string>Sends your position and heading to your SDRmm server during a mission.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

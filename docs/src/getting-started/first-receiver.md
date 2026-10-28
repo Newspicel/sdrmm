@@ -1,11 +1,11 @@
 # Your first receiver
 
 Listen to a local FM station with an RTL-SDR. You need the receiver, an antenna, and
-[SDR-- installed](install.md).
+[SDRmm installed](install.md).
 
 ## 1. Pick the radio
 
-Attach the antenna and plug the RTL-SDR into the computer running the server. Open SDR--.
+Attach the antenna and plug the RTL-SDR into the computer running the server. Open SDRmm.
 
 A new installation starts with a **Device** wired to a **Scope**, and a **Speaker**. Pick your
 RTL-SDR on the Device node and set the rate to **2.4 MS/s**.

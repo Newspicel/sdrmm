@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::records::LicenseEntry;
 
 const DOCUMENT: &str = include_str!("../data/notices.json");
-const APP_NAME: &str = "SDR--";
+const APP_NAME: &str = "SDRmm";
 
 #[derive(Deserialize)]
 struct Document {

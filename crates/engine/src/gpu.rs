@@ -132,14 +132,14 @@ impl Context {
         }
         tracing::info!(adapter = %info.name, backend = ?info.backend, "GPU compute adapter");
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("SDR-- GPU compute"),
+            label: Some("SDRmm GPU compute"),
             required_limits: adapter.limits(),
             ..Default::default()
         }))
         .map_err(|error| format!("request device: {error}"))?;
 
         let fft_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("SDR-- FFT stage layout"),
+            label: Some("SDRmm FFT stage layout"),
             entries: &[
                 storage_entry(0, false),
                 storage_entry(1, true),
@@ -147,7 +147,7 @@ impl Context {
             ],
         });
         let power_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("SDR-- FFT power layout"),
+            label: Some("SDRmm FFT power layout"),
             entries: &[
                 storage_entry(0, true),
                 storage_entry(1, false),
@@ -195,26 +195,26 @@ impl Processor {
         let (bits, bit_reversed, twiddles) = fft_tables(size);
         let data = buffer(
             &context.device,
-            "SDR-- FFT data",
+            "SDRmm FFT data",
             complex_bytes,
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         );
         let twiddle_buffer = context
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("SDR-- FFT twiddles"),
+                label: Some("SDRmm FFT twiddles"),
                 contents: bytemuck::cast_slice(&twiddles),
                 usage: wgpu::BufferUsages::STORAGE,
             });
         let output = buffer(
             &context.device,
-            "SDR-- FFT dB output",
+            "SDRmm FFT dB output",
             power_bytes,
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         );
         let readback = buffer(
             &context.device,
-            "SDR-- FFT readback",
+            "SDRmm FFT readback",
             power_bytes,
             wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         );
@@ -262,11 +262,11 @@ impl Processor {
             self.context
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("SDR-- spectrum FFT"),
+                    label: Some("SDRmm spectrum FFT"),
                 });
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("SDR-- FFT stages"),
+                label: Some("SDRmm FFT stages"),
                 timestamp_writes: None,
             });
             if let Some(fft) = &self.batched_fft {
@@ -390,7 +390,7 @@ fn stage_bind_groups(
     let stage_params = context
         .device
         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("SDR-- FFT stage parameters"),
+            label: Some("SDRmm FFT stage parameters"),
             contents: &stage_bytes,
             usage: wgpu::BufferUsages::UNIFORM,
         });
@@ -399,7 +399,7 @@ fn stage_bind_groups(
             context
                 .device
                 .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("SDR-- FFT stage bind group"),
+                    label: Some("SDRmm FFT stage bind group"),
                     layout: &context.fft_layout,
                     entries: &[
                         bind(0, data.as_entire_binding()),
@@ -428,7 +428,7 @@ fn power_bind_group(
     let power_params = context
         .device
         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("SDR-- FFT power parameters"),
+            label: Some("SDRmm FFT power parameters"),
             contents: bytemuck::bytes_of(&PowerParams {
                 size,
                 inv_gain,
@@ -439,7 +439,7 @@ fn power_bind_group(
     context
         .device
         .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("SDR-- FFT power bind group"),
+            label: Some("SDRmm FFT power bind group"),
             layout: &context.power_layout,
             entries: &[
                 bind(0, data.as_entire_binding()),

@@ -267,7 +267,7 @@ mod tests {
     fn station() -> Station {
         Station {
             pi: 0xD3C2,
-            ps: "SDR--FM".to_owned(),
+            ps: "SDRmmFM".to_owned(),
             radiotext: "reference modulator".to_owned(),
             pty: 10,
             tp: true,

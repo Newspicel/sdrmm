@@ -26,8 +26,8 @@ cp "${debs[@]}" "$out/deb/pool/main/"
     gzip -9kf "dists/stable/main/binary-$arch/Packages"
   done
   apt-ftparchive \
-    -o APT::FTPArchive::Release::Origin=SDR-- \
-    -o APT::FTPArchive::Release::Label=SDR-- \
+    -o APT::FTPArchive::Release::Origin=SDRmm \
+    -o APT::FTPArchive::Release::Label=SDRmm \
     -o APT::FTPArchive::Release::Suite=stable \
     -o APT::FTPArchive::Release::Codename=stable \
     -o APT::FTPArchive::Release::Architectures="amd64 arm64" \
@@ -44,7 +44,7 @@ createrepo_c "$out/rpm"
 gpg --batch --yes --local-user "$key" --armor --detach-sign "$out/rpm/repodata/repomd.xml"
 cat > "$out/rpm/sdrmm.repo" <<EOF
 [sdrmm]
-name=SDR--
+name=SDRmm
 baseurl=$url/rpm
 enabled=1
 gpgcheck=1

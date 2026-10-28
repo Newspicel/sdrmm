@@ -18,11 +18,11 @@ const LIVENESS_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, thiserror::Error)]
 pub enum CliPairError {
-    #[error("no SDR-- database at {}: start sdrmm first", .0.display())]
+    #[error("no SDRmm database at {}: start sdrmm first", .0.display())]
     NoDatabase(PathBuf),
     #[error("phones need HTTPS: turn on Allow phones or start with --tls-self-signed")]
     NoEndpoint,
-    #[error("SDR-- is not running (port {0} closed)")]
+    #[error("SDRmm is not running (port {0} closed)")]
     NotRunning(u16),
     #[error("{0}")]
     Pair(String),

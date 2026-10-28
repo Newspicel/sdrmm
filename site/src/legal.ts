@@ -43,7 +43,7 @@ export const imprint: LegalEntry[] = [
 export const privacy: LegalEntry[] = [
   {
     title: "In short",
-    body: "This policy covers this site, downloads.sdrmm.com and the SDR-- iPhone app. All process as little data as possible: no cookies, no tracking across sites, no advertising, no account. The sections below explain what still gets processed, and why.",
+    body: "This policy covers this site, downloads.sdrmm.com and the SDRmm iPhone app. All process as little data as possible: no cookies, no tracking across sites, no advertising, no account. The sections below explain what still gets processed, and why.",
   },
   {
     title: "Controller",
@@ -63,7 +63,7 @@ export const privacy: LegalEntry[] = [
   },
   {
     title: "Download counts",
-    body: "Downloads, Linux package repository refreshes and desktop update checks are served from downloads.sdrmm.com. For each, Cloudflare Workers Analytics Engine and Workers Logs store the file path, release version, operating system, CPU architecture and country. No IP address or other identifier is stored, so a count cannot be linked to you. Legal basis: Art. 6 (1) (f) GDPR (legitimate interest in knowing how many people use SDR--).",
+    body: "Downloads, Linux package repository refreshes and desktop update checks are served from downloads.sdrmm.com. For each, Cloudflare Workers Analytics Engine and Workers Logs store the file path, release version, operating system, CPU architecture and country. No IP address or other identifier is stored, so a count cannot be linked to you. Legal basis: Art. 6 (1) (f) GDPR (legitimate interest in knowing how many people use SDRmm).",
   },
   {
     title: "Live demo map",
@@ -83,15 +83,15 @@ export const privacy: LegalEntry[] = [
   },
   {
     title: "Recording donations",
-    body: "Recordings you upload, with the signal description, notes and optional email address you enter, are stored in a private Cloudflare R2 bucket, and I get an email with these details. They are used only to build and test SDR-- decoders and are never published. Legal basis: Art. 6 (1) (a) GDPR (your consent by uploading). Email contact@sdrmm.com to have a donation deleted.",
+    body: "Recordings you upload, with the signal description, notes and optional email address you enter, are stored in a private Cloudflare R2 bucket, and I get an email with these details. They are used only to build and test SDRmm decoders and are never published. Legal basis: Art. 6 (1) (a) GDPR (your consent by uploading). Email contact@sdrmm.com to have a donation deleted.",
   },
   {
     title: "iPhone app",
-    body: "The app only talks to SDR-- servers you pair with. I receive no data from it, and it contains no analytics or advertising code. Pairing credentials stay in the iOS Keychain, settings stay on the device. Forgetting a server in Settings removes its credentials. If you opted in on your device, Apple shares anonymous crash reports and usage statistics with me.",
+    body: "The app only talks to SDRmm servers you pair with. I receive no data from it, and it contains no analytics or advertising code. Pairing credentials stay in the iOS Keychain, settings stay on the device. Forgetting a server in Settings removes its credentials. If you opted in on your device, Apple shares anonymous crash reports and usage statistics with me.",
   },
   {
     title: "Local network and camera",
-    body: "Local network access finds SDR-- servers nearby. The camera only scans pairing QR codes; images never leave the device.",
+    body: "Local network access finds SDRmm servers nearby. The camera only scans pairing QR codes; images never leave the device.",
   },
   {
     title: "Location during missions",

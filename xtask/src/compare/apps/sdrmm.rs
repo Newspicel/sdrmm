@@ -8,7 +8,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use super::{running::Running, signal::Signal, workspace};
 
-pub const HEADLESS: &str = "SDR-- headless";
+pub const HEADLESS: &str = "SDRmm headless";
 
 pub fn build(root: &Path) -> Result<()> {
     crate::web_build(root)?;

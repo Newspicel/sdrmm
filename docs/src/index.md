@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="icon.svg" alt="SDR-- logo" width="96" height="96">
+  <img src="icon.svg" alt="SDRmm logo" width="96" height="96">
 </p>
 
-# SDR--
+# SDRmm
 
-SDR-- listens to, decodes, and records radio signals from an SDR, a network receiver, or an IQ
+SDRmm listens to, decodes, and records radio signals from an SDR, a network receiver, or an IQ
 recording.
 
 You build a receiver by wiring nodes together in **Patch** view, then pin the controls you use
@@ -12,7 +12,7 @@ to **Rack** view. An RTL-SDR and a local FM station are enough to start.
 
 ## Start here
 
-1. [Install SDR--](getting-started/install.md).
+1. [Install SDRmm](getting-started/install.md).
 2. Build [your first receiver](getting-started/first-receiver.md).
 3. Learn how [nodes and wires](getting-started/workspace.md) fit together.
 
@@ -30,7 +30,7 @@ to **Rack** view. An RTL-SDR and a local FM station are enough to start.
 | Program a radio or measure an antenna | [Tools](user-guide/tools.md) |
 | Run the radio somewhere else | [Deployment](server/deployment.md) |
 | Fix a problem | [Troubleshooting](troubleshooting.md) |
-| Work on SDR-- | [Build and test](development/building.md) |
+| Work on SDRmm | [Build and test](development/building.md) |
 
 ## How it runs
 

@@ -365,7 +365,7 @@ const PAYLOADS: &[Payload] = &[
             r#""source_call":"DL1ABC""#,
             r#""destination_call":"CQCQCQ""#,
             r#""via":"DB0ABC B""#,
-            r#""text":"hello from SDR--""#,
+            r#""text":"hello from SDRmm""#,
         ],
     ),
     reads(
@@ -504,7 +504,7 @@ const PAYLOADS: &[Payload] = &[
         &[
             r#""locked":true"#,
             r#""label":"Rust TV""#,
-            r#""ensemble_label":"SDR--""#,
+            r#""ensemble_label":"SDRmm""#,
         ],
     ),
     reads(

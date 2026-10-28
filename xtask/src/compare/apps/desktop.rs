@@ -4,7 +4,7 @@ use anyhow::{Context, Result, ensure};
 
 use super::{accessibility, disclaim, running::Running, sdrmm, signal::Signal};
 
-pub const TOOL: &str = "SDR-- app";
+pub const TOOL: &str = "SDRmm app";
 
 const IDENTIFIER: &str = "dev.newspicel.sdrmm";
 

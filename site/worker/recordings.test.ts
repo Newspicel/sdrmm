@@ -169,7 +169,7 @@ describe("recording donations", () => {
     expect(sent[0]).toMatchObject({
       to: "contact@sdrmm.com",
       replyTo: "ada@example.org",
-      subject: "SDR-- recording: POCSAG",
+      subject: "SDRmm recording: POCSAG",
     });
     expect(sent[0]?.text).toContain("b.wav (2.5 MB)");
     expect(sent[0]?.text).toContain("Strong");

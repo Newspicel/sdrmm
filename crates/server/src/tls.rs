@@ -242,7 +242,7 @@ fn certificate(names: &[String], key: &rcgen::KeyPair) -> Result<rcgen::Certific
 
 fn distinguished_name() -> rcgen::DistinguishedName {
     let mut name = rcgen::DistinguishedName::new();
-    name.push(rcgen::DnType::CommonName, "SDR--");
+    name.push(rcgen::DnType::CommonName, "SDRmm");
     name
 }
 

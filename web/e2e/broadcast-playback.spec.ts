@@ -114,7 +114,7 @@ for (const system of ["dab", "dvbt", "dvbs", "dvbs2", "dvbs2x", "dvbs2sf"] as co
       const display = page.locator('.react-flow__node[data-id="display"]');
       await display.locator("header").click();
       if (system === "dab") {
-        await expect(display.getByText("SDR-- live", { exact: true })).toBeVisible({
+        await expect(display.getByText("SDRmm live", { exact: true })).toBeVisible({
           timeout: 30_000,
         });
         await expect(display.getByRole("img")).toBeVisible();

@@ -33,7 +33,7 @@ cargo run -p sdrmm
 
 Open <http://localhost:8080>.
 
-The media script builds the few FFmpeg 9.0.2 codecs SDR-- needs, plus fdk-aac 2.0.3 for xHE-AAC,
+The media script builds the few FFmpeg 9.0.2 codecs SDRmm needs, plus fdk-aac 2.0.3 for xHE-AAC,
 from checksummed source into `.media/<target>` as shared libraries. For the host target it also
 writes `.media/cargo.toml`, which `.cargo/config.toml` includes, so every Cargo command uses that
 FFmpeg (`FFMPEG_DIR`, plus `LD_LIBRARY_PATH` on Linux or `DYLD_LIBRARY_PATH` on macOS). On
@@ -187,7 +187,7 @@ them, and `cargo xtask test` regenerates them.
 | `cargo xtask replay` | Runs a capture through one channel; `--center` sets the RF centre of a raw file, `--images` saves pictures |
 | `cargo xtask ber <entry>` | Bit error rate curves into `target/ber` |
 | `cargo xtask ident-matrix` | Signal identifier against the fixtures |
-| `cargo xtask compare <dsp\|decoders\|apps>` | Compares with other SDR software; `--ours` measures SDR-- alone, `decoders --signal <id>` one signal |
+| `cargo xtask compare <dsp\|decoders\|apps>` | Compares with other SDR software; `--ours` measures SDRmm alone, `decoders --signal <id>` one signal |
 
 ## Desktop app
 

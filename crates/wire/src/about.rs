@@ -64,7 +64,7 @@ mod tests {
     #[test]
     fn about_names_the_protocol_and_the_server() {
         let about = AboutResponse {
-            name: "SDR--".to_owned(),
+            name: "SDRmm".to_owned(),
             version: "0.4.0".to_owned(),
             protocol: API_PROTOCOL,
             server_id: "00112233445566778899aabbccddeeff".to_owned(),

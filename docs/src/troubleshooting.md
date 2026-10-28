@@ -10,12 +10,12 @@ It checks drivers, libraries, radio discovery, USB permissions, and storage path
 
 ## The page does not open
 
-- Check the port in the `SDR-- ready` line of the server log.
+- Check the port in the `SDRmm ready` line of the server log.
 - On the server itself, try <http://127.0.0.1:8080>.
 - The desktop app only accepts its own computer. For other machines, run the `sdrmm` server with
   `--bind 0.0.0.0:8080` and a token; it stays on `127.0.0.1:8080` otherwise.
 - Check the firewall and any container port mapping.
-- Behind a reverse proxy, serve SDR-- at the root. Path prefixes do not work.
+- Behind a reverse proxy, serve SDRmm at the root. Path prefixes do not work.
 - With TLS on, use `https://`.
 
 ## The Linux window is blank or the waterfall is missing

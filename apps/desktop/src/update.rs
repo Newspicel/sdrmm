@@ -68,7 +68,7 @@ fn open_releases() {
 async fn use_package_manager(app: &AppHandle) {
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
-        .message("Update SDR-- with your package manager.")
+        .message("Update SDRmm with your package manager.")
         .title("Update")
         .kind(MessageDialogKind::Info)
         .buttons(MessageDialogButtons::Ok)
@@ -90,7 +90,7 @@ async fn prompt(app: &AppHandle, version: &str) -> bool {
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
         .message(format!(
-            "SDR-- {version} is available.\n\nInstalling restarts the app, which stops any \
+            "SDRmm {version} is available.\n\nInstalling restarts the app, which stops any \
              recording or stream that is running."
         ))
         .title("Update available")

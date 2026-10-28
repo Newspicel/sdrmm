@@ -259,7 +259,7 @@ pub(crate) mod testing {
         ServerRecord {
             version: RECORD_VERSION,
             server_id: SERVER_ID.to_owned(),
-            server_name: "SDR-- shack".to_owned(),
+            server_name: "SDRmm shack".to_owned(),
             phone_id: PHONE_ID.to_owned(),
             token: token(),
             hosts: vec!["192.168.1.20:8443".to_owned(), "[fe80::1]:8443".to_owned()],

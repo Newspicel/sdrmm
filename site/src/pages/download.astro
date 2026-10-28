@@ -5,18 +5,18 @@ import Page from "../layouts/Page.astro";
 ---
 
 <Page
-  title="Download SDR-- for macOS, Windows and Linux"
-  description="Installers for macOS, Windows and Linux, portable servers for a machine by the antenna, and the package managers that carry SDR--."
+  title="Download SDRmm for macOS, Windows and Linux"
+  description="Installers for macOS, Windows and Linux, portable servers for a machine by the antenna, and the package managers that carry SDRmm."
   summary="Pick the file for the computer you will run the radio on."
 >
 <div class="wrap top">
-  <h1>Download SDR--</h1>
+  <h1>Download SDRmm</h1>
   <p class="lede">Take the app for the computer your radio plugs into, or the server for a machine
     by the antenna.</p>
 
   <div class="pick">
     <p class="who" id="pick-who">Latest release</p>
-    <a class="btn primary" id="pick-btn" href="https://github.com/Newspicel/sdrmm/releases/latest">Download SDR--</a>
+    <a class="btn primary" id="pick-btn" href="https://github.com/Newspicel/sdrmm/releases/latest">Download SDRmm</a>
     <p class="file" id="pick-file">Desktop app for macOS, Windows and Linux.</p>
     <p class="hint" id="pick-hint" hidden></p>
     <p class="alts" id="pick-alts"><a href="#files">Every file in the release</a><a href="#choose">Not sure which you want?</a></p>
@@ -59,12 +59,12 @@ import Page from "../layouts/Page.astro";
         <li><a class="row" data-file="_aarch64.dmg" href="https://github.com/Newspicel/sdrmm/releases/latest">
           <span class="what">Desktop app <em>Apple silicon</em></span>
           <span class="size"></span>
-          <span class="name">SDR--_&lt;version&gt;_aarch64.dmg</span>
+          <span class="name">SDRmm_&lt;version&gt;_aarch64.dmg</span>
         </a></li>
         <li><a class="row" data-file="_x64.dmg" href="https://github.com/Newspicel/sdrmm/releases/latest">
           <span class="what">Desktop app <em>Intel</em></span>
           <span class="size"></span>
-          <span class="name">SDR--_&lt;version&gt;_x64.dmg</span>
+          <span class="name">SDRmm_&lt;version&gt;_x64.dmg</span>
         </a></li>
         <li><a class="row" data-file="-aarch64-apple-darwin.tar.gz" href="https://github.com/Newspicel/sdrmm/releases/latest">
           <span class="what">Server <em>Apple silicon</em></span>
@@ -85,17 +85,17 @@ import Page from "../layouts/Page.astro";
         <li><a class="row" data-file="_x64-setup.exe" href="https://github.com/Newspicel/sdrmm/releases/latest">
           <span class="what">Desktop app <em>installer</em></span>
           <span class="size"></span>
-          <span class="name">SDR--_&lt;version&gt;_x64-setup.exe</span>
+          <span class="name">SDRmm_&lt;version&gt;_x64-setup.exe</span>
         </a></li>
         <li><a class="row" data-file="_x64_en-US.msi" href="https://github.com/Newspicel/sdrmm/releases/latest">
           <span class="what">Desktop app <em>MSI package</em></span>
           <span class="size"></span>
-          <span class="name">SDR--_&lt;version&gt;_x64_en-US.msi</span>
+          <span class="name">SDRmm_&lt;version&gt;_x64_en-US.msi</span>
         </a></li>
         <li><a class="row" data-file="_arm64-setup.exe" href="https://github.com/Newspicel/sdrmm/releases/latest">
           <span class="what">Desktop app <em>installer, ARM64</em></span>
           <span class="size"></span>
-          <span class="name">SDR--_&lt;version&gt;_arm64-setup.exe</span>
+          <span class="name">SDRmm_&lt;version&gt;_arm64-setup.exe</span>
         </a></li>
         <li><a class="row" data-file="-x86_64-pc-windows-msvc.zip" href="https://github.com/Newspicel/sdrmm/releases/latest">
           <span class="what">Server <em>zip archive, x86-64</em></span>
@@ -204,7 +204,7 @@ import Page from "../layouts/Page.astro";
     <li>
       <div>
         <h3>Install it</h3>
-        <p>macOS: open the disk image and drag SDR-- to Applications. Windows: run the installer.
+        <p>macOS: open the disk image and drag SDRmm to Applications. Windows: run the installer.
           It is not code-signed yet, so SmartScreen asks first; choose <b>More info</b>, then
           <b>Run anyway</b>. Linux: <code>chmod +x</code> the AppImage, or
           <code>sudo apt install ./sdrmm-app_*.deb</code>, or
@@ -452,7 +452,7 @@ function handheldCard() {
   el("pick-who").textContent = "Phone or tablet";
   el("pick-btn").textContent = "See every file";
   el("pick-btn").href = "#files";
-  el("pick-file").textContent = "SDR-- runs on a desktop or a server.";
+  el("pick-file").textContent = "SDRmm runs on a desktop or a server.";
   el("pick-hint").textContent =
     "Install it on a computer, then open that machine's address in this browser to operate the receiver from here.";
   el("pick-hint").hidden = false;

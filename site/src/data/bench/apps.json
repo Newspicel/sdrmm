@@ -23,12 +23,12 @@
           "value": 18.1
         },
         {
-          "tool": "SDR-- headless",
+          "tool": "SDRmm headless",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 5.4
         },
         {
-          "tool": "SDR-- app",
+          "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 46.1
         }
@@ -52,12 +52,12 @@
           "value": 148.3
         },
         {
-          "tool": "SDR-- headless",
+          "tool": "SDRmm headless",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 46.1
         },
         {
-          "tool": "SDR-- app",
+          "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 644.6
         }
@@ -76,12 +76,12 @@
           "value": 61.0
         },
         {
-          "tool": "SDR-- headless",
+          "tool": "SDRmm headless",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 11.0
         },
         {
-          "tool": "SDR-- app",
+          "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 91.2
         }
@@ -100,12 +100,12 @@
           "value": 625.4
         },
         {
-          "tool": "SDR-- headless",
+          "tool": "SDRmm headless",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 55.9
         },
         {
-          "tool": "SDR-- app",
+          "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 759.5
         }
@@ -124,12 +124,12 @@
           "value": 130.4
         },
         {
-          "tool": "SDR-- headless",
+          "tool": "SDRmm headless",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 38.5
         },
         {
-          "tool": "SDR-- app",
+          "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 192.0
         }
@@ -148,12 +148,12 @@
           "value": 814.1
         },
         {
-          "tool": "SDR-- headless",
+          "tool": "SDRmm headless",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 101.9
         },
         {
-          "tool": "SDR-- app",
+          "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 948.6
         }

@@ -385,7 +385,7 @@ pub(crate) fn reconcile_recordings(dir: &std::path::Path, store: &Store) -> Resu
 
 #[derive(OpenApi)]
 #[openapi(
-    info(title = "SDR-- API", version = env!("CARGO_PKG_VERSION")),
+    info(title = "SDRmm API", version = env!("CARGO_PKG_VERSION")),
     components(schemas(
         ServerEvent,
         ClientCommand,

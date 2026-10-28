@@ -69,7 +69,7 @@ class PairViewModelTest {
         model.setCode("4821 0937")
         assertThat(model.state.value.code).isEqualTo("48210937")
         model.submitCode()
-        assertThat(core.calls).containsExactly("offerFromDiscovery:SDR-- bench")
+        assertThat(core.calls).containsExactly("offerFromDiscovery:SDRmm bench")
         assertThat(model.state.value.step).isEqualTo(PairStep.Confirm(Samples.offer(code = "48210937")))
     }
 

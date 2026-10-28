@@ -226,7 +226,7 @@ pub fn meshtastic_scene(rate_hz: f64) -> Vec<Complex<f32>> {
         ..LoraWaveform::default()
     };
     let packets = [
-        meshtastic_text("SDR-- MESH FIXTURE"),
+        meshtastic_text("SDRmm MESH FIXTURE"),
         meshtastic_position(47.3769, 8.5417),
     ];
     scene(&waveform, &packets, rate_hz)
@@ -242,8 +242,8 @@ pub fn meshcore_scene(rate_hz: f64) -> Vec<Complex<f32>> {
         ..LoraWaveform::default()
     };
     let packets = [
-        meshcore_advert("SDR-- Repeater", (52.52, 13.405)),
-        meshcore_public_text("sdrmm", "SDR-- MESHCORE FIXTURE"),
+        meshcore_advert("SDRmm Repeater", (52.52, 13.405)),
+        meshcore_public_text("sdrmm", "SDRmm MESHCORE FIXTURE"),
     ];
     scene(&waveform, &packets, rate_hz)
 }

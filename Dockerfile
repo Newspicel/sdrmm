@@ -91,7 +91,7 @@ RUN test -f web/dist/index.html \
 FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
 LABEL org.opencontainers.image.url="https://sdrmm.com" \
       org.opencontainers.image.source="https://github.com/newspicel/sdrmm" \
-      org.opencontainers.image.description="SDR--: headless SDR server with embedded web UI" \
+      org.opencontainers.image.description="SDRmm: headless SDR server with embedded web UI" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 # SoapySDR comes from Debian, as it would on the host: the modules named here are the ones no

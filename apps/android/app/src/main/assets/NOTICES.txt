@@ -1,4 +1,4 @@
-SDR-- for Android ships these components beside the Rust core listed above.
+SDRmm for Android ships these components beside the Rust core listed above.
 
 Jetpack Compose 2026.09.00
 Apache-2.0

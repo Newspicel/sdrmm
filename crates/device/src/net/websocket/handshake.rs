@@ -57,7 +57,7 @@ pub(crate) fn follow(from: &Endpoint, location: &str) -> Result<(Endpoint, Strin
     }
     let Some(at) = location.find("://") else {
         return Err(DeviceError::Io(format!(
-            "the server redirects to {location}, which SDR-- cannot follow"
+            "the server redirects to {location}, which SDRmm cannot follow"
         )));
     };
     let rest = &location[at + 3..];
@@ -72,7 +72,7 @@ pub(crate) fn follow(from: &Endpoint, location: &str) -> Result<(Endpoint, Strin
         .filter(|_| matches!(scheme.as_str(), "http" | "https" | "ws" | "wss"))
         .ok_or_else(|| {
             DeviceError::Io(format!(
-                "the server redirects to {location}, which SDR-- cannot follow"
+                "the server redirects to {location}, which SDRmm cannot follow"
             ))
         })?;
     Ok((to, path.to_string()))
@@ -118,7 +118,7 @@ pub(crate) fn verify(response: &[u8], key: &str) -> Result<(), DeviceError> {
     match header("sec-websocket-accept") {
         Some(value) if value == expected => Ok(()),
         Some(_) => Err(DeviceError::Io(
-            "the server's Sec-WebSocket-Accept does not answer the key SDR-- sent".to_string(),
+            "the server's Sec-WebSocket-Accept does not answer the key SDRmm sent".to_string(),
         )),
         None => Err(DeviceError::Io(
             "the server's upgrade carries no Sec-WebSocket-Accept".to_string(),

@@ -25,7 +25,7 @@ static NOTICES: LazyLock<NoticesDocument> = LazyLock::new(|| {
 #[must_use]
 pub fn about(server_id: &str, server_name: &str) -> AboutResponse {
     AboutResponse {
-        name: "SDR--".to_string(),
+        name: "SDRmm".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         protocol: API_PROTOCOL,
         server_id: server_id.to_owned(),

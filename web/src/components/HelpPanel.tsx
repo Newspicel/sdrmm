@@ -56,7 +56,7 @@ export function HelpPanel({
           <div className="flex shrink-0 items-baseline justify-between gap-4 px-4 pt-4 pb-3">
             <Dialog.Title className={DIALOG_TITLE}>Help</Dialog.Title>
             <Dialog.Description className="legend">
-              {about.data ? `SDR-- ${about.data.version}` : ""}
+              {about.data ? `SDRmm ${about.data.version}` : ""}
             </Dialog.Description>
           </div>
 

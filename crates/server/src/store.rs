@@ -70,7 +70,7 @@ pub enum StoreError {
     #[error("stored snapshot corrupt: {0}")]
     Corrupt(#[from] serde_json::Error),
     #[error(
-        "this database is newer than SDR-- (schema {found}, supported {known}); update SDR-- or \
+        "this database is newer than SDRmm (schema {found}, supported {known}); update SDRmm or \
          delete the database"
     )]
     NewerSchema { found: i64, known: usize },

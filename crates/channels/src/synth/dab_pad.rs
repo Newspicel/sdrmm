@@ -42,7 +42,7 @@ pub fn prepend(unit: &[u8], index: usize) -> Vec<u8> {
     let cycle = index % (2 + image.len().div_ceil(32));
     let mut pad = if cycle == 0 {
         let mut label = vec![0x69, 0xf0];
-        label.extend_from_slice(b"SDR-- live");
+        label.extend_from_slice(b"SDRmm live");
         let mut pad = vec![0x82, 0];
         pad.extend_from_slice(&crc(label));
         pad.resize(18, 0);

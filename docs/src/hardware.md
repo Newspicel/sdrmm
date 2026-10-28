@@ -71,7 +71,7 @@ Making a radio? Write to [hi@jhaag.me](mailto:hi@jhaag.me) to get it supported a
 Plug it in and it appears in the **Radios** tab of every empty Device node.
 
 On Linux, install your radio's udev rules and add the server's user to the group they name, usually
-`plugdev`. Reload udev and replug the radio. SDR-- never needs root. For containers, see
+`plugdev`. Reload udev and replug the radio. SDRmm never needs root. For containers, see
 [USB devices](server/deployment.md#usb-devices).
 
 ### Network radios
@@ -159,13 +159,13 @@ Many dongles ship with the serial `00000001`. Two dongles with one serial are to
 port instead, shown with `(bus/address)` after the name, and their settings and
 [calibration](#calibration) can follow the wrong one after a replug.
 
-SDR-- asks once when it finds such a dongle. **Yes** writes a random serial, or one you type, to
+SDRmm asks once when it finds such a dongle. **Yes** writes a random serial, or one you type, to
 its EEPROM. Replug it afterwards. The dongle must be closed, and one without an EEPROM cannot keep a
 serial.
 
 ## KrakenSDR
 
-Five tuners on one clock, a Device each; KerberosSDR has four. SDR-- knows them by serial and USB
+Five tuners on one clock, a Device each; KerberosSDR has four. SDRmm knows them by serial and USB
 hub, so the vendor Pi image is not needed, and names them `KrakenSDR <hub> lane 1` to `lane 5`.
 Add a Device per lane and wire them to one [Array](user-guide/arrays.md) in antenna order. Each
 lane reports the bank it shares, so the Array takes **Shared clock** from the hardware and not from
@@ -224,14 +224,14 @@ IF gain above about 25 dB can overload it.
 
 The dongle presents itself as a sound card, so each system needs one step:
 
-- **Linux:** SDR-- reads it over raw USB and takes it from the sound and HID drivers while it is
+- **Linux:** SDRmm reads it over raw USB and takes it from the sound and HID drivers while it is
   open. The user needs access to the USB node, for example with
   `SUBSYSTEM=="usb", ATTRS{idVendor}=="04d8", ATTRS{idProduct}=="fb31", MODE="0660", GROUP="plugdev"`.
 - **Windows:** raw USB through WinUSB. In Zadig, turn on **List All Devices**, turn off **Ignore
   Hubs or Composite Parents**, pick **FUNcube Dongle V2.0 (Composite Parent)**, and install WinUSB.
   It then no longer shows up as a sound card.
 - **macOS:** samples come through Core Audio, since macOS keeps raw USB for its own driver. Allow
-  **Microphone** for SDR-- (or the terminal running `sdrmm`) in System Settings, or the node
+  **Microphone** for SDRmm (or the terminal running `sdrmm`) in System Settings, or the node
   reports silence.
 
 Tested on hardware provided by [FUNcube Dongle](https://www.funcubedongle.com). Thank you.
@@ -254,7 +254,7 @@ gap.
 | Bits | 8 or 10 bits per sample; 10 is slower over serial |
 | Burst | Samples per capture |
 
-SDR-- finds the firmware at 2 MBd, 1 MBd or 921.6 kBd. A CP2102 bridge cannot reach 1 MBd, so build
+SDRmm finds the firmware at 2 MBd, 1 MBd or 921.6 kBd. A CP2102 bridge cannot reach 1 MBd, so build
 the firmware with `CONFIG_ESP_SDR_UART_BAUD=921600` for those boards. On Linux, add the server's
 user to `dialout`.
 
@@ -264,7 +264,7 @@ prints. It needs a Gigabit link for 40 MS/s.
 
 ## AntSDR
 
-SDR-- talks to the iiod server of the AntSDR's Pluto firmware directly, with no libiio. The E310
+SDRmm talks to the iiod server of the AntSDR's Pluto firmware directly, with no libiio. The E310
 has two receive lanes on one synthesizer, so they are phase coherent. UHD firmware is not
 supported. MicroPhase ships UHD images for the E200 and E316 only; the `e310v2` target in
 antsdr_uhd is the E316 and does not run on an E310.
@@ -297,7 +297,7 @@ and TX ports in firmware, so those menus are hidden. The other controls are the
 [AD936x ones](#plutosdr-and-other-ad936x-boards).
 
 **Faster streaming:** `sdrmm-iqlinkd` runs on the board and sends samples over UDP, about 20 MS/s
-on one lane instead of 15 with iiod. SDR-- uses it by itself when it answers on port 30432, and
+on one lane instead of 15 with iiod. SDRmm uses it by itself when it answers on port 30432, and
 iiod otherwise. Install it once:
 
 ```sh
@@ -373,7 +373,7 @@ RSPduo's second tuner.
 
 The link is unencrypted `ws://`. Use it on a trusted network or through a tunnel.
 
-SDR-- receives raw IQ and does its own demodulation. Settings:
+SDRmm receives raw IQ and does its own demodulation. Settings:
 
 | Setting | Does |
 |---|---|
@@ -398,7 +398,7 @@ address in the workspace.
 A Kiwi streams 12 or 20 kHz of IQ anywhere in 0 to 30 MHz: enough for SSB, CW, AM and the
 narrowband decoders. Wider channels show the width they need. Gain is the Kiwi's AGC or a manual RF gain.
 
-Public Kiwis are shared. When one is full, kicks you, or hits its time limit, SDR-- stops and does
+Public Kiwis are shared. When one is full, kicks you, or hits its time limit, SDRmm stops and does
 not reconnect. A dropped connection is retried.
 
 ## Dragon Labs CR-8
@@ -434,7 +434,7 @@ Packaged builds load SoapySDR at runtime and work without it. The container ship
 bladeRF, LimeSDR, and SoapyRemote modules. A remote `SoapySDRServer` shows up in the normal radio
 list, through SoapyRemote.
 
-SDR-- needs SoapySDR 0.9 or 0.8 and modules built for it. For unusual install locations:
+SDRmm needs SoapySDR 0.9 or 0.8 and modules built for it. For unusual install locations:
 
 | Variable | Value |
 |---|---|
@@ -443,9 +443,9 @@ SDR-- needs SoapySDR 0.9 or 0.8 and modules built for it. For unusual install lo
 | `SOAPY_SDR_PLUGIN_PATH` | Extra module folders |
 
 `SoapySDRUtil --find` shows what SoapySDR itself sees. It knows nothing about the built-in drivers,
-which SDR-- prefers when both could open a radio.
+which SDRmm prefers when both could open a radio.
 
-SDR-- probes SoapySDR in a child process, so a crashing module cannot take it down. Set
+SDRmm probes SoapySDR in a child process, so a crashing module cannot take it down. Set
 `SDRMM_SOAPY_PROBE=in-process` to turn that off while debugging.
 
 ## Other sources

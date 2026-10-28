@@ -2,7 +2,7 @@ import apps from "./data/bench/apps.json";
 import decoders from "./data/bench/decoders.json";
 import dsp from "./data/bench/dsp.json";
 
-export const SELF = "SDR--";
+export const SELF = "SDRmm";
 
 export interface Entry {
   tool: string;

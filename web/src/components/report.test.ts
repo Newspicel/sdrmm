@@ -86,7 +86,7 @@ describe("buildBundle", () => {
       workspace: { nodes: 3, edges: 1, kinds: [{ kind: "device", count: 1 }] },
     });
 
-    expect(bundle).toContain("| SDR-- | 0.4.0 |");
+    expect(bundle).toContain("| SDRmm | 0.4.0 |");
     expect(bundle).toContain("| Platform | macos/aarch64 |");
     expect(bundle).toContain("**WARN** Device backends");
     expect(bundle).toContain("hint: rebuild with --features soapy");

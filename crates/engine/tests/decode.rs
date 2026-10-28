@@ -680,7 +680,7 @@ async fn a_meshtastic_text_survives_the_ddc_and_reaches_the_decoded_stream() {
     assert_eq!(frame.spreading_factor, 11);
     assert_eq!(frame.station().as_deref(), Some("!5d12a7c3"));
     assert!(
-        frame.summary().contains("SDR-- MESH FIXTURE"),
+        frame.summary().contains("SDRmm MESH FIXTURE"),
         "{}",
         frame.summary()
     );

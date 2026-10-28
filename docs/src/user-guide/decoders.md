@@ -77,7 +77,7 @@ radio running at that sample rate, using the middle 80%.
 
 ## Pager text
 
-Some German POCSAG networks send umlauts as `{ | } [ \ ] ~`. SDR-- converts them inside
+Some German POCSAG networks send umlauts as `{ | } [ \ ] ~`. SDRmm converts them inside
 lowercase words only: `M}nchen` becomes `München`, `Stra~e` becomes `Straße`. `[ALARM]` and
 all-caps messages stay as sent.
 

@@ -13,7 +13,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 68.50558491781044
         },
@@ -38,7 +38,7 @@
       "note": "48 runs, SNR 20 to -5 dB.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 67.7579365079365
         },
@@ -62,7 +62,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 182.3812439479947
         },
@@ -82,7 +82,7 @@
       "note": "48 runs, SNR -2 to -12 dB.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 54.166666666666664
         },
@@ -101,7 +101,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 830.8817770258635
         },
@@ -126,7 +126,7 @@
       "note": "48 runs, SNR 5 to -10 dB.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 81.25
         },
@@ -150,7 +150,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 972.0894847048572
         },
@@ -170,7 +170,7 @@
       "note": "48 runs, SNR 5 to -20 dB.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 72.91666666666667
         },
@@ -189,7 +189,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 786.0639257681324
         },
@@ -209,7 +209,7 @@
       "note": "48 runs, SNR 45 to 20 dB.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 91.66666666666667
         },
@@ -228,7 +228,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 468.42576154318095
         },
@@ -248,7 +248,7 @@
       "note": "48 runs, SNR 5 to -10 dB.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 70.83333333333333
         },
@@ -267,7 +267,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 2.0
         },
@@ -286,7 +286,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 2350.0070254320185
         },
@@ -306,7 +306,7 @@
       "note": "48 runs, SNR 30 to 5 dB.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 51.041666666666664
         },
@@ -323,10 +323,10 @@
       "title": "FT8 decodes",
       "unit": "msgs",
       "better": "higher",
-      "note": "Two SDR-- decodes are unconfirmed.",
+      "note": "Two SDRmm decodes are unconfirmed.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 21.0
         },
@@ -343,10 +343,10 @@
       "title": "FT8 speed",
       "unit": "× realtime",
       "better": "higher",
-      "note": "SDR-- re-decodes overlapping windows.",
+      "note": "SDRmm re-decodes overlapping windows.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 45.538446592510034
         },
@@ -366,7 +366,7 @@
       "note": "48 runs, SNR 20 to -5 dB.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 55.8531746031746
         },
@@ -386,7 +386,7 @@
       "note": "Counts frames carrying the call's addresses.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 5.0
         },
@@ -405,7 +405,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 368.7324520707938
         },
@@ -425,7 +425,7 @@
       "note": "48 runs, SNR 20 to 0 dB.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 80.83333333333333
         },
@@ -444,7 +444,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 424.1175322955578
         },
@@ -464,7 +464,7 @@
       "note": "48 runs, SNR 15 to -10 dB.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 66.66666666666667
         },
@@ -483,7 +483,7 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 383.9818666197497
         },
@@ -503,7 +503,7 @@
       "note": "48 runs, SNR 25 to 0 dB.",
       "results": [
         {
-          "tool": "SDR--",
+          "tool": "SDRmm",
           "version": "2.1.0-8-gee242c51-dirty",
           "value": 83.33333333333333
         },

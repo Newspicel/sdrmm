@@ -94,7 +94,7 @@ pub(crate) fn initialized<T: Pod>(context: &Context, contents: &[T]) -> wgpu::Bu
     context
         .device
         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("SDR-- data"),
+            label: Some("SDRmm data"),
             contents: bytemuck::cast_slice(contents),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         })

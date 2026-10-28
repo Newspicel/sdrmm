@@ -20,7 +20,7 @@ use crate::datv::{
 
 pub const SYMBOL_RATE: f64 = 250_000.0;
 pub const PROGRAM_NAME: &str = "Rust TV";
-pub const PROVIDER: &str = "SDR--";
+pub const PROVIDER: &str = "SDRmm";
 pub const CODE_RATE: DatvCodeRate = DatvCodeRate::ThreeQuarters;
 
 #[must_use]

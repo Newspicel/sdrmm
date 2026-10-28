@@ -601,7 +601,7 @@ jobs:
           base="$DOWNLOADS/$GITHUB_REF_NAME"
           "$RUNNER_TEMP/komac" update Newspicel.SDRmm \
             --version "$VERSION" \
-            --urls "$base/SDR--_${VERSION}_x64-setup.exe" "$base/SDR--_${VERSION}_arm64-setup.exe" \
+            --urls "$base/SDRmm_${VERSION}_x64-setup.exe" "$base/SDRmm_${VERSION}_arm64-setup.exe" \
             --release-notes-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
             --submit
 

@@ -3,11 +3,11 @@ import { releases } from "../changelog";
 import Page from "../layouts/Page.astro";
 import { REPOSITORY } from "../seo";
 
-const summary = "What changed in each SDR-- release.";
+const summary = "What changed in each SDRmm release.";
 const all = await releases();
 ---
 
-<Page title="Changelog · SDR--" description={summary} summary={summary}>
+<Page title="Changelog · SDRmm" description={summary} summary={summary}>
   <div class="wrap changelog">
     <h1>Changelog</h1>
     {

@@ -36,9 +36,9 @@ fn xng_datalink(message: &xng_mode_dsc::DscMessage) -> DataLinkMessage {
         0,
         0.0,
         xng_types::Provenance {
-            station: xng_types::StationIdentity::new("SDR--"),
+            station: xng_types::StationIdentity::new("SDRmm"),
             app: xng_types::AppInfo {
-                name: "SDR--".to_owned(),
+                name: "SDRmm".to_owned(),
                 version: String::new(),
             },
             sdr: None,

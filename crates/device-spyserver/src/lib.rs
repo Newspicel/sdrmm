@@ -28,7 +28,7 @@ mod stream;
 
 const DRIVER_ID: DeviceBackend = DeviceBackend::Spyserver;
 
-const CLIENT_NAME: &str = "SDR--";
+const CLIENT_NAME: &str = "SDRmm";
 
 #[derive(Debug, Default)]
 pub struct SpyServerDriver {

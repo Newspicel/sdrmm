@@ -883,7 +883,7 @@ struct WsStub {
 
 fn about() -> AboutResponse {
     AboutResponse {
-        name: "SDR--".to_owned(),
+        name: "SDRmm".to_owned(),
         version: "0.9.0".to_owned(),
         protocol: API_PROTOCOL,
         server_id: testing::SERVER_ID.to_owned(),

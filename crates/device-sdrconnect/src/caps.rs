@@ -237,7 +237,7 @@ pub(crate) struct Remote {
     network_mode: Option<NetworkMode>,
     profile: Option<String>,
     recording: Option<Recording>,
-    /// Whether the server was already streaming when SDR-- arrived, so stopping leaves the
+    /// Whether the server was already streaming when SDRmm arrived, so stopping leaves the
     /// operator's own session the way they left it.
     streaming: bool,
 }
@@ -296,7 +296,7 @@ impl Remote {
         batch
     }
 
-    /// Turns the IQ on, and switches off the streams SDR-- has nowhere to put.
+    /// Turns the IQ on, and switches off the streams SDRmm has nowhere to put.
     pub(crate) fn start(&self) -> Vec<Command> {
         let mut batch = self.replay();
         batch.push(Command::Emit(Event::AudioStreamEnable, flag(false)));
@@ -808,7 +808,7 @@ mod tests {
             names
                 .iter()
                 .any(|m| m.contains(r#""audio_stream_enable","property":"","value":"false""#)),
-            "the link carries IQ and nothing SDR-- would throw away: {names:?}"
+            "the link carries IQ and nothing SDRmm would throw away: {names:?}"
         );
         assert!(
             names
@@ -825,7 +825,7 @@ mod tests {
                 Event::DeviceStreamEnable,
                 "false".to_string()
             )),
-            "a receiver SDR-- started is stopped again"
+            "a receiver SDRmm started is stopped again"
         );
         remote.streaming = true;
         assert!(

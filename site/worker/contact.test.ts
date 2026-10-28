@@ -52,7 +52,7 @@ describe("contact form", () => {
       to: "hi@jhaag.me",
       from: { email: "contact@sdrmm.com" },
       replyTo: { email: "ada@example.org", name: "Ada" },
-      subject: "SDR--: Ada",
+      subject: "SDRmm: Ada",
     });
     expect(sent[0]?.text).toContain("Need a decoder.");
   });

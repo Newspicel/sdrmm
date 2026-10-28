@@ -3,7 +3,7 @@ pub(crate) const PORT: u16 = 8073;
 const MSG: &[u8] = b"MSG ";
 const SND: &[u8] = b"SND";
 const IQ_HEADER: usize = 20;
-const IDENT: &str = "SDR--";
+const IDENT: &str = "SDRmm";
 
 pub(crate) const ADC_OVERLOAD: u8 = 0x02;
 const IQ: u8 = 0x08;
@@ -340,6 +340,6 @@ mod tests {
             .encode(),
             "SET agc=0 hang=0 thresh=-100 slope=6 decay=1000 manGain=60"
         );
-        assert_eq!(Command::Ident.encode(), "SET ident_user=SDR--");
+        assert_eq!(Command::Ident.encode(), "SET ident_user=SDRmm");
     }
 }

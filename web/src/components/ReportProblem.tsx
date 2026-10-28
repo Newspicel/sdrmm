@@ -67,7 +67,7 @@ export function ReportProblem({
           <div className="flex shrink-0 items-baseline justify-between gap-4">
             <Dialog.Title className={DIALOG_TITLE}>Report a problem</Dialog.Title>
             <Dialog.Description className="legend">
-              {version.length > 0 ? `SDR-- ${version}` : "Collecting…"}
+              {version.length > 0 ? `SDRmm ${version}` : "Collecting…"}
             </Dialog.Description>
           </div>
 

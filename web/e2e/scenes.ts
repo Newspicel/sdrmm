@@ -407,7 +407,7 @@ const pocsag: Scene = {
   async ready(page) {
     await expect(
       face(page, "log")
-        .getByText(/SDR-- FIXTURE/)
+        .getByText(/SDRmm FIXTURE/)
         .first(),
     ).toBeVisible({ timeout: 60_000 });
   },

@@ -22,9 +22,9 @@ export function donationEmail(
   ];
   return {
     to: mailbox.RECORDINGS_TO,
-    from: { email: mailbox.CONTACT_FROM, name: "SDR-- recordings" },
+    from: { email: mailbox.CONTACT_FROM, name: "SDRmm recordings" },
     ...(donation.email ? { replyTo: donation.email } : {}),
-    subject: `SDR-- recording: ${donation.signal}`,
+    subject: `SDRmm recording: ${donation.signal}`,
     text: lines.join("\n"),
   };
 }

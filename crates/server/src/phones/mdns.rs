@@ -10,7 +10,7 @@ use sdrmm_wire::{
 };
 
 const MAX_INSTANCE_BYTES: usize = 63;
-const INSTANCE_PREFIX: &str = "SDR-- ";
+const INSTANCE_PREFIX: &str = "SDRmm ";
 const GOODBYE_WAIT: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Debug, PartialEq, Eq)]

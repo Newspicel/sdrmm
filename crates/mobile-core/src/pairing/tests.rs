@@ -17,7 +17,7 @@ const PHONE_ID: &str = "p0123456789abcdef";
 
 fn about(protocol: u32) -> AboutResponse {
     AboutResponse {
-        name: "SDR--".to_owned(),
+        name: "SDRmm".to_owned(),
         version: "0.9.0".to_owned(),
         protocol,
         server_id: SERVER_ID.to_owned(),
@@ -93,7 +93,7 @@ fn link(code: &str) -> String {
 
 fn discovered(fp: &str) -> DiscoveredServer {
     DiscoveredServer {
-        name: "SDR-- pi".to_owned(),
+        name: "SDRmm pi".to_owned(),
         hosts: vec![
             "[fe80::1]:8443".to_owned(),
             "192.168.1.20:8443".to_owned(),
@@ -172,7 +172,7 @@ fn a_discovered_server_is_unverified_and_keeps_its_hosts_ipv4_first() {
             .expect("offer")
             .server_name
             .as_deref(),
-        Some("SDR-- pi")
+        Some("SDRmm pi")
     );
 }
 

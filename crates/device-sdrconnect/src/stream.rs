@@ -84,7 +84,7 @@ impl SdrConnectStream {
                 tuner = self.tuner.name(),
                 bytes,
                 "SDRconnect is sending {} for this tuner although the stream was switched off; \
-                 SDR-- demodulates from the IQ and is discarding it",
+                 SDRmm demodulates from the IQ and is discarding it",
                 match kind {
                     PayloadKind::Audio => "demodulated audio",
                     PayloadKind::Spectrum => "spectrum bins",
@@ -176,7 +176,7 @@ impl CaptureStream for SdrConnectStream {
                 None => {
                     if !self.noted.unknown.swap(true, Ordering::Relaxed) {
                         tracing::warn!(
-                            "SDRconnect sent a binary payload type SDR-- does not know; skipping it"
+                            "SDRconnect sent a binary payload type SDRmm does not know; skipping it"
                         );
                     }
                     Next::Idle

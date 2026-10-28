@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/icon.svg" alt="SDR-- logo" width="96" height="96">
+  <img src="assets/icon.svg" alt="SDRmm logo" width="96" height="96">
 </p>
 
-# SDR--
+# SDRmm
 
 A software-defined radio application for listening, decoding, and recording. Connect radios,
 channels, and displays in **Patch** view, then pin your everyday controls to **Rack** view.

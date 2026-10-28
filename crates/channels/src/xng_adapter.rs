@@ -5,9 +5,9 @@ use crate::datalink::{self, Quality};
 
 pub fn provenance() -> Provenance {
     Provenance {
-        station: StationIdentity::new("SDR--"),
+        station: StationIdentity::new("SDRmm"),
         app: AppInfo {
-            name: "SDR--".to_owned(),
+            name: "SDRmm".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
         },
         sdr: None,

@@ -195,7 +195,7 @@ async fn serve_until_stopped(config: Config, engine: std::sync::Arc<Engine>) -> 
     let handle = serve(config, engine.clone())
         .await
         .context("failed to start server")?;
-    tracing::info!(url = %format!("{}://{}", handle.scheme, handle.local_addr), "SDR-- ready");
+    tracing::info!(url = %format!("{}://{}", handle.scheme, handle.local_addr), "SDRmm ready");
 
     tokio::select! {
         res = handle.join() => res.context("server task failed")?,

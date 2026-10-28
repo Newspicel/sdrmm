@@ -171,11 +171,11 @@ mod tests {
 
     #[test]
     fn multimon_lines_are_read_per_mode() {
-        let out = "APRS: DL1ABC-9>APRS:!x\nPOCSAG1200: Address: 1234567  Function: 3  Alpha:   SDR-- FIXTURE<NUL>\nAFSK1200: fm";
+        let out = "APRS: DL1ABC-9>APRS:!x\nPOCSAG1200: Address: 1234567  Function: 3  Alpha:   SDRmm FIXTURE<NUL>\nAFSK1200: fm";
         assert_eq!(multimon_aprs(out), ["DL1ABC-9>APRS:!x"]);
         assert_eq!(
             multimon_pocsag(out),
-            ["POCSAG1200: Address: 1234567  Function: 3  Alpha:   SDR-- FIXTURE"]
+            ["POCSAG1200: Address: 1234567  Function: 3  Alpha:   SDRmm FIXTURE"]
         );
     }
 

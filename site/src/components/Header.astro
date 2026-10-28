@@ -6,7 +6,7 @@ const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" 
 
 <header class="bar">
   <div class="wrap">
-    <a class="mark" href="/"><img src="/icon.svg" alt="" width="24" height="24" />SDR--</a>
+    <a class="mark" href="/"><img src="/icon.svg" alt="" width="24" height="24" />SDRmm</a>
     <nav class="links" aria-label="Main">
       <ul>
         {PRIMARY.map((link) => <li><a href={link.href} aria-current={current(link.href)}>{link.label}</a></li>)}

@@ -112,7 +112,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
   desktopItems = [
     (makeDesktopItem {
       name = "sdrmm-desktop";
-      desktopName = "SDR--";
+      desktopName = "SDRmm";
       comment = "Software-defined radio receiver";
       exec = "sdrmm-desktop";
       icon = "dev.newspicel.sdrmm";

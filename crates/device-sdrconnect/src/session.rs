@@ -98,7 +98,7 @@ pub(crate) fn interrogate(socket: &WebSocket, tuner: Tuner) -> Result<Snapshot, 
                     }
                 }
                 Ok(_) => {}
-                Err(e) => tracing::debug!("SDRconnect sent a message SDR-- skipped: {e}"),
+                Err(e) => tracing::debug!("SDRconnect sent a message SDRmm skipped: {e}"),
             },
             Incoming::Binary(_) | Incoming::Idle => {}
             Incoming::Ended => {

@@ -1,5 +1,5 @@
 name: Feature request
-description: Something SDR-- should be able to do and cannot.
+description: Something SDRmm should be able to do and cannot.
 labels: ["enhancement"]
 body:
   - type: textarea

@@ -115,7 +115,7 @@ On the emulator, the server on your computer is `10.0.2.2`. Move the phone with
    "$ANDROID_HOME/extras/google/auto/desktop-head-unit"
    ```
 
-4. Open SDR-- from the head unit's launcher. Type `day` or `night` in the head unit console to
+4. Open SDRmm from the head unit's launcher. Type `day` or `night` in the head unit console to
    switch the map style.
 
 Check that **Missions** lists over the map, the DF panel updates about once a second,

@@ -559,7 +559,7 @@ fn stopping_asks_the_server_for_no_more_iq_and_leaves_the_receiver_as_it_found_i
         )
         .then_some(())
     });
-    eventually("a receiver SDR-- started to be stopped again", || {
+    eventually("a receiver SDRmm started to be stopped again", || {
         saw(
             &observed,
             CAPTURING,

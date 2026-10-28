@@ -4,7 +4,7 @@ pub(super) use crate::gpu::{compute::*, fft::*};
 pub(crate) fn storage(context: &Context, count: usize) -> wgpu::Buffer {
     buffer(
         &context.device,
-        "SDR-- storage",
+        "SDRmm storage",
         count as u64 * 4,
         wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
     )
@@ -21,7 +21,7 @@ impl Readback {
         Self {
             buffer: buffer(
                 &context.device,
-                "SDR-- readback",
+                "SDRmm readback",
                 bytes,
                 wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             ),

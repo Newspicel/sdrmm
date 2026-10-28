@@ -67,7 +67,7 @@ object Samples {
     )
 
     fun discovered(
-        name: String = "SDR-- bench",
+        name: String = "SDRmm bench",
         id: String = "s1",
     ): DiscoveredServer = DiscoveredServer(
         name = name,

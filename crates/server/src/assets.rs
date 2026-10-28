@@ -94,9 +94,9 @@ fn accepts_gzip(headers: &HeaderMap) -> bool {
         })
 }
 
-const NOT_BUILT: &str = "<!doctype html><meta charset=utf-8><title>SDR--</title>\
+const NOT_BUILT: &str = "<!doctype html><meta charset=utf-8><title>SDRmm</title>\
 <body style=\"font-family:system-ui;background:#0b0e14;color:#c8d3e0;padding:3rem\">\
-<h1>SDR-- server is running</h1>\
+<h1>SDRmm server is running</h1>\
 <p>The web UI has not been built yet. Run <code>cargo xtask dev</code> for the dev server, \
 or <code>cargo xtask codegen &amp;&amp; pnpm -C web build</code> to embed it.</p>";
 

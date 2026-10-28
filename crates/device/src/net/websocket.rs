@@ -345,7 +345,7 @@ impl WebSocket {
                 };
                 if bytes.len() + block.len() > frame::MAX_PAYLOAD {
                     return self.broken(format!(
-                        "a fragmented WebSocket message exceeds the {} SDR-- will buffer",
+                        "a fragmented WebSocket message exceeds the {} SDRmm will buffer",
                         frame::MAX_PAYLOAD
                     ));
                 }
@@ -532,7 +532,7 @@ mod tests {
         let got = drain(&socket, 1);
         assert!(
             matches!(&got[0], Incoming::Text(text) if text == "beat"),
-            "the server saw the pong SDR-- sent back: {got:?}"
+            "the server saw the pong SDRmm sent back: {got:?}"
         );
     }
 

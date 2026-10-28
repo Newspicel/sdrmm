@@ -50,7 +50,7 @@ export function buildBundle(input: BundleInput): string {
 function environmentSection(input: BundleInput): string {
   const doctor = input.diagnostics?.doctor;
   const rows: [string, string][] = [
-    ["SDR--", input.version || "unknown"],
+    ["SDRmm", input.version || "unknown"],
     ["Platform", doctor?.platform ?? "unknown"],
     ["Browser", input.userAgent || "unknown"],
     ["Collected", input.diagnostics?.generated_at ?? new Date().toISOString()],

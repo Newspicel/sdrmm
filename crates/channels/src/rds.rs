@@ -676,8 +676,8 @@ mod tests {
     fn station() -> TxStation {
         TxStation {
             pi: 0xD3C2,
-            ps: "SDR--FM".to_owned(),
-            radiotext: "SDR-- reference transmission".to_owned(),
+            ps: "SDRmmFM".to_owned(),
+            radiotext: "SDRmm reference transmission".to_owned(),
             pty: 10,
             tp: true,
             ta: false,
@@ -797,7 +797,7 @@ mod tests {
             );
             let update = last_update(&events);
             assert_eq!(update.pi.as_deref(), Some("D3C2"), "skip {skip}");
-            assert_eq!(update.ps.as_deref(), Some("SDR--FM"), "skip {skip}");
+            assert_eq!(update.ps.as_deref(), Some("SDRmmFM"), "skip {skip}");
         }
     }
 
@@ -851,10 +851,10 @@ mod tests {
         let (_, events) = drive(&bits_of(&tx_groups(&station(), 40)));
         let update = last_update(&events);
         assert_eq!(update.pi.as_deref(), Some("D3C2"));
-        assert_eq!(update.ps.as_deref(), Some("SDR--FM"));
+        assert_eq!(update.ps.as_deref(), Some("SDRmmFM"));
         assert_eq!(
             update.radiotext.as_deref(),
-            Some("SDR-- reference transmission")
+            Some("SDRmm reference transmission")
         );
         assert_eq!(update.pty, Some(10));
         assert_eq!(update.pty_name.as_deref(), Some("Pop Music"));
@@ -918,10 +918,10 @@ mod tests {
             decoder.groups
         );
         let update = last_update(&events);
-        assert_eq!(update.ps.as_deref(), Some("SDR--FM"));
+        assert_eq!(update.ps.as_deref(), Some("SDRmmFM"));
         assert_eq!(
             update.radiotext.as_deref(),
-            Some("SDR-- reference transmission")
+            Some("SDRmm reference transmission")
         );
         assert!(
             update.block_errors > 0,
@@ -1064,10 +1064,10 @@ mod tests {
         );
         let update = last_update(&events);
         assert_eq!(update.pi.as_deref(), Some("D3C2"));
-        assert_eq!(update.ps.as_deref(), Some("SDR--FM"));
+        assert_eq!(update.ps.as_deref(), Some("SDRmmFM"));
         assert_eq!(
             update.radiotext.as_deref(),
-            Some("SDR-- reference transmission")
+            Some("SDRmm reference transmission")
         );
         assert_eq!(update.pty_name.as_deref(), Some("Pop Music"));
         assert_eq!(update.tp, Some(true));
@@ -1093,10 +1093,10 @@ mod tests {
         );
         let update = last_update(&events);
         assert_eq!(update.pi.as_deref(), Some("D3C2"));
-        assert_eq!(update.ps.as_deref(), Some("SDR--FM"));
+        assert_eq!(update.ps.as_deref(), Some("SDRmmFM"));
         assert_eq!(
             update.radiotext.as_deref(),
-            Some("SDR-- reference transmission")
+            Some("SDRmm reference transmission")
         );
         assert_eq!(decoder.frames.block_errors, 0);
     }
@@ -1107,10 +1107,10 @@ mod tests {
         let mpx = composite(&station(), 12.0, Some(1_000.0), RATE);
         let events = run(&mut decoder, &over_the_air(&mpx, 0.25));
         let update = last_update(&events);
-        assert_eq!(update.ps.as_deref(), Some("SDR--FM"));
+        assert_eq!(update.ps.as_deref(), Some("SDRmmFM"));
         assert_eq!(
             update.radiotext.as_deref(),
-            Some("SDR-- reference transmission")
+            Some("SDRmm reference transmission")
         );
         let (blocks, errors) = (decoder.frames.blocks_read, decoder.frames.block_errors);
         assert!(blocks > 500, "only {blocks} blocks read");

@@ -104,7 +104,7 @@ flags, and short text from the event become fields.
 
 DAB IP services and DVB-S2 GSE carry IP packets. Wire the channel's `events` to an
 **Event output**, choose **Network interface**, and set **Interface**, **IPv4**, and **Prefix**.
-SDR-- creates a TUN interface and writes the packets to it.
+SDRmm creates a TUN interface and writes the packets to it.
 
 | System | Needs |
 |---|---|

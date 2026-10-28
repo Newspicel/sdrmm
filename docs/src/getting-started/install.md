@@ -15,7 +15,7 @@ sits somewhere else and you connect from a browser. Both run the same receiver.
 
 ## Desktop app
 
-Download the installer from the [download page](/download) and open SDR--. The app starts
+Download the installer from the [download page](/download) and open SDRmm. The app starts
 its own server on a random port only this computer can reach. For a fixed port or access from
 other devices, run the [server](#portable-server) instead.
 

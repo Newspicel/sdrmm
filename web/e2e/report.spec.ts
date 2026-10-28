@@ -36,7 +36,7 @@ test("reporting a problem collects the diagnostics and prefills a GitHub issue",
   const bundle = dialog.locator("pre");
   await expect(bundle).toContainText("### Environment");
   await expect(bundle).toContainText("### Diagnostics");
-  await expect(bundle).toContainText("| SDR-- |");
+  await expect(bundle).toContainText("| SDRmm |");
 
   await expect(bundle).not.toContainText("### Workspace");
   await dialog.getByRole("checkbox", { name: "Include the workspace shape" }).click();

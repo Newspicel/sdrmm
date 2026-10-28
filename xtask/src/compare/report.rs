@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
-pub const SELF: &str = "SDR--";
+pub const SELF: &str = "SDRmm";
 
 pub fn ours(tool: &str) -> bool {
     tool.starts_with(SELF)
@@ -250,10 +250,10 @@ mod tests {
 
     #[test]
     fn every_sdrmm_variant_is_ours() {
-        assert!(ours("SDR-- app"));
+        assert!(ours("SDRmm app"));
         assert!(ours(SELF));
         assert!(!ours("SDR++"));
-        assert!(validate(&suite("SDR-- headless", 1.0)).is_ok());
+        assert!(validate(&suite("SDRmm headless", 1.0)).is_ok());
     }
 
     #[test]

@@ -68,4 +68,4 @@ sample counts and packet-fragmentation invariance. They are not AAC bit-exact co
 
 `slideshow.png` is an original 8 × 8 RGB image filled with (240, 60, 30), encoded using Python's
 stdlib zlib and PNG chunk CRCs. The DAB generator carries it through CRC-protected MOT header
-and body segments alongside the UTF-8 dynamic label `SDR-- live`, inside AAC data-stream elements.
+and body segments alongside the UTF-8 dynamic label `SDRmm live`, inside AAC data-stream elements.
