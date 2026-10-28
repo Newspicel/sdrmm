@@ -235,7 +235,11 @@ mod tests {
     const PATTERN_LAGS: f64 = -1.0;
     const PATTERN_LEADS: f64 = 1.0;
     const PERF_SECONDS: f64 = 5.0;
-    const MIN_REALTIME_SPEEDUP: f64 = 320.0;
+    /// What the name of the test promises: comfortably ahead of the channel rate, the same margin
+    /// the rest of the crate's throughput gates keep. Hosted runners read 280x to 1000x here, so a
+    /// floor set near a workstation's reading gates the runner rather than the code. The size of
+    /// the drop is caught by the per-host `channel_perf` baseline, which carries a `vor` row.
+    const MIN_REALTIME_SPEEDUP: f64 = 10.0;
 
     fn annex_10_conventional_vor(
         bearing_deg: f64,
