@@ -51,7 +51,9 @@ impl FakeServer {
     }
 
     /// Starts one whose port only answers once `away` has passed, the way a server that is
-    /// restarting or still letting go of its last client does not answer yet.
+    /// restarting or still letting go of its last client does not answer yet. The port closes
+    /// before this returns, so a client dialling during `away` is refused rather than accepted
+    /// into a backlog the thread is about to drop, which would reset it mid-greeting.
     ///
     /// # Panics
     /// If the loopback interface cannot be bound.
@@ -59,17 +61,23 @@ impl FakeServer {
         away: Duration,
         handle: impl Fn(TcpStream, usize) + Send + Sync + 'static,
     ) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
-        let addr = listener.local_addr().expect("a bound address");
+        let bound = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let addr = bound.local_addr().expect("a bound address");
         let connections = Arc::new(AtomicUsize::new(0));
         let counted = connections.clone();
+        let waiting = if away.is_zero() {
+            Some(bound)
+        } else {
+            drop(bound);
+            None
+        };
         std::thread::spawn(move || {
-            let listener = if away.is_zero() {
-                listener
-            } else {
-                drop(listener);
-                std::thread::sleep(away);
-                TcpListener::bind(addr).expect("rebind loopback")
+            let listener = match waiting {
+                Some(listener) => listener,
+                None => {
+                    std::thread::sleep(away);
+                    TcpListener::bind(addr).expect("rebind loopback")
+                }
             };
             let handle = Arc::new(handle);
             for stream in listener.incoming().flatten() {
