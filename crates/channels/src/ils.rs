@@ -186,7 +186,9 @@ mod tests {
     const LOCALIZER_FULL_SCALE_DOTS: f32 = 2.5;
     const GLIDEPATH_FULL_SCALE_DOTS: f32 = 2.0;
     const PERF_SECONDS: f64 = 5.0;
-    const MIN_REALTIME_SPEEDUP: f64 = 800.0;
+    /// Hosted runners read 500x to 1000x here, so the floor sits at VOR's rather than at a fast
+    /// workstation's reading. A regression is caught by the per-host `channel_perf` baseline.
+    const MIN_REALTIME_SPEEDUP: f64 = 320.0;
 
     fn two_tone_am(depth_90: f32, depth_150: f32, seconds: usize) -> Vec<Complex<f32>> {
         (0..RATE as usize * seconds)
