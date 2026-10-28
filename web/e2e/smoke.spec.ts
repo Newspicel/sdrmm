@@ -103,6 +103,7 @@ test.describe("the workspace", () => {
       route.fulfill({
         json: {
           devices: [{ driver: "virtual", key: "band", label: "Test band (virtual)" }],
+          synthetic: true,
         },
       }),
     );
@@ -154,10 +155,11 @@ test.describe("the workspace", () => {
     await receiver.getByRole("button", { name: /test band/i }).click();
     await expect(receiver.locator('[id^="frequency-dial"]')).toBeVisible();
 
-    await addNode(page, "Recording");
-    const library = page.locator('.react-flow__node[data-id^="recording:"]');
+    await addNode(page, "Device");
+    const library = page.locator('.react-flow__node[data-id^="device:"]').last();
     await expect(library).toBeVisible();
     await activate(library);
+    await library.getByRole("button", { name: "Recording" }).click();
     await expect(library.getByRole("button", { name: /Upload SigMF/i })).toBeVisible();
     await library.getByRole("searchbox", { name: "Search recordings" }).fill("099");
     const capture = library.getByRole("button", { name: /Tower watch/i });
@@ -165,7 +167,7 @@ test.describe("the workspace", () => {
     await expect(capture).toContainText("100.0000 MHz · 2.048 MS/s · 2.0 s · 32.8 MB");
     await expect(capture).toHaveAttribute("title", /RTL-SDR 00000001 · capture-099 · #airband$/);
     await expect(library.getByRole("button", { name: /capture-000/i })).toHaveCount(0);
-    await library.getByRole("button", { name: "Remove Recording" }).click();
+    await library.getByRole("button", { name: "Remove Device" }).click();
     await expect(library).toHaveCount(0);
     await activate(receiver);
 

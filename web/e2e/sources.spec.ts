@@ -5,7 +5,7 @@ async function pickGenerator(page: Page) {
   await addNode(page, "Device");
   const device = page.locator('.react-flow__node[data-id^="device:"]').last();
   await device.locator("header").click();
-  await device.getByRole("radio", { name: /Virtual/ }).click();
+  await device.getByRole("button", { name: /^Virtual/ }).click();
   await device.getByRole("button", { name: "Signal generator" }).click();
   return device;
 }
@@ -14,7 +14,7 @@ async function pickRecording(page: Page) {
   await addNode(page, "Device");
   const device = page.locator('.react-flow__node[data-id^="device:"]').last();
   await device.locator("header").click();
-  await device.getByRole("radio", { name: "Recording" }).click();
+  await device.getByRole("button", { name: "Recording" }).click();
   return device;
 }
 
@@ -84,6 +84,6 @@ test.describe("the source nodes", () => {
     await device.locator("header").click();
     const source = device.getByRole("group", { name: "Radio source" });
     await expect(source).toBeVisible();
-    await expect(source.getByRole("radio", { name: "Recording" })).toBeVisible();
+    await expect(source.getByRole("button", { name: "Recording" })).toBeVisible();
   });
 });
