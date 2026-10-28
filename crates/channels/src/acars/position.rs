@@ -100,18 +100,14 @@ fn parse_deg_min(field: &str, deg_digits: usize) -> Option<f64> {
     Some(deg + min / 60.0)
 }
 
+fn first_field(text: &str) -> Option<&str> {
+    Some(text.strip_prefix("POS")?.split(',').next()?.trim())
+}
+
 pub fn decode(label: &str, text: &str) -> Option<Position> {
     match label {
-        "20" => {
-            let body = text.strip_prefix("POS")?;
-            let first = body.split(',').next()?;
-            decode_scaled(first)
-        }
-        "H1" => {
-            let body = text.strip_prefix("POS")?;
-            let first = body.split(',').next()?;
-            decode_decimal_minutes(first)
-        }
+        "20" => decode_scaled(first_field(text)?),
+        "H1" => decode_decimal_minutes(first_field(text)?),
         "4J" => decode_4j(text),
         _ => None,
     }
@@ -210,6 +206,13 @@ mod tests {
             "lon {}",
             p.longitude
         );
+    }
+
+    #[test]
+    fn label_20_pos_with_a_separating_space() {
+        let p = decode("20", "POS N38160W077075,,211733,360,OTT").unwrap();
+        assert!(close(p.latitude, 38.160), "lat {}", p.latitude);
+        assert!(close(p.longitude, -77.075), "lon {}", p.longitude);
     }
 
     #[test]

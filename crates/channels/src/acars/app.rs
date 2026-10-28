@@ -35,6 +35,17 @@ pub enum AcarsApp {
     Airline5z(airline5z::Airline5z),
 }
 
+impl AcarsApp {
+    /// A position the application layer already carries, for labels whose free text holds none.
+    /// A failed envelope CRC means the coordinates are guesses, so they stay off the map.
+    fn position(&self) -> Option<position::Position> {
+        match self {
+            Self::Adsc { envelope, message } if envelope.crc_ok => message.reported_position(),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct AppDecode {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -86,7 +97,8 @@ pub fn decode(label: &str, text: &str, downlink: bool) -> AppDecode {
     };
 
     out.oooi = oooi::decode(label, text);
-    out.position = position::decode(label, text);
+    out.position =
+        position::decode(label, body).or_else(|| out.app.as_ref().and_then(AcarsApp::position));
     out.met = met::decode(label, text);
     out
 }

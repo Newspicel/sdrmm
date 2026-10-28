@@ -6,6 +6,7 @@ use super::{
     *,
 };
 use crate::hfdl::systable::{GroundStation, GsFrequency, build_gs_record, build_systable_hfnpdus};
+use crate::testutil::without_fields_xng_drops;
 
 fn parse(parser: &mut PduParser, payload: &[u8], bps: u32) -> Vec<HfdlEvent> {
     let mut out = Vec::new();
@@ -473,7 +474,9 @@ fn parser_matches_xng() {
             assert_eq!(a.details, b.details);
             assert_eq!(a.raw, b.raw);
             assert_eq!(
-                serde_json::to_value(&a.acars).ok(),
+                serde_json::to_value(&a.acars)
+                    .ok()
+                    .map(without_fields_xng_drops),
                 serde_json::to_value(&b.acars).ok()
             );
         }

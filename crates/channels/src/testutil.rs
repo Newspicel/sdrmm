@@ -277,3 +277,30 @@ pub(crate) const THROUGHPUT_ATTEMPTS: usize = 5;
 pub(crate) fn fastest_seconds(attempts: usize, mut timed: impl FnMut() -> f64) -> f64 {
     (0..attempts).map(|_| timed()).fold(f64::INFINITY, f64::min)
 }
+
+/// The ACARS fields xng has no equivalent of, so an equivalence check compares what xng claims
+/// to decode and leaves our own decodes to the tests that cover them.
+pub(crate) fn without_fields_xng_drops(mut value: serde_json::Value) -> serde_json::Value {
+    if let Some(object) = value.as_object_mut() {
+        for field in ["oooi", "position", "met"] {
+            object.remove(field);
+        }
+    }
+    drop_hex_damaged(&mut value);
+    value
+}
+
+/// ARINC 622 notes damaged hex that xng reports in its own shape, so it never takes part in an
+/// equivalence check.
+pub(crate) fn drop_hex_damaged(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(object) => {
+            object.remove("hex_damaged");
+            for nested in object.values_mut() {
+                drop_hex_damaged(nested);
+            }
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(drop_hex_damaged),
+        _ => {}
+    }
+}

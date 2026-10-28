@@ -1,4 +1,5 @@
 use crate::acars::bits::{BitReader, sign_extend};
+use crate::acars::position::Position;
 use serde::Serialize;
 
 fn coordinate(v: u32) -> f64 {
@@ -218,6 +219,18 @@ pub struct AdscMessage {
 }
 
 impl AdscMessage {
+    /// Where the aircraft said it is. Predicted-route and fixed-projection tags name where it
+    /// expects to be, so they never answer this.
+    pub fn reported_position(&self) -> Option<Position> {
+        self.tags.iter().find_map(|tag| match tag {
+            AdscTag::Report(report) => Some(Position {
+                latitude: report.lat,
+                longitude: report.lon,
+            }),
+            _ => None,
+        })
+    }
+
     #[cfg(test)]
     pub fn summary(&self) -> Option<String> {
         for t in &self.tags {

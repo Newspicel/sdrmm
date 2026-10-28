@@ -5,6 +5,7 @@ use super::{
     reasm::{Reasm, Reassembler},
     summary,
 };
+use crate::testutil::{drop_hex_damaged, without_fields_xng_drops};
 
 const SAMPLES: &[(&str, &str)] = &[
     (
@@ -248,26 +249,10 @@ fn to_json<T: serde::Serialize>(value: &T) -> Value {
     serde_json::to_value(value).unwrap()
 }
 
-fn drop_hex_damaged(value: &mut Value) {
-    match value {
-        Value::Object(object) => {
-            object.remove("hex_damaged");
-            for nested in object.values_mut() {
-                drop_hex_damaged(nested);
-            }
-        }
-        Value::Array(items) => items.iter_mut().for_each(drop_hex_damaged),
-        _ => {}
-    }
-}
-
-fn without_fields_xng_drops(mut value: Value) -> Value {
+fn without_position(mut value: Value) -> Value {
     if let Some(object) = value.as_object_mut() {
-        for field in ["oooi", "position", "met"] {
-            object.remove(field);
-        }
+        object.remove("position");
     }
-    drop_hex_damaged(&mut value);
     value
 }
 
@@ -297,14 +282,16 @@ fn blocks_keep_the_decodes_xng_drops() {
     assert!(xng_acars::block::parse(&octets).is_some());
 }
 
+/// xng reads a position only out of the free text of an unprefixed label, so the comparison
+/// leaves that field to `decodes_keep_the_positions_xng_drops`.
 fn assert_decode_matches(label: &str, text: &str, downlink: bool) {
     let ours = decode(label, text, downlink);
     let theirs = xng_acars::decode(label, text, downlink);
     let mut ours_json = to_json(&ours);
     drop_hex_damaged(&mut ours_json);
     assert_eq!(
-        ours_json,
-        to_json(&theirs),
+        without_position(ours_json),
+        without_position(to_json(&theirs)),
         "decode {label} {text:?} downlink={downlink}"
     );
     assert_eq!(
@@ -418,6 +405,31 @@ fn generated_samples() -> Vec<(&'static str, String)> {
         ("MA", miam::testing::deflated_data_pdu(&[0, 1, 2, 255])),
         ("MA", miam::testing::plain_data_pdu("HELLO FILE WORLD")),
     ]
+}
+
+#[test]
+fn decodes_keep_the_positions_xng_drops() {
+    let sublabelled = decode("H1", "#M1BPOSN43312W123174,EASON,215754,370", true);
+    let position = sublabelled
+        .position
+        .expect("an H1 report behind a sublabel");
+    assert!((position.latitude - 43.52).abs() < 0.001, "{position:?}");
+    assert!((position.longitude + 123.29).abs() < 0.001, "{position:?}");
+
+    let adsc = decode(
+        "B6",
+        "/BOMASAI.ADS.VT-ANB072501A070A988CA73248F0E5DC10200000F5EE1ABC000102B885E0A19F5",
+        true,
+    );
+    let position = adsc.position.expect("an ADS-C basic report");
+    assert!(
+        (position.latitude - 52.040_176).abs() < 1e-5,
+        "{position:?}"
+    );
+    assert!(
+        (position.longitude - 19.803_886).abs() < 1e-5,
+        "{position:?}"
+    );
 }
 
 #[test]

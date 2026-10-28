@@ -644,6 +644,38 @@ mod tests {
     }
 
     #[test]
+    fn an_h1_position_report_behind_a_sublabel_reaches_the_map() {
+        let report = Block {
+            label: "H1",
+            text: "#M1BPOSN43312W123174,EASON,215754,370,EBINY,220601,ELENN,M48,02216,185",
+            ..downlink()
+        };
+        let (_, messages) = framed(&[report]);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        let message = &messages[0];
+        let (lat, lon) = (message.lat.expect("lat"), message.lon.expect("lon"));
+        assert!((lat - 43.52).abs() < 0.001, "{lat}");
+        assert!((lon + 123.29).abs() < 0.001, "{lon}");
+    }
+
+    #[test]
+    fn an_adsc_basic_report_reaches_the_map() {
+        let report = Block {
+            label: "B6",
+            seq_no: Some("M11A"),
+            flight: Some("AI0142"),
+            text: "/BOMASAI.ADS.VT-ANB072501A070A988CA73248F0E5DC10200000F5EE1ABC000102B885E0A19F5",
+            ..downlink()
+        };
+        let (_, messages) = framed(&[report]);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        let message = &messages[0];
+        let (lat, lon) = (message.lat.expect("lat"), message.lon.expect("lon"));
+        assert!((lat - 52.040_176).abs() < 1e-5, "{lat}");
+        assert!((lon - 19.803_886).abs() < 1e-5, "{lon}");
+    }
+
+    #[test]
     fn two_blocks_reassemble_into_one_payload() {
         let first = Block {
             block_id: '2',
