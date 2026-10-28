@@ -1,6 +1,6 @@
 import type { Options } from "../../components/controls";
 import type { AutocompleteSuggestion } from "../../components/TextAutocomplete";
-import type { SerialDeviceInfo, PositionSource } from "../../lib/types";
+import type { PositionSource, SerialDeviceInfo } from "../../lib/types";
 
 export type GpsTab = "receiver" | "network" | "fixed" | "phone";
 

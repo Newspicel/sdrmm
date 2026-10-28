@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelDescriptor, PatchCatalog } from "../lib/types";
-import { CATALOG as WIRE_CATALOG, catalogBody, catalogShape } from "../test/catalog";
+import { catalogBody, catalogShape, CATALOG as WIRE_CATALOG } from "../test/catalog";
 import {
   channelPicker,
   decoderGroups,

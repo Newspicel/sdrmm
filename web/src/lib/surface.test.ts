@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import fixtures from "../generated/frame-fixtures.json";
+import fixtures from "../generated/frame-fixtures.json" with { type: "json" };
 import type { RangeDopplerFrame } from "./frame";
 import { ListenerRegistry } from "./listeners";
 import { refusalText, type SurfaceFrame, SurfaceHub, type SurfaceSocket } from "./surface";

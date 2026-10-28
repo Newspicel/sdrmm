@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import limits from "../generated/limits.json";
+import limits from "../generated/limits.json" with { type: "json" };
 import type { ChannelSettings, WorkspaceDetail } from "../lib/types";
 import { savedChannelsOf, withSavedChannel } from "./savedChannels";
 

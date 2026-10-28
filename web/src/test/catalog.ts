@@ -1,4 +1,4 @@
-import catalog from "../generated/catalog-fixture.json";
+import catalog from "../generated/catalog-fixture.json" with { type: "json" };
 import type { NodeBody, NodeKind, NodeTypeInfo, PatchCatalog, PortSpec } from "../lib/types";
 
 export const CATALOG = catalog as unknown as PatchCatalog;

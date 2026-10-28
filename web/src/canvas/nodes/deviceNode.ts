@@ -26,9 +26,7 @@ export function isRecordingRef(reference: DeviceRef): boolean {
 }
 
 export function isGeneratorRef(reference: DeviceRef): boolean {
-  return (
-    reference.backend === "virtual" && (reference.key?.startsWith(GENERATOR_PREFIX) ?? false)
-  );
+  return reference.backend === "virtual" && (reference.key?.startsWith(GENERATOR_PREFIX) ?? false);
 }
 
 export function recordingRef(stem: string): DeviceRef {

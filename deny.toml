@@ -23,14 +23,6 @@ ignore = [
     # by nothing in the graph: glib is the only crate here that so much as names the type, and
     # it reaches us only through the Linux desktop shell. Drop this the day tauri ships gtk4.
     { id = "RUSTSEC-2024-0429", reason = "glib::VariantStrIter is unreachable here, and no fixed version exists below glib 0.20 / gtk4" },
-    # `zip` 4.6.1 is the newest version that can exist in this graph: the fix landed in 9.0.0 and
-    # tauri-plugin-updater 2.13.1, the newest release, pins zip 4 as a Windows-only dependency.
-    # All three advisories need a hostile archive, and the only `ZipArchive::extract` call in the
-    # graph is the Windows updater's, which runs on a payload after `verify_signature` has checked
-    # it against the app's embedded minisign key. Drop these the day the plugin moves to zip 9.
-    { id = "RUSTSEC-2026-0367", reason = "zip reaches us only through the Windows updater, which extracts nothing it has not verified, and no fixed version exists below zip 9" },
-    { id = "RUSTSEC-2026-0368", reason = "zip reaches us only through the Windows updater, which extracts nothing it has not verified, and no fixed version exists below zip 9" },
-    { id = "RUSTSEC-2026-0369", reason = "zip reaches us only through the Windows updater, which extracts nothing it has not verified, and no fixed version exists below zip 9" },
 ]
 
 [licenses]

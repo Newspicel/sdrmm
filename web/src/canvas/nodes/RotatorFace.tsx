@@ -21,7 +21,7 @@ import type {
 } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { serialDetail, nmeaSuggestion, validHostPort } from "./gpsSource";
+import { nmeaSuggestion, serialDetail, validHostPort } from "./gpsSource";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 import {
   AZIMUTH_RANGES,

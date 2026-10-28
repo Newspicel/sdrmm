@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import labels from "../generated/labels.json";
+import labels from "../generated/labels.json" with { type: "json" };
 import { omitNodes } from "./byNode";
 import type {
   ArrayFailure,

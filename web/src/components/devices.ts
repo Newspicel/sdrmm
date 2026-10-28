@@ -1,4 +1,4 @@
-import backends from "../generated/backends.json";
+import backends from "../generated/backends.json" with { type: "json" };
 import type { DeviceBackend, DeviceClaim, DeviceInfo, DevicesResponse } from "../lib/types";
 import type { Options } from "./controls";
 

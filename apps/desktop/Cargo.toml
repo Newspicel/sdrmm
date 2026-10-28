@@ -38,13 +38,13 @@ sdrmm-engine.workspace = true
 sdrmm-device-soapy = { workspace = true, optional = true }
 anyhow.workspace = true
 tauri = { version = "2.12", features = [] }
-tauri-plugin-updater = { version = "2.13", default-features = false, features = ["zip", "system-proxy"] }
+tauri-plugin-updater = { version = "2.14", default-features = false, features = ["zip", "system-proxy"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2.5.1"
+tauri-plugin-notification = "2.8.0"
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "net"] }
 tracing.workspace = true
-tauri-plugin-opener = "2.7.0"
+tauri-plugin-opener = "2.7.2"
 
 [dev-dependencies]
 tempfile.workspace = true

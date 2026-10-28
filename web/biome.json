@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
   "root": false,
   "extends": "//",
   "files": {
@@ -8,6 +8,8 @@
       "!**/src/generated/**",
       "!dist/**",
       "!node_modules/**",
+      "!pnpm-lock.yaml",
+      "!pnpm-workspace.yaml",
       "!test-results/**",
       "!playwright-report/**",
       "!.e2e-tmp/**"

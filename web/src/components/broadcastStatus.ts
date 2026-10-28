@@ -1,4 +1,4 @@
-import labels from "../generated/labels.json";
+import labels from "../generated/labels.json" with { type: "json" };
 import type { BroadcastStatus } from "../lib/types";
 
 type Fact = readonly [string, string];

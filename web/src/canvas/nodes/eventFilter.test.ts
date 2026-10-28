@@ -9,10 +9,10 @@ import {
   offeredBy,
   parseIds,
   parseWords,
-  textLength,
   predicatesFor,
   sectionsFor,
   stationLabel,
+  textLength,
   toTriState,
 } from "./eventFilter";
 

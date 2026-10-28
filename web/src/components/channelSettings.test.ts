@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import wire from "../generated/limits.json";
+import wire from "../generated/limits.json" with { type: "json" };
 import type {
   AudioProcessing,
   ChannelDescriptor,

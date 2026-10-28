@@ -11,8 +11,8 @@ import {
   filterNmeaDevices,
   type GpsTab,
   gpsTabs,
-  serialDetail,
   nmeaSource,
+  serialDetail,
   validHostPort,
 } from "./gpsSource";
 

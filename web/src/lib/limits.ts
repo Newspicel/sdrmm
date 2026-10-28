@@ -1,4 +1,4 @@
-import limits from "../generated/limits.json";
+import limits from "../generated/limits.json" with { type: "json" };
 
 export interface Bounds {
   min: number;

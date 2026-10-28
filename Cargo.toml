@@ -90,7 +90,7 @@ repository = "https://github.com/newspicel/sdrmm"
 rust-version = "1.99"
 
 [workspace.dependencies]
-tun-rs = { version = "2.8.11", features = ["async"] }
+tun-rs = { version = "2.8.15", features = ["async"] }
 sdrmm-test-support = { path = "crates/test-support" }
 # Internal crates
 sdrmm-wire = { path = "crates/wire" }
@@ -129,7 +129,7 @@ sdrmm-server = { path = "crates/server", default-features = false }
 xtask-release = { path = "xtask/release" }
 
 # Async runtime / web
-tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net"] }
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net"] }
 axum = { version = "0.8", features = ["ws", "multipart"] }
 # TLS termination for `--tls-*`. `tls-rustls-no-provider` keeps the crypto provider ours to pick.
 axum-server = { version = "0.8", default-features = false, features = ["tls-rustls-no-provider"] }
@@ -144,9 +144,9 @@ url = "2.5.8"
 tokio-postgres = { version = "0.7.18", default-features = false, features = ["runtime"] }
 tokio-postgres-rustls = "0.14"
 rustls-platform-verifier = "0.7"
-rustls-webpki = { version = "0.103.15", default-features = false }
+rustls-webpki = { version = "0.103.16", default-features = false }
 rustls-pki-types = { version = "1.15.1", default-features = false }
-mdns-sd = "0.21.4"
+mdns-sd = "0.21.6"
 gethostname = "1.1.0"
 getrandom = "0.4.3"
 tokio-tungstenite = "0.30"
@@ -155,7 +155,7 @@ serialport = { version = "4.10.1", default-features = false }
 
 # MCP server (, §18): streamable HTTP mounted on the same axum app. `schemars` derives
 # the tool argument schemas and must match the version rmcp itself depends on.
-rmcp = { version = "3.5", features = ["server", "macros", "transport-streamable-http-server"] }
+rmcp = { version = "3.8", features = ["server", "macros", "transport-streamable-http-server"] }
 schemars = "1.2"
 
 # Serde + OpenAPI
@@ -168,7 +168,7 @@ mime_guess = "2"
 # Device backends
 # Reads the USB bus without opening devices, so a hotplug check cannot disturb a running stream
 # or wake the vendor SoapySDR modules.
-nusb = "0.2.7"
+nusb = "0.2.9"
 # SoapySDR, the SDRplay API and the CR-8 library are all resolved at runtime from wherever their
 # installers put them, so nothing here links or ships them and a machine without one simply
 # reports no hardware of that kind.
@@ -177,10 +177,10 @@ libloading = "0.9"
 # DSP
 num-complex = { version = "0.4", features = ["bytemuck"] }
 rustfft = "6"
-tract-onnx = { version = "0.23.8", default-features = false }
-tract-nnef = "0.23.8"
+tract-onnx = { version = "0.23.9", default-features = false }
+tract-nnef = "0.23.9"
 realfft = "3"
-mfsk-core = { version = "0.13.1", default-features = false, features = ["std", "fft-rustfft", "ft8", "ft4", "wspr", "internal-testing"] }
+mfsk-core = { version = "0.14.0", default-features = false, features = ["std", "fft-rustfft", "ft8", "ft4", "wspr", "internal-testing"] }
 xng-mode-dsc = { git = "https://github.com/airframesio/xng", rev = "096c805278faa0a904de7d98066bf4cf395cb6c2" }
 xng-mode-stdc = { git = "https://github.com/airframesio/xng", rev = "096c805278faa0a904de7d98066bf4cf395cb6c2" }
 xng-mode-aero = { git = "https://github.com/airframesio/xng", rev = "096c805278faa0a904de7d98066bf4cf395cb6c2" }
@@ -203,7 +203,7 @@ symphonia-bundle-mp3 = { version = "0.6.1", default-features = false, features =
 ffmpeg-the-third = { version = "6.0.0", default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
 
 # Persistence
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 jiff = "0.2"
 dirs = "7"
 
@@ -234,7 +234,7 @@ qrcodegen = "1.8.0"
 # Errors / logging / util
 libc = "0.2"
 socket2 = { version = "0.6", features = ["all"] }
-rustix = { version = "1.1.5", default-features = false, features = ["std", "fs", "process", "thread"] }
+rustix = { version = "1.1.6", default-features = false, features = ["std", "fs", "process", "thread"] }
 thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
@@ -242,14 +242,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 arc-swap = "1"
 clap = { version = "4", features = ["derive", "env"] }
 # Cross-platform file events for `cargo xtask dev`; xtask only.
-notify = "8.2.0"
+notify = "8.2.1"
 
 # Scoped temp dirs for filesystem tests (SigMF IO, recordings REST); dev-dependency only.
 tempfile = "3"
 
 criterion = "0.8"
 
-resvg = { version = "0.48", default-features = false }
+resvg = { version = "0.49", default-features = false }
 
 # PNG encoding for the captured-picture store; the same version resvg already pulls in.
 png = { version = "0.18", default-features = false }

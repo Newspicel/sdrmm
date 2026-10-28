@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import limits from "../../generated/limits.json";
+import limits from "../../generated/limits.json" with { type: "json" };
 import { JitterBuffer } from "./jitter";
 import { MAX_FRAMES, SAMPLE_RATE, TARGET_FRAMES } from "./worklet";
 

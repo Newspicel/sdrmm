@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import channelDefaults from "../generated/channel-defaults.json";
+import channelDefaults from "../generated/channel-defaults.json" with { type: "json" };
 import type { ChannelParams, ParamChoice } from "../lib/types";
 import { loraKeysShown } from "./LoraKeysChip";
 import { bandwidthOptions, ModeChips, serviceOptions } from "./ModeChips";

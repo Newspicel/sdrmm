@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import catalog from "../../generated/catalog-fixture.json";
+import catalog from "../../generated/catalog-fixture.json" with { type: "json" };
 import { DECODER_PANELS, MODE_CHIPS } from "./index";
 
 const KINDS = new Set((catalog.event_kinds as { kind: string }[]).map((entry) => entry.kind));

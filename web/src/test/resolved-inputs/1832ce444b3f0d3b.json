@@ -73,9 +73,7 @@
             "steer": {
               "kind": "wired"
             },
-            "nulls_deg": [
-              45
-            ],
+            "nulls_deg": [45],
             "auto_nulls": false,
             "main_lane": 0,
             "reference_lanes": [],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import fixtures from "../generated/frame-fixtures.json";
+import fixtures from "../generated/frame-fixtures.json" with { type: "json" };
 import {
   decodeAudio,
   decodeFusionGrid,

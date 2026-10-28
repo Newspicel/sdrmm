@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
   "root": false,
   "extends": "//",
   "files": {
@@ -7,6 +7,8 @@
       "**",
       "!dist/**",
       "!node_modules/**",
+      "!pnpm-lock.yaml",
+      "!pnpm-workspace.yaml",
       "!.astro/**",
       "!.wrangler/**",
       "!worker/worker-configuration.d.ts",

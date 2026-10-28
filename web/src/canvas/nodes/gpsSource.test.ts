@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   filterNmeaDevices,
   gpsTabs,
-  serialDetail,
   nmeaSource,
   nmeaSuggestion,
+  serialDetail,
   validHostPort,
 } from "./gpsSource";
 

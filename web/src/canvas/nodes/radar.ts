@@ -1,5 +1,5 @@
 import type { Options } from "../../components/controls";
-import labels from "../../generated/labels.json";
+import labels from "../../generated/labels.json" with { type: "json" };
 import { GATE_TEXT } from "../../lib/arrays";
 import type { RangeDopplerFrame } from "../../lib/frame";
 import { LIGHT_SPEED_M_S, RADAR_LIMITS } from "../../lib/limits";

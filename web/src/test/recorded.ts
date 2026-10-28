@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect } from "vitest";
-import fixtures from "../generated/resolved-fixtures.json";
+import fixtures from "../generated/resolved-fixtures.json" with { type: "json" };
 import type { DeviceSet, PatchGraph, ResolvedPatch } from "../lib/types";
 import { resolvedPatch } from "./resolved";
 

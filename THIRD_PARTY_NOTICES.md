@@ -4,11 +4,12 @@
 
 SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 
-## Rust crates (800)
+## Rust crates (790)
 
 | Component | Version | License |
 | --- | --- | --- |
 | [adler2](https://github.com/oyvindln/adler2) | 2.0.1 | 0BSD OR MIT OR Apache-2.0 |
+| [ahash](https://github.com/tkaitchuck/ahash) | 0.8.12 | MIT OR Apache-2.0 |
 | [aho-corasick](https://github.com/BurntSushi/aho-corasick) | 1.1.5 | Unlicense OR MIT |
 | [alloc-no-stdlib](https://github.com/dropbox/rust-alloc-no-stdlib) | 3.0.0 | BSD-3-Clause |
 | [alloc-stdlib](https://github.com/dropbox/rust-alloc-no-stdlib) | 0.3.0 | BSD-3-Clause |
@@ -20,8 +21,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [anstyle-query](https://github.com/rust-cli/anstyle.git) | 1.1.5 | MIT OR Apache-2.0 |
 | [anstyle-wincon](https://github.com/rust-cli/anstyle.git) | 3.0.11 | MIT OR Apache-2.0 |
 | [anyhow](https://github.com/dtolnay/anyhow) | 1.0.104 | MIT OR Apache-2.0 |
-| [arbitrary](https://github.com/rust-fuzz/arbitrary/) | 1.4.2 | MIT OR Apache-2.0 |
-| [arc-swap](https://github.com/vorner/arc-swap) | 1.9.2 | MIT OR Apache-2.0 |
+| [arc-swap](https://github.com/vorner/arc-swap) | 1.9.3 | MIT OR Apache-2.0 |
 | [arrayvec](https://github.com/bluss/arrayvec) | 0.7.8 | MIT OR Apache-2.0 |
 | [ash](https://github.com/ash-rs/ash) | 0.38.0+1.3.281 | MIT OR Apache-2.0 |
 | [askama](https://github.com/askama-rs/askama) | 0.16.1 | MIT OR Apache-2.0 |
@@ -33,12 +33,12 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [asn1-rs-impl](https://github.com/rusticata/asn1-rs.git) | 0.2.0 | MIT/Apache-2.0 |
 | [async-broadcast](https://github.com/smol-rs/async-broadcast) | 0.7.2 | MIT OR Apache-2.0 |
 | [async-channel](https://github.com/smol-rs/async-channel) | 2.5.0 | Apache-2.0 OR MIT |
-| [async-compression](https://github.com/Nullus157/async-compression) | 0.4.50 | MIT OR Apache-2.0 |
+| [async-compression](https://github.com/Nullus157/async-compression) | 0.4.51 | MIT OR Apache-2.0 |
 | [async-executor](https://github.com/smol-rs/async-executor) | 1.14.0 | Apache-2.0 OR MIT |
 | [async-io](https://github.com/smol-rs/async-io) | 2.6.0 | Apache-2.0 OR MIT |
 | [async-lock](https://github.com/smol-rs/async-lock) | 3.4.2 | Apache-2.0 OR MIT |
 | [async-process](https://github.com/smol-rs/async-process) | 2.5.0 | Apache-2.0 OR MIT |
-| [async-recursion](https://github.com/dcchut/async-recursion) | 1.1.1 | MIT OR Apache-2.0 |
+| [async-recursion](https://github.com/dcchut/async-recursion) | 1.2.0 | MIT OR Apache-2.0 |
 | [async-signal](https://github.com/smol-rs/async-signal) | 0.2.14 | Apache-2.0 OR MIT |
 | [async-task](https://github.com/smol-rs/async-task) | 4.7.1 | Apache-2.0 OR MIT |
 | [async-trait](https://github.com/dtolnay/async-trait) | 0.1.92 | MIT OR Apache-2.0 |
@@ -47,8 +47,8 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [atk-sys](https://github.com/gtk-rs/gtk3-rs) | 0.18.2 | MIT |
 | [atomic-waker](https://github.com/smol-rs/atomic-waker) | 1.1.2 | Apache-2.0 OR MIT |
 | [autocfg](https://github.com/cuviper/autocfg) | 1.5.1 | Apache-2.0 OR MIT |
-| [aws-lc-rs](https://github.com/aws/aws-lc-rs) | 1.18.1 | ISC AND (Apache-2.0 OR ISC) |
-| [aws-lc-sys](https://github.com/aws/aws-lc-rs) | 0.45.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) |
+| [aws-lc-rs](https://github.com/aws/aws-lc-rs) | 1.18.2 | ISC AND (Apache-2.0 OR ISC) |
+| [aws-lc-sys](https://github.com/aws/aws-lc-rs) | 0.46.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) |
 | [axum](https://github.com/tokio-rs/axum) | 0.8.9 | MIT |
 | [axum-core](https://github.com/tokio-rs/axum) | 0.5.6 | MIT |
 | [axum-macros](https://github.com/tokio-rs/axum) | 0.5.1 | MIT |
@@ -70,8 +70,8 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [block-buffer](https://github.com/RustCrypto/utils) | 0.12.1 | MIT OR Apache-2.0 |
 | [block2](https://github.com/madsmtm/objc2) | 0.6.2 | MIT |
 | [blocking](https://github.com/smol-rs/blocking) | 1.7.0 | Apache-2.0 OR MIT |
-| [brotli](https://github.com/dropbox/rust-brotli) | 9.0.0 | BSD-3-Clause AND MIT |
-| [brotli-decompressor](https://github.com/dropbox/rust-brotli-decompressor) | 6.0.1 | BSD-3-Clause/MIT |
+| [brotli](https://github.com/dropbox/rust-brotli) | 9.1.1 | BSD-3-Clause AND MIT |
+| [brotli-decompressor](https://github.com/dropbox/rust-brotli-decompressor) | 6.2.0 | BSD-3-Clause/MIT |
 | [bs58](https://github.com/Nullus157/bs58-rs) | 0.5.1 | MIT/Apache-2.0 |
 | [bumpalo](https://github.com/fitzgen/bumpalo) | 3.20.3 | MIT OR Apache-2.0 |
 | [bytemuck](https://github.com/Lokathor/bytemuck) | 1.25.2 | Zlib OR Apache-2.0 OR MIT |
@@ -86,7 +86,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [cargo_metadata](https://github.com/oli-obk/cargo_metadata) | 0.19.2 | MIT |
 | [cargo_metadata](https://github.com/oli-obk/cargo_metadata) | 0.23.1 | MIT |
 | [cargo_toml](https://gitlab.com/lib.rs/cargo_toml) | 1.0.1 | Apache-2.0 OR MIT |
-| [cc](https://github.com/rust-lang/cc-rs) | 1.5.1 | MIT OR Apache-2.0 |
+| [cc](https://github.com/rust-lang/cc-rs) | 1.10.0 | MIT OR Apache-2.0 |
 | [cesu8](https://github.com/emk/cesu8-rs) | 1.1.0 | Apache-2.0/MIT |
 | [cexpr](https://github.com/jethrogb/rust-cexpr) | 0.6.0 | Apache-2.0/MIT |
 | [cfb](https://github.com/mdsteele/rust-cfb) | 0.14.0 | MIT |
@@ -106,9 +106,9 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [codec2](https://github.com/scriptjunkie/codec2) | 0.3.1 | LGPL-2.1-only AND MIT |
 | [codespan-reporting](https://github.com/brendanzab/codespan) | 0.13.1 | Apache-2.0 |
 | [colorchoice](https://github.com/rust-cli/anstyle.git) | 1.0.5 | MIT OR Apache-2.0 |
-| [combine](https://github.com/Marwes/combine) | 4.6.8 | MIT |
-| [compression-codecs](https://github.com/Nullus157/async-compression) | 0.4.45 | MIT OR Apache-2.0 |
-| [compression-core](https://github.com/Nullus157/async-compression) | 0.4.33 | MIT OR Apache-2.0 |
+| [combine](https://github.com/Marwes/combine) | 4.6.9 | MIT |
+| [compression-codecs](https://github.com/Nullus157/async-compression) | 0.4.46 | MIT OR Apache-2.0 |
+| [compression-core](https://github.com/Nullus157/async-compression) | 0.4.34 | MIT OR Apache-2.0 |
 | [concurrent-queue](https://github.com/smol-rs/concurrent-queue) | 2.5.0 | Apache-2.0 OR MIT |
 | [const-oid](https://github.com/RustCrypto/formats) | 0.10.2 | Apache-2.0 OR MIT |
 | [const-oid](https://github.com/RustCrypto/formats/tree/master/const-oid) | 0.9.6 | Apache-2.0 OR MIT |
@@ -121,7 +121,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [core_detect](https://github.com/thomcc/core_detect) | 1.0.0 | MIT/Apache-2.0 |
 | [cpufeatures](https://github.com/RustCrypto/utils) | 0.2.17 | MIT OR Apache-2.0 |
 | [cpufeatures](https://github.com/RustCrypto/utils) | 0.3.1 | MIT OR Apache-2.0 |
-| [crc32fast](https://github.com/srijs/rust-crc32fast) | 1.5.2 | MIT OR Apache-2.0 |
+| [crc32fast](https://github.com/srijs/rust-crc32fast) | 1.5.3 | MIT OR Apache-2.0 |
 | [crossbeam-channel](https://github.com/crossbeam-rs/crossbeam) | 0.5.17 | MIT OR Apache-2.0 |
 | [crossbeam-utils](https://github.com/crossbeam-rs/crossbeam) | 0.8.23 | MIT OR Apache-2.0 |
 | [crunchy](https://github.com/eira-fransham/crunchy) | 0.2.4 | MIT |
@@ -130,7 +130,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [cssparser](https://github.com/servo/rust-cssparser) | 0.37.0 | MPL-2.0 |
 | [cssparser-macros](https://github.com/servo/rust-cssparser) | 0.7.1 | MPL-2.0 |
 | [ctor](https://github.com/mmastrac/linktime) | 1.0.13 | Apache-2.0 OR MIT |
-| [ctutils](https://github.com/RustCrypto/utils) | 0.4.2 | Apache-2.0 OR MIT |
+| [ctutils](https://github.com/RustCrypto/utils) | 0.4.6 | Apache-2.0 OR MIT |
 | [darling](https://github.com/TedDriggs/darling) | 0.20.11 | MIT |
 | [darling](https://github.com/TedDriggs/darling) | 0.24.1 | MIT |
 | [darling_core](https://github.com/TedDriggs/darling) | 0.20.11 | MIT |
@@ -139,14 +139,13 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [darling_macro](https://github.com/TedDriggs/darling) | 0.24.1 | MIT |
 | [data-encoding](https://github.com/ia0/data-encoding) | 2.11.1 | MIT |
 | [dbus](https://github.com/diwic/dbus-rs) | 0.9.12 | Apache-2.0/MIT |
-| [defmt](https://github.com/knurling-rs/defmt) | 1.1.1 | MIT OR Apache-2.0 |
-| [defmt-macros](https://github.com/knurling-rs/defmt) | 1.1.1 | MIT OR Apache-2.0 |
-| [defmt-parser](https://github.com/knurling-rs/defmt) | 1.0.0 | MIT OR Apache-2.0 |
+| [defmt](https://github.com/knurling-rs/defmt) | 1.2.0 | MIT OR Apache-2.0 |
+| [defmt-macros](https://github.com/knurling-rs/defmt) | 1.2.0 | MIT OR Apache-2.0 |
+| [defmt-parser](https://github.com/knurling-rs/defmt) | 1.1.0 | MIT OR Apache-2.0 |
 | [der](https://github.com/RustCrypto/formats/tree/master/der) | 0.7.10 | Apache-2.0 OR MIT |
 | [der-parser](https://github.com/rusticata/der-parser.git) | 10.0.0 | MIT OR Apache-2.0 |
 | [der_derive](https://github.com/RustCrypto/formats/tree/master/der/derive) | 0.7.3 | Apache-2.0 OR MIT |
-| [deranged](https://github.com/jhpratt/deranged) | 0.5.8 | MIT OR Apache-2.0 |
-| [derive_arbitrary](https://github.com/rust-fuzz/arbitrary) | 1.4.2 | MIT OR Apache-2.0 |
+| [deranged](https://github.com/jhpratt/deranged) | 0.5.9 | MIT OR Apache-2.0 |
 | [derive_builder](https://github.com/colin-kiegel/rust-derive-builder) | 0.20.2 | MIT OR Apache-2.0 |
 | [derive_builder_core](https://github.com/colin-kiegel/rust-derive-builder) | 0.20.2 | MIT OR Apache-2.0 |
 | [derive_builder_macro](https://github.com/colin-kiegel/rust-derive-builder) | 0.20.2 | MIT OR Apache-2.0 |
@@ -168,15 +167,15 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [dtoa-short](https://github.com/upsuper/dtoa-short) | 0.3.5 | MPL-2.0 |
 | [dunce](https://gitlab.com/kornelski/dunce) | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
 | [dyn-clone](https://github.com/dtolnay/dyn-clone) | 1.0.20 | MIT OR Apache-2.0 |
-| [either](https://github.com/rayon-rs/either) | 1.18.0 | MIT OR Apache-2.0 |
-| [embed-resource](https://github.com/nabijaczleweli/rust-embed-resource) | 3.0.11 | MIT |
+| [either](https://github.com/rayon-rs/either) | 1.19.0 | MIT OR Apache-2.0 |
+| [embed-resource](https://github.com/nabijaczleweli/rust-embed-resource) | 3.0.12 | MIT |
 | [embed_plist](https://github.com/nvzqz/embed-plist-rs) | 1.2.2 | MIT OR Apache-2.0 |
 | [encoding_rs](https://github.com/hsivonen/encoding_rs) | 0.8.42 | (Apache-2.0 OR MIT) AND BSD-3-Clause |
 | [endi](https://github.com/zeenix/endi) | 1.1.1 | MIT |
 | [enumflags2](https://github.com/meithecatte/enumflags2) | 0.7.12 | MIT OR Apache-2.0 |
 | [enumflags2_derive](https://github.com/meithecatte/enumflags2) | 0.7.12 | MIT OR Apache-2.0 |
-| [equivalent](https://github.com/indexmap-rs/equivalent) | 1.0.2 | Apache-2.0 OR MIT |
-| [erased-serde](https://github.com/dtolnay/erased-serde) | 0.4.10 | MIT OR Apache-2.0 |
+| [equivalent](https://github.com/indexmap-rs/equivalent) | 1.0.3 | Apache-2.0 OR MIT |
+| [erased-serde](https://github.com/dtolnay/erased-serde) | 0.4.11 | MIT OR Apache-2.0 |
 | [errno](https://github.com/lambda-fairy/rust-errno) | 0.3.14 | MIT OR Apache-2.0 |
 | [event-listener](https://github.com/smol-rs/event-listener) | 5.4.2 | Apache-2.0 OR MIT |
 | [event-listener-strategy](https://github.com/smol-rs/event-listener-strategy) | 0.5.4 | Apache-2.0 OR MIT |
@@ -189,7 +188,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [ffmpeg-the-third](https://github.com/shssoichiro/ffmpeg-the-third) | 6.0.0+ffmpeg-9.0 | WTFPL |
 | [field-offset](https://github.com/Diggsey/rust-field-offset) | 0.3.6 | MIT OR Apache-2.0 |
 | [filetime](https://github.com/alexcrichton/filetime) | 0.2.29 | MIT/Apache-2.0 |
-| [find-msvc-tools](https://github.com/rust-lang/cc-rs) | 0.1.14 | MIT OR Apache-2.0 |
+| [find-msvc-tools](https://github.com/rust-lang/cc-rs) | 0.1.15 | MIT OR Apache-2.0 |
 | [fixedbitset](https://github.com/petgraph/fixedbitset) | 0.5.7 | MIT OR Apache-2.0 |
 | [flagset](https://github.com/enarx/flagset) | 0.4.7 | Apache-2.0 |
 | [flate2](https://github.com/rust-lang/flate2-rs) | 1.1.10 | MIT OR Apache-2.0 |
@@ -200,7 +199,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [foreign-types-macros](https://github.com/sfackler/foreign-types) | 0.2.4 | MIT/Apache-2.0 |
 | [foreign-types-shared](https://github.com/sfackler/foreign-types) | 0.3.1 | MIT/Apache-2.0 |
 | [form_urlencoded](https://github.com/servo/rust-url) | 1.2.2 | MIT OR Apache-2.0 |
-| [fs-err](https://github.com/andrewhickman/fs-err) | 3.3.1 | MIT OR Apache-2.0 |
+| [fs-err](https://github.com/andrewhickman/fs-err) | 3.3.2 | MIT OR Apache-2.0 |
 | [fs_extra](https://github.com/webdesus/fs_extra) | 1.3.0 | MIT |
 | [futures](https://github.com/rust-lang/futures-rs) | 0.3.34 | MIT OR Apache-2.0 |
 | [futures-channel](https://github.com/rust-lang/futures-rs) | 0.3.34 | MIT OR Apache-2.0 |
@@ -241,7 +240,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [gtk](https://github.com/gtk-rs/gtk3-rs) | 0.18.2 | MIT |
 | [gtk-sys](https://github.com/gtk-rs/gtk3-rs) | 0.18.2 | MIT |
 | [gtk3-macros](https://github.com/gtk-rs/gtk3-rs) | 0.18.2 | MIT |
-| [h2](https://github.com/hyperium/h2) | 0.4.19 | MIT |
+| [h2](https://github.com/hyperium/h2) | 0.4.20 | MIT |
 | [half](https://github.com/VoidStarKat/half-rs) | 2.7.1 | MIT OR Apache-2.0 |
 | [hashbrown](https://github.com/rust-lang/hashbrown) | 0.12.3 | MIT OR Apache-2.0 |
 | [hashbrown](https://github.com/rust-lang/hashbrown) | 0.16.1 | MIT OR Apache-2.0 |
@@ -259,19 +258,19 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [httparse](https://github.com/seanmonstar/httparse) | 1.10.1 | MIT OR Apache-2.0 |
 | [httpdate](https://github.com/pyfisch/httpdate) | 1.0.3 | MIT OR Apache-2.0 |
 | [hybrid-array](https://github.com/RustCrypto/hybrid-array) | 0.4.15 | MIT OR Apache-2.0 |
-| [hyper](https://github.com/hyperium/hyper) | 1.11.1 | MIT |
+| [hyper](https://github.com/hyperium/hyper) | 1.12.0 | MIT |
 | [hyper-rustls](https://github.com/rustls/hyper-rustls) | 0.27.10 | Apache-2.0 OR ISC OR MIT |
 | [hyper-util](https://github.com/hyperium/hyper-util) | 0.1.21 | MIT |
 | [iana-time-zone](https://github.com/strawlab/iana-time-zone) | 0.1.65 | MIT OR Apache-2.0 |
 | [iana-time-zone-haiku](https://github.com/strawlab/iana-time-zone) | 0.1.2 | MIT OR Apache-2.0 |
-| [ico](https://github.com/mdsteele/rust-ico) | 0.5.0 | MIT |
-| [icu_collections](https://github.com/unicode-org/icu4x) | 2.3.0 | Unicode-3.0 |
-| [icu_locale_core](https://github.com/unicode-org/icu4x) | 2.3.0 | Unicode-3.0 |
-| [icu_normalizer](https://github.com/unicode-org/icu4x) | 2.3.0 | Unicode-3.0 |
-| [icu_normalizer_data](https://github.com/unicode-org/icu4x) | 2.3.0 | Unicode-3.0 |
-| [icu_properties](https://github.com/unicode-org/icu4x) | 2.3.0 | Unicode-3.0 |
-| [icu_properties_data](https://github.com/unicode-org/icu4x) | 2.3.0 | Unicode-3.0 |
-| [icu_provider](https://github.com/unicode-org/icu4x) | 2.3.1 | Unicode-3.0 |
+| [ico](https://github.com/mdsteele/rust-ico) | 0.6.0 | MIT |
+| [icu_collections](https://github.com/unicode-org/icu4x) | 2.4.0 | Unicode-3.0 |
+| [icu_locale_core](https://github.com/unicode-org/icu4x) | 2.4.0 | Unicode-3.0 |
+| [icu_normalizer](https://github.com/unicode-org/icu4x) | 2.4.0 | Unicode-3.0 |
+| [icu_normalizer_data](https://github.com/unicode-org/icu4x) | 2.4.0 | Unicode-3.0 |
+| [icu_properties](https://github.com/unicode-org/icu4x) | 2.4.0 | Unicode-3.0 |
+| [icu_properties_data](https://github.com/unicode-org/icu4x) | 2.4.0 | Unicode-3.0 |
+| [icu_provider](https://github.com/unicode-org/icu4x) | 2.4.0 | Unicode-3.0 |
 | [ident_case](https://github.com/TedDriggs/ident_case) | 1.0.1 | MIT/Apache-2.0 |
 | [idna](https://github.com/servo/rust-url/) | 1.1.0 | MIT OR Apache-2.0 |
 | [idna_adapter](https://github.com/hsivonen/idna_adapter) | 1.2.2 | Apache-2.0 OR MIT |
@@ -289,10 +288,10 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [itoa](https://github.com/dtolnay/itoa) | 1.0.18 | MIT OR Apache-2.0 |
 | [javascriptcore-rs](https://github.com/tauri-apps/javascriptcore-rs) | 1.1.2 | MIT |
 | [javascriptcore-rs-sys](https://github.com/tauri-apps/javascriptcore-rs) | 1.1.1 | MIT |
-| [jiff](https://github.com/BurntSushi/jiff) | 0.2.37 | Unlicense OR MIT |
+| [jiff](https://github.com/BurntSushi/jiff) | 0.2.38 | Unlicense OR MIT |
 | [jiff-core](https://github.com/BurntSushi/jiff) | 0.1.1 | Unlicense OR MIT |
-| [jiff-static](https://github.com/BurntSushi/jiff) | 0.2.37 | Unlicense OR MIT |
-| [jiff-tzdb](https://github.com/BurntSushi/jiff) | 0.1.8 | Unlicense OR MIT |
+| [jiff-static](https://github.com/BurntSushi/jiff) | 0.2.38 | Unlicense OR MIT |
+| [jiff-tzdb](https://github.com/BurntSushi/jiff) | 0.1.9 | Unlicense OR MIT |
 | [jiff-tzdb-platform](https://github.com/BurntSushi/jiff) | 0.1.3 | Unlicense OR MIT |
 | [jni](https://github.com/jni-rs/jni-rs) | 0.21.1 | MIT/Apache-2.0 |
 | [jni](https://github.com/jni-rs/jni-rs) | 0.22.4 | MIT OR Apache-2.0 |
@@ -307,20 +306,20 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [keyboard-types](https://github.com/rust-windowing/keyboard-types) | 0.8.3 | MIT OR Apache-2.0 |
 | [khronos-egl](https://github.com/timothee-haudebourg/khronos-egl) | 6.0.0 | MIT/Apache-2.0 |
 | [khronos_api](https://github.com/brendanzab/gl-rs/) | 3.1.0 | Apache-2.0 |
-| [lazy_static](https://github.com/rust-lang-nursery/lazy-static.rs) | 1.5.0 | MIT OR Apache-2.0 |
+| [lazy_static](https://github.com/rust-lang-nursery/lazy-static.rs) | 1.5.1 | MIT OR Apache-2.0 |
 | libappindicator | 0.9.0 | Apache-2.0 OR MIT |
 | libappindicator-sys | 0.9.0 | Apache-2.0 OR MIT |
-| [libc](https://github.com/rust-lang/libc) | 0.2.189 | MIT OR Apache-2.0 |
+| [libc](https://github.com/rust-lang/libc) | 0.2.191 | MIT OR Apache-2.0 |
 | [libdbus-sys](https://github.com/diwic/dbus-rs) | 0.2.7 | Apache-2.0/MIT |
 | [libloading](https://github.com/nagisa/rust_libloading/) | 0.7.4 | ISC |
 | [libloading](https://github.com/nagisa/rust_libloading/) | 0.8.9 | ISC |
 | [libloading](https://github.com/nagisa/rust_libloading/) | 0.9.0 | ISC |
 | [libm](https://github.com/rust-lang/compiler-builtins) | 0.2.16 | MIT |
 | [libredox](https://gitlab.redox-os.org/redox-os/libredox.git) | 0.1.25 | MIT |
-| [libsqlite3-sys](https://github.com/rusqlite/rusqlite) | 0.38.2 | MIT |
+| [libsqlite3-sys](https://github.com/rusqlite/rusqlite) | 0.39.1 | MIT |
 | [linux-raw-sys](https://github.com/sunfishcode/linux-raw-sys) | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [litemap](https://github.com/unicode-org/icu4x) | 0.8.3 | Unicode-3.0 |
-| [litrs](https://github.com/LukasKalbertodt/litrs) | 1.0.0 | MIT OR Apache-2.0 |
+| [litrs](https://github.com/LukasKalbertodt/litrs) | 1.0.1 | MIT OR Apache-2.0 |
 | [local-ip-address](https://github.com/LeoBorai/local-ip-address) | 0.6.13 | MIT OR Apache-2.0 |
 | [lock_api](https://github.com/Amanieu/parking_lot) | 0.4.14 | MIT OR Apache-2.0 |
 | [log](https://github.com/rust-lang/log) | 0.4.34 | MIT OR Apache-2.0 |
@@ -332,16 +331,16 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [matchers](https://github.com/hawkw/matchers) | 0.2.0 | MIT |
 | [matchit](https://github.com/ibraheemdev/matchit) | 0.8.4 | MIT AND BSD-3-Clause |
 | [md-5](https://github.com/RustCrypto/hashes) | 0.11.0 | MIT OR Apache-2.0 |
-| [mdns-sd](https://github.com/keepsimple1/mdns-sd) | 0.21.4 | Apache-2.0 OR MIT |
+| [mdns-sd](https://github.com/keepsimple1/mdns-sd) | 0.21.6 | Apache-2.0 OR MIT |
 | [memchr](https://github.com/BurntSushi/memchr) | 2.8.3 | Unlicense OR MIT |
 | [memoffset](https://github.com/Gilnaa/memoffset) | 0.9.1 | MIT |
 | [mime](https://github.com/hyperium/mime) | 0.3.17 | MIT OR Apache-2.0 |
 | [mime_guess](https://github.com/abonander/mime_guess) | 2.0.5 | MIT |
 | [minimal-lexical](https://github.com/Alexhuszagh/minimal-lexical) | 0.2.1 | MIT/Apache-2.0 |
-| [minisign-verify](https://github.com/jedisct1/rust-minisign-verify) | 0.2.5 | MIT |
+| [minisign-verify](https://github.com/jedisct1/rust-minisign-verify) | 0.3.0 | MIT |
 | [miniz_oxide](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
 | [miniz_oxide](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) | 0.9.1 | MIT OR Zlib OR Apache-2.0 |
-| [mio](https://github.com/tokio-rs/mio) | 1.2.3 | MIT |
+| [mio](https://github.com/tokio-rs/mio) | 1.2.4 | MIT |
 | [mio-serial](https://github.com/berkowski/mio-serial) | 5.0.7 | MIT |
 | [mqttbytes-core-next](https://github.com/thehouseisonfire/rumqtt) | 0.34.0 | Apache-2.0 |
 | [muda](https://github.com/tauri-apps/muda) | 0.20.0 | Apache-2.0 OR MIT |
@@ -352,13 +351,15 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [ndk](https://github.com/rust-mobile/ndk) | 0.9.0 | MIT OR Apache-2.0 |
 | [ndk-context](https://github.com/rust-windowing/android-ndk-rs) | 0.1.1 | MIT OR Apache-2.0 |
 | [ndk-sys](https://github.com/rust-mobile/ndk) | 0.6.0+11769913 | MIT OR Apache-2.0 |
-| [neli](https://github.com/jbaublitz/neli) | 0.7.4 | BSD-3-Clause |
+| [neli](https://github.com/jbaublitz/neli) | 0.7.5 | BSD-3-Clause |
 | [neli-proc-macros](https://github.com/jbaublitz/neli) | 0.2.2 | BSD-3-Clause |
 | [netconfig-rs](https://github.com/tun-rs/netconfig-rs) | 0.1.6 | MIT |
 | [netlink-packet-core](https://github.com/rust-netlink/netlink-packet-core) | 0.8.2 | MIT |
+| [netlink-packet-core](https://github.com/rust-netlink/netlink-packet-core) | 0.9.0 | MIT |
 | [netlink-packet-route](https://github.com/rust-netlink/netlink-packet-route) | 0.25.1 | MIT |
-| [netlink-packet-route](https://github.com/rust-netlink/netlink-packet-route) | 0.31.0 | MIT |
+| [netlink-packet-route](https://github.com/rust-netlink/netlink-packet-route) | 0.33.0 | MIT |
 | [netlink-sys](https://github.com/rust-netlink/netlink-sys) | 0.8.8 | MIT |
+| [netlink-sys](https://github.com/rust-netlink/netlink-sys) | 0.9.0 | MIT |
 | [new_debug_unreachable](https://github.com/mbrubeck/rust-debug-unreachable) | 1.0.6 | MIT |
 | [nix](https://github.com/nix-rust/nix) | 0.26.4 | MIT |
 | [nix](https://github.com/nix-rust/nix) | 0.30.1 | MIT |
@@ -373,8 +374,8 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [num-traits](https://github.com/rust-num/num-traits) | 0.2.19 | MIT OR Apache-2.0 |
 | [num_enum](https://github.com/illicitonion/num_enum) | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
 | [num_enum_derive](https://github.com/illicitonion/num_enum) | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 |
-| [nusb](https://github.com/kevinmehall/nusb) | 0.2.7 | Apache-2.0 OR MIT |
-| [objc2](https://github.com/madsmtm/objc2) | 0.6.4 | MIT |
+| [nusb](https://github.com/kevinmehall/nusb) | 0.2.9 | Apache-2.0 OR MIT |
+| [objc2](https://github.com/madsmtm/objc2) | 0.6.5 | MIT |
 | [objc2-app-kit](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-cloud-kit](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-core-audio](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
@@ -400,12 +401,12 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [oid-registry](https://github.com/rusticata/oid-registry.git) | 0.8.1 | MIT OR Apache-2.0 |
 | [once_cell](https://github.com/matklad/once_cell) | 1.21.4 | MIT OR Apache-2.0 |
 | [once_cell_polyfill](https://github.com/polyfill-rs/once_cell_polyfill) | 1.70.2 | MIT OR Apache-2.0 |
-| [open](https://github.com/Byron/open-rs) | 5.4.4 | MIT |
-| [openssl-probe](https://github.com/rustls/openssl-probe) | 0.2.1 | MIT OR Apache-2.0 |
+| [open](https://github.com/Byron/open-rs) | 5.4.5 | MIT |
+| [openssl-probe](https://github.com/rustls/openssl-probe) | 0.2.2 | MIT OR Apache-2.0 |
 | [option-ext](https://github.com/soc/option-ext.git) | 0.2.0 | MPL-2.0 |
 | [opus](https://github.com/SpaceManiac/opus-rs) | 0.4.0 | MIT/Apache-2.0 |
-| [opusic-sys](https://github.com/DoumanAsh/opusic-sys) | 0.7.5 | BSD-3-Clause |
-| [ordered-float](https://github.com/reem/rust-ordered-float) | 5.5.0 | MIT |
+| [opusic-sys](https://github.com/DoumanAsh/opusic-sys) | 0.7.6 | BSD-3-Clause |
+| [ordered-float](https://github.com/reem/rust-ordered-float) | 5.5.1 | MIT |
 | [ordered-stream](https://github.com/danieldg/ordered-stream) | 0.2.0 | MIT OR Apache-2.0 |
 | [osakit](https://github.com/mdevils/rust-osakit) | 0.3.1 | MIT OR Apache-2.0 |
 | [pango](https://github.com/gtk-rs/gtk-rs-core) | 0.18.3 | MIT |
@@ -426,8 +427,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [piper](https://github.com/smol-rs/piper) | 0.2.5 | MIT OR Apache-2.0 |
 | [pkg-config](https://github.com/rust-lang/pkg-config-rs) | 0.3.34 | MIT OR Apache-2.0 |
 | [plain](https://github.com/randomites/plain) | 0.2.3 | MIT/Apache-2.0 |
-| [plist](https://github.com/ebarnard/rust-plist/) | 1.10.1 | MIT |
-| [png](https://github.com/image-rs/image-png) | 0.17.16 | MIT OR Apache-2.0 |
+| [plist](https://github.com/ebarnard/rust-plist/) | 1.10.3 | MIT |
 | [png](https://github.com/image-rs/image-png) | 0.18.1 | MIT OR Apache-2.0 |
 | [polling](https://github.com/smol-rs/polling) | 3.11.0 | Apache-2.0 OR MIT |
 | [pollster](https://github.com/zesterer/pollster) | 1.0.1 | Apache-2.0/MIT |
@@ -436,7 +436,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [postgres-protocol](https://github.com/rust-postgres/rust-postgres) | 0.6.12 | MIT OR Apache-2.0 |
 | [postgres-types](https://github.com/rust-postgres/rust-postgres) | 0.2.14 | MIT OR Apache-2.0 |
 | [potential_utf](https://github.com/unicode-org/icu4x) | 0.1.6 | Unicode-3.0 |
-| [powerfmt](https://github.com/jhpratt/powerfmt) | 0.2.0 | MIT OR Apache-2.0 |
+| [powerfmt](https://github.com/jhpratt/powerfmt) | 0.2.1 | MIT OR Apache-2.0 |
 | [ppv-lite86](https://github.com/cryptocorrosion/cryptocorrosion) | 0.2.21 | MIT OR Apache-2.0 |
 | [precomputed-hash](https://github.com/emilio/precomputed-hash) | 0.1.1 | MIT |
 | [presser](https://github.com/EmbarkStudios/presser) | 0.3.1 | MIT OR Apache-2.0 |
@@ -466,7 +466,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [raw-window-handle](https://github.com/rust-windowing/raw-window-handle) | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
 | [raw-window-metal](https://github.com/rust-windowing/raw-window-metal) | 1.1.0 | MIT OR Apache-2.0 |
 | [rcgen](https://github.com/rustls/rcgen) | 0.14.10 | MIT OR Apache-2.0 |
-| [realfft](https://github.com/HEnquist/realfft) | 3.5.0 | MIT |
+| [realfft](https://github.com/HEnquist/realfft) | 3.5.1 | MIT |
 | [redox_syscall](https://gitlab.redox-os.org/redox-os/syscall) | 0.5.18 | MIT |
 | [redox_users](https://gitlab.redox-os.org/redox-os/users) | 0.5.3 | MIT |
 | [ref-cast](https://github.com/dtolnay/ref-cast) | 1.0.27 | MIT OR Apache-2.0 |
@@ -476,37 +476,37 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [regex-syntax](https://github.com/rust-lang/regex) | 0.8.11 | MIT OR Apache-2.0 |
 | [renderdoc-sys](https://github.com/ebkalderon/renderdoc-rs) | 1.1.0 | MIT OR Apache-2.0 |
 | [reqwest](https://github.com/seanmonstar/reqwest) | 0.13.5 | MIT OR Apache-2.0 |
-| [rfd](https://github.com/PolyMeilex/rfd) | 0.16.0 | MIT |
+| [rfd](https://github.com/PolyMeilex/rfd) | 0.17.2 | MIT |
 | [ring](https://github.com/briansmith/ring) | 0.17.14 | Apache-2.0 AND ISC |
-| [rmcp](https://github.com/modelcontextprotocol/rust-sdk/) | 3.5.0 | Apache-2.0 |
-| [rmcp-macros](https://github.com/modelcontextprotocol/rust-sdk/) | 3.5.0 | Apache-2.0 |
-| [route_manager](https://github.com/tun-rs/route_manager) | 0.2.13 | Apache-2.0 |
-| rsqlite-vfs | 0.1.1 | MIT |
-| [rtrb](https://github.com/mgeier/rtrb) | 0.4.0 | MIT OR Apache-2.0 |
+| [rmcp](https://github.com/modelcontextprotocol/rust-sdk/) | 3.8.0 | Apache-2.0 |
+| [rmcp-macros](https://github.com/modelcontextprotocol/rust-sdk/) | 3.8.0 | Apache-2.0 |
+| [route_manager](https://github.com/tun-rs/route_manager) | 0.2.17 | Apache-2.0 |
+| [rsqlite-vfs](https://github.com/Spxg/sqlite-wasm-rs) | 0.2.0 | MIT |
+| [rtrb](https://github.com/mgeier/rtrb) | 0.4.1 | MIT OR Apache-2.0 |
 | [rumqttc-core-next](https://github.com/thehouseisonfire/rumqtt) | 0.34.0 | Apache-2.0 |
 | [rumqttc-v4-next](https://github.com/thehouseisonfire/rumqtt) | 0.34.0 | Apache-2.0 |
-| [rusqlite](https://github.com/rusqlite/rusqlite) | 0.40.2 | MIT |
+| [rusqlite](https://github.com/rusqlite/rusqlite) | 0.41.0 | MIT |
 | [rustc-hash](https://github.com/rust-lang-nursery/rustc-hash) | 1.1.0 | Apache-2.0/MIT |
 | [rustc-hash](https://github.com/rust-lang/rustc-hash) | 2.1.3 | Apache-2.0 OR MIT |
 | [rustc_version](https://github.com/djc/rustc-version-rs) | 0.4.1 | MIT OR Apache-2.0 |
 | [rustfft](https://github.com/ejmahler/RustFFT) | 6.4.1 | MIT OR Apache-2.0 |
 | [rusticata-macros](https://github.com/rusticata/rusticata-macros.git) | 4.1.0 | MIT/Apache-2.0 |
-| [rustix](https://github.com/bytecodealliance/rustix) | 1.1.5 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| [rustix](https://github.com/bytecodealliance/rustix) | 1.1.6 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [rustls](https://github.com/rustls/rustls) | 0.23.46 | Apache-2.0 OR ISC OR MIT |
-| [rustls-native-certs](https://github.com/rustls/rustls-native-certs) | 0.8.4 | Apache-2.0 OR ISC OR MIT |
+| [rustls-native-certs](https://github.com/rustls/rustls-native-certs) | 0.8.5 | Apache-2.0 OR ISC OR MIT |
 | [rustls-pki-types](https://github.com/rustls/pki-types) | 1.15.1 | MIT OR Apache-2.0 |
 | [rustls-platform-verifier](https://github.com/rustls/rustls-platform-verifier) | 0.7.1 | MIT OR Apache-2.0 |
 | [rustls-platform-verifier-android](https://github.com/rustls/rustls-platform-verifier) | 0.2.0 | MIT OR Apache-2.0 |
-| [rustls-webpki](https://github.com/rustls/webpki) | 0.103.15 | ISC |
+| [rustls-webpki](https://github.com/rustls/webpki) | 0.103.16 | ISC |
 | [rustversion](https://github.com/dtolnay/rustversion) | 1.0.23 | MIT OR Apache-2.0 |
 | [ryu](https://github.com/dtolnay/ryu) | 1.0.23 | Apache-2.0 OR BSL-1.0 |
 | [same-file](https://github.com/BurntSushi/same-file) | 1.0.6 | Unlicense/MIT |
-| [schannel](https://github.com/steffengy/schannel-rs) | 0.1.29 | MIT |
+| [schannel](https://github.com/steffengy/schannel-rs) | 0.1.30 | MIT |
 | [schemars](https://github.com/GREsau/schemars) | 0.8.22 | MIT |
 | [schemars](https://github.com/GREsau/schemars) | 0.9.0 | MIT |
-| [schemars](https://github.com/GREsau/schemars) | 1.2.2 | MIT |
+| [schemars](https://github.com/GREsau/schemars) | 1.2.3 | MIT |
 | [schemars_derive](https://github.com/GREsau/schemars) | 0.8.22 | MIT |
-| [schemars_derive](https://github.com/GREsau/schemars) | 1.2.2 | MIT |
+| [schemars_derive](https://github.com/GREsau/schemars) | 1.2.3 | MIT |
 | [scopeguard](https://github.com/bluss/scopeguard) | 1.2.0 | MIT OR Apache-2.0 |
 | [scroll](https://github.com/m4b/scroll) | 0.12.0 | MIT |
 | [scroll_derive](https://github.com/m4b/scroll) | 0.12.1 | MIT |
@@ -520,11 +520,11 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [serde_derive](https://github.com/serde-rs/serde) | 1.0.229 | MIT OR Apache-2.0 |
 | [serde_derive_internals](https://github.com/serde-rs/serde) | 0.29.1 | MIT OR Apache-2.0 |
 | [serde_derive_internals](https://github.com/serde-rs/serde) | 0.30.0 | MIT OR Apache-2.0 |
-| [serde_json](https://github.com/serde-rs/json) | 1.0.151 | MIT OR Apache-2.0 |
+| [serde_json](https://github.com/serde-rs/json) | 1.0.154 | MIT OR Apache-2.0 |
 | [serde_path_to_error](https://github.com/dtolnay/path-to-error) | 0.1.20 | MIT OR Apache-2.0 |
 | [serde_repr](https://github.com/dtolnay/serde-repr) | 0.1.21 | MIT OR Apache-2.0 |
 | [serde_spanned](https://github.com/toml-rs/toml) | 0.6.9 | MIT OR Apache-2.0 |
-| [serde_spanned](https://github.com/toml-rs/toml) | 1.1.1 | MIT OR Apache-2.0 |
+| [serde_spanned](https://github.com/toml-rs/toml) | 1.1.2 | MIT OR Apache-2.0 |
 | [serde_urlencoded](https://github.com/nox/serde_urlencoded) | 0.7.1 | MIT/Apache-2.0 |
 | [serde_with](https://github.com/jonasbb/serde_with/) | 3.24.0 | MIT OR Apache-2.0 |
 | [serde_with_macros](https://github.com/jonasbb/serde_with/) | 3.24.0 | MIT OR Apache-2.0 |
@@ -535,7 +535,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [sha1](https://github.com/RustCrypto/hashes) | 0.10.7 | MIT OR Apache-2.0 |
 | [sha1](https://github.com/RustCrypto/hashes) | 0.11.0 | MIT OR Apache-2.0 |
 | [sha2](https://github.com/RustCrypto/hashes) | 0.10.9 | MIT OR Apache-2.0 |
-| [sha2](https://github.com/RustCrypto/hashes) | 0.11.0 | MIT OR Apache-2.0 |
+| [sha2](https://github.com/RustCrypto/hashes) | 0.11.1 | MIT OR Apache-2.0 |
 | [sharded-slab](https://github.com/hawkw/sharded-slab) | 0.1.7 | MIT |
 | [shlex](https://github.com/comex/rust-shlex) | 1.3.0 | MIT OR Apache-2.0 |
 | [shlex](https://github.com/comex/rust-shlex) | 2.0.1 | MIT OR Apache-2.0 |
@@ -546,7 +546,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [siphasher](https://github.com/jedisct1/rust-siphash) | 1.0.4 | MIT OR Apache-2.0 |
 | [slab](https://github.com/tokio-rs/slab) | 0.4.12 | MIT |
 | [slotmap](https://github.com/orlp/slotmap) | 1.1.1 | Zlib |
-| [smallvec](https://github.com/servo/rust-smallvec) | 1.16.2 | MIT OR Apache-2.0 |
+| [smallvec](https://github.com/servo/rust-smallvec) | 1.16.4 | MIT OR Apache-2.0 |
 | [smawk](https://github.com/mgeisler/smawk) | 0.3.3 | MIT |
 | [socket-pktinfo](https://github.com/pixsper/socket-pktinfo) | 0.4.1 | MIT |
 | [socket2](https://github.com/rust-lang/socket2) | 0.6.5 | MIT OR Apache-2.0 |
@@ -556,46 +556,47 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [spin](https://github.com/mvdnes/spin-rs.git) | 0.9.9 | MIT |
 | [spirv](https://github.com/gfx-rs/rspirv) | 0.4.0+sdk-1.4.341.0 | Apache-2.0 |
 | [spki](https://github.com/RustCrypto/formats/tree/master/spki) | 0.7.3 | Apache-2.0 OR MIT |
-| [sqlite-wasm-rs](https://github.com/Spxg/sqlite-wasm-rs) | 0.5.5 | MIT |
+| [sqlite-wasm-rs](https://github.com/Spxg/sqlite-wasm-rs) | 0.6.2 | MIT |
 | [sse-stream](https://github.com/4t145/sse-stream/) | 0.2.6 | MIT OR Apache-2.0 |
 | [stable_deref_trait](https://github.com/storyyeller/stable_deref_trait) | 1.2.1 | MIT OR Apache-2.0 |
 | [static_assertions](https://github.com/nvzqz/static-assertions-rs) | 1.1.0 | MIT OR Apache-2.0 |
+| [static_vcruntime](https://github.com/ChrisDenton/static_vcruntime) | 3.0.0 | MIT OR Apache-2.0 OR Zlib |
 | [strength_reduce](http://github.com/ejmahler/strength_reduce) | 0.2.4 | MIT OR Apache-2.0 |
 | [string_cache](https://github.com/servo/string-cache) | 0.9.0 | MIT OR Apache-2.0 |
 | [string_cache_codegen](https://github.com/servo/string-cache) | 0.6.1 | MIT OR Apache-2.0 |
 | [stringprep](https://github.com/sfackler/rust-stringprep) | 0.1.5 | MIT/Apache-2.0 |
 | [strsim](https://github.com/rapidfuzz/strsim-rs) | 0.11.1 | MIT |
 | [subtle](https://github.com/dalek-cryptography/subtle) | 2.6.1 | BSD-3-Clause |
-| [swift-rs](https://github.com/Brendonovich/swift-rs) | 1.0.8 | MIT OR Apache-2.0 |
+| [swift-rs](https://github.com/Brendonovich/swift-rs) | 1.0.9 | MIT OR Apache-2.0 |
 | [symphonia-bundle-mp3](https://github.com/pdeljanov/Symphonia) | 0.6.1 | MPL-2.0 |
 | [symphonia-core](https://github.com/pdeljanov/Symphonia) | 0.6.1 | MPL-2.0 |
 | [syn](https://github.com/dtolnay/syn) | 1.0.109 | MIT OR Apache-2.0 |
 | [syn](https://github.com/dtolnay/syn) | 2.0.119 | MIT OR Apache-2.0 |
-| [syn](https://github.com/dtolnay/syn) | 3.0.6 | MIT OR Apache-2.0 |
+| [syn](https://github.com/dtolnay/syn) | 3.0.9 | MIT OR Apache-2.0 |
 | [sync_wrapper](https://github.com/Actyx/sync_wrapper) | 1.0.2 | Apache-2.0 |
 | [synstructure](https://github.com/mystor/synstructure) | 0.13.2 | MIT |
 | [synstructure](https://github.com/mystor/synstructure) | 0.14.0 | MIT |
 | [system-configuration](https://github.com/mullvad/system-configuration-rs) | 0.7.0 | MIT OR Apache-2.0 |
 | [system-configuration-sys](https://github.com/mullvad/system-configuration-rs) | 0.6.0 | MIT OR Apache-2.0 |
 | [system-deps](https://github.com/gdesmott/system-deps) | 6.2.2 | MIT OR Apache-2.0 |
-| [tao](https://github.com/tauri-apps/tao) | 0.37.1 | Apache-2.0 |
+| [tao](https://github.com/tauri-apps/tao) | 0.37.2 | Apache-2.0 |
 | [tao-macros](https://github.com/tauri-apps/tao) | 0.1.4 | MIT OR Apache-2.0 |
 | [tar](https://github.com/composefs/tar-rs) | 0.4.46 | MIT OR Apache-2.0 |
 | [target-lexicon](https://github.com/bytecodealliance/target-lexicon) | 0.12.16 | Apache-2.0 WITH LLVM-exception |
-| [tauri](https://github.com/tauri-apps/tauri) | 2.12.1 | Apache-2.0 OR MIT |
-| [tauri-build](https://github.com/tauri-apps/tauri) | 2.7.1 | Apache-2.0 OR MIT |
-| [tauri-codegen](https://github.com/tauri-apps/tauri) | 2.7.1 | Apache-2.0 OR MIT |
-| [tauri-macros](https://github.com/tauri-apps/tauri) | 2.7.1 | Apache-2.0 OR MIT |
-| [tauri-plugin](https://github.com/tauri-apps/tauri) | 2.7.1 | Apache-2.0 OR MIT |
-| [tauri-plugin-dialog](https://github.com/tauri-apps/plugins-workspace) | 2.8.0 | Apache-2.0 OR MIT |
-| [tauri-plugin-fs](https://github.com/tauri-apps/plugins-workspace) | 2.6.0 | Apache-2.0 OR MIT |
-| [tauri-plugin-notification](https://github.com/tauri-apps/plugins-workspace) | 2.5.1 | Apache-2.0 OR MIT |
-| [tauri-plugin-opener](https://github.com/tauri-apps/plugins-workspace) | 2.7.0 | Apache-2.0 OR MIT |
-| [tauri-plugin-updater](https://github.com/tauri-apps/plugins-workspace) | 2.13.1 | Apache-2.0 OR MIT |
-| [tauri-runtime](https://github.com/tauri-apps/tauri) | 2.12.1 | Apache-2.0 OR MIT |
-| [tauri-runtime-wry](https://github.com/tauri-apps/tauri) | 2.12.1 | Apache-2.0 OR MIT |
-| [tauri-utils](https://github.com/tauri-apps/tauri) | 2.10.1 | Apache-2.0 OR MIT |
-| [tauri-winres](https://github.com/tauri-apps/winres) | 0.3.6 | MIT |
+| [tauri](https://github.com/tauri-apps/tauri) | 2.12.5 | Apache-2.0 OR MIT |
+| [tauri-build](https://github.com/tauri-apps/tauri) | 2.7.4 | Apache-2.0 OR MIT |
+| [tauri-codegen](https://github.com/tauri-apps/tauri) | 2.7.4 | Apache-2.0 OR MIT |
+| [tauri-macros](https://github.com/tauri-apps/tauri) | 2.7.4 | Apache-2.0 OR MIT |
+| [tauri-plugin](https://github.com/tauri-apps/tauri) | 2.7.2 | Apache-2.0 OR MIT |
+| [tauri-plugin-dialog](https://github.com/tauri-apps/plugins-workspace) | 2.8.4 | Apache-2.0 OR MIT |
+| [tauri-plugin-fs](https://github.com/tauri-apps/plugins-workspace) | 2.7.1 | Apache-2.0 OR MIT |
+| [tauri-plugin-notification](https://github.com/tauri-apps/plugins-workspace) | 2.8.0 | Apache-2.0 OR MIT |
+| [tauri-plugin-opener](https://github.com/tauri-apps/plugins-workspace) | 2.7.2 | Apache-2.0 OR MIT |
+| [tauri-plugin-updater](https://github.com/tauri-apps/plugins-workspace) | 2.14.1 | Apache-2.0 OR MIT |
+| [tauri-runtime](https://github.com/tauri-apps/tauri) | 2.12.2 | Apache-2.0 OR MIT |
+| [tauri-runtime-wry](https://github.com/tauri-apps/tauri) | 2.12.3 | Apache-2.0 OR MIT |
+| [tauri-utils](https://github.com/tauri-apps/tauri) | 2.10.2 | Apache-2.0 OR MIT |
+| [tauri-winres](https://github.com/tauri-apps/winres) | 0.3.7 | MIT |
 | [tauri-winrt-notification](https://github.com/tauri-apps/winrt-notification) | 0.8.1 | MIT OR Apache-2.0 |
 | [tempfile](https://github.com/Stebalien/tempfile) | 3.27.0 | MIT OR Apache-2.0 |
 | [tendril](https://github.com/servo/html5ever) | 0.5.1 | MIT OR Apache-2.0 |
@@ -608,11 +609,11 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [time](https://github.com/time-rs/time) | 0.3.55 | MIT OR Apache-2.0 |
 | [time-core](https://github.com/time-rs/time) | 0.1.9 | MIT OR Apache-2.0 |
 | [time-macros](https://github.com/time-rs/time) | 0.2.32 | MIT OR Apache-2.0 |
-| [tinystr](https://github.com/unicode-org/icu4x) | 0.8.4 | Unicode-3.0 |
+| [tinystr](https://github.com/unicode-org/icu4x) | 0.8.5 | Unicode-3.0 |
 | [tinyvec](https://github.com/Lokathor/tinyvec) | 1.13.3 | Zlib OR Apache-2.0 OR MIT |
 | [tls_codec](https://github.com/RustCrypto/formats) | 0.4.2 | Apache-2.0 OR MIT |
 | [tls_codec_derive](https://github.com/RustCrypto/formats) | 0.4.2 | Apache-2.0 OR MIT |
-| [tokio](https://github.com/tokio-rs/tokio) | 1.53.1 | MIT |
+| [tokio](https://github.com/tokio-rs/tokio) | 1.54.1 | MIT |
 | [tokio-macros](https://github.com/tokio-rs/tokio) | 2.7.2 | MIT |
 | [tokio-postgres](https://github.com/rust-postgres/rust-postgres) | 0.7.18 | MIT OR Apache-2.0 |
 | [tokio-postgres-rustls](https://github.com/jbg/tokio-postgres-rustls) | 0.14.0 | MIT |
@@ -621,16 +622,16 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [tokio-stream](https://github.com/tokio-rs/tokio) | 0.1.19 | MIT |
 | [tokio-tungstenite](https://github.com/snapview/tokio-tungstenite) | 0.29.0 | MIT |
 | [tokio-tungstenite](https://github.com/snapview/tokio-tungstenite) | 0.30.0 | MIT |
-| [tokio-util](https://github.com/tokio-rs/tokio) | 0.7.19 | MIT |
+| [tokio-util](https://github.com/tokio-rs/tokio) | 0.7.20 | MIT |
 | [toml](https://github.com/toml-rs/toml) | 0.8.2 | MIT OR Apache-2.0 |
-| [toml](https://github.com/toml-rs/toml) | 1.1.6+spec-1.1.0 | MIT OR Apache-2.0 |
+| [toml](https://github.com/toml-rs/toml) | 1.1.8+spec-1.1.0 | MIT OR Apache-2.0 |
 | [toml_datetime](https://github.com/toml-rs/toml) | 0.6.3 | MIT OR Apache-2.0 |
-| [toml_datetime](https://github.com/toml-rs/toml) | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 |
+| [toml_datetime](https://github.com/toml-rs/toml) | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
 | [toml_edit](https://github.com/toml-rs/toml) | 0.19.15 | MIT OR Apache-2.0 |
 | [toml_edit](https://github.com/toml-rs/toml) | 0.20.2 | MIT OR Apache-2.0 |
-| [toml_edit](https://github.com/toml-rs/toml) | 0.25.15+spec-1.1.0 | MIT OR Apache-2.0 |
-| [toml_parser](https://github.com/toml-rs/toml) | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
-| [toml_writer](https://github.com/toml-rs/toml) | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
+| [toml_edit](https://github.com/toml-rs/toml) | 0.25.17+spec-1.1.0 | MIT OR Apache-2.0 |
+| [toml_parser](https://github.com/toml-rs/toml) | 1.1.5+spec-1.1.0 | MIT OR Apache-2.0 |
+| [toml_writer](https://github.com/toml-rs/toml) | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
 | [tower](https://github.com/tower-rs/tower) | 0.5.3 | MIT |
 | [tower-http](https://github.com/tower-rs/tower-http) | 0.6.11 | MIT |
 | [tower-http](https://github.com/tower-rs/tower-http) | 0.7.1 | MIT |
@@ -644,17 +645,18 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [transpose](https://github.com/ejmahler/transpose) | 0.2.3 | MIT OR Apache-2.0 |
 | [tray-icon](https://github.com/tauri-apps/tray-icon) | 0.25.1 | MIT OR Apache-2.0 |
 | [try-lock](https://github.com/seanmonstar/try-lock) | 0.2.5 | MIT |
-| [tun-rs](https://github.com/tun-rs/tun-rs) | 2.8.11 | Apache-2.0 |
+| [tun-rs](https://github.com/tun-rs/tun-rs) | 2.8.15 | Apache-2.0 |
 | [tungstenite](https://github.com/snapview/tungstenite-rs) | 0.29.0 | MIT OR Apache-2.0 |
 | [tungstenite](https://github.com/snapview/tungstenite-rs) | 0.30.0 | MIT OR Apache-2.0 |
+| [typed-path](https://github.com/chipsenkbeil/typed-path) | 0.13.0 | MIT OR Apache-2.0 |
 | [typeid](https://github.com/dtolnay/typeid) | 1.0.3 | MIT OR Apache-2.0 |
 | [typenum](https://github.com/paholg/typenum) | 1.20.1 | MIT OR Apache-2.0 |
 | [uds_windows](https://github.com/haraldh/rust_uds_windows) | 1.2.1 | MIT |
 | [unescaper](https://github.com/hack-ink/unescaper) | 0.1.10 | MIT OR GPL-3.0-only |
-| [unicase](https://github.com/seanmonstar/unicase) | 2.9.0 | MIT OR Apache-2.0 |
+| [unicase](https://github.com/seanmonstar/unicase) | 2.10.0 | MIT OR Apache-2.0 |
 | [unicode-bidi](https://github.com/servo/unicode-bidi) | 0.3.18 | MIT OR Apache-2.0 |
-| [unicode-ident](https://github.com/dtolnay/unicode-ident) | 1.0.26 | (MIT OR Apache-2.0) AND Unicode-3.0 |
-| [unicode-normalization](https://github.com/unicode-rs/unicode-normalization) | 0.1.25 | MIT OR Apache-2.0 |
+| [unicode-ident](https://github.com/dtolnay/unicode-ident) | 1.0.27 | (MIT OR Apache-2.0) AND Unicode-3.0 |
+| [unicode-normalization](https://github.com/unicode-rs/unicode-normalization) | 0.1.26 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | [unicode-properties](https://github.com/unicode-rs/unicode-properties) | 0.1.4 | MIT/Apache-2.0 |
 | [unicode-segmentation](https://github.com/unicode-rs/unicode-segmentation) | 1.13.3 | MIT OR Apache-2.0 |
 | [unicode-width](https://github.com/unicode-rs/unicode-width) | 0.2.2 | MIT OR Apache-2.0 |
@@ -675,7 +677,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [utoipa](https://github.com/juhaku/utoipa) | 6.0.0 | MIT OR Apache-2.0 |
 | [utoipa-axum](https://github.com/juhaku/utoipa) | 0.3.0 | MIT OR Apache-2.0 |
 | [utoipa-gen](https://github.com/juhaku/utoipa) | 6.0.1 | MIT OR Apache-2.0 |
-| [uuid](https://github.com/uuid-rs/uuid) | 1.26.1 | Apache-2.0 OR MIT |
+| [uuid](https://github.com/uuid-rs/uuid) | 1.29.0 | Apache-2.0 OR MIT |
 | [valuable](https://github.com/tokio-rs/valuable) | 0.1.1 | MIT |
 | [vcpkg](https://github.com/mcgoo/vcpkg-rs) | 0.2.15 | MIT/Apache-2.0 |
 | [version-compare](https://gitlab.com/timvisee/version-compare) | 0.2.1 | MIT |
@@ -683,7 +685,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [vswhom](https://github.com/nabijaczleweli/vswhom.rs) | 0.1.0 | MIT |
 | [vswhom-sys](https://github.com/nabijaczleweli/vswhom-sys.rs) | 0.1.3 | MIT |
 | [walkdir](https://github.com/BurntSushi/walkdir) | 2.5.0 | Unlicense/MIT |
-| [want](https://github.com/seanmonstar/want) | 0.3.1 | MIT |
+| [want](https://github.com/seanmonstar/want) | 0.3.2 | MIT |
 | [wasi](https://github.com/bytecodealliance/wasi) | 0.11.1+wasi-snapshot-preview1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [wasi](https://github.com/bytecodealliance/wasi-rs) | 0.14.7+wasi-0.2.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [wasip2](https://github.com/bytecodealliance/wasi-rs) | 1.0.4+wasi-0.2.12 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
@@ -700,7 +702,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [web_atoms](https://github.com/servo/html5ever) | 0.2.6 | MIT OR Apache-2.0 |
 | [webkit2gtk](https://github.com/tauri-apps/webkit2gtk-rs) | 2.0.2 | MIT |
 | [webkit2gtk-sys](https://github.com/tauri-apps/webkit2gtk-rs) | 2.0.2 | MIT |
-| [webpki-root-certs](https://github.com/rustls/webpki-roots) | 1.0.9 | CDLA-Permissive-2.0 |
+| [webpki-root-certs](https://github.com/rustls/webpki-roots) | 1.0.11 | CDLA-Permissive-2.0 |
 | [webview2-com](https://github.com/wravery/webview2-rs) | 0.39.1 | MIT |
 | [webview2-com-macros](https://github.com/wravery/webview2-rs) | 0.8.1 | MIT |
 | [webview2-com-sys](https://github.com/wravery/webview2-rs) | 0.39.1 | MIT |
@@ -741,45 +743,33 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [windows-strings](https://github.com/microsoft/windows-rs) | 0.5.1 | MIT OR Apache-2.0 |
 | [windows-sys](https://github.com/microsoft/windows-rs) | 0.45.0 | MIT OR Apache-2.0 |
 | [windows-sys](https://github.com/microsoft/windows-rs) | 0.52.0 | MIT OR Apache-2.0 |
-| [windows-sys](https://github.com/microsoft/windows-rs) | 0.59.0 | MIT OR Apache-2.0 |
-| [windows-sys](https://github.com/microsoft/windows-rs) | 0.60.2 | MIT OR Apache-2.0 |
 | [windows-sys](https://github.com/microsoft/windows-rs) | 0.61.2 | MIT OR Apache-2.0 |
 | [windows-targets](https://github.com/microsoft/windows-rs) | 0.42.2 | MIT OR Apache-2.0 |
 | [windows-targets](https://github.com/microsoft/windows-rs) | 0.52.6 | MIT OR Apache-2.0 |
-| [windows-targets](https://github.com/microsoft/windows-rs) | 0.53.5 | MIT OR Apache-2.0 |
 | [windows-threading](https://github.com/microsoft/windows-rs) | 0.1.0 | MIT OR Apache-2.0 |
 | [windows-threading](https://github.com/microsoft/windows-rs) | 0.2.1 | MIT OR Apache-2.0 |
 | [windows-version](https://github.com/microsoft/windows-rs) | 0.1.7 | MIT OR Apache-2.0 |
 | [windows_aarch64_gnullvm](https://github.com/microsoft/windows-rs) | 0.42.2 | MIT OR Apache-2.0 |
 | [windows_aarch64_gnullvm](https://github.com/microsoft/windows-rs) | 0.52.6 | MIT OR Apache-2.0 |
-| [windows_aarch64_gnullvm](https://github.com/microsoft/windows-rs) | 0.53.1 | MIT OR Apache-2.0 |
 | [windows_aarch64_msvc](https://github.com/microsoft/windows-rs) | 0.42.2 | MIT OR Apache-2.0 |
 | [windows_aarch64_msvc](https://github.com/microsoft/windows-rs) | 0.52.6 | MIT OR Apache-2.0 |
-| [windows_aarch64_msvc](https://github.com/microsoft/windows-rs) | 0.53.1 | MIT OR Apache-2.0 |
 | [windows_i686_gnu](https://github.com/microsoft/windows-rs) | 0.42.2 | MIT OR Apache-2.0 |
 | [windows_i686_gnu](https://github.com/microsoft/windows-rs) | 0.52.6 | MIT OR Apache-2.0 |
-| [windows_i686_gnu](https://github.com/microsoft/windows-rs) | 0.53.1 | MIT OR Apache-2.0 |
 | [windows_i686_gnullvm](https://github.com/microsoft/windows-rs) | 0.52.6 | MIT OR Apache-2.0 |
-| [windows_i686_gnullvm](https://github.com/microsoft/windows-rs) | 0.53.1 | MIT OR Apache-2.0 |
 | [windows_i686_msvc](https://github.com/microsoft/windows-rs) | 0.42.2 | MIT OR Apache-2.0 |
 | [windows_i686_msvc](https://github.com/microsoft/windows-rs) | 0.52.6 | MIT OR Apache-2.0 |
-| [windows_i686_msvc](https://github.com/microsoft/windows-rs) | 0.53.1 | MIT OR Apache-2.0 |
 | [windows_x86_64_gnu](https://github.com/microsoft/windows-rs) | 0.42.2 | MIT OR Apache-2.0 |
 | [windows_x86_64_gnu](https://github.com/microsoft/windows-rs) | 0.52.6 | MIT OR Apache-2.0 |
-| [windows_x86_64_gnu](https://github.com/microsoft/windows-rs) | 0.53.1 | MIT OR Apache-2.0 |
 | [windows_x86_64_gnullvm](https://github.com/microsoft/windows-rs) | 0.42.2 | MIT OR Apache-2.0 |
 | [windows_x86_64_gnullvm](https://github.com/microsoft/windows-rs) | 0.52.6 | MIT OR Apache-2.0 |
-| [windows_x86_64_gnullvm](https://github.com/microsoft/windows-rs) | 0.53.1 | MIT OR Apache-2.0 |
 | [windows_x86_64_msvc](https://github.com/microsoft/windows-rs) | 0.42.2 | MIT OR Apache-2.0 |
 | [windows_x86_64_msvc](https://github.com/microsoft/windows-rs) | 0.52.6 | MIT OR Apache-2.0 |
-| [windows_x86_64_msvc](https://github.com/microsoft/windows-rs) | 0.53.1 | MIT OR Apache-2.0 |
 | [winnow](https://github.com/winnow-rs/winnow) | 0.5.40 | MIT |
 | [winnow](https://github.com/winnow-rs/winnow) | 1.0.4 | MIT |
-| [winreg](https://github.com/gentoo90/winreg-rs) | 0.55.0 | MIT |
 | [winreg](https://github.com/gentoo90/winreg-rs) | 0.56.0 | MIT |
 | [wit-bindgen](https://github.com/bytecodealliance/wit-bindgen) | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [writeable](https://github.com/unicode-org/icu4x) | 0.6.4 | Unicode-3.0 |
-| [wry](https://github.com/tauri-apps/wry) | 0.57.0 | Apache-2.0 OR MIT |
+| [wry](https://github.com/tauri-apps/wry) | 0.57.1 | Apache-2.0 OR MIT |
 | [x11](https://github.com/AltF02/x11-rs.git) | 2.21.0 | MIT |
 | [x11-dl](https://github.com/AltF02/x11-rs.git) | 2.21.0 | MIT |
 | [x509-cert](https://github.com/RustCrypto/formats/tree/master/x509-cert) | 0.2.5 | Apache-2.0 OR MIT |
@@ -787,26 +777,26 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [xattr](https://github.com/Stebalien/xattr) | 1.6.1 | MIT OR Apache-2.0 |
 | [xml-rs](https://github.com/kornelski/xml-rs) | 0.8.29 | MIT |
 | [yasna](https://github.com/qnighy/yasna.rs) | 0.6.0 | MIT OR Apache-2.0 |
-| [yoke](https://github.com/unicode-org/icu4x) | 0.8.3 | Unicode-3.0 |
+| [yoke](https://github.com/unicode-org/icu4x) | 0.8.4 | Unicode-3.0 |
 | [yoke-derive](https://github.com/unicode-org/icu4x) | 0.8.4 | Unicode-3.0 |
 | [zbus](https://github.com/z-galaxy/zbus/) | 5.19.0 | MIT |
 | [zbus_macros](https://github.com/z-galaxy/zbus/) | 5.19.0 | MIT |
-| [zbus_names](https://github.com/z-galaxy/zbus/) | 4.3.4 | MIT |
+| [zbus_names](https://github.com/z-galaxy/zbus/) | 4.3.5 | MIT |
 | [zcheapstr](https://github.com/z-galaxy/zcheapstr/) | 1.1.0 | MIT |
-| [zerocopy](https://github.com/google/zerocopy) | 0.8.59 | BSD-2-Clause OR Apache-2.0 OR MIT |
-| [zerocopy-derive](https://github.com/google/zerocopy) | 0.8.59 | BSD-2-Clause OR Apache-2.0 OR MIT |
+| [zerocopy](https://github.com/google/zerocopy) | 0.8.63 | BSD-2-Clause OR Apache-2.0 OR MIT |
+| [zerocopy-derive](https://github.com/google/zerocopy) | 0.8.63 | BSD-2-Clause OR Apache-2.0 OR MIT |
 | [zerofrom](https://github.com/unicode-org/icu4x) | 0.1.8 | Unicode-3.0 |
 | [zerofrom-derive](https://github.com/unicode-org/icu4x) | 0.1.8 | Unicode-3.0 |
-| [zeroize](https://github.com/RustCrypto/utils) | 1.9.0 | Apache-2.0 OR MIT |
+| [zeroize](https://github.com/RustCrypto/utils) | 1.9.1 | Apache-2.0 OR MIT |
 | [zeroize_derive](https://github.com/RustCrypto/utils) | 1.5.0 | Apache-2.0 OR MIT |
 | [zerotrie](https://github.com/unicode-org/icu4x) | 0.2.5 | Unicode-3.0 |
-| [zerovec](https://github.com/unicode-org/icu4x) | 0.11.8 | Unicode-3.0 |
-| [zerovec-derive](https://github.com/unicode-org/icu4x) | 0.11.6 | Unicode-3.0 |
-| [zip](https://github.com/zip-rs/zip2.git) | 4.6.1 | MIT |
+| [zerovec](https://github.com/unicode-org/icu4x) | 0.11.9 | Unicode-3.0 |
+| [zerovec-derive](https://github.com/unicode-org/icu4x) | 0.11.7 | Unicode-3.0 |
+| [zip](https://github.com/zip-rs/zip2) | 9.1.3 | MIT |
 | [zlib-rs](https://github.com/trifectatechfoundation/zlib-rs) | 0.6.8 | Zlib |
 | [zmij](https://github.com/dtolnay/zmij) | 1.0.23 | MIT |
-| [zvariant](https://github.com/z-galaxy/zbus/) | 5.15.0 | MIT |
-| [zvariant_derive](https://github.com/z-galaxy/zbus/) | 5.15.0 | MIT |
+| [zvariant](https://github.com/z-galaxy/zbus/) | 5.15.1 | MIT |
+| [zvariant_derive](https://github.com/z-galaxy/zbus/) | 5.15.1 | MIT |
 | [zvariant_utils](https://github.com/z-galaxy/zbus/) | 4.2.0 | MIT |
 
 ## Web packages (69)
@@ -814,8 +804,8 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | Component | Version | License |
 | --- | --- | --- |
 | [@babel/runtime](https://babel.dev/docs/en/next/babel-runtime) | 7.29.7 | MIT |
-| [@base-ui/react](https://base-ui.com) | 1.8.0 | MIT |
-| [@base-ui/utils](https://github.com/mui/base-ui#readme) | 0.4.0 | MIT |
+| [@base-ui/react](https://base-ui.com) | 1.9.0 | MIT |
+| [@base-ui/utils](https://github.com/mui/base-ui#readme) | 0.5.0 | MIT |
 | [@eshaz/web-worker](https://github.com/eshaz/web-worker) | 1.2.2 | Apache-2.0 |
 | [@floating-ui/core](https://floating-ui.com) | 1.8.0 | MIT |
 | [@floating-ui/dom](https://floating-ui.com) | 1.8.0 | MIT |
@@ -824,16 +814,16 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [@fontsource-variable/jetbrains-mono](https://fontsource.org/fonts/jetbrains-mono) | 5.3.0 | OFL-1.1 |
 | [@mapbox/jsonlint-lines-primitives](https://github.com/mapbox/jsonlint#readme) | 2.0.3 | MIT |
 | [@mapbox/point-geometry](https://github.com/mapbox/point-geometry) | 1.1.0 | ISC |
-| [@mapbox/tiny-sdf](https://github.com/mapbox/tiny-sdf#readme) | 2.2.0 | BSD-2-Clause |
+| [@mapbox/tiny-sdf](https://github.com/mapbox/tiny-sdf#readme) | 2.3.0 | BSD-2-Clause |
 | [@mapbox/unitbezier](https://github.com/mapbox/unitbezier) | 1.0.0 | BSD-2-Clause |
 | [@mapbox/vector-tile](https://github.com/mapbox/vector-tile-js#readme) | 3.0.0 | BSD-3-Clause |
-| [@maplibre/geojson-vt](https://github.com/maplibre/geojson-vt#readme) | 6.1.1 | ISC |
+| [@maplibre/geojson-vt](https://github.com/maplibre/geojson-vt#readme) | 6.3.0 | ISC |
 | [@maplibre/maplibre-gl-style-spec](https://maplibre.org/maplibre-style-spec/) | 26.4.4 | ISC |
 | [@maplibre/mlt](https://github.com/maplibre/maplibre-tile-spec/#readme) | 1.3.0 | (MIT OR Apache-2.0) |
-| [@maplibre/vt-pbf](https://github.com/maplibre/vt-pbf#readme) | 4.3.2 | MIT |
+| [@maplibre/vt-pbf](https://github.com/maplibre/vt-pbf#readme) | 4.3.3 | MIT |
 | [@scarf/scarf](https://github.com/scarf-sh/scarf-js) | 1.4.0 | Apache-2.0 |
-| [@tanstack/query-core](https://tanstack.com/query) | 5.104.0 | MIT |
-| [@tanstack/react-query](https://tanstack.com/query) | 5.104.0 | MIT |
+| [@tanstack/query-core](https://tanstack.com/query) | 5.105.0 | MIT |
+| [@tanstack/react-query](https://tanstack.com/query) | 5.105.0 | MIT |
 | [@types/d3-color](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-color) | 3.1.3 | MIT |
 | [@types/d3-drag](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-drag) | 3.0.7 | MIT |
 | [@types/d3-interpolate](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-interpolate) | 3.0.4 | MIT |
@@ -859,8 +849,8 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [gl-matrix](http://glmatrix.net) | 3.4.4 | MIT |
 | [json-stringify-pretty-compact](https://github.com/lydell/json-stringify-pretty-compact#readme) | 4.0.0 | MIT |
 | [kdbush](https://github.com/mourner/kdbush#readme) | 4.1.0 | ISC |
-| [lucide-react](https://lucide.dev) | 1.49.0 | ISC |
-| [maplibre-gl](https://maplibre.org/) | 6.11.2 | BSD-3-Clause |
+| [lucide-react](https://lucide.dev) | 1.61.0 | ISC |
+| [maplibre-gl](https://maplibre.org/) | 6.16.0 | BSD-3-Clause |
 | [minimist](https://github.com/minimistjs/minimist) | 1.2.8 | MIT |
 | [murmurhash-js](https://github.com/mikolalysenko/murmurhash-js#readme) | 1.0.0 | MIT |
 | [openapi-fetch](https://openapi-ts.dev) | 0.17.0 | MIT |
@@ -870,18 +860,18 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [potpack](https://mapbox.github.io/potpack/) | 2.1.0 | ISC |
 | [protocol-buffers-schema](https://github.com/mafintosh/protocol-buffers-schema) | 3.6.1 | MIT |
 | [quickselect](https://github.com/mourner/quickselect#readme) | 3.0.0 | ISC |
-| [react](https://react.dev/) | 19.3.0 | MIT |
-| [react-dom](https://react.dev/) | 19.3.0 | MIT |
+| [react](https://react.dev/) | 19.3.1 | MIT |
+| [react-dom](https://react.dev/) | 19.3.1 | MIT |
 | [require-from-string](https://github.com/floatdrop/require-from-string#readme) | 2.0.2 | MIT |
 | [reselect](https://github.com/reduxjs/reselect#readme) | 5.3.0 | MIT |
 | [resolve-protobuf-schema](https://github.com/mafintosh/resolve-protobuf-schema) | 2.1.0 | MIT |
 | [scheduler](https://react.dev/) | 0.28.0 | MIT |
 | [simple-yenc](https://github.com/eshaz/simple-yenc#readme) | 1.0.4 | MIT |
-| [swagger-ui-dist](https://github.com/swagger-api/swagger-ui#readme) | 5.33.0 | Apache-2.0 |
+| [swagger-ui-dist](https://github.com/swagger-api/swagger-ui#readme) | 5.34.0 | Apache-2.0 |
 | [tinyqueue](https://github.com/mourner/tinyqueue) | 3.0.0 | ISC |
 | [uqr](https://github.com/unjs/uqr#readme) | 0.1.3 | MIT |
 | [use-sync-external-store](https://github.com/react/react#readme) | 1.7.0 | MIT |
-| [zustand](https://github.com/pmndrs/zustand) | 4.5.7, 5.0.15 | MIT |
+| [zustand](https://github.com/pmndrs/zustand) | 4.5.7, 5.0.16 | MIT |
 
 ## Hardware libraries (12)
 

@@ -267,6 +267,9 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    env:
+      # The image binds the wildcard address, which the server refuses without a token.
+      SDRMM_TOKEN: container-smoke
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -291,10 +294,11 @@ jobs:
           grep -qi 'lms7' doctor
           grep -qi 'remote' doctor
       - name: Start
-        run: docker run --rm --detach --name sdrmm-ci --publish 8080:8080 sdrmm:ci
+        run: docker run --detach --name sdrmm-ci --env SDRMM_TOKEN --publish 8080:8080 sdrmm:ci
       - name: Serve UI
         run: |
-          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null http://127.0.0.1:8080/api/status
+          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null \
+            -H "Authorization: Bearer $SDRMM_TOKEN" http://127.0.0.1:8080/api/status
           curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root"'
       - if: failure()
         run: docker logs sdrmm-ci

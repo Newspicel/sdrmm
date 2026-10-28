@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import limits from "../generated/limits.json";
+import limits from "../generated/limits.json" with { type: "json" };
 import { cellKey, useSurveyStore, withCell } from "./survey";
 import type { SurveyCell, SurveyUpdate } from "./types";
 
