@@ -1,4 +1,5 @@
 mod bulk;
+mod configuration;
 mod error;
 mod pause;
 mod policy;
@@ -8,6 +9,7 @@ pub mod testing;
 mod tx;
 
 pub use bulk::{BulkIn, Completion, NusbBulkIn};
+pub use configuration::select_configuration;
 pub use error::{Result, StreamError, is_busy, is_disconnect};
 pub use pause::{Paused, Pauser};
 pub use policy::{Action, TransferPolicy};

@@ -1,5 +1,5 @@
 use nusb::MaybeFuture;
-use sdrmm_usb_stream::{NusbBulkIn, RxStream, StreamConfig};
+use sdrmm_usb_stream::{NusbBulkIn, RxStream, StreamConfig, select_configuration};
 use tracing::{debug, info};
 
 use super::{
@@ -46,11 +46,8 @@ impl Airspy {
             .wait()
             .map_err(|e| Error::usb("opening Airspy USB device", e))?;
 
-        match device.set_configuration(USB_CONFIGURATION).wait() {
-            Ok(()) => {}
-            Err(e) if e.kind() == nusb::ErrorKind::Unsupported => {}
-            Err(e) => return Err(Error::usb("selecting USB configuration 1", e)),
-        }
+        select_configuration(&device, USB_CONFIGURATION)
+            .map_err(|e| Error::usb("selecting USB configuration 1", e))?;
         let interface = device
             .detach_and_claim_interface(USB_INTERFACE)
             .wait()
