@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
 
 use axum::body::Bytes;
 use reqwest::{Client, Response, Url, multipart};
@@ -729,7 +732,22 @@ async fn send_mqtt(target: MqttTarget<'_>, message: &OutputMessage) -> Result<()
 }
 
 fn mqtt_options(target: &MqttTarget<'_>) -> Result<MqttOptions, DeliveryError> {
-    let url = Url::parse(target.broker_url)
+    let (host, port, secure) = mqtt_broker(target.broker_url)?;
+    let mut options = MqttOptions::new(target.client_id, (host, port));
+    options.set_keep_alive(MQTT_KEEP_ALIVE_SECS);
+    if secure {
+        options.set_transport(mqtt_tls()?);
+    }
+    if !target.username.is_empty() {
+        options.set_credentials(target.username, target.password.to_owned());
+    }
+    Ok(options)
+}
+
+/// Where a broker URL points and whether it asks for TLS, with the port its scheme implies when
+/// the URL names none.
+fn mqtt_broker(broker_url: &str) -> Result<(String, u16, bool), DeliveryError> {
+    let url = Url::parse(broker_url)
         .map_err(|error| DeliveryError::Failed(format!("MQTT broker URL: {error}")))?;
     let secure = match url.scheme() {
         "mqtts" => true,
@@ -746,17 +764,20 @@ fn mqtt_options(target: &MqttTarget<'_>) -> Result<MqttOptions, DeliveryError> {
     let port = url
         .port()
         .unwrap_or(if secure { MQTTS_PORT } else { MQTT_PORT });
-    let mut options = MqttOptions::new(target.client_id, (host, port));
-    options.set_keep_alive(MQTT_KEEP_ALIVE_SECS);
-    if secure {
-        let transport = Transport::try_tls_with_default_config()
-            .map_err(|error| DeliveryError::Failed(format!("MQTT TLS: {error}")))?;
-        options.set_transport(transport);
+    Ok((host.to_owned(), port, secure))
+}
+
+/// Reading the platform trust store takes seconds and asks the operating system for every root
+/// it holds, so the first secure broker pays for it and the rest share what it found. A read
+/// that failed is not kept, leaving the next publish free to try again.
+fn mqtt_tls() -> Result<Transport, DeliveryError> {
+    static TLS: OnceLock<Transport> = OnceLock::new();
+    if let Some(transport) = TLS.get() {
+        return Ok(transport.clone());
     }
-    if !target.username.is_empty() {
-        options.set_credentials(target.username, target.password.to_owned());
-    }
-    Ok(options)
+    let transport = Transport::try_tls_with_default_config()
+        .map_err(|error| DeliveryError::Failed(format!("MQTT TLS: {error}")))?;
+    Ok(TLS.get_or_init(|| transport).clone())
 }
 
 async fn mqtt_disconnect(client: &AsyncClient, eventloop: &mut EventLoop) {

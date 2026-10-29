@@ -693,19 +693,6 @@ mod tests {
             0x5d90,
         );
         let reports = run(params(), &iq);
-        eprintln!(
-            "DEBUG-PAGER {:?}",
-            reports
-                .iter()
-                .map(|r| r.loudest().map(|s| (
-                    s.modulation,
-                    s.symbol_rate_hz,
-                    s.deviation_hz,
-                    s.bandwidth_hz,
-                    &s.candidates
-                )))
-                .collect::<Vec<_>>()
-        );
         assert_eq!(consensus(&reports), Modulation::Fsk2);
         let named = reports
             .iter()

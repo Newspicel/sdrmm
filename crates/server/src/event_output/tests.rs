@@ -1254,19 +1254,24 @@ fn the_broker_url_takes_the_default_port_for_its_scheme() {
         password: "",
         client_id: "sdrmm-chat",
     };
-    for (broker_url, port) in [
-        ("mqtt://broker.example", MQTT_PORT),
-        ("mqtts://broker.example", MQTTS_PORT),
-        ("mqtt://broker.example:1884", 1_884),
+    for (broker_url, port, secure) in [
+        ("mqtt://broker.example", MQTT_PORT, false),
+        ("mqtts://broker.example", MQTTS_PORT, true),
+        ("mqtt://broker.example:1884", 1_884, false),
     ] {
-        let options = mqtt_options(&target(broker_url)).expect("broker options");
         assert_eq!(
-            options.broker().tcp_address(),
-            Some(("broker.example", port)),
+            mqtt_broker(broker_url).expect("broker address"),
+            ("broker.example".to_owned(), port, secure),
             "{broker_url}"
         );
     }
-    assert!(mqtt_options(&target("https://broker.example")).is_err());
+    assert!(mqtt_broker("https://broker.example").is_err());
+
+    let options = mqtt_options(&target("mqtt://broker.example:1884")).expect("broker options");
+    assert_eq!(
+        options.broker().tcp_address(),
+        Some(("broker.example", 1_884))
+    );
 }
 
 #[test]

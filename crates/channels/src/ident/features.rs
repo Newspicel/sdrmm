@@ -31,7 +31,10 @@ const LINE_THRESHOLD_DB: f32 = 6.0;
 const MIN_CLOCK_SEGMENTS: usize = 3;
 
 const MAX_HARMONIC: usize = 8;
-const SUBHARMONIC_FRACTION: f32 = 0.5;
+/// How far under the loudest line its own fundamental may sit and still be read as the clock.
+/// Squaring a two-level series leaves most of the energy in the octave: on an ACARS burst the
+/// 2400 Hz clock is four decibels under its octave, while the bumps between the two are thirteen.
+const SUBHARMONIC_FRACTION: f32 = 0.25;
 const HARMONIC_TOLERANCE: f64 = 0.03;
 
 const KEYED_FRACTION: f32 = 0.35;
@@ -877,6 +880,26 @@ mod tests {
 
     fn measure(iq: Vec<Complex<f32>>) -> Waveform {
         Meter::new().measure(&Zoom { rate: RATE, iq }, &band())
+    }
+
+    #[test]
+    fn an_acars_burst_reads_its_clock_and_not_the_octave_above_it() {
+        let block = crate::synth::acars::Block {
+            mode: '2',
+            registration: ".D-AIBC",
+            ack: '\x15',
+            label: "H1",
+            block_id: '3',
+            seq_no: Some("M01A"),
+            flight: Some("LH0400"),
+            text: "SDRmm FIXTURE",
+            more: false,
+        };
+        let iq = crate::synth::acars::transmission(&block, RATE);
+        let baud = measure(iq)
+            .symbol_rate_hz
+            .expect("a keyed carrier has a symbol clock");
+        assert!((baud - 2_400.0).abs() < 120.0, "baud {baud}");
     }
 
     #[test]

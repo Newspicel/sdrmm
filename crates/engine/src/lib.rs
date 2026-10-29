@@ -1592,10 +1592,7 @@ impl Engine {
                 let attached_before = sorted_ids(&engine.registry.probe_all());
                 let found = engine.registry.probe_all_deep();
                 let attached = sorted_ids(&engine.registry.probe_all());
-                let extras = found
-                    .into_iter()
-                    .filter(|device| !attached.contains(&device.id()))
-                    .collect();
+                let extras = discovery::extras_beyond(found, &attached_before, &attached);
                 let extras_changed = engine.lock_discovery().searched(extras, Instant::now());
                 if extras_changed || attached != attached_before {
                     engine.emit(ServerEvent::StateChanged {

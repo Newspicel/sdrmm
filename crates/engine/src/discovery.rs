@@ -64,6 +64,24 @@ impl Discovery {
     }
 }
 
+/// What a deep search turned up beyond the radios attached to this machine. The attached listing
+/// is read either side of the search because opening a radio takes it out of its driver's
+/// listing: a radio either read saw is attached, not a network find that would then outlive the
+/// search in the device list.
+pub(crate) fn extras_beyond(
+    found: Vec<DeviceInfo>,
+    before: &[String],
+    after: &[String],
+) -> Vec<DeviceInfo> {
+    found
+        .into_iter()
+        .filter(|device| {
+            let id = device.id();
+            !before.contains(&id) && !after.contains(&id)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use sdrmm_wire::DeviceBackend;
@@ -123,6 +141,25 @@ mod tests {
         discovery.searched(Vec::new(), now);
         discovery.expire();
         assert!(discovery.claim(now));
+    }
+
+    #[test]
+    fn a_radio_opened_while_the_search_ran_is_no_network_find() {
+        let band = device(DeviceBackend::Virtual, "band");
+        let remote = device(DeviceBackend::Soapy, "remote");
+        let found = vec![band.clone(), remote];
+        assert_eq!(
+            ids(&extras_beyond(found.clone(), &[band.id()], &[])),
+            vec!["soapy:remote"]
+        );
+        assert_eq!(
+            ids(&extras_beyond(found.clone(), &[], &[band.id()])),
+            vec!["soapy:remote"]
+        );
+        assert_eq!(
+            ids(&extras_beyond(found, &[], &[])),
+            vec!["virtual:band", "soapy:remote"]
+        );
     }
 
     #[test]
