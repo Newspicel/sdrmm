@@ -131,7 +131,7 @@ impl Reply {
     pub fn line(&self) -> String {
         match self {
             Self::Streaming { frame_bytes } => format!("{OK} {frame_bytes}\n"),
-            Self::Refused(reason) => format!("{ERR} {}\n", reason.replace('\n', " ")),
+            Self::Refused(reason) => format!("{ERR} {}\n", one_line(reason)),
         }
     }
 
@@ -143,10 +143,15 @@ impl Reply {
             OK => Ok(Self::Streaming {
                 frame_bytes: rest.trim().parse().map_err(|_| bad())?,
             }),
-            ERR => Ok(Self::Refused(rest.trim().to_string())),
+            ERR => Ok(Self::Refused(one_line(rest.trim()))),
             _ => Err(bad()),
         }
     }
+}
+
+/// A reason travels as one line, so both ends fold a newline in it to a space the same way.
+fn one_line(reason: &str) -> String {
+    reason.replace('\n', " ")
 }
 
 #[cfg(test)]
@@ -218,6 +223,10 @@ mod tests {
         assert_eq!(
             Reply::Refused("two\nlines".to_string()).line(),
             "ERR two lines\n"
+        );
+        assert_eq!(
+            Reply::parse("ERR two\nlines"),
+            Ok(Reply::Refused("two lines".to_string()))
         );
         assert!(Reply::parse("HELLO").is_err());
     }
