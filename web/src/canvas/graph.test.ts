@@ -14,6 +14,8 @@ import {
   addEdge,
   addNode,
   clampCells,
+  dragCorner,
+  dragEdge,
   echoesWire,
   edgeKey,
   type GraphContext,
@@ -418,6 +420,40 @@ describe("the rack", () => {
       { node: "b", x: 6, y: 0, w: 6, h: 4 },
       { node: "c", x: 6, y: 4, w: 6, h: 4 },
     ]);
+  });
+
+  it("stops a dragged edge at the last legal cell instead of snapping back", () => {
+    const rack = pin(pin({ slots: [] }, "a"), "b");
+    expect(dragEdge(rack, "a", "e", 9).slots).toEqual([
+      { node: "a", x: 0, y: 0, w: 11, h: 4 },
+      { node: "b", x: 11, y: 0, w: 1, h: 4 },
+    ]);
+    const tall = placeSlot(rack, "b", { x: 6, y: 0, w: 6, h: 8 });
+    const below = placeSlot(pin(tall, "d"), "d", { x: 0, y: 4, w: 4, h: 4 });
+    expect(dragEdge(below, "a", "e", -3).slots?.slice(0, 2)).toEqual([
+      { node: "a", x: 0, y: 0, w: 4, h: 4 },
+      { node: "b", x: 4, y: 0, w: 8, h: 8 },
+    ]);
+    expect(dragEdge(rack, "gone", "e", 2)).toBe(rack);
+  });
+
+  it("grows a corner to the nearest size that fits", () => {
+    const rack = pin(pin({ slots: [] }, "a"), "b");
+    expect(dragCorner(rack, "a", { w: 9, h: 6 }).slots?.[0]).toEqual({
+      node: "a",
+      x: 0,
+      y: 0,
+      w: 6,
+      h: 6,
+    });
+    expect(dragCorner(rack, "a", { w: 3, h: 2 }).slots?.[0]).toEqual({
+      node: "a",
+      x: 0,
+      y: 0,
+      w: 3,
+      h: 2,
+    });
+    expect(dragCorner(rack, "gone", { w: 2, h: 2 })).toBe(rack);
   });
 
   it("says how far an edge can travel before the grid or a neighbour stops it", () => {

@@ -74,7 +74,7 @@ async function watchRackStyles(page: Page): Promise<void> {
       throw new Error("a rack to watch");
     }
     const read = (): string =>
-      [...host.children]
+      [...host.querySelectorAll(":scope > [data-id]")]
         .map((child) => `${child.getAttribute("data-id")}:${(child as HTMLElement).style.gridArea}`)
         .join(" ");
     const held = read();
@@ -392,12 +392,7 @@ test.describe("the workspace", () => {
     ).toBe(1);
 
     const tall = await slots(page);
-    await dragBy(
-      page,
-      page.locator('[title="Move: drop on another face to trade places"]').first(),
-      0,
-      8,
-    );
+    await dragBy(page, rackNode(page, "scope").getByRole("button", { name: /^rename/i }), 0, 8);
     await expect
       .poll(async () => (await slots(page)).find((slot) => slot.node === "scope")?.y ?? -1)
       .toBe(Math.max(0, 8 - (tall.find((slot) => slot.node === "scope")?.h ?? 0)));

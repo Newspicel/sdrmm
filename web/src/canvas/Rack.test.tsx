@@ -47,4 +47,12 @@ describe("Rack grips", () => {
     expect(html).not.toContain('aria-hidden="true" title="Resize"');
     expect(html).toContain('aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"');
   });
+
+  it("stretches the face over its slot and lets a narrow slot scroll", () => {
+    const html = render();
+    expect(html).not.toMatch(/style="width:/);
+    expect(html).toMatch(
+      /class="size-full overflow-auto"><div class="h-full" style="min-width:\d+px"/,
+    );
+  });
 });

@@ -4,19 +4,19 @@ import { Button } from "../components/BaseControls";
 import { deepEqual } from "../lib/deepEqual";
 import type { PatchNode, RackLayout } from "../lib/types";
 import { useWorkspaceContext } from "./context";
+import { RACK_COLS, RACK_ROWS, type RackCell } from "./graph";
+import { FACES, rackFaceSize } from "./nodes";
 import {
-  clampCells,
-  moveSlot,
-  placeSlot,
-  RACK_COLS,
-  RACK_ROWS,
-  type RackEdge,
-  resizeSlot,
-  slotRoom,
-} from "./graph";
-import { FACES, faceSize } from "./nodes";
+  applyGesture,
+  fromHeader,
+  type Gesture,
+  type GestureMode,
+  type Ghost,
+  moveGhost,
+} from "./rackGesture";
 
 const SETTLE_MS = 500;
+const DRAG_PX = 4;
 
 const NUDGES: Record<string, { dx: number; dy: number }> = {
   ArrowLeft: { dx: -1, dy: 0 },
@@ -28,20 +28,22 @@ const NUDGES: Record<string, { dx: number; dy: number }> = {
 interface Preview {
   layout: RackLayout;
   dropped: boolean;
+  ghost: Ghost | null;
 }
 
-interface Gesture {
-  node: string;
-  mode: "move" | "corner" | RackEdge;
+/// Pointer capture waits for real movement so a click or double-click on the title still lands.
+interface Drag extends Gesture {
   originX: number;
   originY: number;
-  base: RackLayout;
+  pointer: number;
+  handle: Element;
+  captured: boolean;
 }
 
 export function Rack() {
   const workspace = useWorkspaceContext();
   const hostRef = useRef<HTMLDivElement>(null);
-  const gesture = useRef<Gesture | null>(null);
+  const drag = useRef<Drag | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
 
   const landed = preview !== null && preview.dropped && sameRack(workspace.rack, preview.layout);
@@ -54,73 +56,84 @@ export function Rack() {
     return () => clearTimeout(settle);
   }, [preview]);
 
-  const cellSize = useCallback(() => {
+  const cells = useCallback((active: Drag, event: React.PointerEvent) => {
     const host = hostRef.current;
-    return host === null
-      ? { w: 1, h: 1 }
-      : { w: host.clientWidth / RACK_COLS, h: host.clientHeight / RACK_ROWS };
+    const w = host === null ? 1 : host.clientWidth / RACK_COLS;
+    const h = host === null ? 1 : host.clientHeight / RACK_ROWS;
+    return {
+      dx: Math.round((event.clientX - active.originX) / w),
+      dy: Math.round((event.clientY - active.originY) / h),
+    };
   }, []);
-
-  const onPointerMove = useCallback(
-    (event: React.PointerEvent) => {
-      const active = gesture.current;
-      if (active === null) {
-        return;
-      }
-      const cell = cellSize();
-      const dx = Math.round((event.clientX - active.originX) / cell.w);
-      const dy = Math.round((event.clientY - active.originY) / cell.h);
-      const next = applyGesture(active, dx, dy);
-      setPreview((current) =>
-        current !== null && sameRack(current.layout, next)
-          ? current
-          : { layout: next, dropped: false },
-      );
-    },
-    [cellSize],
-  );
 
   const endGesture = useCallback(
     (event: React.PointerEvent) => {
-      const active = gesture.current;
-      gesture.current = null;
-      if (active === null) {
+      const active = drag.current;
+      drag.current = null;
+      const { dx, dy } = active === null ? { dx: 0, dy: 0 } : cells(active, event);
+      if (active === null || !active.captured || (dx === 0 && dy === 0)) {
         setPreview(null);
         return;
       }
-      const cell = cellSize();
-      const dx = Math.round((event.clientX - active.originX) / cell.w);
-      const dy = Math.round((event.clientY - active.originY) / cell.h);
-      if (dx === 0 && dy === 0) {
-        setPreview(null);
-        return;
-      }
-      setPreview({ layout: applyGesture(active, dx, dy), dropped: true });
+      setPreview({ layout: applyGesture(active, dx, dy), dropped: true, ghost: null });
       workspace.edit((snapshot) => ({
         ...snapshot,
         rack: applyGesture({ ...active, base: snapshot.rack ?? {} }, dx, dy),
       }));
     },
-    [cellSize, workspace],
+    [cells, workspace],
   );
 
-  const begin = (event: React.PointerEvent, node: string, mode: Gesture["mode"]) => {
+  const onPointerMove = useCallback(
+    (event: React.PointerEvent) => {
+      const active = drag.current;
+      if (active === null) {
+        return;
+      }
+      if (event.buttons === 0) {
+        endGesture(event);
+        return;
+      }
+      if (!active.captured) {
+        if (Math.hypot(event.clientX - active.originX, event.clientY - active.originY) < DRAG_PX) {
+          return;
+        }
+        active.handle.setPointerCapture(active.pointer);
+        active.captured = true;
+      }
+      const { dx, dy } = cells(active, event);
+      const layout = applyGesture(active, dx, dy);
+      const next = { layout, dropped: false, ghost: moveGhost(active, dx, dy, layout) };
+      setPreview((current) => (current !== null && samePreview(current, next) ? current : next));
+    },
+    [cells, endGesture],
+  );
+
+  const begin = (event: React.PointerEvent, node: string, mode: GestureMode) => {
     if (event.button !== 0) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    gesture.current = {
+    drag.current = {
       node,
       mode,
+      base: workspace.rack,
       originX: event.clientX,
       originY: event.clientY,
-      base: workspace.rack,
+      pointer: event.pointerId,
+      handle: event.currentTarget,
+      captured: false,
     };
   };
 
-  const nudge = (event: React.KeyboardEvent, node: string, mode: Gesture["mode"]) => {
+  const pickUp = (event: React.PointerEvent, node: string) => {
+    if (fromHeader(event.target)) {
+      begin(event, node, "move");
+    }
+  };
+
+  const nudge = (event: React.KeyboardEvent, node: string, mode: GestureMode) => {
     const step = NUDGES[event.key];
     if (step === undefined) {
       return;
@@ -129,11 +142,7 @@ export function Rack() {
     event.stopPropagation();
     workspace.edit((snapshot) => ({
       ...snapshot,
-      rack: applyGesture(
-        { node, mode, originX: 0, originY: 0, base: snapshot.rack ?? {} },
-        step.dx,
-        step.dy,
-      ),
+      rack: applyGesture({ node, mode, base: snapshot.rack ?? {} }, step.dx, step.dy),
     }));
   };
 
@@ -145,11 +154,12 @@ export function Rack() {
       </div>
     );
   }
+  const ghost = landed ? null : (preview?.ghost ?? null);
 
   return (
     <div
       ref={hostRef}
-      className="grid min-h-0 flex-1 gap-px bg-bg p-px"
+      className="grid min-h-0 flex-1 gap-px overflow-hidden bg-bg p-px"
       style={{
         gridTemplateColumns: `repeat(${RACK_COLS}, minmax(0, 1fr))`,
         gridTemplateRows: `repeat(${RACK_ROWS}, minmax(0, 1fr))`,
@@ -167,19 +177,31 @@ export function Rack() {
           <div
             key={slot.node}
             data-id={slot.node}
-            className="flex min-h-0 min-w-0 items-center justify-center"
-            style={{
-              gridColumn: `${slot.x + 1} / span ${slot.w}`,
-              gridRow: `${slot.y + 1} / span ${slot.h}`,
-            }}
+            className={`relative min-h-0 min-w-0 rounded-control has-[>button:focus-visible]:outline-2 has-[>button:focus-visible]:outline-accent [&_header]:cursor-grab ${
+              ghost?.partner === slot.node ? "outline-2 outline-accent" : ""
+            }`}
+            style={area(slot)}
+            onPointerDown={(event) => pickUp(event, slot.node)}
           >
-            <div className="relative max-h-full max-w-full" style={faceSize(node)}>
-              <RackFace node={node} />
-              <Grips node={slot.node} onBegin={begin} onNudge={nudge} />
+            <div className="size-full overflow-auto">
+              <div className="h-full" style={rackFaceSize(node)}>
+                <RackFace node={node} />
+              </div>
             </div>
+            <Grips node={slot.node} onBegin={begin} onNudge={nudge} />
           </div>
         );
       })}
+      {ghost !== null && (
+        <div
+          aria-hidden
+          data-ghost={ghost.legal ? "legal" : "blocked"}
+          className={`pointer-events-none z-20 rounded-control border-2 border-dashed ${
+            ghost.legal ? "border-accent bg-accent/10" : "border-danger bg-danger/10"
+          }`}
+          style={area(ghost.cell)}
+        />
+      )}
     </div>
   );
 }
@@ -189,22 +211,25 @@ const RackFace = memo(function RackFace({ node }: { node: PatchNode }) {
   return <Face node={node} />;
 });
 
+const EDGE_LINE =
+  "before:absolute before:bg-accent before:opacity-0 before:transition-opacity hover:before:opacity-100";
+
 function Grips({
   node,
   onBegin,
   onNudge,
 }: {
   node: string;
-  onBegin: (event: React.PointerEvent, node: string, mode: Gesture["mode"]) => void;
-  onNudge: (event: React.KeyboardEvent, node: string, mode: Gesture["mode"]) => void;
+  onBegin: (event: React.PointerEvent, node: string, mode: GestureMode) => void;
+  onNudge: (event: React.KeyboardEvent, node: string, mode: GestureMode) => void;
 }) {
-  const grip = (mode: Gesture["mode"], className: string, label: string, hint: string) => (
+  const grip = (mode: GestureMode, className: string, label: string, hint: string) => (
     <Button
       type="button"
       aria-label={`${label} ${node}`}
       aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
       title={hint}
-      className={`absolute ${className}`}
+      className={`absolute z-10 ${className}`}
       onPointerDown={(event) => onBegin(event, node, mode)}
       onKeyDown={(event) => onNudge(event, node, mode)}
     />
@@ -213,37 +238,32 @@ function Grips({
     <>
       {grip(
         "n",
-        "inset-x-0 top-0 h-1.5 cursor-ns-resize",
+        `inset-x-3 -top-1 h-2 cursor-ns-resize ${EDGE_LINE} before:inset-x-0 before:top-[3px] before:h-0.5`,
         "Boundary above",
         "Drag the boundary above",
       )}
       {grip(
         "s",
-        "inset-x-0 bottom-0 h-1.5 cursor-ns-resize",
+        `inset-x-3 -bottom-1 h-2 cursor-ns-resize ${EDGE_LINE} before:inset-x-0 before:top-[3px] before:h-0.5`,
         "Boundary below",
         "Drag the boundary below",
       )}
       {grip(
         "w",
-        "inset-y-0 left-0 w-1.5 cursor-ew-resize",
+        `inset-y-3 -left-1 w-2 cursor-ew-resize ${EDGE_LINE} before:inset-y-0 before:left-[3px] before:w-0.5`,
         "Boundary left of",
         "Drag the boundary to the left",
       )}
       {grip(
         "e",
-        "inset-y-0 right-0 w-1.5 cursor-ew-resize",
+        `inset-y-3 -right-1 w-2 cursor-ew-resize ${EDGE_LINE} before:inset-y-0 before:left-[3px] before:w-0.5`,
         "Boundary right of",
         "Drag the boundary to the right",
       )}
-      {grip(
-        "move",
-        "top-1.5 right-14 left-1.5 h-5 cursor-move",
-        "Move",
-        "Move: drop on another face to trade places",
-      )}
+      {grip("move", "sr-only", "Move", "Move: drop on another face to trade places")}
       {grip(
         "corner",
-        "right-0 bottom-0 size-3.5 cursor-se-resize border-r-2 border-b-2 border-line-strong",
+        "right-0 bottom-0 size-3.5 cursor-se-resize border-r-2 border-b-2 border-line-strong hover:border-accent",
         "Resize",
         "Resize",
       )}
@@ -251,41 +271,17 @@ function Grips({
   );
 }
 
-function applyGesture(gesture: Gesture, dx: number, dy: number): RackLayout {
-  const slot = (gesture.base.slots ?? []).find((candidate) => candidate.node === gesture.node);
-  if (slot === undefined) {
-    return gesture.base;
-  }
-  switch (gesture.mode) {
-    case "move":
-      return moveSlot(gesture.base, gesture.node, {
-        x: clamp(slot.x + dx, 0, RACK_COLS - slot.w),
-        y: clamp(slot.y + dy, 0, RACK_ROWS - slot.h),
-      });
-    case "corner":
-      return placeSlot(gesture.base, gesture.node, {
-        x: slot.x,
-        y: slot.y,
-        w: clamp(slot.w + dx, 1, RACK_COLS - slot.x),
-        h: clamp(slot.h + dy, 1, RACK_ROWS - slot.y),
-      });
-    default: {
-      const edge = gesture.mode;
-      const cells = edge === "n" || edge === "s" ? dy : dx;
-      return resizeSlot(
-        gesture.base,
-        gesture.node,
-        edge,
-        clampCells(slotRoom(gesture.base, gesture.node, edge), cells),
-      );
-    }
-  }
-}
-
-function clamp(value: number, low: number, high: number): number {
-  return Math.min(Math.max(value, low), Math.max(high, low));
+function area(cell: RackCell): React.CSSProperties {
+  return {
+    gridColumn: `${cell.x + 1} / span ${cell.w}`,
+    gridRow: `${cell.y + 1} / span ${cell.h}`,
+  };
 }
 
 function sameRack(a: RackLayout, b: RackLayout): boolean {
   return deepEqual(a.slots ?? [], b.slots ?? []);
+}
+
+function samePreview(a: Preview, b: Preview): boolean {
+  return a.dropped === b.dropped && sameRack(a.layout, b.layout) && deepEqual(a.ghost, b.ghost);
 }

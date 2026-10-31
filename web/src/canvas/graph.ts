@@ -351,6 +351,52 @@ export function clampCells(room: { min: number; max: number }, cells: number): n
   return Math.min(Math.max(cells, room.min), Math.max(room.max, room.min));
 }
 
+/// Moves an edge as far toward `cells` as the grid and the pushed neighbours allow, so a drag
+/// past a blocker stops at it instead of snapping back.
+export function dragEdge(
+  rack: RackLayout,
+  node: string,
+  edge: RackEdge,
+  cells: number,
+): RackLayout {
+  for (
+    let step = clampCells(slotRoom(rack, node, edge), cells);
+    step !== 0;
+    step -= Math.sign(step)
+  ) {
+    const next = resizeSlot(rack, node, edge, step);
+    if (next !== rack) {
+      return next;
+    }
+  }
+  return rack;
+}
+
+/// Resizes from the bottom right corner to the legal size nearest the one asked for.
+export function dragCorner(
+  rack: RackLayout,
+  node: string,
+  size: { w: number; h: number },
+): RackLayout {
+  const slot = (rack.slots ?? []).find((candidate) => candidate.node === node);
+  if (slot === undefined) {
+    return rack;
+  }
+  let best = rack;
+  let bestMiss = Number.POSITIVE_INFINITY;
+  for (let w = size.w; w >= 1; w--) {
+    for (let h = size.h; h >= 1; h--) {
+      const miss = size.w - w + (size.h - h);
+      const next = miss < bestMiss ? placeSlot(rack, node, { x: slot.x, y: slot.y, w, h }) : rack;
+      if (next !== rack) {
+        best = next;
+        bestMiss = miss;
+      }
+    }
+  }
+  return best;
+}
+
 export function pruneRack(rack: RackLayout, graph: PatchGraph): RackLayout {
   const known = new Set(graph.nodes.map((node) => node.id));
   const kept = (rack.slots ?? []).filter((slot) => known.has(slot.node));

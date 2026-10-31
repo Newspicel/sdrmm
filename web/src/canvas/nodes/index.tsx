@@ -2,7 +2,7 @@ import type { Node, NodeProps } from "@xyflow/react";
 import type { ComponentType, CSSProperties } from "react";
 import type { NodeKind, PatchNode } from "../../lib/types";
 import type { FlowData } from "../Canvas";
-import { nodeSize } from "../graph";
+import { nodeMinSize, nodeSize } from "../graph";
 import { ArrayFace } from "./ArrayFace";
 import { AudioFxFace } from "./AudioFxFace";
 import { BasebandScopeFace } from "./BasebandScopeFace";
@@ -132,4 +132,9 @@ export const FACES: Record<NodeKind, Face> = {
 export function faceSize(node: PatchNode): CSSProperties {
   const size = nodeSize(node.kind);
   return { width: size.h === undefined ? size.w : "100%", height: "100%" };
+}
+
+/// A rack slot may be narrower than a face can draw; the slot scrolls rather than squeezing it.
+export function rackFaceSize(node: PatchNode): CSSProperties {
+  return { minWidth: nodeMinSize(node.kind, []).w };
 }
