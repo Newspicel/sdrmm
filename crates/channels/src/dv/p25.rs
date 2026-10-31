@@ -30,6 +30,9 @@ const MAX_FRAME_BITS: usize = 1_728;
 const MAX_FRAME_SYMBOLS: usize = MAX_FRAME_BITS / 2;
 
 const IMBE_OFFSETS: [usize; 9] = [0, 72, 164, 256, 348, 440, 532, 624, 712];
+const IMBE_BITS: usize = 144;
+const BODY_START: usize = SYNC_BITS as usize + NID_BITS;
+const IMBE_SPANS: [(usize, usize); 9] = imbe_spans();
 
 const DUID_HEADER: u8 = 0x0;
 const DUID_TERMINATOR: u8 = 0x3;
@@ -124,7 +127,8 @@ struct Decoder {
     pending_duid: Option<u8>,
     pending_nac: u16,
     pending_errors: u32,
-    encrypted: bool,
+    next_imbe: usize,
+    encryption: Option<bool>,
     vocoder: MbeDecoder,
     logical: Vec<bool>,
     rejected: u32,
@@ -141,7 +145,8 @@ impl Decoder {
             pending_duid: None,
             pending_nac: 0,
             pending_errors: 0,
-            encrypted: false,
+            next_imbe: 0,
+            encryption: None,
             vocoder: MbeDecoder::full_rate(),
             logical: Vec::with_capacity(MAX_FRAME_BITS),
             rejected: 0,
@@ -160,7 +165,8 @@ impl Decoder {
         self.pending_duid = None;
         self.pending_nac = 0;
         self.pending_errors = 0;
-        self.encrypted = false;
+        self.next_imbe = 0;
+        self.encryption = None;
         self.vocoder.reset();
     }
 
@@ -168,17 +174,16 @@ impl Decoder {
         self.window.push(symbol);
         if self.countdown > 0 {
             self.countdown -= 1;
+            if let Some(duid) = self.pending_duid.filter(|&duid| is_voice(duid)) {
+                self.voice(duid, out);
+            }
             if self.countdown == 0 {
                 if let Some(duid) = self.pending_duid.take() {
-                    let frames = self.metadata(duid);
-                    if is_voice(duid) {
-                        self.voice(duid, out);
-                    }
-                    for frame in frames {
+                    for frame in self.metadata(duid) {
                         out.events.push(DecoderEvent::Dv(frame));
                     }
                     if matches!(duid, DUID_TERMINATOR | DUID_TERMINATOR_LC) {
-                        self.encrypted = false;
+                        self.encryption = None;
                     }
                     self.hunting = true;
                 } else if let Some((duid, frame)) = self.nid() {
@@ -188,6 +193,7 @@ impl Decoder {
                     let total_symbols = frame_bits(duid) / 2;
                     let consumed = SYNC_BITS as usize / 2 + NID_SYMBOLS;
                     self.pending_duid = Some(duid);
+                    self.next_imbe = 0;
                     self.countdown = total_symbols.saturating_sub(consumed);
                     if self.countdown == 0 {
                         self.pending_duid = None;
@@ -215,7 +221,7 @@ impl Decoder {
         let mut word = 0u64;
         for (i, &bit) in self.bits.iter().enumerate() {
             let frame_bit = SYNC_BITS as usize + i;
-            if frame_bit >= STATUS_START && (frame_bit - STATUS_START) % STATUS_STRIDE < 2 {
+            if is_status(frame_bit) {
                 continue;
             }
             word = word << 1 | u64::from(bit);
@@ -253,29 +259,29 @@ impl Decoder {
         Some((duid, Some(frame)))
     }
 
+    /// Hands each vocoder frame on the moment its last symbol lands, so a data unit leaves as
+    /// nine 20 ms frames instead of one 180 ms burst that live audio downstream sheds.
     fn voice(&mut self, duid: u8, out: &mut ChannelOutputs) {
-        let total_symbols = frame_bits(duid) / 2;
-        self.window.bits(0, total_symbols, &mut self.bits);
-        self.logical.clear();
-        for (i, &bit) in self.bits.iter().enumerate() {
-            if i >= STATUS_START && (i - STATUS_START) % STATUS_STRIDE < 2 {
-                continue;
-            }
-            self.logical.push(bit);
+        let Some(&(first, ready)) = IMBE_SPANS.get(self.next_imbe) else {
+            return;
+        };
+        if frame_bits(duid) / 2 - self.countdown != ready {
+            return;
         }
-        const BODY_START: usize = SYNC_BITS as usize + NID_BITS;
-        for &offset in &IMBE_OFFSETS {
-            let start = BODY_START + offset * 2;
-            let Some(frame) = self.logical.get(start..start + 144) else {
-                return;
-            };
-            let mut dibits = [0u8; 72];
-            for (slot, pair) in dibits.iter_mut().zip(frame.as_chunks::<2>().0) {
-                *slot = u8::from(pair[0]) << 1 | u8::from(pair[1]);
-            }
-            self.vocoder
-                .decode_full_dibits(&dibits, self.encrypted, out);
+        self.next_imbe += 1;
+        self.window.bits(0, ready - first, &mut self.bits);
+        let mut dibits = [0u8; IMBE_BITS / 2];
+        let mut info = self
+            .bits
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| !is_status(first * 2 + i))
+            .map(|(_, &bit)| u8::from(bit));
+        for slot in &mut dibits {
+            *slot = info.next().unwrap_or(0) << 1 | info.next().unwrap_or(0);
         }
+        self.vocoder
+            .decode_full_dibits(&dibits, self.encryption != Some(false), out);
     }
 
     fn logical_frame(&mut self, duid: u8) {
@@ -283,7 +289,7 @@ impl Decoder {
         self.window.bits(0, total_symbols, &mut self.bits);
         self.logical.clear();
         for (index, &bit) in self.bits.iter().enumerate() {
-            if index >= STATUS_START && (index - STATUS_START) % STATUS_STRIDE < 2 {
+            if is_status(index) {
                 continue;
             }
             self.logical.push(bit);
@@ -303,7 +309,6 @@ impl Decoder {
     }
 
     fn signalling_symbols(&self) -> Option<([u8; 24], u32)> {
-        const BODY_START: usize = SYNC_BITS as usize + NID_BITS;
         let mut coded = Vec::with_capacity(240);
         for &voice_index in &[1usize, 2, 3, 4, 5, 6] {
             let start = BODY_START + (IMBE_OFFSETS[voice_index] + 72) * 2;
@@ -335,8 +340,8 @@ impl Decoder {
         let mut frame = decode_p25_link_control(&bits);
         frame.kind = DvFrameKind::Voice;
         self.finish_metadata(&mut frame, hamming_errors + rs_errors);
-        if let Some(encrypted) = frame.encrypted {
-            self.encrypted = encrypted;
+        if frame.encrypted.is_some() {
+            self.encryption = frame.encrypted;
         }
         Some(frame)
     }
@@ -354,13 +359,12 @@ impl Decoder {
         let mut frame = DvFrame::new(DvMode::P25, DvFrameKind::Voice);
         frame.opcode = Some("encryption synchronization".to_owned());
         decode_encryption(&mut frame, &bits, 0);
-        self.encrypted = frame.encrypted == Some(true);
+        self.encryption = frame.encrypted;
         self.finish_metadata(&mut frame, hamming_errors + rs_errors);
-        self.encrypted.then_some(frame)
+        (frame.encrypted == Some(true)).then_some(frame)
     }
 
     fn header_data_unit(&mut self) -> Option<DvFrame> {
-        const BODY_START: usize = SYNC_BITS as usize + NID_BITS;
         let body = self.logical.get(BODY_START..BODY_START + 36 * 18)?;
         let mut symbols = [0u8; 36];
         let mut golay_errors = 0;
@@ -383,13 +387,12 @@ impl Decoder {
         frame.encrypted = frame.algorithm_id.map(|algorithm| algorithm != 0x80);
         frame.destination = Some(bits_value(&bits[104..120]));
         frame.group_call = Some(true);
-        self.encrypted = frame.encrypted == Some(true);
+        self.encryption = frame.encrypted;
         self.finish_metadata(&mut frame, golay_errors + rs_errors);
         Some(frame)
     }
 
     fn trunking_blocks(&mut self) -> Vec<DvFrame> {
-        const BODY_START: usize = SYNC_BITS as usize + NID_BITS;
         let mut frames = Vec::new();
         for block in 0..3 {
             let start = BODY_START + block * 196;
@@ -423,7 +426,6 @@ impl Decoder {
     }
 
     fn packet_data(&self) -> DvFrame {
-        const BODY_START: usize = SYNC_BITS as usize + NID_BITS;
         let mut frame = DvFrame::new(DvMode::P25, DvFrameKind::Data);
         frame.opcode = Some("packet data unit".to_owned());
         frame.data = Some(hex_bits(
@@ -679,6 +681,30 @@ fn frame_bits(duid: u8) -> usize {
     }
 }
 
+const fn is_status(frame_bit: usize) -> bool {
+    frame_bit >= STATUS_START && (frame_bit - STATUS_START) % STATUS_STRIDE < 2
+}
+
+const fn on_air_bit(logical: usize) -> usize {
+    logical + (STATUS_STRIDE - STATUS_START) * (logical / STATUS_START)
+}
+
+/// The first symbol of each vocoder frame in a voice data unit, and the symbol count at which
+/// its last bit has arrived.
+const fn imbe_spans() -> [(usize, usize); 9] {
+    let mut spans = [(0, 0); 9];
+    let mut i = 0;
+    while i < spans.len() {
+        let start = BODY_START + IMBE_OFFSETS[i] * 2;
+        spans[i] = (
+            on_air_bit(start) / 2,
+            on_air_bit(start + IMBE_BITS - 1) / 2 + 1,
+        );
+        i += 1;
+    }
+    spans
+}
+
 fn is_voice(duid: u8) -> bool {
     matches!(duid, DUID_LDU1 | DUID_LDU2)
 }
@@ -780,6 +806,47 @@ mod tests {
     }
 
     #[test]
+    fn voice_leaves_the_decoder_one_vocoder_frame_at_a_time() {
+        const BLOCK: usize = 480;
+        let encoded = full_rate_frames(18);
+        let voice: [[[bool; 144]; 9]; 2] =
+            std::array::from_fn(|ldu| std::array::from_fn(|frame| encoded[ldu * 9 + frame]));
+        let iq = tx::transmission_with_voice(0x293, &voice, INPUT_RATE_HZ);
+        let mut channel = channel();
+        let mut out = ChannelOutputs::default();
+        let mut largest = 0;
+        let mut total = 0;
+        for block in iq.chunks(BLOCK) {
+            out.reset();
+            channel.process(block, &mut out);
+            largest = largest.max(out.audio_pcm.len());
+            total += out.audio_pcm.len();
+        }
+        assert!((total as isize - 18 * 960).abs() <= 1, "{total} samples");
+        assert!(largest <= 960 + 1, "{largest} samples left in one block");
+    }
+
+    #[test]
+    fn a_late_entry_stays_muted_until_the_call_says_it_is_clear() {
+        const HDU_TAIL_SYMBOL: usize = 200 + 380;
+        let encoded = full_rate_frames(18);
+        let voice: [[[bool; 144]; 9]; 2] =
+            std::array::from_fn(|ldu| std::array::from_fn(|frame| encoded[ldu * 9 + frame]));
+        let iq = tx::transmission_with_voice(0x293, &voice, INPUT_RATE_HZ);
+        let samples_per_symbol = (INPUT_RATE_HZ / BAUD) as usize;
+        let (frames, audio) =
+            decode_with_audio(&mut channel(), &iq[HDU_TAIL_SYMBOL * samples_per_symbol..]);
+        assert!(
+            frames.iter().all(|f| f.kind != DvFrameKind::Header),
+            "{frames:?}"
+        );
+        assert_eq!(audio.len(), 18 * 960);
+        let (first, second) = audio.split_at(9 * 960);
+        assert!(first.iter().all(|&sample| sample == 0.0));
+        assert!(crate::testutil::rms(second) > 0.005);
+    }
+
+    #[test]
     fn encrypted_calls_report_identifiers_and_are_muted() {
         let encoded = full_rate_frames(18);
         let voice: [[[bool; 144]; 9]; 2] =
@@ -800,10 +867,6 @@ mod tests {
     fn spec_symbol(dibit: u8) -> f32 {
         const SPEC_SYMBOL_FOR_DIBIT: [f32; 4] = [1.0, 3.0, -1.0, -3.0];
         SPEC_SYMBOL_FOR_DIBIT[usize::from(dibit)]
-    }
-
-    fn is_status(frame_bit: usize) -> bool {
-        frame_bit >= STATUS_START && (frame_bit - STATUS_START) % STATUS_STRIDE < 2
     }
 
     #[test]
