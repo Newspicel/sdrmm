@@ -473,6 +473,7 @@ pub fn hunt_graph(phone: Option<&str>) -> PatchGraph {
                     locked_streams: Vec::new(),
                     split_tuning: false,
                     stopped: false,
+                    waiting: false,
                 }),
             ),
             node(
