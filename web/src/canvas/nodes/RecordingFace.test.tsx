@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { usePositionStore } from "../../lib/position";
 import type { DeviceSet, PatchGraph, PatchNode, RecordingInfo } from "../../lib/types";
 import { catalogBody } from "../../test/catalog";
 import { renderFace, stubWorkspace } from "../../test/faceHarness";
@@ -8,7 +9,7 @@ import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../../test/resolved
 import { nodePorts } from "../graph";
 import { makeArray } from "../makeArray";
 import { arrayLaneRows } from "./arrayNode";
-import { RecordingFace, RecordingFacts } from "./RecordingFace";
+import { RecordedPosition, RecordingFace, RecordingFacts } from "./RecordingFace";
 
 const LANES = 5;
 
@@ -79,7 +80,7 @@ describe("RecordingFace", () => {
       "iq5",
     ]);
     const unresolved = stubWorkspace({ graph: alone }).context;
-    expect(nodePorts(unresolved, take).map((port) => port.name)).toEqual(["iq"]);
+    expect(nodePorts(unresolved, take).map((port) => port.name)).toEqual(["iq", "position"]);
   });
 
   it("offers Make array for a playing collection and wires every lane", () => {
@@ -109,6 +110,29 @@ describe("RecordingFace", () => {
       "take iq5",
     ]);
     expect(renderFace(RecordingFace, take, { graph: made, devices })).not.toContain("Make array");
+  });
+
+  it("reads out the recorded position once one is wired", () => {
+    usePositionStore.getState().clear();
+    expect(renderToStaticMarkup(<RecordedPosition node="rec" />)).toBe("");
+    const at = (fix: { latitude: number; longitude: number } | null, error: string | null) =>
+      usePositionStore.getState().observe({
+        type: "PositionChanged",
+        data: {
+          node: "rec",
+          fix: fix === null ? null : { ...fix, time: "2026-08-14T12:00:00Z" },
+          error,
+        },
+      });
+    at({ latitude: 52.5, longitude: 13.4 }, null);
+    const shown = renderToStaticMarkup(<RecordedPosition node="rec" />);
+    expect(shown).toContain("52.500000, 13.400000");
+    expect(shown).toContain("JO62");
+    at(null, "no position recorded here");
+    expect(renderToStaticMarkup(<RecordedPosition node="rec" />)).toContain(
+      "no position recorded here",
+    );
+    usePositionStore.getState().clear();
   });
 
   it("reads out the lane count of a collection only", () => {

@@ -1629,6 +1629,16 @@ impl Engine {
     }
 
     #[must_use]
+    pub fn playback(&self, ds: u32) -> Option<sdrmm_wire::PlaybackStatus> {
+        self.lock()
+            .device_sets
+            .get(&ds)?
+            .playback
+            .as_deref()
+            .map(PlaybackShared::status)
+    }
+
+    #[must_use]
     pub fn hears(&self, ds: u32, stream: u32, settings: &ChannelSettings) -> bool {
         self.lock()
             .device_sets

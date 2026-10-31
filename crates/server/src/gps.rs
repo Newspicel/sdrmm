@@ -25,6 +25,7 @@ use crate::{AppState, problems::ProblemBoard};
 mod gpsd;
 mod nmea;
 mod pose;
+mod replay;
 mod routes;
 
 pub(crate) use routes::PositionRoutes;
@@ -86,6 +87,7 @@ pub(crate) struct GpsHub {
     events: broadcast::Sender<ServerEvent>,
     pose_seen: Mutex<HashMap<String, tokio::time::Instant>>,
     online: Mutex<HashSet<String>>,
+    replays: Mutex<HashMap<String, replay::Replay>>,
 }
 
 impl Default for GpsHub {
@@ -140,6 +142,7 @@ impl Default for GpsHub {
             events: broadcast::channel(EVENT_CAPACITY).0,
             pose_seen: Mutex::new(HashMap::new()),
             online: Mutex::new(HashSet::new()),
+            replays: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -177,6 +180,7 @@ impl GpsHub {
                 _ => None,
             })
             .collect::<HashMap<_, _>>();
+        let replayed = self.reconcile_replays(state, &resolved);
         let next = GpsConfiguration {
             sources: wanted.clone(),
             routes: resolved.positions.clone(),
@@ -213,7 +217,7 @@ impl GpsHub {
                 .latest
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            latest.retain(|node, _| wanted.contains_key(node));
+            latest.retain(|node, _| wanted.contains_key(node) || replayed.contains(node));
             for node in &changed_sources {
                 latest.remove(node);
             }

@@ -2214,6 +2214,16 @@
                 }
               ],
               "stream": 4
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "position",
+              "note": "Recorded position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
             }
           ],
           "runs": {
@@ -3085,6 +3095,16 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "position",
+              "note": "Recorded position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
             }
           ],
           "runs": {
@@ -3261,6 +3281,16 @@
                 }
               ],
               "stream": 4
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "position",
+              "note": "Recorded position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
             }
           ],
           "runs": {
@@ -8562,6 +8592,16 @@
               },
               "port_type": "iq",
               "stream": 4
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "position",
+              "note": "Recorded position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
             }
           ],
           "runs": {
@@ -10057,6 +10097,16 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "position",
+              "note": "Recorded position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
             }
           ],
           "runs": {

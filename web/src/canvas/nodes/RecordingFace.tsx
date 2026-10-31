@@ -15,6 +15,7 @@ import {
   recordingTitle,
 } from "../../components/recordings";
 import { recordingsQuery } from "../../lib/api";
+import { gridLocator, usePositionStore } from "../../lib/position";
 import type { DeviceRef, PatchNode, RecordingInfo } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
@@ -79,6 +80,24 @@ export function Library({
         <p className="text-sm text-ink-dim">Nothing free matches that.</p>
       )}
     </div>
+  );
+}
+
+export function RecordedPosition({ node }: { node: string }) {
+  const state = usePositionStore((store) => store.sources[node]);
+  if (state === undefined) {
+    return null;
+  }
+  const fix = state.fix;
+  return (
+    <Readouts columns={2}>
+      <Readout label="Position" title="Recorded at the playhead">
+        {fix === null
+          ? (state.error ?? "none")
+          : `${fix.latitude.toFixed(6)}, ${fix.longitude.toFixed(6)}`}
+      </Readout>
+      {fix !== null && <Readout label="Grid">{gridLocator(fix.latitude, fix.longitude)}</Readout>}
+    </Readouts>
   );
 }
 
@@ -197,6 +216,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
         {set.playback != null && (
           <PlaybackTransport node={node.id} set={set} status={set.playback} />
         )}
+        <RecordedPosition node={node.id} />
         {known !== null && <RecordingFacts recording={known} />}
         {set.error != null && <FaceFault message={set.error} />}
       </FaceBody>

@@ -318,6 +318,7 @@ fn start_runtime(state: &AppState) -> Background {
     survey::follow(state);
     missions::watch::spawn(state);
     state.gps.spawn_watchdog(state);
+    state.gps.spawn_replay(state);
     phones::spawn_flusher(state);
     background
 }

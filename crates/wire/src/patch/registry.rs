@@ -644,8 +644,14 @@ pub fn channel_ports(descriptor: &ChannelDescriptor) -> Vec<PortSpec> {
     narrow_channel(NodeKind::Channel.declared(), Some(descriptor))
 }
 
-/// A generator makes its own samples, so its lane is synthetic rather than a radio's.
+/// A generator makes its own samples, so its lane is synthetic rather than a radio's. A
+/// recording plays back the place it was made at, too.
 fn narrow_device(declared: Vec<PortSpec>, pinned: Option<&super::DeviceRef>) -> Vec<PortSpec> {
+    if pinned.is_some_and(super::DeviceRef::is_recording) {
+        let mut ports = declared;
+        ports.push(output(POSITION_PORT, Payload::Position).noted("Recorded position"));
+        return ports;
+    }
     if !pinned.is_some_and(super::DeviceRef::is_generator) {
         return declared;
     }

@@ -3,6 +3,7 @@ mod collection;
 mod export;
 mod import;
 mod library;
+mod track;
 
 use std::{
     fs::{self, File},
@@ -26,6 +27,7 @@ pub use library::{Stored, scan_library};
 use num_complex::Complex;
 use sdrmm_wire::PositionFix;
 use serde::{Deserialize, Serialize};
+pub use track::RecordedTrack;
 
 pub const SIGMF_VERSION: &str = "1.2.6";
 pub const DATATYPE_CF32_LE: &str = "cf32_le";
@@ -107,6 +109,12 @@ pub struct SigmfGlobal {
         skip_serializing_if = "Option::is_none"
     )]
     pub lane: Option<u32>,
+    #[serde(
+        rename = "core:geolocation",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub geolocation: Option<SigmfGeolocation>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -230,6 +238,7 @@ impl SigmfWriter {
                 tags: Vec::new(),
                 rx_stream: None,
                 lane: None,
+                geolocation: None,
             },
             captures: vec![SigmfCapture {
                 sample_start: 0,
@@ -292,33 +301,26 @@ impl SigmfWriter {
     }
 
     pub fn add_capture(&mut self, frequency_hz: f64) {
-        if let Some(last) = self.meta.captures.last_mut()
-            && last.sample_start == self.samples
-        {
-            last.frequency = Some(frequency_hz);
-            return;
-        }
-        self.meta.captures.push(SigmfCapture {
-            sample_start: self.samples,
-            frequency: Some(frequency_hz),
-            ..SigmfCapture::default()
-        });
+        self.capture_here().frequency = Some(frequency_hz);
     }
 
     pub fn set_lane(&mut self, lane: u32) {
         self.meta.global.lane = Some(lane);
     }
 
+    /// A new capture keeps the place of the one before it: a capture without a geolocation says
+    /// the position was lost, not that the radio retuned.
     pub fn capture_here(&mut self) -> &mut SigmfCapture {
         let captures = &mut self.meta.captures;
-        let frequency = captures.last().and_then(|capture| capture.frequency);
         if captures
             .last()
             .is_none_or(|capture| capture.sample_start != self.samples)
         {
+            let last = captures.last();
             captures.push(SigmfCapture {
                 sample_start: self.samples,
-                frequency,
+                frequency: last.and_then(|capture| capture.frequency),
+                geolocation: last.and_then(|capture| capture.geolocation.clone()),
                 ..SigmfCapture::default()
             });
         }
@@ -986,6 +988,7 @@ mod tests {
                 tags: Vec::new(),
                 rx_stream: None,
                 lane: None,
+                geolocation: None,
             },
             captures: vec![SigmfCapture {
                 sample_start: 7,

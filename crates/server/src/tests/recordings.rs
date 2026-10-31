@@ -1040,3 +1040,85 @@ async fn a_collection_travels_through_the_library_whole() {
     assert_eq!(left, 0, "every lane and the collection are gone");
     assert!(list_recordings(&app).await.is_empty());
 }
+
+fn record_drive(dir: &Path) {
+    let fix = |latitude: f64, time: &str| sdrmm_wire::PositionFix {
+        latitude,
+        longitude: 13.4,
+        altitude_m: None,
+        accuracy_m: None,
+        speed_mps: None,
+        track_deg: None,
+        time: time.to_owned(),
+        attitude: sdrmm_wire::Attitude::default(),
+    };
+    let quiet = vec![num_complex::Complex::new(0.0f32, 0.0); 48_000];
+    let mut writer =
+        sdrmm_recorder::SigmfWriter::create(&dir.join("drive"), 48_000.0, 100e6, "test")
+            .expect("create");
+    writer.set_position(Some(&fix(52.0, "2026-08-14T12:00:00Z")));
+    writer.write_block(&quiet).expect("write");
+    writer.set_position(Some(&fix(53.0, "2026-08-14T12:00:01Z")));
+    writer.write_block(&quiet).expect("write");
+    writer.finalize().expect("finalize");
+}
+
+async fn wait_for_latitude(state: &AppState, node: &str, latitude: f64) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let shown = state.gps.fix(node).map(|fix| fix.latitude);
+        if shown == Some(latitude) {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{node} shows {shown:?}, not {latitude}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test]
+async fn a_wired_recording_plays_back_where_it_was_made() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    record_drive(dir.path());
+    let state = recording_state(dir.path());
+    let (app, background) = router_with_state(state.clone(), &ServerOptions::default());
+    background.detach();
+    open_radio(&app, "recording:drive").await;
+    let node = radio_node("recording:drive");
+
+    let workspace = workspaces(&app).await.active.expect("seeded workspace");
+    let mut snapshot = workspace_detail(&app, workspace).await.snapshot;
+    snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+        id: "map".to_owned(),
+        body: sdrmm_wire::NodeBody::Map,
+        position: sdrmm_wire::Position { x: 400.0, y: 900.0 },
+        size: None,
+        label: None,
+    });
+    snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
+        from: sdrmm_wire::PortRef {
+            node: node.clone(),
+            port: sdrmm_wire::POSITION_PORT.to_owned(),
+        },
+        to: sdrmm_wire::PortRef {
+            node: "map".to_owned(),
+            port: sdrmm_wire::POSITION_PORT.to_owned(),
+        },
+    });
+    put_workspace(&app, &snapshot).await;
+    apply(&app, workspace).await;
+
+    let (status, _) = playback(&app, &node, r#"{"action":"pause"}"#).await;
+    assert_eq!(status, StatusCode::OK);
+    let seek = |at: u64| format!(r#"{{"action":"seek","position_samples":{at}}}"#);
+    playback(&app, &node, &seek(60_000)).await;
+    wait_for_latitude(&state, &node, 53.0).await;
+    playback(&app, &node, &seek(0)).await;
+    wait_for_latitude(&state, &node, 52.0).await;
+    assert_eq!(
+        state.gps.fix(&node).map(|fix| fix.time),
+        Some("2026-08-14T12:00:00Z".to_owned())
+    );
+}

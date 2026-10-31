@@ -93,6 +93,10 @@ recording. Wire it to channels and displays like any other Device, then use play
 to decode the same samples again with different settings. A Device node also offers the library
 itself, under **Recording**.
 
+A recording made with GPS wired plays its location back too. Wire the Device `position` to a
+**Map**, or to anything that takes a GPS. The position follows the playhead, also on seek, and the
+Device node shows it.
+
 **Upload SigMF** adds a recording from your computer, as a `.sigmf` archive or a
 `.sigmf-meta` and `.sigmf-data` pair. A downloaded array collection uploads whole.
 

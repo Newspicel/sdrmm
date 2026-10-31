@@ -1770,11 +1770,36 @@ fn a_recording_and_a_generator_each_carry_one_iq_output() {
         pinned("gen", DeviceBackend::Virtual, Some("gen-")),
     ] {
         let ports = node.body.ports(None);
-        assert_eq!(ports.len(), 1, "{}", node.id);
-        assert_eq!(ports[0].port_type, PortType::Iq);
-        assert_eq!(ports[0].direction, PortDirection::Out);
+        let iq: Vec<_> = ports
+            .iter()
+            .filter(|port| port.port_type == PortType::Iq)
+            .collect();
+        assert_eq!(iq.len(), 1, "{}", node.id);
+        assert_eq!(iq[0].direction, PortDirection::Out);
         assert_eq!(node.body.category(), NodeCategory::Source);
     }
+}
+
+#[test]
+fn only_a_recording_sends_a_position() {
+    let sends = |node: PatchNode| {
+        node.body.ports(None).iter().any(|port| {
+            port.port_type == PortType::Position && port.direction == PortDirection::Out
+        })
+    };
+    assert!(sends(recording("rec", Some("take"))));
+    assert!(!sends(pinned("gen", DeviceBackend::Virtual, Some("gen-"))));
+    assert!(!sends(pinned("dev", DeviceBackend::Virtual, Some("band"))));
+    assert!(!sends(node(
+        "bare",
+        NodeBody::Device(DeviceNode::default())
+    )));
+
+    let graph = PatchGraph {
+        nodes: vec![recording("rec", Some("take")), node("map", NodeBody::Map)],
+        edges: vec![edge(("rec", POSITION_PORT), ("map", POSITION_PORT))],
+    };
+    assert_eq!(graph.validate(), Ok(()));
 }
 
 #[test]
