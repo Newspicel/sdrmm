@@ -17,6 +17,10 @@ use tones::{Afc, Bank, Powers, TONES};
 
 const RATE: f64 = 48_000.0;
 const CHANNEL_TAPS: usize = 129;
+/// The AFC centres the tones after the channel filter, so the filter leaves this much room past
+/// the signal for a radio that is off frequency; without it the outer tone is cut and the AFC
+/// locks short.
+const AFC_PULL_HZ: f64 = 2_500.0;
 pub(crate) const SYNC_MARKER: u32 = 0xA6C6_AAAA;
 const SEARCH_SPS: usize = 30;
 const FAST_SPS: usize = 15;
@@ -171,12 +175,13 @@ fn params(settings: &ChannelSettings) -> Result<&FlexParams, ChannelError> {
 fn check_params(params: &FlexParams) -> Result<(), ChannelError> {
     if params.bandwidth_hz.is_finite()
         && params.bandwidth_hz >= 10_000.0
-        && params.bandwidth_hz < RATE
+        && params.bandwidth_hz + 2.0 * AFC_PULL_HZ < RATE
     {
         Ok(())
     } else {
         Err(ChannelError::InvalidSettings(format!(
-            "flex bandwidth must be in [10000, {RATE}) Hz, got {}",
+            "flex bandwidth must be in [10000, {}) Hz, got {}",
+            RATE - 2.0 * AFC_PULL_HZ,
             params.bandwidth_hz
         )))
     }
@@ -189,7 +194,7 @@ pub(crate) fn occupied_band(params: &FlexParams) -> (f64, f64) {
 
 pub(crate) fn channel_filter(params: &FlexParams) -> Result<ChannelFilter, ChannelError> {
     check_params(params)?;
-    let half = params.bandwidth_hz / 2.0;
+    let half = params.bandwidth_hz / 2.0 + AFC_PULL_HZ;
     Ok(ChannelFilter::Symmetric(Decimator::new(
         &design_lowpass(CHANNEL_TAPS, half / RATE),
         1,
@@ -974,6 +979,24 @@ mod tests {
                 assert!(
                     messages.iter().any(|m| m.text == "FLEX ALPHA PAGE"),
                     "{mode:?} seed {seed:#x}: {messages:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_pager_off_frequency_by_more_than_the_tone_margin_decodes_in_noise() {
+        for mode in [synth::flex::Mode::Flex1600_2, synth::flex::Mode::Flex3200_4] {
+            for offset in [-2_500.0, 2_500.0] {
+                let mut iq = synth::silence(3_000);
+                iq.extend(synth::flex::transmission_mode(&page(), 7, 83, RATE, mode));
+                iq.extend(synth::silence(3_000));
+                synth::shift(&mut iq, offset, RATE);
+                synth::add_noise(&mut iq, 0x2468_ace1, 1.5);
+                let messages = received(&iq);
+                assert!(
+                    messages.iter().any(|m| m.text == "FLEX ALPHA PAGE"),
+                    "{mode:?} {offset} Hz: {messages:?}"
                 );
             }
         }
