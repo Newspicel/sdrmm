@@ -9996,6 +9996,22 @@ dependencies = [
  "flate2",
  "libc",
  "notify",
+ "sdrmm-wire",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "xtask-release",
+]
+
+[[package]]
+name = "xtask-gen"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "flate2",
+ "libc",
  "num-complex",
  "objc2-application-services",
  "objc2-core-foundation",

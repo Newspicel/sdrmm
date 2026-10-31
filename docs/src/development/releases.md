@@ -103,7 +103,7 @@ ghcr.io/newspicel/sdrmm:<major>.<minor>
 ghcr.io/newspicel/sdrmm:latest
 ```
 
-Nightlies update `:nightly` and add a `sha-<commit>` tag. CI builds both architectures and checks
+Nightlies update `:nightly` and add a `sha-<commit>` tag. The nightly workflow builds both architectures and checks
 the binary, SoapySDR modules, server startup, and embedded frontend.
 
 ## Homebrew

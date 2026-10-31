@@ -1,5 +1,3 @@
-mod frame_fixtures;
-
 #[cfg(unix)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
@@ -13,7 +11,6 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand};
 use notify::{Config, Event, EventKind, PollWatcher, RecursiveMode, Watcher};
-use num_complex::Complex;
 pub(crate) use xtask_release::bundled;
 pub(crate) use xtask_release::dist::release_features;
 pub(crate) use xtask_release::media::{ensure_target, media_dir, media_env, run_against_media};
@@ -22,27 +19,15 @@ pub(crate) use xtask_release::web::{PNPM, ensure_web_deps, web_build};
 
 mod architecture;
 mod bandplan;
-mod ber;
-mod broadcast_fixtures;
 mod bundle;
-mod capture;
 mod comments;
-mod compare;
-mod denoise_model;
-mod excerpt;
-mod fuzz_seeds;
-mod icons;
-mod ident_matrix;
 mod ios;
 mod licenses;
 mod mobile;
 mod nixhash;
-mod replay;
-mod resolved_fixtures;
 #[cfg(test)]
 mod site;
 mod units;
-mod wires;
 
 #[derive(Parser)]
 #[command(name = "xtask", about = "SDRmm workspace tasks")]
@@ -60,7 +45,10 @@ enum Cmd {
         watch: bool,
     },
     Check,
-    Test,
+    Test {
+        #[command(subcommand)]
+        step: Option<TestStep>,
+    },
     Perf,
     Sanitize,
     Fuzz {
@@ -76,28 +64,10 @@ enum Cmd {
     Audit,
     Smoke,
     Screenshots,
-    Fixtures,
-    BroadcastFixtures {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    Excerpt(excerpt::Excerpt),
-    Replay(replay::Replay),
-    NetCapture(capture::NetCapture),
     Bandplan {
         #[arg(long)]
         offline: bool,
     },
-    Ber {
-        entry: String,
-        #[arg(long)]
-        out: Option<PathBuf>,
-        #[arg(long)]
-        full: bool,
-    },
-    DenoiseModel,
-    Icons,
-    IdentMatrix,
     NixHash,
     Desktop {
         #[arg(long)]
@@ -112,10 +82,10 @@ enum Cmd {
         #[command(subcommand)]
         action: ios::IosAction,
     },
-    Compare {
-        #[command(subcommand)]
-        suite: compare::Compare,
-    },
+    /// Fixtures, captures, comparisons and the other tools that build the decoders run in
+    /// `xtask-gen`, so this binary stays small enough to build in seconds.
+    #[command(external_subcommand)]
+    Gen(Vec<String>),
 }
 
 fn main() -> Result<()> {
@@ -124,7 +94,7 @@ fn main() -> Result<()> {
         Cmd::Licenses => licenses::run(&root(), PNPM),
         Cmd::Dev { watch } => dev(&root(), watch),
         Cmd::Check => check(&root()),
-        Cmd::Test => test(&root()),
+        Cmd::Test { step } => test(&root(), step.as_ref()),
         Cmd::Perf => perf(&root()),
         Cmd::Sanitize => sanitize(&root()),
         Cmd::Fuzz {
@@ -136,22 +106,13 @@ fn main() -> Result<()> {
         Cmd::Audit => audit(&root()),
         Cmd::Smoke => smoke(&root()),
         Cmd::Screenshots => screenshots(&root()),
-        Cmd::Fixtures => fixtures(&root()),
-        Cmd::BroadcastFixtures { out } => broadcast_fixtures::run(&out),
-        Cmd::Excerpt(args) => excerpt::run(&root(), &args),
-        Cmd::Replay(args) => replay::run(&args),
-        Cmd::NetCapture(args) => capture::run(&args),
-        Cmd::Compare { suite } => compare::run(&root(), &suite),
         Cmd::Bandplan { offline } => bandplan::run(&root(), offline),
-        Cmd::Ber { entry, out, full } => ber::run(&root(), &entry, out.as_deref(), full),
-        Cmd::DenoiseModel => denoise_model::run(&root()),
-        Cmd::Icons => icons::icons(&root()),
-        Cmd::IdentMatrix => ident_matrix::run(&root()),
         Cmd::NixHash => nixhash::run(&root()),
         Cmd::Desktop { target, bundles } => desktop(&root(), target.as_deref(), bundles.as_deref()),
         Cmd::Release(cmd) => xtask_release::run(&root(), &cmd),
         Cmd::Mobile(args) => mobile::run(&root(), &args),
         Cmd::Ios { action } => ios::run(&root(), &action),
+        Cmd::Gen(args) => xtask_gen(&root(), &args),
     }
 }
 
@@ -161,55 +122,14 @@ fn root() -> PathBuf {
 }
 
 fn codegen(root: &Path) -> Result<()> {
-    std::fs::write(
-        root.join("web/src/generated/frame-fixtures.json"),
-        serde_json::to_string_pretty(&frame_fixtures::frames()?)?,
-    )
-    .context("write binary frame fixtures")?;
-    std::fs::write(
-        root.join("web/src/generated/catalog-fixture.json"),
-        serde_json::to_string_pretty(&sdrmm_wire::PatchCatalog::build())?,
-    )
-    .context("write catalog test fixture")?;
-    std::fs::write(
-        root.join("web/src/generated/channel-defaults.json"),
-        serde_json::to_string_pretty(&channel_defaults())?,
-    )
-    .context("write channel defaults")?;
-    resolved_fixtures::write(root)?;
-    std::fs::write(
-        root.join("web/src/generated/labels.json"),
-        serde_json::to_string_pretty(&sdrmm_wire::labels::generated()?)?,
-    )
-    .context("write labels")?;
-    std::fs::write(
-        root.join("web/src/generated/limits.json"),
-        sdrmm_wire::limits::generated()?,
-    )
-    .context("write limits")?;
-    std::fs::write(
-        root.join("web/src/generated/backends.json"),
-        serde_json::to_string_pretty(&sdrmm_wire::backend_table())?,
-    )
-    .context("write device backends")?;
-    std::fs::write(
-        root.join("docs/src/wires.md"),
-        wires::page(&sdrmm_wire::PatchCatalog::build()),
-    )
-    .context("write the wires page")?;
-    let frames = root.join("web/src/generated/frame.ts");
-    std::fs::write(&frames, sdrmm_wire::typescript_frames()).context("write binary frame codec")?;
-    let spec = sdrmm_server::openapi()
-        .to_pretty_json()
-        .context("serialize OpenAPI")?;
-    let openapi_path = root.join("openapi.json");
-    std::fs::write(&openapi_path, format!("{spec}\n")).context("write openapi.json")?;
-    println!("wrote {}", openapi_path.display());
+    xtask_gen(root, &["codegen"])?;
+    openapi_typescript(root)
+}
 
-    let out = root.join("web/src/generated/schema.d.ts");
-    let generated = out.parent().context("schema path has no directory")?;
-    std::fs::create_dir_all(generated).context("create generated dir")?;
+const OPENAPI: &str = "openapi.json";
+const SCHEMA: &str = "web/src/generated/schema.d.ts";
 
+fn openapi_typescript(root: &Path) -> Result<()> {
     run(
         PNPM,
         &[
@@ -217,26 +137,19 @@ fn codegen(root: &Path) -> Result<()> {
             "codegen",
             "exec",
             "openapi-typescript",
-            utf8(&openapi_path)?,
+            utf8(&root.join(OPENAPI))?,
             "-o",
-            utf8(&out)?,
+            utf8(&root.join(SCHEMA))?,
             "--alphabetize",
         ],
         root,
-    )?;
-    println!("wrote {}", out.display());
-    Ok(())
+    )
 }
 
-fn channel_defaults() -> std::collections::BTreeMap<String, sdrmm_wire::ChannelParams> {
-    sdrmm_channels::descriptors()
-        .into_iter()
-        .filter_map(|descriptor| {
-            descriptor
-                .defaults
-                .map(|settings| (descriptor.type_id, settings.params))
-        })
-        .collect()
+fn xtask_gen(root: &Path, args: &[impl AsRef<str>]) -> Result<()> {
+    let mut all = vec!["run", "--quiet", "-p", "xtask-gen", "--"];
+    all.extend(args.iter().map(AsRef::as_ref));
+    run("cargo", &all, root)
 }
 
 fn dev(root: &Path, watch: bool) -> Result<()> {
@@ -634,20 +547,9 @@ fn check(root: &Path) -> Result<()> {
 
     web_build(root)?;
 
-    codegen(root)?;
-    run(
-        "git",
-        &[
-            "diff",
-            "--exit-code",
-            "--",
-            "openapi.json",
-            "web/src/generated",
-            "docs/src/wires.md",
-        ],
-        root,
-    )
-    .context("codegen drift: regenerate with `cargo xtask codegen` and commit")?;
+    openapi_typescript(root)?;
+    run("git", &["diff", "--exit-code", "--", SCHEMA], root)
+        .context("codegen drift: regenerate with `cargo xtask codegen` and commit")?;
 
     licenses::run(root, PNPM)?;
     run(
@@ -1069,36 +971,132 @@ mod perf_tests {
     }
 }
 
+/// CI splits the run so one runner builds and the others each run a slice of what it built.
+#[derive(Subcommand)]
+enum TestStep {
+    /// Build every test, synthesize the fixtures and pack both into DIR.
+    Archive {
+        dir: PathBuf,
+    },
+    /// Run one slice, such as `slice:2/4`, of what `archive` packed into DIR.
+    Shard {
+        dir: PathBuf,
+        #[arg(long)]
+        partition: String,
+    },
+    Web,
+}
+
+const TEST_ARCHIVE: &str = "tests.tar.zst";
+const TEST_TARGETS: [&str; 4] = ["--workspace", "--lib", "--bins", "--tests"];
+
 /// Runs every workspace crate under nextest, which schedules all test binaries into one pool
 /// rather than running them one at a time. The synthesized SigMF pairs come first because they
 /// are never committed, so the tests that read them off disk have nothing to read until the
-/// generator has run. Benches stay out rather than arriving with `--all-targets`: a
-/// `harness = false` target cannot answer `--list`, and `cargo xtask check` clippies them.
-fn test(root: &Path) -> Result<()> {
-    ensure_tool("nextest", "cargo-nextest")?;
-    fixtures(root)?;
-    let media = media_dir(root, None)?
+/// generator has run. The generator is built in the same cargo run as the tests: on its own,
+/// cargo would resolve its features apart from theirs and compile the workspace twice. Benches
+/// stay out rather than arriving with `--all-targets`: a `harness = false` target cannot answer
+/// `--list`, and `cargo xtask check` clippies them.
+fn test(root: &Path, step: Option<&TestStep>) -> Result<()> {
+    match step {
+        None => {
+            build_tests(root)?;
+            with_env(&generator(root), &["fixtures"], root, &test_env(root)?)?;
+            nextest(root, &TEST_TARGETS)?;
+            web_tests(root)
+        }
+        Some(TestStep::Archive { dir }) => archive_tests(root, dir),
+        Some(TestStep::Shard { dir, partition }) => shard_tests(root, dir, partition),
+        Some(TestStep::Web) => web_tests(root),
+    }
+}
+
+fn test_env(root: &Path) -> Result<Vec<(&'static str, String)>> {
+    let mut env = media_dir(root, None)?
         .map(|dir| media_env(&dir))
         .unwrap_or_default();
-    let mut env: Vec<(&str, &str)> = media.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    env.push(NO_SOAPY_RUNTIME);
-    run_with_env(
-        "cargo",
-        &[
-            "nextest",
-            "run",
-            "--workspace",
-            "--lib",
-            "--bins",
-            "--tests",
-        ],
+    env.push((NO_SOAPY_RUNTIME.0, NO_SOAPY_RUNTIME.1.to_owned()));
+    Ok(env)
+}
+
+fn with_env(
+    program: &str,
+    args: &[&str],
+    root: &Path,
+    env: &[(&'static str, String)],
+) -> Result<()> {
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    run_with_env(program, args, root, &env)
+}
+
+fn build_tests(root: &Path) -> Result<()> {
+    ensure_tool("nextest", "cargo-nextest")?;
+    let mut args = vec!["build"];
+    args.extend(TEST_TARGETS);
+    with_env("cargo", &args, root, &test_env(root)?)
+}
+
+fn generator(root: &Path) -> String {
+    let target =
+        std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), PathBuf::from);
+    target
+        .join("debug")
+        .join(format!("xtask-gen{}", std::env::consts::EXE_SUFFIX))
+        .display()
+        .to_string()
+}
+
+fn nextest(root: &Path, extra: &[&str]) -> Result<()> {
+    let mut args = vec!["nextest", "run"];
+    args.extend(extra);
+    with_env("cargo", &args, root, &test_env(root)?)
+}
+
+fn archive_tests(root: &Path, dir: &Path) -> Result<()> {
+    build_tests(root)?;
+    std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+    with_env(
+        &generator(root),
+        &["fixtures", "--out", utf8(&dir.join("fixtures"))?],
         root,
-        &env,
+        &test_env(root)?,
     )?;
+    let mut args = vec!["nextest", "archive", "--archive-file"];
+    let file = dir.join(TEST_ARCHIVE);
+    args.push(utf8(&file)?);
+    args.extend(TEST_TARGETS);
+    with_env("cargo", &args, root, &test_env(root)?)
+}
+
+fn shard_tests(root: &Path, dir: &Path, partition: &str) -> Result<()> {
+    ensure_tool("nextest", "cargo-nextest")?;
+    let fixtures = root.join("fixtures");
+    for entry in std::fs::read_dir(dir.join("fixtures"))
+        .with_context(|| format!("read {}", dir.display()))?
+    {
+        let from = entry.context("read archived fixture")?.path();
+        let name = from.file_name().context("fixture without a name")?;
+        std::fs::copy(&from, fixtures.join(name))
+            .with_context(|| format!("restore {}", from.display()))?;
+    }
+    let file = dir.join(TEST_ARCHIVE);
+    nextest(
+        root,
+        &[
+            "--archive-file",
+            utf8(&file)?,
+            "--workspace-remap",
+            utf8(root)?,
+            "--partition",
+            partition,
+        ],
+    )
+}
+
+fn web_tests(root: &Path) -> Result<()> {
     ensure_web_deps(root)?;
     run(PNPM, &["--dir", "web", "test"], root)?;
-    run(PNPM, &["--dir", "site", "test"], root)?;
-    Ok(())
+    run(PNPM, &["--dir", "site", "test"], root)
 }
 
 fn ensure_tool(subcommand: &str, crate_name: &str) -> Result<()> {
@@ -1266,7 +1264,7 @@ fn fuzz_targets(target: Option<&str>) -> Result<Vec<&str>> {
 /// of the target's state, so the runner's memory caps it rather than any one input.
 fn fuzz(root: &Path, target: Option<&str>, seconds: u64, jobs: u8, minimize: bool) -> Result<()> {
     ensure_tool("fuzz", "cargo-fuzz")?;
-    fuzz_seeds::run(root)?;
+    xtask_gen(root, &["fuzz-seeds"])?;
     let host = host_target()?;
     let budget = format!("-max_total_time={seconds}");
     let workers = jobs.to_string();
@@ -1333,7 +1331,14 @@ fn smoke(root: &Path) -> Result<()> {
         std::fs::remove_dir_all(&scratch)
             .with_context(|| format!("remove {}", scratch.display()))?;
     }
-    broadcast_fixtures::run(&scratch.join("recordings"))?;
+    xtask_gen(
+        root,
+        &[
+            "broadcast-fixtures",
+            "--out",
+            utf8(&scratch.join("recordings"))?,
+        ],
+    )?;
     run_with_env(
         PNPM,
         &["--dir", "web", "exec", "playwright", "test"],
@@ -1363,84 +1368,6 @@ fn screenshots(root: &Path) -> Result<()> {
         &[NO_SOAPY_RUNTIME],
     )?;
     println!("wrote {}", out.display());
-    Ok(())
-}
-
-fn fixtures(root: &Path) -> Result<()> {
-    const CENTER_HZ: f64 = 100_000_000.0;
-
-    let dir = root.join("fixtures");
-    std::fs::create_dir_all(&dir).context("create fixtures dir")?;
-
-    const BAND_RATE: f64 = 2_400_000.0;
-    let samples = sdrmm_device_virtual::render(BAND_RATE, BAND_RATE as usize);
-    write_fixture(
-        &dir,
-        "siggen_2m4_1s",
-        &samples,
-        BAND_RATE,
-        CENTER_HZ,
-        "Signal Generator (virtual)",
-        "1 s of the virtual test band: the record/replay fixture",
-    )?;
-
-    for recipe in sdrmm_channels::synth::decoder_fixtures::RECIPES {
-        write_fixture(
-            &dir,
-            recipe.stem,
-            &(recipe.iq)(),
-            recipe.rate,
-            CENTER_HZ,
-            "SDRmm reference modulator",
-            recipe.note,
-        )?;
-    }
-    Ok(())
-}
-
-fn write_fixture(
-    dir: &Path,
-    stem_name: &str,
-    iq: &[Complex<f32>],
-    rate: f64,
-    center_hz: f64,
-    hw: &str,
-    note: &str,
-) -> Result<()> {
-    let stem = dir.join(stem_name);
-    for path in [
-        sdrmm_recorder::meta_path(&stem),
-        sdrmm_recorder::data_path(&stem),
-    ] {
-        match std::fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => return Err(err).with_context(|| format!("replace {}", path.display())),
-        }
-    }
-    let mut writer = sdrmm_recorder::SigmfWriter::create(&stem, rate, center_hz, hw)
-        .with_context(|| format!("create fixture {stem_name}"))?;
-    writer
-        .write_block(iq)
-        .with_context(|| format!("write fixture {stem_name}"))?;
-    writer
-        .finalize()
-        .with_context(|| format!("finalize fixture {stem_name}"))?;
-
-    let reader = sdrmm_recorder::SigmfReader::open(&stem)
-        .with_context(|| format!("re-open fixture {stem_name}"))?;
-    ensure!(
-        reader.total_samples() == iq.len() as u64,
-        "fixture {stem_name} readback: {} samples on disk, {} rendered",
-        reader.total_samples(),
-        iq.len()
-    );
-    println!(
-        "{stem_name}: {} samples, {:.2} s @ {}: {note}",
-        iq.len(),
-        iq.len() as f64 / rate,
-        sdrmm_wire::units::sample_rate(rate),
-    );
     Ok(())
 }
 

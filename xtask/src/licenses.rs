@@ -17,7 +17,7 @@ pub const NOTICES_JSON: &str = "crates/server/data/notices.json";
 pub const NOTICES_MARKDOWN: &str = "THIRD_PARTY_NOTICES.md";
 pub const MOBILE_NOTICES_JSON: &str = "crates/mobile-core/data/notices.json";
 
-const NOT_DISTRIBUTED: &[&str] = &["xtask"];
+const NOT_DISTRIBUTED: &[&str] = &["xtask", "xtask-gen"];
 
 const MAX_LICENSE_BYTES: u64 = 256 * 1024;
 

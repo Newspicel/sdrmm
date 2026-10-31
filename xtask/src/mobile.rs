@@ -301,7 +301,7 @@ fn host_library_step() -> Step {
 }
 
 fn bindgen(bin: &str, args: Vec<String>) -> Step {
-    let mut all = strings(["run", "--quiet", "-p", "xtask", "--bin"]);
+    let mut all = strings(["run", "--quiet", "-p", "xtask-gen", "--bin"]);
     all.push(bin.to_owned());
     all.push("--".to_owned());
     all.extend(args);

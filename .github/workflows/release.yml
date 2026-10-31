@@ -280,8 +280,6 @@ jobs:
         with:
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=linux/${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=linux/${{ matrix.arch }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}

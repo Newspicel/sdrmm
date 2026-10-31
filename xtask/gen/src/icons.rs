@@ -241,10 +241,7 @@ mod tests {
     use super::*;
 
     fn tree() -> usvg::Tree {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("xtask has a parent")
-            .join(SOURCE);
+        let root = crate::root().join(SOURCE);
         let svg = std::fs::read(&root).expect("the committed mark");
         usvg::Tree::from_data(&svg, &usvg::Options::default()).expect("the mark parses")
     }

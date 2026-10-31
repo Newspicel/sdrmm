@@ -218,10 +218,7 @@ mod tests {
 
     #[test]
     fn the_harness_lock_pins_futuredsp() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("the workspace root")
-            .to_path_buf();
+        let root = crate::root();
         let lock = std::fs::read_to_string(root.join(SOURCES).join("rust/Cargo.lock"))
             .expect("the harness lock file");
         assert!(lock_version(&lock, "futuredsp").is_some());

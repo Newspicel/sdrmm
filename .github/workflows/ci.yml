@@ -15,7 +15,6 @@ concurrency:
 
 env:
   SAVE_CACHE: ${{ github.ref == 'refs/heads/main' }}
-  CARGO_PROFILE_DEV_OPT_LEVEL: 3
 
 jobs:
   check:
@@ -53,34 +52,79 @@ jobs:
           cache: performance
       - run: cargo xtask perf
 
-  test:
-    name: Tests (${{ matrix.label }})
+  test-build:
+    name: Build tests (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - label: ubuntu
             runner: ubuntu-24.04
-          - label: macos-arm64
-            runner: macos-15
+          - label: ubuntu-arm64
+            runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+    env:
+      CARGO_PROFILE_DEV_OPT_LEVEL: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/node
       - uses: ./.github/actions/rust
         with:
-          cache: ${{ matrix.label == 'ubuntu' && 'ubuntu' || 'macos' }}
+          cache: ${{ matrix.label }}
           save: ${{ env.SAVE_CACHE }}
           tauri: true
       - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-nextest
-      - run: cargo xtask test
+      - run: cargo xtask test archive target/test-archive
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tests-${{ matrix.label }}
+          path: target/test-archive
+          compression-level: 0
+          retention-days: 1
+
+  test:
+    name: Tests (${{ matrix.label }} ${{ matrix.shard }}/4)
+    needs: test-build
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [ubuntu, ubuntu-arm64]
+        shard: [1, 2, 3, 4]
+    runs-on: ${{ matrix.label == 'ubuntu' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/rust
+        with:
+          cache: shard-${{ matrix.label }}
+          save: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}
+          tauri: true
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-nextest
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tests-${{ matrix.label }}
+          path: target/test-archive
+      - run: cargo xtask test shard target/test-archive --partition slice:${{ matrix.shard }}/4
+
+  web-test:
+    name: Web tests (ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - uses: ./.github/actions/rust
+        with:
+          cache: web
+          save: ${{ env.SAVE_CACHE }}
+      - run: cargo xtask test web
 
   gpu:
     name: GPU parity (ubuntu)
     runs-on: ubuntu-24.04
+    env:
+      CARGO_PROFILE_DEV_OPT_LEVEL: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
@@ -129,79 +173,11 @@ jobs:
         env:
           SDRMM_RT_SCALE: "2"
 
-  mobile:
-    name: Mobile core (ubuntu)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - id: ndk
-        run: echo "version=$(sed -n 's/^sdrmm.ndkVersion=//p' apps/android/gradle.properties)" >> "$GITHUB_OUTPUT"
-      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
-        with:
-          packages: ndk;${{ steps.ndk.outputs.version }}
-      - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ steps.ndk.outputs.version }}" >> "$GITHUB_ENV"
-      - uses: ./.github/actions/rust
-        with:
-          cache: mobile
-          save: ${{ env.SAVE_CACHE }}
-      - run: cargo xtask mobile check --android
-      - run: cargo xtask mobile bindings
-
-  ios:
-    name: iPhone app (macos)
-    runs-on: xcode-27
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo xcode-select -s /Applications/Xcode_27.app
-      - uses: ./.github/actions/rust
-        with:
-          cache: ios
-          save: ${{ env.SAVE_CACHE }}
-      - run: cargo xtask mobile check --ios
-      - run: cargo xtask ios lint
-      - run: cargo xtask ios test
-      - if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ios-results
-          path: target/ios/results
-          retention-days: 7
-
-  android:
-    name: Android app (ubuntu)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: "21"
-      - id: ndk
-        run: echo "version=$(sed -n 's/^sdrmm.ndkVersion=//p' apps/android/gradle.properties)" >> "$GITHUB_OUTPUT"
-      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
-        with:
-          packages: platforms;android-37.0 build-tools;37.0.0 ndk;${{ steps.ndk.outputs.version }}
-      - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ steps.ndk.outputs.version }}" >> "$GITHUB_ENV"
-      - uses: ./.github/actions/rust
-        with:
-          cache: android
-          save: ${{ env.SAVE_CACHE }}
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-      - run: ./gradlew -p build-logic test
-        working-directory: apps/android
-      - run: ./gradlew spotlessCheck checkSourceRules lintDebug testDebugUnitTest assembleDebug
-        working-directory: apps/android
-      - run: '"$ANDROID_HOME/build-tools/37.0.0/zipalign" -c -P 16 -v 4 apps/android/app/build/outputs/apk/debug/app-debug.apk'
-      - if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: android-reports
-          path: apps/android/app/build/reports
-          retention-days: 7
-
   smoke:
     name: Browser smoke (ubuntu)
     runs-on: ubuntu-24.04
+    env:
+      CARGO_PROFILE_DEV_OPT_LEVEL: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/node
@@ -217,147 +193,3 @@ jobs:
           name: smoke-trace
           path: web/test-results
           retention-days: 7
-
-  desktop:
-    name: Desktop shell (${{ matrix.label }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: ubuntu
-            runner: ubuntu-24.04
-          - label: macos
-            runner: macos-15
-          - label: windows
-            runner: windows-2025
-          - label: windows-arm64
-            runner: windows-11-arm
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/rust
-        with:
-          cache: desktop-${{ matrix.label }}
-          save: ${{ env.SAVE_CACHE }}
-          tauri: true
-      - run: cargo xtask desktop
-
-  advisories:
-    name: Advisories (ubuntu)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/rust
-        with:
-          cache: ubuntu
-          save: false
-      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
-        with:
-          tool: cargo-deny
-      - run: cargo xtask audit
-
-  image:
-    name: Container image (${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    env:
-      # The image binds the wildcard address, which the server refuses without a token.
-      SDRMM_TOKEN: container-smoke
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          platforms: linux/${{ matrix.arch }}
-          load: true
-          tags: sdrmm:ci
-          build-args: PROFILE=ci
-          cache-from: type=gha,scope=linux/${{ matrix.arch }}-ci
-          cache-to: type=gha,mode=max,scope=linux/${{ matrix.arch }}-ci
-      - name: Version
-        run: docker run --rm sdrmm:ci --version
-      - name: Doctor
-        run: |
-          docker run --rm sdrmm:ci --doctor | tee doctor
-          grep -q 'compiled backends:.*soapy' doctor
-          grep -q 'compiled backends:.*rtlsdr' doctor
-          grep -q 'compiled backends:.*hackrf' doctor
-          grep -q 'core: 0.8.' doctor
-          grep -qi 'bladerf' doctor
-          grep -qi 'lms7' doctor
-          grep -qi 'remote' doctor
-      - name: Start
-        run: docker run --detach --name sdrmm-ci --env SDRMM_TOKEN --publish 8080:8080 sdrmm:ci
-      - name: Serve UI
-        run: |
-          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null \
-            -H "Authorization: Bearer $SDRMM_TOKEN" http://127.0.0.1:8080/api/status
-          curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root"'
-      - if: failure()
-        run: docker logs sdrmm-ci
-
-  nix:
-    name: Nix package (${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-            system: x86_64-linux
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-            system: aarch64-linux
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # 31.11.3
-      - run: sudo apt-get update && sudo apt-get install --yes xvfb
-      - name: Flake check
-        run: nix flake check --print-build-logs
-      - name: Build
-        run: |
-          nix build --impure --print-build-logs --expr '
-            let
-              flake = builtins.getFlake (toString ./.);
-              system = "${{ matrix.system }}";
-              pkgs = builtins.getAttr system flake.inputs.nixpkgs.legacyPackages;
-            in
-            (builtins.getAttr system flake.packages).default.override {
-              soapyPlugins = with pkgs; [ soapybladerf soapyremote ];
-            }
-          '
-      - name: Layout
-        run: |
-          test -x result/bin/sdrmm-desktop
-          test ! -e result/bin/sdrmm
-          test -f result/share/applications/sdrmm-desktop.desktop
-          test -f result/share/icons/hicolor/128x128/apps/dev.newspicel.sdrmm.png
-          test -z "$(find -L result -path '*/SoapySDR/modules*' -print -quit)"
-      - name: Linking
-        run: |
-          ldd result/bin/.sdrmm-desktop-wrapped | tee ldd
-          grep -q 'libwebkit2gtk-4.1' ldd
-          ! grep -q 'libSoapySDR' ldd
-      - name: Wrapper
-        run: |
-          grep -q 'SDRMM_SOAPY_LIBRARY' result/bin/sdrmm-desktop
-          grep -q 'SOAPY_SDR_PLUGIN_PATH' result/bin/sdrmm-desktop
-          grep -q 'soapybladerf' result/bin/sdrmm-desktop
-          grep -q 'soapyremote' result/bin/sdrmm-desktop
-          grep -q 'vulkan-loader' result/bin/sdrmm-desktop
-          grep -q 'libglvnd' result/bin/sdrmm-desktop
-      - name: Launch
-        run: |
-          status=0
-          timeout 15s xvfb-run --auto-servernum result/bin/sdrmm-desktop > desktop.log 2>&1 || status=$?
-          test "$status" -eq 124 || { cat desktop.log; exit 1; }

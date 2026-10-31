@@ -76,7 +76,7 @@ fn rerun_release(root: &Path, scope: &Scope) -> Result<()> {
             "run",
             "--release",
             "-p",
-            "xtask",
+            "xtask-gen",
             "--",
             "compare",
             "decoders",

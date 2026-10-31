@@ -116,9 +116,10 @@ pnpm --dir web exec playwright install chromium
 `fuzz` takes `--target <channel_chain|channel_settings|dv_voice>`, `--seconds` (default 60),
 `--jobs`, and `--minimize`. Automated tests never need real hardware.
 
-CI runs these on every push and pull request, plus the mobile, iPhone, Android, container image,
-and Nix jobs. The nightly workflow adds sanitizers, four hours of fuzzing per target, iPhone UI and
-end-to-end runs, Android device tests, and measurement suites.
+CI runs `check`, `perf`, `smoke`, and `test` on every push and pull request. `test` builds once
+per architecture (`test archive`) and runs the archive in four slices (`test shard`). The nightly
+workflow runs the rest: macOS tests, desktop, mobile, iPhone, Android, container image, Nix,
+advisories, sanitizers, four hours of fuzzing per target, and measurement suites.
 
 ## Performance baselines
 

@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn bpsk_ideal_smoke_passes_and_writes_both_files() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let root = crate::root();
         let dir = std::env::temp_dir().join(format!("sdrmm-xtask-ber-{}", std::process::id()));
         run(&root, "bpsk-ideal", Some(&dir), false).unwrap();
         for name in ["bpsk_ideal_awgn.json", "bpsk_ideal_awgn.csv"] {

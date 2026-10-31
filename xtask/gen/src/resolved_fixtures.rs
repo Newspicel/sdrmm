@@ -15,7 +15,7 @@ struct Input {
     live: Value,
 }
 
-pub(crate) fn write(root: &Path) -> Result<()> {
+pub(crate) fn contents(root: &Path) -> Result<String> {
     let inputs = root.join("web/src/test/resolved-inputs");
     let mut fixtures = BTreeMap::new();
     let mut files: Vec<_> = std::fs::read_dir(&inputs)
@@ -42,11 +42,7 @@ pub(crate) fn write(root: &Path) -> Result<()> {
         "unresolvable fixtures:\n{}",
         failed.join("\n")
     );
-    std::fs::write(
-        root.join("web/src/generated/resolved-fixtures.json"),
-        format!("{}\n", serde_json::to_string_pretty(&fixtures)?),
-    )
-    .context("write resolved fixtures")
+    Ok(format!("{}\n", serde_json::to_string_pretty(&fixtures)?))
 }
 
 fn resolve(input: &Input) -> Result<Value> {

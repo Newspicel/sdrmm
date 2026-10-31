@@ -123,9 +123,8 @@ Check that **Missions** lists over the map, the DF panel updates about once a se
 
 ### CI
 
-The `mobile` job runs `mobile check --android` and `mobile bindings`. The `ios` job runs
-`mobile check --ios`, `ios lint`, and `ios test`. The `android` job runs the `build-logic` tests,
-the Gradle checks, unit tests, `assembleDebug`, and the alignment check.
-
-Nightly, `ios-ui` runs `ios test --ui --floor`, `ios-e2e` runs `ios e2e`, and `android-device` runs
+All phone jobs run nightly. The `mobile` job runs `mobile check --android` and `mobile bindings`.
+The `ios` job runs `mobile check --ios`, `ios lint`, and `ios test`. The `android` job runs the
+`build-logic` tests, the Gradle checks, unit tests, `assembleDebug`, and the alignment check.
+`ios-ui` runs `ios test --ui --floor`, `ios-e2e` runs `ios e2e`, and `android-device` runs
 `connectedDebugAndroidTest` on an API 36 emulator.

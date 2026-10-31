@@ -39,6 +39,7 @@ members = [
     "apps/desktop",
     "xtask",
     "xtask/release",
+    "xtask/gen",
 ]
 
 default-members = [
@@ -79,6 +80,7 @@ default-members = [
     "apps/iqlinkd",
     "xtask",
     "xtask/release",
+    "xtask/gen",
 ]
 
 [workspace.package]
