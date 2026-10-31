@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 48000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "rtl_tcp",
+    "core:description": "FLEX 3200/4 off air on 929.615 MHz (US): an alpha page to long address capcode 7831826"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 929615000.0,
+      "core:datetime": "2026-10-31T16:54:07Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "user recording at 1024000 Hz centred 929.640 MHz; source SHA-256 c293e283d5fd9d5a85d3cc174ba5bde0b7cc5cde1b401779ccf3b4d4c7524b19; samples 153600..2252800 shifted 25 kHz and resampled to 48000 Hz",
+      "core:sample_count": 98400,
+      "core:sample_start": 0
+    }
+  ]
+}

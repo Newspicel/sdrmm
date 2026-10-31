@@ -34,6 +34,11 @@ const CAPCODE_OFFSET: u32 = 0x8000;
 const FIRST_ADDRESS_WORD: u32 = 0x8001;
 const LAST_ADDRESS_WORD: u32 = 0x1F_7FFE;
 const IDLE_ADDRESS_WORDS: [u32; 2] = [0, 0x1F_FFFF];
+const LONG_FIRST_WORDS: std::ops::RangeInclusive<u32> = 1..=0x8000;
+const LONG_SECOND_WORDS: [std::ops::RangeInclusive<u32>; 2] =
+    [0x1E_0001..=0x1F_0000, 0x1F_7FFF..=0x1F_FFFE];
+/// The ARIB long capcode base; the patent's 2067456 does not match real pagers.
+const LONG_CAPCODE_BASE: u64 = 0x1F_9000;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "flex".to_owned(),
@@ -475,42 +480,89 @@ fn decode_phase(bits: &[f32], sync: FrameInfo, out: &mut ChannelOutputs, rejecte
         return;
     }
     let info = FrameInfo {
-        errors: sync.errors + words.iter().map(|word| word.errors()).sum::<u32>(),
+        errors: sync.errors + words[0].errors(),
         ..sync
     };
-    for address_index in address_start..vector_start {
+    let mut address_index = address_start;
+    while address_index < vector_start {
         let vector_index = vector_start + address_index - address_start;
         if vector_index >= WORDS {
             break;
         }
-        match capcode_of(words[address_index]) {
+        let capcode = capcode_at(&words[..vector_start], address_index);
+        match capcode {
             Capcode::Idle => {}
-            Capcode::Unusable => *rejected = rejected.saturating_add(1),
-            Capcode::Address(address) => match page(&words, address, vector_index, &info) {
-                Some(message) => out.events.push(DecoderEvent::Flex(message)),
-                None => *rejected = rejected.saturating_add(1),
-            },
+            Capcode::Unusable { .. } => *rejected = rejected.saturating_add(1),
+            Capcode::Address {
+                capcode: address,
+                long,
+            } => {
+                let used = words.get(address_index..address_index + capcode.words());
+                let addressed = FrameInfo {
+                    errors: info.errors + used.map_or(0, errors_in),
+                    ..info
+                };
+                match page(&words, address, vector_index, long, &addressed) {
+                    Some(message) => out.events.push(DecoderEvent::Flex(message)),
+                    None => *rejected = rejected.saturating_add(1),
+                }
+            }
+        }
+        address_index += capcode.words();
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Capcode {
+    Idle,
+    Unusable { long: bool },
+    Address { capcode: u64, long: bool },
+}
+
+impl Capcode {
+    fn words(&self) -> usize {
+        match self {
+            Self::Unusable { long: true } | Self::Address { long: true, .. } => 2,
+            _ => 1,
         }
     }
 }
 
-enum Capcode {
-    Idle,
-    Unusable,
-    Address(u64),
-}
-
-fn capcode_of(word: Word) -> Capcode {
-    let Some(data) = trusted_address(word) else {
-        return Capcode::Unusable;
+fn capcode_at(addresses: &[Word], index: usize) -> Capcode {
+    let Some(first) = addresses.get(index).copied().and_then(trusted_address) else {
+        return Capcode::Unusable { long: false };
     };
-    if IDLE_ADDRESS_WORDS.contains(&data) {
+    if IDLE_ADDRESS_WORDS.contains(&first) {
         return Capcode::Idle;
     }
-    if !(FIRST_ADDRESS_WORD..=LAST_ADDRESS_WORD).contains(&data) {
-        return Capcode::Unusable;
+    if LONG_FIRST_WORDS.contains(&first) {
+        return long_capcode(first, addresses.get(index + 1).copied());
     }
-    Capcode::Address(u64::from(data - CAPCODE_OFFSET))
+    if !(FIRST_ADDRESS_WORD..=LAST_ADDRESS_WORD).contains(&first) {
+        return Capcode::Unusable { long: false };
+    }
+    Capcode::Address {
+        capcode: u64::from(first - CAPCODE_OFFSET),
+        long: false,
+    }
+}
+
+fn long_capcode(first: u32, second: Option<Word>) -> Capcode {
+    match second.and_then(trusted_address) {
+        Some(second)
+            if LONG_SECOND_WORDS
+                .iter()
+                .any(|range| range.contains(&second)) =>
+        {
+            Capcode::Address {
+                capcode: (u64::from(second ^ 0x1F_FFFF) << 15)
+                    + LONG_CAPCODE_BASE
+                    + u64::from(first),
+                long: true,
+            }
+        }
+        _ => Capcode::Unusable { long: true },
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -520,6 +572,10 @@ struct FrameInfo {
     frame: u8,
     phase: usize,
     errors: u32,
+}
+
+fn errors_in(words: &[Word]) -> u32 {
+    words.iter().map(|word| word.errors()).sum()
 }
 
 fn trusted_biw(word: Word) -> Option<u32> {
@@ -539,26 +595,29 @@ fn page(
     words: &[Word; WORDS],
     address: u64,
     vector_index: usize,
+    long: bool,
     info: &FrameInfo,
 ) -> Option<FlexMessage> {
     let vector = words[vector_index].data()?;
     if !checksum(vector) {
         return None;
     }
-    let data = words.map(|word| word.data().unwrap_or(0));
     let kind = (vector >> 4) & 7;
-    let start = usize::from(((vector >> 7) & 0x7F) as u8);
-    let len = usize::from(((vector >> 14) & 0x7F) as u8);
-    let (payload, text) = match kind {
-        2 => (PagerPayload::Tone, String::new()),
-        3 | 4 | 7 => (PagerPayload::Numeric, numeric(&data, vector_index, kind)),
-        5 => (PagerPayload::Alpha, alpha(&data, start, len)),
-        6 => (PagerPayload::Binary, binary(&data, start, len)),
-        _ => return None,
-    };
-    if !content_trusted(words, vector, kind) {
+    let field = message_field(words, vector_index, vector, kind, long)?;
+    if !content_trusted(&field, kind) {
         return None;
     }
+    let data = field
+        .iter()
+        .map(|word| word.data().unwrap_or(0))
+        .collect::<Vec<_>>();
+    let (payload, text) = match kind {
+        2 => (PagerPayload::Tone, String::new()),
+        3 | 4 | 7 => (PagerPayload::Numeric, numeric(&data, kind)),
+        5 => (PagerPayload::Alpha, alpha(&data)),
+        6 => (PagerPayload::Binary, binary(&data)),
+        _ => return None,
+    };
     Some(FlexMessage {
         address,
         payload,
@@ -568,15 +627,33 @@ fn page(
         cycle: info.cycle,
         frame: info.frame,
         phase: char::from(b'A' + info.phase as u8),
-        errors_corrected: info.errors,
+        errors_corrected: info.errors + words[vector_index].errors() + errors_in(&field),
     })
 }
 
-fn content_trusted(words: &[Word; WORDS], vector: u32, kind: u32) -> bool {
-    let range = content(vector, kind);
-    let Some(used) = words.get(range) else {
-        return false;
+/// A long address moves the first message word into its second vector word.
+fn message_field(
+    words: &[Word; WORDS],
+    vector_index: usize,
+    vector: u32,
+    kind: u32,
+    long: bool,
+) -> Option<Vec<Word>> {
+    let start = ((vector >> 7) & 0x7F) as usize;
+    let count = match kind {
+        3 | 4 | 7 => ((vector >> 14) & 7) as usize + 1,
+        5 | 6 => ((vector >> 14) & 0x7F) as usize,
+        _ => return Some(Vec::new()),
     };
+    if !long {
+        return words.get(start..start + count).map(<[Word]>::to_vec);
+    }
+    let first = *words.get(vector_index + 1)?;
+    let rest = words.get(start..start + count.checked_sub(1)?)?;
+    Some(std::iter::once(first).chain(rest.iter().copied()).collect())
+}
+
+fn content_trusted(used: &[Word], kind: u32) -> bool {
     if used.contains(&Word::Lost) {
         return false;
     }
@@ -600,22 +677,13 @@ fn alpha_checksum_holds(used: &[Word]) -> bool {
     !sum & 0x3FF == header & 0x3FF
 }
 
-fn content(vector: u32, kind: u32) -> std::ops::Range<usize> {
-    let start = ((vector >> 7) & 0x7F) as usize;
-    match kind {
-        3 | 4 | 7 => start..start + ((vector >> 14) & 7) as usize + 1,
-        5 | 6 => start..start + ((vector >> 14) & 0x7F) as usize,
-        _ => 0..0,
-    }
-}
-
-fn alpha(words: &[u32], start: usize, len: usize) -> String {
-    if len < 2 || start >= words.len() {
+fn alpha(field: &[u32]) -> String {
+    let Some((header, words)) = field.split_first() else {
         return String::new();
-    }
-    let fragment = words[start] >> 11 & 3;
+    };
+    let fragment = header >> 11 & 3;
     let mut text = String::new();
-    for (index, &word) in words.iter().skip(start + 1).take(len - 1).enumerate() {
+    for (index, &word) in words.iter().enumerate() {
         for slot in 0..3 {
             if index == 0 && slot == 0 && fragment == 3 {
                 continue;
@@ -632,13 +700,10 @@ fn alpha(words: &[u32], start: usize, len: usize) -> String {
     text.trim_end().to_owned()
 }
 
-fn numeric(words: &[u32], vector_index: usize, kind: u32) -> String {
+fn numeric(field: &[u32], kind: u32) -> String {
     const ALPHABET: &[u8; 16] = b"0123456789 U -][";
-    let vector = words[vector_index];
-    let start = usize::from(((vector >> 7) & 0x7F) as u8);
-    let end = start + usize::from(((vector >> 14) & 7) as u8);
     let mut stream = Vec::new();
-    for &word in words.get(start..=end).unwrap_or_default() {
+    for &word in field {
         stream.extend((0..21).map(|bit| word >> bit & 1 == 1));
     }
     let skip = if kind == 7 { 14 } else { 6 };
@@ -662,11 +727,9 @@ fn numeric(words: &[u32], vector_index: usize, kind: u32) -> String {
         .to_owned()
 }
 
-fn binary(words: &[u32], start: usize, len: usize) -> String {
-    words
+fn binary(field: &[u32]) -> String {
+    field
         .iter()
-        .skip(start)
-        .take(len)
         .map(|word| format!("{word:06X}"))
         .collect::<Vec<_>>()
         .join(" ")
@@ -901,23 +964,100 @@ mod tests {
         (messages, channel.rejected())
     }
 
+    fn hard(data: u32) -> Word {
+        Word::Hard { data, errors: 0 }
+    }
+
+    fn short(capcode: u64) -> Capcode {
+        Capcode::Address {
+            capcode,
+            long: false,
+        }
+    }
+
     #[test]
     fn address_words_outside_the_capcode_range_are_refused() {
-        let hard = |data| Word::Hard { data, errors: 0 };
-        assert!(matches!(capcode_of(hard(0x8001)), Capcode::Address(1)));
-        assert!(matches!(
-            capcode_of(hard(0x1F_7806)),
-            Capcode::Address(2_029_574)
-        ));
-        assert!(matches!(capcode_of(hard(0)), Capcode::Idle));
-        assert!(matches!(capcode_of(hard(0x1F_FFFF)), Capcode::Idle));
-        for refused in [1, 0x100, 0x8000, 0x1F_7FFF, 0x1F_FFFE] {
-            assert!(
-                matches!(capcode_of(hard(refused)), Capcode::Unusable),
+        let single = |word| capcode_at(&[word], 0);
+        assert_eq!(single(hard(0x8001)), short(1));
+        assert_eq!(single(hard(0x1F_7806)), short(2_029_574));
+        assert_eq!(single(hard(0)), Capcode::Idle);
+        assert_eq!(single(hard(0x1F_FFFF)), Capcode::Idle);
+        for refused in [0x1F_7FFF, 0x1F_FFFE] {
+            assert_eq!(
+                single(hard(refused)),
+                Capcode::Unusable { long: false },
                 "{refused:#X}"
             );
         }
-        assert!(matches!(capcode_of(Word::Lost), Capcode::Unusable));
+        assert_eq!(single(Word::Lost), Capcode::Unusable { long: false });
+    }
+
+    #[test]
+    fn a_long_address_takes_two_words() {
+        assert_eq!(
+            capcode_at(&[hard(0x00_7112), hard(0x1F_FF50)], 0),
+            Capcode::Address {
+                capcode: 7_831_826,
+                long: true
+            }
+        );
+        for first in [1, 0x100, 0x8000] {
+            assert_eq!(
+                capcode_at(&[hard(first)], 0),
+                Capcode::Unusable { long: true }
+            );
+            assert_eq!(
+                capcode_at(&[hard(first), hard(0x9000)], 0),
+                Capcode::Unusable { long: true }
+            );
+        }
+    }
+
+    #[test]
+    fn a_long_numeric_page_starts_in_its_second_vector_word() {
+        let digits = 1 << 6 | 2 << 10 | 3 << 14 | 0xC << 18;
+        let mut words = [hard(0); WORDS];
+        words[3] = hard(checksum_filled(3 << 4 | 5 << 7));
+        words[4] = hard(digits);
+        let info = FrameInfo {
+            mode: SYNC_CODES[0].1,
+            cycle: 0,
+            frame: 0,
+            phase: 0,
+            errors: 0,
+        };
+        let message = super::page(&words, 7_831_826, 3, true, &info).expect("numeric page");
+        assert_eq!(message.payload, PagerPayload::Numeric);
+        assert_eq!(message.text, "123");
+    }
+
+    fn checksum_filled(data: u32) -> u32 {
+        (0..16)
+            .map(|nibble| data | nibble)
+            .find(|&word| checksum(word))
+            .unwrap_or(data)
+    }
+
+    #[test]
+    fn decodes_a_long_address_page_off_air() {
+        let iq = crate::testutil::cf32_le(include_bytes!(
+            "../../../fixtures/flex_us_long_address_48k.sigmf-data"
+        ));
+        let messages = received(&iq);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        let message = &messages[0];
+        assert_eq!(message.address, 7_831_826);
+        assert_eq!(message.payload, PagerPayload::Alpha);
+        assert_eq!((message.baud, message.levels), (6_400, 4));
+        assert_eq!((message.cycle, message.frame), (13, 17));
+        assert_eq!(message.errors_corrected, 0);
+        assert_eq!(message.text.len(), 196);
+        assert!(
+            message.text.starts_with("84bG9OxYeX+1gAgG"),
+            "{}",
+            message.text
+        );
+        assert!(message.text.ends_with("ZPFj77mAAAA"), "{}", message.text);
     }
 
     #[test]
