@@ -657,6 +657,8 @@ fn connected_airspy_retunes_while_streaming() {
     assert!(moved > stayed * 10.0, "the retune did not reach the radio");
 }
 
+/// The LNA is judged with the mixer at full gain: at mixer gain 0 the noise after the mixer buries
+/// whatever the LNA adds, so even a manual LNA at full gain barely moves the level.
 #[test]
 #[ignore = "requires one idle Airspy R2 or Mini"]
 fn connected_airspy_agc_lifts_a_quiet_front_end() {
@@ -666,6 +668,11 @@ fn connected_airspy_agc_lifts_a_quiet_front_end() {
     radio.set_sample_rate_hz(rate).expect("sample rate");
     radio.set_vga_gain(MAX_VGA_GAIN).expect("vga");
     radio.set_lna_gain(0).expect("lna");
+    radio.set_mixer_gain(MAX_MIXER_GAIN).expect("mixer");
+    let lna_manual = stream_raw(&mut radio, Duration::from_secs(1)).stats.rms();
+    radio.set_lna_agc(true).expect("lna agc");
+    let lna = stream_raw(&mut radio, Duration::from_secs(1)).stats.rms();
+    radio.set_lna_agc(false).expect("lna agc");
     radio.set_mixer_gain(0).expect("mixer");
     let mut level = |lna: bool, mixer: bool| {
         radio.set_lna_agc(lna).expect("lna agc");
@@ -673,14 +680,15 @@ fn connected_airspy_agc_lifts_a_quiet_front_end() {
         stream_raw(&mut radio, Duration::from_secs(1)).stats.rms()
     };
     let manual = level(false, false);
-    let lna = level(true, false);
     let mixer = level(false, true);
     let both = level(true, true);
     let back = level(false, false);
-    eprintln!("rms manual={manual:.1} lna={lna:.1} mixer={mixer:.1} both={both:.1} back={back:.1}");
-    assert!(lna > manual * 2.0, "the LNA AGC did nothing");
+    eprintln!(
+        "rms lna_manual={lna_manual:.1} lna={lna:.1} manual={manual:.1} mixer={mixer:.1} both={both:.1} back={back:.1}"
+    );
+    assert!(lna > lna_manual * 1.4, "the LNA AGC did nothing");
     assert!(mixer > manual * 1.2, "the mixer AGC did nothing");
-    assert!(both > lna.max(mixer), "both loops together did no more");
+    assert!(both > mixer * 1.2, "both loops together did no more");
     assert!(
         (back / manual - 1.0).abs() < 0.3,
         "AGC off left the gain where the AGC put it"
@@ -738,10 +746,13 @@ fn connected_airspy_has_no_spike_at_the_centre() {
     }
 }
 
+/// At full gain the front end's noise sits well above the ADC's. At low gain the ADC's own noise
+/// shows, and its density rises at the slower ADC clock without anything being wrong.
 #[test]
 #[ignore = "requires one idle Airspy R2 or Mini"]
 fn connected_airspy_noise_density_holds_across_rates() {
     let mut radio = open_raw();
+    full_gain(&mut radio);
     radio
         .set_frequency_hz(OFF_CLOCK_HARMONICS_HZ)
         .expect("tune");

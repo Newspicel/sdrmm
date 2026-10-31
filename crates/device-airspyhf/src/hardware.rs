@@ -686,6 +686,23 @@ fn connected_airspyhf_stages_move_a_received_carrier() {
     assert!((two + 12.0).abs() < 3.0, "two attenuator steps");
 }
 
+/// The DC term against everything the radio delivers, so the verdict does not grow with the FFT
+/// length: an idle low-IF rate carries a rounding bias of a few hundredths of an LSB, which a
+/// long transform lifts well clear of a floor only a few LSB high.
+fn dc_share_db(iq: &[Sample]) -> f64 {
+    let count = iq.len() as f64;
+    let (re, im) = iq.iter().fold((0.0, 0.0), |(re, im), sample| {
+        (re + f64::from(sample.re), im + f64::from(sample.im))
+    });
+    let dc = (re / count).powi(2) + (im / count).powi(2);
+    let power = iq
+        .iter()
+        .map(|sample| f64::from(sample.norm_sqr()))
+        .sum::<f64>()
+        / count;
+    db(dc / power)
+}
+
 #[test]
 #[ignore = "requires one idle Airspy HF+"]
 fn connected_airspyhf_blocks_dc_only_where_there_is_a_spike() {
@@ -695,21 +712,12 @@ fn connected_airspyhf_blocks_dc_only_where_there_is_a_spike() {
     for rate in radio.sample_rates().to_vec() {
         radio.set_sample_rate_hz(rate).expect("sample rate");
         let hint = caps::dc_artifact(radio.is_low_if());
-        let zoom = Zoom::capture(&mut radio);
-        let centre = zoom.spectrum[ZOOM_LEN / 2 - 1..=ZOOM_LEN / 2 + 1]
-            .iter()
-            .copied()
-            .fold(0.0, f64::max);
-        let beside = zoom.spectrum[ZOOM_LEN / 2 - 40..ZOOM_LEN / 2 - 10]
-            .iter()
-            .sum::<f64>()
-            / 30.0;
-        let spike = db(centre / beside);
-        eprintln!("rate={rate} {hint:?}: centre {spike:.1} dB over its neighbours");
+        let share = dc_share_db(&capture_iq(&mut radio, ZOOM_LEN * 8));
+        eprintln!("rate={rate} {hint:?}: DC is {share:.1} dB of the power");
         if hint.is_managed() {
-            assert!(spike > 15.0, "{rate}: blocking a spike that is not there");
+            assert!(share > -10.0, "{rate}: blocking a spike that is not there");
         } else {
-            assert!(spike < 6.0, "{rate}: a spike is left in");
+            assert!(share < -20.0, "{rate}: a spike is left in");
         }
     }
 }
