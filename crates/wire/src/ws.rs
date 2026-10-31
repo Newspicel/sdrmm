@@ -195,6 +195,9 @@ pub enum ServerEvent {
     RotatorUpdate {
         status: Box<crate::rotator::RotatorStatus>,
     },
+    ScheduleUpdate {
+        status: Box<crate::schedule::ScheduleStatus>,
+    },
     PositionChanged {
         node: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]

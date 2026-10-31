@@ -25,6 +25,20 @@
           },
           "multi": "many",
           "repeat": "per_rx_stream"
+        },
+        {
+          "name": "control",
+          "port_type": "control",
+          "direction": "in",
+          "payload": {
+            "type": "control",
+            "verbs": [
+              "run"
+            ]
+          },
+          "multi": "many",
+          "takes": "running",
+          "note": "Opens the radio only while a schedule or satellite says so"
         }
       ],
       "needs_channel_type": false,
@@ -1358,6 +1372,20 @@
             "type": "position"
           },
           "multi": "one"
+        },
+        {
+          "name": "control",
+          "port_type": "control",
+          "direction": "in",
+          "payload": {
+            "type": "control",
+            "verbs": [
+              "run"
+            ]
+          },
+          "multi": "many",
+          "takes": "running",
+          "note": "Armed, it records only while a schedule or satellite says so"
         }
       ],
       "needs_channel_type": false,
@@ -1390,6 +1418,20 @@
             "type": "audio"
           },
           "multi": "many"
+        },
+        {
+          "name": "control",
+          "port_type": "control",
+          "direction": "in",
+          "payload": {
+            "type": "control",
+            "verbs": [
+              "run"
+            ]
+          },
+          "multi": "many",
+          "takes": "running",
+          "note": "Armed, it records only while a schedule or satellite says so"
         }
       ],
       "needs_channel_type": false,
@@ -1422,6 +1464,20 @@
             "type": "baseband"
           },
           "multi": "many"
+        },
+        {
+          "name": "control",
+          "port_type": "control",
+          "direction": "in",
+          "payload": {
+            "type": "control",
+            "verbs": [
+              "run"
+            ]
+          },
+          "multi": "many",
+          "takes": "running",
+          "note": "Armed, it records only while a schedule or satellite says so"
         }
       ],
       "needs_channel_type": false,
@@ -1718,6 +1774,39 @@
       }
     },
     {
+      "kind": "schedule",
+      "name": "Schedule",
+      "category": "tool",
+      "summary": "Runs radios and recorders by the clock",
+      "role": {
+        "role": "plain"
+      },
+      "face": {
+        "width": 360,
+        "dial": false
+      },
+      "ports": [
+        {
+          "name": "control",
+          "port_type": "control",
+          "direction": "out",
+          "payload": {
+            "type": "control",
+            "verbs": [
+              "run"
+            ]
+          },
+          "multi": "many",
+          "note": "Radios and recorders to run in its windows"
+        }
+      ],
+      "needs_channel_type": false,
+      "default_body": {
+        "kind": "schedule",
+        "data": {}
+      }
+    },
+    {
       "kind": "satellite",
       "name": "Satellite",
       "category": "tool",
@@ -1748,11 +1837,12 @@
             "verbs": [
               "tune",
               "doppler",
-              "point"
+              "point",
+              "run"
             ]
           },
           "multi": "many",
-          "note": "decoders to tune and Doppler correct, rotators to point"
+          "note": "decoders to tune and Doppler correct, rotators to point, radios to run"
         },
         {
           "name": "events",
@@ -2420,7 +2510,7 @@
       "port_type": "control",
       "name": "Control",
       "hue": "violet",
-      "note": "Commands that retune a decoder or point a rotator"
+      "note": "Commands that retune a decoder, point a rotator or run a radio"
     },
     {
       "port_type": "position",

@@ -27,6 +27,7 @@ export const POLARIMETER_LIMITS = limits.polarimeter;
 export const HUNT_LIMITS = limits.hunt;
 export const PRESENCE_LIMITS = limits.presence;
 export const ROTATOR_LIMITS = limits.rotator;
+export const SCHEDULE_LIMITS = limits.schedule;
 export const MAX_NODES = limits.patch.nodes;
 export const MAX_EDGES = limits.patch.wires;
 export const MAX_STREAMS = limits.patch.streams;

@@ -103,7 +103,7 @@
           "id": "note",
           "kind": "note",
           "data": {
-            "text": "## Satellite pass\n\n**GPS position** is your station. Everything that points or predicts needs it.\n\n**Satellite** predicts the next pass and, during it, drives two things at once: the decoder's tuning for Doppler, and the rotator's aim.\n\n**Rotator** points the antenna. Without one, delete it: the rest still works on a fixed antenna.\n\n**Channel** decodes APT. Pick the satellite in the Satellite node, not here.\n\n**Video** is where the weather image appears, line by line as the pass comes in. APT sends a picture, so without this node the pass decodes to a log of rows you cannot look at.\n\n**Recorder** keeps the raw IQ of the pass, so you can decode it again later with different settings.\n\n**Map** draws the ground track. **Decoder log** keeps what came down.\n\nPick a radio on the Device node to start."
+            "text": "## Satellite pass\n\n**GPS position** is your station. Everything that points or predicts needs it.\n\n**Satellite** predicts the next pass and, during it, tunes the decoder for Doppler, aims the rotator, and opens the radio only for the pass.\n\n**Rotator** points the antenna. Without one, delete it: the rest still works on a fixed antenna.\n\n**Channel** decodes APT. Pick the satellite in the Satellite node, not here.\n\n**Video** is where the weather image appears, line by line as the pass comes in. APT sends a picture, so without this node the pass decodes to a log of rows you cannot look at.\n\n**Recorder**, once armed, keeps the raw IQ of each pass, so you can decode it again later with different settings.\n\n**Map** draws the ground track. **Decoder log** keeps what came down.\n\nPick a radio on the Device node to start."
           },
           "position": {
             "x": 0.0,
@@ -214,6 +214,26 @@
           "to": {
             "node": "picture",
             "port": "video"
+          }
+        },
+        {
+          "from": {
+            "node": "sat",
+            "port": "control"
+          },
+          "to": {
+            "node": "dev",
+            "port": "control"
+          }
+        },
+        {
+          "from": {
+            "node": "sat",
+            "port": "control"
+          },
+          "to": {
+            "node": "rec",
+            "port": "control"
           }
         }
       ]

@@ -30,6 +30,7 @@ import { AudioRecorderFace, BasebandRecorderFace, RecorderFace } from "./Recorde
 import { RotatorFace } from "./RotatorFace";
 import { SatelliteFace } from "./SatelliteFace";
 import { ScannerFace } from "./ScannerFace";
+import { ScheduleFace } from "./ScheduleFace";
 import { ScopeFace } from "./ScopeFace";
 import { SignalMapFace } from "./SignalMapFace";
 import { SpatialSpectrumFace } from "./SpatialSpectrumFace";
@@ -76,6 +77,7 @@ export const NODE_TYPES: Record<NodeKind, ComponentType<NodeProps<Node<FlowData>
   export: mount(ExportFace),
   scanner: mount(ScannerFace),
   hunt: mount(HuntFace),
+  schedule: mount(ScheduleFace),
   satellite: mount(SatelliteFace),
   rotator: mount(RotatorFace),
   triangulation: mount(TriangulationFace),
@@ -115,6 +117,7 @@ export const FACES: Record<NodeKind, Face> = {
   export: ExportFace,
   scanner: ScannerFace,
   hunt: HuntFace,
+  schedule: ScheduleFace,
   satellite: SatelliteFace,
   rotator: RotatorFace,
   triangulation: TriangulationFace,

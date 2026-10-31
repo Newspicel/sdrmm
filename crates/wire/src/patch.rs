@@ -168,6 +168,9 @@ pub struct DeviceNode {
     pub split_tuning: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stopped: bool,
+    /// Set by the server, never saved: a wired controller lets this radio rest for now.
+    #[serde(skip)]
+    pub waiting: bool,
 }
 
 impl DeviceNode {
@@ -412,7 +415,9 @@ impl NodeBody {
             Self::Device(device) => device
                 .device
                 .clone()
-                .filter(|pinned| !device.stopped && pinned.valid() && pinned.opens())
+                .filter(|pinned| {
+                    !device.stopped && !device.waiting && pinned.valid() && pinned.opens()
+                })
                 .map(|pinned| pinned.owned_by(node_id)),
             _ => None,
         }
@@ -422,6 +427,24 @@ impl NodeBody {
     pub const fn stopped(&self) -> bool {
         match self {
             Self::Device(device) => device.stopped && device.device.is_some(),
+            _ => false,
+        }
+    }
+
+    const fn rest(&mut self) {
+        match self {
+            Self::Device(device) => device.waiting = true,
+            Self::Recorder(RecorderNode { recording, .. })
+            | Self::AudioRecorder(AudioRecorderNode { recording, .. })
+            | Self::BasebandRecorder(BasebandRecorderNode { recording }) => *recording = false,
+            _ => {}
+        }
+    }
+
+    #[must_use]
+    pub const fn waiting(&self) -> bool {
+        match self {
+            Self::Device(device) => device.waiting && !device.stopped && device.device.is_some(),
             _ => false,
         }
     }
@@ -586,6 +609,25 @@ impl PatchGraph {
             .map(|lane| lane + 1)
             .max()
             .unwrap_or(0)
+    }
+
+    /// The patch as the server runs it: a radio or recorder with a wired run input rests unless
+    /// `held(node, controller)` says one of its controllers holds it on.
+    #[must_use]
+    pub fn rested(&self, held: impl Fn(&str, &str) -> bool) -> Self {
+        let mut out = self.clone();
+        for node in &mut out.nodes {
+            let mut controllers = self
+                .edges
+                .iter()
+                .filter(|edge| edge.to.node == node.id && edge.to.port == CONTROL_PORT)
+                .map(|edge| edge.from.node.as_str())
+                .peekable();
+            if controllers.peek().is_some() && !controllers.any(|from| held(&node.id, from)) {
+                node.body.rest();
+            }
+        }
+        out
     }
 
     pub fn settle_arrays(&mut self) -> bool {

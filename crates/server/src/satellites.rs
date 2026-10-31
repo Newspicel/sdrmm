@@ -34,6 +34,8 @@ const PUBLISH_EVERY: Duration = Duration::from_secs(1);
 const PASS_EVERY: Duration = Duration::from_secs(60);
 const PASS_HORIZON_S: f64 = 2.0 * 86_400.0;
 const HORIZON_DEG: f64 = 0.0;
+/// Opening a radio takes seconds, so one the satellite runs opens this long before the rise.
+const RUN_LEAD_S: f64 = 30.0;
 
 #[derive(Clone, Debug, PartialEq)]
 struct Wiring {
@@ -352,7 +354,9 @@ fn drive(
         next_pass: status.next_pass,
         pass_track: status.pass_track.clone(),
     };
-    let mut acks = control.deliver(engine, patch, node, &ControlCommand::Point(sky));
+    let on = runs(status, unix_now());
+    let mut acks = control.deliver(engine, patch, node, &ControlCommand::Run { on });
+    acks.extend(control.deliver(engine, patch, node, &ControlCommand::Point(sky)));
     let doppler = match (wiring.settings.downlink_hz, steering.doppler) {
         (Some(freq_hz), Some(doppler)) => {
             acks.extend(control.deliver(engine, patch, node, &ControlCommand::Tune { freq_hz }));
@@ -366,7 +370,19 @@ fn drive(
         }
     };
     acks.extend(control.deliver(engine, patch, node, &ControlCommand::Doppler(doppler)));
+    if !on && control::takes(patch, node, ControlVerb::Run) {
+        acks.retain(|ack| ack.error.as_deref() != Some(control::NOT_RUNNING));
+    }
     take_acks(status, acks);
+}
+
+/// Between passes the radios it runs rest, and the decoders on them with it.
+fn runs(status: &SatelliteStatus, now: f64) -> bool {
+    status.visible
+        || status
+            .next_pass
+            .and_then(|pass| pass.aos)
+            .is_some_and(|aos| aos as f64 - now <= RUN_LEAD_S)
 }
 
 fn take_acks(status: &mut SatelliteStatus, acks: Vec<ControlAck>) {
@@ -454,6 +470,29 @@ mod tests {
                 port: to.1.to_owned(),
             },
         }
+    }
+
+    #[test]
+    fn a_satellite_runs_its_radios_from_just_before_the_rise() {
+        let rising = |aos: i64| SatelliteStatus {
+            next_pass: Some(SatellitePass {
+                aos: Some(aos),
+                los: Some(aos + 600),
+                max_elevation_deg: 40.0,
+                max_at: aos + 300,
+            }),
+            ..SatelliteStatus::default()
+        };
+        assert!(!runs(&rising(1_000), 900.0));
+        assert!(runs(&rising(1_000), 1_000.0 - RUN_LEAD_S));
+        assert!(runs(
+            &SatelliteStatus {
+                visible: true,
+                ..SatelliteStatus::default()
+            },
+            0.0
+        ));
+        assert!(!runs(&SatelliteStatus::default(), 0.0));
     }
 
     #[test]

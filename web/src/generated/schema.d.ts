@@ -3774,7 +3774,7 @@ export interface components {
             verb?: components["schemas"]["ControlVerb"] | null;
         };
         /** @enum {string} */
-        ControlVerb: "tune" | "doppler" | "sweep" | "point";
+        ControlVerb: "tune" | "doppler" | "sweep" | "point" | "run";
         ConversionIssue: {
             field?: string | null;
             item?: string | null;
@@ -7042,6 +7042,10 @@ export interface components {
             /** @enum {string} */
             kind: "hunt";
         } | {
+            data: components["schemas"]["ScheduleNode"];
+            /** @enum {string} */
+            kind: "schedule";
+        } | {
             data: components["schemas"]["SatelliteNode"];
             /** @enum {string} */
             kind: "satellite";
@@ -7089,7 +7093,7 @@ export interface components {
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "dmr_trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "triangulation" | "note";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "dmr_trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "triangulation" | "note";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -9020,6 +9024,35 @@ export interface components {
             /** @enum {string} */
             target: "channel";
         };
+        ScheduleNode: {
+            windows?: components["schemas"]["ScheduleWindow"][];
+            /** @description An IANA zone such as `Europe/Berlin`. None keeps the server's own clock. */
+            zone?: string | null;
+        };
+        ScheduleStatus: {
+            driving?: string[];
+            error?: string | null;
+            /**
+             * Format: int64
+             * @description When it next turns on or off, in Unix seconds.
+             */
+            next_change?: number | null;
+            node: string;
+            on: boolean;
+            zone?: string | null;
+        };
+        /**
+         * @description On from `start_min` to `stop_min`, in minutes past midnight. A stop before the start runs past
+         *     midnight, and a stop equal to the start keeps it on for a whole day. Days name the day a window
+         *     opens; none means every day.
+         */
+        ScheduleWindow: {
+            days?: components["schemas"]["Weekday"][];
+            /** Format: int32 */
+            start_min: number;
+            /** Format: int32 */
+            stop_min: number;
+        };
         ScramblerStatus: {
             /** Format: double */
             confidence: number;
@@ -9186,6 +9219,12 @@ export interface components {
             };
             /** @enum {string} */
             type: "RotatorUpdate";
+        } | {
+            data: {
+                status: components["schemas"]["ScheduleStatus"];
+            };
+            /** @enum {string} */
+            type: "ScheduleUpdate";
         } | {
             data: {
                 error?: string | null;
@@ -10237,7 +10276,7 @@ export interface components {
         /** @enum {string} */
         UlaSide: "both" | "front" | "back";
         /** @enum {string} */
-        UnboundReason: "not_wired" | "no_radio" | "radio_absent" | "radio_closed" | "not_placed" | "not_running" | "stopped";
+        UnboundReason: "not_wired" | "no_radio" | "radio_absent" | "radio_closed" | "not_placed" | "not_running" | "stopped" | "waiting";
         /** @enum {string} */
         Unit: "none" | "hz" | "db" | "dbfs" | "degrees" | "feet" | "metres" | "kilometres" | "knots" | "metres_per_second" | "feet_per_minute" | "celsius" | "percent" | "hectopascal" | "seconds" | "baud" | "millimetres" | "volts" | "db_hz" | "kilometres_per_hour" | "watts_per_square_metre" | "chips" | "wpm" | "dbm" | "psi" | "lux" | "kelvin";
         UpdateNanoVnaMeasurementRequest: {
@@ -10338,6 +10377,8 @@ export interface components {
         };
         /** @enum {string} */
         WebhookFormat: "json" | "discord";
+        /** @enum {string} */
+        Weekday: "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
         /** @enum {string} */
         WefaxIoc: "ioc576" | "ioc288";
         /** @enum {string} */

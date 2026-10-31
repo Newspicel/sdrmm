@@ -367,11 +367,23 @@ function Refused({ set }: { set: DeviceSet }) {
   return said == null ? null : <FaceFault message={said} detail={set.refused?.error} />;
 }
 
-function idleSaid(stopped: boolean, onBus: boolean): string {
+function idleSaid(stopped: boolean, waiting: boolean, onBus: boolean): string {
   if (stopped) {
     return "stopped";
   }
+  if (waiting) {
+    return "waiting";
+  }
   return onBus ? "not open" : "disconnected";
+}
+
+function openSaid(waiting: boolean, onBus: boolean): string {
+  if (waiting) {
+    return "Opens when its schedule or satellite says so";
+  }
+  return onBus
+    ? "Open this radio and start the channels wired to it"
+    : "Nothing to open until the radio is plugged back in";
 }
 
 function StopButton({ set, onStop }: { set: DeviceSet; onStop: () => void }) {
@@ -403,6 +415,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
   const set = workspace.devices.get(node.id) ?? null;
   const runs = runsOf(workspace.resolved, node.id);
   const onBus = runs?.runs === "unbound" && runs.reason === "radio_closed";
+  const waiting = runs?.runs === "unbound" && runs.reason === "waiting";
 
   const editNode = (next: Partial<DeviceNodeData>): void =>
     workspace.edit((snapshot) => ({
@@ -482,7 +495,12 @@ export function DeviceFace({ node }: { node: PatchNode }) {
 
   if (set === null) {
     return (
-      <NodeShell node={node} title="Device" category="source" subtitle={idleSaid(stopped, onBus)}>
+      <NodeShell
+        node={node}
+        title="Device"
+        category="source"
+        subtitle={idleSaid(stopped, waiting, onBus)}
+      >
         <FaceBody>
           <p className="p-3 font-mono text-sm text-ink">{refLabel(reference)}</p>
         </FaceBody>
@@ -508,11 +526,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
             <Button
               type="button"
               className={BTN_PRIMARY}
-              title={
-                onBus
-                  ? "Open this radio and start the channels wired to it"
-                  : "Nothing to open until the radio is plugged back in"
-              }
+              title={openSaid(waiting, onBus)}
               onClick={() => workspace.apply()}
               disabled={!onBus}
             >

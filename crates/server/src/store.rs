@@ -1694,6 +1694,7 @@ fn migrate_control_wires(snapshot: &mut serde_json::Value) {
         .flatten();
     let mut radios: HashSet<String> = HashSet::new();
     let mut decoders: HashSet<String> = HashSet::new();
+    let mut sweepers: HashSet<String> = HashSet::new();
     for node in nodes {
         let Some(id) = node.get("id").and_then(serde_json::Value::as_str) else {
             continue;
@@ -1703,9 +1704,12 @@ fn migrate_control_wires(snapshot: &mut serde_json::Value) {
             radios.insert(id.to_owned());
         } else if kind == Some(NodeKind::Channel.as_str()) {
             decoders.insert(id.to_owned());
+        } else if kind == Some(NodeKind::Scanner.as_str()) || kind == Some(NodeKind::Hunt.as_str())
+        {
+            sweepers.insert(id.to_owned());
         }
     }
-    if radios.is_empty() {
+    if radios.is_empty() || sweepers.is_empty() {
         return;
     }
     let Some(edges) = graph
@@ -1734,12 +1738,14 @@ fn migrate_control_wires(snapshot: &mut serde_json::Value) {
     let mut taken: HashSet<String> = HashSet::new();
     let mut moved = Vec::with_capacity(edges.len());
     for edge in edges.drain(..) {
-        let Some((sink, port)) = edge_end(&edge, "to").map(|(n, p)| (n.to_owned(), p.to_owned()))
+        let (Some((source, _)), Some((sink, port))) =
+            (edge_end(&edge, "from"), edge_end(&edge, "to"))
         else {
             moved.push(edge);
             continue;
         };
-        if port != "control" || !radios.contains(&sink) {
+        let sink = sink.to_owned();
+        if port != "control" || !radios.contains(&sink) || !sweepers.contains(source) {
             moved.push(edge);
             continue;
         }

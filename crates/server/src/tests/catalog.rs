@@ -208,9 +208,10 @@ async fn the_patch_catalog_describes_the_node_palette() {
         device.ports.iter().all(|port| port.name != "tx"),
         "no radio offers a transmit input"
     );
-    assert!(
-        device.ports.iter().all(|port| port.name != "control"),
-        "a radio is driven through its decoders"
+    assert_eq!(
+        port("control").payload,
+        sdrmm_wire::Payload::control(&[sdrmm_wire::ControlVerb::Run]),
+        "a radio is tuned through its decoders and only told when to run"
     );
     let decoder = catalog
         .nodes

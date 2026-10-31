@@ -227,7 +227,7 @@ describe("ports", () => {
   it("draws the ports the server resolved, and catalog ports until it has", () => {
     const graph = workspace();
     const dev = deviceNode(graph);
-    expect(nodePorts(context, dev).map((p) => p.name)).toEqual(["iq"]);
+    expect(nodePorts(context, dev).map((p) => p.name)).toEqual(["iq", "control"]);
     const four = { ...context, resolved: radioResolved(["iq", "iq2", "iq3", "iq4"]) };
     const ports = nodePorts(four, dev);
     expect(ports.map((p) => p.name)).toEqual(["iq", "iq2", "iq3", "iq4"]);
@@ -237,7 +237,10 @@ describe("ports", () => {
   it("falls back to catalog ports when the resolved node has another kind", () => {
     const dev = deviceNode(workspace());
     const stale = resolvedPatch([resolvedNodeOf("dev", "scope", [])]);
-    expect(nodePorts({ ...context, resolved: stale }, dev).map((p) => p.name)).toEqual(["iq"]);
+    expect(nodePorts({ ...context, resolved: stale }, dev).map((p) => p.name)).toEqual([
+      "iq",
+      "control",
+    ]);
   });
 
   it("grows the resize floor with the port count", () => {

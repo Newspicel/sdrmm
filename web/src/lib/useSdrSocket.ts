@@ -33,6 +33,7 @@ import { observeResolved } from "./resolved";
 import { useRotatorStore } from "./rotator";
 import { useSatelliteStore } from "./satellite";
 import { useScannerStore } from "./scanner";
+import { useScheduleStore } from "./schedule";
 import { sinkHub } from "./sinks";
 import { spectrumHub } from "./spectrum";
 import { surfaceHub } from "./surface";
@@ -111,6 +112,7 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     s.on("event", usePositionStore.getState().observe);
     s.on("event", useSatelliteStore.getState().observe);
     s.on("event", useRotatorStore.getState().observe);
+    s.on("event", useScheduleStore.getState().observe);
     s.on("event", useLevelStore.getState().observe);
     s.on("event", useProcessorStore.getState().observe);
     s.on("event", useArrayStore.getState().observe);

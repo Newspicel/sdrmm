@@ -88,6 +88,69 @@ async fn stopping_a_device_node_closes_its_radio_and_starting_it_brings_the_sett
     assert_eq!(set.channels[0].settings.frequency_hz, 145_512_500.0);
 }
 
+fn scheduled(windows: Vec<sdrmm_wire::ScheduleWindow>) -> sdrmm_wire::WorkspaceSnapshot {
+    let mut snapshot = virtual_snapshot("band", &[("voice", "nfm", "iq")]);
+    snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+        id: "clock".to_owned(),
+        body: sdrmm_wire::NodeBody::Schedule(sdrmm_wire::ScheduleNode {
+            windows,
+            zone: Some("UTC".to_owned()),
+        }),
+        position: sdrmm_wire::Position { x: 0.0, y: 300.0 },
+        size: None,
+        label: None,
+    });
+    snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
+        from: sdrmm_wire::PortRef {
+            node: "clock".to_owned(),
+            port: "control".to_owned(),
+        },
+        to: sdrmm_wire::PortRef {
+            node: "device".to_owned(),
+            port: "control".to_owned(),
+        },
+    });
+    snapshot
+}
+
+async fn wait_for_radios(app: &Router, count: usize) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while get_state(app).await.device_sets.len() != count {
+        assert!(Instant::now() < deadline, "never held {count} radios");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test]
+async fn a_scheduled_radio_opens_in_its_window_and_rests_outside_it() {
+    let app = test_router();
+    let workspace = put_active_workspace(&app, &scheduled(Vec::new())).await;
+    assert_eq!(
+        apply(&app, workspace).await.opened,
+        0,
+        "no window, no radio"
+    );
+
+    let all_day = sdrmm_wire::ScheduleWindow {
+        start_min: 0,
+        stop_min: 0,
+        days: Vec::new(),
+    };
+    put_active_workspace(&app, &scheduled(vec![all_day])).await;
+    wait_for_radios(&app, 1).await;
+    assert_eq!(get_state(&app).await.device_sets[0].channels.len(), 1);
+
+    put_active_workspace(&app, &scheduled(Vec::new())).await;
+    wait_for_radios(&app, 0).await;
+    let saved = workspace_detail(&app, workspace).await.snapshot.graph;
+    assert!(
+        saved
+            .node("device")
+            .is_some_and(|node| !node.body.stopped()),
+        "resting never writes the saved patch"
+    );
+}
+
 #[tokio::test]
 async fn applying_a_workspace_reports_an_absent_radio() {
     let app = test_router();

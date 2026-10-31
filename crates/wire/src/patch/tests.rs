@@ -255,6 +255,7 @@ fn a_device_node_saved_before_the_frequency_lock_existed_still_loads_unlocked() 
         locked_streams: vec![1],
         split_tuning: false,
         stopped: false,
+        waiting: false,
     });
     let json = serde_json::to_string(&locked).expect("serialize the body");
     let NodeBody::Device(back) =
@@ -824,7 +825,7 @@ fn no_radio_offers_a_transmit_input() {
     assert!(
         ports
             .iter()
-            .all(|port| port.direction == PortDirection::Out)
+            .all(|port| port.direction == PortDirection::Out || port.port_type == PortType::Control)
     );
     let mut retransmit = workspace();
     retransmit
@@ -905,13 +906,9 @@ fn a_scanner_owns_the_one_decoder_its_wire_runs_into() {
     a_radio
         .edges
         .push(edge(("scan", "control"), ("dev2", "control")));
-    assert_eq!(
-        a_radio.validate(),
-        Err(PatchError::UnknownPort(PortRef {
-            node: "dev2".to_owned(),
-            port: "control".to_owned()
-        })),
-        "a radio is driven through its decoders, never directly"
+    assert!(
+        matches!(a_radio.validate(), Err(PatchError::Refused { .. })),
+        "a radio is swept through its decoders, never directly"
     );
 
     let mut two_decoders = driven.clone();
@@ -1866,7 +1863,7 @@ fn the_catalog_offers_one_source_that_opens_a_radio() {
         .expect("device is in the catalog");
     assert_eq!(entry.category, NodeCategory::Source);
     assert!(!entry.needs_channel_type);
-    assert_eq!(entry.ports.len(), 1);
+    assert_eq!(entry.ports.len(), 2);
     for retired in ["recording", "signal_gen"] {
         assert!(NodeKind::parse(retired).is_none(), "{retired} is retired");
     }

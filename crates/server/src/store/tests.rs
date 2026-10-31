@@ -2809,3 +2809,29 @@ fn the_author_migration_keeps_the_head_and_drops_the_redo_tail() {
     );
     assert!(!store.workspace_for(id, ME).expect("read").history.can_undo);
 }
+
+#[test]
+fn a_run_wire_into_a_radio_survives_the_old_control_wire_move() {
+    let mut snapshot = sdrmm_wire::WorkspaceSnapshot::starter();
+    snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+        id: "clock".to_owned(),
+        body: sdrmm_wire::NodeBody::Schedule(sdrmm_wire::ScheduleNode::default()),
+        position: sdrmm_wire::Position { x: 0.0, y: 300.0 },
+        size: None,
+        label: None,
+    });
+    let run = sdrmm_wire::PatchEdge {
+        from: sdrmm_wire::PortRef {
+            node: "clock".to_owned(),
+            port: "control".to_owned(),
+        },
+        to: sdrmm_wire::PortRef {
+            node: "device".to_owned(),
+            port: "control".to_owned(),
+        },
+    };
+    snapshot.graph.edges.push(run.clone());
+    let json = serde_json::to_string(&snapshot).expect("json");
+    let parsed = super::parse_workspace_snapshot(&json).expect("parses");
+    assert!(parsed.graph.edges.contains(&run));
+}

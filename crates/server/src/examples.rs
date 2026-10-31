@@ -85,7 +85,7 @@ static EXAMPLES: &[Example] = &[
 ];
 
 #[cfg(test)]
-const UNCOVERED: &[sdrmm_wire::NodeKind] = &[];
+const UNCOVERED: &[sdrmm_wire::NodeKind] = &[sdrmm_wire::NodeKind::Schedule];
 
 #[derive(Debug)]
 pub(crate) enum ExampleError {

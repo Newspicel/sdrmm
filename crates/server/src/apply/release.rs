@@ -7,6 +7,7 @@ pub(crate) fn release(
     before: &PatchGraph,
     after: &PatchGraph,
 ) -> Vec<PatchRefusal> {
+    let (before, after) = (&state.runs.gated(before), &state.runs.gated(after));
     let snapshot = state.engine.snapshot();
     let mut refused = close_dropped_radios(state, &snapshot, before, after);
     refused.extend(stop_dropped_captures(state, &snapshot, before, after));
@@ -54,7 +55,8 @@ fn close_dropped_channels(
 }
 
 pub(crate) fn drops_radio(state: &AppState, before: &PatchGraph, after: &PatchGraph) -> bool {
-    !dropped_radios(&state.engine.snapshot(), before, after).is_empty()
+    let (before, after) = (state.runs.gated(before), state.runs.gated(after));
+    !dropped_radios(&state.engine.snapshot(), &before, &after).is_empty()
 }
 
 fn dropped_radios(

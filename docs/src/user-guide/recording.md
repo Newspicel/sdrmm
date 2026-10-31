@@ -24,6 +24,15 @@ while recording.
 
 A clean server shutdown finishes open recordings. Killing the process can leave one incomplete.
 
+## Record on a schedule or a pass
+
+Wire a **Schedule** or a [Satellite](satellites.md) `control` to a recorder's `control`, then
+press **Record** to arm it. It records only while the controller says so.
+
+A Schedule holds windows such as 06:00 to 08:00 on weekdays. A stop before the start runs past
+midnight, and the same time for both keeps it on all day. Times follow the **Zone** you set, or
+the server's clock. Wire it to a Device's `control` too and the radio rests outside its windows.
+
 ## Pre-roll
 
 Catch a signal after it happened:

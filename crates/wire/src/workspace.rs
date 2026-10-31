@@ -835,6 +835,7 @@ mod tests {
                 locked_streams: Vec::new(),
                 split_tuning: false,
                 stopped: false,
+                waiting: false,
             })
         );
         assert!(
@@ -855,6 +856,7 @@ mod tests {
             locked_streams: vec![0],
             split_tuning: false,
             stopped: false,
+            waiting: false,
         });
         let mut snap = WorkspaceSnapshot::starter();
         snap.merge_patch(&locked, "held:", Some(&rtlsdr()));
@@ -865,6 +867,7 @@ mod tests {
                 locked_streams: vec![0],
                 split_tuning: false,
                 stopped: false,
+                waiting: false,
             })
         );
     }

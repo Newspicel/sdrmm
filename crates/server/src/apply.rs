@@ -27,16 +27,17 @@ pub(crate) fn bring_up(
     saved: &WorkspaceState,
 ) -> Result<PatchApplyReport, AppError> {
     let mut report = PatchApplyReport::default();
+    let graph = app.runs.gated(&snapshot.graph);
     forget_closed_bindings(app, &app.engine.snapshot());
-    restore_bound(app, workspace, &snapshot.graph, saved, &mut report);
-    open_radios(app, workspace, &snapshot.graph, saved, &mut report);
-    crate::placement::settle_workspace(app, &snapshot.graph, saved, &mut report);
-    let resolved = Resolved::of(snapshot.graph.clone(), &app.engine.snapshot());
+    restore_bound(app, workspace, &graph, saved, &mut report);
+    open_radios(app, workspace, &graph, saved, &mut report);
+    crate::placement::settle_workspace(app, &graph, saved, &mut report);
+    let resolved = Resolved::of(graph.clone(), &app.engine.snapshot());
     report.closed += close_unowned(app, &resolved, &report.bound);
     for (node, reason) in hooks(app, &resolved, saved) {
         report.refused.push(PatchRefusal { node, reason });
     }
-    crate::placement::settle_lanes(app, &snapshot.graph, saved, &mut report);
+    crate::placement::settle_lanes(app, &graph, saved, &mut report);
     publish_refusals(app, &report);
     app.resolve_now();
     Ok(report)

@@ -49,6 +49,7 @@ pub mod same;
 pub mod sarsat;
 pub mod satellite;
 pub mod scan;
+pub mod schedule;
 pub mod sink;
 pub mod stanag;
 pub mod state;
@@ -320,6 +321,10 @@ pub use satellite::{
 pub use scan::{
     MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanSettings,
     ScanState, ScannerStatus, WatchedLane,
+};
+pub use schedule::{
+    MAX_SCHEDULE_WINDOWS, MAX_TIME_ZONE_LEN, MINUTES_PER_DAY, ScheduleNode, ScheduleStatus,
+    ScheduleWindow, Weekday,
 };
 pub use sink::{
     Entity, EntityKey, PositionTrack, PropagationCell, PropagationPath, PropagationSummary,

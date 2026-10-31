@@ -11,7 +11,9 @@ use sdrmm_wire::{
 };
 use tokio::sync::watch;
 
-const NOT_RUNNING: &str = "Not running";
+use crate::run_gate::RunGate;
+
+pub(crate) const NOT_RUNNING: &str = "Not running";
 const NO_LANE: &str = "Wire the lane it watches";
 
 pub(crate) struct Sweep<'a> {
@@ -55,6 +57,7 @@ impl Held {
 pub(crate) struct ControlBus {
     latest: Mutex<HashMap<String, watch::Sender<Option<ControlCommand>>>>,
     driven: Mutex<HashMap<String, Held>>,
+    runs: Arc<RunGate>,
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -62,6 +65,13 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl ControlBus {
+    pub(crate) fn gated_by(runs: Arc<RunGate>) -> Self {
+        Self {
+            runs,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn follow(&self, target: &str) -> watch::Receiver<Option<ControlCommand>> {
         locked(&self.latest)
             .entry(target.to_owned())
@@ -105,6 +115,7 @@ impl ControlBus {
 
     pub(crate) fn settle(&self, rig: &dyn Rig, patch: &ResolvedPatch) {
         self.release_all_but(rig, patch, &|from: &str| patch.node(from).is_some());
+        self.runs.retain(|node| patch.node(node).is_some());
         let controllers: Vec<String> = locked(&self.driven).keys().cloned().collect();
         for from in controllers {
             self.release_unwired(rig, patch, &from, &targets(patch, &from));
@@ -176,7 +187,7 @@ impl ControlBus {
                 }
                 None => {}
             },
-            ControlCommand::Tune { .. } => {}
+            ControlCommand::Tune { .. } | ControlCommand::Run { .. } => {}
         }
         if held.is_empty() {
             driven.remove(from);
@@ -202,7 +213,12 @@ impl ControlBus {
                 Ok(None)
             }
             ControlCommand::Release => {
+                self.runs.hold(from, target, false);
                 self.release(rig, patch, target, None);
+                Ok(None)
+            }
+            ControlCommand::Run { on } => {
+                self.runs.hold(from, target, *on);
                 Ok(None)
             }
             ControlCommand::Tune { freq_hz } => {
@@ -255,7 +271,7 @@ const fn retunes(command: &ControlCommand) -> bool {
     match command {
         ControlCommand::Tune { .. } | ControlCommand::Doppler(_) => true,
         ControlCommand::Sweep(job) => matches!(runs(job), Some(true)),
-        ControlCommand::Point(_) | ControlCommand::Release => false,
+        ControlCommand::Point(_) | ControlCommand::Run { .. } | ControlCommand::Release => false,
     }
 }
 

@@ -13202,7 +13202,8 @@
           "tune",
           "doppler",
           "sweep",
-          "point"
+          "point",
+          "run"
         ]
       },
       "ConversionIssue": {
@@ -26377,6 +26378,24 @@
             ],
             "properties": {
               "data": {
+                "$ref": "#/components/schemas/ScheduleNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "schedule"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
                 "$ref": "#/components/schemas/SatelliteNode"
               },
               "kind": {
@@ -26606,6 +26625,7 @@
           "export",
           "scanner",
           "hunt",
+          "schedule",
           "satellite",
           "rotator",
           "df",
@@ -33522,6 +33542,91 @@
           }
         }
       },
+      "ScheduleNode": {
+        "type": "object",
+        "properties": {
+          "windows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleWindow"
+            }
+          },
+          "zone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "An IANA zone such as `Europe/Berlin`. None keeps the server's own clock."
+          }
+        }
+      },
+      "ScheduleStatus": {
+        "type": "object",
+        "required": [
+          "node",
+          "on"
+        ],
+        "properties": {
+          "driving": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_change": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When it next turns on or off, in Unix seconds."
+          },
+          "node": {
+            "type": "string"
+          },
+          "on": {
+            "type": "boolean"
+          },
+          "zone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ScheduleWindow": {
+        "type": "object",
+        "description": "On from `start_min` to `stop_min`, in minutes past midnight. A stop before the start runs past\nmidnight, and a stop equal to the start keeps it on for a whole day. Days name the day a window\nopens; none means every day.",
+        "required": [
+          "start_min",
+          "stop_min"
+        ],
+        "properties": {
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Weekday"
+            }
+          },
+          "start_min": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "stop_min": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "ScramblerStatus": {
         "type": "object",
         "required": [
@@ -34206,6 +34311,32 @@
                 "type": "string",
                 "enum": [
                   "RotatorUpdate"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "$ref": "#/components/schemas/ScheduleStatus"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ScheduleUpdate"
                 ]
               }
             }
@@ -38005,7 +38136,8 @@
           "radio_closed",
           "not_placed",
           "not_running",
-          "stopped"
+          "stopped",
+          "waiting"
         ]
       },
       "Unit": {
@@ -38397,6 +38529,18 @@
         "enum": [
           "json",
           "discord"
+        ]
+      },
+      "Weekday": {
+        "type": "string",
+        "enum": [
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+          "saturday",
+          "sunday"
         ]
       },
       "WefaxIoc": {

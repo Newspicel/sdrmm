@@ -408,6 +408,11 @@
     "winegard_baud": 57600,
     "rotctld_address": "127.0.0.1:4533"
   },
+  "schedule": {
+    "windows": 16,
+    "minutes_per_day": 1440,
+    "zone_len": 64
+  },
   "patch": {
     "nodes": 128,
     "wires": 256,

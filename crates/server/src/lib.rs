@@ -62,7 +62,9 @@ mod reference;
 mod resolved;
 mod rest;
 mod rotators;
+mod run_gate;
 mod satellites;
+mod schedules;
 mod sinks;
 mod store;
 mod surfaces;
@@ -111,7 +113,9 @@ pub(crate) struct AppState {
     pub(crate) problems: Arc<problems::ProblemBoard>,
     pub(crate) presence: Arc<presence::Presence>,
     pub(crate) control: Arc<control::ControlBus>,
+    pub(crate) runs: Arc<run_gate::RunGate>,
     pub(crate) satellites: Arc<satellites::SatelliteHub>,
+    pub(crate) schedules: Arc<schedules::ScheduleHub>,
     pub(crate) rotators: Arc<rotators::RotatorHub>,
     pub(crate) reference: Arc<reference::Reference>,
     pub(crate) cps: Arc<cps::CpsHub>,
@@ -135,6 +139,7 @@ impl AppState {
     fn new(engine: Arc<Engine>, store: Arc<Store>) -> Self {
         let server_id = store.server_id();
         let phones = Arc::new(phones::Phones::new(store.clone()));
+        let runs = Arc::new(run_gate::RunGate::default());
         Self {
             engine,
             store,
@@ -154,11 +159,13 @@ impl AppState {
             unrestored: Arc::new(std::sync::Mutex::new(Vec::new())),
             restored: Arc::new(std::sync::Mutex::new(HashSet::new())),
             gps: Arc::new(gps::GpsHub::default()),
-            resolved: Arc::default(),
+            resolved: Arc::new(resolved::ResolvedHub::default().gated_by(runs.clone())),
             problems: Arc::default(),
             presence: Arc::default(),
-            control: Arc::default(),
+            control: Arc::new(control::ControlBus::gated_by(runs.clone())),
+            runs,
             satellites: Arc::new(satellites::SatelliteHub::default()),
+            schedules: Arc::default(),
             rotators: Arc::default(),
             reference: Arc::default(),
             cps: Arc::new(cps::CpsHub::default()),
@@ -309,6 +316,8 @@ fn start_runtime(state: &AppState) -> Background {
             .control
             .settle(&state.engine, &state.resolved.current().patch);
     });
+    run_gate::follow(state);
+    schedules::follow(state);
     audio_fx::follow(state);
     array::start_pump(state);
     radar::start(state);

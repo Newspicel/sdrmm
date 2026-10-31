@@ -13,6 +13,7 @@ pub enum ControlVerb {
     Doppler,
     Sweep,
     Point,
+    Run,
 }
 
 impl ControlVerb {
@@ -23,6 +24,7 @@ impl ControlVerb {
             Self::Doppler => "Doppler",
             Self::Sweep => "sweeps",
             Self::Point => "pointing",
+            Self::Run => "running",
         }
     }
 }
@@ -59,10 +61,16 @@ pub struct SkyTrack {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "command", content = "with", rename_all = "snake_case")]
 pub enum ControlCommand {
-    Tune { freq_hz: f64 },
+    Tune {
+        freq_hz: f64,
+    },
     Doppler(DopplerSteer),
     Sweep(SweepJob),
     Point(SkyTrack),
+    /// Holds a radio or a recorder on, or lets it rest. One wired controller saying on is enough.
+    Run {
+        on: bool,
+    },
     Release,
 }
 
@@ -74,6 +82,7 @@ impl ControlCommand {
             Self::Doppler(_) => Some(ControlVerb::Doppler),
             Self::Sweep(_) => Some(ControlVerb::Sweep),
             Self::Point(_) => Some(ControlVerb::Point),
+            Self::Run { .. } => Some(ControlVerb::Run),
             Self::Release => None,
         }
     }

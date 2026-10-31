@@ -403,3 +403,35 @@ fn a_satellite_steering_leaves_a_running_scan_alone() {
         rig.calls()
     );
 }
+
+#[test]
+fn a_radio_runs_while_its_satellite_says_on_and_rests_on_release() {
+    let nodes = vec![
+        node("sat", NodeBody::Satellite(SatelliteNode::default())),
+        node("dev", NodeBody::Device(sdrmm_wire::DeviceNode::default())),
+        channel("voice"),
+    ];
+    let edges = vec![
+        wire(("sat", "control"), ("dev", "control")),
+        wire(("sat", "control"), ("voice", "control")),
+    ];
+    let graph = PatchGraph {
+        nodes: nodes.clone(),
+        edges: edges.clone(),
+    };
+    let patch = resolve(nodes, edges);
+    let runs = Arc::new(RunGate::default());
+    let bus = ControlBus::gated_by(runs.clone());
+    let rig = FakeRig::default();
+    let resting = |graph: &PatchGraph| {
+        runs.gated(graph)
+            .node("dev")
+            .is_some_and(|node| matches!(&node.body, NodeBody::Device(device) if device.waiting))
+    };
+    let acks = bus.deliver(&rig, &patch, "sat", &ControlCommand::Run { on: true });
+    assert_eq!(acks.len(), 1, "a decoder takes no run command");
+    assert_eq!(acks[0].target, "dev");
+    assert!(!resting(&graph));
+    bus.deliver(&rig, &patch, "sat", &ControlCommand::Release);
+    assert!(resting(&graph));
+}

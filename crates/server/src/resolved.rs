@@ -10,7 +10,10 @@ use tokio::sync::{
     watch,
 };
 
-use crate::{AppState, Store, events::EventRoutes, gps::PositionRoutes, problems::ProblemBoard};
+use crate::{
+    AppState, Store, events::EventRoutes, gps::PositionRoutes, problems::ProblemBoard,
+    run_gate::RunGate,
+};
 
 #[derive(Debug, Default)]
 pub(crate) struct Resolved {
@@ -43,6 +46,7 @@ pub(crate) struct ResolvedHub {
     tx: watch::Sender<Arc<Resolved>>,
     descriptors: Vec<ChannelDescriptor>,
     loaded: Mutex<Option<Loaded>>,
+    runs: Arc<RunGate>,
 }
 
 impl Default for ResolvedHub {
@@ -57,7 +61,12 @@ impl ResolvedHub {
             tx: watch::channel(Arc::new(Resolved::default())).0,
             descriptors,
             loaded: Mutex::new(None),
+            runs: Arc::default(),
         }
+    }
+
+    pub(crate) fn gated_by(self, runs: Arc<RunGate>) -> Self {
+        Self { runs, ..self }
     }
 
     pub(crate) fn current(&self) -> Arc<Resolved> {
@@ -97,14 +106,14 @@ impl ResolvedHub {
 
     fn resolve(
         &self,
-        loaded: &Loaded,
+        (loaded, graph): (&Loaded, &PatchGraph),
         (live, attached): (&StateSnapshot, &[DeviceInfo]),
     ) -> (ResolvedPatch, Vec<NodeProblem>) {
         let ctx = ResolveCtx {
             descriptors: Some(&self.descriptors),
             live: Some(live),
         };
-        let (mut patch, refused) = resolve::compile_draft(&loaded.graph, &ctx);
+        let (mut patch, refused) = resolve::compile_draft(graph, &ctx);
         for wire in &refused {
             tracing::warn!(
                 from = %wire.edge.from.node,
@@ -114,7 +123,7 @@ impl ResolvedHub {
                 "the active workspace holds a refused wire"
             );
         }
-        let problems = resolve::bind(&mut patch, &loaded.graph, live, attached);
+        let problems = resolve::bind(&mut patch, graph, live, attached);
         patch.workspace = Some(loaded.workspace);
         patch.revision = loaded.revision;
         (patch, problems)
@@ -124,8 +133,10 @@ impl ResolvedHub {
         let live = engine.snapshot();
         let (mut patch, found, graph) = match loaded {
             Some(loaded) => {
-                let (patch, found) = self.resolve(loaded, (&live, &engine.attached_devices()));
-                (patch, found, loaded.graph.clone())
+                let graph = Arc::new(self.runs.gated(&loaded.graph));
+                let (patch, found) =
+                    self.resolve((loaded, &graph), (&live, &engine.attached_devices()));
+                (patch, found, graph)
             }
             None => (ResolvedPatch::default(), Vec::new(), Arc::default()),
         };

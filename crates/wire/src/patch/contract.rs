@@ -112,7 +112,7 @@ impl PortType {
             Self::Events => Some("Decoded events. Calls and transmissions bring their clip"),
             Self::Baseband => Some("One channel, filtered and decimated"),
             Self::Video => Some("Decoded video frames and pictures"),
-            Self::Control => Some("Commands that retune a decoder or point a rotator"),
+            Self::Control => Some("Commands that retune a decoder, point a rotator or run a radio"),
             Self::Position => Some("A live fix and the heading it comes with"),
             Self::Array => Some("One lane per antenna element"),
         }

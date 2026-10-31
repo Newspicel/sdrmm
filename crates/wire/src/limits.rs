@@ -90,6 +90,7 @@ pub struct Limits {
     pub hunt: HuntLimits,
     pub presence: PresenceLimits,
     pub rotator: RotatorLimits,
+    pub schedule: ScheduleLimits,
     pub patch: PatchLimits,
     pub scan: ScanLimits,
     pub name_len: usize,
@@ -205,6 +206,13 @@ pub const WMBUS_LIMITS: WmbusLimits = WmbusLimits {
     meter_digits: crate::wmbus::METER_DIGITS,
     key_digits: crate::wmbus::KEY_DIGITS,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct ScheduleLimits {
+    pub windows: usize,
+    pub minutes_per_day: u16,
+    pub zone_len: usize,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct RotatorLimits {
@@ -540,6 +548,11 @@ pub const LIMITS: Limits = Limits {
     hunt: HUNT_LIMITS,
     presence: PRESENCE_LIMITS,
     rotator: ROTATOR_LIMITS,
+    schedule: ScheduleLimits {
+        windows: crate::schedule::MAX_SCHEDULE_WINDOWS,
+        minutes_per_day: crate::schedule::MINUTES_PER_DAY,
+        zone_len: crate::schedule::MAX_TIME_ZONE_LEN,
+    },
     patch: PatchLimits {
         nodes: crate::patch::MAX_NODES,
         wires: crate::patch::MAX_EDGES,

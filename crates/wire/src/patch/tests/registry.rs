@@ -25,6 +25,7 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("export", Face::fit(320)),
     ("scanner", Face::fit(400)),
     ("hunt", Face::fit(360)),
+    ("schedule", Face::fit(360)),
     ("satellite", Face::fit(420).dial()),
     ("rotator", Face::fit(340)),
     ("triangulation", Face::fit(400)),

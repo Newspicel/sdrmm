@@ -102,6 +102,20 @@
                 }
               ],
               "stream": 2
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -126,6 +140,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -955,6 +983,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -1006,6 +1048,20 @@
                 }
               ],
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -1183,6 +1239,20 @@
                 }
               ],
               "stream": 2
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -1207,6 +1277,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -1486,6 +1570,20 @@
               },
               "port_type": "iq",
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -1510,6 +1608,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -2216,6 +2328,20 @@
               "stream": 4
             },
             {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            },
+            {
               "direction": "out",
               "multi": "many",
               "name": "position",
@@ -2471,6 +2597,20 @@
                 }
               ],
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -2641,6 +2781,20 @@
               },
               "port_type": "iq",
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -2972,6 +3126,20 @@
                 }
               ],
               "stream": 1
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -3095,6 +3263,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             },
             {
               "direction": "out",
@@ -3281,6 +3463,20 @@
                 }
               ],
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             },
             {
               "direction": "out",
@@ -3652,6 +3848,20 @@
               },
               "port_type": "iq",
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -3676,6 +3886,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -3941,6 +4165,20 @@
                 }
               ],
               "stream": 2
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -3965,6 +4203,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -4526,6 +4778,20 @@
               },
               "port_type": "iq",
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -4748,6 +5014,20 @@
                 }
               ],
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -4772,6 +5052,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -5044,6 +5338,20 @@
                 }
               ],
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -5158,6 +5466,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -5525,6 +5847,20 @@
               },
               "port_type": "iq",
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -5556,6 +5892,20 @@
                 }
               ],
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -6131,6 +6481,20 @@
                 }
               ],
               "stream": 2
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -6162,6 +6526,20 @@
                 }
               ],
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -6475,6 +6853,20 @@
                 }
               ],
               "stream": 2
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -6499,6 +6891,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -6701,6 +7107,20 @@
                 }
               ],
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -6753,6 +7173,20 @@
                 "type": "position"
               },
               "port_type": "position"
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Armed, it records only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -6785,6 +7219,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -6819,6 +7267,20 @@
                 "type": "position"
               },
               "port_type": "position"
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Armed, it records only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -6922,6 +7384,20 @@
               },
               "port_type": "iq",
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -6946,6 +7422,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -7203,6 +7693,20 @@
                 }
               ],
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -7475,6 +7979,20 @@
                 }
               ],
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -7527,6 +8045,20 @@
                 "type": "position"
               },
               "port_type": "position"
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Armed, it records only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -7665,6 +8197,20 @@
                 }
               ],
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -7717,6 +8263,20 @@
                 "type": "position"
               },
               "port_type": "position"
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Armed, it records only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -7938,6 +8498,20 @@
                 }
               ],
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -7962,6 +8536,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -8594,6 +9182,20 @@
               "stream": 4
             },
             {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            },
+            {
               "direction": "out",
               "multi": "many",
               "name": "position",
@@ -8778,6 +9380,20 @@
                 }
               ],
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -9185,6 +9801,20 @@
               },
               "port_type": "iq",
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -9209,6 +9839,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -9661,6 +10305,20 @@
                 }
               ],
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -9933,6 +10591,20 @@
                 }
               ],
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -10099,6 +10771,20 @@
               "stream": 0
             },
             {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            },
+            {
               "direction": "out",
               "multi": "many",
               "name": "position",
@@ -10140,6 +10826,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -10386,6 +11086,20 @@
               },
               "port_type": "iq",
               "stream": 4
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -10417,6 +11131,20 @@
                 }
               ],
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {
@@ -10671,6 +11399,20 @@
               },
               "port_type": "iq",
               "stream": 0
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
             }
           ],
           "runs": {

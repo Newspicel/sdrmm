@@ -19,7 +19,7 @@ import {
 } from "../../components/preRoll";
 import { formatDuration, recordingElapsedS } from "../../components/recordings";
 import { SAMPLE_RATE as AUDIO_RATE_HZ } from "../../lib/audio/worklet";
-import { useInputs } from "../../lib/resolved";
+import { useFeeds, useInputs } from "../../lib/resolved";
 import type { PatchNode, PatchNodeOf, PreRollStatus, RecordingStatus } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
 import { useWorkspaceContext } from "../context";
@@ -40,6 +40,8 @@ function RecorderSwitch({
 }) {
   const workspace = useWorkspaceContext();
   const recording = node.data?.recording ?? false;
+  const ruled = useRunWired(node.id);
+  const blocked = ruled ? null : unwired;
   const switchTo = (next: boolean) => {
     workspace.edit((snapshot) => ({
       ...snapshot,
@@ -50,8 +52,8 @@ function RecorderSwitch({
     <Button
       type="button"
       className={recording ? BTN_DANGER : BTN_PRIMARY}
-      title={recording ? undefined : (unwired ?? title)}
-      disabled={unwired !== null && !recording}
+      title={recording ? undefined : (blocked ?? (ruled ? RULED : title))}
+      disabled={blocked !== null && !recording}
       onClick={() => switchTo(!recording)}
     >
       {recording ? (
@@ -64,6 +66,14 @@ function RecorderSwitch({
       )}
     </Button>
   );
+}
+
+const RULED = "Arm it to record while its schedule or satellite says so";
+
+/// A recorder with a wired controller arms now and records once the controller says on, even
+/// while its radio rests and nothing feeds it yet.
+function useRunWired(node: string): boolean {
+  return useFeeds(node, "control").length > 0;
 }
 
 function FileReadout({ label, file }: { label: string; file: string }) {
@@ -128,6 +138,7 @@ function IqRecorder({ node }: { node: PatchNodeOf<"recorder"> }) {
   const held = phase.kind === "held" || phase.kind === "capturing" ? phase.status : null;
   const status = held?.capture ?? (set?.recording?.node === node.id ? set.recording : null);
   const recording = node.data?.recording ?? false;
+  const ruled = useRunWired(node.id);
 
   const setPreRoll = (pre_roll_s: number) => {
     workspace.edit((snapshot) => ({
@@ -167,7 +178,9 @@ function IqRecorder({ node }: { node: PatchNodeOf<"recorder"> }) {
         </Chips>
         <Readouts ruled={false}>
           {status === null ? (
-            <Readout label="File">{recording && set !== null ? "Waiting" : IDLE}</Readout>
+            <Readout label="File">
+              {recording && (set !== null || ruled) ? "Waiting" : IDLE}
+            </Readout>
           ) : (
             <FileReadout label="File" file={status.file} />
           )}
@@ -255,6 +268,7 @@ function SkipSilenceChip({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
 
 function AudioRecorder({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
   const inputs = useInputs(node.id, "audio");
+  const ruled = useRunWired(node.id);
   const nameOf = useInputName();
   const recording = node.data?.recording ?? false;
   const takes = inputs.map((input) => ({ input, status: ownRecording(input.channel, node.id) }));
@@ -266,7 +280,9 @@ function AudioRecorder({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
           <SkipSilenceChip node={node} />
         </Chips>
         <Readouts ruled={false}>
-          {takes.length === 0 && <Readout label="File">{IDLE}</Readout>}
+          {takes.length === 0 && (
+            <Readout label="File">{recording && ruled ? "Waiting" : IDLE}</Readout>
+          )}
           {takes.map(({ input, status }) =>
             status === null ? (
               <Readout key={inputKey(input)} label={nameOf(input)}>
@@ -316,6 +332,7 @@ export function BasebandRecorderFace({ node }: { node: PatchNode }) {
 
 function BasebandRecorder({ node }: { node: PatchNodeOf<"baseband_recorder"> }) {
   const inputs = useInputs(node.id, "baseband");
+  const ruled = useRunWired(node.id);
   const nameOf = useInputName();
   const recording = node.data?.recording ?? false;
   const takes = inputs.map((input) => ({
@@ -327,7 +344,9 @@ function BasebandRecorder({ node }: { node: PatchNodeOf<"baseband_recorder"> }) 
     <NodeShell node={node} title="Baseband recorder" category="output">
       <FaceBody>
         <Readouts ruled={false}>
-          {takes.length === 0 && <Readout label="File">{IDLE}</Readout>}
+          {takes.length === 0 && (
+            <Readout label="File">{recording && ruled ? "Waiting" : IDLE}</Readout>
+          )}
           {takes.map(({ input, status }) =>
             status === null ? (
               <Readout key={input.node} label={nameOf(input)}>

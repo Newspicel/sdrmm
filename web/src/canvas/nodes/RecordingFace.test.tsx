@@ -80,7 +80,11 @@ describe("RecordingFace", () => {
       "iq5",
     ]);
     const unresolved = stubWorkspace({ graph: alone }).context;
-    expect(nodePorts(unresolved, take).map((port) => port.name)).toEqual(["iq", "position"]);
+    expect(nodePorts(unresolved, take).map((port) => port.name)).toEqual([
+      "iq",
+      "control",
+      "position",
+    ]);
   });
 
   it("offers Make array for a playing collection and wires every lane", () => {

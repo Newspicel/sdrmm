@@ -11,7 +11,7 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 | Audio | Live audio |
 | Events | Decoded events. Calls and transmissions bring their clip |
 | Video | Decoded video frames and pictures |
-| Control | Commands that retune a decoder or point a rotator |
+| Control | Commands that retune a decoder, point a rotator or run a radio |
 | Position | A live fix and the heading it comes with |
 | Array | One lane per antenna element |
 | Bearing | A live bearing that steers an array |
@@ -93,6 +93,7 @@ A radio, a recording or a generator: where a patch starts
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `iq` | out | IQ | radio | many, one per lane |
+| `control` | in | Control | run | many. Opens the radio only while a schedule or satellite says so |
 
 ### GPS position
 
@@ -189,6 +190,14 @@ Walks you towards a transmitter
 | `position` | in | Position | A live fix and the heading it comes with | one. Where you stand and which way you point |
 | `events` | out | Events | Bearing | many. Sweep and mark bearings |
 
+### Schedule
+
+Runs radios and recorders by the clock
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `control` | out | Control | run | many. Radios and recorders to run in its windows |
+
 ### Satellite
 
 Predicts passes and follows Doppler
@@ -196,7 +205,7 @@ Predicts passes and follows Doppler
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `position` | in | Position | A live fix and the heading it comes with | one |
-| `control` | out | Control | tune, doppler, point | many. decoders to tune and Doppler correct, rotators to point |
+| `control` | out | Control | tune, doppler, point, run | many. decoders to tune and Doppler correct, rotators to point, radios to run |
 | `events` | out | Events | Satellite | many. Position and ground track for a Map |
 
 ### Direction finder
@@ -371,6 +380,7 @@ Records a radio's full IQ, with an optional pre-roll
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one |
 | `position` | in | Position | A live fix and the heading it comes with | one |
+| `control` | in | Control | run | many. Armed, it records only while a schedule or satellite says so |
 
 ### Audio recorder
 
@@ -379,6 +389,7 @@ Records channel audio to WAV
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `audio` | in | Audio | Live audio | many |
+| `control` | in | Control | run | many. Armed, it records only while a schedule or satellite says so |
 
 ### Baseband recorder
 
@@ -387,6 +398,7 @@ Records one channel's IQ
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `baseband` | in | Baseband | One channel, filtered and decimated | many |
+| `control` | in | Control | run | many. Armed, it records only while a schedule or satellite says so |
 
 ### Network IQ
 

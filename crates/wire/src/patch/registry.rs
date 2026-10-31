@@ -21,6 +21,7 @@ use crate::{
     propagation::PropagationNode,
     rotator::RotatorNode,
     satellite::SatelliteNode,
+    schedule::ScheduleNode,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -150,10 +151,16 @@ const DERIVED_IQ: &[IqOrigin] = &[IqOrigin::Derived];
 const CHANNEL_VERBS: &[ControlVerb] =
     &[ControlVerb::Tune, ControlVerb::Doppler, ControlVerb::Sweep];
 const SWEEP: &[ControlVerb] = &[ControlVerb::Sweep];
-const SATELLITE_VERBS: &[ControlVerb] =
-    &[ControlVerb::Tune, ControlVerb::Doppler, ControlVerb::Point];
+const SATELLITE_VERBS: &[ControlVerb] = &[
+    ControlVerb::Tune,
+    ControlVerb::Doppler,
+    ControlVerb::Point,
+    ControlVerb::Run,
+];
+const RUN: &[ControlVerb] = &[ControlVerb::Run];
 const POINT: &[ControlVerb] = &[ControlVerb::Point];
 const NETWORK_SOURCE: &str = "source";
+const RUN_TAKE: &str = "Armed, it records only while a schedule or satellite says so";
 
 fn iq_in() -> PortSpec {
     input(IQ_PORT, Payload::iq(ANY_IQ))
@@ -173,6 +180,12 @@ fn audio_in() -> PortSpec {
 
 fn audio_out() -> PortSpec {
     output(AUDIO_PORT, Payload::Audio)
+}
+
+fn run_in(note: &'static str) -> PortSpec {
+    input(CONTROL_PORT, Payload::control(RUN))
+        .many()
+        .noted(note)
 }
 
 fn events_in(accept: Accept) -> PortSpec {
@@ -355,6 +368,7 @@ macro_rules! node_registry {
                 "A radio, a recording or a generator: where a patch starts",
                 Role::OpensRadio, Face::fit(420).dial(), [
                 iq_out(RADIO_IQ).repeated(PortRepeat::PerRxStream),
+                run_in("Opens the radio only while a schedule or satellite says so"),
             ]),
             (Gps(GpsNode), "gps", Source, "GPS position", "Your station location, live or fixed",
                 Role::Plain, Face::fit(360), [
@@ -461,15 +475,18 @@ macro_rules! node_registry {
                 Role::Plain, Face::fit(340), [
                 iq_in(),
                 position_in(),
+                run_in(RUN_TAKE),
             ]),
             (AudioRecorder(AudioRecorderNode), "audio_recorder", Output, "Audio recorder",
                 "Records channel audio to WAV", Role::Plain, Face::fit(340), [
                 audio_in(),
+                run_in(RUN_TAKE),
             ]),
             (BasebandRecorder(BasebandRecorderNode), "baseband_recorder", Output,
                 "Baseband recorder",
                 "Records one channel's IQ", Role::Plain, Face::fit(340), [
                 input(BASEBAND_PORT, Payload::Baseband).many(),
+                run_in(RUN_TAKE),
             ]),
             (NetworkExport(NetworkExportNode), "network_export", Output, "Network IQ",
                 "Streams IQ to other programs", Role::Plain, Face::fit(380), [
@@ -492,11 +509,17 @@ macro_rules! node_registry {
                 position_in().noted("Where you stand and which way you point"),
                 events_out(Accept::Kinds(&[EventKind::Df])).noted("Sweep and mark bearings"),
             ]),
+            (Schedule(ScheduleNode), "schedule", Tool, "Schedule",
+                "Runs radios and recorders by the clock", Role::Plain, Face::fit(360), [
+                output(CONTROL_PORT, Payload::control(RUN))
+                    .noted("Radios and recorders to run in its windows"),
+            ]),
             (Satellite(SatelliteNode), "satellite", Tool, "Satellite",
                 "Predicts passes and follows Doppler", Role::Plain, Face::fit(420).dial(), [
                 position_in(),
-                output(CONTROL_PORT, Payload::control(SATELLITE_VERBS))
-                    .noted("decoders to tune and Doppler correct, rotators to point"),
+                output(CONTROL_PORT, Payload::control(SATELLITE_VERBS)).noted(
+                    "decoders to tune and Doppler correct, rotators to point, radios to run",
+                ),
                 events_out(Accept::Kinds(&[EventKind::Satellite]))
                     .noted("Position and ground track for a Map"),
             ]),

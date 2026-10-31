@@ -13,6 +13,15 @@ shift as it passes, so the decoder never has to chase the carrier.
 
 On auto tuning the radio follows the decoder, as it does for a scanner.
 
+## Run the radio only for passes
+
+Wire Satellite `control` to the Device's `control`. The radio opens 30 s before the satellite
+rises and closes when it sets, so between passes it costs no CPU, USB or network. A recorder
+wired the same way records each pass while armed.
+
+A Device with a `control` wire runs only while a controller says so. **Stop** on the Device
+still wins.
+
 ## Point an antenna
 
 1. Add **Rotator** and pick its link: a Yaesu **GS-232** controller on a serial port, a

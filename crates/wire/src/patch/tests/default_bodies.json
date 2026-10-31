@@ -207,6 +207,10 @@
     }
   },
   {
+    "kind": "schedule",
+    "data": {}
+  },
+  {
     "kind": "satellite",
     "data": {
       "tuning_locked": false
