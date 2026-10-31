@@ -41,8 +41,8 @@ criterion.workspace = true
 sdrmm-test-support = { workspace = true, features = ["denoise-models"] }
 sdrmm-dsp = { workspace = true, features = ["test-scene"] }
 sdrmm-modem-test-support.workspace = true
-# The coded-baseline artifacts (tests/dmr_soft_gain.rs) bundle three labelled curves per
-# file, a shape `sweep::save_json` (one bare Curve) does not cover.
+# The coded-baseline artifacts (tests/integration/dmr_soft_gain.rs) bundle three labelled curves
+# per file, a shape `sweep::save_json` (one bare Curve) does not cover.
 serde.workspace = true
 serde_json.workspace = true
 # Dev-dependency on ourselves so integration tests see `synth` and its fixtures,

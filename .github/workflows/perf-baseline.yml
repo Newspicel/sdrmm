@@ -36,7 +36,7 @@ jobs:
         with:
           cache: performance
           save: "false"
-      - run: cargo test -p sdrmm-channels --release --test channel_perf -- --ignored --exact write_perf_baseline
+      - run: cargo test -p sdrmm-channels --release --test integration -- --ignored --exact channel_perf::write_perf_baseline
         env:
           SDRMM_WRITE_BASELINES: "1"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

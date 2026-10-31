@@ -32,7 +32,11 @@ jobs:
         with:
           cache: nightly
       - name: Modem gates
-        run: cargo test -p sdrmm-modem -p sdrmm-modem-test-support --release -- --ignored --skip write_
+        run: |
+          cargo test -p sdrmm-modem -p sdrmm-modem-test-support --release -- --ignored --skip write_ \
+            --skip _perf::
+          cargo test -p sdrmm-modem --release --test integration -- --ignored --skip write_ \
+            --test-threads=1 _perf::
       - name: Fetch the xng bench captures
         env:
           GH_TOKEN: ${{ github.token }}
@@ -79,8 +83,8 @@ jobs:
           echo 'ship inside WSJT-X (save/samples) and the .txt is what jt9 prints, so nothing is downloadable.'
       - name: Channel reference cross-checks
         run: |
-          cargo test -p sdrmm-channels --release \
-            --test xng_fixtures --test xng_vdl2 --test xng_hfdl -- --ignored --nocapture
+          cargo test -p sdrmm-channels --release --test integration -- --ignored --nocapture \
+            xng_fixtures:: xng_vdl2:: xng_hfdl::
           cargo test -p sdrmm-channels --release --lib -- --ignored --nocapture \
             names_the_sigidwiki_library \
             reproduces_the_itu_reset_vectors_bit_for_bit \
@@ -88,11 +92,11 @@ jobs:
             separates_real_bases_moved_onto_two_carriers_of_a_wideband_capture
       - name: Channel measurement sweeps
         run: |
-          cargo test -p sdrmm-channels --release --lib \
-            --test channel_perf --test datv_perf \
-            --test dmr_ambe_gain --test dmr_baseline --test dmr_soft_gain \
-            -- --ignored --nocapture \
-            --skip write_perf_baseline \
+          cargo test -p sdrmm-channels --release --test integration -- --ignored --nocapture \
+            --test-threads=1 channel_perf:: datv_perf:: --skip write_perf_baseline
+          cargo test -p sdrmm-channels --release --test integration -- --ignored --nocapture \
+            dmr_ambe_gain:: dmr_baseline:: dmr_soft_gain::
+          cargo test -p sdrmm-channels --release --lib -- --ignored --nocapture \
             --skip write_drm_frame_fixtures \
             --skip names_the_sigidwiki_library \
             --skip reproduces_the_itu_reset_vectors_bit_for_bit \

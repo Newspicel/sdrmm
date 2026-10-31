@@ -47,11 +47,11 @@ outside a KrakenSDR is used. The 8-bit counter cannot see losses of exact multip
 
 ```sh
 cargo test -p sdrmm-device-rtlsdr kraken_ -- --ignored --nocapture --test-threads=1
-cargo test -p sdrmm-engine --test array_hardware -- --ignored --nocapture --test-threads=1
+cargo test -p sdrmm-engine --test integration -- --ignored --nocapture --test-threads=1 array_hardware::
 SDRMM_BENCH_ASSERT=mac cargo test -p sdrmm-engine --release \
-  --test radar_hardware benchmark_radar -- --ignored --nocapture
+  --test integration radar_hardware::benchmark_radar -- --ignored --nocapture
 SDRMM_RADAR_FM_HZ=<local FM in Hz> cargo test -p sdrmm-engine --release \
-  --test radar_hardware kraken_fm_live -- --ignored --nocapture
+  --test integration radar_hardware::kraken_fm_live -- --ignored --nocapture
 ```
 
 Add `--features probe` to the array tests to check that no processor sees the noise source.

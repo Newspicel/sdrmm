@@ -1,0 +1,169 @@
+use std::hint::black_box;
+
+use num_complex::Complex;
+use sdrmm_dsp::{
+    FracResampler, NoiseFloor, SpectrumAnalyzer, Squelch,
+    radar::{
+        cfar::Hit,
+        cluster::{Cluster, Clusterer},
+    },
+};
+use sdrmm_test_support::{assert_no_alloc, measure_throughput};
+
+#[test]
+fn tuning_and_downconversion_reuse_storage_across_ragged_blocks_and_retunes() {
+    let mut nco = sdrmm_dsp::Nco::new(187_501.25, 20_000_000.0);
+    let mut samples = [Complex::new(1.0, 0.5); 4099];
+    assert_no_alloc("nco", || {
+        for chunk in samples.chunks_mut(17) {
+            nco.mix(chunk);
+        }
+        nco.set_freq(-311.0, 48_000.0);
+        nco.reset();
+    });
+    for output_rate in [48_000.0, 240_000.0] {
+        let mut ddc = sdrmm_dsp::Ddc::new(20_000_000.0, output_rate, 187_501.25).unwrap();
+        let mut out = Vec::new();
+        for _ in 0..8 {
+            ddc.process(&samples, &mut out);
+        }
+        assert_no_alloc("ddc", || {
+            for size in [1, 17, 2048, 4099] {
+                for chunk in samples.chunks(size) {
+                    ddc.process(chunk, &mut out);
+                }
+                ddc.set_offset(-31_251.0);
+                ddc.reset();
+            }
+        });
+    }
+}
+
+#[test]
+fn spectrum_processing_reuses_scratch_and_meets_the_display_budget() {
+    let mut analyzer = SpectrumAnalyzer::new(4096);
+    let input: Vec<_> = (0..4096)
+        .map(|index| Complex::from_polar(0.5, std::f32::consts::TAU * 32.0 * index as f32 / 4096.0))
+        .collect();
+    let mut output = vec![0.0; input.len()];
+    analyzer.power_db(&input, &mut output);
+    assert_no_alloc("spectrum", || analyzer.power_db(&input, &mut output));
+    assert_eq!(
+        output
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1))
+            .map(|(bin, _)| bin),
+        Some(2080)
+    );
+    let msps = measure_throughput(30, input.len() as u64, || {
+        analyzer.power_db(black_box(&input), black_box(&mut output))
+    });
+    assert!(
+        msps > 1.0,
+        "spectrum must handle eight 30 Hz displays: {msps} MS/s"
+    );
+}
+
+#[test]
+fn the_local_noise_floor_reuses_scratch_and_keeps_up_with_the_skimmer() {
+    let mut noise = NoiseFloor::new(48, 8);
+    let input: Vec<f32> = (0..4096)
+        .map(|bin| -90.0 + (bin % 17) as f32 - (bin % 5) as f32)
+        .collect();
+    let mut floor = Vec::new();
+    noise.estimate(&input, &mut floor);
+    assert_no_alloc("noise floor", || noise.estimate(&input, &mut floor));
+    let msps = measure_throughput(30, input.len() as u64, || {
+        noise.estimate(black_box(&input), black_box(&mut floor))
+    });
+    assert!(
+        msps > 1.0,
+        "a skimmer needs a floor every 2048 samples: {msps} MS/s"
+    );
+}
+
+#[test]
+fn a_guarded_squelch_reuses_storage_and_keeps_up_with_a_wide_channel() {
+    let mut squelch = Squelch::new(240_000.0, 0.0, 2.0, 0.1).with_guard_band(-6_250.0, 6_250.0);
+    squelch.set_auto_margin_db(Some(8.0));
+    let input: Vec<Complex<f32>> = (0..4099)
+        .map(|k| Complex::new((k % 7) as f32 * 1e-3, (k % 11) as f32 * 1e-3))
+        .collect();
+    assert_no_alloc("guarded squelch", || {
+        for size in [1, 17, 2048, 4099] {
+            for chunk in input.chunks(size) {
+                let _ = squelch.process(chunk, chunk);
+            }
+            squelch.reset();
+        }
+    });
+    let msps = measure_throughput(30, input.len() as u64, || {
+        black_box(squelch.process(black_box(&input), black_box(&input)));
+    });
+    assert!(msps > 10.0, "guarded squelch: {msps} MS/s");
+}
+
+#[test]
+fn fractional_resampling_reuses_storage_and_exceeds_audio_realtime() {
+    let mut resampler = FracResampler::new(48_000.0 / 240_000.0);
+    let input = vec![Complex::new(0.5, 0.0); 2048];
+    let mut output = Vec::with_capacity(input.len());
+    for _ in 0..4 {
+        resampler.process(&input, &mut output);
+    }
+    assert_no_alloc("resampler", || {
+        for _ in 0..10 {
+            resampler.process(&input, &mut output);
+        }
+    });
+    assert!(output.iter().all(|sample| (sample.re - 0.5).abs() < 1e-5));
+    let msps = measure_throughput(20, input.len() as u64, || {
+        resampler.process(black_box(&input), black_box(&mut output))
+    });
+    assert!(
+        msps > 0.48,
+        "resampler must sustain twice realtime: {msps} MS/s"
+    );
+}
+
+#[test]
+fn clustering_is_deterministic_and_does_not_allocate_even_for_large_inputs() {
+    let (rows, gates) = (512, 80);
+    let mut power = vec![1.0f32; rows * gates];
+    let hits: Vec<Hit> = (0..2_048u32)
+        .map(|index| {
+            let (row, gate) = ((index * 7) % rows as u32, (index * 13) % gates as u32);
+            let cell = 20.0 + index as f32 * 0.01;
+            power[row as usize * gates + gate as usize] = cell;
+            Hit {
+                row,
+                gate,
+                power: cell,
+                noise: 1.0,
+            }
+        })
+        .collect();
+    let mut clusterer = Clusterer::new(gates, rows).unwrap();
+    let mut expected: Vec<Cluster> = Vec::new();
+    clusterer
+        .cluster(&hits, &power, 8, &mut expected, 4_096)
+        .unwrap();
+    let mut reversed = hits.clone();
+    reversed.reverse();
+    let mut clusters: Vec<Cluster> = Vec::with_capacity(4_096);
+    let mut dropped = 0;
+    assert_no_alloc("radar clustering", || {
+        dropped = clusterer
+            .cluster(&reversed, &power, 8, &mut clusters, 4_096)
+            .unwrap();
+    });
+    assert_eq!(dropped, 0);
+    assert!(clusters.len() > 100, "{}", clusters.len());
+    assert_eq!(clusters, expected);
+    assert!(
+        clusters
+            .windows(2)
+            .all(|pair| pair[0].power >= pair[1].power)
+    );
+}

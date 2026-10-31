@@ -139,7 +139,7 @@ Record on a quiet machine, in release, and commit the file:
 
 ```sh
 cargo test -p sdrmm-modem-test-support --release -- --ignored --exact ber::perf::tests::write_perf_baseline
-cargo test -p sdrmm-channels --release --test channel_perf -- --ignored --exact write_perf_baseline
+cargo test -p sdrmm-channels --release --test integration -- --ignored --exact channel_perf::write_perf_baseline
 ```
 
 For a CI host, dispatch the `Perf baseline` workflow (or push to the `perf-baseline` branch),

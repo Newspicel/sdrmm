@@ -125,7 +125,7 @@ jobs:
         with:
           cache: array-realtime
           save: ${{ env.SAVE_CACHE }}
-      - run: cargo test -p sdrmm-engine --release --features probe --test array_realtime -- --nocapture
+      - run: "cargo test -p sdrmm-engine --release --features probe --test integration -- --nocapture array_realtime::"
         env:
           SDRMM_RT_SCALE: "2"
 
