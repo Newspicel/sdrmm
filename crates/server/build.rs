@@ -15,6 +15,12 @@ fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let dist = manifest.join("../../web/dist");
+    if let Err(error) = ensure_watchable(&dist) {
+        println!(
+            "cargo:warning=cannot prepare {} for watching: {error}",
+            dist.display()
+        );
+    }
     println!("cargo:rerun-if-changed=../../web/dist");
     println!("cargo:rerun-if-changed=data");
 
@@ -24,6 +30,35 @@ fn main() {
         &out.join("web_assets.rs"),
     );
     compress_tree(&manifest.join("data"), &out.join("data"));
+}
+
+/// Cargo treats a watched path that does not exist as changed, so a checkout without a web
+/// build would rebuild the server and everything above it on every cargo run. An empty
+/// directory dated to the epoch is watchable and never newer than the last run; the first
+/// file `pnpm build` writes into it still triggers exactly one rerun.
+fn ensure_watchable(dist: &Path) -> std::io::Result<()> {
+    if dist.exists() {
+        return Ok(());
+    }
+    fs::create_dir_all(dist)?;
+    open_dir(dist)?.set_modified(std::time::SystemTime::UNIX_EPOCH)
+}
+
+#[cfg(not(windows))]
+fn open_dir(dir: &Path) -> std::io::Result<fs::File> {
+    fs::File::open(dir)
+}
+
+/// Windows opens a directory only with backup semantics, and dating it needs attribute access.
+#[cfg(windows)]
+fn open_dir(dir: &Path) -> std::io::Result<fs::File> {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    fs::OpenOptions::new()
+        .access_mode(FILE_WRITE_ATTRIBUTES)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(dir)
 }
 
 fn built_ui(dist: &Path) -> Option<&Path> {
