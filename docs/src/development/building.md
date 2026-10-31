@@ -118,7 +118,7 @@ pnpm --dir web exec playwright install chromium
 
 CI runs `check`, `perf`, `smoke`, and `test` on every push and pull request. `test` builds once
 per architecture (`test archive`) and runs the archive in four slices (`test shard`). The nightly
-workflow runs the rest: macOS tests, desktop, mobile, iPhone, Android, container image, Nix,
+workflow runs the rest: macOS tests, array realtime, desktop, mobile, iPhone, Android, container image, Nix,
 advisories, sanitizers, four hours of fuzzing per target, and measurement suites.
 
 ## Performance baselines
