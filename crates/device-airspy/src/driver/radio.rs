@@ -196,14 +196,11 @@ impl Airspy {
         config.on_thread_start = Some(|| {
             sdrmm_device::schedule::claim(sdrmm_device::Latency::Critical);
         });
-        let stream = sdrmm_usb_stream::start(endpoint, config)?;
-        if let Err(error) = self.set_mode(ReceiverMode::Rx) {
-            if let Err(off) = self.set_mode_off() {
-                debug!("airspy stop after a failed start: {off}");
-            }
-            return Err(error);
-        }
-        Ok(stream)
+        receiver_on_then_stream(
+            || self.set_mode(ReceiverMode::Rx),
+            || Ok(sdrmm_usb_stream::start(endpoint, config)?),
+            || self.set_mode_off(),
+        )
     }
 
     pub(crate) fn set_mode_off(&self) -> Result<()> {
@@ -211,7 +208,7 @@ impl Airspy {
             .control_out(&VendorControlRequest::receiver_mode(ReceiverMode::Off))
     }
 
-    fn set_mode(&mut self, mode: ReceiverMode) -> Result<()> {
+    fn set_mode(&self, mode: ReceiverMode) -> Result<()> {
         debug!(?mode, "airspy receiver mode");
         self.control
             .control_out(&VendorControlRequest::receiver_mode(mode))
@@ -226,6 +223,22 @@ impl Airspy {
             "disable sample packing",
         )
     }
+}
+
+/// Switching the receiver on resets the radio's bulk endpoint, so transfers queued before it
+/// never complete on Windows. The receiver goes on first and the stream then clears the halt and
+/// queues, the order libairspy uses.
+fn receiver_on_then_stream<S>(
+    switch_on: impl FnOnce() -> Result<()>,
+    stream: impl FnOnce() -> Result<S>,
+    switch_off: impl FnOnce() -> Result<()>,
+) -> Result<S> {
+    switch_on()?;
+    stream().inspect_err(|_| {
+        if let Err(off) = switch_off() {
+            debug!("airspy stop after a failed start: {off}");
+        }
+    })
 }
 
 fn read_sample_rates(control: &Control) -> Result<Vec<u32>> {
@@ -253,4 +266,48 @@ fn read_sample_rates(control: &Control) -> Result<Vec<u32>> {
         ));
     }
     Ok(rates)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+
+    use super::*;
+
+    fn run(stream_fails: bool) -> (Result<u8>, Vec<&'static str>) {
+        let order = RefCell::new(Vec::new());
+        let result = receiver_on_then_stream(
+            || {
+                order.borrow_mut().push("on");
+                Ok(())
+            },
+            || {
+                order.borrow_mut().push("stream");
+                if stream_fails {
+                    Err(Error::protocol("start stream", "refused"))
+                } else {
+                    Ok(7)
+                }
+            },
+            || {
+                order.borrow_mut().push("off");
+                Ok(())
+            },
+        );
+        (result, order.into_inner())
+    }
+
+    #[test]
+    fn the_receiver_is_on_before_any_transfer_is_queued() {
+        let (result, order) = run(false);
+        assert_eq!(result.ok(), Some(7));
+        assert_eq!(order, ["on", "stream"]);
+    }
+
+    #[test]
+    fn a_stream_that_fails_to_start_switches_the_receiver_off() {
+        let (result, order) = run(true);
+        assert!(result.is_err());
+        assert_eq!(order, ["on", "stream", "off"]);
+    }
 }
