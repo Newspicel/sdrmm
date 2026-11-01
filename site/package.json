@@ -13,21 +13,21 @@
     "typecheck": "astro sync && tsc --noEmit && wrangler types worker/worker-configuration.d.ts && tsc --noEmit -p worker && wrangler types -c downloads/wrangler.jsonc downloads/worker-configuration.d.ts && tsc --noEmit -p downloads"
   },
   "dependencies": {
-    "@astrojs/react": "^7.1.1",
+    "@astrojs/react": "^7.1.2",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
-    "astro": "^7.4.2",
+    "astro": "^7.4.4",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.3",
+    "@biomejs/biome": "2.6.4",
     "@tailwindcss/vite": "4.3.3",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "oxc-transform-react": "^0.155.0",
+    "oxc-transform-react": "^0.156.0",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vitest": "5.0.5",
-    "wrangler": "4.153.0"
+    "wrangler": "4.155.0"
   }
 }
