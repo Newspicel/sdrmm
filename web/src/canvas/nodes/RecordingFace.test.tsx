@@ -61,6 +61,20 @@ function collection(lanes: number): RecordingInfo {
 
 const alone: PatchGraph = { nodes: [take], edges: [] };
 
+function recordPosition(
+  fix: { latitude: number; longitude: number } | null,
+  error: string | null,
+): void {
+  usePositionStore.getState().observe({
+    type: "PositionChanged",
+    data: {
+      node: "rec",
+      fix: fix === null ? null : { ...fix, time: "2026-08-14T12:00:00Z" },
+      error,
+    },
+  });
+}
+
 describe("RecordingFace", () => {
   it("draws the iq outputs the server resolved for the recording", () => {
     const lanes = Array.from({ length: LANES }, (_, lane) =>
@@ -119,20 +133,11 @@ describe("RecordingFace", () => {
   it("reads out the recorded position once one is wired", () => {
     usePositionStore.getState().clear();
     expect(renderToStaticMarkup(<RecordedPosition node="rec" />)).toBe("");
-    const at = (fix: { latitude: number; longitude: number } | null, error: string | null) =>
-      usePositionStore.getState().observe({
-        type: "PositionChanged",
-        data: {
-          node: "rec",
-          fix: fix === null ? null : { ...fix, time: "2026-08-14T12:00:00Z" },
-          error,
-        },
-      });
-    at({ latitude: 52.5, longitude: 13.4 }, null);
+    recordPosition({ latitude: 52.5, longitude: 13.4 }, null);
     const shown = renderToStaticMarkup(<RecordedPosition node="rec" />);
     expect(shown).toContain("52.500000, 13.400000");
     expect(shown).toContain("JO62");
-    at(null, "no position recorded here");
+    recordPosition(null, "no position recorded here");
     expect(renderToStaticMarkup(<RecordedPosition node="rec" />)).toContain(
       "no position recorded here",
     );

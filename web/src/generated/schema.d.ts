@@ -7964,9 +7964,12 @@ export interface components {
             grids: number;
         };
         PropagationView: {
+            /** @description Estimated reflection points, one per square. They carry the measured MUF. */
             cells: components["schemas"]["PropagationCell"][];
             paths?: components["schemas"]["PropagationPath"][];
             receiver?: components["schemas"]["LatLon"] | null;
+            /** @description The squares the heard stations sent from. */
+            stations?: components["schemas"]["PropagationCell"][];
             summary: components["schemas"]["PropagationSummary"];
         };
         ProtocolMatch: {

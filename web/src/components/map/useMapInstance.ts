@@ -75,7 +75,7 @@ function installAll(core: MapCore, inputs: MapInputs, sinks: MapSinks): void {
   const { map, accent, edge } = core;
   applyProjection(map, inputs.globe);
   installSignalLayers(map, edge, inputs.signalSamples !== null);
-  installPropagationLayers(map, edge, accent, inputs.propagation?.layer ?? null);
+  installPropagationLayers(map, edge, inputs.propagation?.layer ?? null);
   installPositionLayers(map, accent, edge, positionsOn(inputs));
   installHeatLayer(map, inputs.heatEnabled);
   sinks.setHeadings(installSinkLayers(map, edge, core.ground, inputs.entities !== null));
@@ -298,7 +298,7 @@ function useLayerToggles(coreRef: RefObject<MapCore | null>, keys: LayerKeys): v
   useEffect(() => {
     const core = readyCore(coreRef.current);
     if (core !== null) {
-      installPropagationLayers(core.map, core.edge, core.accent, propagationLayer);
+      installPropagationLayers(core.map, core.edge, propagationLayer);
       core.generation += 1;
     }
   }, [coreRef, propagationLayer]);

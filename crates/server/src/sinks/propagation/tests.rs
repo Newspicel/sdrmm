@@ -160,6 +160,23 @@ fn reflection_points_gather_into_their_square() {
 }
 
 #[test]
+fn a_station_sits_in_its_own_square_not_at_the_reflection_point() {
+    let amsterdam = at(52.4, 4.9);
+    let mut rome = heard("rome");
+    rome.grid = "JN61".to_owned();
+    rome.from = grid_lat_lon("JN61").unwrap();
+    let seen = observe(&rome, amsterdam, 300.0);
+
+    let heard_at = stations(std::slice::from_ref(&seen), 30, NOW);
+    let reflected = cells(&[seen], 30, NOW);
+
+    assert_eq!(heard_at.len(), 1);
+    assert_eq!(heard_at[0].key, "JN61");
+    assert_eq!(heard_at[0].decodes, 1);
+    assert_ne!(reflected[0].key, "JN61");
+}
+
+#[test]
 fn an_old_decode_weighs_less_and_a_cell_without_muf_stays_unmeasured() {
     let mut old = observation("old", at(50.0, -20.0));
     old.heard.at_ms = NOW - 60 * 60_000;

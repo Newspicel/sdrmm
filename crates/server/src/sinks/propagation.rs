@@ -210,13 +210,34 @@ pub(crate) fn cells(
     half_life_minutes: u32,
     now_ms: i64,
 ) -> Vec<PropagationCell> {
+    gather(observations, half_life_minutes, now_ms, |observation| {
+        &observation.control
+    })
+}
+
+pub(crate) fn stations(
+    observations: &[Observation],
+    half_life_minutes: u32,
+    now_ms: i64,
+) -> Vec<PropagationCell> {
+    gather(observations, half_life_minutes, now_ms, |observation| {
+        std::slice::from_ref(&observation.heard.from)
+    })
+}
+
+fn gather(
+    observations: &[Observation],
+    half_life_minutes: u32,
+    now_ms: i64,
+    points: impl Fn(&Observation) -> &[LatLon],
+) -> Vec<PropagationCell> {
     let mut sums: BTreeMap<String, CellSum> = BTreeMap::new();
     for observation in observations {
         let weight = decay_weight((now_ms - observation.heard.at_ms) as f64, half_life_minutes);
         if weight <= 0.0 {
             continue;
         }
-        for point in &observation.control {
+        for point in points(observation) {
             sums.entry(square_of(*point))
                 .or_default()
                 .add(observation, weight);
@@ -343,6 +364,7 @@ impl Propagation {
             .collect();
         PropagationView {
             cells: cells(&observations, half_life, now_ms),
+            stations: stations(&observations, half_life, now_ms),
             paths: if self.settings.show_paths {
                 paths(&observations, receiver, half_life, now_ms)
             } else {

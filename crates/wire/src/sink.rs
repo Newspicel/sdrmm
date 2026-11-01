@@ -83,7 +83,11 @@ pub struct PropagationSummary {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PropagationView {
+    /// Estimated reflection points, one per square. They carry the measured MUF.
     pub cells: Vec<PropagationCell>,
+    /// The squares the heard stations sent from.
+    #[serde(default)]
+    pub stations: Vec<PropagationCell>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<PropagationPath>,
     pub summary: PropagationSummary,

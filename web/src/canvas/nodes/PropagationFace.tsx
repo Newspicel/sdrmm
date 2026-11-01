@@ -81,6 +81,7 @@ function Propagation({ node }: { node: PatchNodeOf<"propagation"> }) {
   const settings = node.data;
   const { cells, summary } = view;
   const paths = view.paths ?? EMPTY_PATHS;
+  const stations = view.stations ?? EMPTY_CELLS;
   const receiver = view.receiver;
   const station = useMemo<[number, number]>(
     () => (receiver == null ? NO_RECEIVER : [receiver.lat, receiver.lon]),
@@ -99,7 +100,10 @@ function Propagation({ node }: { node: PatchNodeOf<"propagation"> }) {
 
   const forecastError = ionosonde.data?.error ?? (ionosonde.isError ? "no answer" : null);
 
-  const overlay = useMemo(() => ({ cells, paths, sondes, layer }), [cells, paths, sondes, layer]);
+  const overlay = useMemo(
+    () => ({ cells, stations, paths, sondes, layer }),
+    [cells, stations, paths, sondes, layer],
+  );
 
   const update = (patch: Partial<PatchNodeOf<"propagation">["data"]>): void => {
     workspace.edit((snapshot) => ({
@@ -263,6 +267,8 @@ function ForecastReadouts({
 }
 
 const EMPTY_PATHS: never[] = [];
+
+const EMPTY_CELLS: never[] = [];
 
 function PathTable({
   comparisons,

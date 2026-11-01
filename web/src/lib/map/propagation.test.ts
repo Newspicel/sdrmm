@@ -6,8 +6,10 @@ import {
   MUF_MAX_MHZ,
   MUF_MIN_MHZ,
   mufColor,
+  PROPAGATION_SOURCES,
   pathCollection,
   sondeCollection,
+  updatePropagationSources,
 } from "./propagation";
 
 function cell(over: Partial<PropagationCell> = {}): PropagationCell {
@@ -76,6 +78,24 @@ describe("propagation map sources", () => {
       .slice(1)
       .filter((point, index) => Math.abs(point[0] - (line[index]?.[0] ?? 0)) > 180);
     expect(jumps).toHaveLength(0);
+  });
+
+  it("feeds station squares and reflection points to separate sources", () => {
+    const written = new Map<string, unknown>();
+    const map = {
+      getSource: (id: string) => ({ setData: (data: unknown) => written.set(id, data) }),
+    } as unknown as Parameters<typeof updatePropagationSources>[0];
+    updatePropagationSources(map, {
+      cells: [cell({ key: "JN57", latitude: 47.5, longitude: 9 })],
+      stations: [cell({ key: "JN61", latitude: 41.5, longitude: 13 })],
+      paths: [],
+      sondes: [],
+      layer: "activity",
+    });
+    const grid = (id: string) =>
+      (written.get(id) as ReturnType<typeof cellCollection>).features[0]?.properties.grid;
+    expect(grid(PROPAGATION_SOURCES.stations)).toBe("JN61");
+    expect(grid(PROPAGATION_SOURCES.cells)).toBe("JN57");
   });
 
   it("labels an ionosonde with its MUF", () => {

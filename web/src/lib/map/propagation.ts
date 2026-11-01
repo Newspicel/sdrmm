@@ -9,6 +9,7 @@ import { setSourceData } from "./sources";
 
 export const PROPAGATION_SOURCES = {
   cells: "propagation-cells",
+  stations: "propagation-stations",
   paths: "propagation-paths",
   sondes: "propagation-sondes",
 } as const;
@@ -26,10 +27,13 @@ export const MUF_MIN_MHZ = 4;
 
 export const MUF_MAX_MHZ = 40;
 
+export const PATH_COLOR = "#1d4ed8";
+
 export type PropagationLayer = "activity" | "muf";
 
 export interface PropagationOverlay {
   cells: readonly PropagationCell[];
+  stations: readonly PropagationCell[];
   paths: readonly PropagationPath[];
   sondes: readonly IonosondeStation[];
   layer: PropagationLayer;
@@ -167,20 +171,26 @@ function interpolate(
 export function updatePropagationSources(
   map: Pick<MapLibreMap, "getSource">,
   overlay: PropagationOverlay,
-): { cells: CellCollection; paths: PathCollection; sondes: SondeCollection } {
+): {
+  cells: CellCollection;
+  stations: CellCollection;
+  paths: PathCollection;
+  sondes: SondeCollection;
+} {
   const cells = cellCollection(overlay.cells);
+  const stations = cellCollection(overlay.stations);
   const paths = pathCollection(overlay.paths);
   const sondes = sondeCollection(overlay.sondes);
   setSourceData(map.getSource<GeoJSONSource>(PROPAGATION_SOURCES.cells), cells);
+  setSourceData(map.getSource<GeoJSONSource>(PROPAGATION_SOURCES.stations), stations);
   setSourceData(map.getSource<GeoJSONSource>(PROPAGATION_SOURCES.paths), paths);
   setSourceData(map.getSource<GeoJSONSource>(PROPAGATION_SOURCES.sondes), sondes);
-  return { cells, paths, sondes };
+  return { cells, stations, paths, sondes };
 }
 
 export function installPropagationLayers(
   map: MapLibreMap,
   edge: string,
-  accent: string,
   layer: PropagationLayer | null,
 ): void {
   for (const id of PROPAGATION_LAYERS) {
@@ -205,9 +215,9 @@ export function installPropagationLayers(
     type: "line",
     source: PROPAGATION_SOURCES.paths,
     paint: {
-      "line-color": accent,
-      "line-width": 0.8,
-      "line-opacity": ["interpolate", ["linear"], ["get", "weight"], 0, 0.05, 1, 0.45],
+      "line-color": PATH_COLOR,
+      "line-width": 2,
+      "line-opacity": ["interpolate", ["linear"], ["get", "weight"], 0, 0.25, 1, 0.9],
     },
   });
 
@@ -215,7 +225,7 @@ export function installPropagationLayers(
     map.addLayer({
       id: "propagation-heat",
       type: "heatmap",
-      source: PROPAGATION_SOURCES.cells,
+      source: PROPAGATION_SOURCES.stations,
       paint: {
         "heatmap-weight": ["interpolate", ["linear"], ["get", "weight"], 0, 0.05, 12, 1],
         "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 0.6, 8, 1.6],

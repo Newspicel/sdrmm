@@ -29547,7 +29547,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PropagationCell"
-            }
+            },
+            "description": "Estimated reflection points, one per square. They carry the measured MUF."
           },
           "paths": {
             "type": "array",
@@ -29564,6 +29565,13 @@
                 "type": "null"
               }
             ]
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PropagationCell"
+            },
+            "description": "The squares the heard stations sent from."
           },
           "summary": {
             "$ref": "#/components/schemas/PropagationSummary"

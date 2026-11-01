@@ -17,13 +17,13 @@ On opening, the map loads the last six hours of logged decodes.
 
 | Layer | Shows |
 |---|---|
-| Activity | Estimated reflection points, weighted by count and age |
-| MUF | Estimated MUF lower bound per Maidenhead square |
+| Activity | Heard stations per grid square, weighted by count and age |
+| MUF | Estimated MUF lower bound at each reflection point |
 | Paths | Great-circle paths, one per grid square and band. Off by default. |
 
 Only messages with a locator count. Reports and `73` usually have none.
 
-Each path is split into hops. A one-hop path reflects at its midpoint. Points lose half their
+For MUF, each path is split into hops. A one-hop path reflects at its midpoint. Points lose half their
 weight every **Half-life**, from five minutes to twelve hours (default 30 minutes).
 
 ## Measured MUF
