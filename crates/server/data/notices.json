@@ -4994,7 +4994,7 @@
     },
     {
       "name": "rusqlite",
-      "version": "0.41.0",
+      "version": "0.41.1",
       "license": "MIT",
       "source": "rust",
       "url": "https://github.com/rusqlite/rusqlite",
@@ -6708,7 +6708,7 @@
     },
     {
       "name": "tun-rs",
-      "version": "2.8.15",
+      "version": "2.8.16",
       "license": "Apache-2.0",
       "source": "rust",
       "url": "https://github.com/tun-rs/tun-rs",
@@ -8780,7 +8780,7 @@
     },
     {
       "name": "lucide-react",
-      "version": "1.61.0",
+      "version": "1.63.0",
       "license": "ISC",
       "source": "web",
       "url": "https://lucide.dev",
