@@ -387,7 +387,8 @@ fn start_background(state: &AppState) -> Background {
     };
     let rebind = {
         let state = state.clone();
-        spawn_task("sdrmm-rebind", move || rebind::run(state))
+        let saved = rebind::Saved::active(&state);
+        spawn_task("sdrmm-rebind", move || rebind::run(state, saved))
     };
     let log = {
         let engine = Arc::downgrade(&state.engine);

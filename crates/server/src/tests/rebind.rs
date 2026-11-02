@@ -140,3 +140,38 @@ async fn a_radio_that_turns_up_later_is_bound_to_the_node_waiting_for_it() {
         Some(SERIAL)
     );
 }
+
+#[tokio::test]
+async fn the_startup_pass_leaves_a_workspace_a_client_edited_first_alone() {
+    let store = Arc::new(Store::open(None).expect("in-memory store"));
+    let absent = Arc::new(AtomicBool::new(false));
+    let (first, background) =
+        router_with_state(late_state(&absent, &store), &ServerOptions::default());
+    background.detach();
+    let workspace = put_active_workspace(&first, &late_snapshot()).await;
+
+    let present = Arc::new(AtomicBool::new(true));
+    let restarted = late_state(&present, &store);
+    let (_app, background) = router_with_state(restarted.clone(), &ServerOptions::default());
+    background.detach();
+    let revision = store.workspace(workspace).expect("stored").info.revision;
+    let mut edited = late_snapshot();
+    edited.graph.nodes[0].position.x += 10.0;
+    store
+        .update_workspace(
+            workspace,
+            &sdrmm_wire::UpdateWorkspaceRequest {
+                revision,
+                name: None,
+                snapshot: Some(edited),
+            },
+            None,
+        )
+        .expect("the client's edit lands");
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        restarted.engine.snapshot().device_sets.is_empty(),
+        "the startup pass opened a workspace the client had taken over"
+    );
+}

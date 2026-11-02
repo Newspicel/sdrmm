@@ -113,10 +113,18 @@ fn scheduled(windows: Vec<sdrmm_wire::ScheduleWindow>) -> sdrmm_wire::WorkspaceS
     snapshot
 }
 
+/// Waits for `count` radios each holding one lane, since a woken radio opens before its lanes.
 async fn wait_for_radios(app: &Router, count: usize) {
     let deadline = Instant::now() + Duration::from_secs(10);
-    while get_state(app).await.device_sets.len() != count {
-        assert!(Instant::now() < deadline, "never held {count} radios");
+    loop {
+        let sets = get_state(app).await.device_sets;
+        if sets.len() == count && sets.iter().all(|set| set.channels.len() == 1) {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "never held {count} radios with a lane each"
+        );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
@@ -138,7 +146,6 @@ async fn a_scheduled_radio_opens_in_its_window_and_rests_outside_it() {
     };
     put_active_workspace(&app, &scheduled(vec![all_day])).await;
     wait_for_radios(&app, 1).await;
-    assert_eq!(get_state(&app).await.device_sets[0].channels.len(), 1);
 
     put_active_workspace(&app, &scheduled(Vec::new())).await;
     wait_for_radios(&app, 0).await;

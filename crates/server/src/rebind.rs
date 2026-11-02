@@ -3,11 +3,34 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::{AppState, rest, workspace};
 
+/// The active workspace and its revision when the server started.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Saved {
+    id: i64,
+    revision: u64,
+}
+
+impl Saved {
+    pub(crate) fn active(state: &AppState) -> Option<Self> {
+        let active = state.store.active_workspace();
+        if let Err(error) = &active {
+            tracing::warn!(
+                ?error,
+                "could not read the active workspace to open its radios"
+            );
+        }
+        active.ok().flatten().map(|detail| Self {
+            id: detail.info.id,
+            revision: detail.info.revision,
+        })
+    }
+}
+
 /// Binds the active workspace's radios as they turn up: a network radio found by a search that
 /// finished after the page loaded, or a radio plugged in later.
-pub(crate) async fn run(state: AppState) {
+pub(crate) async fn run(state: AppState, saved: Option<Saved>) {
     let mut events = state.engine.subscribe_events();
-    bring_up_saved(state.clone()).await;
+    bring_up_saved(state.clone(), saved).await;
     loop {
         match events.recv().await {
             Ok(ServerEvent::StateChanged {
@@ -20,13 +43,18 @@ pub(crate) async fn run(state: AppState) {
     }
 }
 
-async fn bring_up_saved(state: AppState) {
+/// Opens the workspace saved at startup. Once a client has switched or edited it, that client
+/// applies it, so a late startup pass leaves it alone.
+async fn bring_up_saved(state: AppState, saved: Option<Saved>) {
+    let Some(saved) = saved else {
+        return;
+    };
     let opened = tokio::task::spawn_blocking(move || {
-        let Some(id) = state.store.list_workspaces()?.active else {
-            return Ok(false);
-        };
         let _serialized = rest::lock_gate(&state.apply_gate);
-        crate::apply::bring_up_active(&state, id).map(|report| report.opened > 0)
+        if Saved::active(&state) != Some(saved) {
+            return Ok(false);
+        }
+        crate::apply::bring_up_active(&state, saved.id).map(|report| report.opened > 0)
     })
     .await;
     match opened {
