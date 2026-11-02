@@ -6,11 +6,14 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
-const KINDS: &[(&str, &str)] = &[
-    ("darwin", ".app.tar.gz"),
-    ("linux", ".AppImage"),
-    ("windows", "-setup.exe"),
-    ("windows", ".msi"),
+/// Windows artifacts also get an `{os}-{arch}-{installer}` key: the updater looks that up
+/// first, so an MSI install updates through the MSI instead of gaining a second, per-user
+/// NSIS install that its shortcuts never launch.
+const KINDS: &[(&str, &str, Option<&str>)] = &[
+    ("darwin", ".app.tar.gz", None),
+    ("linux", ".AppImage", None),
+    ("windows", "-setup.exe", Some("nsis")),
+    ("windows", ".msi", Some("msi")),
 ];
 
 const NON_UPDATER_KINDS: &[&str] = &[".deb", ".rpm", ".dmg"];
@@ -47,6 +50,7 @@ struct Platform {
     url: String,
 }
 
+#[derive(Clone)]
 struct Candidate {
     rank: usize,
     file: String,
@@ -92,13 +96,19 @@ fn build(sigs: &[(String, String)], version: &str, base_url: &str) -> Result<Man
     let base_url = base_url.trim_end_matches('/');
     let version = version.strip_prefix('v').unwrap_or(version);
     let mut best: BTreeMap<String, Candidate> = BTreeMap::new();
+    let mut by_installer: BTreeMap<String, Candidate> = BTreeMap::new();
 
     for (sig_name, signature) in sigs {
         let file = sig_name
             .strip_suffix(".sig")
             .with_context(|| format!("`{sig_name}` is not a .sig file"))?
             .to_string();
-        let Some((platform, rank)) = classify(&file)? else {
+        let Some(Kind {
+            platform,
+            rank,
+            installer,
+        }) = classify(&file)?
+        else {
             continue;
         };
         ensure!(
@@ -111,6 +121,16 @@ fn build(sigs: &[(String, String)], version: &str, base_url: &str) -> Result<Man
             file,
             signature: signature.trim().to_string(),
         };
+        if let Some(installer) = installer {
+            let key = format!("{platform}-{installer}");
+            ensure!(
+                !by_installer.contains_key(&key),
+                "`{}` and `{}` both claim {platform}",
+                by_installer[&key].file,
+                candidate.file
+            );
+            by_installer.insert(key, candidate.clone());
+        }
         match best.entry(platform.clone()) {
             Entry::Vacant(slot) => {
                 slot.insert(candidate);
@@ -137,6 +157,7 @@ fn build(sigs: &[(String, String)], version: &str, base_url: &str) -> Result<Man
         );
     }
 
+    best.extend(by_installer);
     Ok(Manifest {
         version: version.to_string(),
         platforms: best
@@ -155,12 +176,20 @@ fn build(sigs: &[(String, String)], version: &str, base_url: &str) -> Result<Man
     })
 }
 
-fn classify(file: &str) -> Result<Option<(String, usize)>> {
+struct Kind {
+    platform: String,
+    rank: usize,
+    installer: Option<&'static str>,
+}
+
+fn classify(file: &str) -> Result<Option<Kind>> {
     let kind = KINDS
         .iter()
         .enumerate()
-        .find_map(|(rank, (os, ext))| file.ends_with(ext).then_some((*os, rank)));
-    let Some((os, rank)) = kind else {
+        .find_map(|(rank, (os, ext, installer))| {
+            file.ends_with(ext).then_some((*os, rank, *installer))
+        });
+    let Some((os, rank, installer)) = kind else {
         ensure!(
             NON_UPDATER_KINDS.iter().any(|ext| file.ends_with(ext)),
             "`{file}` is not an updater artifact any bundle target emits"
@@ -177,7 +206,11 @@ fn classify(file: &str) -> Result<Option<(String, usize)>> {
                  before both slices land in one release."
             )
         })?;
-    Ok(Some((format!("{os}-{arch}"), rank)))
+    Ok(Some(Kind {
+        platform: format!("{os}-{arch}"),
+        rank,
+        installer,
+    }))
 }
 
 #[cfg(test)]
@@ -204,8 +237,33 @@ mod tests {
     fn maps_every_matrix_strand_to_its_platform_key() {
         let manifest = build(&release(), "1.2.3", BASE).unwrap();
         assert_eq!(manifest.version, "1.2.3");
-        let keys: Vec<_> = manifest.platforms.keys().map(String::as_str).collect();
-        assert_eq!(keys, EXPECTED);
+        for platform in EXPECTED {
+            assert!(manifest.platforms.contains_key(*platform), "{platform}");
+        }
+    }
+
+    #[test]
+    fn each_windows_installer_updates_through_its_own_kind() {
+        let mut sigs = release();
+        sigs.push((
+            "SDRmm_1.2.3_x64_en-US.msi.sig".to_string(),
+            "sig-of-msi".to_string(),
+        ));
+        let manifest = build(&sigs, "1.2.3", BASE).unwrap();
+        let url = |key: &str| manifest.platforms[key].url.clone();
+        assert_eq!(
+            url("windows-x86_64-msi"),
+            format!("{BASE}/SDRmm_1.2.3_x64_en-US.msi")
+        );
+        assert_eq!(
+            url("windows-x86_64-nsis"),
+            format!("{BASE}/SDRmm_1.2.3_x64-setup.exe")
+        );
+        assert_eq!(
+            url("windows-aarch64-nsis"),
+            format!("{BASE}/SDRmm_1.2.3_arm64-setup.exe")
+        );
+        assert!(!manifest.platforms.contains_key("windows-aarch64-msi"));
     }
 
     #[test]

@@ -78,7 +78,8 @@ the installed plugins WebKit uses for audio.
 ## Desktop updates
 
 Release builds check `downloads.sdrmm.com` for the latest stable release at startup, then GitHub.
-Local builds never check. On Linux only the AppImage updates itself. Update archives use a Tauri
+Local builds never check. On Linux only the AppImage updates itself. On Windows, MSI and NSIS
+installs each update through their own installer kind. Update archives use a Tauri
 updater signature separate from platform code signing. Preserve the private updater key;
 installed clients trust its compiled public key.
 
