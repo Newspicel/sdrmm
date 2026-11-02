@@ -32,6 +32,7 @@ mod gsm;
 mod hfdl;
 pub mod hunt_sweep;
 mod ident;
+pub mod if_stage;
 mod ils;
 mod inmarsat_aero;
 mod inmarsat_stdc;

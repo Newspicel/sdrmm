@@ -471,6 +471,7 @@ impl Follower {
                 frequency_hz: radio.control_hz as f64,
                 squelch: sdrmm_wire::Squelch::Off,
                 blanker: Default::default(),
+                if_filter: Default::default(),
                 params,
             };
             let result = match self.controls.get(&node) {
@@ -624,6 +625,7 @@ impl Follower {
             frequency_hz: freq_hz as f64,
             squelch: sdrmm_wire::Squelch::Off,
             blanker: Default::default(),
+            if_filter: Default::default(),
             params,
         };
         match engine.add_channel_for(
@@ -788,6 +790,7 @@ impl Follower {
             frequency_hz: grant.freq_hz as f64,
             squelch: sdrmm_wire::Squelch::Off,
             blanker: Default::default(),
+            if_filter: Default::default(),
             params,
         };
         if !engine.hears(carrier.device_set, carrier.stream, &settings) {
@@ -1202,6 +1205,7 @@ mod tests {
                     squelch: sdrmm_wire::Squelch::Off,
                     params: ChannelParams::Dmr(DmrParams::default()),
                     blanker: Default::default(),
+                    if_filter: Default::default(),
                 },
             )
             .expect("control channel");

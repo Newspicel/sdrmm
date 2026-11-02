@@ -775,6 +775,7 @@ mod tests {
                     ..sdrmm_wire::NfmParams::default()
                 }),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
             out_of_band: None,
             rejected: 0,

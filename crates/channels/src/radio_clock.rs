@@ -1047,6 +1047,7 @@ mod tests {
                 invert: false,
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         };
         let mut channel = RadioClockChannel::new(ChannelCtx { input_rate: RATE }, settings)
             .expect("valid fixture channel");

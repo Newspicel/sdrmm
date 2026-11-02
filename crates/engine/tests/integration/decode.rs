@@ -50,6 +50,7 @@ fn aprs_burst(frame: Vec<u8>) -> Vec<Complex<f32>> {
                 ..AprsParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
     )
     .unwrap();
@@ -199,6 +200,7 @@ async fn pocsag_page_survives_the_ddc_and_reaches_the_decoded_stream() {
                 ..PocsagParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Pocsag(_)),
     )
@@ -233,6 +235,7 @@ async fn flex_page_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Flex(FlexParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Flex(_)),
     )
@@ -268,6 +271,7 @@ async fn ermes_page_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Ermes(ErmesParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Ermes(_)),
     )
@@ -316,6 +320,7 @@ async fn eot_telemetry_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Eot(EotParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Eot(_)),
     )
@@ -349,6 +354,7 @@ async fn a_406_beacon_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Sarsat(SarsatParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Sarsat(_)),
     )
@@ -378,6 +384,7 @@ async fn a_tetrapol_control_channel_survives_the_ddc_and_reaches_the_decoded_str
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Tetrapol(TetrapolParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| {
             matches!(
@@ -412,6 +419,7 @@ async fn a_same_alert_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Same(SameParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Same(_)),
     )
@@ -459,6 +467,7 @@ async fn aprs_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
                 ..AprsParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Aprs(_)),
     )
@@ -504,6 +513,7 @@ async fn ais_position_survives_the_ddc_and_reaches_the_decoded_stream() {
                 ais_channel: AisChannel::B,
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Ais(_)),
     )
@@ -562,6 +572,7 @@ async fn a_mic_e_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Aprs(AprsParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Aprs(p) if p.mic_e_message.is_some()),
     )
@@ -607,6 +618,7 @@ async fn a_ctcss_tone_survives_the_ddc_and_reaches_the_decoded_stream() {
                 ..NfmParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Tone(t) if t.ctcss_hz.is_some()),
     )
@@ -639,6 +651,7 @@ async fn selcall_survives_the_ddc_and_reaches_the_decoded_stream() {
                 system: SelcallSystem::Ccir1,
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Selcall(_)),
     )
@@ -670,6 +683,7 @@ async fn a_meshtastic_text_survives_the_ddc_and_reaches_the_decoded_stream() {
                 ..LoraParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Lora(frame) if frame.decoded.is_some()),
     )
@@ -711,6 +725,7 @@ async fn freedv_recording_survives_the_virtual_device_and_acquires_sync() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Freedv(FreeDvParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| {
             matches!(
@@ -752,6 +767,7 @@ async fn a_recorded_stanag_4285_signal_is_named_through_the_engine() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Stanag(StanagParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Stanag(_)),
     )
@@ -793,6 +809,7 @@ async fn adsb_squitter_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Adsb(AdsbParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Adsb(a) if a.lat.is_some()),
     )
@@ -827,6 +844,7 @@ async fn gps_ca_acquisition_survives_virtual_device_playback() {
                 threshold: 2.5,
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Gnss(frame) if frame.prn == 7),
     )
@@ -853,6 +871,7 @@ async fn vor_radial_survives_virtual_device_playback() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Vor(VorParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Vor(_)),
     )
@@ -889,6 +908,7 @@ async fn a_mode_s_identity_reply_survives_the_ddc_and_reaches_the_decoded_stream
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Adsb(AdsbParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Adsb(a) if a.df == 5),
     )
@@ -927,6 +947,7 @@ async fn rtty_text_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Rtty(params),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Rtty(t) if t.text.contains("CQ CQ DE DL1ABC")),
     )
@@ -962,6 +983,7 @@ async fn psk_text_survives_the_ddc_and_reaches_the_decoded_stream() {
                     invert: false,
                 }),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
             |event| match event {
                 DecoderEvent::Psk(text) => text.text.contains(want),
@@ -994,6 +1016,7 @@ async fn ft8_message_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Ft8(WsjtParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Ft8(message) if message.text.contains("W1AW")),
     )
@@ -1022,6 +1045,7 @@ async fn ft4_message_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Ft4(WsjtParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Ft4(message) if message.text.contains("JA1ABC")),
     )
@@ -1048,6 +1072,7 @@ async fn wspr_spot_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Wspr(WsprParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Wspr(spot) if spot.callsign == "K1ABC"),
     )
@@ -1077,6 +1102,7 @@ async fn morse_text_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Morse(MorseParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Morse(m) if m.text.contains("DL1ABC")),
     )
@@ -1113,6 +1139,7 @@ async fn cw_skimmer_spot_survives_the_ddc_and_reaches_the_decoded_stream() {
                 wpm: None,
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| {
             matches!(event, DecoderEvent::CwSkimmer(spot)
@@ -1147,6 +1174,7 @@ async fn navtex_broadcast_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Navtex(NavtexParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Navtex(m) if m.complete),
     )
@@ -1193,6 +1221,7 @@ async fn acars_block_survives_the_ddc_and_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Acars(AcarsParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Acars(_)),
     )
@@ -1227,6 +1256,7 @@ async fn ysf_callsigns_survive_a_recorded_virtual_device() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Ysf(YsfParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| {
             matches!(event, DecoderEvent::Dv(frame) if frame.mode == DvMode::Ysf
@@ -1267,6 +1297,7 @@ async fn a_tetra_group_call_survives_the_ddc() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Tetra(TetraParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| {
             matches!(event, DecoderEvent::Dv(frame) if frame.mode == DvMode::Tetra
@@ -1311,6 +1342,7 @@ async fn ident_names_an_unknown_transmission_end_to_end() {
                 ..IdentParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Ident(r) if r.best().is_some_and(|m| m.confirmed)),
     )
@@ -1369,6 +1401,7 @@ async fn a_dab_ensemble_locks_through_a_virtual_device() {
                     ..DabParams::default()
                 }),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
             |status| status.locked && !status.services.is_empty(),
         )
@@ -1402,6 +1435,7 @@ async fn a_dvb_s_transport_stream_names_its_program() {
                 ..DatvParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |status| !status.services.is_empty(),
     )
@@ -1445,6 +1479,7 @@ async fn datv_qpsk_lock_is_reported() {
                 ..DatvParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |status| status.system == BroadcastSystem::DvbS2 && status.locked,
     )
@@ -1474,6 +1509,7 @@ async fn drm30_lock_is_reported() {
                 ..DrmParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |status| status.system == BroadcastSystem::Drm30 && status.locked,
     )
@@ -1510,6 +1546,7 @@ async fn adsb_decodes_at_an_rtl_sdr_rate_the_ddc_could_not_have_resampled() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Adsb(AdsbParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Adsb(a) if a.lat.is_some()),
     )
@@ -1544,6 +1581,7 @@ async fn adsb_decodes_from_a_wideband_radio_through_the_resampler() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Adsb(AdsbParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Adsb(a) if a.callsign.is_some()),
     )
@@ -1587,6 +1625,7 @@ async fn rds_station_survives_the_ddc_and_reaches_the_decoded_stream() {
                 stereo: false,
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Rds(u) if u.ps.is_some()),
     )
@@ -1645,6 +1684,7 @@ async fn retuning_resets_the_decoder_through_the_engine_path() {
             stereo: false,
         }),
         blanker: Default::default(),
+        if_filter: Default::default(),
     };
 
     let mut rx = engine.subscribe_decoded();
@@ -1687,6 +1727,7 @@ async fn a_dmr_call_reaches_the_symbol_stream_with_its_measurement() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::Dmr(DmrParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .unwrap();
@@ -1744,6 +1785,7 @@ async fn an_analog_channel_never_pretends_to_have_symbols() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::Nfm(NfmParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .unwrap();
@@ -1778,6 +1820,7 @@ async fn a_dect_base_station_survives_the_ddc_and_reports_its_identity_and_secur
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Dect(DectParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Dect(f) if f.identity.is_some()),
     )
@@ -1813,6 +1856,7 @@ async fn damaged_dect_bursts_surface_as_rejected_channel_state() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::Dect(DectParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .unwrap();
@@ -1908,6 +1952,7 @@ async fn a_twenty_megasample_capture_carries_a_call_on_one_of_ten_dect_carriers(
                 ..DectParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Dect(f) if f.voice.is_some_and(|voice| voice.playing)),
     )
@@ -1941,6 +1986,7 @@ async fn a_dect_capabilities_broadcast_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Dect(DectParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Dect(f) if !f.capabilities.is_empty()),
     )
@@ -2015,6 +2061,7 @@ async fn broadcast_audio_reaches_stereo_opus_through_virtual_devices() {
                     squelch: sdrmm_wire::Squelch::Off,
                     params,
                     blanker: Default::default(),
+                    if_filter: Default::default(),
                 },
             )
             .unwrap();
@@ -2088,6 +2135,7 @@ async fn dab_pad_slideshow_crosses_the_virtual_receiver_and_decoded_event_stream
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Dab(DabParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::BroadcastData(_)),
     )
@@ -2127,6 +2175,7 @@ async fn an_aprs_weather_report_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Aprs(AprsParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Aprs(p) if p.weather.is_some()),
     )
@@ -2156,6 +2205,7 @@ async fn an_rs41_radiosonde_survives_the_ddc_and_reports_its_position() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Radiosonde(RadiosondeParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Radiosonde(f) if f.lat.is_some()),
     )
@@ -2188,6 +2238,7 @@ async fn a_noaa_apt_pass_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Apt(AptParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Apt(_)),
     )
@@ -2222,6 +2273,7 @@ async fn a_wefax_chart_reaches_the_decoded_stream() {
                 ..WefaxParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Wefax(_)),
     )
@@ -2254,6 +2306,7 @@ async fn a_meteor_lrpt_pass_reaches_the_decoded_stream() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Lrpt(LrptParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Lrpt(_)),
     )
@@ -2313,6 +2366,7 @@ async fn a_long_range_remote_id_pack_survives_the_ddc() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::RemoteId(RemoteIdParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::RemoteId(_)),
     )
@@ -2353,6 +2407,7 @@ async fn a_remote_id_wifi_beacon_reaches_the_decoded_stream() {
                 link: RemoteIdLink::Wifi,
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::RemoteId(_)),
     )
@@ -2383,6 +2438,7 @@ async fn a_ble_beacon_survives_the_ddc() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Ble(BleParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| {
             matches!(
@@ -2427,6 +2483,7 @@ async fn the_2_4_ghz_survey_reports_each_second() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::IsmSurvey(IsmSurveyParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::IsmSurvey(_)),
     )
@@ -2468,6 +2525,7 @@ async fn a_wmbus_meter_beside_the_centre_survives_the_ddc() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Wmbus(WmbusParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Wmbus(_)),
     )
@@ -2497,6 +2555,7 @@ async fn per_frames_survive_the_ddc_and_are_counted() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Per(params),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Per(report) if report.restarts > 0),
     )
@@ -2528,6 +2587,7 @@ async fn a_switched_noise_source_reads_a_noise_figure_end_to_end() {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::NoiseFigure(NoiseFigureParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::NoiseFigure(report) if report.nf_db.is_some()),
     )
@@ -2559,6 +2619,7 @@ async fn vlf_stations_reach_the_sid_monitor() {
                 ..SidParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Sid(_)),
     )

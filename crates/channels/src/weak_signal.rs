@@ -493,6 +493,7 @@ pub(crate) fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, Ch
             squelch: sdrmm_wire::Squelch::Off,
             params: params.clone(),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
     )?;
     let (low, high) = occupied_band(params);

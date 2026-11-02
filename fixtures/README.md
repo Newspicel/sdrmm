@@ -88,6 +88,8 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `tetra_call_offair_48k` | 48 k | `tetra` @ +0.3 kHz | MCC 228, MNC 8889, D-SETUP 100701 to group 100601, D-TX GRANTED to 100702 |
 | `tetrapol_control_48k` | 48 k | `tetrapol` @ 0 Hz | scrambling 70, system info for cell 28.2.7 at BCH frame 0, group 393 active on channel 2890, PCH paging CGI 125 and 399 |
 | `tetrapol_traffic_48k` | 48 k | `tetrapol` @ 0 Hz | group idle (cause 0x12) under scrambling 115, then voice under 118 |
+| `wfm_offair_99m9_240k` | 240 k | `wfm` @ 0 Hz | 99.9 MHz broadcast audio, the wanted station in the IF filter tests |
+| `wfm_offair_96m5_240k` | 240 k | `wfm` @ 0 Hz | 96.5 MHz broadcast audio, the interferer in the IF filter tests |
 | `stanag/stanag_4285_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | STANAG 4285 |
 | `stanag/stanag_4529_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | STANAG 4529 |
 | `stanag/stanag_110a_600s_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | MIL-STD-188-110A, 600 bps short |
@@ -299,6 +301,13 @@ on 2026-10-03. The SigMF metadata names the receiver and pins the source SHA-256
   1 kHz. `radio_clock::tests::wwvb_off_air_through_receiver_agc_decodes`
 - `flex_p2000_offair_48k`: 169.650 MHz, Netherlands. FLEX sync reads the low tone as 1, the FIW
   and data the high tone. `flex::tests::decodes_a_p2000_page_off_air`
+
+### Broadcast FM: `wfm_offair_99m9_240k`, `wfm_offair_96m5_240k`
+
+One second each of two stations from `fm_98.1MHz_8Msps.iq` in LC-Linkous/hackRF_python
+(GPL-2.0), a HackRF One capture of US band II at 8 MS/s. The annotations pin the source SHA-256
+and sample range. `if_stage::offair` mixes the 96.5 MHz station onto the 99.9 MHz station's
+adjacent channel, or adds a carrier, and checks that the IF filter brings the audio back.
 
 ### FreeDV: `freedv_1600_8k`
 

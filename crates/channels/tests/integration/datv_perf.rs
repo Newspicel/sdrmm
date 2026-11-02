@@ -26,6 +26,7 @@ fn settings(standard: DatvStandard) -> ChannelSettings {
             ..synth::datv::params()
         }),
         blanker: Default::default(),
+        if_filter: Default::default(),
     }
 }
 

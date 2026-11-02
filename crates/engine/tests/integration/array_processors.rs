@@ -248,6 +248,7 @@ async fn a_channel_on_a_lane_port_hears_the_processor_output() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::Nfm(NfmParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .unwrap();

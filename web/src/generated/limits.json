@@ -464,6 +464,19 @@
     "filter_low_seed_hz": 300.0,
     "filter_high_seed_hz": 3000.0
   },
+  "if_filter": {
+    "notches": 8,
+    "edge_hz": {
+      "min": -5000000.0,
+      "max": 5000000.0
+    },
+    "passband_hz": 100.0,
+    "notch_width_hz": {
+      "min": 20.0,
+      "max": 50000.0
+    },
+    "notch_width_seed_hz": 2000.0
+  },
   "survey": {
     "cells": 5000,
     "cell_m": 10.0,

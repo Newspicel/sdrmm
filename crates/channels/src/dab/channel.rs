@@ -719,6 +719,7 @@ mod tests {
                 ..DabParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         }
     }
 

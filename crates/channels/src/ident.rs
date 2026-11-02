@@ -468,6 +468,7 @@ mod tests {
             squelch: sdrmm_wire::Squelch::Off,
             params: sdrmm_wire::ChannelParams::Ident(params),
             blanker: Default::default(),
+            if_filter: Default::default(),
         }
     }
 

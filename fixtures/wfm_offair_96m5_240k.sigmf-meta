@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 240000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "HackRF One",
+    "core:description": "Off-air broadcast FM at 96.5 MHz"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 96500000.0,
+      "core:datetime": "2026-11-02T14:23:35.779071Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "LC-Linkous/hackRF_python hackrfpy/tests/fm_reference/fm_98.1MHz_8Msps.iq, GPL-2.0; source SHA-256 b4902ff2871bc2262887627a7e54854951e04516e170f1fc1dff2fc45d64da0e; samples 8000000..16000000 at 8000000 Hz",
+      "core:sample_count": 240001,
+      "core:sample_start": 0
+    }
+  ]
+}

@@ -97,6 +97,7 @@ fn analog() -> Analog {
                 squelch: Squelch::Manual { level_db: -80.0 },
                 params: ChannelParams::default_for("am").expect("am"),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .expect("add channel");

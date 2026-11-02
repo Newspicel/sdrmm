@@ -1,11 +1,18 @@
 import type { BroadcastStatus, ChannelDescriptor, ChannelSettings } from "../lib/types";
 import type { ChannelEdit } from "../lib/useChannelPatch";
 import { BlankerChip } from "./BlankerControl";
-import { AUDIO_LIMITS, channelHasAudio, radioWindowHz, squelchMarginDb } from "./channelSettings";
+import {
+  AUDIO_LIMITS,
+  channelFrequencyHz,
+  channelHasAudio,
+  radioWindowHz,
+  squelchMarginDb,
+} from "./channelSettings";
 import { inTuningRange, type Range } from "./dial";
 import { FrequencyDial } from "./FrequencyDial";
 import { Chips, NumberChip } from "./face/Chips";
 import { formatMhz } from "./format";
+import { IfFilterChip } from "./IfFilterControl";
 import { ModeChips } from "./ModeChips";
 import { TuneTo } from "./TuneTo";
 import { TuningLock } from "./TuningLock";
@@ -99,6 +106,14 @@ export function ChannelControls({
         <BlankerChip
           blanker={settings.blanker ?? {}}
           onBlanker={(blanker) => onEdit({ blanker })}
+        />
+      )}
+      {descriptor !== undefined && descriptor.bandwidth_hz > 0 && (
+        <IfFilterChip
+          filter={settings.if_filter ?? {}}
+          bandwidthHz={descriptor.bandwidth_hz}
+          channelHz={channelFrequencyHz(settings)}
+          onFilter={(if_filter) => onEdit({ if_filter })}
         />
       )}
     </Chips>

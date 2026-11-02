@@ -12482,6 +12482,9 @@
             "format": "double",
             "description": "The frequency the decoder listens on, whatever any radio happens to be tuned to. A radio\nthat cannot reach it simply does not carry this channel."
           },
+          "if_filter": {
+            "$ref": "#/components/schemas/IfFilter"
+          },
           "params": {
             "$ref": "#/components/schemas/ChannelParams"
           },
@@ -21343,6 +21346,51 @@
               "number",
               "null"
             ],
+            "format": "double"
+          }
+        }
+      },
+      "IfFilter": {
+        "type": "object",
+        "description": "Shapes the IF ahead of the demodulator, so a neighbour is cut before it can capture it.\n\nEdges are offsets from the channel frequency and only narrow the decoder's own passband.\nNotches sit at fixed radio frequencies: a retune moves the channel, never the notch, so a notch\nstays on its interferer.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "high_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "low_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "notches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IfNotch"
+            }
+          }
+        }
+      },
+      "IfNotch": {
+        "type": "object",
+        "required": [
+          "frequency_hz"
+        ],
+        "properties": {
+          "frequency_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "width_hz": {
+            "type": "number",
             "format": "double"
           }
         }

@@ -28,6 +28,7 @@ fn a_stalled_tcp_reader_reports_failure_while_radio_audio_stays_continuous() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: sdrmm_wire::ChannelParams::Nfm(sdrmm_wire::NfmParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .expect("channel");

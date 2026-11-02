@@ -458,6 +458,7 @@ fn nfm_with_inversion_at(frequency_hz: f64, inversion_hz: f64) -> ChannelSetting
             ..NfmParams::default()
         }),
         blanker: Default::default(),
+        if_filter: Default::default(),
     }
 }
 
@@ -467,6 +468,7 @@ fn nfm_at(offset_hz: f64) -> ChannelSettings {
         squelch: sdrmm_wire::Squelch::Off,
         params: ChannelParams::Nfm(NfmParams::default()),
         blanker: Default::default(),
+        if_filter: Default::default(),
     }
 }
 

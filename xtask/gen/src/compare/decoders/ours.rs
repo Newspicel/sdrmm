@@ -37,6 +37,7 @@ impl FrontEnd {
                 squelch: Squelch::Off,
                 params,
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
             input_rate,
         })

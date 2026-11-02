@@ -74,6 +74,7 @@ impl Track {
                 wpm,
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         };
         Ok(Self {
             frequency_hz: 0.0,

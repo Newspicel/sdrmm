@@ -475,6 +475,7 @@ fn voice_settings(params: ChannelParams) -> ChannelSettings {
         squelch: Squelch::Off,
         params,
         blanker: Default::default(),
+        if_filter: Default::default(),
     }
 }
 

@@ -10,12 +10,17 @@ use crate::{
 
 mod choices;
 mod decoders;
+mod if_filter;
 
 pub use choices::{
     CTCSS_TONES_HZ, DCS_CODES, DEEMPHASIS_US, ParamChoice, ParamOption, RTTY_BAUDS, RTTY_SHIFTS_HZ,
     SettingChoice,
 };
 pub(crate) use decoders::decoders;
+pub use if_filter::{
+    DEFAULT_IF_NOTCH_WIDTH_HZ, IfFilter, IfNotch, MAX_IF_EDGE_HZ, MAX_IF_NOTCH_WIDTH_HZ,
+    MAX_IF_NOTCHES, MIN_IF_NOTCH_WIDTH_HZ, MIN_IF_PASSBAND_HZ,
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -1724,6 +1729,8 @@ pub struct ChannelSettings {
     pub params: ChannelParams,
     #[serde(default)]
     pub blanker: NoiseBlankerSettings,
+    #[serde(default)]
+    pub if_filter: IfFilter,
 }
 
 impl ChannelSettings {
@@ -1734,12 +1741,14 @@ impl ChannelSettings {
             squelch: Squelch::Off,
             params: ChannelParams::default_for(type_id)?,
             blanker: NoiseBlankerSettings::default(),
+            if_filter: IfFilter::default(),
         })
     }
 
     /// Every numeric setting checked against the range published for its decoder.
     pub fn check_limits(&self) -> Result<(), String> {
         self.squelch.validate()?;
+        self.if_filter.validate()?;
         let limits = param_limits(self.params.type_id());
         if limits.is_empty() {
             return Ok(());
@@ -1782,6 +1791,8 @@ impl<'de> Deserialize<'de> for ChannelSettings {
             #[serde(default)]
             blanker: Option<NoiseBlankerSettings>,
             #[serde(default)]
+            if_filter: IfFilter,
+            #[serde(default)]
             audio: Option<LegacyAudio>,
         }
         #[derive(Deserialize)]
@@ -1803,6 +1814,7 @@ impl<'de> Deserialize<'de> for ChannelSettings {
                 .unwrap_or_else(|| Squelch::from_levels(stated.squelch_db, stated.squelch_auto_db)),
             params: stated.params,
             blanker,
+            if_filter: stated.if_filter,
         })
     }
 }

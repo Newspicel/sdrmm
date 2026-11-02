@@ -12,6 +12,7 @@ pub(crate) fn settings(params: ChannelParams) -> ChannelSettings {
         squelch: sdrmm_wire::Squelch::Off,
         params,
         blanker: Default::default(),
+        if_filter: Default::default(),
     }
 }
 

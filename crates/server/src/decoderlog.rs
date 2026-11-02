@@ -279,6 +279,7 @@ mod tests {
                     squelch: sdrmm_wire::Squelch::Off,
                     params: ChannelParams::default_for("adsb").expect("adsb is a channel type"),
                     blanker: Default::default(),
+                    if_filter: Default::default(),
                 },
                 Some("channel:adsb"),
             )

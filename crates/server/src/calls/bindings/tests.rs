@@ -59,6 +59,7 @@ fn live_channel_workspace(
                 params: ChannelParams::default_for(&channel.channel_type)
                     .expect("a known channel type"),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
             Some(&node.id),
         )

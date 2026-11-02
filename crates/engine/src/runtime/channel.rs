@@ -7,6 +7,7 @@ use std::sync::{
 use num_complex::Complex;
 use sdrmm_channels::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
+    if_stage::IfStage,
 };
 use sdrmm_dsp::{LevelMeter, NoiseBlanker, Squelch};
 use sdrmm_wire::{ChannelSettings, DecoderEvent, PositionFix};
@@ -142,6 +143,7 @@ pub(crate) struct ChannelHost {
     audio_rec: Option<AudioTaps>,
     rx: Box<dyn ChannelRx>,
     blanker: Option<NoiseBlanker>,
+    if_stage: Option<IfStage>,
     outputs: ChannelOutputs,
     scratch: Vec<Complex<f32>>,
     filtered: Vec<Complex<f32>>,
@@ -226,6 +228,12 @@ impl ChannelHost {
             rx,
             blanker: (descriptor.has_audio && settings.blanker.enabled)
                 .then(|| NoiseBlanker::new(input_rate, settings.blanker.threshold)),
+            if_stage: IfStage::build(
+                &settings.if_filter,
+                input_rate,
+                settings.frequency_hz,
+                block,
+            )?,
             outputs: ChannelOutputs::default(),
             scratch: Vec::with_capacity(block),
             filtered: Vec::with_capacity(block),
@@ -311,7 +319,7 @@ impl ChannelHost {
             self.rx.position_changed(self.position.as_ref());
             self.ddc.reset();
             self.filter.reset();
-            self.reset_blanker();
+            self.reset_front_end();
             self.squelch.reset();
             self.lo_artifact_hz = None;
             self.recovering = false;
@@ -382,7 +390,7 @@ impl ChannelHost {
         self.follow_lo_artifact();
         if self.ddc.select_shared(selected.is_some()) {
             self.filter.reset();
-            self.reset_blanker();
+            self.reset_front_end();
             self.squelch.reset();
         }
         self.ddc.process(input, selected, &mut self.scratch);
@@ -392,7 +400,11 @@ impl ChannelHost {
         if let Some(blanker) = &mut self.blanker {
             blanker.process(&mut self.scratch);
         }
-        self.filter.process(&self.scratch, &mut self.filtered);
+        let shaped = match &mut self.if_stage {
+            Some(stage) => stage.process(&self.scratch),
+            None => &self.scratch,
+        };
+        self.filter.process(shaped, &mut self.filtered);
         self.meter.process(&self.filtered);
         self.sinks
             .level_db
@@ -551,7 +563,11 @@ impl ChannelHost {
     }
 
     fn aim(&mut self) -> bool {
-        let offset_hz = self.frequency_hz + self.doppler.shift_hz - self.center_hz;
+        let tuned_hz = self.frequency_hz + self.doppler.shift_hz;
+        if let Some(stage) = &mut self.if_stage {
+            stage.retune(tuned_hz);
+        }
+        let offset_hz = tuned_hz - self.center_hz;
         self.in_band = reaches(
             offset_hz,
             self.band_low_hz,
@@ -569,14 +585,17 @@ impl ChannelHost {
     fn restart_chain(&mut self) {
         self.ddc.reset();
         self.filter.reset();
-        self.reset_blanker();
+        self.reset_front_end();
         self.squelch.reset();
         self.lo_artifact_hz = None;
     }
 
-    fn reset_blanker(&mut self) {
+    fn reset_front_end(&mut self) {
         if let Some(blanker) = &mut self.blanker {
             blanker.reset();
+        }
+        if let Some(stage) = &mut self.if_stage {
+            stage.reset();
         }
     }
 
@@ -613,7 +632,8 @@ pub(crate) mod tests {
     use std::f64::consts::TAU;
 
     use sdrmm_wire::{
-        AmParams, ChannelParams, NfmParams, NoiseBlankerSettings, Sideband, SsbParams, WfmParams,
+        AmParams, ChannelParams, IfFilter, IfNotch, NfmParams, NoiseBlankerSettings, Sideband,
+        SsbParams, WfmParams,
     };
 
     use super::{super::DSP_BLOCK, *};
@@ -629,6 +649,7 @@ pub(crate) mod tests {
             squelch,
             params: ChannelParams::Nfm(NfmParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         }
     }
 
@@ -764,6 +785,62 @@ pub(crate) mod tests {
             host.process_at(&block, dsp_block_len(RATE) as u64, CENTER);
         });
         host.publisher.queue.flush();
+    }
+
+    fn shaped_nfm_settings(notch_hz: f64) -> ChannelSettings {
+        ChannelSettings {
+            if_filter: IfFilter {
+                enabled: true,
+                high_hz: Some(4_000.0),
+                notches: vec![IfNotch {
+                    frequency_hz: notch_hz,
+                    width_hz: 200.0,
+                }],
+                ..IfFilter::default()
+            },
+            ..nfm_settings(sdrmm_wire::Squelch::Off)
+        }
+    }
+
+    fn carrier_level(host: &mut ChannelHost, carrier_hz: f64, center_hz: f64) -> f32 {
+        let carrier = tone(carrier_hz - center_hz, 0.5, BLOCK * 40);
+        for block in carrier.chunks(BLOCK) {
+            host.process_and_flush(block, center_hz);
+        }
+        let power: f32 = host.filtered.iter().map(|s| s.norm_sqr()).sum();
+        (power / host.filtered.len() as f32).sqrt()
+    }
+
+    #[test]
+    fn a_shaped_channel_block_allocates_nothing_on_the_dsp_thread() {
+        let (mut host, _rx) = host(&shaped_nfm_settings(CENTER + 2_000.0));
+        let block = tone(1200.0, 0.5, dsp_block_len(RATE));
+        host.process_and_flush(&block, CENTER);
+        sdrmm_test_support::assert_no_alloc("shaped channel block on the dsp thread", || {
+            host.process_at(&block, dsp_block_len(RATE) as u64, CENTER);
+        });
+        host.publisher.queue.flush();
+    }
+
+    #[test]
+    fn an_if_notch_holds_its_radio_frequency_while_radio_and_channel_move() {
+        let carrier_hz = CENTER + 2_000.0;
+        let (mut open, _rx) = host(&nfm_settings(sdrmm_wire::Squelch::Off));
+        assert!(carrier_level(&mut open, carrier_hz, CENTER) > 0.3);
+        let (mut host, _rx) = host(&shaped_nfm_settings(carrier_hz));
+        assert!(carrier_level(&mut host, carrier_hz, CENTER) < 0.01);
+        assert!(carrier_level(&mut host, carrier_hz, CENTER + 5_000.0) < 0.01);
+        host.retune(CENTER + 1_000.0);
+        assert!(carrier_level(&mut host, carrier_hz, CENTER + 5_000.0) < 0.01);
+    }
+
+    #[test]
+    fn if_edges_cut_a_neighbour_the_decoder_filter_would_pass() {
+        let neighbour_hz = CENTER + 5_000.0;
+        let (mut open, _rx) = host(&nfm_settings(sdrmm_wire::Squelch::Off));
+        assert!(carrier_level(&mut open, neighbour_hz, CENTER) > 0.3);
+        let (mut shaped, _rx) = host(&shaped_nfm_settings(CENTER + 2_000.0));
+        assert!(carrier_level(&mut shaped, neighbour_hz, CENTER) < 0.01);
     }
 
     #[test]
@@ -935,6 +1012,7 @@ pub(crate) mod tests {
                 bandwidth_hz: 2_700.0,
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         };
         let (mut host, mut rx) = host(&settings);
         let blocks = run(&mut host, &mut rx, &tone(10_000.0, 1.0, 48_000));
@@ -962,6 +1040,7 @@ pub(crate) mod tests {
             squelch,
             params: ChannelParams::Am(AmParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         }
     }
 
@@ -1103,6 +1182,7 @@ pub(crate) mod tests {
                 stereo,
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         };
         let input = tone(1_000.0, 0.5, 48_000);
         let mut expected = 0u64;
@@ -1219,6 +1299,7 @@ pub(crate) mod tests {
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Wfm(sdrmm_wire::WfmParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         };
         let (pcm_tx, mut pcm_rx) = broadcast::channel::<PcmBlock>(4096);
         let mut host = ChannelHost::build(

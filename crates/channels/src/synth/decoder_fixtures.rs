@@ -245,6 +245,7 @@ fn aprs_packet() -> Vec<Complex<f32>> {
             ..AprsParams::default()
         }),
         blanker: Default::default(),
+        if_filter: Default::default(),
     };
     let mut tx = AprsTx::new(
         ChannelCtx {

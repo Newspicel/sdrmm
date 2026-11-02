@@ -15,6 +15,9 @@ import {
   choiceOptions,
   choicesOf,
   clampOffsetHz,
+  IF_LIMITS,
+  ifEdgeHz,
+  ifFilterSummary,
   limitOf,
   mergeAudio,
   mergeChannelSettings,
@@ -29,6 +32,9 @@ import {
   squelchMarginDb,
   squelchMode,
   unsetAs,
+  withIfEdge,
+  withIfNotchAdded,
+  withIfNotchRemoved,
   withNotchAdded,
   withNotchAt,
   withNotchRemoved,
@@ -55,6 +61,7 @@ describe("mergeChannelSettings", () => {
     expect(mergeChannelSettings(base, { frequency_hz: 144_987_500 })).toEqual({
       ...base,
       blanker: {},
+      if_filter: {},
       frequency_hz: 144_987_500,
     });
   });
@@ -64,6 +71,14 @@ describe("mergeChannelSettings", () => {
     expect(mergeChannelSettings(blanked, { frequency_hz: 145_000_000 }).blanker).toEqual({
       enabled: true,
       threshold: 7,
+    });
+  });
+
+  it("carries the IF filter through an unrelated edit", () => {
+    const shaped: ChannelSettings = { ...base, if_filter: { enabled: true, high_hz: 40_000 } };
+    expect(mergeChannelSettings(shaped, { frequency_hz: 145_000_000 }).if_filter).toEqual({
+      enabled: true,
+      high_hz: 40_000,
     });
   });
 
@@ -111,6 +126,7 @@ describe("mergeChannelSettings", () => {
       frequency_hz: 14_070_000,
       squelch: { mode: "off" },
       blanker: {},
+      if_filter: {},
       params: {
         type: "rtty",
         settings: { baud: 45.45, shift_hz: 850, stop_bits: "two", invert: true },
@@ -503,5 +519,38 @@ describe("the audio seeds and bounds", () => {
       toneHz: wire.audio.tone_hz,
       notchWidthHz: wire.audio.notch_width_hz,
     });
+  });
+});
+
+describe("IF filter", () => {
+  const WFM_HZ = 200_000;
+
+  it("shows the decoder's own edges until one is moved", () => {
+    expect(ifEdgeHz({}, "low_hz", WFM_HZ)).toBe(-100_000);
+    const cut = withIfEdge({}, "high_hz", 40_000, WFM_HZ);
+    expect(ifEdgeHz(cut, "high_hz", WFM_HZ)).toBe(40_000);
+    expect(withIfEdge(cut, "high_hz", 100_000, WFM_HZ).high_hz).toBeNull();
+  });
+
+  it("adds notches at the channel up to the wire limit", () => {
+    let filter = withIfNotchAdded({}, 99_900_000);
+    expect(filter?.notches).toEqual([
+      { frequency_hz: 99_900_000, width_hz: wire.if_filter.notch_width_seed_hz },
+    ]);
+    for (let n = 1; n < IF_LIMITS.maxNotches; n++) {
+      filter = withIfNotchAdded(filter ?? {}, 99_900_000);
+    }
+    expect(withIfNotchAdded(filter ?? {}, 99_900_000)).toBeNull();
+    expect(withIfNotchRemoved(filter ?? {}, 0).notches).toHaveLength(IF_LIMITS.maxNotches - 1);
+  });
+
+  it("summarises only what it does", () => {
+    expect(ifFilterSummary({ high_hz: 40_000 }, WFM_HZ)).toBe("off");
+    expect(ifFilterSummary({ enabled: true }, WFM_HZ)).toBe("off");
+    const notch = { frequency_hz: 99_930_000, width_hz: 2_000 };
+    expect(ifFilterSummary({ enabled: true, notches: [notch] }, WFM_HZ)).toBe("1 notch");
+    expect(ifFilterSummary({ enabled: true, high_hz: 40_000 }, WFM_HZ)).toMatch(
+      /^−100 kHz \+40 kHz$/,
+    );
   });
 });

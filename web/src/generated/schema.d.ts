@@ -3561,6 +3561,7 @@ export interface components {
              *     that cannot reach it simply does not carry this channel.
              */
             frequency_hz?: number;
+            if_filter?: components["schemas"]["IfFilter"];
             params: components["schemas"]["ChannelParams"];
             squelch?: components["schemas"]["Squelch"];
         };
@@ -5854,6 +5855,27 @@ export interface components {
             snr_db: number;
             /** Format: double */
             symbol_rate_hz?: number | null;
+        };
+        /**
+         * @description Shapes the IF ahead of the demodulator, so a neighbour is cut before it can capture it.
+         *
+         *     Edges are offsets from the channel frequency and only narrow the decoder's own passband.
+         *     Notches sit at fixed radio frequencies: a retune moves the channel, never the notch, so a notch
+         *     stays on its interferer.
+         */
+        IfFilter: {
+            enabled?: boolean;
+            /** Format: double */
+            high_hz?: number | null;
+            /** Format: double */
+            low_hz?: number | null;
+            notches?: components["schemas"]["IfNotch"][];
+        };
+        IfNotch: {
+            /** Format: double */
+            frequency_hz: number;
+            /** Format: double */
+            width_hz?: number;
         };
         Illuminator: {
             /** @enum {string} */

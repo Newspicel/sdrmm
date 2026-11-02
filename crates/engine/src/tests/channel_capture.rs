@@ -16,6 +16,7 @@ async fn channel_levels_are_measured_and_pushed_without_invalidating_state() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::Nfm(NfmParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .expect("channel");
@@ -86,6 +87,7 @@ async fn a_channel_level_reports_the_gate_that_let_audio_through() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::Nfm(NfmParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .expect("passing channel");
@@ -98,6 +100,7 @@ async fn a_channel_level_reports_the_gate_that_let_audio_through() {
                 squelch: sdrmm_wire::Squelch::Manual { level_db: 0.0 },
                 params: ChannelParams::Nfm(NfmParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .expect("shut channel");

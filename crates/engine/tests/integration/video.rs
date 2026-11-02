@@ -75,6 +75,7 @@ async fn dvb_satellite_video_reaches_the_color_video_stream() {
                         ..DatvParams::default()
                     }),
                     blanker: Default::default(),
+                    if_filter: Default::default(),
                 },
             )
             .unwrap();
@@ -142,6 +143,7 @@ async fn dvbt_media_crosses_a_virtual_device_and_reaches_audio_and_video() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::Dvbt(sdrmm_wire::DvbtParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .unwrap();
@@ -203,6 +205,7 @@ async fn an_atv_transmission_reaches_the_video_stream_as_a_picture() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::Atv(params),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .unwrap();
@@ -273,6 +276,7 @@ async fn a_channel_without_video_refuses_the_subscription() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::Nfm(NfmParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .unwrap();
@@ -335,6 +339,7 @@ async fn an_sstv_transmission_reaches_the_image_stream_as_a_finished_picture() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::Sstv(SstvParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .unwrap();

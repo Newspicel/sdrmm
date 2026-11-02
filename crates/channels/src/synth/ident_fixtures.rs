@@ -397,6 +397,7 @@ fn run(fixture: &Fixture, iq: &[Complex<f32>]) -> Vec<IdentReport> {
             ..IdentParams::default()
         }),
         blanker: Default::default(),
+        if_filter: Default::default(),
     };
     let mut channel = IdentChannel::new(
         ChannelCtx {

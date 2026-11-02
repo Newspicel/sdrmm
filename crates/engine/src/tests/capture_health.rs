@@ -146,6 +146,7 @@ fn channel_settings(index: usize) -> ChannelSettings {
         squelch: sdrmm_wire::Squelch::Off,
         params,
         blanker: Default::default(),
+        if_filter: Default::default(),
     }
 }
 

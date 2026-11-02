@@ -104,6 +104,7 @@ fn nfm_channel(offset_hz: f64) -> ChannelSettings {
         squelch: sdrmm_wire::Squelch::Off,
         params: ChannelParams::Nfm(NfmParams::default()),
         blanker: Default::default(),
+        if_filter: Default::default(),
     }
 }
 

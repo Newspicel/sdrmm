@@ -44,6 +44,7 @@ fn settings(params: ChannelParams, offset_hz: f64, squelch_db: Option<f32>) -> C
         }),
         params,
         blanker: Default::default(),
+        if_filter: Default::default(),
     }
 }
 

@@ -255,6 +255,7 @@ fn a_decoder_too_wide_to_clear_the_spike_is_held_as_far_off_it_as_the_window_all
             squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::Adsb(AdsbParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         ..parked(1, 0.0)
     };

@@ -44,6 +44,7 @@ fn nfm(offset_hz: f64, squelch_db: Option<f32>) -> ChannelSettings {
         }),
         params: ChannelParams::Nfm(NfmParams::default()),
         blanker: Default::default(),
+        if_filter: Default::default(),
     }
 }
 
@@ -721,6 +722,7 @@ async fn a_decoded_frame_reports_its_lanes_absolute_frequency() {
             ..PocsagParams::default()
         }),
         blanker: Default::default(),
+        if_filter: Default::default(),
     };
     let on_lane_0 = engine
         .add_channel(ds, 0, pocsag(DEFAULT_CENTER_HZ + PAGING_OFFSET_HZ))

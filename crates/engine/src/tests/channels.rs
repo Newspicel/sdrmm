@@ -46,6 +46,7 @@ async fn live_position_survives_a_channel_rate_rebuild() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::Adsb(AdsbParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .unwrap();
@@ -76,6 +77,7 @@ async fn live_position_survives_a_channel_rate_rebuild() {
                     ref_lon: Some(0.0),
                 }),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .unwrap();
@@ -185,6 +187,7 @@ async fn a_channel_with_no_audio_refuses_a_blanker() {
             enabled: true,
             threshold: 5.0,
         },
+        if_filter: Default::default(),
     };
     let err = engine.add_channel(ds, 0, settings).unwrap_err();
     assert!(err.is_bad_request(), "expected bad request, got {err}");

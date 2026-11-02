@@ -54,6 +54,7 @@ pub fn run(args: &Replay) -> Result<()> {
         squelch: sdrmm_wire::Squelch::Off,
         params,
         blanker: Default::default(),
+        if_filter: Default::default(),
     };
     let mut ddc =
         Ddc::new(device_rate, input_rate, args.offset).map_err(|err| anyhow::anyhow!("{err}"))?;

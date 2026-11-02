@@ -871,6 +871,7 @@ pub(crate) fn all() -> &'static [TemplateInfo] {
                             frequency_hz: channel.freq_hz,
                             squelch: channel.squelch,
                             blanker: Default::default(),
+                            if_filter: Default::default(),
                             params,
                         }
                     })

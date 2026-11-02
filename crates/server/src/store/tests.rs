@@ -23,6 +23,7 @@ fn snapshot() -> PresetSnapshot {
                 squelch: sdrmm_wire::Squelch::Manual { level_db: -60.0 },
                 params: ChannelParams::Nfm(NfmParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             }],
         }],
     }

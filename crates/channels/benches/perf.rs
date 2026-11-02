@@ -80,6 +80,7 @@ fn adsb_decode(c: &mut Criterion) {
         squelch: Squelch::Off,
         params: ChannelParams::Adsb(AdsbParams::default()),
         blanker: Default::default(),
+        if_filter: Default::default(),
     };
     let ctx = ChannelCtx {
         input_rate: ADSB_RATE,

@@ -59,6 +59,7 @@ pub fn settings(index: usize) -> ChannelSettings {
         squelch: Squelch::Off,
         params: ChannelParams::Nfm(NfmParams::default()),
         blanker: NoiseBlankerSettings::default(),
+        if_filter: Default::default(),
     }
 }
 

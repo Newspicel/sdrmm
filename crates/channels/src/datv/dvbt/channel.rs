@@ -229,6 +229,7 @@ mod tests {
                 ..Default::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         }
     }
 
@@ -340,6 +341,7 @@ mod tests {
                     squelch: sdrmm_wire::Squelch::Off,
                     params: ChannelParams::Dvbt(params),
                     blanker: Default::default(),
+                    if_filter: Default::default(),
                 },
             )
             .unwrap();

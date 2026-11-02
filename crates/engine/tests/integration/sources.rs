@@ -106,6 +106,7 @@ async fn a_recording_node_plays_its_library_stem_into_a_decoder() {
             squelch: Squelch::Off,
             params: ChannelParams::Pocsag(PocsagParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Pocsag(_)),
     )
@@ -157,6 +158,7 @@ async fn a_signal_generator_node_opens_once_per_node_and_decodes() {
             squelch: Squelch::Off,
             params: ChannelParams::Pocsag(PocsagParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Pocsag(_)),
     )
@@ -185,6 +187,7 @@ async fn a_generated_signal_reaches_the_decoder_it_is_named_for() {
                 ..NfmParams::default()
             }),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Tone(tone) if tone.ctcss_hz.is_some()),
     )
@@ -232,6 +235,7 @@ async fn a_signal_that_needs_another_rate_takes_the_whole_chain_with_it() {
                 squelch: Squelch::Off,
                 params: ChannelParams::Pocsag(PocsagParams::default()),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .unwrap();
@@ -253,6 +257,7 @@ async fn a_signal_that_needs_another_rate_takes_the_whole_chain_with_it() {
             squelch: Squelch::Off,
             params: ChannelParams::Adsb(sdrmm_wire::AdsbParams::default()),
             blanker: Default::default(),
+            if_filter: Default::default(),
         },
         |event| matches!(event, DecoderEvent::Adsb(_)),
     )

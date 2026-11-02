@@ -98,6 +98,7 @@ pub struct Limits {
     pub filter: FilterLimits,
     pub channel_frequency_seed_hz: f64,
     pub audio: AudioLimits,
+    pub if_filter: IfFilterLimits,
     pub survey: SurveyLimits,
     pub wmbus: WmbusLimits,
     pub workspace_state_version: u32,
@@ -175,6 +176,29 @@ pub const AUDIO_LIMITS: AudioLimits = AudioLimits {
     denoise_strength_seed: crate::audio::DEFAULT_DENOISE_STRENGTH,
     filter_low_seed_hz: crate::audio::DEFAULT_FILTER_LOW_HZ,
     filter_high_seed_hz: crate::audio::DEFAULT_FILTER_HIGH_HZ,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct IfFilterLimits {
+    pub notches: usize,
+    pub edge_hz: Bounds<f64>,
+    pub passband_hz: f64,
+    pub notch_width_hz: Bounds<f64>,
+    pub notch_width_seed_hz: f64,
+}
+
+pub const IF_FILTER_LIMITS: IfFilterLimits = IfFilterLimits {
+    notches: crate::channel::MAX_IF_NOTCHES,
+    edge_hz: Bounds::new(
+        -crate::channel::MAX_IF_EDGE_HZ,
+        crate::channel::MAX_IF_EDGE_HZ,
+    ),
+    passband_hz: crate::channel::MIN_IF_PASSBAND_HZ,
+    notch_width_hz: Bounds::new(
+        crate::channel::MIN_IF_NOTCH_WIDTH_HZ,
+        crate::channel::MAX_IF_NOTCH_WIDTH_HZ,
+    ),
+    notch_width_seed_hz: crate::channel::DEFAULT_IF_NOTCH_WIDTH_HZ,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -573,6 +597,7 @@ pub const LIMITS: Limits = Limits {
     },
     channel_frequency_seed_hz: crate::channel::DEFAULT_FREQUENCY_HZ,
     audio: AUDIO_LIMITS,
+    if_filter: IF_FILTER_LIMITS,
     survey: SURVEY_LIMITS,
     wmbus: WMBUS_LIMITS,
     workspace_state_version: crate::workspace_state::WORKSPACE_STATE_VERSION,

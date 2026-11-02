@@ -1,15 +1,18 @@
-import { AUDIO, CHANNEL_FREQUENCY_SEED_HZ } from "../lib/limits";
+import { AUDIO, CHANNEL_FREQUENCY_SEED_HZ, IF_FILTER_LIMITS } from "../lib/limits";
 import type {
   AudioProcessing,
   ChannelDescriptor,
   ChannelParams,
   ChannelSettings,
+  IfFilter,
+  IfNotch,
   NotchSettings,
   ParamChoice,
   ParamLimit,
   Squelch,
 } from "../lib/types";
 import type { Options } from "./controls";
+import { formatSignedHz } from "./format";
 
 export type ChannelTypeId = ChannelParams["type"];
 
@@ -51,7 +54,73 @@ export function mergeChannelSettings(
     squelch: edit.squelch ?? current.squelch ?? SQUELCH_OFF,
     params: edit.params ?? current.params,
     blanker: edit.blanker ?? current.blanker ?? {},
+    if_filter: edit.if_filter ?? current.if_filter ?? {},
   };
+}
+
+export const IF_LIMITS = {
+  maxNotches: IF_FILTER_LIMITS.notches,
+  edgeHz: IF_FILTER_LIMITS.edge_hz,
+  notchWidthHz: IF_FILTER_LIMITS.notch_width_hz,
+  notchWidthSeedHz: IF_FILTER_LIMITS.notch_width_seed_hz,
+} as const;
+
+export type IfEdge = "low_hz" | "high_hz";
+
+export function ownIfEdgeHz(edge: IfEdge, bandwidthHz: number): number {
+  return edge === "low_hz" ? -bandwidthHz / 2 : bandwidthHz / 2;
+}
+
+export function ifEdgeHz(filter: IfFilter, edge: IfEdge, bandwidthHz: number): number {
+  return filter[edge] ?? ownIfEdgeHz(edge, bandwidthHz);
+}
+
+/** An edge moved back onto the decoder's own is dropped, so the decoder keeps its filter. */
+export function withIfEdge(
+  filter: IfFilter,
+  edge: IfEdge,
+  hz: number,
+  bandwidthHz: number,
+): IfFilter {
+  return { ...filter, [edge]: hz === ownIfEdgeHz(edge, bandwidthHz) ? null : hz };
+}
+
+export function withIfNotchAdded(filter: IfFilter, atHz: number): IfFilter | null {
+  const notches = filter.notches ?? [];
+  if (notches.length >= IF_LIMITS.maxNotches) {
+    return null;
+  }
+  return {
+    ...filter,
+    notches: [...notches, { frequency_hz: atHz, width_hz: IF_LIMITS.notchWidthSeedHz }],
+  };
+}
+
+export function withIfNotchAt(filter: IfFilter, index: number, edit: Partial<IfNotch>): IfFilter {
+  const notches = (filter.notches ?? []).map((notch, at) =>
+    at === index ? { ...notch, ...edit } : notch,
+  );
+  return { ...filter, notches };
+}
+
+export function withIfNotchRemoved(filter: IfFilter, index: number): IfFilter {
+  return { ...filter, notches: (filter.notches ?? []).filter((_, at) => at !== index) };
+}
+
+export function ifFilterSummary(filter: IfFilter, bandwidthHz: number): string {
+  const notches = filter.notches?.length ?? 0;
+  const edged = (filter.low_hz ?? null) !== null || (filter.high_hz ?? null) !== null;
+  if (!(filter.enabled ?? false) || (!edged && notches === 0)) {
+    return "off";
+  }
+  const edges = (["low_hz", "high_hz"] as const).map((edge) =>
+    formatSignedHz(ifEdgeHz(filter, edge, bandwidthHz)),
+  );
+  const parts = edged ? [edges.join(" ")] : [];
+  if (notches > 0) {
+    parts.push(`${notches} notch${notches === 1 ? "" : "es"}`);
+  }
+  return parts.join(", ");
 }
 
 export const SQUELCH_RANGE_DB = { min: -120, max: 0 } as const;

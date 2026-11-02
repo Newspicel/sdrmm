@@ -94,6 +94,16 @@ NFM also has **Tone** squelch:
 The **Blanker** on audio channels removes impulse noise from the IQ before filtering. A lower
 threshold removes more, but can damage the signal.
 
+## IF filter
+
+The **IF** chip shapes the IQ ahead of the demodulator, so a neighbour is gone before it can
+capture an FM receiver or swamp a decoder.
+
+- **Edges** move either side of the passband in, one side at a time. Cut the side a stronger
+  adjacent station sits on.
+- **Notches** remove narrow interferers such as carriers and birdies. Each sits at a radio
+  frequency, so it stays on its interferer when you retune.
+
 ## Audio FX
 
 Wire a channel's `audio` through an **Audio FX** node to process what you hear. The raw audio

@@ -369,6 +369,7 @@ async fn a_hunt_position_wire_feeds_hunt_poses() {
                 squelch: sdrmm_wire::Squelch::Off,
                 params: ChannelParams::default_for("nfm").expect("nfm"),
                 blanker: Default::default(),
+                if_filter: Default::default(),
             },
         )
         .expect("decoder");

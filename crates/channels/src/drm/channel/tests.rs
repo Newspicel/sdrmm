@@ -25,6 +25,7 @@ fn settings(mode: DrmMode, bandwidth_hz: f64, service: Option<u8>) -> ChannelSet
             service,
         }),
         blanker: Default::default(),
+        if_filter: Default::default(),
     }
 }
 

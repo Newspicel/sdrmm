@@ -19,6 +19,7 @@ pub mod firc;
 pub mod fm;
 pub mod iir;
 pub mod interp;
+pub mod iq_notch;
 pub mod level;
 pub mod linalg;
 pub mod manifold;
@@ -84,6 +85,7 @@ pub use iir::{
     Biquad, ComplexOnePole, DcBlocker, Deemphasis, Highpass, IqDcBlocker, one_pole_coeff,
 };
 pub use interp::{CubicInterpolator, RealInterpolator};
+pub use iq_notch::IqNotch;
 pub use level::{LEVEL_FLOOR_DB, LevelMeter};
 pub use nco::Nco;
 pub use noise::{AutoNotch, ClickRemover, NoiseBlanker, SpectralDenoiser};

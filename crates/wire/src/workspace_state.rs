@@ -273,6 +273,7 @@ mod tests {
                 squelch: crate::Squelch::Off,
                 params: ChannelParams::Nfm(NfmParams::default()),
                 blanker: crate::audio::NoiseBlankerSettings::default(),
+                if_filter: Default::default(),
             },
         }
     }

@@ -75,6 +75,7 @@ pub(crate) fn channel_filter(p: &DrmParams) -> Result<ChannelFilter, ChannelErro
         squelch: sdrmm_wire::Squelch::Off,
         params: ChannelParams::Drm(*p),
         blanker: Default::default(),
+        if_filter: Default::default(),
     })?;
     let (low, high) = occupied_band(&p);
     let low = (low - FILTER_MARGIN_HZ).max(-INPUT_RATE_HZ * 0.45);

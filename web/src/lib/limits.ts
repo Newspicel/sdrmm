@@ -41,6 +41,7 @@ export const MAX_FILTER_TEXT_LEN = limits.filter.text_len;
 export const CHANNEL_FREQUENCY_SEED_HZ = limits.channel_frequency_seed_hz;
 export const AUDIO = limits.audio;
 export const AUDIO_RATE_HZ = limits.audio.rate_hz;
+export const IF_FILTER_LIMITS = limits.if_filter;
 export const SURVEY_LIMITS = limits.survey;
 export const WMBUS_LIMITS = limits.wmbus;
 export const WORKSPACE_STATE_VERSION = limits.workspace_state_version;
