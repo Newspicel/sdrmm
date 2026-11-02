@@ -34,9 +34,9 @@ jobs:
       - name: Modem gates
         run: |
           cargo test -p sdrmm-modem -p sdrmm-modem-test-support --release -- --ignored --skip write_ \
-            --skip _perf::
-          cargo test -p sdrmm-modem --release --test integration -- --ignored --skip write_ \
-            --test-threads=1 _perf::
+            --skip perf_baseline
+          cargo test -p sdrmm-modem -p sdrmm-modem-test-support --release -- --ignored --skip write_ \
+            --test-threads=1 perf_baseline
       - name: Fetch the xng bench captures
         env:
           GH_TOKEN: ${{ github.token }}
@@ -196,6 +196,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/node
+      - run: pnpm --dir web build && rm -rf web/node_modules
       - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # 31.11.3
       - run: sudo apt-get update && sudo apt-get install --yes xvfb
       - name: Flake check
@@ -204,7 +206,7 @@ jobs:
         run: |
           nix build --impure --print-build-logs --expr '
             let
-              flake = builtins.getFlake (toString ./.);
+              flake = builtins.getFlake ("path:" + toString ./.);
               system = "${{ matrix.system }}";
               pkgs = builtins.getAttr system flake.inputs.nixpkgs.legacyPackages;
             in
@@ -367,7 +369,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select -s /Applications/Xcode_27.app
-      - run: xcrun simctl list runtimes | grep -q 'iOS 18.1 ' || xcodebuild -downloadPlatform iOS -buildVersion 18.1 -architectureVariant arm64
+      - run: xcrun simctl list runtimes | grep -q 'iOS 18.1 ' || xcodebuild -downloadPlatform iOS -buildVersion 18.1 -architectureVariant universal
       - uses: ./.github/actions/rust
         with:
           cache: ios

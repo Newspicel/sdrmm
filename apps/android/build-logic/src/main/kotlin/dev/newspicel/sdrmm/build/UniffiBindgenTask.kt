@@ -44,7 +44,7 @@ abstract class UniffiBindgenTask : DefaultTask() {
             "--locked",
             "--quiet",
             "-p",
-            "xtask",
+            "xtask-gen",
             "--bin",
             "uniffi-bindgen",
             "--",

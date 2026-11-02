@@ -21,10 +21,15 @@ jobs:
       - run: cargo test -p sdrmm-modem-test-support --release -- --ignored --exact ber::perf::tests::write_perf_baseline
         env:
           SDRMM_WRITE_BASELINES: "1"
+      - run: |
+          cargo test -p sdrmm-modem --release --test integration -- --ignored --test-threads=1 \
+            --skip compare_ perf_baseline
+        env:
+          SDRMM_WRITE_BASELINES: "1"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: modem-perf-baseline
-          path: crates/modem/baselines/perf_phase0.json
+          path: crates/modem/baselines/**/*perf*.json
           retention-days: 7
 
   channels:

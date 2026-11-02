@@ -128,18 +128,19 @@ Throughput gates compare a measurement with a committed baseline:
 | Gate | Baseline |
 |---|---|
 | `ber::perf::tests::compare_perf_baseline` in `sdrmm-modem-test-support` | `crates/modem/baselines/perf_phase0.json`, rows tagged by host |
+| `compare_*perf_baseline*` in `sdrmm-modem --test integration` | `crates/modem/baselines/*/*perf*.json`, rows tagged by host |
 | `survey_every_channel_search_path` in `sdrmm-channels` | `crates/channels/baselines/channel_perf/<arch>-<os>.json` |
 
-Every row carries the host it was measured on, `<arch>-<os>`. Both gates compare only the rows of
-the host they run on and fail when they find none, so a new runner architecture cannot quietly
-switch them off. `perf_phase0.json` holds `aarch64-macos` only, so the nightly `x86_64-linux` modem
-gate fails until that host is recorded. The per-modulation gates in `crates/modem/tests` still skip
-instead, and want the same treatment.
+Every row carries the host it was measured on, `<arch>-<os>`. Gates compare only the rows of the
+host they run on and fail when they find none, so a new runner architecture cannot quietly switch
+them off.
 
-Record on a quiet machine, in release, and commit the file:
+Record on a quiet machine, in release, and commit the files:
 
 ```sh
+export SDRMM_WRITE_BASELINES=1
 cargo test -p sdrmm-modem-test-support --release -- --ignored --exact ber::perf::tests::write_perf_baseline
+cargo test -p sdrmm-modem --release --test integration -- --ignored --test-threads=1 --skip compare_ perf_baseline
 cargo test -p sdrmm-channels --release --test integration -- --ignored --exact channel_perf::write_perf_baseline
 ```
 
@@ -167,14 +168,12 @@ Regenerate and commit these with the change that caused them:
 |---|---|---|
 | REST routes or wire types | `cargo xtask codegen` | `openapi.json`, `web/src/generated/` |
 | Dependencies | `cargo xtask licenses` | `THIRD_PARTY_NOTICES.md`, `crates/server/data/notices.json`, phone notices |
-| `web/pnpm-lock.yaml` or a git dependency's `rev` | `cargo xtask nix-hash` | Hashes in `packaging/nix/package.nix` |
 | Band-plan sources | `cargo xtask bandplan` | `crates/server/data/bandplan/` |
 | `assets/icon.svg` | `cargo xtask icons` | Desktop, iPhone, web, site, and docs icons |
 | Demo scenes in `web/e2e/scenes.ts` | `pnpm --dir web demo:record` | `site/public/demo/` |
 | README screenshots | `cargo xtask screenshots` | `assets/screenshots/` |
 
-`nix-hash` needs Nix on Linux, or Docker to run `nixos/nix` elsewhere. `cargo xtask check` catches
-stale codegen, notices, and Nix hashes.
+`cargo xtask check` catches stale codegen and notices.
 
 `cargo xtask fixtures` writes the synthesized decoder SigMF pairs into `fixtures/`. Git ignores
 them, and `cargo xtask test` regenerates them.
