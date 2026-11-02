@@ -83,16 +83,18 @@ sudo dnf install sdrmm-app
 
 ## Nix
 
-Install and launch the desktop app on x86_64 or aarch64 Linux:
+Install and launch the desktop app on x86_64 or aarch64 Linux from a release's source tarball,
+which carries the built web interface:
 
 ```sh
-nix --extra-experimental-features 'nix-command flakes' \
-  profile install github:Newspicel/sdrmm
+VERSION=1.2.3
+nix --extra-experimental-features 'nix-command flakes' profile install \
+  "https://github.com/Newspicel/sdrmm/releases/download/v$VERSION/sdrmm-$VERSION-src.tar.gz"
 sdrmm-desktop
 ```
 
 The flake exports the desktop app as `sdrmm-desktop`, `sdrmm`, and `default`. From a checkout,
-`nix build` produces `result/bin/sdrmm-desktop`.
+run `pnpm --dir web build`, then `nix build path:.` produces `result/bin/sdrmm-desktop`.
 
 Radios without a built-in driver need SoapySDR modules, picked with `soapyPlugins`. For SDRplay,
 enable `services.sdrplayApi` and pass the unfree `pkgs.sdrplay` as `sdrplayApi`. This NixOS

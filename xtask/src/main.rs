@@ -24,7 +24,6 @@ mod comments;
 mod ios;
 mod licenses;
 mod mobile;
-mod nixhash;
 #[cfg(test)]
 mod site;
 mod units;
@@ -68,7 +67,6 @@ enum Cmd {
         #[arg(long)]
         offline: bool,
     },
-    NixHash,
     Desktop {
         #[arg(long)]
         target: Option<String>,
@@ -107,7 +105,6 @@ fn main() -> Result<()> {
         Cmd::Smoke => smoke(&root()),
         Cmd::Screenshots => screenshots(&root()),
         Cmd::Bandplan { offline } => bandplan::run(&root(), offline),
-        Cmd::NixHash => nixhash::run(&root()),
         Cmd::Desktop { target, bundles } => desktop(&root(), target.as_deref(), bundles.as_deref()),
         Cmd::Release(cmd) => xtask_release::run(&root(), &cmd),
         Cmd::Mobile(args) => mobile::run(&root(), &args),
@@ -501,7 +498,6 @@ fn check(root: &Path) -> Result<()> {
     architecture::check(root)?;
     units::check(root)?;
     bundle::check_resources(root)?;
-    nixhash::check(root)?;
     check_toolchain_pins(root)?;
     comments::check(root)?;
     check_windows_rs_alignment(root)?;

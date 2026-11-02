@@ -2,10 +2,6 @@
   lib,
   stdenv,
   rustPlatform,
-  fetchPnpmDeps,
-  pnpmConfigHook,
-  pnpm,
-  nodejs_26,
   pkg-config,
   cmake,
   copyDesktopItems,
@@ -42,39 +38,26 @@ rustPlatform.buildRustPackage (finalAttrs: {
   pname = "sdrmm-desktop";
   version = (builtins.fromTOML (builtins.readFile ../../Cargo.toml)).workspace.package.version;
 
-  src = lib.cleanSource ../..;
+  src = lib.cleanSourceWith {
+    src = lib.cleanSource ../..;
+    filter =
+      path: type:
+      !builtins.elem (baseNameOf path) [
+        "target"
+        "node_modules"
+      ];
+  };
 
   cargoLock = {
     lockFile = ../../Cargo.lock;
-    outputHashes = {
-      # git rev 096c805278faa0a904de7d98066bf4cf395cb6c2
-      "xng-acars-0.21.0" = "sha256-O/+eP1Eyx5PGrP7+YGJmOIRFFwF2t9HOWtag5z1lUWM=";
-    };
+    allowBuiltinFetchGit = true;
   };
-
-  pnpmDeps = fetchPnpmDeps {
-    inherit (finalAttrs) pname version src;
-    inherit pnpm;
-    sourceRoot = "${finalAttrs.src.name}/web";
-    fetcherVersion = 4;
-    # web/pnpm-lock.yaml sha256:76876895c4590f3e1135fbf5d8f1358ae99e11d5c9ca8b81f0c06be331c35d6e
-    hash =
-      {
-        aarch64-linux = "sha256-G7IihJxn7EsVljCqfl6/CKartMAokBbehofE17cqwSc=";
-        x86_64-linux = "sha256-G7IihJxn7EsVljCqfl6/CKartMAokBbehofE17cqwSc=";
-      }
-      .${stdenv.hostPlatform.system};
-  };
-  pnpmRoot = "web";
 
   nativeBuildInputs = [
     cmake
     rustPlatform.bindgenHook
     copyDesktopItems
-    nodejs_26
     pkg-config
-    pnpm
-    pnpmConfigHook
     wrapGAppsHook3
   ];
 
@@ -98,9 +81,13 @@ rustPlatform.buildRustPackage (finalAttrs: {
     xdotool
   ];
 
+  # Nix fetches nothing without a pinned hash, so the web bundle comes prebuilt: the release
+  # source tarball carries it, and a checkout needs `pnpm --dir web build` first.
   preBuild = ''
-    find web/node_modules -path '*/.bin/*' -type f -exec sed -i 's/command -p /command /g' {} +
-    pnpm --dir web build
+    test -f web/dist/index.html || {
+      echo "web/dist is missing: build from the release source tarball, or run 'pnpm --dir web build' first" >&2
+      exit 1
+    }
   '';
 
   cargoBuildFlags = [
