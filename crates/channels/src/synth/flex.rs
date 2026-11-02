@@ -18,6 +18,24 @@ pub struct Page {
     pub text: String,
 }
 
+/// Where a page sits in a long message sent over several frames.
+#[derive(Clone, Copy, Debug)]
+pub struct Fragment {
+    pub number: u8,
+    pub continued: bool,
+}
+
+impl Fragment {
+    pub const WHOLE: Self = Self {
+        number: 3,
+        continued: false,
+    };
+
+    fn header(self) -> u32 {
+        u32::from(self.number) << 11 | u32::from(self.continued) << 10 | 1 << 19
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Mode {
     Flex1600_2,
@@ -68,8 +86,12 @@ fn checksum(mut data: u32) -> u32 {
     data
 }
 
-fn text_words(text: &str) -> Vec<u32> {
-    let mut slots = vec![0u8];
+fn text_words(text: &str, fragment: Fragment) -> Vec<u32> {
+    let mut slots = if fragment.number == Fragment::WHOLE.number {
+        vec![0u8]
+    } else {
+        Vec::new()
+    };
     slots.extend(text.bytes().filter(u8::is_ascii).map(|byte| byte & 0x7F));
     slots.push(3);
     while !slots.len().is_multiple_of(3) {
@@ -91,16 +113,16 @@ fn alpha_header(header: u32, text: &[u32]) -> u32 {
     header | !sum & 0x3FF
 }
 
-fn frame_words(page: &Page) -> [u32; WORDS] {
+fn frame_words(page: &Page, fragment: Fragment) -> [u32; WORDS] {
     let mut words = [0u32; WORDS];
-    let text = text_words(&page.text);
+    let text = text_words(&page.text, fragment);
     let message_start = 3;
     let message_len = text.len() + 1;
     words[0] = checksum(2 << 10);
     words[1] = page.address + CAPCODE_OFFSET;
     words[2] =
         checksum((ALPHA_VECTOR << 4) | (message_start as u32) << 7 | (message_len as u32) << 14);
-    words[message_start] = alpha_header(3 << 11 | 1 << 19, &text);
+    words[message_start] = alpha_header(fragment.header(), &text);
     for (slot, word) in words[message_start + 1..].iter_mut().zip(text) {
         *slot = word;
     }
@@ -285,7 +307,30 @@ pub fn transmission_mode(
     rate: f64,
     mode: Mode,
 ) -> Vec<Complex<f32>> {
-    air(&frame_words(page), cycle, frame, rate, mode)
+    air(
+        &frame_words(page, Fragment::WHOLE),
+        cycle,
+        frame,
+        rate,
+        mode,
+    )
+}
+
+#[must_use]
+pub fn fragment_transmission(
+    page: &Page,
+    fragment: Fragment,
+    cycle: u8,
+    frame: u8,
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    air(
+        &frame_words(page, fragment),
+        cycle,
+        frame,
+        rate,
+        Mode::Flex1600_2,
+    )
 }
 
 #[must_use]
@@ -321,7 +366,7 @@ mod tests {
             Mode::Flex3200_4,
         ] {
             assert_eq!(
-                data_symbols(&frame_words(&page), mode).len(),
+                data_symbols(&frame_words(&page, Fragment::WHOLE), mode).len(),
                 mode.symbol_rate() * 176 / 100
             );
         }

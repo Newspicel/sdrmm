@@ -19753,6 +19753,10 @@
             "format": "int32",
             "minimum": 0
           },
+          "complete": {
+            "type": "boolean",
+            "description": "False when a fragment of a page split over frames never arrived."
+          },
           "cycle": {
             "type": "integer",
             "format": "int32",

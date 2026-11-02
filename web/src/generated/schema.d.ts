@@ -5416,6 +5416,8 @@ export interface components {
             address: number;
             /** Format: int32 */
             baud: number;
+            /** @description False when a fragment of a page split over frames never arrived. */
+            complete?: boolean;
             /** Format: int32 */
             cycle: number;
             /** Format: int32 */

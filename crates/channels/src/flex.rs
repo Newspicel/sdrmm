@@ -10,9 +10,11 @@ use sdrmm_wire::{
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
 
 pub(crate) mod codeword;
+mod fragments;
 mod tones;
 
 use codeword::{PHASE_BITS, WORDS, Word, decode_word};
+use fragments::{MAX_TEXT, Piece, Reassembly};
 use tones::{Afc, Bank, Powers, TONES};
 
 const RATE: f64 = 48_000.0;
@@ -28,7 +30,10 @@ const LATE: usize = 2;
 const HISTORY: usize = 2 * LATE + 1;
 const TIMING_GAIN: f32 = 0.15;
 const SYNC_TOLERANCE: u32 = 3;
-const MAX_TEXT: usize = 256;
+const FRAME_SAMPLES: u64 = 90_000;
+/// The next piece of a long page can follow idle frames, so a piece waits this long for it.
+const FRAGMENT_WAIT: u64 = 32 * FRAME_SAMPLES;
+const LINE_FEED: u8 = b'\n';
 const MAX_SOFT_ADDRESS_ERRORS: u32 = 3;
 const CAPCODE_OFFSET: u32 = 0x8000;
 const FIRST_ADDRESS_WORD: u32 = 0x8001;
@@ -165,6 +170,7 @@ pub struct FlexChannel {
     symbol_target: usize,
     polarity: bool,
     rejected: u32,
+    fragments: Reassembly,
 }
 
 fn params(settings: &ChannelSettings) -> Result<&FlexParams, ChannelError> {
@@ -418,6 +424,12 @@ impl FlexChannel {
                 *symbols += 1;
                 let total = usize::from(mode.symbol_rate) * 176 / 100;
                 if *symbols == total {
+                    let mut delivery = Delivery {
+                        events: &mut out.events,
+                        fragments: &mut self.fragments,
+                        now: self.sample,
+                        rejected: 0,
+                    };
                     for &phase in mode.active_phases() {
                         decode_phase(
                             &phases[phase],
@@ -428,10 +440,10 @@ impl FlexChannel {
                                 phase,
                                 errors: *errors,
                             },
-                            out,
-                            &mut rejected,
+                            &mut delivery,
                         );
                     }
+                    rejected = delivery.rejected;
                     next = Some(State::Search);
                     self.symbol_target = SEARCH_SPS;
                 }
@@ -466,7 +478,20 @@ fn soft_bits(powers: Powers, levels: u8) -> [f32; 2] {
     ]
 }
 
-fn decode_phase(bits: &[f32], sync: FrameInfo, out: &mut ChannelOutputs, rejected: &mut u32) {
+struct Delivery<'a> {
+    events: &'a mut Vec<DecoderEvent>,
+    fragments: &'a mut Reassembly,
+    now: u64,
+    rejected: u32,
+}
+
+impl Delivery<'_> {
+    fn reject(&mut self) {
+        self.rejected = self.rejected.saturating_add(1);
+    }
+}
+
+fn decode_phase(bits: &[f32], sync: FrameInfo, delivery: &mut Delivery) {
     let Some(received) = codeword::deinterleave(bits) else {
         return;
     };
@@ -492,7 +517,7 @@ fn decode_phase(bits: &[f32], sync: FrameInfo, out: &mut ChannelOutputs, rejecte
         let capcode = capcode_at(&words[..vector_start], address_index);
         match capcode {
             Capcode::Idle => {}
-            Capcode::Unusable { .. } => *rejected = rejected.saturating_add(1),
+            Capcode::Unusable { .. } => delivery.reject(),
             Capcode::Address {
                 capcode: address,
                 long,
@@ -503,8 +528,12 @@ fn decode_phase(bits: &[f32], sync: FrameInfo, out: &mut ChannelOutputs, rejecte
                     ..info
                 };
                 match page(&words, address, vector_index, long, &addressed) {
-                    Some(message) => out.events.push(DecoderEvent::Flex(message)),
-                    None => *rejected = rejected.saturating_add(1),
+                    Some((message, piece)) => {
+                        delivery
+                            .fragments
+                            .accept(message, piece, delivery.now, delivery.events);
+                    }
+                    None => delivery.reject(),
                 }
             }
         }
@@ -597,7 +626,7 @@ fn page(
     vector_index: usize,
     long: bool,
     info: &FrameInfo,
-) -> Option<FlexMessage> {
+) -> Option<(FlexMessage, Piece)> {
     let vector = words[vector_index].data()?;
     if !checksum(vector) {
         return None;
@@ -611,6 +640,10 @@ fn page(
         .iter()
         .map(|word| word.data().unwrap_or(0))
         .collect::<Vec<_>>();
+    let piece = match (kind, data.first()) {
+        (5, Some(&header)) => Piece::of(header),
+        _ => Piece::WHOLE,
+    };
     let (payload, text) = match kind {
         2 => (PagerPayload::Tone, String::new()),
         3 | 4 | 7 => (PagerPayload::Numeric, numeric(&data, kind)),
@@ -618,7 +651,7 @@ fn page(
         6 => (PagerPayload::Binary, binary(&data)),
         _ => return None,
     };
-    Some(FlexMessage {
+    let message = FlexMessage {
         address,
         payload,
         text,
@@ -628,7 +661,9 @@ fn page(
         frame: info.frame,
         phase: char::from(b'A' + info.phase as u8),
         errors_corrected: info.errors + words[vector_index].errors() + errors_in(&field),
-    })
+        complete: true,
+    };
+    Some((message, piece))
 }
 
 /// A long address moves the first message word into its second vector word.
@@ -692,12 +727,12 @@ fn alpha(field: &[u32]) -> String {
             if character == 3 {
                 return text;
             }
-            if character.is_ascii() && !character.is_ascii_control() && text.len() < MAX_TEXT {
+            if character == LINE_FEED || !character.is_ascii_control() {
                 text.push(char::from(character));
             }
         }
     }
-    text.trim_end().to_owned()
+    text
 }
 
 fn numeric(field: &[u32], kind: u32) -> String {
@@ -759,6 +794,7 @@ impl ChannelRx for FlexChannel {
             symbol_target: SEARCH_SPS,
             polarity: false,
             rejected: 0,
+            fragments: Reassembly::new(FRAGMENT_WAIT),
         })
     }
 
@@ -771,6 +807,7 @@ impl ChannelRx for FlexChannel {
 
     fn retuned(&mut self) {
         self.reset();
+        self.fragments.abandon();
         self.afc = Afc::new(RATE);
         self.slow.reset();
         self.fast.reset();
@@ -781,6 +818,7 @@ impl ChannelRx for FlexChannel {
             self.push_sample(sample, out);
             self.sample = self.sample.wrapping_add(1);
         }
+        self.fragments.expire(self.sample, &mut out.events);
     }
 
     fn rejected(&self) -> u32 {
@@ -1026,7 +1064,9 @@ mod tests {
             phase: 0,
             errors: 0,
         };
-        let message = super::page(&words, 7_831_826, 3, true, &info).expect("numeric page");
+        let (message, piece) =
+            super::page(&words, 7_831_826, 3, true, &info).expect("numeric page");
+        assert_eq!(piece, Piece::WHOLE);
         assert_eq!(message.payload, PagerPayload::Numeric);
         assert_eq!(message.text, "123");
     }
@@ -1058,6 +1098,67 @@ mod tests {
             message.text
         );
         assert!(message.text.ends_with("ZPFj77mAAAA"), "{}", message.text);
+    }
+
+    fn fragment(text: &str, number: u8, continued: bool, frame: u8) -> Vec<Complex<f32>> {
+        let page = synth::flex::Page {
+            address: 123_456,
+            text: text.to_owned(),
+        };
+        let fragment = synth::flex::Fragment { number, continued };
+        synth::flex::fragment_transmission(&page, fragment, 7, frame, RATE)
+    }
+
+    #[test]
+    fn a_page_split_over_frames_arrives_whole() {
+        let mut iq = fragment("TRAUMA ALERT # ", 3, true, 83);
+        iq.extend(synth::silence(3 * FRAME_SAMPLES as usize));
+        iq.extend(fragment("OF PATIENTS: 1", 0, false, 87));
+        let messages = received(&iq);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert_eq!(messages[0].text, "TRAUMA ALERT # OF PATIENTS: 1");
+        assert!(messages[0].complete);
+        assert_eq!(messages[0].frame, 83);
+    }
+
+    #[test]
+    fn joins_pages_split_over_two_frames_off_air() {
+        let iq = crate::testutil::cf32_le(include_bytes!(
+            "../../../fixtures/flex_us_fragments_48k.sigmf-data"
+        ));
+        let messages = received(&iq);
+        assert!(messages.iter().all(|m| m.complete), "{messages:?}");
+        let joined = messages
+            .iter()
+            .find(|m| m.address == 420_006_712)
+            .expect("the split page");
+        assert_eq!(
+            joined.text,
+            "Trauma Alert 9999 # of Patients: 1 Mechanism: Fall ETA: 4 MINS +18888581081 ID 727333692"
+        );
+        assert_eq!((joined.cycle, joined.frame), (11, 46));
+        let note = messages
+            .iter()
+            .find(|m| m.address == 420_051_701)
+            .expect("the page with a line break");
+        assert!(note.text.starts_with("Room 412"), "{}", note.text);
+        assert_eq!(messages.len(), 6, "{messages:?}");
+    }
+
+    #[test]
+    fn a_continuation_whose_start_was_lost_is_marked_incomplete() {
+        let messages = received(&fragment("OF PATIENTS: 1", 0, false, 87));
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert_eq!(messages[0].text, "OF PATIENTS: 1");
+        assert!(!messages[0].complete);
+    }
+
+    #[test]
+    fn an_alpha_page_keeps_its_line_breaks() {
+        let character = |slot: u32, value: u8| u32::from(value) << (slot * 7);
+        let line = character(0, b'A') | character(1, b'\n') | character(2, b'B');
+        let ignored = character(0, b'\r') | character(1, 3);
+        assert_eq!(alpha(&[0, line, ignored]), "A\nB");
     }
 
     #[test]

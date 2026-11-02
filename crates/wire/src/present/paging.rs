@@ -61,6 +61,11 @@ impl EventPayload for FlexMessage {
         } else {
             format!("{}: {}", self.address, self.text)
         };
+        let summary = if self.complete {
+            summary
+        } else {
+            format!("{summary} …")
+        };
         Presentation {
             entity: Some(self.address.to_string()),
             fields: flex_fields(self),
@@ -77,6 +82,10 @@ fn flex_fields(p: &FlexMessage) -> Vec<Field> {
         ("Cycle", count(Some(p.cycle))),
         ("Frame", count(Some(p.frame))),
         ("Phase", text_of(p.phase)),
+        (
+            "Complete",
+            flag(Some(p.complete).filter(|complete| !complete)),
+        ),
         ("Repaired", repaired(p.errors_corrected)),
         ("Text", text(Some(&p.text))),
     ])
@@ -181,6 +190,17 @@ mod tests {
         assert_eq!(flex.field("Mode"), text(Some("1600/2")).as_ref());
         assert_eq!(flex.field("Phase"), text(Some("a")).as_ref());
         assert_eq!(flex.field("Repaired"), None);
+        assert_eq!(flex.field("Complete"), None);
+        let partial = present::<FlexMessage>(
+            EventKind::Flex,
+            serde_json::json!({
+                "address": 1234567, "payload": "alpha", "text": "HEL", "baud": 1600,
+                "levels": 2, "cycle": 3, "frame": 17, "phase": "a", "errors_corrected": 0,
+                "complete": false,
+            }),
+        );
+        assert_eq!(partial.field("Complete"), flag(Some(false)).as_ref());
+        assert_eq!(partial.summary, "1234567: HEL …");
         let ermes = present::<ErmesMessage>(
             EventKind::Ermes,
             serde_json::json!({

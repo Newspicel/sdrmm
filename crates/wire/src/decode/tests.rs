@@ -108,6 +108,7 @@ fn kind_matches_the_serialized_tag() {
             frame: 0,
             phase: 'A',
             errors_corrected: 0,
+            complete: true,
         }),
         DecoderEvent::Ermes(ErmesMessage {
             local_address: 1,

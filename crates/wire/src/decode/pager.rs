@@ -39,6 +39,13 @@ pub struct FlexMessage {
     pub frame: u8,
     pub phase: char,
     pub errors_corrected: u32,
+    /// False when a fragment of a page split over frames never arrived.
+    #[serde(default = "complete")]
+    pub complete: bool,
+}
+
+fn complete() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

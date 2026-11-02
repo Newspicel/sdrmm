@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 48000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "rtl_tcp",
+    "core:description": "FLEX 1600/4 off air on 929.940 MHz (US): frames 46 and 47, alpha pages split over both"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 929940000.0,
+      "core:datetime": "2026-11-02T14:45:41.001478Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "user recording at 1024000 Hz centred 929.640 MHz; source SHA-256 1ef4c53f914938483d55fddd754acb06613dfb66782a6e78cb0df5ba489774a5; samples 7782400..11827200 at 1024000 Hz",
+      "core:sample_count": 189601,
+      "core:sample_start": 0
+    }
+  ]
+}
