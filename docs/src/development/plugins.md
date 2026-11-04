@@ -9,6 +9,9 @@ reason shows as an error.
 
 ## Write one
 
+This section is for Rust. For C, Zig, Go, AssemblyScript and others, see
+[Plugins in any language](plugin-abi.md).
+
 Start from `crates/plugin-example`, a carrier detector:
 
 ```sh
