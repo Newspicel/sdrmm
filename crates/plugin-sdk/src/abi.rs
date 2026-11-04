@@ -11,6 +11,9 @@ use serde::Serialize;
 
 use crate::{Outputs, Plugin, settings};
 
+pub mod processor;
+pub mod transmit;
+
 struct Slot<P> {
     plugin: P,
     input: Vec<Complex<f32>>,
@@ -113,7 +116,7 @@ pub fn open<P: Plugin + 'static>(rate: f64, ptr: u32, len: u32) -> i32 {
     }
 }
 
-fn store<P: 'static>(slot: Slot<P>) -> i32 {
+fn store<T: 'static>(slot: T) -> i32 {
     CHANNELS.with_borrow_mut(|channels| {
         let boxed: Box<dyn Any> = Box::new(slot);
         let index = match channels.iter().position(Option::is_none) {
@@ -130,15 +133,16 @@ fn store<P: 'static>(slot: Slot<P>) -> i32 {
     })
 }
 
-fn with_slot<P: 'static, R>(handle: i32, f: impl FnOnce(&mut Slot<P>) -> R) -> Option<R> {
+fn with_stored<T: 'static, R>(handle: i32, f: impl FnOnce(&mut T) -> R) -> Option<R> {
     let index = usize::try_from(handle).ok()?;
     CHANNELS.with_borrow_mut(|channels| {
-        let slot = channels
-            .get_mut(index)?
-            .as_mut()?
-            .downcast_mut::<Slot<P>>()?;
+        let slot = channels.get_mut(index)?.as_mut()?.downcast_mut::<T>()?;
         Some(f(slot))
     })
+}
+
+fn with_slot<P: 'static, R>(handle: i32, f: impl FnOnce(&mut Slot<P>) -> R) -> Option<R> {
+    with_stored::<Slot<P>, R>(handle, f)
 }
 
 pub fn apply<P: Plugin + 'static>(handle: i32, ptr: u32, len: u32) -> i32 {
@@ -203,7 +207,7 @@ pub fn retuned<P: Plugin + 'static>(handle: i32) {
     with_slot::<P, _>(handle, |slot| slot.plugin.retuned());
 }
 
-pub fn close<P: 'static>(handle: i32) {
+pub fn close(handle: i32) {
     if let Ok(index) = usize::try_from(handle) {
         CHANNELS.with_borrow_mut(|channels| {
             if let Some(slot) = channels.get_mut(index) {

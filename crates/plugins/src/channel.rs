@@ -73,13 +73,11 @@ impl WasmChannel {
     /// Stops the channel for good and says why on its node face.
     fn stop(&mut self, error: String, out: &mut ChannelOutputs) {
         tracing::error!(plugin = %self.module.name, %error, "plugin channel stopped");
-        out.status = Some(ChannelStatus {
-            readouts: vec![Field {
-                label: "Plugin".to_owned(),
-                value: FieldValue::Text(format!("stopped: {error}")),
-            }],
-            choices: Vec::new(),
-        });
+        out.status = Some(ChannelStatus::readouts(vec![Field::new(
+            "plugin",
+            "Plugin",
+            FieldValue::Text(format!("stopped: {error}")),
+        )]));
         self.fault = Some(error);
     }
 

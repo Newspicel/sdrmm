@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, Symbol};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView, Symbol};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -106,18 +106,22 @@ fn course(m: &AisMessage) -> Option<f64> {
 
 fn ais_fields(m: &AisMessage) -> Vec<Field> {
     fields(&[
-        ("MMSI", text_of(m.mmsi)),
-        ("Message type", count(Some(m.msg_type))),
-        ("Channel", text_of(m.ais_channel)),
-        ("Name", text(m.name.as_deref())),
-        ("Call sign", text(m.call_sign.as_deref())),
-        ("Destination", text(m.destination.as_deref())),
-        ("Position", position(m.lat, m.lon)),
-        ("SOG", number(m.sog_kt, Unit::Knots, 1)),
-        ("COG", number(course(m), Unit::Degrees, 0)),
-        ("Heading", number(true_heading(m), Unit::Degrees, 0)),
-        ("Nav status", count(m.nav_status)),
-        ("NMEA", text(Some(&m.nmea))),
+        ("mmsi", "MMSI", text_of(m.mmsi)),
+        ("message_type", "Message type", count(Some(m.msg_type))),
+        ("channel", "Channel", text_of(m.ais_channel)),
+        ("name", "Name", text(m.name.as_deref())),
+        ("call_sign", "Call sign", text(m.call_sign.as_deref())),
+        ("destination", "Destination", text(m.destination.as_deref())),
+        ("position", "Position", position(m.lat, m.lon)),
+        ("sog", "SOG", number(m.sog_kt, Unit::Knots, 1)),
+        ("cog", "COG", number(course(m), Unit::Degrees, 0)),
+        (
+            "heading",
+            "Heading",
+            number(true_heading(m), Unit::Degrees, 0),
+        ),
+        ("nav_status", "Nav status", count(m.nav_status)),
+        ("nmea", "NMEA", text(Some(&m.nmea))),
     ])
 }
 
@@ -135,8 +139,22 @@ fn ais_summary(m: &AisMessage) -> String {
 pub(crate) fn ais_kind() -> KindSpec {
     KindSpec::of::<AisMessage>("AIS", "Vessels", Hue::Amber)
         .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-        .symbol(Symbol::Ship)
+        .symbol(Symbol::SHIP)
         .sighting()
+        .view(
+            KindView::table(&[
+                "mmsi",
+                "name",
+                "call_sign",
+                "sog",
+                "cog",
+                "heading",
+                "destination",
+                "position",
+            ])
+            .sorted("name", false)
+            .keyed("mmsi"),
+        )
         .build()
 }
 
@@ -215,5 +233,21 @@ mod model_tests {
                 digits: 0
             })
         );
+    }
+
+    #[test]
+    fn the_vessel_table_names_fields_messages_show() {
+        let sample = |json| sdrmm_wire::DecoderEvent::tagged(AisMessage::KIND, &json);
+        let samples = [
+            sample(serde_json::json!({
+                "mmsi": 211234560, "msg_type": 1, "ais_channel": "A", "nmea": "!AIVDM",
+                "lat": 54.3, "lon": 10.1, "sog_kt": 12.3, "cog_deg": 87.6, "heading_deg": 90,
+            })),
+            sample(serde_json::json!({
+                "mmsi": 211234560, "msg_type": 5, "ais_channel": "B", "nmea": "!AIVDM",
+                "name": "NORDIC", "call_sign": "DABC", "destination": "KIEL",
+            })),
+        ];
+        crate::testutil::assert_views_hold(&ais_kind(), &samples);
     }
 }

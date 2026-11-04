@@ -100,7 +100,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "dsc".to_owned(),
     name: "Digital Selective Calling".to_owned(),
     summary: "Maritime distress and calling alerts".to_owned(),
-    family: DecoderFamily::Marine,
+    family: DecoderFamily::MARINE,
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,

@@ -37,7 +37,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "ism_survey".to_owned(),
     name: "2.4 GHz survey".to_owned(),
     summary: "Wi-Fi, Bluetooth, 802.15.4 and ovens by airtime, energy only".to_owned(),
-    family: DecoderFamily::Utility,
+    family: DecoderFamily::UTILITY,
     bandwidth_hz: 2.0 * usable_half_hz(IsmSurveyParams::default().span),
     input_rate_hz: IsmSurveyParams::default().span.sample_rate_hz(),
     has_audio: false,

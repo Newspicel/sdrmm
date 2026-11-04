@@ -19,7 +19,7 @@ use sdrmm_wire::{
     CapturedImagesResponse, ChannelSettings, ChannelTypesResponse, ClientCommand, ClientsResponse,
     CreateBookmarkRequest, CreatePresetRequest, CreateWorkspaceRequest, CreatedRowId,
     DecoderLogEntry, DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount,
-    DeviceInfo, DeviceSettings, DevicesResponse, DfFusionState, DiagnosticsReport, DoctorReport,
+    DeviceInfo, DeviceSettings, DevicesResponse, DfFusionView, DiagnosticsReport, DoctorReport,
     ErrorCode, ExamplesResponse, ExportFormat, IonosondeReport, LicenseTextResponse, LocateQuery,
     LogGroupKey, MAX_RECORDING_UPLOAD_BYTES, MAX_SATELLITE_QUERY_LEN, NodeBody, OccupancyReport,
     PRESET_SNAPSHOT_VERSION, PatchApplyReport, PatchCatalog, PatchChannelRequest, PatchGraph,

@@ -11,8 +11,13 @@ use crate::{
     channel::{ChannelDescriptor, ChannelStatus, SettingField},
     decode::{DecoderEvent, EventKind, EventKindEntry},
     present::Presentation,
+    processor::plugin::ProcessorType,
 };
 
+pub mod processor;
+pub mod transmit;
+
+/// The ABI this server and the SDK speak; a plugin built for any other is refused.
 pub const ABI_VERSION: u32 = 1;
 pub const IMPORT_MODULE: &str = "sdrmm";
 
@@ -72,6 +77,9 @@ pub struct PluginManifest {
     pub kinds: Vec<EventKindEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub home_hz: Option<f64>,
+    /// An array processor the plugin also brings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processor: Option<ProcessorType>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -217,6 +225,11 @@ pub fn unpack(packed: i64) -> (u32, u32) {
 /// What the events and status buffers decode to, for both sides to agree on.
 pub type EventBatch = Vec<DecoderEvent>;
 pub type StatusUpdate = ChannelStatus;
+
+/// The events a guest left in a buffer.
+pub fn read_events(bytes: &[u8]) -> Result<EventBatch, String> {
+    serde_json::from_slice(bytes).map_err(|error| format!("events: {error}"))
+}
 
 #[cfg(test)]
 mod tests {

@@ -76,7 +76,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "hfdl".to_owned(),
     name: "High Frequency Data Link".to_owned(),
     summary: "Aircraft datalink on HF".to_owned(),
-    family: DecoderFamily::Aviation,
+    family: DecoderFamily::AVIATION,
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,

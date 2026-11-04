@@ -27,6 +27,7 @@ pub mod mission;
 pub mod network;
 pub mod node_action;
 pub mod note;
+mod open_name;
 pub mod patch;
 pub mod phone;
 pub mod plugin;
@@ -73,12 +74,12 @@ pub use bandplan::{
     LocateQuery,
 };
 pub use channel::{
-    BandMiss, CallGate, ChannelBand, ChannelDescriptor, ChannelInfo, ChannelParams,
+    BandMiss, CallGate, ChannelBand, ChannelDescriptor, ChannelHealth, ChannelInfo, ChannelParams,
     ChannelSettings, ChannelStatus, ClickProfile, Condition, Control, DEFAULT_FREQUENCY_HZ,
-    DEFAULT_IF_NOTCH_WIDTH_HZ, DecoderFamily, DecoderSettings, IfFilter, IfNotch, MAX_IF_EDGE_HZ,
-    MAX_IF_NOTCH_WIDTH_HZ, MAX_IF_NOTCHES, MAX_SQUELCH_AUTO_MARGIN_DB, MIN_IF_NOTCH_WIDTH_HZ,
-    MIN_IF_PASSBAND_HZ, MIN_SQUELCH_AUTO_MARGIN_DB, NumberSpec, ParamChoice, ParamOption,
-    PresetOption, RETIRED_CHANNEL_TYPES, SettingChoice, SettingField, Squelch,
+    DEFAULT_IF_NOTCH_WIDTH_HZ, DecoderFamily, DecoderSettings, IfFilter, IfNotch, LanePick,
+    MAX_IF_EDGE_HZ, MAX_IF_NOTCH_WIDTH_HZ, MAX_IF_NOTCHES, MAX_SQUELCH_AUTO_MARGIN_DB,
+    MIN_IF_NOTCH_WIDTH_HZ, MIN_IF_PASSBAND_HZ, MIN_SQUELCH_AUTO_MARGIN_DB, NumberSpec, ParamChoice,
+    ParamOption, PresetOption, RETIRED_CHANNEL_TYPES, SettingChoice, SettingField, Squelch,
     retired_channel_type,
 };
 pub use control::{
@@ -100,9 +101,10 @@ pub use decode::{
     ANY_MODULATION, BroadcastData, Capability, CodeStyle, DecodedRecord, DecoderEvent,
     DvChannelDefinition, DvFrame, DvFrameKind, DvSlotActivity, DvTrunkProtocol, EventCatalog,
     EventContract, EventKind, EventKindEntry, FeedEncoder, FeedEntry, FeedSpec, HzRange,
-    IdentFeatures, IdentReport, IdentSignal, KindCodec, KindSet, KindSpec, Lifetime, Modulation,
-    NO_CHANNEL, ProtocolMatch, Sideband, SignalMeasure, SignalSignature, SignalTrial, SiteNaming,
-    Symbol, Vendor, catalog, install_catalog, modulation_label, platform_kinds,
+    IdentFeatures, IdentReport, IdentSignal, KindCodec, KindSet, KindSpec, KindView, Lifetime,
+    Modulation, NO_CHANNEL, ProtocolMatch, Sideband, SignalMeasure, SignalSignature, SignalTrial,
+    SiteNaming, SortKey, Symbol, Vendor, catalog, install_catalog, modulation_label,
+    platform_kinds,
 };
 pub use device::{
     Agc, AgcGain, AgcReach, AgcSetting, ArgumentInfo, ArgumentOption, ArgumentType, BackendEntry,
@@ -133,8 +135,8 @@ pub use frame::{
     typescript_frames,
 };
 pub use fusion::{
-    BearingSource, DfBearing, DfEstimate, DfFusionState, DfOtherPeak, DfStation, FusionDecay,
-    NavGuide, NavMode, NavTarget, NavTargetKind, TriangulationParams,
+    BearingFix, BearingSource, DfBearing, DfEstimate, DfFusionState, DfFusionView, DfOtherPeak,
+    DfStation, FusionDecay, NavGuide, NavMode, NavTarget, NavTargetKind, TriangulationParams,
 };
 pub use geo::LatLon;
 pub use hunt::{HuntAction, HuntSettings, HuntStatus, HuntSweep, HuntSweepParams, SweepState};
@@ -198,6 +200,10 @@ pub use processor::{
     },
     correlator::{Baseline, CorrelatorParams, CorrelatorReading},
     df::{DfAlgorithm, DfParams, DfPeak, DfReading, SourceRule, UlaSide},
+    plugin::{
+        ArrayNeeds, PluginParams, PluginReading, PluginReadout, ProcessorNode, ProcessorType,
+        ReadoutSpec, install_processor_types, processor_type, processor_types,
+    },
     polarimeter::{Hand, PolarimeterParams, PolarimeterReading},
     spatial::{SpatialMethod, SpatialPeak, SpatialReading, SpatialSpectrumParams},
     stitch::{StitchBlend, StitchLane, StitchParams, StitchReading},

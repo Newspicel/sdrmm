@@ -1,18 +1,6 @@
-import type { Options } from "../../components/controls";
-import type {
-  PatchGraph,
-  ProcessorGate,
-  StitchBlend,
-  StitchLane,
-  StitchReading,
-} from "../../lib/types";
+import type { PatchGraph, ProcessorGate, StitchLane, StitchReading } from "../../lib/types";
 import { nodeOf, patchNode } from "../graph";
 import type { Chip } from "./ProcessorHealth";
-
-export const STITCH_BLENDS: Options<StitchBlend> = [
-  { value: "snr", label: "SNR", title: "Favour the cleaner lane in overlaps" },
-  { value: "equal", label: "Equal", title: "Average overlaps" },
-];
 
 export const SPREAD_CHIP: Chip = {
   label: "Needs spread",

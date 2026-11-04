@@ -5,15 +5,17 @@ import { addNode, newNodeId, nodeIds, opensDevice } from "./graph";
 import { newNodeBody } from "./newNode";
 import { useNodePlacement } from "./placement";
 
-export type AddNode = (kind: NodeKind, channelType?: string, at?: Position) => void;
+/** Adds a node of `kind`; `typeId` picks the decoder or plugin processor it runs. */
+export type AddNode = (kind: NodeKind, typeId?: string, at?: Position) => void;
 
 export function useAddNode(): AddNode {
   const workspace = useWorkspaceContext();
   const placeNode = useNodePlacement();
 
-  return (kind, channelType, at) => {
+  return (kind, typeId, at) => {
     const body = newNodeBody(workspace.context.catalog, kind, {
-      channelType: channelType ?? workspace.context.channelTypes[0]?.type_id,
+      channelType: typeId ?? workspace.context.channelTypes[0]?.type_id,
+      processorType: typeId,
     });
     if (body === null) {
       pushToast(`Unknown node: ${kind}`);

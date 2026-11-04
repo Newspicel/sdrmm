@@ -77,17 +77,30 @@ fn gnss_fields(g: &GnssFrame) -> Vec<Field> {
         .subframe
         .map_or_else(|| text_of("acquiring"), |id| count(Some(id)));
     fields(&[
-        ("Signal", text_of(format!("GPS L1 C/A PRN {}", g.prn))),
-        ("Doppler", number(Some(g.doppler_hz), Unit::Hz, 0)),
         (
+            "signal",
+            "Signal",
+            text_of(format!("GPS L1 C/A PRN {}", g.prn)),
+        ),
+        (
+            "doppler",
+            "Doppler",
+            number(Some(g.doppler_hz), Unit::Hz, 0),
+        ),
+        (
+            "code_phase",
             "Code phase",
             number(Some(g.code_phase_chips), Unit::Chips, 2),
         ),
-        ("C/N0", number(Some(g.cn0_db_hz), Unit::DbHz, 1)),
-        ("Subframe", subframe),
-        ("Time of week", number(g.tow_seconds, Unit::Seconds, 0)),
-        ("Week", count(g.week)),
-        ("Words", text(Some(&g.words.join(" ")))),
+        ("c_n0", "C/N0", number(Some(g.cn0_db_hz), Unit::DbHz, 1)),
+        ("subframe", "Subframe", subframe),
+        (
+            "time_of_week",
+            "Time of week",
+            number(g.tow_seconds, Unit::Seconds, 0),
+        ),
+        ("week", "Week", count(g.week)),
+        ("words", "Words", text(Some(&g.words.join(" ")))),
     ])
 }
 

@@ -13,6 +13,34 @@ pub struct ParamOption {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// A status readout key whose text follows the label while the decoder runs, as an
+    /// `Auto` option shows what it found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+impl ParamOption {
+    /// `value` labelled `label`; a value that cannot be serialized stands as null.
+    #[must_use]
+    pub fn new(value: impl Serialize, label: &str) -> Self {
+        option(
+            serde_json::to_value(value).unwrap_or_default(),
+            label.to_owned(),
+            None,
+        )
+    }
+
+    #[must_use]
+    pub fn title(mut self, title: &str) -> Self {
+        self.title = Some(title.to_owned());
+        self
+    }
+
+    #[must_use]
+    pub fn status(mut self, readout: &str) -> Self {
+        self.status = Some(readout.to_owned());
+        self
+    }
 }
 
 pub trait SettingChoice: Copy + Serialize + 'static {
@@ -29,6 +57,7 @@ pub fn option(value: serde_json::Value, label: String, title: Option<&str>) -> P
         value,
         label,
         title: title.map(str::to_owned),
+        status: None,
     }
 }
 

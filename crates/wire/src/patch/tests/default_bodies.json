@@ -401,6 +401,13 @@
     }
   },
   {
+    "kind": "processor",
+    "data": {
+      "processor_type": "",
+      "settings": null
+    }
+  },
+  {
     "kind": "triangulation",
     "data": {
       "settings": {
@@ -415,6 +422,9 @@
         "align": true
       }
     }
+  },
+  {
+    "kind": "bearing_fix"
   },
   {
     "data": {

@@ -138,9 +138,13 @@ fn settle(p: &mut DrmParams) {
 
 pub(crate) fn drm_form() -> Vec<SettingField> {
     vec![
-        SettingField::new("mode", "Mode", Control::choice::<DrmMode>())
-            .title("DRM mode")
-            .quiet(DrmMode::Auto),
+        SettingField::new(
+            "mode",
+            "Mode",
+            Control::choice_showing(DrmMode::Auto, crate::broadcast_media::SYSTEM_READOUT),
+        )
+        .title("DRM mode")
+        .quiet(DrmMode::Auto),
         SettingField::bandwidth(&DRM30_BANDWIDTHS_HZ).when("mode", [DrmMode::Drm30]),
         crate::broadcast_media::service_field("service", 3.0),
     ]

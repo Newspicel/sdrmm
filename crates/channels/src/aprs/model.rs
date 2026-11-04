@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, Symbol};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView, Symbol};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -98,13 +98,14 @@ impl EventPayload for AprsPacket {
 
 fn aprs_fields(p: &AprsPacket) -> Vec<Field> {
     let mut shown = fields(&[
-        ("Source", text(Some(&p.source))),
-        ("Destination", text(Some(&p.destination))),
-        ("Path", text(Some(&p.path.join(" → ")))),
-        ("Symbol", text(p.symbol.as_deref())),
-        ("Position", position(p.lat, p.lon)),
-        ("Course", number(p.course_deg, Unit::Degrees, 0)),
+        ("source", "Source", text(Some(&p.source))),
+        ("destination", "Destination", text(Some(&p.destination))),
+        ("path", "Path", text(Some(&p.path.join(" → ")))),
+        ("symbol", "Symbol", text(p.symbol.as_deref())),
+        ("position", "Position", position(p.lat, p.lon)),
+        ("course", "Course", number(p.course_deg, Unit::Degrees, 0)),
         (
+            "speed",
             "Speed",
             number(
                 p.speed_kt.map(knots_to_kilometres_per_hour),
@@ -113,6 +114,7 @@ fn aprs_fields(p: &AprsPacket) -> Vec<Field> {
             ),
         ),
         (
+            "altitude",
             "Altitude",
             number(
                 p.altitude_ft.map(|feet| feet_to_metres(feet.into())),
@@ -120,30 +122,68 @@ fn aprs_fields(p: &AprsPacket) -> Vec<Field> {
                 0,
             ),
         ),
-        ("Message", text(p.mic_e_message.as_deref())),
-        ("Comment", text(p.comment.as_deref())),
+        ("message", "Message", text(p.mic_e_message.as_deref())),
+        ("comment", "Comment", text(p.comment.as_deref())),
     ]);
     shown.extend(p.weather.as_ref().map(weather_fields).unwrap_or_default());
-    shown.extend(fields(&[("Packet", text(Some(&p.tnc2)))]));
+    shown.extend(fields(&[("packet", "Packet", text(Some(&p.tnc2)))]));
     shown
 }
 
 fn weather_fields(w: &AprsWeather) -> Vec<Field> {
     fields(&[
-        ("Wind", number(w.wind_speed_ms, Unit::MetresPerSecond, 1)),
-        ("Wind from", number(w.wind_dir_deg, Unit::Degrees, 0)),
-        ("Gust", number(w.wind_gust_ms, Unit::MetresPerSecond, 1)),
-        ("Temperature", number(w.temperature_c, Unit::Celsius, 1)),
-        ("Humidity", number(w.humidity_pct, Unit::Percent, 0)),
-        ("Pressure", number(w.pressure_hpa, Unit::Hectopascal, 1)),
-        ("Rain 1 h", number(w.rain_1h_mm, Unit::Millimetres, 1)),
-        ("Rain 24 h", number(w.rain_24h_mm, Unit::Millimetres, 1)),
         (
+            "wind",
+            "Wind",
+            number(w.wind_speed_ms, Unit::MetresPerSecond, 1),
+        ),
+        (
+            "wind_from",
+            "Wind from",
+            number(w.wind_dir_deg, Unit::Degrees, 0),
+        ),
+        (
+            "gust",
+            "Gust",
+            number(w.wind_gust_ms, Unit::MetresPerSecond, 1),
+        ),
+        (
+            "temperature",
+            "Temperature",
+            number(w.temperature_c, Unit::Celsius, 1),
+        ),
+        (
+            "humidity",
+            "Humidity",
+            number(w.humidity_pct, Unit::Percent, 0),
+        ),
+        (
+            "pressure",
+            "Pressure",
+            number(w.pressure_hpa, Unit::Hectopascal, 1),
+        ),
+        (
+            "rain_1_h",
+            "Rain 1 h",
+            number(w.rain_1h_mm, Unit::Millimetres, 1),
+        ),
+        (
+            "rain_24_h",
+            "Rain 24 h",
+            number(w.rain_24h_mm, Unit::Millimetres, 1),
+        ),
+        (
+            "rain_today",
             "Rain today",
             number(w.rain_midnight_mm, Unit::Millimetres, 1),
         ),
-        ("Snow 24 h", number(w.snow_24h_mm, Unit::Millimetres, 1)),
         (
+            "snow_24_h",
+            "Snow 24 h",
+            number(w.snow_24h_mm, Unit::Millimetres, 1),
+        ),
+        (
+            "light",
             "Light",
             number(w.luminosity_wm2, Unit::WattsPerSquareMetre, 0),
         ),
@@ -213,8 +253,25 @@ impl AprsWeather {
 pub(crate) fn aprs_kind() -> KindSpec {
     KindSpec::of::<AprsPacket>("APRS", "Stations", Hue::Violet)
         .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-        .symbol(Symbol::Station)
+        .symbol(Symbol::STATION)
         .sighting()
+        .view(
+            KindView::table(&[
+                "source",
+                "symbol",
+                "position",
+                "speed",
+                "altitude",
+                "temperature",
+                "wind",
+                "gust",
+                "humidity",
+                "pressure",
+                "rain_1_h",
+            ])
+            .sorted("source", false)
+            .keyed("source"),
+        )
         .build()
 }
 
@@ -389,6 +446,38 @@ mod model_tests {
         assert_eq!(
             view.field("Light"),
             number(Some(300), Unit::WattsPerSquareMetre, 0).as_ref()
+        );
+    }
+
+    #[test]
+    fn the_station_table_names_fields_packets_show() {
+        let tracker = AprsPacket {
+            source: "DL1ABC-9".to_owned(),
+            symbol: Some("/>".to_owned()),
+            lat: Some(52.5),
+            lon: Some(13.4),
+            speed_kt: Some(30.0),
+            altitude_ft: Some(120),
+            tnc2: "DL1ABC-9>APRS:!".to_owned(),
+            ..AprsPacket::default()
+        };
+        let weather = AprsPacket {
+            source: "DL1WX".to_owned(),
+            weather: Some(crate::aprs::AprsWeather {
+                temperature_c: Some(12.0),
+                wind_speed_ms: Some(3.0),
+                wind_gust_ms: Some(6.0),
+                humidity_pct: Some(80),
+                pressure_hpa: Some(1013.2),
+                rain_1h_mm: Some(0.4),
+                ..crate::aprs::AprsWeather::default()
+            }),
+            tnc2: "DL1WX>APRS:_".to_owned(),
+            ..AprsPacket::default()
+        };
+        crate::testutil::assert_views_hold(
+            &aprs_kind(),
+            &[DecoderEvent::of(&tracker), DecoderEvent::of(&weather)],
         );
     }
 }

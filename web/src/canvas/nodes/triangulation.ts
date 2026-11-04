@@ -1,46 +1,8 @@
-import type { Options } from "../../components/controls";
 import type { FusionGridFrame } from "../../lib/frame";
-import { FUSION_LIMITS } from "../../lib/limits";
 import { feedSources } from "../../lib/resolved";
-import type {
-  DfEstimate,
-  DfFusionState,
-  DfStation,
-  FusionDecay,
-  NavMode,
-  NavTargetKind,
-  PatchCatalog,
-  PatchNode,
-  ResolvedPatch,
-  TriangulationParams,
-} from "../../lib/types";
-import { defaultBody } from "../newNode";
-
-export const NAV_TEXT: Record<NavTargetKind, string> = {
-  probe: "Drive across",
-  estimate: "Drive at it",
-};
+import type { DfStation, ResolvedPatch } from "../../lib/types";
 
 export const NO_SOURCES = "Wire direction finders in";
-
-export type DecayKind = FusionDecay["kind"];
-
-export function halfLifeTitle(seconds: number): string {
-  return seconds % 60 === 0 ? `Half life ${seconds / 60} min` : `Half life ${seconds} s`;
-}
-
-export const DECAY_OPTIONS: Options<DecayKind> = [
-  { value: "auto", label: "Auto", title: "Fixed or moving, from the stations" },
-  { value: "fixed", label: "Fixed", title: halfLifeTitle(FUSION_LIMITS.fixed_half_life_s) },
-  { value: "moving", label: "Moving", title: halfLifeTitle(FUSION_LIMITS.moving_half_life_s) },
-  { value: "half_life", label: "Set", title: "Pick the half life" },
-];
-
-export const NAV_OPTIONS: Options<NavMode> = [
-  { value: "auto", label: "Auto", title: "Cross the bearings first, then drive at the fix" },
-  { value: "direct", label: "Direct", title: "Drive at the fix as soon as there is one" },
-  { value: "off", label: "off" },
-];
 
 export interface Box {
   w: number;
@@ -68,43 +30,6 @@ export function insideBox(point: { x: number; y: number }, box: Box): boolean {
 
 export function fusionSources(resolved: ResolvedPatch | null, node: string): number {
   return feedSources(resolved, node, "events").length;
-}
-
-export function estimateLabel(estimate: DfEstimate | null): string {
-  return estimate === null ? "-" : `${estimate.lat.toFixed(5)}, ${estimate.lon.toFixed(5)}`;
-}
-
-export function spreadLabel(estimate: DfEstimate | null): string {
-  if (estimate === null) {
-    return "-";
-  }
-  return `${metres(estimate.ellipse_major_m)} × ${metres(estimate.ellipse_minor_m)}`;
-}
-
-function metres(value: number): string {
-  return value >= 1_000 ? `${(value / 1_000).toFixed(1)} km` : `${Math.round(value)} m`;
-}
-
-export interface GuidanceText {
-  text: string;
-  title?: string;
-}
-
-export function guidanceText(fusion: DfFusionState | undefined): GuidanceText {
-  const nav = fusion?.nav ?? null;
-  if (nav !== null) {
-    return {
-      text: `${NAV_TEXT[nav.kind]} · ${Math.round(nav.bearing_deg)}°`,
-      title: `${metres(nav.distance_m)} away`,
-    };
-  }
-  if (fusion?.no_guide_position === true) {
-    return { text: "-", title: "Wire a GPS in to guide it" };
-  }
-  if (fusion?.no_bearings === true) {
-    return { text: "-", title: "No bearings to steer by yet" };
-  }
-  return { text: "-" };
 }
 
 export function stationAge(station: DfStation, now: number): string {
@@ -139,32 +64,4 @@ export function stationSigma(station: DfStation): string {
   return sigma === undefined || !Number.isFinite(sigma) || sigma <= 0
     ? "-"
     : `${sigma.toFixed(1)}°`;
-}
-
-export function decayWith(kind: DecayKind, current: FusionDecay): FusionDecay {
-  if (kind !== "half_life") {
-    return { kind };
-  }
-  return current.kind === "half_life"
-    ? current
-    : { kind: "half_life", seconds: FUSION_LIMITS.half_life_seed_s };
-}
-
-export function fadeTitle(fusion: DfFusionState | undefined): string | undefined {
-  const seconds = fusion?.half_life_s ?? 0;
-  return seconds > 0 ? `Old bearings count half after ${seconds} s` : undefined;
-}
-
-export function triangulationSettings(
-  node: PatchNode,
-  catalog: PatchCatalog,
-): TriangulationParams | null {
-  if (node.kind !== "triangulation") {
-    return null;
-  }
-  if (node.data?.settings !== undefined) {
-    return node.data.settings;
-  }
-  const body = defaultBody(catalog, "triangulation");
-  return body?.kind === "triangulation" ? (body.data?.settings ?? null) : null;
 }

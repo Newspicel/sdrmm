@@ -59,6 +59,12 @@ static EXAMPLES: &[Example] = &[
         body: packed_data!("examples/df-drive.json"),
     },
     Example {
+        id: "vor-fix",
+        name: "VOR fix",
+        description: "Two VOR radials crossed into your position on the Map.",
+        body: packed_data!("examples/vor-fix.json"),
+    },
+    Example {
         id: "passive-radar",
         name: "Passive radar",
         description: "Aircraft echoes of a broadcast FM station, without transmitting.",
@@ -84,8 +90,12 @@ static EXAMPLES: &[Example] = &[
     },
 ];
 
+/// Kinds no shipped example can hold: a plugin processor runs only once its plugin is loaded.
 #[cfg(test)]
-const UNCOVERED: &[sdrmm_wire::NodeKind] = &[sdrmm_wire::NodeKind::Schedule];
+const UNCOVERED: &[sdrmm_wire::NodeKind] = &[
+    sdrmm_wire::NodeKind::Schedule,
+    sdrmm_wire::NodeKind::Processor,
+];
 
 #[derive(Debug)]
 pub(crate) enum ExampleError {
@@ -216,6 +226,7 @@ mod tests {
         assert_eq!(needs("hf-station"), (1, 0, 0));
         assert_eq!(needs("trunked-talkgroups"), (1, 0, 0));
         assert_eq!(needs("network-feed"), (1, 0, 0));
+        assert_eq!(needs("vor-fix"), (1, 0, 0));
     }
 
     #[test]

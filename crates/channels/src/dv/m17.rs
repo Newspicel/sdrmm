@@ -69,7 +69,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "m17".to_owned(),
     name: "M17".to_owned(),
     summary: "M17 open amateur digital voice".to_owned(),
-    family: DecoderFamily::DigitalVoice,
+    family: DecoderFamily::DIGITAL_VOICE,
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,

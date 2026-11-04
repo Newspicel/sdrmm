@@ -3,8 +3,10 @@ import { useArrayStore } from "../../lib/arrays";
 import { useProcessorStore } from "../../lib/processors";
 import type {
   ArrayStatus,
+  ChannelStatus,
   DfPeak,
   DfReading,
+  Field,
   PatchGraph,
   PatchNode,
   ProcessorStatus,
@@ -76,13 +78,41 @@ const FIVE: ArrayStatus = arrayStatus("north", {
   lanes: [0, 1, 2, 3, 4].map((lane) => laneStatus(lane)),
 });
 
+function degrees(key: string, label: string, value: number): Field {
+  return { key, label, value: { type: "number", value: { value, unit: "degrees", digits: 0 } } };
+}
+
+/** The readouts the server derives from `found`, as far as these tests read them. */
+function statusOf(found: DfReading): ChannelStatus {
+  const first = found.peaks[0];
+  const readouts = [
+    ...(first?.true_deg == null ? [] : [degrees("bearing", "Bearing", first.true_deg)]),
+    ...(first === undefined ? [] : [degrees("relative", "Rel", first.relative_deg)]),
+    {
+      key: "fit",
+      label: "Fit",
+      value: {
+        type: "number",
+        value: { value: (found.fit ?? 0) * 100, unit: "percent", digits: 0 },
+      },
+    },
+  ] satisfies Field[];
+  return { readouts };
+}
+
 function render(found: DfReading | null, status: ArrayStatus = FIVE, graph = WIRED): string {
   useArrayStore.setState({ byNode: { north: status }, receivedAt: { north: Date.now() } });
   useProcessorStore.setState({
     byNode:
       found === null
         ? {}
-        : { finder: { reading: { type: "df", reading: found }, receivedAt: Date.now() } },
+        : {
+            finder: {
+              reading: { type: "df", reading: found },
+              status: statusOf(found),
+              receivedAt: Date.now(),
+            },
+          },
   });
   return renderFace(DfFace, FINDER, { graph });
 }
@@ -109,7 +139,9 @@ describe("DfFace", () => {
     expect(html).toContain("5 lanes");
     expect(html).toContain('aria-label="Bearing rose"');
     expect(html).toContain(">N</text>");
-    expect(html).toContain('aria-label="Method"');
+    expect(html).toMatch(/>Method<\/span><b[^>]*>MUSIC</);
+    expect(html).toMatch(/>Width<\/span><b[^>]*>20<\/b>/);
+    expect(html).toContain(">More<");
   });
 
   it("disables True without heading", () => {
@@ -117,7 +149,8 @@ describe("DfFace", () => {
     expect(pressed(html, "Rel")).toBe(true);
     expect(html).toContain(`title="${NEEDS_HEADING}"`);
     expect(attributesOf(html, "True")).toContain('disabled=""');
-    expect(html).toMatch(/>Bearing<.*>047°</);
+    expect(html).not.toContain(">Bearing<");
+    expect(html).toMatch(/>Rel<.*>47°</);
     expect(html).toContain(">F</text>");
     expect(html).toContain(">No heading<");
   });
@@ -126,7 +159,7 @@ describe("DfFace", () => {
     const html = render(null, { ...FIVE, processors: [gated("phase")] });
     expect(html).toContain("needs cal");
     expect(html).toContain(">Needs cal<");
-    expect(html).toMatch(/>Bearing<.*>-</);
+    expect(html).not.toContain(">Bearing<");
   });
 
   it("says when no array is wired", () => {

@@ -29,6 +29,7 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("satellite", Face::fit(420).dial()),
     ("rotator", Face::fit(340)),
     ("triangulation", Face::fit(400)),
+    ("bearing_fix", Face::fit(320)),
     ("array", Face::fit(460)),
     ("df", Face::fit(400)),
     ("beamformer", Face::fit(400)),
@@ -37,6 +38,7 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("correlator", Face::sized(520, 460).min(380, 340)),
     ("polarimeter", Face::fit(360)),
     ("stitch", Face::fit(360)),
+    ("processor", Face::fit(400)),
     ("note", Face::sized(320, 200).min(200, 120)),
 ];
 

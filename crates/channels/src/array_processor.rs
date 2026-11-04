@@ -4,14 +4,17 @@ use num_complex::Complex;
 use sdrmm_dsp::manifold::{Geometry, ManifoldError, ManifoldTable, Vec3, Winding as DspWinding};
 use sdrmm_wire::{
     ArrayGeometry, ArrayTuningMode, CalPhase, CalSourceKind, Coherence, DfBearing, ProcessorParams,
-    ProcessorReading, StreamKind, SurfaceFrame, Winding,
+    ProcessorReading, SettingField, StreamKind, SurfaceFrame, Winding,
 };
 use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use crate::ChannelError;
 
+mod plugins;
 #[cfg(feature = "probe")]
 pub mod probe;
+
+pub use plugins::{ProcessorFactory, install_processors, processor_plugin};
 
 #[cfg(test)]
 pub(crate) mod bench;
@@ -84,6 +87,8 @@ pub struct ProcessorDescriptor {
     pub lane_ports: &'static [&'static str],
     pub steer_port: Option<&'static str>,
     pub surface: Option<StreamKind>,
+    /// The form a face renders for this processor's settings.
+    pub settings: fn() -> Vec<SettingField>,
     pub needs: fn(&ProcessorParams) -> ProcessorNeeds,
     pub band: fn(&ProcessorParams) -> Option<(f64, f64)>,
     pub tuning: fn(&ProcessorParams) -> TuningNeed,
@@ -356,19 +361,53 @@ pub struct OutputSlots<'a> {
     pub lanes: &'a mut [LaneBuffer],
 }
 
+/// A block's events as one JSON array of `DecoderEvent`s, parsed by the engine off the DSP
+/// thread. Its room is reserved up front, so filling it allocates nothing.
+#[derive(Debug, Default)]
+pub struct EventBytes {
+    bytes: Vec<u8>,
+}
+
+impl EventBytes {
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            bytes: Vec::with_capacity(capacity),
+        }
+    }
+
+    #[must_use]
+    pub fn as_slice(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Holds `json` in place of what it held, or refuses it whole when it does not fit.
+    fn set(&mut self, json: &[u8]) -> bool {
+        self.bytes.clear();
+        if json.len() > self.bytes.capacity() {
+            return false;
+        }
+        self.bytes.extend_from_slice(json);
+        true
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct OutputTally {
     pub report: bool,
     pub surface: bool,
     pub bearings: usize,
+    pub events: bool,
     pub steer: Option<Steer>,
     pub dropped_reports: u64,
     pub dropped_surfaces: u64,
     pub dropped_bearings: u64,
+    pub dropped_events: u64,
 }
 
 pub struct ProcessorOutput<'a> {
     slots: OutputSlots<'a>,
+    events: Option<&'a mut EventBytes>,
     tally: OutputTally,
 }
 
@@ -377,7 +416,27 @@ impl<'a> ProcessorOutput<'a> {
     pub fn new(slots: OutputSlots<'a>) -> Self {
         Self {
             slots,
+            events: None,
             tally: OutputTally::default(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_events(self, events: Option<&'a mut EventBytes>) -> Self {
+        Self { events, ..self }
+    }
+
+    /// Hands on `json`, a JSON array of events, counting it lost when there is no room.
+    pub fn events(&mut self, json: &[u8]) {
+        let held = !self.tally.events
+            && self
+                .events
+                .as_deref_mut()
+                .is_some_and(|slot| slot.set(json));
+        if held {
+            self.tally.events = true;
+        } else {
+            self.tally.dropped_events += 1;
         }
     }
 
@@ -513,10 +572,33 @@ pub fn processor_descriptor(type_id: &str) -> Option<&'static ProcessorDescripto
     registration(type_id).map(|entry| entry.descriptor)
 }
 
+/// The descriptor every loaded processor shares.
+#[must_use]
+pub fn plugin_descriptor() -> &'static ProcessorDescriptor {
+    &plugins::DESCRIPTOR
+}
+
+/// The descriptor `params` run under: a built-in's own, or the one every loaded processor shares.
+#[must_use]
+pub fn descriptor_for(params: &ProcessorParams) -> Option<&'static ProcessorDescriptor> {
+    match params {
+        ProcessorParams::Plugin(plugin) => {
+            processor_plugin(&plugin.type_id).map(|_| &plugins::DESCRIPTOR)
+        }
+        _ => processor_descriptor(params.type_id()),
+    }
+}
+
 pub fn create_processor(
     ctx: &ArrayCtx<'_>,
     params: &ProcessorParams,
 ) -> Result<Box<dyn ArrayProcessor>, ChannelError> {
+    if let ProcessorParams::Plugin(plugin) = params {
+        if let Some(problem) = plugin.problem() {
+            return Err(ChannelError::Refused(problem));
+        }
+        return plugins::create(ctx, plugin);
+    }
     let type_id = params.type_id();
     let entry =
         registration(type_id).ok_or_else(|| ChannelError::UnknownType(type_id.to_owned()))?;

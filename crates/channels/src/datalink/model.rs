@@ -64,20 +64,25 @@ impl EventPayload for DataLinkMessage {
 fn data_link_fields(m: &DataLinkMessage) -> Vec<Field> {
     let integrity = if m.crc_ok { "verified" } else { "failed" };
     fields(&[
-        ("Type", text(Some(&m.message_type))),
-        ("Station", text(m.station.as_deref())),
-        ("Integrity", text_of(integrity)),
-        ("FEC repaired", count(m.fec_corrected)),
-        ("SNR", number(m.snr_db, Unit::Db, 1)),
-        ("Frequency error", number(m.frequency_error_hz, Unit::Hz, 1)),
-        ("Position", position(m.lat, m.lon)),
+        ("type", "Type", text(Some(&m.message_type))),
+        ("station", "Station", text(m.station.as_deref())),
+        ("integrity", "Integrity", text_of(integrity)),
+        ("fec_repaired", "FEC repaired", count(m.fec_corrected)),
+        ("snr", "SNR", number(m.snr_db, Unit::Db, 1)),
         (
+            "frequency_error",
+            "Frequency error",
+            number(m.frequency_error_hz, Unit::Hz, 1),
+        ),
+        ("position", "Position", position(m.lat, m.lon)),
+        (
+            "area",
             "Area",
             m.area.as_ref().and_then(|area| text_of(area.label())),
         ),
-        ("Text", text(m.text.as_deref())),
-        ("Details", details(&m.details)),
-        ("Raw", text(m.raw.as_deref())),
+        ("text", "Text", text(m.text.as_deref())),
+        ("details", "Details", details(&m.details)),
+        ("raw", "Raw", text(m.raw.as_deref())),
     ])
 }
 
@@ -108,7 +113,7 @@ fn data_link_summary(m: &DataLinkMessage) -> String {
 pub(crate) fn dsc_kind() -> KindSpec {
     KindSpec::tagged::<DataLinkMessage>(EventKind::named("dsc"), "DSC", "Vessels", Hue::Amber)
         .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-        .symbol(Symbol::Ship)
+        .symbol(Symbol::SHIP)
         .sighting()
         .build()
 }
@@ -121,7 +126,7 @@ pub(crate) fn inmarsat_stdc_kind() -> KindSpec {
         Hue::Amber,
     )
     .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-    .symbol(Symbol::Ship)
+    .symbol(Symbol::SHIP)
     .sighting()
     .build()
 }
@@ -134,7 +139,7 @@ pub(crate) fn inmarsat_aero_kind() -> KindSpec {
         Hue::Teal,
     )
     .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-    .symbol(Symbol::Plane)
+    .symbol(Symbol::PLANE)
     .sighting()
     .build()
 }
@@ -147,7 +152,7 @@ pub(crate) fn vdl2_kind() -> KindSpec {
         Hue::Teal,
     )
     .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-    .symbol(Symbol::Plane)
+    .symbol(Symbol::PLANE)
     .sighting()
     .build()
 }
@@ -155,7 +160,7 @@ pub(crate) fn vdl2_kind() -> KindSpec {
 pub(crate) fn hfdl_kind() -> KindSpec {
     KindSpec::tagged::<DataLinkMessage>(EventKind::named("hfdl"), "HFDL", "Aircraft", Hue::Teal)
         .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-        .symbol(Symbol::Plane)
+        .symbol(Symbol::PLANE)
         .sighting()
         .build()
 }
@@ -163,7 +168,7 @@ pub(crate) fn hfdl_kind() -> KindSpec {
 pub(crate) fn iridium_kind() -> KindSpec {
     KindSpec::tagged::<DataLinkMessage>(EventKind::named("iridium"), "Iridium", "Bursts", Hue::Blue)
         .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-        .symbol(Symbol::Dot)
+        .symbol(Symbol::DOT)
         .sighting()
         .build()
 }

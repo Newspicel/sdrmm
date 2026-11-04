@@ -26,6 +26,7 @@ mod assets;
 mod audio_fx;
 mod auth;
 mod bandplan;
+mod bearing_fix;
 mod calibration;
 mod calls;
 mod control;
@@ -323,6 +324,7 @@ fn start_runtime(state: &AppState) -> Background {
     radar::start(state);
     df_fusion::start(state);
     fusion_routes::start(state);
+    bearing_fix::start(state);
     sinks::start(state);
     survey::follow(state);
     missions::watch::spawn(state);

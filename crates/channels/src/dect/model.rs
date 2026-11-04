@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -566,28 +566,40 @@ fn dect_fields(f: &DectFrame) -> Vec<Field> {
         DectSide::Rfp => "base station",
         DectSide::Pp => "handset",
     };
-    let mut shown = fields(&[("Side", text_of(side))]);
+    let mut shown = fields(&[("side", "Side", text_of(side))]);
     shown.extend(f.identity.as_ref().map(identity_fields).unwrap_or_default());
     shown.extend(fields(&[
-        ("Carrier", count(f.carrier)),
-        ("Frequency", number(f.carrier_hz, Unit::Hz, 0)),
-        ("Slot pair", count(f.slot_pair)),
-        ("Transceivers", count(f.transceivers)),
-        ("Carriers available", f.rf_carriers.and_then(carriers)),
-        ("Scan carrier", count(f.pscn)),
-        ("Multiframe", count(f.multiframe)),
+        ("carrier", "Carrier", count(f.carrier)),
+        ("frequency", "Frequency", number(f.carrier_hz, Unit::Hz, 0)),
+        ("slot_pair", "Slot pair", count(f.slot_pair)),
+        ("transceivers", "Transceivers", count(f.transceivers)),
+        (
+            "carriers_available",
+            "Carriers available",
+            f.rf_carriers.and_then(carriers),
+        ),
+        ("scan_carrier", "Scan carrier", count(f.pscn)),
+        ("multiframe", "Multiframe", count(f.multiframe)),
     ]));
     shown.extend(security_fields(&f.security));
     shown.extend(fields(&[
-        ("FMID", f.fmid.and_then(|id| text_of(format!("{id:04X}")))),
-        ("PMID", f.pmid.and_then(|id| text_of(format!("{id:05X}")))),
-        ("Handsets", text(Some(&handsets(f)))),
+        (
+            "fmid",
+            "FMID",
+            f.fmid.and_then(|id| text_of(format!("{id:04X}"))),
+        ),
+        (
+            "pmid",
+            "PMID",
+            f.pmid.and_then(|id| text_of(format!("{id:05X}"))),
+        ),
+        ("handsets", "Handsets", text(Some(&handsets(f)))),
     ]));
     shown.extend(voice_fields(f));
     shown.extend(fields(&[
-        ("Bursts", count(Some(f.bursts))),
-        ("Level", number(Some(f.level_dbfs), Unit::Dbfs, 1)),
-        ("Capabilities", text(Some(&capabilities(f)))),
+        ("bursts", "Bursts", count(Some(f.bursts))),
+        ("level", "Level", number(Some(f.level_dbfs), Unit::Dbfs, 1)),
+        ("capabilities", "Capabilities", text(Some(&capabilities(f)))),
     ]));
     shown
 }
@@ -597,45 +609,62 @@ fn identity_fields(id: &DectIdentity) -> Vec<Field> {
         .multicell
         .map(|multi| if multi { "multi-cell" } else { "single cell" });
     fields(&[
-        ("RFPI", text(Some(&id.rfpi))),
-        ("Access class", text_of(id.arc.label())),
-        ("PARI", text(Some(&id.pari))),
+        ("rfpi", "RFPI", text(Some(&id.rfpi))),
+        ("access_class", "Access class", text_of(id.arc.label())),
+        ("pari", "PARI", text(Some(&id.pari))),
         (
+            "manufacturer",
             "Manufacturer",
             id.emc.and_then(|code| text_of(format!("{code:04X}"))),
         ),
         (
+            "installer",
             "Installer",
             id.eic.and_then(|code| text_of(format!("{code:04X}"))),
         ),
         (
+            "operator",
             "Operator",
             id.poc.and_then(|code| text_of(format!("{code:04X}"))),
         ),
         (
+            "gsm_umts_operator",
             "GSM/UMTS operator",
             id.gop.and_then(|code| text_of(format!("{code:05X}"))),
         ),
-        ("Fixed part", count(id.fpn)),
-        ("Fixed part sub", count(id.fps)),
-        ("Radio fixed part", count(Some(id.rpn))),
-        ("Cell", cell.and_then(text_of)),
-        ("SARI list", flag(Some(id.sari_available))),
+        ("fixed_part", "Fixed part", count(id.fpn)),
+        ("fixed_part_sub", "Fixed part sub", count(id.fps)),
+        ("radio_fixed_part", "Radio fixed part", count(Some(id.rpn))),
+        ("cell", "Cell", cell.and_then(text_of)),
+        ("sari_list", "SARI list", flag(Some(id.sari_available))),
     ])
 }
 
 fn security_fields(security: &DectSecurity) -> Vec<Field> {
     fields(&[
-        ("Authentication", flag(security.authentication_supported)),
-        ("Ciphering", flag(security.ciphering_supported)),
-        ("Encryption", text_of(security.cipher_state.label())),
-        ("DSAA2", flag(security.dsaa2_supported)),
-        ("DSC2", flag(security.dsc2_supported)),
         (
+            "authentication",
+            "Authentication",
+            flag(security.authentication_supported),
+        ),
+        ("ciphering", "Ciphering", flag(security.ciphering_supported)),
+        (
+            "encryption",
+            "Encryption",
+            text_of(security.cipher_state.label()),
+        ),
+        ("dsaa2", "DSAA2", flag(security.dsaa2_supported)),
+        ("dsc2", "DSC2", flag(security.dsc2_supported)),
+        (
+            "last_cipher_command",
             "Last cipher command",
             text(security.last_command.as_deref()),
         ),
-        ("Cipher key index", count(security.cipher_key_index)),
+        (
+            "cipher_key_index",
+            "Cipher key index",
+            count(security.cipher_key_index),
+        ),
     ])
 }
 
@@ -646,14 +675,27 @@ fn voice_fields(f: &DectFrame) -> Vec<Field> {
     let nonzero = |value: u32| count(Some(value).filter(|value| *value > 0));
     fields(&[
         (
+            "voice",
             "Voice",
             text_of(if voice.playing { "playing" } else { "muted" }),
         ),
-        ("Voice frames", count(Some(voice.frames))),
-        ("Voice X-CRC errors", nonzero(voice.x_crc_errors)),
-        ("Voice before sync", nonzero(voice.unsynced)),
-        ("Voice encrypted", nonzero(voice.encrypted)),
-        ("Voice late", nonzero(voice.late)),
+        ("voice_frames", "Voice frames", count(Some(voice.frames))),
+        (
+            "voice_x_crc_errors",
+            "Voice X-CRC errors",
+            nonzero(voice.x_crc_errors),
+        ),
+        (
+            "voice_before_sync",
+            "Voice before sync",
+            nonzero(voice.unsynced),
+        ),
+        (
+            "voice_encrypted",
+            "Voice encrypted",
+            nonzero(voice.encrypted),
+        ),
+        ("voice_late", "Voice late", nonzero(voice.late)),
     ])
 }
 
@@ -725,6 +767,22 @@ pub(crate) fn dect_kind() -> KindSpec {
     KindSpec::of::<DectFrame>("DECT", "Base stations", Hue::Muted)
         .caps(&[Capability::Log, Capability::Station])
         .sighting()
+        .view(
+            KindView::table(&[
+                "rfpi",
+                "access_class",
+                "carrier",
+                "slot_pair",
+                "authentication",
+                "encryption",
+                "handsets",
+                "voice",
+                "level",
+                "bursts",
+            ])
+            .sorted("carrier", false)
+            .keyed("rfpi"),
+        )
         .build()
 }
 
@@ -818,5 +876,27 @@ mod model_tests {
             view.field("Level"),
             number(Some(-61.25_f32), Unit::Dbfs, 1).as_ref()
         );
+    }
+
+    #[test]
+    fn the_base_station_table_names_fields_a_frame_shows() {
+        let frame = DectFrame {
+            identity: Some(DectIdentity {
+                rfpi: "01594D6FA8".to_owned(),
+                ..DectIdentity::default()
+            }),
+            carrier: Some(3),
+            slot_pair: Some(5),
+            security: DectSecurity {
+                authentication_supported: Some(true),
+                ..DectSecurity::default()
+            },
+            handsets: vec![0x1234],
+            voice: Some(DectVoice::default()),
+            bursts: 40,
+            level_dbfs: -61.0,
+            ..DectFrame::default()
+        };
+        crate::testutil::assert_views_hold(&dect_kind(), &[sdrmm_wire::DecoderEvent::of(&frame)]);
     }
 }

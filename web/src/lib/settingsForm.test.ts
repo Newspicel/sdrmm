@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   blankEntry,
   CURRENT,
+  ceiling,
   choiceItems,
   chosenValue,
   committed,
@@ -11,9 +12,16 @@ import {
   type Form,
   fieldValue,
   isQuiet,
+  lanesOf,
+  lanesValue,
+  optionLabel,
   parseHz,
   presetIndex,
+  sections,
   shownFields,
+  shownNumber,
+  shownSpec,
+  storedNumber,
   valueAt,
   withPreset,
   withValueAt,
@@ -64,6 +72,82 @@ describe("dotted keys", () => {
     expect(withValueAt({ header: { length: 12 } }, "header.length", null)).toEqual({
       header: { length: null },
     });
+  });
+
+  it("reads and writes list entries by index", () => {
+    const settings = { stations: [{ name: "a" }, { name: "b", hops: [1, 2] }] };
+    expect(valueAt(settings, "stations.1.name")).toBe("b");
+    expect(valueAt(settings, "stations.1.hops.0")).toBe(1);
+    expect(valueAt(settings, "stations.x")).toBeUndefined();
+    expect(withValueAt(settings, "stations.1.hops.1", 5)).toEqual({
+      stations: [{ name: "a" }, { name: "b", hops: [1, 5] }],
+    });
+    expect(settings.stations[1]?.hops).toEqual([1, 2]);
+  });
+
+  it("applies a preset with dotted keys inside a list entry", () => {
+    const item: Form = [field("timing.rate", NUMBER), field("mode", MODES)];
+    const slow = { label: "Slow", values: { "timing.rate": 12, mode: "tone" } };
+    const entry = withPreset(item, { name: "a" }, slow);
+    expect(entry).toEqual({ name: "a", timing: { rate: 12 }, mode: "tone" });
+    expect(presetIndex(item, entry, [slow])).toBe(0);
+  });
+});
+
+function status(key: string): string | undefined {
+  return key === "mode" ? "TM2" : undefined;
+}
+
+describe("option status", () => {
+  const auto = { value: null, label: "Auto", status: "mode" };
+  const options = [auto, { value: 1, label: "TM1" }];
+
+  it("follows an option's label with the readout it names", () => {
+    expect(optionLabel(auto, status)).toBe("Auto TM2");
+    expect(choiceItems(options, null, status).options.map((item) => item.label)).toEqual([
+      "Auto TM2",
+      "TM1",
+    ]);
+  });
+
+  it("keeps the bare label while no readout answers", () => {
+    expect(choiceItems(options, null).options[0]?.label).toBe("Auto");
+    expect(choiceItems(options, null, () => "").options[0]?.label).toBe("Auto");
+  });
+});
+
+describe("number scale", () => {
+  const spec = {
+    unit: "MHz",
+    scale: 1e6,
+    min: 24e6,
+    max: 1.7e9,
+    step: 12_500,
+    presets: [{ value: 145_500_000, label: "Calling" }],
+  };
+
+  it("shows stored values divided by the scale", () => {
+    expect(shownNumber(spec, 145_500_000)).toBe(145.5);
+    expect(shownNumber(spec, null)).toBeNull();
+    expect(shownSpec(spec)).toEqual({
+      ...spec,
+      min: 24,
+      max: 1700,
+      step: 0.0125,
+      presets: [{ value: 145.5, label: "Calling" }],
+    });
+  });
+
+  it("stores shown values multiplied back, without float noise", () => {
+    expect(storedNumber(spec, 144.8)).toBe(144_800_000);
+    expect(storedNumber(spec, null)).toBeNull();
+  });
+
+  it("leaves an unscaled spec alone", () => {
+    const plain = { min: 0, max: 10 };
+    expect(shownSpec(plain)).toBe(plain);
+    expect(shownNumber(plain, 7)).toBe(7);
+    expect(storedNumber(plain, 7)).toBe(7);
   });
 });
 
@@ -257,5 +341,47 @@ describe("parseHz", () => {
     expect(parseHz("")).toBeNull();
     expect(parseHz("fast")).toBeNull();
     expect(parseHz("12 dB")).toBeNull();
+  });
+});
+
+describe("linked fields", () => {
+  const bins = field("bins", { type: "number" });
+  const columns = field("columns", { type: "number", max: 1024 }, { at_most: "bins" });
+  const main = field("main", { type: "lanes", pick: "one" });
+  const refs = field("refs", { type: "lanes", pick: "list", except: "main" });
+  const mask = field("mask", { type: "lanes", pick: "mask", except: "main" });
+
+  it("pulls a field down with the setting it may not pass", () => {
+    const form = [bins, columns];
+    expect(committed(form, { bins: 1024, columns: 512 }, "bins", 256)).toEqual({
+      bins: 256,
+      columns: 256,
+    });
+    expect(committed(form, { bins: 256, columns: 128 }, "bins", 512).columns).toBe(128);
+    expect(ceiling(columns, { bins: 256 }, 1024)).toBe(256);
+    expect(ceiling(columns, {}, 1024)).toBe(1024);
+  });
+
+  it("drops a lane from the fields that may not hold it", () => {
+    const form = [main, refs, mask];
+    const next = committed(form, { main: 0, refs: [1, 2], mask: 0b110 }, "main", 2);
+    expect(next).toEqual({ main: 2, refs: [1], mask: 0b010 });
+  });
+
+  it("reads and writes lanes in every encoding", () => {
+    expect(lanesOf("mask", 0b1010)).toEqual([1, 3]);
+    expect(lanesValue("mask", [3, 1])).toBe(0b1010);
+    expect(lanesValue("list", [3, 1, 3])).toEqual([1, 3]);
+    expect(lanesValue("one", [])).toBeNull();
+  });
+
+  it("lists sections in order of first use", () => {
+    const form = [
+      field("a", { type: "toggle" }, { section: "More" }),
+      field("b", { type: "toggle" }),
+      field("c", { type: "toggle" }, { section: "Track" }),
+      field("d", { type: "toggle" }, { section: "More" }),
+    ];
+    expect(sections(form)).toEqual(["More", "Track"]);
   });
 });

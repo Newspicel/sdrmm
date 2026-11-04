@@ -1,56 +1,59 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { useProcessorStore } from "../../lib/processors";
-import type { NodeBody, PatchGraph } from "../../lib/types";
+import type { BeamformerParams, NodeBody, PatchGraph, PatchNode } from "../../lib/types";
 import { catalogBody } from "../../test/catalog";
 import { renderFace } from "../../test/faceHarness";
 import { placed } from "../../test/fixtures";
 import { BeamformerFace } from "./BeamformerFace";
-import { NullEditor, STEER_UNWIRED } from "./BeamformerSettings";
 
-function lcmv(): NodeBody {
+function beam(settings: Partial<BeamformerParams>): PatchNode {
   const body = catalogBody("beamformer");
   if (body.kind !== "beamformer" || body.data.settings === undefined) {
     throw new Error("a beamformer body");
   }
-  return { ...body, data: { settings: { ...body.data.settings, mode: "lcmv", nulls_deg: [45] } } };
+  const tuned: NodeBody = { ...body, data: { settings: { ...body.data.settings, ...settings } } };
+  return placed("beam", tuned);
 }
 
-const BEAM = placed("beam", lcmv());
+const BEAM = beam({ mode: "lcmv", nulls_deg: [45] });
 
-function graph(steer: boolean): PatchGraph {
-  return {
-    nodes: [placed("arr", catalogBody("array")), placed("finder", catalogBody("df")), BEAM],
-    edges: [
-      { from: { node: "arr", port: "array" }, to: { node: "beam", port: "array" } },
-      ...(steer
-        ? [{ from: { node: "finder", port: "bearing" }, to: { node: "beam", port: "steer" } }]
-        : []),
-    ],
-  };
+const GRAPH: PatchGraph = {
+  nodes: [placed("arr", catalogBody("array")), placed("finder", catalogBody("df")), BEAM],
+  edges: [
+    { from: { node: "arr", port: "array" }, to: { node: "beam", port: "array" } },
+    { from: { node: "finder", port: "bearing" }, to: { node: "beam", port: "steer" } },
+  ],
+};
+
+function chip(html: string, label: string): string | undefined {
+  return new RegExp(`>${label}</span><b[^>]*>([^<]*)<`).exec(html)?.[1];
 }
 
 afterEach(() => useProcessorStore.getState().reset());
 
 describe("BeamformerFace", () => {
-  it("disables DF steering without a steer wire", () => {
-    expect(renderFace(BeamformerFace, BEAM, { graph: graph(false) })).toContain(STEER_UNWIRED);
-    expect(renderFace(BeamformerFace, BEAM, { graph: graph(true) })).not.toContain(STEER_UNWIRED);
+  it("draws the settings its mode uses from the catalog form", () => {
+    const html = renderFace(BeamformerFace, BEAM, { graph: GRAPH });
+    expect(chip(html, "Mode")).toBe("Nulls");
+    expect(chip(html, "Nulls")).toBe("45°");
+    expect(chip(html, "Steer")).toBe("DF");
+    expect(chip(html, "Timeout")).toBe("5000");
+    expect(html).not.toContain(">Main<");
+    expect(html).not.toContain(">Noise<");
   });
 
-  it("lists each null with its own remove button", () => {
-    const html = renderFace(BeamformerFace, BEAM, { graph: graph(true) });
-    expect(html).toMatch(/>Nulls<\/span><b[^>]*>045°</);
-    const settings = BEAM.kind === "beamformer" ? BEAM.data.settings : undefined;
-    if (settings === undefined) {
-      throw new Error("beamformer settings");
-    }
-    const editor = renderToStaticMarkup(<NullEditor settings={settings} edit={() => {}} />);
-    expect(editor).toContain("045°");
-    expect(editor).toContain('aria-label="Remove null 45"');
+  it("offers lanes to a canceller and names an empty reference set", () => {
+    const canceller = beam({ mode: "canceller", taps: 4 });
+    const html = renderFace(BeamformerFace, canceller, { graph: GRAPH, resolved: null });
+    expect(chip(html, "Main")).toBe("1");
+    expect(chip(html, "Refs")).toBe("others");
+    expect(chip(html, "Adapt")).toBe("NLMS");
+    expect(html).toContain(">Step<");
+    expect(html).not.toContain(">Forget<");
+    expect(html).not.toContain(">Steer<");
   });
 
-  it("shows gain, steer and weights from a reading", () => {
+  it("shows the readouts its status publishes and the weights it drew", () => {
     useProcessorStore.setState({
       byNode: {
         beam: {
@@ -59,7 +62,6 @@ describe("BeamformerFace", () => {
             reading: {
               at: "2026-09-28T12:00:00Z",
               output_db: -42,
-              sinr_gain_db: 6.2,
               steer_deg: 137,
               nulls_deg: [45],
               weights: [
@@ -69,18 +71,27 @@ describe("BeamformerFace", () => {
               pattern: Array.from({ length: 360 }, () => 128),
             },
           },
+          status: {
+            readouts: [
+              { key: "gain", label: "Gain", value: { type: "text", value: "+6.2 dB" } },
+              {
+                key: "steer",
+                label: "Steer",
+                value: { type: "number", value: { value: 137, unit: "degrees", digits: 0 } },
+              },
+            ],
+          },
           receivedAt: Date.now(),
         },
       },
     });
-    const html = renderFace(BeamformerFace, BEAM, { graph: graph(true) });
-    expect(html).toMatch(/>\+6\.2 <span[^>]*>dB</);
-    expect(html).toContain("137° DF");
+    const html = renderFace(BeamformerFace, BEAM, { graph: GRAPH });
+    expect(html).toMatch(/>Gain<.*>\+6\.2 <span[^>]*>dB</);
+    expect(html).toContain("137°");
     expect(html).toContain('title="L2 -1.2 dB 34°"');
     expect(html).toContain('role="meter" aria-label="Lane 2 weight"');
     expect(html).toContain('aria-valuenow="87"');
     expect(html).toContain('aria-label="Beam pattern"');
-    expect(html).not.toContain(">No steer<");
   });
 
   it("puts reading flags in the footer", () => {
@@ -102,7 +113,7 @@ describe("BeamformerFace", () => {
         },
       },
     });
-    const html = renderFace(BeamformerFace, BEAM, { graph: graph(true) });
+    const html = renderFace(BeamformerFace, BEAM, { graph: GRAPH });
     expect(html).toMatch(/title="No bearing to steer at"[^>]*>No steer</);
   });
 });

@@ -83,7 +83,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "inmarsat_stdc".to_owned(),
     name: "Inmarsat STD-C / EGC".to_owned(),
     summary: "Maritime text and safety messages over Inmarsat".to_owned(),
-    family: DecoderFamily::Marine,
+    family: DecoderFamily::MARINE,
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,

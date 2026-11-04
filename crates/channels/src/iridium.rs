@@ -89,7 +89,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "iridium".to_owned(),
     name: "Iridium bursts".to_owned(),
     summary: "Iridium satellite bursts".to_owned(),
-    family: DecoderFamily::Utility,
+    family: DecoderFamily::UTILITY,
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: CHANNEL_RATE,
     has_audio: false,

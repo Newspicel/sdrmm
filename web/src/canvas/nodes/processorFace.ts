@@ -1,18 +1,7 @@
 import { GATE_TEXT, processorStatusOf } from "../../lib/arrays";
 import { isStale, type ProcessorState } from "../../lib/processors";
-import { clearAction, useRefusalStore } from "../../lib/refusals";
-import type {
-  ArrayStatus,
-  PatchNode,
-  PatchNodeOf,
-  ProcessorGate,
-  ProcessorStatus,
-  ResolvedPatch,
-} from "../../lib/types";
-import { useWorkspaceContext } from "../context";
-import { patchNode } from "../graph";
+import type { ArrayStatus, ProcessorGate, ProcessorStatus, ResolvedPatch } from "../../lib/types";
 import { arrayOf, wiredLaneCount } from "../lanes";
-import { type SettingsKind, type SettingsOf, settingsOf } from "../newNode";
 
 export const NO_ARRAY = "no array";
 export const STALE = "stale";
@@ -92,42 +81,4 @@ export function ageLabel(receivedAt: number | undefined, now: number): string {
     return `${Math.floor(seconds)} s`;
   }
   return `${Math.floor(seconds / 60)} min`;
-}
-
-type ProcessorNode = PatchNodeOf<SettingsKind>;
-
-export function withSettings<K extends SettingsKind>(
-  stored: PatchNodeOf<K>,
-  base: SettingsOf<K>,
-  next: Partial<SettingsOf<K>>,
-): PatchNode {
-  const typed = stored as unknown as ProcessorNode;
-  return { ...typed, data: { ...typed.data, settings: { ...base, ...next } } } as PatchNode;
-}
-
-export function useProcessorEdit<K extends SettingsKind>(
-  node: PatchNodeOf<K>,
-): (next: Partial<SettingsOf<K>>) => void {
-  const workspace = useWorkspaceContext();
-  const typed = node as unknown as ProcessorNode;
-  return (next) => {
-    const catalog = workspace.context.catalog;
-    if (settingsOf(node, catalog) === null) {
-      useRefusalStore.getState().flag(typed.id, NO_CATALOG, "action", SETTINGS_ACTION);
-      return;
-    }
-    clearAction(typed.id, SETTINGS_ACTION);
-    workspace.edit((snapshot) => ({
-      ...snapshot,
-      graph: patchNode(snapshot.graph, typed.id, (stored) => {
-        if (stored.kind !== typed.kind) {
-          return stored;
-        }
-        const current = stored as unknown as PatchNodeOf<K>;
-        const base = settingsOf(current, catalog);
-        return base === null ? stored : withSettings(current, base, next);
-      }),
-    }));
-    workspace.apply();
-  };
 }

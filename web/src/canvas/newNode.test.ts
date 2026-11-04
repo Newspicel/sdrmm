@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { PatchCatalog, PatchNodeOf } from "../lib/types";
 import { CATALOG } from "../test/catalog";
-import { carriesSettings, defaultBody, huntSweepOf, newNodeBody, settingsOf } from "./newNode";
+import { carriesSettings, defaultBody, huntSweepOf, newNodeBody } from "./newNode";
+import { nodeSettings } from "./nodes/NodeForm";
 
-const KINDS = CATALOG.nodes.map((entry) => entry.kind);
+const KINDS = CATALOG.nodes
+  .filter((entry) => entry.needs_processor_type !== true)
+  .map((entry) => entry.kind);
 
 describe("newNodeBody", () => {
   it("takes every body from the catalog", () => {
     for (const entry of CATALOG.nodes) {
-      if (entry.kind === "channel") {
+      if (entry.needs_channel_type === true || entry.needs_processor_type === true) {
         continue;
       }
       expect(newNodeBody(CATALOG, entry.kind)).toEqual(entry.default_body);
@@ -52,7 +55,7 @@ describe("newNodeBody", () => {
   });
 });
 
-describe("settingsOf", () => {
+describe("nodeSettings", () => {
   it("reads stored settings and falls back to the catalog default", () => {
     const stored = newNodeBody(CATALOG, "df") as PatchNodeOf<"df">;
     const node = {
@@ -61,9 +64,9 @@ describe("settingsOf", () => {
       position: { x: 0, y: 0 },
       data: { settings: { ...stored.data.settings, report_ms: 900 } },
     } as PatchNodeOf<"df">;
-    expect(settingsOf(node, CATALOG)?.report_ms).toBe(900);
+    expect(nodeSettings(CATALOG, node)?.report_ms).toBe(900);
     const bare = { ...node, data: {} } as PatchNodeOf<"df">;
-    expect(settingsOf(bare, CATALOG)).toEqual(stored.data.settings);
+    expect(nodeSettings(CATALOG, bare)).toEqual(stored.data.settings);
   });
 });
 

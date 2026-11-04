@@ -7,91 +7,10 @@ import {
   TRUE_MARKS,
 } from "../../components/Rose";
 import { GATE_TEXT } from "../../lib/arrays";
-import { DF_LIMITS } from "../../lib/limits";
-import type {
-  DfAlgorithm,
-  DfParams,
-  DfPeak,
-  DfReading,
-  ProcessorGate,
-  UlaSide,
-} from "../../lib/types";
+import type { DfPeak, DfReading, ProcessorGate } from "../../lib/types";
 import type { Chip } from "./ProcessorHealth";
 
 export const NEEDS_HEADING = "Needs heading";
-
-export interface DfAlgorithmInfo {
-  value: DfAlgorithm;
-  label: string;
-  title: string;
-  structured: boolean;
-}
-
-export const DF_ALGORITHMS: readonly DfAlgorithmInfo[] = [
-  { value: "bartlett", label: "Bartlett", title: "Plain beam scan, robust", structured: false },
-  { value: "capon", label: "Capon", title: "Sharper beam scan", structured: false },
-  {
-    value: "music",
-    label: "MUSIC",
-    title: "Subspace scan, splits close sources",
-    structured: false,
-  },
-  { value: "root_music", label: "Root-MUSIC", title: "Grid-free MUSIC", structured: true },
-  { value: "esprit", label: "ESPRIT", title: "Grid-free rotation fit", structured: true },
-];
-
-export const NEEDS_LINE_OR_CIRCLE = "Needs a line or circle";
-
-export function algorithmOptions(structuredOk: boolean): Options<DfAlgorithm> {
-  return DF_ALGORITHMS.map((algorithm) => {
-    const refused = algorithm.structured && !structuredOk;
-    return {
-      value: algorithm.value,
-      label: algorithm.label,
-      title: refused ? NEEDS_LINE_OR_CIRCLE : algorithm.title,
-      disabled: refused,
-    };
-  });
-}
-
-export function smoothingTitle(structuredOk: boolean): string {
-  return structuredOk ? "Spatial smoothing for reflections, 0 off" : NEEDS_LINE_OR_CIRCLE;
-}
-
-export const AUTO_SOURCES = 0;
-export const TOO_MANY_SOURCES = "Too many sources";
-
-export function sourceOptions(lanes: number, stored: number | null = null): Options<number> {
-  const fit = Math.max(DF_LIMITS.sources.min, Math.min(lanes - 1, DF_LIMITS.sources.max));
-  const counts = Array.from({ length: Math.max(fit, stored ?? 0) }, (_, index) => index + 1);
-  return [
-    { value: AUTO_SOURCES, label: "Auto", title: "Count sources from the signal" },
-    ...counts.map((count) =>
-      count > fit
-        ? { value: count, label: String(count), title: TOO_MANY_SOURCES }
-        : { value: count, label: String(count) },
-    ),
-  ];
-}
-
-export const RULE_OPTIONS: Options<DfParams["source_rule"]> = [
-  { value: "dominance", label: "Dominance", title: "Count sources clearly above the rest" },
-  { value: "mdl", label: "MDL", title: "Information criterion" },
-];
-
-export const PEAK_OPTIONS: Options<number> = Array.from(
-  { length: DF_LIMITS.peaks.max - DF_LIMITS.peaks.min + 1 },
-  (_, index) => ({
-    value: DF_LIMITS.peaks.min + index,
-    label: String(DF_LIMITS.peaks.min + index),
-  }),
-);
-
-export const SIDE_OPTIONS: Options<UlaSide> = [
-  { value: "both", label: "Both", title: "Report front and mirror" },
-  { value: "front", label: "Front", title: "Only the side ahead of the line" },
-  { value: "back", label: "Back", title: "Only the side behind the line" },
-];
 
 export type BearingFrame = "relative" | "true";
 
@@ -162,18 +81,6 @@ export function bearingLabel(deg: number): string {
 export function peakText(peak: DfPeak, frame: BearingFrame): string {
   const deg = peakDeg(peak, frame);
   return deg === null ? "-" : bearingLabel(deg);
-}
-
-export function sigmaText(sigmaDeg: number): string {
-  return sigmaDeg < 1 ? `${sigmaDeg.toFixed(1)}°` : `${Math.round(sigmaDeg)}°`;
-}
-
-export function percentText(fraction: number): string {
-  return `${Math.round(Math.min(1, Math.max(0, fraction)) * 100)}%`;
-}
-
-export function peakSummary(peak: DfPeak, frame: BearingFrame): string {
-  return `${peakText(peak, frame)} ${percentText(peak.confidence)} ±${sigmaText(peak.sigma_deg)}`;
 }
 
 const READING_CHIPS: readonly {
@@ -250,21 +157,4 @@ export function dfChips(
     }
   }
   return chips;
-}
-
-export function isStructured(algorithm: DfAlgorithm, smoothing: number): boolean {
-  return (
-    smoothing > 0 || DF_ALGORITHMS.some((entry) => entry.value === algorithm && entry.structured)
-  );
-}
-
-export function elevationBlock(
-  collinear: boolean,
-  algorithm: DfAlgorithm,
-  smoothing: number,
-): string | null {
-  if (collinear) {
-    return "Needs a 2D array";
-  }
-  return isStructured(algorithm, smoothing) ? "Needs a grid method" : null;
 }

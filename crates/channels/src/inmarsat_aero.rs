@@ -91,7 +91,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "inmarsat_aero".to_owned(),
     name: "Inmarsat Classic Aero".to_owned(),
     summary: "Aircraft datalink over Inmarsat".to_owned(),
-    family: DecoderFamily::Aviation,
+    family: DecoderFamily::AVIATION,
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: INPUT_RATE,
     has_audio: false,

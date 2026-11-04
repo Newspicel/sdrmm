@@ -2,11 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ArrayGeometry } from "../../lib/types";
 import {
   adjacentSpacingM,
-  allowsStructured,
   convertGeometry,
   elementPositions,
-  isCollinear,
-  isLevelLine,
   movedElement,
   overlappingRows,
   paddedPositions,
@@ -140,76 +137,6 @@ describe("overlappingRows", () => {
     expect(overlappingRows(positions, 4)).toEqual([2, 3]);
     expect(overlappingRows(positions, 3)).toEqual([2]);
     expect(overlappingRows(positions, 4, 0.001)).toEqual([3]);
-  });
-});
-
-function bentRow(off: number): ArrayGeometry {
-  return {
-    kind: "explicit",
-    positions: [
-      { x_m: 0, y_m: 0 },
-      { x_m: 0.5, y_m: off },
-      { x_m: 1, y_m: 0 },
-    ],
-  };
-}
-
-describe("line shapes", () => {
-  it("knows a line from a plane", () => {
-    expect(isCollinear({ kind: "ula", spacing_m: 0.5, axis_deg: 0 }, 4)).toBe(true);
-    expect(isCollinear(CIRCLE, 5)).toBe(false);
-    expect(isCollinear(CIRCLE, 2)).toBe(true);
-    const diagonal: ArrayGeometry = {
-      kind: "explicit",
-      positions: [
-        { x_m: 0, y_m: 0 },
-        { x_m: 1, y_m: 1 },
-        { x_m: 2, y_m: 2 },
-      ],
-    };
-    expect(isCollinear(diagonal, 3)).toBe(true);
-  });
-
-  it("allows the same slack as the server, a thousandth of the aperture", () => {
-    expect(isCollinear(bentRow(0.0009), 3)).toBe(true);
-    expect(isCollinear(bentRow(0.0011), 3)).toBe(false);
-  });
-
-  it("needs a level line for a side and an even one for grid-free methods", () => {
-    const mast: ArrayGeometry = {
-      kind: "explicit",
-      positions: [
-        { x_m: 0, y_m: 0, z_m: 0 },
-        { x_m: 0, y_m: 0, z_m: 1 },
-        { x_m: 0, y_m: 0, z_m: 2 },
-      ],
-    };
-    expect(isCollinear(mast, 3)).toBe(true);
-    expect(isLevelLine(mast, 3)).toBe(false);
-    expect(allowsStructured(mast, 3)).toBe(false);
-    const shuffled: ArrayGeometry = {
-      kind: "explicit",
-      positions: [
-        { x_m: 0.6, y_m: 0 },
-        { x_m: -0.6, y_m: 0 },
-        { x_m: 0, y_m: 0 },
-        { x_m: 0.2, y_m: 0 },
-      ],
-    };
-    expect(isLevelLine(shuffled, 4)).toBe(true);
-    expect(allowsStructured(shuffled, 4)).toBe(false);
-    const spaced = {
-      kind: "explicit" as const,
-      positions: [
-        { x_m: 0.6, y_m: 0 },
-        { x_m: -0.6, y_m: 0 },
-        { x_m: 0.2, y_m: 0 },
-        { x_m: -0.2, y_m: 0 },
-      ],
-    };
-    expect(allowsStructured(spaced, 4)).toBe(true);
-    expect(allowsStructured(CIRCLE, 5)).toBe(true);
-    expect(isLevelLine(CIRCLE, 5)).toBe(false);
   });
 });
 

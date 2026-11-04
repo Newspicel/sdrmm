@@ -461,15 +461,15 @@ pub enum TxPayload {
     Frame(Vec<u8>),
 }
 
+/// A modulator compiled into this crate: its static descriptor and how to open it.
+pub trait NativeTx: ChannelTx + Sized {
+    fn descriptor() -> &'static ChannelDescriptor;
+
+    fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError>;
+}
+
+/// A running modulator, built in or loaded as a plugin.
 pub trait ChannelTx: Send {
-    fn descriptor() -> &'static ChannelDescriptor
-    where
-        Self: Sized;
-
-    fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError>
-    where
-        Self: Sized;
-
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError>;
 
     fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError>;
@@ -503,7 +503,7 @@ pub(crate) fn check_rate(
 mod tests {
     use std::collections::HashSet;
 
-    use sdrmm_wire::{CallGate, ChannelParams, EventKind, Sideband};
+    use sdrmm_wire::{CallGate, Capability, ChannelParams, EventKind, KindView, Sideband};
 
     use crate::am::AmParams;
 
@@ -701,7 +701,7 @@ mod tests {
                 Control::Text { optional, .. } => *optional,
                 Control::Choice { options } => options.iter().any(|option| option.value.is_null()),
                 Control::Live { .. } | Control::List { .. } | Control::Preset { .. } => true,
-                Control::Toggle => false,
+                Control::Toggle | Control::Lanes { .. } | Control::Numbers { .. } => false,
             }
     }
 
@@ -742,6 +742,46 @@ mod tests {
                     catalog.entry(kind).is_some(),
                     "{} emits unknown {kind}",
                     descriptor.type_id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_view_hint_is_one_the_frontend_can_draw() {
+        registry::init();
+        for entry in sdrmm_wire::catalog().entries() {
+            for view in &entry.views {
+                let fields = view.fields();
+                match view {
+                    KindView::Table { columns, sort, .. } => {
+                        let unique: std::collections::BTreeSet<_> = columns.iter().collect();
+                        assert_eq!(unique.len(), columns.len(), "{} repeats", entry.kind);
+                        assert!(
+                            sort.as_ref()
+                                .is_none_or(|sort| columns.contains(&sort.field)),
+                            "{} sorts by a hidden column",
+                            entry.kind
+                        );
+                    }
+                    KindView::Meter { min, max, .. } => {
+                        assert!(min < max, "{} meter range", entry.kind);
+                    }
+                    KindView::Trend { window_s, .. } => {
+                        assert!(*window_s > 0, "{} trend window", entry.kind);
+                    }
+                    KindView::Picture => {
+                        assert!(
+                            entry.has(Capability::Picture),
+                            "{} has no picture",
+                            entry.kind
+                        );
+                    }
+                }
+                assert!(
+                    matches!(view, KindView::Picture) || !fields.is_empty(),
+                    "{} view names no field",
+                    entry.kind
                 );
             }
         }

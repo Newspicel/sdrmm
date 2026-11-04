@@ -1,5 +1,5 @@
 use crate::default_true;
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -104,7 +104,7 @@ impl EventPayload for AptImage {
     fn present(&self, _kind: &EventKind) -> Presentation {
         Presentation {
             fields: picture_fields(
-                &[("Channels", apt_channels(self))],
+                &[("channels", "Channels", apt_channels(self))],
                 self.lines,
                 self.complete,
                 self.duration_ms,
@@ -129,6 +129,7 @@ fn apt_channels(p: &AptImage) -> Option<FieldValue> {
 pub(crate) fn apt_kind() -> KindSpec {
     KindSpec::of::<AptImage>("NOAA APT", "Pictures", Hue::Orange)
         .caps(&[Capability::Log, Capability::Picture])
+        .view(KindView::Picture)
         .build()
 }
 

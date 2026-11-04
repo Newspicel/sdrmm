@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use sdrmm_channels::{ChannelCtx, ChannelError, ChannelFilter, ChannelLayout, ChannelRx, Decoder};
+use sdrmm_channels::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelLayout, ChannelRx, ChannelTx, Decoder,
+};
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DEFAULT_FREQUENCY_HZ, EventKind, KindCodec,
@@ -9,7 +11,7 @@ use sdrmm_wire::{
     present::Presentation,
 };
 
-use crate::{channel::WasmChannel, module::PluginModule};
+use crate::{channel::WasmChannel, module::PluginModule, transmit::WasmTx};
 
 const FILTER_TAPS: usize = 65;
 
@@ -30,7 +32,6 @@ fn describe(module: &PluginModule) -> ChannelDescriptor {
     let manifest = &module.manifest;
     let mut descriptor = manifest.descriptor.clone();
     descriptor.settings = manifest.form.clone();
-    descriptor.can_transmit = false;
     descriptor.identifiable = !descriptor.signatures.is_empty();
     if descriptor.emits.is_empty() {
         descriptor.emits = manifest
@@ -85,6 +86,22 @@ impl Decoder for WasmDecoder {
     ) -> Result<Box<dyn ChannelRx>, ChannelError> {
         self.check_type(&settings.params)?;
         Ok(Box::new(WasmChannel::open(
+            self.module.clone(),
+            ctx.input_rate,
+            &settings.params.settings,
+        )?))
+    }
+
+    fn create_tx(
+        &self,
+        ctx: ChannelCtx,
+        settings: &ChannelSettings,
+    ) -> Result<Box<dyn ChannelTx>, ChannelError> {
+        self.check_type(&settings.params)?;
+        if !self.descriptor.can_transmit {
+            return Err(ChannelError::NoTransmitter(self.descriptor.type_id.clone()));
+        }
+        Ok(Box::new(WasmTx::open(
             self.module.clone(),
             ctx.input_rate,
             &settings.params.settings,

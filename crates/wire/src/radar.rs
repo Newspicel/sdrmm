@@ -801,18 +801,31 @@ impl EventPayload for RadarTrackEvent {
 impl RadarTrackEvent {
     fn fields(&self) -> Vec<Field> {
         fields(&[
-            ("Track", text_of(format!("T{}", self.track_id))),
-            ("Change", text_of(self.change.as_str())),
-            ("Range", number(Some(self.range_km), Unit::Kilometres, 2)),
+            ("track", "Track", text_of(format!("T{}", self.track_id))),
+            ("change", "Change", text_of(self.change.as_str())),
             (
+                "range",
+                "Range",
+                number(Some(self.range_km), Unit::Kilometres, 2),
+            ),
+            (
+                "range_rate",
                 "Range rate",
                 number(Some(self.range_rate_mps), Unit::MetresPerSecond, 0),
             ),
-            ("Doppler", number(Some(self.doppler_hz), Unit::Hz, 1)),
-            ("SNR", number(Some(self.snr_db), Unit::Db, 1)),
-            ("Bearing", number(self.bearing_deg, Unit::Degrees, 1)),
-            ("Position", position(self.lat, self.lon)),
-            ("Target", text(self.target.as_deref())),
+            (
+                "doppler",
+                "Doppler",
+                number(Some(self.doppler_hz), Unit::Hz, 1),
+            ),
+            ("snr", "SNR", number(Some(self.snr_db), Unit::Db, 1)),
+            (
+                "bearing",
+                "Bearing",
+                number(self.bearing_deg, Unit::Degrees, 1),
+            ),
+            ("position", "Position", position(self.lat, self.lon)),
+            ("target", "Target", text(self.target.as_deref())),
         ])
     }
 }
@@ -867,12 +880,12 @@ impl EventPayload for RadarSites {
         let mut shapes = vec![
             Shape::Pin {
                 at: receiver,
-                symbol: Symbol::Antenna,
+                symbol: Symbol::ANTENNA,
                 label: "Receiver".to_owned(),
             },
             Shape::Pin {
                 at: illuminator,
-                symbol: Symbol::Antenna,
+                symbol: Symbol::ANTENNA,
                 label: "Illuminator".to_owned(),
             },
         ];
@@ -886,16 +899,23 @@ impl EventPayload for RadarSites {
             place: Some(Place::at(receiver)),
             shapes,
             fields: fields(&[
-                ("Receiver", position(Some(receiver.lat), Some(receiver.lon))),
                 (
+                    "receiver",
+                    "Receiver",
+                    position(Some(receiver.lat), Some(receiver.lon)),
+                ),
+                (
+                    "illuminator",
                     "Illuminator",
                     position(Some(illuminator.lat), Some(illuminator.lon)),
                 ),
                 (
+                    "baseline",
                     "Baseline",
                     number(Some(geometry.baseline_km), Unit::Kilometres, 1),
                 ),
                 (
+                    "echoes",
                     "Echoes",
                     number(Some(self.ranges_km.len() as f64), Unit::None, 0),
                 ),

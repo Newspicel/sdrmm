@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 
 use crate::{
     patch::Hue,
-    present::{EventPayload, Presentation, overlay_value},
+    present::{EventPayload, Presentation, overlay_value, unique_keys},
 };
 
 #[derive(
@@ -34,24 +34,125 @@ pub enum Capability {
     Track,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Symbol {
-    Plane,
-    Ship,
-    Station,
-    Balloon,
-    Drone,
-    Beacon,
-    Node,
-    Person,
-    Vehicle,
-    Satellite,
-    Antenna,
-    Fix,
-    Target,
-    Echo,
-    Dot,
+crate::open_name::open_name!(
+    /// The icon an entity of a kind wears on the map.
+    Symbol {
+        PLANE = "plane",
+        SHIP = "ship",
+        STATION = "station",
+        BALLOON = "balloon",
+        DRONE = "drone",
+        BEACON = "beacon",
+        NODE = "node",
+        PERSON = "person",
+        VEHICLE = "vehicle",
+        SATELLITE = "satellite",
+        ANTENNA = "antenna",
+        FIX = "fix",
+        TARGET = "target",
+        ECHO = "echo",
+        DOT = "dot",
+    }
+);
+
+/// How the frontend lays out a kind's events beyond the plain log. Each names fields by
+/// `Field::key`, so a renamed label keeps its column.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum KindView {
+    /// One row per entity, newest values merged, columns in this order.
+    Table {
+        columns: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sort: Option<SortKey>,
+        /// The field that tells rows apart; unset uses the presentation's entity.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
+    },
+    /// The newest value of a field drawn on a range.
+    Meter { field: String, min: f64, max: f64 },
+    /// A field plotted over time, the last `window_s` seconds.
+    Trend { fields: Vec<String>, window_s: u32 },
+    /// The newest picture the kind carries.
+    Picture,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SortKey {
+    pub field: String,
+    #[serde(default)]
+    pub descending: bool,
+}
+
+impl KindView {
+    #[must_use]
+    pub fn table(columns: &[&str]) -> Self {
+        Self::Table {
+            columns: columns.iter().map(|&column| column.to_owned()).collect(),
+            sort: None,
+            key: None,
+        }
+    }
+
+    #[must_use]
+    pub fn sorted(self, field: &str, descending: bool) -> Self {
+        match self {
+            Self::Table { columns, key, .. } => Self::Table {
+                columns,
+                sort: Some(SortKey {
+                    field: field.to_owned(),
+                    descending,
+                }),
+                key,
+            },
+            other => other,
+        }
+    }
+
+    #[must_use]
+    pub fn keyed(self, field: &str) -> Self {
+        match self {
+            Self::Table { columns, sort, .. } => Self::Table {
+                columns,
+                sort,
+                key: Some(field.to_owned()),
+            },
+            other => other,
+        }
+    }
+
+    #[must_use]
+    pub fn meter(field: &str, min: f64, max: f64) -> Self {
+        Self::Meter {
+            field: field.to_owned(),
+            min,
+            max,
+        }
+    }
+
+    #[must_use]
+    pub fn trend(fields: &[&str], window_s: u32) -> Self {
+        Self::Trend {
+            fields: fields.iter().map(|&field| field.to_owned()).collect(),
+            window_s,
+        }
+    }
+
+    /// Every field key the view names, so a kind can be checked against what it presents.
+    #[must_use]
+    pub fn fields(&self) -> Vec<&str> {
+        match self {
+            Self::Table { columns, sort, key } => columns
+                .iter()
+                .map(String::as_str)
+                .chain(sort.iter().map(|sort| sort.field.as_str()))
+                .chain(key.as_deref())
+                .collect(),
+            Self::Meter { field, .. } => vec![field.as_str()],
+            Self::Trend { fields, .. } => fields.iter().map(String::as_str).collect(),
+            Self::Picture => Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -219,7 +320,7 @@ impl DecoderEvent {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct EventKindEntry {
     pub kind: EventKind,
     pub name: String,
@@ -237,6 +338,8 @@ pub struct EventKindEntry {
     /// whatever carrier it is given.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub allocated: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub views: Vec<KindView>,
 }
 
 fn verifies_by_default() -> bool {
@@ -256,7 +359,14 @@ impl EventKindEntry {
             lifetime: Lifetime::Instant,
             verifies: true,
             allocated: false,
+            views: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn view(mut self, view: KindView) -> Self {
+        self.views.push(view);
+        self
     }
 
     #[must_use]
@@ -432,6 +542,12 @@ impl KindSpecBuilder {
     }
 
     #[must_use]
+    pub fn view(mut self, view: KindView) -> Self {
+        self.entry = self.entry.view(view);
+        self
+    }
+
+    #[must_use]
     pub fn build(self) -> KindSpec {
         KindSpec {
             entry: self.entry,
@@ -576,6 +692,7 @@ impl EventCatalog {
             None => Err(format!("unknown event kind {}", event.kind)),
         };
         let mut view = presented.unwrap_or_else(Presentation::of);
+        view.fields = unique_keys(std::mem::take(&mut view.fields));
         if view.label.is_none() {
             view.label.clone_from(&view.entity);
         }

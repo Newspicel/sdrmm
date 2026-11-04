@@ -56,7 +56,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "atv".to_owned(),
     name: "ATV".to_owned(),
     summary: "Analog TV picture and sound".to_owned(),
-    family: DecoderFamily::Video,
+    family: DecoderFamily::VIDEO,
     bandwidth_hz: 1_500_000.0,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
@@ -755,7 +755,7 @@ pub(crate) fn atv_form() -> Vec<SettingField> {
         SettingField::new(
             "sound_subcarrier_hz",
             "Sound",
-            NumberSpec::hz(500_000.0, 7_500_000.0, 500_000.0).optional("off"),
+            NumberSpec::mhz(500_000.0, 7_500_000.0, 500_000.0).optional("off"),
         )
         .title("FM sound subcarrier, empty for none"),
         SettingField::new("interlace", "Interlace", Control::Toggle)
@@ -1120,5 +1120,20 @@ mod tests {
             elapsed < realtime_budget(seconds * 10.0),
             "{seconds:.2} s of colour video took {elapsed:.2} s"
         );
+    }
+
+    #[test]
+    fn the_sound_subcarrier_is_typed_in_mhz_and_kept_in_hz() {
+        let form = atv_form();
+        let sound = form
+            .iter()
+            .find(|field| field.key == "sound_subcarrier_hz")
+            .expect("sound field");
+        let Control::Number(spec) = &sound.control else {
+            panic!("sound is a number: {:?}", sound.control);
+        };
+        assert_eq!(spec.unit.as_deref(), Some("MHz"));
+        assert_eq!(spec.scale, Some(1e6));
+        assert_eq!(spec.max, Some(7_500_000.0));
     }
 }

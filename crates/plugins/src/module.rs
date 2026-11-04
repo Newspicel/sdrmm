@@ -11,6 +11,8 @@ use crate::{
     PluginError,
     engine::{CALL_BUDGET, engine},
     kernels::{HostState, link},
+    processor::check_processor,
+    transmit::check_exports,
 };
 
 /// One loaded plugin: its compiled code, its manifest, and an instance kept for control calls.
@@ -34,26 +36,31 @@ pub(crate) struct Guest {
 
 impl PluginModule {
     pub fn load(path: &Path) -> Result<Arc<Self>, PluginError> {
-        let name = path
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let name = plugin_name(path);
+        let bytes = std::fs::read(path).map_err(|error| PluginError::Load {
+            plugin: name.clone(),
+            error: error.to_string(),
+        })?;
+        Self::from_bytes(name, &bytes)
+    }
+
+    /// Compiles the module in `bytes`, `name` being what logs and errors call it.
+    pub fn from_bytes(name: String, bytes: &[u8]) -> Result<Arc<Self>, PluginError> {
         let fail = |error: String| PluginError::Load {
             plugin: name.clone(),
             error,
         };
         let engine = engine()?;
-        let module = Module::from_file(engine, path).map_err(|error| fail(error.to_string()))?;
+        let module = Module::new(engine, bytes).map_err(|error| fail(error.to_string()))?;
         let mut linker = Linker::new(engine);
         link(&mut linker)?;
         let mut control = instantiate(&name, &module, &linker).map_err(fail)?;
         let manifest = control.manifest().map_err(fail)?;
-        if manifest.abi != ABI_VERSION {
-            return Err(fail(format!(
-                "speaks plugin ABI {}, this server speaks {ABI_VERSION}",
-                manifest.abi
-            )));
+        check_abi(manifest.abi).map_err(fail)?;
+        if manifest.descriptor.can_transmit {
+            check_exports(&module).map_err(fail)?;
         }
+        check_processor(&module, &manifest).map_err(fail)?;
         Ok(Arc::new(Self {
             name,
             module,
@@ -92,11 +99,7 @@ fn instantiate(name: &str, module: &Module, linker: &Linker<HostState>) -> Resul
     let version = abi
         .call(&mut store, ())
         .map_err(|error| error.to_string())?;
-    if version != ABI_VERSION {
-        return Err(format!(
-            "speaks plugin ABI {version}, this server speaks {ABI_VERSION}"
-        ));
-    }
+    check_abi(version)?;
     Ok(Guest {
         alloc: typed(&instance, &mut store, export::ALLOC)?,
         call: typed(&instance, &mut store, export::CALL)?,
@@ -105,6 +108,22 @@ fn instantiate(name: &str, module: &Module, linker: &Linker<HostState>) -> Resul
         instance,
         memory,
     })
+}
+
+pub(crate) fn plugin_name(path: &Path) -> String {
+    path.file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+fn check_abi(version: u32) -> Result<(), String> {
+    if version == ABI_VERSION {
+        Ok(())
+    } else {
+        Err(format!(
+            "built for plugin ABI {version}, this server speaks ABI {ABI_VERSION}"
+        ))
+    }
 }
 
 pub(crate) fn typed<P: wasmtime::WasmParams, R: wasmtime::WasmResults>(
@@ -140,6 +159,20 @@ impl Guest {
         let reply: Reply<T> = serde_json::from_slice(&self.read_packed(packed)?)
             .map_err(|error| format!("reply: {error}"))?;
         reply.into_result()
+    }
+
+    /// Calls `func(first, json)` with `value` as JSON in a guest buffer.
+    pub(crate) fn call_json<A: wasmtime::WasmTy>(
+        &mut self,
+        func: &TypedFunc<(A, u32, u32), i32>,
+        first: A,
+        value: &impl Serialize,
+    ) -> Result<i32, String> {
+        let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+        let (ptr, len) = self.write(&bytes)?;
+        self.store.set_epoch_deadline(CALL_BUDGET);
+        func.call(&mut self.store, (first, ptr, len))
+            .map_err(|error| error.to_string())
     }
 
     /// Copies `bytes` into a buffer the guest allocated for them.

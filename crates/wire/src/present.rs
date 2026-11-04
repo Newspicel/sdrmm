@@ -78,12 +78,19 @@ impl Presentation {
 }
 
 impl Presentation {
+    /// The value of the field keyed `name`, or failing that labelled `name`.
     #[must_use]
-    pub fn field(&self, label: &str) -> Option<&FieldValue> {
+    pub fn field(&self, name: &str) -> Option<&FieldValue> {
         self.fields
             .iter()
-            .find(|field| field.label == label)
+            .find(|field| field.key == name)
+            .or_else(|| self.fields.iter().find(|field| field.label == name))
             .map(|field| &field.value)
+    }
+
+    #[must_use]
+    pub fn keys(&self) -> Vec<&str> {
+        self.fields.iter().map(|field| field.key.as_str()).collect()
     }
 
     #[must_use]
@@ -206,10 +213,24 @@ pub enum LineStyle {
     Footprint,
 }
 
+/// One named value of a presentation. `key` stays fixed while `label` may change or be
+/// translated, so tables, sorts and view hints refer to `key`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct Field {
+    pub key: String,
     pub label: String,
     pub value: FieldValue,
+}
+
+impl Field {
+    #[must_use]
+    pub fn new(key: impl Into<String>, label: impl Into<String>, value: FieldValue) -> Self {
+        Self {
+            key: key.into(),
+            label: label.into(),
+            value,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -326,16 +347,40 @@ pub fn number<T: Into<f64>>(value: Option<T>, unit: Unit, digits: u8) -> Option<
 }
 
 #[must_use]
-pub fn fields(entries: &[(&str, Option<FieldValue>)]) -> Vec<Field> {
+pub fn fields(entries: &[(&str, &str, Option<FieldValue>)]) -> Vec<Field> {
     entries
         .iter()
-        .filter_map(|(label, value)| {
-            value.clone().map(|value| Field {
-                label: (*label).to_owned(),
-                value,
-            })
+        .filter_map(|(key, label, value)| {
+            value.clone().map(|value| Field::new(*key, *label, value))
         })
         .collect()
+}
+
+/// `fields` with each repeated key numbered from its second use, so every key names one
+/// field. A payload listing one thing twice, such as two records of one meter, keeps both.
+#[must_use]
+pub fn unique_keys(mut fields: Vec<Field>) -> Vec<Field> {
+    let mut taken = std::collections::HashSet::with_capacity(fields.len());
+    for field in &mut fields {
+        if !taken.insert(field.key.clone()) {
+            field.key = (2..)
+                .map(|n| format!("{}_{n}", field.key))
+                .find(|key| !taken.contains(key))
+                .unwrap_or_default();
+            taken.insert(field.key.clone());
+        }
+    }
+    fields
+}
+
+/// `text` as a field key: lowercase ASCII words joined by `_`.
+#[must_use]
+pub fn key_of(text: &str) -> String {
+    text.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect::<Vec<_>>()
+        .join("_")
 }
 
 #[must_use]
@@ -425,16 +470,16 @@ pub fn took(duration_ms: u32) -> Option<FieldValue> {
 }
 
 pub fn picture_fields(
-    lead: &[(&str, Option<FieldValue>)],
+    lead: &[(&str, &str, Option<FieldValue>)],
     lines: u16,
     complete: bool,
     duration_ms: u32,
 ) -> Vec<Field> {
     let mut shown = fields(lead);
     shown.extend(fields(&[
-        ("Lines", count(Some(lines))),
-        ("Complete", flag(Some(complete))),
-        ("Took", took(duration_ms)),
+        ("lines", "Lines", count(Some(lines))),
+        ("complete", "Complete", flag(Some(complete))),
+        ("took", "Took", took(duration_ms)),
     ]));
     shown
 }

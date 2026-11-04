@@ -56,13 +56,7 @@ async fn a_channel_publishes_with_the_node_it_was_opened_for() {
 async fn a_channel_status_reaches_its_own_channel_face() {
     let engine = virtual_engine();
     let mut events = engine.subscribe_events();
-    let status = ChannelStatus {
-        readouts: vec![Field {
-            label: "Lock".to_owned(),
-            value: FieldValue::Flag(true),
-        }],
-        choices: Vec::new(),
-    };
+    let status = ChannelStatus::readouts(vec![Field::new("lock", "Lock", FieldValue::Flag(true))]);
 
     engine
         .decoded_sink(1, 2, Some("channel:dab"))

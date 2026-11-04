@@ -35,6 +35,7 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_ports: &[],
     steer_port: None,
     surface: Some(StreamKind::SpatialSpectrum),
+    settings: sdrmm_wire::SpatialSpectrumParams::form,
     needs: |_| ProcessorNeeds::ALL,
     band: |_| None,
     tuning: |_| TuningNeed::Together,

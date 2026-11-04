@@ -40,7 +40,7 @@ impl EventPayload for MorseText {
     fn present(&self, _kind: &EventKind) -> Presentation {
         text_pane(
             &self.text,
-            fields(&[("Speed", number(Some(self.wpm), Unit::Wpm, 0))]),
+            fields(&[("speed", "Speed", number(Some(self.wpm), Unit::Wpm, 0))]),
         )
     }
 }

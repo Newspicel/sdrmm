@@ -102,6 +102,7 @@ export function ChannelControls({
         form={descriptor?.settings ?? []}
         settings={params.settings ?? {}}
         choices={statusChoices(status)}
+        readouts={status?.readouts}
         onSettings={(next) => onEdit({ params: paramsWith(params.type, next) })}
       />
       {audio && (

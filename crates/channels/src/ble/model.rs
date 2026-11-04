@@ -1,4 +1,6 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
+use sdrmm_wire::present::key_of;
+use sdrmm_wire::present::unique_keys;
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -325,25 +327,31 @@ impl EventPayload for BleAdvert {
 fn ble_fields(a: &BleAdvert) -> Vec<Field> {
     let mut shown = fields(&[
         (
+            "address",
             "Address",
             text(a.address.as_ref().map(|address| address.address.as_str())),
         ),
         (
+            "address_type",
             "Address type",
             a.address
                 .as_ref()
                 .and_then(|address| text_of(address.kind.label())),
         ),
         (
+            "target",
             "Target",
             text(a.target.as_ref().map(|address| address.address.as_str())),
         ),
-        ("Name", text(a.name.as_deref())),
+        ("name", "Name", text(a.name.as_deref())),
+        ("vendor", "Vendor", text(a.vendor())),
         (
+            "beacon",
             "Beacon",
             a.beacon.as_ref().and_then(|beacon| text_of(beacon.label())),
         ),
         (
+            "beacon_data",
             "Beacon data",
             a.beacon.as_ref().and_then(|beacon| text_of(beacon.text())),
         ),
@@ -351,31 +359,38 @@ fn ble_fields(a: &BleAdvert) -> Vec<Field> {
     shown.extend(a.manufacturer.iter().filter_map(maker_field));
     shown.extend(a.services.iter().filter_map(service_field));
     shown.extend(fields(&[
-        ("URI", text(a.uri.as_deref())),
-        ("Flags", a.flags.and_then(|flags| text_of(flags.label()))),
-        ("Tx power", number(a.tx_power_dbm, Unit::Dbm, 0)),
+        ("uri", "URI", text(a.uri.as_deref())),
         (
+            "flags",
+            "Flags",
+            a.flags.and_then(|flags| text_of(flags.label())),
+        ),
+        ("tx_power", "Tx power", number(a.tx_power_dbm, Unit::Dbm, 0)),
+        (
+            "appearance",
             "Appearance",
             a.appearance
                 .and_then(|code| text_of(format!("{code:#06x}"))),
         ),
-        ("PDU", text_of(a.pdu.label())),
-        ("PHY", text_of(a.phy.label())),
-        ("Channel", count(a.channel)),
+        ("pdu", "PDU", text_of(a.pdu.label())),
+        ("phy", "PHY", text_of(a.phy.label())),
+        ("channel", "Channel", count(a.channel)),
         (
+            "set",
             "Set",
             a.adi
                 .and_then(|adi| text_of(format!("{} · data {}", adi.set, adi.data_id))),
         ),
-        ("Aux", a.aux.and_then(|aux| text_of(aux.label()))),
-        ("Level", number(Some(a.level_dbfs), Unit::Dbfs, 1)),
+        ("aux", "Aux", a.aux.and_then(|aux| text_of(aux.label()))),
+        ("level", "Level", number(Some(a.level_dbfs), Unit::Dbfs, 1)),
         (
+            "repeats",
             "Repeats",
             count(Some(a.repeats).filter(|repeats| *repeats > 0)),
         ),
-        ("Data", text(Some(&a.data))),
+        ("data", "Data", text(Some(&a.data))),
     ]));
-    shown
+    unique_keys(shown)
 }
 
 fn maker_field(maker: &BleManufacturer) -> Option<Field> {
@@ -383,7 +398,8 @@ fn maker_field(maker: &BleManufacturer) -> Option<Field> {
         .company
         .clone()
         .unwrap_or_else(|| format!("Company {:#06x}", maker.company_id));
-    text(Some(&maker.data)).map(|value| Field { label, value })
+    let key = format!("company_{:04x}", maker.company_id);
+    text(Some(&maker.data)).map(|value| Field::new(key, label, value))
 }
 
 fn service_field(service: &BleService) -> Option<Field> {
@@ -395,7 +411,8 @@ fn service_field(service: &BleService) -> Option<Field> {
         Some(data) => format!("{} {data}", service.uuid),
         None => service.uuid.clone(),
     };
-    text(Some(&value)).map(|value| Field { label, value })
+    let key = format!("service_{}", key_of(&service.uuid));
+    text(Some(&value)).map(|value| Field::new(key, label, value))
 }
 
 impl BleFlags {
@@ -476,6 +493,13 @@ pub(crate) fn ble_kind() -> KindSpec {
     KindSpec::of::<BleAdvert>("BLE", "Devices", Hue::Muted)
         .caps(&[Capability::Log, Capability::Station])
         .sighting()
+        .view(
+            KindView::table(&[
+                "address", "name", "vendor", "beacon", "channel", "level", "repeats",
+            ])
+            .sorted("level", true)
+            .keyed("address"),
+        )
         .build()
 }
 
@@ -564,5 +588,21 @@ mod model_tests {
         assert_eq!(view.field("Channel"), count(Some(38)).as_ref());
         assert_eq!(view.field("Repeats"), None);
         assert_eq!(view.field("Data"), text_of("020106").as_ref());
+    }
+
+    #[test]
+    fn the_device_table_names_fields_an_advert_shows() {
+        let mut advert = advert();
+        advert.beacon = Some(BleBeacon::FindMy { maintained: true });
+        advert.repeats = 3;
+        let repeated = BleManufacturer {
+            company_id: 0x004C,
+            company: Some("Apple".to_owned()),
+            data: "1206".to_owned(),
+        };
+        advert.manufacturer.push(repeated);
+        let view = advert.present(&EventKind::named("ble"));
+        assert_eq!(view.field("vendor"), text_of("Apple").as_ref());
+        crate::testutil::assert_views_hold(&ble_kind(), &[sdrmm_wire::DecoderEvent::of(&advert)]);
     }
 }

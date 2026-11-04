@@ -154,15 +154,27 @@ impl EventPayload for StanagReport {
 
 fn stanag_fields(r: &StanagReport) -> Vec<Field> {
     let Some(modem) = r.modem else {
-        return fields(&[("Modem", text_of("gone"))]);
+        return fields(&[("modem", "Modem", text_of("gone"))]);
     };
     fields(&[
-        ("Modem", text_of(modem.label())),
-        ("Rate", r.rate.and_then(|rate| text_of(rate.label()))),
-        ("Audio", number(Some(r.audio_hz), Unit::Hz, 0)),
-        ("Frequency", number(r.frequency_hz, Unit::Hz, 0)),
-        ("Bandwidth", number(Some(r.bandwidth_hz), Unit::Hz, 0)),
-        ("Confidence", percent(r.confidence)),
+        ("modem", "Modem", text_of(modem.label())),
+        (
+            "rate",
+            "Rate",
+            r.rate.and_then(|rate| text_of(rate.label())),
+        ),
+        ("audio", "Audio", number(Some(r.audio_hz), Unit::Hz, 0)),
+        (
+            "frequency",
+            "Frequency",
+            number(r.frequency_hz, Unit::Hz, 0),
+        ),
+        (
+            "bandwidth",
+            "Bandwidth",
+            number(Some(r.bandwidth_hz), Unit::Hz, 0),
+        ),
+        ("confidence", "Confidence", percent(r.confidence)),
     ])
 }
 

@@ -50,7 +50,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "p25".to_owned(),
     name: "P25 Phase 1".to_owned(),
     summary: "P25 public safety voice".to_owned(),
-    family: DecoderFamily::DigitalVoice,
+    family: DecoderFamily::DIGITAL_VOICE,
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,

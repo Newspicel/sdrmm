@@ -50,7 +50,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "wfm".to_owned(),
     name: "WFM (broadcast)".to_owned(),
     summary: "FM broadcast radio with stereo and RDS".to_owned(),
-    family: DecoderFamily::AnalogVoice,
+    family: DecoderFamily::ANALOG_VOICE,
     bandwidth_hz: 200_000.0,
     input_rate_hz: 240_000.0,
     has_audio: true,

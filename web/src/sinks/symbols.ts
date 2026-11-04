@@ -75,7 +75,7 @@ const ship: Painter = () =>
     ]),
   );
 
-export const SYMBOL_ICON: Readonly<Record<MapSymbol, Painter>> = {
+export const SYMBOL_ICON = {
   plane,
   ship,
   station: arrow,
@@ -91,9 +91,15 @@ export const SYMBOL_ICON: Readonly<Record<MapSymbol, Painter>> = {
   target: arrow,
   echo: arrow,
   dot: arrow,
-};
+} satisfies Record<string, Painter>;
 
-export const LABEL_OFFSET_EM: Readonly<Record<MapSymbol, number>> = {
+export type KnownSymbol = keyof typeof SYMBOL_ICON;
+
+export function knownSymbol(symbol: MapSymbol): KnownSymbol {
+  return Object.hasOwn(SYMBOL_ICON, symbol) ? (symbol as KnownSymbol) : "dot";
+}
+
+export const LABEL_OFFSET_EM: Readonly<Record<KnownSymbol, number>> = {
   plane: 1.3,
   ship: 1.1,
   station: 0.7,
@@ -111,7 +117,7 @@ export const LABEL_OFFSET_EM: Readonly<Record<MapSymbol, number>> = {
   dot: 0.5,
 };
 
-export const DOT_RADIUS: Readonly<Record<MapSymbol, number>> = {
+export const DOT_RADIUS: Readonly<Record<KnownSymbol, number>> = {
   plane: 4,
   ship: 4,
   station: 4,
@@ -129,7 +135,7 @@ export const DOT_RADIUS: Readonly<Record<MapSymbol, number>> = {
   dot: 3,
 };
 
-export function iconName(symbol: MapSymbol): string {
+export function iconName(symbol: KnownSymbol): string {
   return `sink-symbol-${symbol}`;
 }
 

@@ -50,6 +50,14 @@ describe("map layers from a sink feed", () => {
     expect(points.features[1]?.properties).not.toHaveProperty("heading");
   });
 
+  it("draws a symbol it has no icon for as a dot", () => {
+    const kite = placed("K", { place: { at: { lat: 50, lon: 8 } } }, "teal", "kite");
+
+    const [feature] = entityCollection([kite], COLORS).features;
+
+    expect(feature?.properties).toMatchObject({ symbol: "dot", radius: 3 });
+  });
+
   it("turns rays, ellipses, circles and forecast lines into map features", () => {
     const at = { lat: 52.5, lon: 13.4 };
     const entity = placed(

@@ -70,10 +70,9 @@ fn report(state: &AppState, processor: String, reading: &ProcessorReading) {
         }
         other => other.clone(),
     };
-    state.engine.emit_event(ServerEvent::ProcessorUpdate {
-        node: processor,
-        reading: Box::new(reading),
-    });
+    state
+        .engine
+        .emit_event(ServerEvent::processor_update(processor, reading));
 }
 
 fn draw(state: &AppState, processor: &str, seq: u32, surface: Arc<SurfaceFrame>) {

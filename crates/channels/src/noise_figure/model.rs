@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, DecoderSettings, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, DecoderSettings, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -11,6 +11,9 @@ use sdrmm_wire::present::number;
 use sdrmm_wire::present::text_of;
 
 pub const MEASUREMENT_REPORT_MS: u32 = 1_000;
+
+/// Long enough to watch an adjustment settle.
+const TREND_S: u32 = 600;
 
 pub const MIN_ENR_DB: f32 = 1.0;
 
@@ -69,17 +72,38 @@ impl EventPayload for NoiseFigureReport {
         let source = self.source_on.map(|on| if on { "on" } else { "off" });
         Presentation {
             fields: fields(&[
-                ("Noise figure", number(self.nf_db, Unit::Db, 2)),
                 (
+                    "noise_figure",
+                    "Noise figure",
+                    number(self.nf_db, Unit::Db, 2),
+                ),
+                (
+                    "noise_temperature",
                     "Noise temperature",
                     number(self.temperature_k, Unit::Kelvin, 0),
                 ),
-                ("Y-factor", number(self.y_db, Unit::Db, 2)),
-                ("Source on", number(self.hot_dbfs, Unit::Dbfs, 2)),
-                ("Source off", number(self.cold_dbfs, Unit::Dbfs, 2)),
-                ("Level", number(Some(self.level_dbfs), Unit::Dbfs, 2)),
-                ("Source", source.and_then(text_of)),
-                ("Settled", number(Some(self.settled_s), Unit::Seconds, 1)),
+                ("y_factor", "Y-factor", number(self.y_db, Unit::Db, 2)),
+                (
+                    "level_on",
+                    "Source on",
+                    number(self.hot_dbfs, Unit::Dbfs, 2),
+                ),
+                (
+                    "level_off",
+                    "Source off",
+                    number(self.cold_dbfs, Unit::Dbfs, 2),
+                ),
+                (
+                    "level",
+                    "Level",
+                    number(Some(self.level_dbfs), Unit::Dbfs, 2),
+                ),
+                ("source", "Source", source.and_then(text_of)),
+                (
+                    "settled",
+                    "Settled",
+                    number(Some(self.settled_s), Unit::Seconds, 1),
+                ),
             ]),
             ..Presentation::of(self.summary())
         }
@@ -89,6 +113,7 @@ impl EventPayload for NoiseFigureReport {
 pub(crate) fn noise_figure_kind() -> KindSpec {
     KindSpec::of::<NoiseFigureReport>("Noise figure", "Noise figure", Hue::Muted)
         .caps(&[Capability::Log])
+        .view(KindView::trend(&["noise_figure", "y_factor"], TREND_S))
         .build()
 }
 
@@ -127,5 +152,24 @@ mod model_tests {
             number(Some(650.0_f32), Unit::Kelvin, 0).as_ref()
         );
         assert_eq!(view.field("Source"), text_of("on").as_ref());
+    }
+
+    #[test]
+    fn the_trend_names_fields_a_measured_report_shows() {
+        let report = NoiseFigureReport {
+            window_ms: 1000,
+            level_dbfs: -60.0,
+            settled_s: 2.5,
+            source_on: Some(false),
+            hot_dbfs: Some(-50.0),
+            cold_dbfs: Some(-60.0),
+            y_db: Some(10.0),
+            nf_db: Some(5.12),
+            temperature_k: Some(650.0),
+        };
+        crate::testutil::assert_views_hold(
+            &noise_figure_kind(),
+            &[sdrmm_wire::DecoderEvent::of(&report)],
+        );
     }
 }

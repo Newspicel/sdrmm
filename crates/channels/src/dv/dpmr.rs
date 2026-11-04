@@ -57,7 +57,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "dpmr".to_owned(),
     name: "dPMR".to_owned(),
     summary: "dPMR two-way radio voice".to_owned(),
-    family: DecoderFamily::DigitalVoice,
+    family: DecoderFamily::DIGITAL_VOICE,
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,

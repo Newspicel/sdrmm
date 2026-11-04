@@ -141,42 +141,53 @@ fn eot_fields(m: &EotMessage) -> Vec<Field> {
         EotReport::Head(request) => hot_fields(m, request),
         EotReport::Rear(status) => rear_fields(m, status),
     };
-    shown.extend(fields(&[("Repaired", repaired(m.errors_corrected))]));
+    shown.extend(fields(&[(
+        "repaired",
+        "Repaired",
+        repaired(m.errors_corrected),
+    )]));
     shown
 }
 
 fn hot_fields(m: &EotMessage, request: &HotRequest) -> Vec<Field> {
     fields(&[
-        ("Unit", text_of("Head (HOT)")),
-        ("Address", text_of(m.unit_address)),
-        ("Command", text_of(request.command_label())),
-        ("Copies", text_of(format!("{}/3", request.copies))),
+        ("unit", "Unit", text_of("Head (HOT)")),
+        ("address", "Address", text_of(m.unit_address)),
+        ("command", "Command", text_of(request.command_label())),
+        ("copies", "Copies", text_of(format!("{}/3", request.copies))),
     ])
 }
 
 fn rear_fields(m: &EotMessage, s: &EotStatus) -> Vec<Field> {
     fields(&[
-        ("Unit", text_of("Rear (EOT)")),
-        ("Address", text_of(m.unit_address)),
-        ("Brake pipe", number(Some(s.pressure_psig), Unit::Psi, 0)),
-        ("Motion", flag(Some(s.motion))),
-        ("Marker light", flag(Some(s.marker_light))),
+        ("unit", "Unit", text_of("Rear (EOT)")),
+        ("address", "Address", text_of(m.unit_address)),
         (
+            "brake_pipe",
+            "Brake pipe",
+            number(Some(s.pressure_psig), Unit::Psi, 0),
+        ),
+        ("motion", "Motion", flag(Some(s.motion))),
+        ("marker_light", "Marker light", flag(Some(s.marker_light))),
+        (
+            "marker_battery",
             "Marker battery",
             text_of(if s.marker_battery_low { "low" } else { "ok" }),
         ),
-        ("Battery", text_of(eot_battery(s.battery))),
+        ("battery", "Battery", text_of(eot_battery(s.battery))),
         (
+            "charge",
             "Charge",
             number(Some(s.battery_charge_pct), Unit::Percent, 0),
         ),
         (
+            "valve_circuit",
             "Valve circuit",
             text_of(if s.valve_ok { "ok" } else { "fail" }),
         ),
-        ("Turbine", flag(Some(s.turbine))),
-        ("Arming", text_of(eot_arming(s.arming))),
-        ("Message type", count(Some(s.message_type))),
+        ("turbine", "Turbine", flag(Some(s.turbine))),
+        ("arming", "Arming", text_of(eot_arming(s.arming))),
+        ("message_type", "Message type", count(Some(s.message_type))),
     ])
 }
 

@@ -2,6 +2,8 @@ import { deepEqual } from "./deepEqual";
 import type {
   Condition,
   Control,
+  LanePick,
+  NumberSpec,
   ParamChoice,
   ParamOption,
   PresetOption,
@@ -19,20 +21,39 @@ export function isSet(value: unknown): boolean {
   return value !== undefined && value !== null;
 }
 
-/** The value at a dotted `key` (`header.length` reads `length` of the `header` object). */
+function isIndex(part: string): boolean {
+  return /^\d+$/.test(part);
+}
+
+function childAt(value: unknown, part: string): unknown {
+  if (Array.isArray(value)) {
+    return isIndex(part) ? value[Number(part)] : undefined;
+  }
+  return isObject(value) ? value[part] : undefined;
+}
+
+/**
+ * The value at a dotted `key`: `header.length` reads `length` of the `header` object and
+ * `stations.1.name` the `name` of the second `stations` entry.
+ */
 export function valueAt(settings: unknown, key: string): unknown {
-  return key
-    .split(".")
-    .reduce<unknown>((value, part) => (isObject(value) ? value[part] : undefined), settings);
+  return key.split(".").reduce<unknown>(childAt, settings);
+}
+
+function setAt(container: unknown, parts: readonly string[], value: unknown): unknown {
+  const [head = "", ...rest] = parts;
+  const inner = rest.length === 0 ? value : setAt(childAt(container, head), rest, value);
+  if (Array.isArray(container) && isIndex(head)) {
+    const copy: unknown[] = [...container];
+    copy[Number(head)] = inner;
+    return copy;
+  }
+  return { ...(isObject(container) ? container : {}), [head]: inner };
 }
 
 export function withValueAt(settings: Settings, key: string, value: unknown): Settings {
   const [head = "", ...rest] = key.split(".");
-  if (rest.length === 0) {
-    return { ...settings, [head]: value };
-  }
-  const inner = settings[head];
-  return { ...settings, [head]: withValueAt(isObject(inner) ? inner : {}, rest.join("."), value) };
+  return { ...settings, [head]: rest.length === 0 ? value : setAt(settings[head], rest, value) };
 }
 
 function fallbackOf(form: Form, key: string): unknown {
@@ -76,7 +97,95 @@ export function isQuiet(field: SettingField, value: unknown): boolean {
  * reveals, so a mode switched on arrives with its own setting.
  */
 export function committed(form: Form, settings: Settings, key: string, value: unknown): Settings {
-  return revealed(form, settings, withValueAt(settings, key, value));
+  const changed = released(form, pulledDown(form, withValueAt(settings, key, value), key), key);
+  return revealed(form, settings, changed);
+}
+
+/** Every field held at most the value at `key` comes down to it. */
+function pulledDown(form: Form, settings: Settings, key: string): Settings {
+  const limit = valueAt(settings, key);
+  if (typeof limit !== "number") {
+    return settings;
+  }
+  return form
+    .filter((field) => field.at_most === key)
+    .reduce<Settings>((next, field) => {
+      const held = valueAt(next, field.key);
+      return typeof held === "number" && held > limit ? withValueAt(next, field.key, limit) : next;
+    }, settings);
+}
+
+/** The lane now at `key` leaves every lanes field that may not hold it. */
+function released(form: Form, settings: Settings, key: string): Settings {
+  const lane = valueAt(settings, key);
+  if (typeof lane !== "number") {
+    return settings;
+  }
+  return form.reduce<Settings>((next, field) => {
+    const control = field.control;
+    if (control.type !== "lanes" || control.except !== key) {
+      return next;
+    }
+    const held = valueAt(next, field.key);
+    return isSet(held) ? withValueAt(next, field.key, withoutLane(control.pick, held, lane)) : next;
+  }, settings);
+}
+
+export function lanesOf(pick: LanePick, value: unknown): number[] {
+  switch (pick) {
+    case "one":
+      return typeof value === "number" ? [value] : [];
+    case "list":
+      return Array.isArray(value)
+        ? value.filter((lane): lane is number => typeof lane === "number")
+        : [];
+    case "mask":
+      return typeof value === "number"
+        ? Array.from({ length: 32 }, (_, lane) => lane).filter(
+            (lane) => (value & (1 << lane)) !== 0,
+          )
+        : [];
+  }
+}
+
+export function lanesValue(pick: LanePick, lanes: readonly number[]): unknown {
+  const sorted = [...new Set(lanes)].toSorted((a, b) => a - b);
+  switch (pick) {
+    case "one":
+      return sorted[0] ?? null;
+    case "list":
+      return sorted;
+    case "mask":
+      return sorted.reduce((mask, lane) => mask | (1 << lane), 0);
+  }
+}
+
+function withoutLane(pick: LanePick, value: unknown, lane: number): unknown {
+  return pick === "one"
+    ? value
+    : lanesValue(
+        pick,
+        lanesOf(pick, value).filter((held) => held !== lane),
+      );
+}
+
+/** The highest value a field may take now: its spec's, or less under `at_most`. */
+export function ceiling(
+  field: SettingField,
+  settings: Settings,
+  max?: number | null,
+): number | undefined {
+  const limit = field.at_most == null ? undefined : valueAt(settings, field.at_most);
+  const spec = max ?? undefined;
+  if (typeof limit !== "number") {
+    return spec;
+  }
+  return spec === undefined ? limit : Math.min(spec, limit);
+}
+
+/** The fold names of a form, in order of first use. */
+export function sections(form: Form): string[] {
+  return [...new Set(form.flatMap((field) => (field.section == null ? [] : [field.section])))];
 }
 
 function revealed(form: Form, before: Settings, after: Settings): Settings {
@@ -115,11 +224,26 @@ export function valueLabel(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
+/** The text of the running decoder's status readout keyed `key`, if it published one. */
+export type OptionStatus = (key: string) => string | undefined;
+
+const NO_STATUS: OptionStatus = () => undefined;
+
+/** An option's label, followed by the status readout it names while the decoder runs. */
+export function optionLabel(option: ParamOption, status: OptionStatus = NO_STATUS): string {
+  const text = option.status == null ? undefined : status(option.status);
+  return text === undefined || text === "" ? option.label : `${option.label} ${text}`;
+}
+
 /** Options keyed by index, with the current value as its own option when none matches. */
-export function choiceItems(options: readonly ParamOption[], value: unknown): ChoiceItems {
+export function choiceItems(
+  options: readonly ParamOption[],
+  value: unknown,
+  status: OptionStatus = NO_STATUS,
+): ChoiceItems {
   const items = options.map((option, index) => ({
     value: String(index),
-    label: option.label,
+    label: optionLabel(option, status),
     ...(option.title == null ? {} : { title: option.title }),
   }));
   const index = options.findIndex((option) => deepEqual(option.value, value));
@@ -169,9 +293,11 @@ function filled(field: SettingField, value: unknown): boolean {
     case "toggle":
     case "list":
     case "preset":
+    case "numbers":
       return true;
     case "choice":
     case "live":
+    case "lanes":
       return isSet(value);
   }
 }
@@ -206,6 +332,43 @@ export function parseHz(text: string): number | null {
   }
   const value = Number(match[1]?.replace(",", ".")) * (SCALE[match[2]?.toLowerCase() ?? ""] ?? 1);
   return Number.isFinite(value) ? value : null;
+}
+
+function scaleOf(spec: NumberSpec): number {
+  return spec.scale != null && spec.scale > 0 ? spec.scale : 1;
+}
+
+function tidy(value: number): number {
+  return Number(value.toPrecision(12));
+}
+
+function scaled(value: number | null | undefined, by: number): number | null | undefined {
+  return value == null ? value : tidy(value / by);
+}
+
+/** The number a control shows for a stored `value`: divided by the spec's scale. */
+export function shownNumber(spec: NumberSpec, value: unknown): unknown {
+  return typeof value === "number" ? scaled(value, scaleOf(spec)) : value;
+}
+
+/** The number stored for what a control shows: multiplied back by the spec's scale. */
+export function storedNumber(spec: NumberSpec, shown: number | null): number | null {
+  return shown === null ? null : tidy(shown * scaleOf(spec));
+}
+
+/** `spec` with limits, step and presets in the units the control shows. */
+export function shownSpec(spec: NumberSpec): NumberSpec {
+  const by = scaleOf(spec);
+  if (by === 1) {
+    return spec;
+  }
+  return {
+    ...spec,
+    min: scaled(spec.min, by),
+    max: scaled(spec.max, by),
+    step: scaled(spec.step, by),
+    presets: spec.presets?.map((preset) => ({ ...preset, value: shownNumber(spec, preset.value) })),
+  };
 }
 
 export function inRange(value: number, min?: number | null, max?: number | null): boolean {

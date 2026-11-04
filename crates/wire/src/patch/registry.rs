@@ -10,14 +10,17 @@ use super::{
     TriangulationNode, TrunkNode, VIDEO_PORT, input, output,
 };
 use crate::{
-    channel::ChannelDescriptor,
+    channel::{ChannelDescriptor, SettingField},
     control::ControlVerb,
     decode::{Capability, EventKind, EventKindEntry, KindSet},
     filter::EventFilterNode,
     monitor::SpectrumMonitorNode,
     network::NetworkExportNode,
     note::NoteNode,
-    processor::processors,
+    processor::{
+        plugin::{ProcessorType, processor_type, processor_types},
+        processors,
+    },
     propagation::PropagationNode,
     rotator::RotatorNode,
     satellite::SatelliteNode,
@@ -100,7 +103,13 @@ pub struct NodeTypeInfo {
     pub ports: Vec<PortSpec>,
     #[serde(default)]
     pub needs_channel_type: bool,
+    /// A node of this kind runs one of the catalog's `processors`.
+    #[serde(default)]
+    pub needs_processor_type: bool,
     pub default_body: NodeBody,
+    /// The form a face renders for this node's settings, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub settings: Vec<SettingField>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -110,6 +119,9 @@ pub struct PatchCatalog {
     pub event_kinds: Vec<EventKindEntry>,
     #[serde(default)]
     pub feeds: Vec<crate::decode::FeedEntry>,
+    /// Array processors the loaded plugins bring.
+    #[serde(default)]
+    pub processors: Vec<ProcessorType>,
 }
 
 impl PatchCatalog {
@@ -120,6 +132,7 @@ impl PatchCatalog {
             port_types: P::ALL.iter().map(|port_type| port_type.info()).collect(),
             event_kinds: crate::decode::catalog().entries(),
             feeds: crate::decode::catalog().feed_entries(),
+            processors: processor_types().as_ref().clone(),
         }
     }
 }
@@ -137,7 +150,9 @@ impl NodeKind {
             face: self.face(),
             ports: self.ports(),
             needs_channel_type: matches!(default_body, NodeBody::Channel(_)),
+            needs_processor_type: matches!(default_body, NodeBody::Processor(_)),
             default_body,
+            settings: self.settings(),
         }
     }
 }
@@ -542,11 +557,23 @@ macro_rules! node_registry {
                     $(port_row!($port $(($($arg)*))?)),*
                 ]),
             )*
+            (Processor(crate::processor::plugin::ProcessorNode), "processor", Tool, "Processor",
+                "An array processor from a plugin", Role::Processor, Face::fit(400), [
+                input(ARRAY_PORT, Payload::Array),
+                events_out(Accept::Any),
+            ]),
             (Triangulation(TriangulationNode), "triangulation", Tool, "Triangulation",
                 "Crosses bearings into a position", Role::Plain, Face::fit(400), [
                 events_in(kinds!(DF)).takes("bearings").noted("Bearings"),
                 position_in().noted("Vehicle to guide"),
                 events_out(kinds!(DF_FIX, NAV)),
+            ]),
+            (BearingFix, "bearing_fix", Tool, "Bearing fix",
+                "Live fix from each station's newest bearing", Role::Plain, Face::fit(320), [
+                events_in(Accept::Caps(&[Capability::Bearing]))
+                    .takes("bearings")
+                    .noted("Bearings with a known origin"),
+                events_out(kinds!(BEARING_FIX)),
             ]),
             (Note(NoteNode), "note", Tool, "Note", "Markdown you leave on the canvas",
                 Role::Plain, Face::sized(320, 200).min(200, 120), []),
@@ -577,6 +604,18 @@ macro_rules! processor_nodes {
             }
         )*
 
+        impl NodeKind {
+            /// The settings form of a node that carries settings of its own.
+            #[must_use]
+            pub fn settings(self) -> Vec<SettingField> {
+                match self {
+                    $(Self::$variant => <$params>::form(),)*
+                    Self::Triangulation => crate::fusion::TriangulationParams::form(),
+                    _ => Vec::new(),
+                }
+            }
+        }
+
         impl NodeBody {
             #[must_use]
             pub const fn lane_outputs(&self) -> &'static [&'static str] {
@@ -594,6 +633,9 @@ macro_rules! processor_nodes {
                             Clone::clone(&node.settings),
                         )),
                     )*
+                    Self::Processor(node) => {
+                        Some(crate::processor::ProcessorParams::Plugin(node.params()))
+                    }
                     _ => None,
                 }
             }
@@ -645,6 +687,7 @@ impl NodeBody {
             Self::SpectrumMonitor(monitor) => {
                 carrying_events(declared, monitor_kinds(monitor, descriptors))
             }
+            Self::Processor(node) => narrow_processor(declared, &node.processor_type),
             Self::EventOutput(node) => carrying_events(declared, node.target.accepts())
                 .into_iter()
                 .map(|port| match port.port_type {
@@ -717,6 +760,25 @@ fn narrow_channel(
             Payload::Events { .. } => !emitted.is_empty(),
             _ => true,
         })
+        .map(|port| match port.payload {
+            Payload::Events { .. } => port.carrying(Payload::Events {
+                kinds: emitted.clone(),
+            }),
+            _ => port,
+        })
+        .collect()
+}
+
+/// A plugin processor's events port carries the kinds its type declares, and goes when it
+/// declares none. A type not loaded keeps every port, so its wires survive a reload.
+fn narrow_processor(declared: Vec<PortSpec>, type_id: &str) -> Vec<PortSpec> {
+    let Some(kind) = processor_type(type_id) else {
+        return declared;
+    };
+    let emitted: KindSet = kind.emits.iter().cloned().collect();
+    declared
+        .into_iter()
+        .filter(|port| !matches!(port.payload, Payload::Events { .. }) || !emitted.is_empty())
         .map(|port| match port.payload {
             Payload::Events { .. } => port.carrying(Payload::Events {
                 kinds: emitted.clone(),

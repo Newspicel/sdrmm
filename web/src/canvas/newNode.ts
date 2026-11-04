@@ -1,28 +1,31 @@
 import type {
   HuntSweepParams,
   NodeBody,
-  NodeBodyOf,
   NodeKind,
   PatchCatalog,
   PatchNodeOf,
-  ProcessorKind,
+  ProcessorType,
   ScanSettings,
 } from "../lib/types";
 
 export interface NewNodeSeed {
   /** The decoder a channel runs; a channel without one has no body. */
   channelType?: string;
+  /** The plugin processor a processor node runs. */
+  processorType?: string;
 }
 
-export type SettingsKind = ProcessorKind;
+export function processorTypeOf(catalog: PatchCatalog, typeId: string): ProcessorType | undefined {
+  return catalog.processors?.find((type) => type.type_id === typeId);
+}
 
-type SettingsMap = {
-  [K in SettingsKind]: NonNullable<NodeBodyOf<K>["data"]["settings"]>;
-};
-
-export type SettingsOf<K extends SettingsKind> = SettingsMap[K];
-
-type ProcessorNode = PatchNodeOf<SettingsKind>;
+/** What a fresh node of `type` starts on. */
+export function processorDefaults(type: ProcessorType | undefined): Record<string, unknown> {
+  const defaults = type?.defaults;
+  return typeof defaults === "object" && defaults !== null
+    ? structuredClone(defaults as Record<string, unknown>)
+    : {};
+}
 
 export function defaultBody(catalog: PatchCatalog, kind: NodeKind): NodeBody | null {
   const entry = catalog.nodes.find((type) => type.kind === kind);
@@ -41,24 +44,13 @@ export function newNodeBody(
       ? null
       : { kind, data: { channel_type: seed.channelType } };
   }
+  if (kind === "processor") {
+    const type = processorTypeOf(catalog, seed.processorType ?? "");
+    return type === undefined
+      ? null
+      : { kind, data: { processor_type: type.type_id, settings: processorDefaults(type) } };
+  }
   return defaultBody(catalog, kind);
-}
-
-export function defaultSettings<K extends SettingsKind>(
-  catalog: PatchCatalog,
-  kind: K,
-): SettingsOf<K> | null {
-  const body = defaultBody(catalog, kind) as NodeBodyOf<SettingsKind> | null;
-  return (body?.data.settings as SettingsOf<K> | undefined) ?? null;
-}
-
-export function settingsOf<K extends SettingsKind>(
-  node: PatchNodeOf<K>,
-  catalog: PatchCatalog,
-): SettingsOf<K> | null {
-  const typed = node as unknown as ProcessorNode;
-  const stored = typed.data.settings as SettingsOf<K> | undefined;
-  return stored ?? defaultSettings(catalog, typed.kind as K);
 }
 
 export function carriesSettings(catalog: PatchCatalog, kind: NodeKind): boolean {

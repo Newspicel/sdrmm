@@ -5,7 +5,7 @@ use super::{
     IdentReport, KindSpec, Symbol,
 };
 use crate::{
-    fusion::{DfBearing, DfEstimate, NavGuide},
+    fusion::{BearingFix, DfBearing, DfEstimate, NavGuide},
     monitor::Transmission,
     patch::Hue,
     radar::{RadarSites, RadarTrackEvent},
@@ -21,6 +21,7 @@ impl EventKind {
     pub const BROADCAST_DATA: Self = Self::named("broadcast_data");
     pub const DF: Self = Self::named("df");
     pub const DF_FIX: Self = Self::named("df_fix");
+    pub const BEARING_FIX: Self = Self::named("bearing_fix");
     pub const RADAR: Self = Self::named("radar");
     pub const RADAR_SITES: Self = Self::named("radar_sites");
     pub const NAV: Self = Self::named("nav");
@@ -41,6 +42,7 @@ contract! {
     VoiceCall => CALL,
     DfBearing => DF,
     DfEstimate => DF_FIX,
+    BearingFix => BEARING_FIX,
     RadarTrackEvent => RADAR,
     RadarSites => RADAR_SITES,
     NavGuide => NAV,
@@ -57,7 +59,7 @@ pub fn platform_kinds() -> Vec<KindSpec> {
             .build(),
         KindSpec::of::<DvFrame>("Digital voice", "Radios", Hue::Blue)
             .caps(&[Log, Station, Geo, Voice])
-            .symbol(Symbol::Person)
+            .symbol(Symbol::PERSON)
             .sighting()
             .build(),
         KindSpec::of::<VoiceCall>("Call", "Calls", Hue::Accent)
@@ -69,27 +71,32 @@ pub fn platform_kinds() -> Vec<KindSpec> {
             .build(),
         KindSpec::of::<DfBearing>("Bearing", "Bearings", Hue::Indigo)
             .caps(&[Log, Station, Geo, Bearing])
-            .symbol(Symbol::Antenna)
+            .symbol(Symbol::ANTENNA)
             .sighting()
             .build(),
         KindSpec::of::<DfEstimate>("Fix", "Fixes", Hue::Indigo)
             .caps(&[Log, Station, Geo])
-            .symbol(Symbol::Fix)
+            .symbol(Symbol::FIX)
+            .sighting()
+            .build(),
+        KindSpec::of::<BearingFix>("Bearing fix", "Fixes", Hue::Indigo)
+            .caps(&[Log, Station, Geo])
+            .symbol(Symbol::FIX)
             .sighting()
             .build(),
         KindSpec::of::<RadarTrackEvent>("Radar", "Tracks", Hue::Orange)
             .caps(&[Log, Station, Geo])
-            .symbol(Symbol::Echo)
+            .symbol(Symbol::ECHO)
             .sighting()
             .build(),
         KindSpec::of::<RadarSites>("Radar sites", "Sites", Hue::Orange)
             .caps(&[Station, Geo])
-            .symbol(Symbol::Antenna)
+            .symbol(Symbol::ANTENNA)
             .standing()
             .build(),
         KindSpec::of::<NavGuide>("Guidance", "Targets", Hue::Indigo)
             .caps(&[Station, Geo])
-            .symbol(Symbol::Target)
+            .symbol(Symbol::TARGET)
             .standing()
             .build(),
         KindSpec::of::<IdentReport>("Signal ID", "Signals", Hue::Muted)
@@ -97,7 +104,7 @@ pub fn platform_kinds() -> Vec<KindSpec> {
             .build(),
         KindSpec::of::<SatelliteFix>("Satellite", "Satellites", Hue::Pink)
             .caps(&[Station, Geo])
-            .symbol(Symbol::Satellite)
+            .symbol(Symbol::SATELLITE)
             .standing()
             .build(),
     ]

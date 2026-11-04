@@ -39,50 +39,75 @@ fn dv_verified(f: &DvFrame) -> bool {
 
 fn dv_fields(f: &DvFrame) -> Vec<Field> {
     let mut shown = fields(&[
-        ("Mode", text(Some(&f.mode))),
-        ("Frame", text_of(dv_frame_kind(f.kind))),
-        ("Network", text(Some(&dv_network(f)))),
-        ("Vendor", dv_vendor(f)),
-        ("Trunking", text(Some(&dv_trunking(f)))),
-        ("Parties", text(f.parties().as_deref())),
-        ("Talker alias", text(f.talker_alias.as_deref())),
+        ("mode", "Mode", text(Some(&f.mode))),
+        ("frame", "Frame", text_of(dv_frame_kind(f.kind))),
+        ("network", "Network", text(Some(&dv_network(f)))),
+        ("vendor", "Vendor", dv_vendor(f)),
+        ("trunking", "Trunking", text(Some(&dv_trunking(f)))),
+        ("parties", "Parties", text(f.parties().as_deref())),
         (
+            "talker_alias",
+            "Talker alias",
+            text(f.talker_alias.as_deref()),
+        ),
+        (
+            "call",
             "Call",
             f.group_call.and_then(|group| text_of(call_type(group))),
         ),
-        ("Via", text(f.via.as_deref())),
-        ("Signalling", text(f.opcode.as_deref())),
-        ("Position", position(f.lat, f.lon)),
+        ("via", "Via", text(f.via.as_deref())),
+        ("signalling", "Signalling", text(f.opcode.as_deref())),
+        ("position", "Position", position(f.lat, f.lon)),
         (
+            "position_error",
             "Position error",
             number(f.position_error_m, Unit::Metres, 0),
         ),
-        ("Channel", count(f.channel)),
-        ("Channel frequency", dv_channel_definition(f)),
-        ("Rest channel", count(f.rest_channel)),
+        ("channel", "Channel", count(f.channel)),
+        (
+            "channel_frequency",
+            "Channel frequency",
+            dv_channel_definition(f),
+        ),
+        ("rest_channel", "Rest channel", count(f.rest_channel)),
     ]);
     shown.extend(dv_site_fields(f));
     shown.extend(fields(&[
-        ("Emergency", flag(f.emergency)),
-        ("Late entry", flag(f.late_entry)),
-        ("Slot activity", text(Some(&slot_activity(f)))),
-        ("Encrypted", flag(f.encrypted)),
+        ("emergency", "Emergency", flag(f.emergency)),
+        ("late_entry", "Late entry", flag(f.late_entry)),
         (
+            "slot_activity",
+            "Slot activity",
+            text(Some(&slot_activity(f))),
+        ),
+        ("encrypted", "Encrypted", flag(f.encrypted)),
+        (
+            "algorithm",
             "Algorithm",
             f.algorithm_id.and_then(|id| text_of(hex(id, 2))),
         ),
-        ("Key ID", f.key_id.and_then(|id| text_of(hex(id, 4)))),
-        ("Message indicator", text(f.message_indicator.as_deref())),
         (
+            "key_id",
+            "Key ID",
+            f.key_id.and_then(|id| text_of(hex(id, 4))),
+        ),
+        (
+            "message_indicator",
+            "Message indicator",
+            text(f.message_indicator.as_deref()),
+        ),
+        (
+            "repaired",
             "Repaired",
             count(Some(f.errors_corrected).filter(|bits| *bits > 0)),
         ),
         (
+            "checksum",
             "Checksum",
             f.crc_verified.and_then(|ok| text_of(checksum(ok))),
         ),
-        ("Text", text(f.text.as_deref())),
-        ("Data", text(f.data.as_deref())),
+        ("text", "Text", text(f.text.as_deref())),
+        ("data", "Data", text(f.data.as_deref())),
     ]));
     shown
 }
@@ -94,9 +119,9 @@ fn dv_site_fields(f: &DvFrame) -> Vec<Field> {
         ("Network ID", "System ID", "Site ID")
     };
     fields(&[
-        (network, f.network_id.and_then(text_of)),
-        (system, f.system_id.and_then(text_of)),
-        (site, f.site_id.and_then(text_of)),
+        ("network", network, f.network_id.and_then(text_of)),
+        ("system", system, f.system_id.and_then(text_of)),
+        ("site", site, f.site_id.and_then(text_of)),
     ])
 }
 
@@ -251,16 +276,20 @@ fn call_fields(c: &VoiceCall) -> Vec<Field> {
         _ => format!("talkgroup {id}"),
     });
     fields(&[
-        ("Mode", text_of(c.mode_label())),
-        ("Destination", text(destination.as_deref())),
-        ("Source", c.source.and_then(text_of)),
-        ("Timeslot", count(c.slot)),
-        ("Colour code", count(c.color_code)),
-        ("Duration", seconds(c.duration_ms, 1)),
-        ("Started", Some(FieldValue::Time(c.started_at.clone()))),
-        ("Emergency", only_if(c.emergency)),
-        ("Encrypted", only_if(c.encrypted)),
-        ("Audio", text(c.audio_error.as_deref())),
+        ("mode", "Mode", text_of(c.mode_label())),
+        ("destination", "Destination", text(destination.as_deref())),
+        ("source", "Source", c.source.and_then(text_of)),
+        ("timeslot", "Timeslot", count(c.slot)),
+        ("colour_code", "Colour code", count(c.color_code)),
+        ("duration", "Duration", seconds(c.duration_ms, 1)),
+        (
+            "started",
+            "Started",
+            Some(FieldValue::Time(c.started_at.clone())),
+        ),
+        ("emergency", "Emergency", only_if(c.emergency)),
+        ("encrypted", "Encrypted", only_if(c.encrypted)),
+        ("audio", "Audio", text(c.audio_error.as_deref())),
     ])
 }
 
@@ -324,22 +353,28 @@ fn transmission_fields(t: &Transmission) -> Vec<Field> {
         format!("{} ({how})", decoder.to_uppercase())
     });
     fields(&[
-        ("Transmission", text_of(t.id)),
-        ("State", text_of(t.state.label())),
+        ("transmission", "Transmission", text_of(t.id)),
+        ("state", "State", text_of(t.state.label())),
         (
+            "frequency",
             "Frequency",
             number(Some(t.signal.frequency_hz), Unit::Hz, 0),
         ),
         (
+            "bandwidth",
             "Bandwidth",
             number(Some(t.signal.bandwidth_hz), Unit::Hz, 0),
         ),
-        ("Modulation", text_of(modulation_label(&t.signal))),
-        ("Decoder", text(decoder.as_deref())),
-        ("Confidence", percent(t.signal.confidence)),
-        ("SNR", number(Some(t.signal.snr_db), Unit::Db, 1)),
-        ("Duration", seconds(t.duration_ms, 2)),
-        ("Error", text(t.error.as_deref())),
+        (
+            "modulation",
+            "Modulation",
+            text_of(modulation_label(&t.signal)),
+        ),
+        ("decoder", "Decoder", text(decoder.as_deref())),
+        ("confidence", "Confidence", percent(t.signal.confidence)),
+        ("snr", "SNR", number(Some(t.signal.snr_db), Unit::Db, 1)),
+        ("duration", "Duration", seconds(t.duration_ms, 2)),
+        ("error", "Error", text(t.error.as_deref())),
     ])
 }
 

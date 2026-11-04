@@ -18,6 +18,11 @@ describe("useFusionStore", () => {
     expect(useFusionStore.getState().byNode.other).toBeDefined();
   });
 
+  it("keeps the readouts a seed brings", () => {
+    useFusionStore.getState().set("tri", STATE, { readouts: [] });
+    expect(useFusionStore.getState().statusByNode.tri).toEqual({ readouts: [] });
+  });
+
   it("ignores other events", () => {
     useFusionStore.getState().set("tri", STATE);
     useFusionStore

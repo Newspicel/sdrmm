@@ -42,7 +42,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "cw_skimmer".to_owned(),
     name: "CW skimmer".to_owned(),
     summary: "Every Morse signal in the band at once".to_owned(),
-    family: DecoderFamily::Amateur,
+    family: DecoderFamily::AMATEUR,
     bandwidth_hz: 24_000.0,
     input_rate_hz: RATE,
     has_audio: false,

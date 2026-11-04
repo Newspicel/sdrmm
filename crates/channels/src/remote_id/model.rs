@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, Symbol};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView, Symbol};
 use serde::{Deserialize, Serialize};
 
 use crate::ble::BLUETOOTH_BAND_RATE_HZ;
@@ -386,8 +386,18 @@ fn slot(message: &RemoteIdMessage) -> (std::mem::Discriminant<RemoteIdMessage>, 
 pub(crate) fn remote_id_kind() -> KindSpec {
     KindSpec::of::<RemoteIdFrame>("Remote ID", "Drones", Hue::Cyan)
         .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-        .symbol(Symbol::Drone)
+        .symbol(Symbol::DRONE)
         .sighting()
+        .view(KindView::table(&[
+            "uas_id",
+            "type",
+            "height",
+            "speed",
+            "pilot_distance",
+            "operator",
+            "link",
+            "level",
+        ]))
         .build()
 }
 
@@ -526,5 +536,38 @@ mod model_tests {
         assert_eq!(RemoteIdLink::Bluetooth.input_rate_hz(), 4e6);
         assert_eq!(RemoteIdLink::BluetoothBand.input_rate_hz(), 20e6);
         assert_eq!(RemoteIdLink::Wifi.bandwidth_hz(), 20e6);
+    }
+
+    #[test]
+    fn the_drone_table_names_fields_a_frame_shows() {
+        let messages = vec![
+            RemoteIdMessage::BasicId {
+                id_type: crate::remote_id::UasIdType::SerialNumber,
+                ua_type: crate::remote_id::UaType::Rotorcraft,
+                uas_id: "1581F5FJD239C00DW22E".to_owned(),
+            },
+            RemoteIdMessage::Location(location(52.5163, 13.3777)),
+            RemoteIdMessage::System(RemoteIdSystem {
+                operator_location_type: OperatorLocationType::Takeoff,
+                operator_lat: Some(52.516),
+                operator_lon: Some(13.377),
+                operator_altitude_m: None,
+                area_count: 0,
+                area_radius_m: 0,
+                area_ceiling_m: None,
+                area_floor_m: None,
+                classification: None,
+                timestamp: None,
+            }),
+            RemoteIdMessage::OperatorId {
+                id_type: 0,
+                operator_id: "FIN87astrdge12k8".to_owned(),
+            },
+        ];
+        let frame = drone(messages, Some("1581F5FJD239C00DW22E"));
+        crate::testutil::assert_views_hold(
+            &remote_id_kind(),
+            &[sdrmm_wire::DecoderEvent::of(&frame)],
+        );
     }
 }

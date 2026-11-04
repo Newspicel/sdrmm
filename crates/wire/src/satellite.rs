@@ -319,30 +319,36 @@ impl EventPayload for SatelliteFix {
             place: Some(Place::at(at).altitude(Some((ground.altitude_km * 1_000.0) as f32))),
             shapes,
             fields: fields(&[
-                ("Catalog", text(self.catalog.as_deref())),
+                ("catalog", "Catalog", text(self.catalog.as_deref())),
                 (
+                    "altitude",
                     "Altitude",
                     number(Some(ground.altitude_km), Unit::Kilometres, 0),
                 ),
                 (
+                    "footprint",
                     "Footprint",
                     number(Some(ground.footprint_km), Unit::Kilometres, 0),
                 ),
-                ("Visible", flag(Some(self.visible))),
+                ("visible", "Visible", flag(Some(self.visible))),
                 (
+                    "elevation",
                     "Elevation",
                     number(self.look.map(|look| look.elevation_deg), Unit::Degrees, 1),
                 ),
                 (
+                    "azimuth",
                     "Azimuth",
                     number(self.look.map(|look| look.azimuth_deg), Unit::Degrees, 1),
                 ),
                 (
+                    "range",
                     "Range",
                     number(self.look.map(|look| look.range_km), Unit::Kilometres, 0),
                 ),
-                ("Doppler", number(self.doppler_hz, Unit::Hz, 0)),
+                ("doppler", "Doppler", number(self.doppler_hz, Unit::Hz, 0)),
                 (
+                    "next_pass",
                     "Next pass",
                     self.next_pass.and_then(|pass| unix_time(pass.max_at)),
                 ),

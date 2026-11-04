@@ -16,8 +16,9 @@ use sdrmm_wire::present::text_of;
 impl RemoteIdFrame {
     pub(super) fn fields(&self) -> Vec<Field> {
         let mut shown = fields(&[
-            ("UAS ID", text(self.uas_id.as_deref())),
+            ("uas_id", "UAS ID", text(self.uas_id.as_deref())),
             (
+                "type",
                 "Type",
                 self.ua_type().and_then(UaType::label).and_then(text_of),
             ),
@@ -29,16 +30,20 @@ impl RemoteIdFrame {
                 .unwrap_or_default(),
         );
         shown.extend(fields(&[
-            ("Operator", text(self.operator_id())),
-            ("Description", text(self.self_id())),
-            ("Auth pages", count(self.auth_pages())),
-            ("Link", text_of(self.transport.label())),
-            ("PHY", text_of(self.phy.label())),
-            ("Address", text(Some(&self.address))),
-            ("Channel", count(self.channel)),
-            ("SSID", text(self.ssid.as_deref())),
-            ("Counter", count(self.counter)),
-            ("Level", number(Some(self.level_dbfs), Unit::Dbfs, 1)),
+            ("operator", "Operator", text(self.operator_id())),
+            ("description", "Description", text(self.self_id())),
+            ("auth_pages", "Auth pages", count(self.auth_pages())),
+            ("link", "Link", text_of(self.transport.label())),
+            ("phy", "PHY", text_of(self.phy.label())),
+            ("address", "Address", text(Some(&self.address))),
+            ("channel", "Channel", count(self.channel)),
+            ("ssid", "SSID", text(self.ssid.as_deref())),
+            ("counter", "Counter", count(self.counter)),
+            (
+                "level",
+                "Level",
+                number(Some(self.level_dbfs), Unit::Dbfs, 1),
+            ),
         ]));
         shown
     }
@@ -50,13 +55,26 @@ impl RemoteIdFrame {
             .zip(pilot)
             .map(|(drone, pilot)| distance_m(drone, pilot));
         fields(&[
-            ("Pilot", position(system.operator_lat, system.operator_lon)),
-            ("Pilot distance", number(distance, Unit::Metres, 0)),
             (
+                "pilot",
+                "Pilot",
+                position(system.operator_lat, system.operator_lon),
+            ),
+            (
+                "pilot_distance",
+                "Pilot distance",
+                number(distance, Unit::Metres, 0),
+            ),
+            (
+                "pilot_altitude",
                 "Pilot altitude",
                 number(system.operator_altitude_m, Unit::Metres, 0),
             ),
-            ("EU class", system.classification.and_then(eu_class)),
+            (
+                "eu_class",
+                "EU class",
+                system.classification.and_then(eu_class),
+            ),
         ])
     }
 
@@ -97,25 +115,40 @@ fn filled(text: &str) -> Option<&str> {
 
 fn location_fields(at: &RemoteIdLocation) -> Vec<Field> {
     fields(&[
-        ("Status", at.status.label().and_then(text_of)),
-        ("Position", position(at.lat, at.lon)),
-        ("Height", number(at.height_m, Unit::Metres, 1)),
-        ("Altitude", number(at.geodetic_altitude_m, Unit::Metres, 1)),
+        ("status", "Status", at.status.label().and_then(text_of)),
+        ("position", "Position", position(at.lat, at.lon)),
+        ("height", "Height", number(at.height_m, Unit::Metres, 1)),
         (
+            "altitude",
+            "Altitude",
+            number(at.geodetic_altitude_m, Unit::Metres, 1),
+        ),
+        (
+            "pressure_altitude",
             "Pressure altitude",
             number(at.pressure_altitude_m, Unit::Metres, 1),
         ),
-        ("Speed", number(at.speed_mps, Unit::MetresPerSecond, 2)),
-        ("Track", number(at.track_deg, Unit::Degrees, 0)),
         (
+            "speed",
+            "Speed",
+            number(at.speed_mps, Unit::MetresPerSecond, 2),
+        ),
+        ("track", "Track", number(at.track_deg, Unit::Degrees, 0)),
+        (
+            "climb",
             "Climb",
             number(at.vertical_speed_mps, Unit::MetresPerSecond, 1),
         ),
         (
+            "accuracy",
             "Accuracy",
             number(at.horizontal_accuracy_m, Unit::Metres, 0),
         ),
-        ("Past hour", number(at.seconds_after_hour, Unit::Seconds, 1)),
+        (
+            "past_hour",
+            "Past hour",
+            number(at.seconds_after_hour, Unit::Seconds, 1),
+        ),
     ])
 }
 

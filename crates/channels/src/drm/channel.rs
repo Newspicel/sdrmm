@@ -34,7 +34,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "drm".to_owned(),
     name: "DRM30 / DRM+".to_owned(),
     summary: "Digital Radio Mondiale receiver".to_owned(),
-    family: DecoderFamily::Broadcast,
+    family: DecoderFamily::BROADCAST,
     bandwidth_hz: DRM_PLUS_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,

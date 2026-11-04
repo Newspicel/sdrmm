@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, Symbol};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView, Symbol};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -1049,8 +1049,16 @@ impl EventPayload for LoraFrame {
 pub(crate) fn lora_kind() -> KindSpec {
     KindSpec::of::<LoraFrame>("LoRa", "Nodes", Hue::Green)
         .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-        .symbol(Symbol::Node)
+        .symbol(Symbol::NODE)
         .sighting()
+        .view(KindView::table(&[
+            "protocol",
+            "sf",
+            "snr",
+            "frequency_error",
+            "integrity",
+            "position",
+        ]))
         .build()
 }
 
@@ -1200,7 +1208,7 @@ mod model_tests {
             snr_db: 11.5,
         }
         .present(&EventKind::named("cw_skimmer"));
-        assert_eq!(view.labels(), ["Offset", "Speed", "SNR", "Text"]);
+        assert_eq!(view.labels(), ["Signal", "Offset", "Speed", "SNR", "Text"]);
         assert_eq!(
             view.field("Offset"),
             number(Some(-120.0_f32), Unit::Hz, 0).as_ref()
@@ -1481,5 +1489,26 @@ mod model_tests {
         raw.integrity = LoraIntegrity::CrcFailed;
         assert_eq!(raw.station(), None);
         assert_eq!(raw.summary(), "SF11 250 kHz · 4 bytes · CRC failed");
+    }
+
+    #[test]
+    fn the_node_table_names_fields_a_frame_shows_and_keys_stay_unique() {
+        let telemetry = lora_with(MeshtasticContent::Telemetry {
+            kind: "device".to_owned(),
+            time: None,
+            metrics: vec![MeshtasticMetric {
+                name: "snr".to_owned(),
+                value: 4.0,
+            }],
+        });
+        let view = telemetry.present(&LoraFrame::KIND);
+        assert!(view.keys().contains(&"snr_2"), "{:?}", view.keys());
+        crate::testutil::assert_views_hold(
+            &lora_kind(),
+            &[
+                sdrmm_wire::DecoderEvent::of(&placed_node()),
+                sdrmm_wire::DecoderEvent::of(&telemetry),
+            ],
+        );
     }
 }

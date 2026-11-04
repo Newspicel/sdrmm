@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { patchCatalogQuery } from "./api";
-import type { Capability, EventKind, EventKindEntry } from "./types";
+import type { Capability, EventKind, EventKindEntry, KindView } from "./types";
 
 const NONE: readonly EventKindEntry[] = [];
+const NO_VIEWS: readonly KindView[] = [];
 
 export function kindEntry(
   kind: string,
@@ -25,6 +26,11 @@ export function kindHas(
 
 export function kindLabel(kind: string, entries: readonly EventKindEntry[]): string {
   return kindEntry(kind, entries)?.name ?? kind.toUpperCase();
+}
+
+/** The layouts a kind declares beyond the plain log, none for a kind without hints. */
+export function kindViews(kind: string, entries: readonly EventKindEntry[]): readonly KindView[] {
+  return kindEntry(kind, entries)?.views ?? NO_VIEWS;
 }
 
 export function useEventKinds(): readonly EventKindEntry[] {

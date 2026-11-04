@@ -29,6 +29,9 @@ pub enum StateScope {
     Arrays,
     Phones,
     Missions,
+    /// The decoder registry changed, as a plugin reload changes it: channel types, event kinds
+    /// and the patch catalog.
+    Decoders,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -211,10 +214,16 @@ pub enum ServerEvent {
     ProcessorUpdate {
         node: String,
         reading: Box<crate::processor::ProcessorReading>,
+        /// Readouts and health derived from `reading`, for any face to show.
+        #[serde(default)]
+        status: Box<crate::channel::ChannelStatus>,
     },
     DfFusionUpdate {
         node: String,
         state: Box<crate::fusion::DfFusionState>,
+        /// Readouts derived from `state`.
+        #[serde(default)]
+        status: Box<crate::channel::ChannelStatus>,
     },
     SurveyUpdate {
         node: String,
@@ -252,6 +261,28 @@ pub enum ServerEvent {
     Error {
         message: String,
     },
+}
+
+impl ServerEvent {
+    /// A processor's reading with the status every face shows derived from it.
+    #[must_use]
+    pub fn processor_update(node: String, reading: crate::processor::ProcessorReading) -> Self {
+        Self::ProcessorUpdate {
+            node,
+            status: Box::new(reading.status()),
+            reading: Box::new(reading),
+        }
+    }
+
+    /// A triangulation's state with the readouts its face shows.
+    #[must_use]
+    pub fn fusion_update(node: String, state: crate::fusion::DfFusionState) -> Self {
+        Self::DfFusionUpdate {
+            node,
+            status: Box::new(state.status()),
+            state: Box::new(state),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

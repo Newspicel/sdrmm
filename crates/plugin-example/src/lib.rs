@@ -1,17 +1,24 @@
 //! Carrier: reports the strongest unmodulated carrier in its passband.
 //!
-//! The smallest useful decoder plugin: a settings form, one event kind with a presenter, and a
-//! host FFT doing the heavy lifting. Build it with
+//! A template for decoder plugins: a settings form, one event kind with a presenter and view
+//! hints, the health footer, a host FFT doing the heavy lifting, a transmitter ([`Beacon`]) and
+//! an array processor ([`LaneMeter`]).
+//! Build it with
 //! `cargo build -p sdrmm-plugin-example --target wasm32-unknown-unknown --release` and drop the
 //! `.wasm` into the server's plugins directory.
 
+mod beacon;
+pub mod lane_meter;
+
+pub use beacon::Beacon;
+pub use lane_meter::LaneMeter;
 use sdrmm_plugin::{
     Complex, Outputs, Plugin,
     kernels::Fft,
     serde_json::Value,
     wire::{
-        Capability, ChannelDescriptor, DecoderFamily, EventContract, EventKind, EventKindEntry,
-        NumberSpec, SettingField,
+        Capability, ChannelDescriptor, ChannelHealth, ChannelStatus, DecoderFamily, EventContract,
+        EventKind, EventKindEntry, KindView, NumberSpec, SettingField,
         patch::Hue,
         plugin::{ABI_VERSION, PluginLayout, PluginManifest},
         present::{Presentation, Unit, fields, number},
@@ -23,6 +30,8 @@ const TYPE_ID: &str = "carrier";
 const INPUT_RATE_HZ: f64 = 48_000.0;
 const FFT_LEN: usize = 1_024;
 const KIND: EventKind = EventKind::named("carrier");
+/// FFT blocks between two health reports.
+const STATUS_EVERY: u32 = 16;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -56,9 +65,20 @@ pub struct Carrier {
     fft: Fft,
     block: Vec<Complex<f32>>,
     held: Option<i64>,
+    blocks: u32,
 }
 
 impl Carrier {
+    fn report(&mut self, health: ChannelHealth, out: &mut Outputs) {
+        self.blocks = self.blocks.wrapping_add(1);
+        if self.blocks.is_multiple_of(STATUS_EVERY) {
+            out.status = Some(ChannelStatus {
+                health,
+                ..ChannelStatus::default()
+            });
+        }
+    }
+
     fn analyse(&mut self, out: &mut Outputs) {
         self.fft.run(&mut self.block);
         let power: Vec<f64> = self
@@ -76,7 +96,17 @@ impl Carrier {
         let snr_db = 10.0 * (top / floor).log10();
         let offset_hz = bin_offset(peak, self.rate);
         let inside = offset_hz.abs() <= self.settings.bandwidth_hz / 2.0;
-        if snr_db < self.settings.threshold_db || !inside {
+        let locked = snr_db >= self.settings.threshold_db && inside;
+        let health = ChannelHealth::default().lock(locked).snr(snr_db as f32);
+        self.report(
+            if locked {
+                health.freq_error(offset_hz)
+            } else {
+                health
+            },
+            out,
+        );
+        if !locked {
             self.held = None;
             return;
         }
@@ -107,11 +137,12 @@ impl Plugin for Carrier {
                 type_id: TYPE_ID.to_owned(),
                 name: "Carrier".to_owned(),
                 summary: "Strongest unmodulated carrier".to_owned(),
-                family: DecoderFamily::Utility,
+                family: DecoderFamily::UTILITY,
                 bandwidth_hz: 20_000.0,
                 input_rate_hz: INPUT_RATE_HZ,
                 has_audio: false,
                 emits: vec![KIND],
+                can_transmit: true,
                 ..ChannelDescriptor::default()
             },
             form: vec![
@@ -130,9 +161,12 @@ impl Plugin for Carrier {
             ],
             kinds: vec![
                 EventKindEntry::new(KIND, "Carrier", "Carriers", Hue::Teal)
-                    .caps(&[Capability::Log]),
+                    .caps(&[Capability::Log])
+                    .view(KindView::meter("snr", 0.0, 60.0))
+                    .view(KindView::trend(&["offset"], 300)),
             ],
             home_hz: None,
+            processor: Some(lane_meter::kind()),
         }
     }
 
@@ -157,6 +191,7 @@ impl Plugin for Carrier {
             fft: Fft::forward(FFT_LEN)?,
             block: Vec::with_capacity(FFT_LEN),
             held: None,
+            blocks: 0,
         })
     }
 
@@ -179,8 +214,12 @@ impl Plugin for Carrier {
             .map_err(|error| error.to_string())?;
         Ok(Presentation {
             fields: fields(&[
-                ("Offset", number(Some(seen.offset_hz), Unit::Hz, 0)),
-                ("SNR", number(Some(seen.snr_db), Unit::Db, 1)),
+                (
+                    "offset",
+                    "Offset",
+                    number(Some(seen.offset_hz), Unit::Hz, 0),
+                ),
+                ("snr", "SNR", number(Some(seen.snr_db), Unit::Db, 1)),
             ]),
             ..Presentation::of(format!("Carrier {:+.0} Hz", seen.offset_hz))
         })
@@ -188,6 +227,8 @@ impl Plugin for Carrier {
 }
 
 sdrmm_plugin::export!(Carrier);
+sdrmm_plugin::export_transmit!(Beacon);
+sdrmm_plugin::export_processor!(LaneMeter);
 
 #[cfg(test)]
 mod tests {
@@ -228,6 +269,17 @@ mod tests {
         let mut out = Outputs::default();
         carrier.process(&tone(5_000.0, FFT_LEN * 2), &mut out);
         assert!(out.events.is_empty());
+    }
+
+    #[test]
+    fn a_held_tone_reports_lock_and_its_offset_in_the_health_footer() {
+        let mut carrier = Carrier::open(INPUT_RATE_HZ, CarrierSettings::default()).expect("opens");
+        let mut out = Outputs::default();
+        carrier.process(&tone(1_500.0, FFT_LEN * STATUS_EVERY as usize), &mut out);
+        let health = out.status.expect("a status").health;
+        assert_eq!(health.lock, Some(true));
+        assert!((health.freq_error_hz.expect("offset") - 1_500.0).abs() < 50.0);
+        assert!(health.snr_db.expect("snr") > 20.0);
     }
 
     #[test]

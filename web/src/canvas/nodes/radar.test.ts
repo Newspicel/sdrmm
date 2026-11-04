@@ -4,26 +4,18 @@ import type { RadarProblem, RadarTrack } from "../../lib/types";
 import { radarUpdate } from "../../test/fixtures";
 import {
   bearingCell,
-  cleaningOptions,
-  clutterText,
   dopplerHzAt,
   frameAxes,
   hoverText,
-  illuminatorEdit,
   isStale,
-  lostCpis,
   problemLabel,
   pxToSurface,
   radarChips,
   radarSubtitle,
   rangeKmAt,
-  referenceText,
   sortTracks,
   surfaceToPx,
-  surveillanceOf,
-  toggledSurveillance,
   velocityMps,
-  withReference,
 } from "./radar";
 
 function frame(overrides: Partial<RangeDopplerFrame> = {}): RangeDopplerFrame {
@@ -119,37 +111,10 @@ describe("radar tracks", () => {
 });
 
 describe("radar health", () => {
-  it("counts every lost CPI", () => {
-    const update = radarUpdate([]);
-    const health = {
-      ...update.health,
-      dropped_cpis: 1,
-      dropped_reports: 2,
-      lagged_updates: 3,
-      dropped_samples: 2_048_000,
-    };
-    expect(lostCpis(health, update.axes, 2_048_000)).toBe(6 + 4);
-    expect(lostCpis(update.health, update.axes, null)).toBe(0);
-  });
-
   it("calls a reading stale after three hops and a second", () => {
     const update = radarUpdate([]);
     expect(isStale(0, update, 1_750)).toBe(false);
     expect(isStale(0, update, 1_751)).toBe(true);
-  });
-
-  it("names the reference state and averages the clutter cut", () => {
-    const update = radarUpdate([]);
-    expect(referenceText(update)).toBe("Raw");
-    const cma = { ...update.health.reference, mode: "cma" as const, quality_db: 6.2 };
-    expect(referenceText({ ...update, health: { ...update.health, reference: cma } })).toBe(
-      "CMA 6 dB",
-    );
-    const lost = { ...cma, locked: false };
-    expect(referenceText({ ...update, health: { ...update.health, reference: lost } })).toBe(
-      "Lost",
-    );
-    expect(clutterText([40, 42])).toEqual({ value: "41 dB", title: "L1 40 dB · L2 42 dB" });
   });
 
   it("keeps problem labels short", () => {
@@ -225,45 +190,5 @@ describe("radarSubtitle", () => {
       problems: [{ kind: "table_out_of_range" as const }, { kind: "overloaded" as const }],
     };
     expect(radarSubtitle({ ...base, update: both }).text).toBe("Overloaded");
-  });
-});
-
-describe("radar settings edits", () => {
-  it("toggles surveillance elements and folds back to all others", () => {
-    const all = { kind: "all_others" as const };
-    expect(surveillanceOf(all, 0, 5)).toEqual([1, 2, 3, 4]);
-    const fewer = toggledSurveillance(all, 2, 0, 5);
-    expect(fewer).toEqual({ kind: "mask", mask: 0b11010 });
-    expect(toggledSurveillance(fewer, 2, 0, 5)).toEqual(all);
-    expect(toggledSurveillance(all, 0, 0, 5)).toBe(all);
-    const single = { kind: "mask" as const, mask: 0b10 };
-    expect(toggledSurveillance(single, 1, 0, 5)).toBe(single);
-  });
-
-  it("keeps reference cleaning valid for the illuminator", () => {
-    const cma = { kind: "cma" as const, taps: 16, step: 0.001 };
-    expect(illuminatorEdit("dab", { illuminator: { kind: "fm" }, reference: cma })).toEqual({
-      illuminator: { kind: "dab" },
-      reference: { kind: "off" },
-    });
-    expect(
-      illuminatorEdit("custom", { illuminator: { kind: "fm" }, reference: cma }).reference,
-    ).toBe(cma);
-    const offered = cleaningOptions("dab").map((option) => [option.value, option.disabled]);
-    expect(offered).toEqual([
-      ["off", false],
-      ["cma", true],
-      ["dab_remod", false],
-    ]);
-  });
-
-  it("drops the new reference from the surveillance mask", () => {
-    expect(withReference({ kind: "mask", mask: 0b110 }, 1)).toEqual({
-      reference_element: 1,
-      surveillance: { kind: "mask", mask: 0b100 },
-    });
-    expect(withReference({ kind: "mask", mask: 0b10 }, 1).surveillance).toEqual({
-      kind: "all_others",
-    });
   });
 });

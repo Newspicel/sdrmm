@@ -42,6 +42,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "device",
         "data": {}
@@ -71,6 +72,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "gps",
         "data": {}
@@ -127,6 +129,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "array",
         "data": {
@@ -230,6 +233,7 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "bearing_fix",
               "broadcast_data",
               "call",
               "df",
@@ -257,6 +261,7 @@
         }
       ],
       "needs_channel_type": true,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "channel",
         "data": {
@@ -299,6 +304,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "scope"
       }
@@ -332,6 +338,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "baseband_scope"
       }
@@ -360,6 +367,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "speaker"
       }
@@ -389,6 +397,7 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "bearing_fix",
               "df",
               "df_fix",
               "dv",
@@ -412,6 +421,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "map"
       }
@@ -459,6 +469,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "signal_map",
         "data": {
@@ -510,6 +521,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "propagation",
         "data": {
@@ -545,6 +557,7 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "bearing_fix",
               "broadcast_data",
               "call",
               "df",
@@ -562,6 +575,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "readout"
       }
@@ -591,6 +605,7 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "bearing_fix",
               "broadcast_data",
               "call",
               "df",
@@ -606,10 +621,11 @@
             "history",
             "clips"
           ],
-          "takes": "Broadcast data, Call, Bearing, Fix, Digital voice, Signal ID, Radar, Transmission"
+          "takes": "Bearing fix, Broadcast data, Call, Bearing, Fix, Digital voice, Signal ID, Radar, Transmission"
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "decoder_log",
         "data": {}
@@ -649,6 +665,7 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "bearing_fix",
               "broadcast_data",
               "call",
               "df",
@@ -666,6 +683,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "spectrum_monitor",
         "data": {
@@ -731,6 +749,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "trunk",
         "data": {
@@ -765,6 +784,7 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "bearing_fix",
               "broadcast_data",
               "call",
               "df",
@@ -787,6 +807,7 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "bearing_fix",
               "broadcast_data",
               "call",
               "df",
@@ -804,6 +825,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "event_filter",
         "data": {
@@ -850,6 +872,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "audio_fx",
         "data": {
@@ -896,6 +919,7 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "bearing_fix",
               "broadcast_data",
               "call",
               "df",
@@ -907,10 +931,11 @@
             ]
           },
           "multi": "many",
-          "takes": "Broadcast data, Call, Bearing, Fix, Digital voice, Signal ID, Radar, Transmission"
+          "takes": "Bearing fix, Broadcast data, Call, Bearing, Fix, Digital voice, Signal ID, Radar, Transmission"
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "event_output",
         "data": {
@@ -954,6 +979,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "video"
       }
@@ -1010,6 +1036,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "recorder",
         "data": {
@@ -1056,6 +1083,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "audio_recorder",
         "data": {
@@ -1102,6 +1130,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "baseband_recorder",
         "data": {
@@ -1149,6 +1178,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "network_export",
         "data": {
@@ -1178,6 +1208,7 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "bearing_fix",
               "broadcast_data",
               "call",
               "df",
@@ -1192,10 +1223,11 @@
           "keeps": [
             "history"
           ],
-          "takes": "Broadcast data, Call, Bearing, Fix, Digital voice, Signal ID, Radar, Transmission"
+          "takes": "Bearing fix, Broadcast data, Call, Bearing, Fix, Digital voice, Signal ID, Radar, Transmission"
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "export"
       }
@@ -1242,6 +1274,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "scanner",
         "data": {
@@ -1329,6 +1362,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "hunt",
         "data": {
@@ -1371,6 +1405,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "schedule",
         "data": {}
@@ -1429,6 +1464,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "satellite",
         "data": {
@@ -1465,6 +1501,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "rotator",
         "data": {
@@ -1531,6 +1568,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "df",
         "data": {
@@ -1552,7 +1590,290 @@
             "yaw_gate_dps": 20.0
           }
         }
-      }
+      },
+      "settings": [
+        {
+          "key": "algorithm",
+          "label": "Method",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "bartlett",
+                "label": "Bartlett",
+                "title": "Plain beam scan, robust"
+              },
+              {
+                "value": "capon",
+                "label": "Capon",
+                "title": "Sharper beam scan"
+              },
+              {
+                "value": "music",
+                "label": "MUSIC",
+                "title": "Subspace scan, splits close sources"
+              },
+              {
+                "value": "root_music",
+                "label": "Root-MUSIC",
+                "title": "Grid-free MUSIC, needs a line or circle"
+              },
+              {
+                "value": "esprit",
+                "label": "ESPRIT",
+                "title": "Grid-free rotation fit, needs a line or circle"
+              }
+            ]
+          }
+        },
+        {
+          "key": "offset_hz",
+          "label": "Offset",
+          "title": "From the array centre",
+          "control": {
+            "type": "number",
+            "min": -100000000.0,
+            "max": 100000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          },
+          "quiet": [
+            0.0
+          ]
+        },
+        {
+          "key": "bandwidth_hz",
+          "label": "Width",
+          "title": "Band the finder listens to",
+          "control": {
+            "type": "number",
+            "min": 100.0,
+            "max": 20000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          }
+        },
+        {
+          "key": "sources",
+          "label": "Sources",
+          "title": "Sources, Auto counts them from the signal",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 15.0,
+            "step": 1.0,
+            "optional": "Auto"
+          },
+          "quiet": [
+            null
+          ]
+        },
+        {
+          "key": "source_rule",
+          "label": "Rule",
+          "title": "How Auto counts sources",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "dominance",
+                "label": "Dominance",
+                "title": "Count sources clearly above the rest"
+              },
+              {
+                "value": "mdl",
+                "label": "MDL",
+                "title": "Information criterion"
+              }
+            ]
+          },
+          "when": [
+            {
+              "key": "sources",
+              "any_of": [
+                null
+              ]
+            }
+          ]
+        },
+        {
+          "key": "max_peaks",
+          "label": "Peaks",
+          "title": "Most bearings per report",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": 1,
+                "label": "1"
+              },
+              {
+                "value": 2,
+                "label": "2"
+              },
+              {
+                "value": 3,
+                "label": "3"
+              },
+              {
+                "value": 4,
+                "label": "4"
+              }
+            ]
+          }
+        },
+        {
+          "key": "squelch_db",
+          "label": "Squelch",
+          "title": "Minimum peak above the floor, 0 off",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 40.0,
+            "step": 0.5,
+            "unit": "dB"
+          },
+          "quiet": [
+            0.0
+          ]
+        },
+        {
+          "key": "report_ms",
+          "label": "Report",
+          "control": {
+            "type": "number",
+            "min": 100.0,
+            "max": 10000.0,
+            "step": 100.0,
+            "unit": "ms"
+          }
+        },
+        {
+          "key": "elevation",
+          "label": "Elevation",
+          "title": "Estimate elevation too, needs a planar array",
+          "control": {
+            "type": "toggle"
+          }
+        },
+        {
+          "key": "station_id",
+          "label": "Station",
+          "title": "Name on the bearings this finder sends",
+          "control": {
+            "type": "text",
+            "placeholder": "unnamed",
+            "optional": true,
+            "secret": false,
+            "max_len": 64
+          },
+          "quiet": [
+            null
+          ]
+        },
+        {
+          "key": "ula_side",
+          "label": "Side",
+          "title": "Which side of a line array to report",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "both",
+                "label": "Both",
+                "title": "Report front and mirror"
+              },
+              {
+                "value": "front",
+                "label": "Front",
+                "title": "Only the side ahead of the line"
+              },
+              {
+                "value": "back",
+                "label": "Back",
+                "title": "Only the side behind the line"
+              }
+            ]
+          },
+          "section": "More"
+        },
+        {
+          "key": "forward_backward",
+          "label": "FB",
+          "title": "Forward-backward averaging, needs a symmetric array",
+          "control": {
+            "type": "toggle"
+          },
+          "section": "More"
+        },
+        {
+          "key": "smoothing",
+          "label": "Smooth",
+          "title": "Spatial smoothing for reflections, 0 off, needs a line or circle",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 8.0,
+            "step": 1.0
+          },
+          "quiet": [
+            0
+          ],
+          "section": "More"
+        },
+        {
+          "key": "loading",
+          "label": "Loading",
+          "title": "Diagonal loading, steadies Capon and MUSIC",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.001
+          },
+          "section": "More"
+        },
+        {
+          "key": "azimuth_step_deg",
+          "label": "Step",
+          "title": "Scan grid",
+          "control": {
+            "type": "number",
+            "min": 0.25,
+            "max": 10.0,
+            "step": 0.25,
+            "unit": "°"
+          },
+          "section": "More"
+        },
+        {
+          "key": "yaw_gate_dps",
+          "label": "Yaw gate",
+          "title": "Skip blocks while the array turns faster",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 360.0,
+            "step": 1.0,
+            "unit": "°/s"
+          },
+          "section": "More"
+        },
+        {
+          "key": "carry_over",
+          "label": "Carry over",
+          "title": "Share of the last report kept",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 0.99,
+            "step": 0.01
+          },
+          "section": "More"
+        }
+      ]
     },
     {
       "kind": "beamformer",
@@ -1601,6 +1922,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "beamformer",
         "data": {
@@ -1627,7 +1949,678 @@
             "steer_timeout_ms": 5000
           }
         }
-      }
+      },
+      "settings": [
+        {
+          "key": "mode",
+          "label": "Mode",
+          "title": "How lanes combine",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "mrc",
+                "label": "MRC",
+                "title": "Best SNR from every lane"
+              },
+              {
+                "value": "das",
+                "label": "Beam",
+                "title": "Steer with equal weights"
+              },
+              {
+                "value": "mvdr",
+                "label": "MVDR",
+                "title": "Steer and suppress the rest"
+              },
+              {
+                "value": "lcmv",
+                "label": "Nulls",
+                "title": "Steer with nulls"
+              },
+              {
+                "value": "gsc",
+                "label": "GSC",
+                "title": "Steer and cancel the rest as it moves"
+              },
+              {
+                "value": "canceller",
+                "label": "Cancel",
+                "title": "Subtract what reference lanes hear"
+              },
+              {
+                "value": "cma",
+                "label": "CMA",
+                "title": "Lock onto a steady envelope"
+              }
+            ]
+          }
+        },
+        {
+          "key": "steer.kind",
+          "label": "Steer",
+          "title": "Beam direction",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "wired",
+                "label": "DF",
+                "title": "Follow the wired direction finder"
+              },
+              {
+                "value": "fixed",
+                "label": "Fixed",
+                "title": "One azimuth"
+              }
+            ]
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "das",
+                "mvdr",
+                "lcmv",
+                "gsc"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "steer.azimuth_deg",
+          "label": "Azimuth",
+          "title": "From array forward",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 359.9,
+            "step": 0.1,
+            "unit": "°"
+          },
+          "fallback": 0.0,
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "das",
+                "mvdr",
+                "lcmv",
+                "gsc"
+              ]
+            },
+            {
+              "key": "steer.kind",
+              "any_of": [
+                "fixed"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "steer_timeout_ms",
+          "label": "Timeout",
+          "title": "Hold the last bearing this long",
+          "control": {
+            "type": "number",
+            "min": 100.0,
+            "max": 60000.0,
+            "step": 100.0,
+            "unit": "ms"
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "das",
+                "mvdr",
+                "lcmv",
+                "gsc"
+              ]
+            },
+            {
+              "key": "steer.kind",
+              "any_of": [
+                "wired"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "nulls_deg",
+          "label": "Nulls",
+          "title": "Azimuths to silence",
+          "control": {
+            "type": "numbers",
+            "spec": {
+              "min": 0.0,
+              "max": 359.9,
+              "step": 0.1,
+              "unit": "°"
+            },
+            "max_len": 3
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "lcmv",
+                "gsc"
+              ]
+            }
+          ],
+          "quiet": [
+            []
+          ]
+        },
+        {
+          "key": "auto_nulls",
+          "label": "Auto nulls",
+          "title": "Find and silence strong interferers",
+          "control": {
+            "type": "toggle"
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "lcmv",
+                "gsc"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "loading",
+          "label": "Loading",
+          "title": "Diagonal loading, steadies the solve",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 10.0,
+            "step": 0.01
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "mvdr",
+                "lcmv",
+                "gsc"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "noise",
+          "label": "Noise",
+          "title": "Noise model",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "measured",
+                "label": "Measured",
+                "title": "Noise of each lane as measured"
+              },
+              {
+                "value": "white",
+                "label": "White",
+                "title": "Same noise on every lane"
+              }
+            ]
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "mrc"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "main_lane",
+          "label": "Main",
+          "title": "Lane the others are cancelled from",
+          "control": {
+            "type": "lanes",
+            "pick": "one"
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "canceller"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "reference_lanes",
+          "label": "Refs",
+          "title": "Lanes that hear only the interference, none for every other lane",
+          "control": {
+            "type": "lanes",
+            "pick": "list",
+            "except": "main_lane",
+            "empty": "others"
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "canceller"
+              ]
+            }
+          ],
+          "quiet": [
+            []
+          ]
+        },
+        {
+          "key": "taps",
+          "label": "Taps",
+          "title": "Delays per reference lane",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 32.0,
+            "step": 1.0
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "canceller"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "adaptation",
+          "label": "Adapt",
+          "title": "Weight solver",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "nlms",
+                "label": "NLMS",
+                "title": "Light, follows slowly"
+              },
+              {
+                "value": "rls",
+                "label": "RLS",
+                "title": "Heavier, follows fast"
+              }
+            ]
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "canceller"
+              ]
+            },
+            {
+              "key": "taps",
+              "any_of": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28,
+                29,
+                30,
+                31,
+                32
+              ]
+            }
+          ]
+        },
+        {
+          "key": "step",
+          "label": "Step",
+          "title": "How fast weights follow",
+          "control": {
+            "type": "number",
+            "min": 0.00001,
+            "max": 1.9,
+            "step": 0.00001
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "canceller"
+              ]
+            },
+            {
+              "key": "taps",
+              "any_of": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28,
+                29,
+                30,
+                31,
+                32
+              ]
+            },
+            {
+              "key": "adaptation",
+              "any_of": [
+                "nlms"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "step",
+          "label": "Step",
+          "title": "How fast weights follow",
+          "control": {
+            "type": "number",
+            "min": 0.00001,
+            "max": 1.9,
+            "step": 0.00001
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "gsc",
+                "cma"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "forget",
+          "label": "Forget",
+          "title": "Memory of the RLS solver",
+          "control": {
+            "type": "number",
+            "min": 0.9,
+            "max": 0.99999,
+            "step": 0.00001
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "canceller"
+              ]
+            },
+            {
+              "key": "taps",
+              "any_of": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28,
+                29,
+                30,
+                31,
+                32
+              ]
+            },
+            {
+              "key": "adaptation",
+              "any_of": [
+                "rls"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "update_ms",
+          "label": "Update",
+          "title": "New weights this often",
+          "control": {
+            "type": "number",
+            "min": 50.0,
+            "max": 10000.0,
+            "step": 10.0,
+            "unit": "ms"
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "mrc",
+                "das",
+                "mvdr",
+                "lcmv"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "crossfade_ms",
+          "label": "Fade",
+          "title": "Blend old and new weights",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 500.0,
+            "step": 1.0,
+            "unit": "ms"
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "mrc",
+                "das",
+                "mvdr",
+                "lcmv"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "carry_over",
+          "label": "Carry over",
+          "title": "Share of the last estimate kept",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 0.99,
+            "step": 0.01
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "mrc",
+                "mvdr",
+                "lcmv"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "update_ms",
+          "label": "Update",
+          "title": "New weights this often",
+          "control": {
+            "type": "number",
+            "min": 50.0,
+            "max": 10000.0,
+            "step": 10.0,
+            "unit": "ms"
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "canceller"
+              ]
+            },
+            {
+              "key": "taps",
+              "any_of": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "key": "crossfade_ms",
+          "label": "Fade",
+          "title": "Blend old and new weights",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 500.0,
+            "step": 1.0,
+            "unit": "ms"
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "canceller"
+              ]
+            },
+            {
+              "key": "taps",
+              "any_of": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "key": "carry_over",
+          "label": "Carry over",
+          "title": "Share of the last estimate kept",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 0.99,
+            "step": 0.01
+          },
+          "when": [
+            {
+              "key": "mode",
+              "any_of": [
+                "canceller"
+              ]
+            },
+            {
+              "key": "taps",
+              "any_of": [
+                1
+              ]
+            }
+          ]
+        },
+        {
+          "key": "offset_hz",
+          "label": "Offset",
+          "title": "From the array centre",
+          "control": {
+            "type": "number",
+            "min": -100000000.0,
+            "max": 100000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          },
+          "quiet": [
+            0.0
+          ]
+        },
+        {
+          "key": "bandwidth_hz",
+          "label": "Width",
+          "title": "Band around the offset, empty for every lane sample",
+          "control": {
+            "type": "number",
+            "min": 1000.0,
+            "max": 20000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0,
+            "optional": "full"
+          },
+          "quiet": [
+            null
+          ]
+        }
+      ]
     },
     {
       "kind": "passive_radar",
@@ -1694,6 +2687,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "passive_radar",
         "data": {
@@ -1754,7 +2748,856 @@
             "gpu": "auto"
           }
         }
-      }
+      },
+      "settings": [
+        {
+          "key": "illuminator.kind",
+          "label": "Illum",
+          "title": "Transmitter type",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "fm",
+                "label": "FM"
+              },
+              {
+                "value": "dab",
+                "label": "DAB"
+              },
+              {
+                "value": "dvbt_partial",
+                "label": "DVB-T"
+              },
+              {
+                "value": "custom",
+                "label": "Custom"
+              }
+            ]
+          }
+        },
+        {
+          "key": "illuminator.bandwidth_hz",
+          "label": "Bandwidth",
+          "title": "Illuminator bandwidth",
+          "control": {
+            "type": "number",
+            "min": 10000.0,
+            "max": 20000000.0,
+            "step": 1000.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          },
+          "fallback": 7610000.0,
+          "when": [
+            {
+              "key": "illuminator.kind",
+              "any_of": [
+                "dvbt_partial"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "illuminator.bandwidth_hz",
+          "label": "Bandwidth",
+          "title": "Illuminator bandwidth",
+          "control": {
+            "type": "number",
+            "min": 10000.0,
+            "max": 20000000.0,
+            "step": 1000.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          },
+          "fallback": 200000.0,
+          "when": [
+            {
+              "key": "illuminator.kind",
+              "any_of": [
+                "custom"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "offset_hz",
+          "label": "Offset",
+          "title": "Illuminator minus array centre",
+          "control": {
+            "type": "number",
+            "min": -50000000.0,
+            "max": 50000000.0,
+            "step": 1000.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          },
+          "quiet": [
+            0.0
+          ]
+        },
+        {
+          "key": "reference_element",
+          "label": "Ref",
+          "title": "Element pointed at the transmitter",
+          "control": {
+            "type": "lanes",
+            "pick": "one"
+          }
+        },
+        {
+          "key": "surveillance.kind",
+          "label": "Listen",
+          "title": "Elements that listen for echoes",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "all_others",
+                "label": "Others",
+                "title": "Every element but the reference"
+              },
+              {
+                "value": "mask",
+                "label": "Pick",
+                "title": "Chosen elements"
+              }
+            ]
+          }
+        },
+        {
+          "key": "surveillance.mask",
+          "label": "Elements",
+          "title": "Elements that listen for echoes",
+          "control": {
+            "type": "lanes",
+            "pick": "mask",
+            "except": "reference_element"
+          },
+          "fallback": 2,
+          "when": [
+            {
+              "key": "surveillance.kind",
+              "any_of": [
+                "mask"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "reference.kind",
+          "label": "Clean",
+          "title": "Reference cleaning",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "off",
+                "label": "off"
+              },
+              {
+                "value": "cma",
+                "label": "CMA"
+              }
+            ]
+          },
+          "when": [
+            {
+              "key": "illuminator.kind",
+              "any_of": [
+                "fm",
+                "custom"
+              ]
+            }
+          ],
+          "quiet": [
+            "off"
+          ]
+        },
+        {
+          "key": "reference.kind",
+          "label": "Clean",
+          "title": "Reference cleaning",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "off",
+                "label": "off"
+              },
+              {
+                "value": "dab_remod",
+                "label": "DAB remod"
+              }
+            ]
+          },
+          "when": [
+            {
+              "key": "illuminator.kind",
+              "any_of": [
+                "dab"
+              ]
+            }
+          ],
+          "quiet": [
+            "off"
+          ]
+        },
+        {
+          "key": "reference.kind",
+          "label": "Clean",
+          "title": "Reference cleaning",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "off",
+                "label": "off"
+              }
+            ]
+          },
+          "when": [
+            {
+              "key": "illuminator.kind",
+              "any_of": [
+                "dvbt_partial"
+              ]
+            }
+          ],
+          "quiet": [
+            "off"
+          ]
+        },
+        {
+          "key": "reference.taps",
+          "label": "CMA taps",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 64.0,
+            "step": 1.0
+          },
+          "fallback": 16,
+          "when": [
+            {
+              "key": "reference.kind",
+              "any_of": [
+                "cma"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "reference.step",
+          "label": "CMA step",
+          "control": {
+            "type": "number",
+            "min": 0.0001,
+            "max": 0.1,
+            "step": 0.0001
+          },
+          "fallback": 0.0010000000474974513,
+          "when": [
+            {
+              "key": "reference.kind",
+              "any_of": [
+                "cma"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "max_range_km",
+          "label": "Range",
+          "title": "Bistatic excess range searched",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 400.0,
+            "step": 1.0,
+            "unit": "km"
+          }
+        },
+        {
+          "key": "max_speed_mps",
+          "label": "Speed",
+          "title": "Largest range rate searched",
+          "control": {
+            "type": "number",
+            "min": 10.0,
+            "max": 2000.0,
+            "step": 10.0,
+            "unit": "m/s"
+          }
+        },
+        {
+          "key": "cpi_ms",
+          "label": "CPI",
+          "title": "Coherent processing interval",
+          "control": {
+            "type": "number",
+            "min": 50.0,
+            "max": 2000.0,
+            "step": 10.0,
+            "unit": "ms"
+          }
+        },
+        {
+          "key": "overlap",
+          "label": "Overlap",
+          "title": "Share of each CPI reused by the next",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 0.75,
+            "step": 0.05,
+            "unit": "%",
+            "scale": 0.01
+          },
+          "quiet": [
+            0.0
+          ]
+        },
+        {
+          "key": "aoa",
+          "label": "AoA",
+          "title": "Angle of arrival per echo, needs calibration",
+          "control": {
+            "type": "toggle"
+          }
+        },
+        {
+          "key": "gpu",
+          "label": "GPU",
+          "title": "Where the heavy maths runs",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "auto",
+                "label": "Auto",
+                "title": "GPU when it is faster"
+              },
+              {
+                "value": "off",
+                "label": "off"
+              }
+            ]
+          }
+        },
+        {
+          "key": "clutter.method",
+          "label": "Clutter",
+          "title": "Clutter method",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "eca_batch",
+                "label": "ECA-B",
+                "title": "Batched extensive cancellation"
+              },
+              {
+                "value": "eca_sliding",
+                "label": "ECA-S",
+                "title": "Sliding extensive cancellation"
+              },
+              {
+                "value": "nlms",
+                "label": "NLMS"
+              },
+              {
+                "value": "block_nlms",
+                "label": "Block NLMS"
+              },
+              {
+                "value": "off",
+                "label": "off"
+              }
+            ]
+          },
+          "quiet": [
+            "off"
+          ]
+        },
+        {
+          "key": "cfar.pfa",
+          "label": "Pfa",
+          "title": "False alarm chance per cell",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": 0.001,
+                "label": "1e-3"
+              },
+              {
+                "value": 0.0001,
+                "label": "1e-4"
+              },
+              {
+                "value": 0.00001,
+                "label": "1e-5"
+              },
+              {
+                "value": 1e-6,
+                "label": "1e-6"
+              },
+              {
+                "value": 1e-7,
+                "label": "1e-7"
+              },
+              {
+                "value": 1e-8,
+                "label": "1e-8"
+              }
+            ]
+          }
+        },
+        {
+          "key": "clutter.reach_km",
+          "label": "Reach",
+          "title": "Clutter extent removed",
+          "control": {
+            "type": "number",
+            "min": 0.1,
+            "max": 100.0,
+            "step": 0.1,
+            "unit": "km"
+          },
+          "when": [
+            {
+              "key": "clutter.method",
+              "any_of": [
+                "eca_batch",
+                "eca_sliding",
+                "nlms",
+                "block_nlms"
+              ]
+            }
+          ],
+          "section": "Clutter"
+        },
+        {
+          "key": "clutter.lead",
+          "label": "Lead",
+          "title": "Taps before zero delay",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 16.0,
+            "step": 1.0
+          },
+          "when": [
+            {
+              "key": "clutter.method",
+              "any_of": [
+                "eca_batch",
+                "eca_sliding",
+                "nlms",
+                "block_nlms"
+              ]
+            }
+          ],
+          "section": "Clutter"
+        },
+        {
+          "key": "clutter.doppler_taps",
+          "label": "Doppler taps",
+          "title": "Doppler shifts each side",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 2.0,
+            "step": 1.0
+          },
+          "when": [
+            {
+              "key": "clutter.method",
+              "any_of": [
+                "eca_batch",
+                "eca_sliding"
+              ]
+            }
+          ],
+          "section": "Clutter"
+        },
+        {
+          "key": "clutter.batch_ms",
+          "label": "Batch",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 1000.0,
+            "step": 1.0,
+            "unit": "ms"
+          },
+          "when": [
+            {
+              "key": "clutter.method",
+              "any_of": [
+                "eca_batch"
+              ]
+            }
+          ],
+          "section": "Clutter"
+        },
+        {
+          "key": "clutter.taper",
+          "label": "Taper",
+          "title": "Blend weights between batches",
+          "control": {
+            "type": "toggle"
+          },
+          "when": [
+            {
+              "key": "clutter.method",
+              "any_of": [
+                "eca_batch"
+              ]
+            }
+          ],
+          "section": "Clutter"
+        },
+        {
+          "key": "clutter.extension_ms",
+          "label": "Extension",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 500.0,
+            "step": 1.0,
+            "unit": "ms"
+          },
+          "when": [
+            {
+              "key": "clutter.method",
+              "any_of": [
+                "eca_sliding"
+              ]
+            }
+          ],
+          "section": "Clutter"
+        },
+        {
+          "key": "clutter.loading",
+          "label": "Loading",
+          "title": "Diagonal loading",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.0001
+          },
+          "when": [
+            {
+              "key": "clutter.method",
+              "any_of": [
+                "eca_batch",
+                "eca_sliding"
+              ]
+            }
+          ],
+          "section": "Clutter"
+        },
+        {
+          "key": "clutter.step",
+          "label": "Step",
+          "control": {
+            "type": "number",
+            "min": 0.001,
+            "max": 1.0,
+            "step": 0.001
+          },
+          "when": [
+            {
+              "key": "clutter.method",
+              "any_of": [
+                "nlms",
+                "block_nlms"
+              ]
+            }
+          ],
+          "section": "Clutter"
+        },
+        {
+          "key": "cfar.kind.kind",
+          "label": "CFAR",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "ca",
+                "label": "CA",
+                "title": "Cell averaging"
+              },
+              {
+                "value": "os",
+                "label": "OS",
+                "title": "Ordered statistic"
+              },
+              {
+                "value": "go",
+                "label": "GO",
+                "title": "Greatest of"
+              }
+            ]
+          },
+          "section": "Detect"
+        },
+        {
+          "key": "cfar.kind.rank",
+          "label": "Rank",
+          "title": "Ordered cell used as the noise estimate",
+          "control": {
+            "type": "number",
+            "min": 0.5,
+            "max": 0.95,
+            "step": 0.01,
+            "unit": "%",
+            "scale": 0.01
+          },
+          "fallback": 0.75,
+          "when": [
+            {
+              "key": "cfar.kind.kind",
+              "any_of": [
+                "os"
+              ]
+            }
+          ],
+          "section": "Detect"
+        },
+        {
+          "key": "cfar.window",
+          "label": "Window",
+          "title": "Cells the noise is taken from",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "range",
+                "label": "Range",
+                "title": "Across delay per Doppler row"
+              },
+              {
+                "value": "plane",
+                "label": "2D",
+                "title": "Across delay and Doppler"
+              }
+            ]
+          },
+          "section": "Detect"
+        },
+        {
+          "key": "cfar.guard_range",
+          "label": "Guard",
+          "title": "Cells skipped next to the cell tested",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 16.0,
+            "step": 1.0
+          },
+          "section": "Detect"
+        },
+        {
+          "key": "cfar.train_range",
+          "label": "Train",
+          "title": "Cells averaged for the noise",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 64.0,
+            "step": 1.0
+          },
+          "section": "Detect"
+        },
+        {
+          "key": "cfar.guard_doppler",
+          "label": "Guard Doppler",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 16.0,
+            "step": 1.0
+          },
+          "when": [
+            {
+              "key": "cfar.window",
+              "any_of": [
+                "plane"
+              ]
+            }
+          ],
+          "section": "Detect"
+        },
+        {
+          "key": "cfar.train_doppler",
+          "label": "Train Doppler",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 16.0,
+            "step": 1.0
+          },
+          "when": [
+            {
+              "key": "cfar.window",
+              "any_of": [
+                "plane"
+              ]
+            }
+          ],
+          "section": "Detect"
+        },
+        {
+          "key": "cfar.min_doppler_hz",
+          "label": "Min Doppler",
+          "title": "Slower rows count as clutter",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 100.0,
+            "step": 0.5,
+            "unit": "Hz"
+          },
+          "section": "Detect"
+        },
+        {
+          "key": "cfar.min_range_km",
+          "label": "Min range",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 50.0,
+            "step": 0.5,
+            "unit": "km"
+          },
+          "section": "Detect"
+        },
+        {
+          "key": "cfar.min_snr_db",
+          "label": "Min SNR",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 40.0,
+            "step": 0.5,
+            "unit": "dB"
+          },
+          "section": "Detect"
+        },
+        {
+          "key": "window",
+          "label": "Doppler window",
+          "title": "Taper across batches",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "hann",
+                "label": "Hann"
+              },
+              {
+                "value": "blackman_harris",
+                "label": "Blackman-Harris"
+              },
+              {
+                "value": "rectangular",
+                "label": "none"
+              }
+            ]
+          },
+          "section": "Detect"
+        },
+        {
+          "key": "tracker.confirm_hits",
+          "label": "Start hits",
+          "title": "Hits needed to start a track",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 16.0,
+            "step": 1.0
+          },
+          "section": "Track",
+          "at_most": "tracker.confirm_window"
+        },
+        {
+          "key": "tracker.confirm_window",
+          "label": "Start looks",
+          "title": "Looks the start hits are counted over",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 16.0,
+            "step": 1.0
+          },
+          "section": "Track"
+        },
+        {
+          "key": "tracker.coast_looks",
+          "label": "Coast",
+          "title": "Missed looks before a track ends",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 100.0,
+            "step": 1.0
+          },
+          "section": "Track"
+        },
+        {
+          "key": "tracker.max_accel_mps2",
+          "label": "Max accel",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 200.0,
+            "step": 1.0,
+            "unit": "m/s²"
+          },
+          "section": "Track"
+        },
+        {
+          "key": "tracker.gate",
+          "label": "Gate",
+          "title": "How far an echo may land from its track",
+          "control": {
+            "type": "number",
+            "min": 4.0,
+            "max": 30.0,
+            "step": 0.1
+          },
+          "section": "Track"
+        },
+        {
+          "key": "tracker.jerk",
+          "label": "Jerk",
+          "title": "How fast targets may change acceleration",
+          "control": {
+            "type": "number",
+            "min": 0.1,
+            "max": 1000.0,
+            "step": 0.1
+          },
+          "section": "Track"
+        },
+        {
+          "key": "assumed_altitude_m",
+          "label": "Altitude",
+          "title": "Target height when no truth matches",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 15000.0,
+            "step": 100.0,
+            "unit": "m"
+          },
+          "section": "Track"
+        }
+      ]
     },
     {
       "kind": "stitch",
@@ -1793,6 +3636,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "stitch",
         "data": {
@@ -1804,7 +3648,60 @@
             "match_phase": true
           }
         }
-      }
+      },
+      "settings": [
+        {
+          "key": "blend",
+          "label": "Blend",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "snr",
+                "label": "SNR",
+                "title": "Favour the cleaner lane in overlaps"
+              },
+              {
+                "value": "equal",
+                "label": "Equal",
+                "title": "Average overlaps"
+              }
+            ]
+          }
+        },
+        {
+          "key": "noise_equalise",
+          "label": "Equalise",
+          "title": "Match noise floors",
+          "control": {
+            "type": "toggle"
+          }
+        },
+        {
+          "key": "flatten",
+          "label": "Flatten",
+          "title": "Undo each lane's filter droop",
+          "control": {
+            "type": "toggle"
+          }
+        },
+        {
+          "key": "spur_reject",
+          "label": "Spurs",
+          "title": "Drop lane spurs in overlaps",
+          "control": {
+            "type": "toggle"
+          }
+        },
+        {
+          "key": "match_phase",
+          "label": "Phase",
+          "title": "Line up phase across seams",
+          "control": {
+            "type": "toggle"
+          }
+        }
+      ]
     },
     {
       "kind": "spatial_spectrum",
@@ -1835,6 +3732,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "spatial_spectrum",
         "data": {
@@ -1849,7 +3747,208 @@
             "offset_hz": 0.0
           }
         }
-      }
+      },
+      "settings": [
+        {
+          "key": "method",
+          "label": "Method",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "bartlett",
+                "label": "Bartlett",
+                "title": "Robust, wide peaks"
+              },
+              {
+                "value": "capon",
+                "label": "Capon",
+                "title": "Sharper peaks"
+              },
+              {
+                "value": "music",
+                "label": "MUSIC",
+                "title": "Sharpest, needs clean signals"
+              }
+            ]
+          }
+        },
+        {
+          "key": "bins",
+          "label": "FFT",
+          "title": "Frequency bins",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": 256,
+                "label": "256"
+              },
+              {
+                "value": 512,
+                "label": "512"
+              },
+              {
+                "value": 1024,
+                "label": "1024"
+              },
+              {
+                "value": 2048,
+                "label": "2048"
+              },
+              {
+                "value": 4096,
+                "label": "4096"
+              }
+            ]
+          }
+        },
+        {
+          "key": "columns",
+          "label": "Columns",
+          "title": "Frequency columns shown",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": 64,
+                "label": "64"
+              },
+              {
+                "value": 128,
+                "label": "128"
+              },
+              {
+                "value": 256,
+                "label": "256"
+              },
+              {
+                "value": 512,
+                "label": "512"
+              },
+              {
+                "value": 1024,
+                "label": "1024"
+              }
+            ]
+          },
+          "at_most": "bins"
+        },
+        {
+          "key": "average_ms",
+          "label": "Average",
+          "control": {
+            "type": "number",
+            "min": 50.0,
+            "max": 10000.0,
+            "step": 10.0,
+            "unit": "ms"
+          }
+        },
+        {
+          "key": "report_ms",
+          "label": "Rate",
+          "title": "New picture this often",
+          "control": {
+            "type": "number",
+            "min": 50.0,
+            "max": 2000.0,
+            "step": 10.0,
+            "unit": "ms"
+          }
+        },
+        {
+          "key": "azimuth_step_deg",
+          "label": "Step",
+          "title": "Bearing resolution",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": 1.0,
+                "label": "1°"
+              },
+              {
+                "value": 2.0,
+                "label": "2°"
+              },
+              {
+                "value": 3.0,
+                "label": "3°"
+              },
+              {
+                "value": 4.0,
+                "label": "4°"
+              },
+              {
+                "value": 5.0,
+                "label": "5°"
+              },
+              {
+                "value": 6.0,
+                "label": "6°"
+              },
+              {
+                "value": 8.0,
+                "label": "8°"
+              },
+              {
+                "value": 9.0,
+                "label": "9°"
+              },
+              {
+                "value": 10.0,
+                "label": "10°"
+              }
+            ]
+          }
+        },
+        {
+          "key": "span_db",
+          "label": "Range",
+          "title": "Colour range below the peak",
+          "control": {
+            "type": "number",
+            "min": 10.0,
+            "max": 80.0,
+            "step": 1.0,
+            "unit": "dB"
+          }
+        },
+        {
+          "key": "offset_hz",
+          "label": "Offset",
+          "title": "From the array centre",
+          "control": {
+            "type": "number",
+            "min": -100000000.0,
+            "max": 100000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          },
+          "quiet": [
+            0.0
+          ]
+        },
+        {
+          "key": "bandwidth_hz",
+          "label": "Width",
+          "title": "Band around the offset, empty for every lane sample",
+          "control": {
+            "type": "number",
+            "min": 1000.0,
+            "max": 20000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0,
+            "optional": "full"
+          },
+          "quiet": [
+            null
+          ]
+        }
+      ]
     },
     {
       "kind": "correlator",
@@ -1880,6 +3979,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "correlator",
         "data": {
@@ -1891,7 +3991,143 @@
             "channels": 256
           }
         }
-      }
+      },
+      "settings": [
+        {
+          "key": "bins",
+          "label": "FFT",
+          "title": "Frequency bins",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": 64,
+                "label": "64"
+              },
+              {
+                "value": 128,
+                "label": "128"
+              },
+              {
+                "value": 256,
+                "label": "256"
+              },
+              {
+                "value": 512,
+                "label": "512"
+              },
+              {
+                "value": 1024,
+                "label": "1024"
+              },
+              {
+                "value": 2048,
+                "label": "2048"
+              },
+              {
+                "value": 4096,
+                "label": "4096"
+              },
+              {
+                "value": 8192,
+                "label": "8192"
+              }
+            ]
+          }
+        },
+        {
+          "key": "channels",
+          "label": "Channels",
+          "title": "Frequency points sent per baseline",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": 16,
+                "label": "16"
+              },
+              {
+                "value": 32,
+                "label": "32"
+              },
+              {
+                "value": 64,
+                "label": "64"
+              },
+              {
+                "value": 128,
+                "label": "128"
+              },
+              {
+                "value": 256,
+                "label": "256"
+              },
+              {
+                "value": 512,
+                "label": "512"
+              },
+              {
+                "value": 1024,
+                "label": "1024"
+              }
+            ]
+          },
+          "at_most": "bins"
+        },
+        {
+          "key": "integrate_s",
+          "label": "Integrate",
+          "title": "Averaging time per result",
+          "control": {
+            "type": "number",
+            "min": 0.05,
+            "max": 600.0,
+            "step": 0.05,
+            "unit": "s"
+          }
+        },
+        {
+          "key": "overlap",
+          "label": "Overlap",
+          "title": "Half-overlapping FFTs, twice the work",
+          "control": {
+            "type": "toggle"
+          }
+        },
+        {
+          "key": "offset_hz",
+          "label": "Offset",
+          "title": "From the array centre",
+          "control": {
+            "type": "number",
+            "min": -100000000.0,
+            "max": 100000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          },
+          "quiet": [
+            0.0
+          ]
+        },
+        {
+          "key": "bandwidth_hz",
+          "label": "Width",
+          "title": "Band around the offset, empty for every lane sample",
+          "control": {
+            "type": "number",
+            "min": 1000.0,
+            "max": 20000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0,
+            "optional": "full"
+          },
+          "quiet": [
+            null
+          ]
+        }
+      ]
     },
     {
       "kind": "polarimeter",
@@ -1930,6 +4166,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "polarimeter",
         "data": {
@@ -1944,6 +4181,175 @@
             "crossfade_ms": 20,
             "flip_hand": false
           }
+        }
+      },
+      "settings": [
+        {
+          "key": "h_lane",
+          "label": "H",
+          "title": "Lane of the horizontal antenna",
+          "control": {
+            "type": "lanes",
+            "pick": "one",
+            "except": "v_lane"
+          }
+        },
+        {
+          "key": "v_lane",
+          "label": "V",
+          "title": "Lane of the vertical antenna",
+          "control": {
+            "type": "lanes",
+            "pick": "one",
+            "except": "h_lane"
+          }
+        },
+        {
+          "key": "matched",
+          "label": "Output",
+          "title": "What the beam output carries",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": true,
+                "label": "Matched",
+                "title": "Beam output matched to the wave"
+              },
+              {
+                "value": false,
+                "label": "Cross",
+                "title": "Beam output across the wave"
+              }
+            ]
+          }
+        },
+        {
+          "key": "offset_hz",
+          "label": "Offset",
+          "title": "From the array centre",
+          "control": {
+            "type": "number",
+            "min": -100000000.0,
+            "max": 100000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          },
+          "quiet": [
+            0.0
+          ]
+        },
+        {
+          "key": "bandwidth_hz",
+          "label": "Width",
+          "title": "Band around the offset",
+          "control": {
+            "type": "number",
+            "min": 100.0,
+            "max": 20000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          }
+        },
+        {
+          "key": "report_ms",
+          "label": "Report",
+          "control": {
+            "type": "number",
+            "min": 50.0,
+            "max": 10000.0,
+            "step": 10.0,
+            "unit": "ms"
+          }
+        },
+        {
+          "key": "average_ms",
+          "label": "Average",
+          "control": {
+            "type": "number",
+            "min": 50.0,
+            "max": 10000.0,
+            "step": 10.0,
+            "unit": "ms"
+          }
+        },
+        {
+          "key": "crossfade_ms",
+          "label": "Fade",
+          "title": "Blend old and new weights",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 500.0,
+            "step": 1.0,
+            "unit": "ms"
+          }
+        },
+        {
+          "key": "flip_hand",
+          "label": "Flip",
+          "title": "Swap right and left hand",
+          "control": {
+            "type": "toggle"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "processor",
+      "name": "Processor",
+      "category": "tool",
+      "summary": "An array processor from a plugin",
+      "role": {
+        "role": "processor"
+      },
+      "face": {
+        "width": 400,
+        "dial": false
+      },
+      "ports": [
+        {
+          "name": "array",
+          "port_type": "array",
+          "direction": "in",
+          "payload": {
+            "type": "array"
+          },
+          "multi": "one"
+        },
+        {
+          "name": "events",
+          "port_type": "events",
+          "direction": "out",
+          "payload": {
+            "type": "events",
+            "kinds": [
+              "bearing_fix",
+              "broadcast_data",
+              "call",
+              "df",
+              "df_fix",
+              "dv",
+              "ident",
+              "nav",
+              "radar",
+              "radar_sites",
+              "satellite",
+              "transmission"
+            ]
+          },
+          "multi": "many"
+        }
+      ],
+      "needs_channel_type": false,
+      "needs_processor_type": true,
+      "default_body": {
+        "kind": "processor",
+        "data": {
+          "processor_type": "",
+          "settings": null
         }
       }
     },
@@ -1999,6 +4405,7 @@
         }
       ],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "triangulation",
         "data": {
@@ -2014,6 +4421,187 @@
             "align": true
           }
         }
+      },
+      "settings": [
+        {
+          "key": "decay.kind",
+          "label": "Fade",
+          "title": "How fast old bearings count less",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "auto",
+                "label": "Auto",
+                "title": "Fixed or moving, from the stations",
+                "status": "fade"
+              },
+              {
+                "value": "fixed",
+                "label": "Fixed",
+                "title": "Half life 1 min"
+              },
+              {
+                "value": "moving",
+                "label": "Moving",
+                "title": "Half life 30 min"
+              },
+              {
+                "value": "half_life",
+                "label": "Set",
+                "title": "Pick the half life"
+              }
+            ]
+          }
+        },
+        {
+          "key": "decay.seconds",
+          "label": "Half life",
+          "title": "Old bearings count half after this",
+          "control": {
+            "type": "number",
+            "min": 10.0,
+            "max": 86400.0,
+            "step": 10.0,
+            "unit": "s"
+          },
+          "fallback": 300,
+          "when": [
+            {
+              "key": "decay.kind",
+              "any_of": [
+                "half_life"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "nav",
+          "label": "Guide",
+          "title": "Where to send a wired vehicle",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "auto",
+                "label": "Auto",
+                "title": "Cross the bearings first, then drive at the fix"
+              },
+              {
+                "value": "direct",
+                "label": "Direct",
+                "title": "Drive at the fix as soon as there is one"
+              },
+              {
+                "value": "off",
+                "label": "off"
+              }
+            ]
+          },
+          "quiet": [
+            "off"
+          ]
+        },
+        {
+          "key": "extent_km",
+          "label": "Extent",
+          "title": "Half width of the search grid",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 100.0,
+            "step": 0.1,
+            "unit": "km"
+          }
+        },
+        {
+          "key": "probe_km",
+          "label": "Probe",
+          "title": "How far across a single bearing to drive",
+          "control": {
+            "type": "number",
+            "min": 0.5,
+            "max": 50.0,
+            "step": 0.5,
+            "unit": "km"
+          }
+        },
+        {
+          "key": "min_confidence",
+          "label": "Min conf",
+          "title": "Bearings below this are refused",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01
+          }
+        },
+        {
+          "key": "align",
+          "label": "Align",
+          "title": "Learn each station's heading offset from crossing bearings",
+          "control": {
+            "type": "toggle"
+          }
+        },
+        {
+          "key": "max_emitters",
+          "label": "Emitters",
+          "title": "Most transmitters to find at once",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 4.0,
+            "step": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "kind": "bearing_fix",
+      "name": "Bearing fix",
+      "category": "tool",
+      "summary": "Live fix from each station's newest bearing",
+      "role": {
+        "role": "plain"
+      },
+      "face": {
+        "width": 320,
+        "dial": false
+      },
+      "ports": [
+        {
+          "name": "events",
+          "port_type": "events",
+          "direction": "in",
+          "payload": {
+            "type": "events",
+            "kinds": [
+              "df"
+            ]
+          },
+          "multi": "many",
+          "takes": "bearings",
+          "note": "Bearings with a known origin"
+        },
+        {
+          "name": "events",
+          "port_type": "events",
+          "direction": "out",
+          "payload": {
+            "type": "events",
+            "kinds": [
+              "bearing_fix"
+            ]
+          },
+          "multi": "many"
+        }
+      ],
+      "needs_channel_type": false,
+      "needs_processor_type": false,
+      "default_body": {
+        "kind": "bearing_fix"
       }
     },
     {
@@ -2035,6 +4623,7 @@
       },
       "ports": [],
       "needs_channel_type": false,
+      "needs_processor_type": false,
       "default_body": {
         "kind": "note",
         "data": {
@@ -2100,6 +4689,23 @@
     }
   ],
   "event_kinds": [
+    {
+      "kind": "bearing_fix",
+      "name": "Bearing fix",
+      "noun": "Fixes",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "fix",
+      "hue": "indigo",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
     {
       "kind": "broadcast_data",
       "name": "Broadcast data",
@@ -2275,5 +4881,6 @@
       "verifies": true
     }
   ],
-  "feeds": []
+  "feeds": [],
+  "processors": []
 }

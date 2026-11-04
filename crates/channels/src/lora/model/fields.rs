@@ -9,31 +9,47 @@ use sdrmm_wire::present::Unit;
 use sdrmm_wire::present::count;
 use sdrmm_wire::present::fields;
 use sdrmm_wire::present::flag;
+use sdrmm_wire::present::key_of;
 use sdrmm_wire::present::number;
 use sdrmm_wire::present::only_if;
 use sdrmm_wire::present::position;
 use sdrmm_wire::present::repaired;
 use sdrmm_wire::present::text;
 use sdrmm_wire::present::text_of;
+use sdrmm_wire::present::unique_keys;
 
 impl LoraFrame {
     pub(super) fn fields(&self) -> Vec<Field> {
         let mut shown = fields(&[
             (
+                "protocol",
                 "Protocol",
                 self.decoded.as_ref().map(protocol).and_then(text_of),
             ),
-            ("SF", text_of(format!("SF{}", self.spreading_factor))),
-            ("Bandwidth", number(Some(self.bandwidth_hz), Unit::Hz, 0)),
-            ("Coding rate", text_of(self.coding_rate.label())),
-            ("Sync word", hex(self.sync_word.into(), 2)),
-            ("Header", text_of(implicit(self.implicit_header))),
-            ("Low data rate", only_if(self.low_data_rate)),
-            ("IQ", text_of(inverted(self.inverted_iq))),
-            ("Integrity", text_of(self.integrity.label())),
-            ("FEC repaired", repaired(self.fec_corrected)),
-            ("SNR", number(Some(self.snr_db), Unit::Db, 1)),
+            ("sf", "SF", text_of(format!("SF{}", self.spreading_factor))),
             (
+                "bandwidth",
+                "Bandwidth",
+                number(Some(self.bandwidth_hz), Unit::Hz, 0),
+            ),
+            (
+                "coding_rate",
+                "Coding rate",
+                text_of(self.coding_rate.label()),
+            ),
+            ("sync_word", "Sync word", hex(self.sync_word.into(), 2)),
+            ("header", "Header", text_of(implicit(self.implicit_header))),
+            (
+                "low_data_rate",
+                "Low data rate",
+                only_if(self.low_data_rate),
+            ),
+            ("iq", "IQ", text_of(inverted(self.inverted_iq))),
+            ("integrity", "Integrity", text_of(self.integrity.label())),
+            ("fec_repaired", "FEC repaired", repaired(self.fec_corrected)),
+            ("snr", "SNR", number(Some(self.snr_db), Unit::Db, 1)),
+            (
+                "frequency_error",
                 "Frequency error",
                 number(Some(self.frequency_error_hz), Unit::Hz, 0),
             ),
@@ -44,8 +60,8 @@ impl LoraFrame {
             Some(LoraPayload::Meshcore(packet)) => meshcore_fields(packet),
             None => Vec::new(),
         });
-        shown.extend(fields(&[("Payload", text(Some(&self.payload)))]));
-        shown
+        shown.extend(fields(&[("payload", "Payload", text(Some(&self.payload)))]));
+        unique_keys(shown)
     }
 }
 
@@ -92,32 +108,49 @@ fn lorawan_fields(frame: &LorawanFrame) -> Vec<Field> {
         .map(|hz| sdrmm_wire::units::hertz(*hz))
         .collect();
     fields(&[
-        ("Type", text_of(frame.message_type.label())),
-        ("DevAddr", text(frame.dev_addr.as_deref())),
-        ("DevEUI", text(frame.dev_eui.as_deref())),
-        ("JoinEUI", text(frame.join_eui.as_deref())),
-        ("FCnt", count(frame.f_cnt)),
-        ("FPort", count(frame.f_port)),
-        ("MIC", text(Some(&mic))),
-        ("ADR", flag(frame.adr)),
-        ("ADR ack request", flag(frame.adr_ack_req)),
-        ("Ack", flag(frame.ack)),
-        ("Pending", flag(frame.pending_or_class_b)),
-        ("MAC commands", joined_text(&frame.mac_commands, ", ")),
-        ("FRMPayload", text(frame.frm_payload.as_deref())),
-        ("Decrypted", text(frame.decrypted.as_deref())),
-        ("DevNonce", count(frame.dev_nonce)),
-        ("JoinNonce", count(frame.join_nonce)),
-        ("NetID", text(frame.net_id.as_deref())),
-        ("RX1 DR offset", count(frame.rx1_dr_offset)),
+        ("type", "Type", text_of(frame.message_type.label())),
+        ("devaddr", "DevAddr", text(frame.dev_addr.as_deref())),
+        ("deveui", "DevEUI", text(frame.dev_eui.as_deref())),
+        ("joineui", "JoinEUI", text(frame.join_eui.as_deref())),
+        ("fcnt", "FCnt", count(frame.f_cnt)),
+        ("fport", "FPort", count(frame.f_port)),
+        ("mic", "MIC", text(Some(&mic))),
+        ("adr", "ADR", flag(frame.adr)),
         (
+            "adr_ack_request",
+            "ADR ack request",
+            flag(frame.adr_ack_req),
+        ),
+        ("ack", "Ack", flag(frame.ack)),
+        ("pending", "Pending", flag(frame.pending_or_class_b)),
+        (
+            "mac_commands",
+            "MAC commands",
+            joined_text(&frame.mac_commands, ", "),
+        ),
+        (
+            "frmpayload",
+            "FRMPayload",
+            text(frame.frm_payload.as_deref()),
+        ),
+        ("decrypted", "Decrypted", text(frame.decrypted.as_deref())),
+        ("devnonce", "DevNonce", count(frame.dev_nonce)),
+        ("joinnonce", "JoinNonce", count(frame.join_nonce)),
+        ("netid", "NetID", text(frame.net_id.as_deref())),
+        ("rx1_dr_offset", "RX1 DR offset", count(frame.rx1_dr_offset)),
+        (
+            "rx2_data_rate",
             "RX2 data rate",
             frame
                 .rx2_data_rate
                 .and_then(|rate| text_of(format!("DR{rate}"))),
         ),
-        ("RX delay", number(frame.rx_delay_s, Unit::Seconds, 0)),
-        ("Channels", joined_text(&channels, ", ")),
+        (
+            "rx_delay",
+            "RX delay",
+            number(frame.rx_delay_s, Unit::Seconds, 0),
+        ),
+        ("channels", "Channels", joined_text(&channels, ", ")),
     ])
 }
 
@@ -132,25 +165,39 @@ fn meshtastic_fields(packet: &MeshtasticPacket) -> Vec<Field> {
         .clone()
         .or_else(|| packet.port.map(|port| port.to_string()));
     let mut shown = fields(&[
-        ("From", text_of(MeshtasticPacket::node_id(packet.from))),
-        ("To", text_of(MeshtasticPacket::node_id(packet.to))),
-        ("Packet ID", hex(packet.id.into(), 8)),
         (
+            "from",
+            "From",
+            text_of(MeshtasticPacket::node_id(packet.from)),
+        ),
+        ("to", "To", text_of(MeshtasticPacket::node_id(packet.to))),
+        ("packet_id", "Packet ID", hex(packet.id.into(), 8)),
+        (
+            "channel",
             "Channel",
             text(packet.channel.as_deref()).or_else(|| hex(packet.channel_hash.into(), 2)),
         ),
-        ("Encryption", text_of(encryption(packet.encryption))),
-        ("Port", text(port.as_deref())),
-        ("Hops", text_of(hops)),
-        ("Want ack", only_if(packet.want_ack)),
-        ("Via MQTT", only_if(packet.via_mqtt)),
-        ("Next hop", nonzero_hex(packet.next_hop)),
-        ("Relay", nonzero_hex(packet.relay_node)),
         (
+            "encryption",
+            "Encryption",
+            text_of(encryption(packet.encryption)),
+        ),
+        ("port", "Port", text(port.as_deref())),
+        ("hops", "Hops", text_of(hops)),
+        ("want_ack", "Want ack", only_if(packet.want_ack)),
+        ("via_mqtt", "Via MQTT", only_if(packet.via_mqtt)),
+        ("next_hop", "Next hop", nonzero_hex(packet.next_hop)),
+        ("relay", "Relay", nonzero_hex(packet.relay_node)),
+        (
+            "request",
             "Request",
             packet.request_id.and_then(|id| hex(id.into(), 8)),
         ),
-        ("Reply to", packet.reply_id.and_then(|id| hex(id.into(), 8))),
+        (
+            "reply_to",
+            "Reply to",
+            packet.reply_id.and_then(|id| hex(id.into(), 8)),
+        ),
     ]);
     shown.extend(
         packet
@@ -185,7 +232,9 @@ fn node_ids(nodes: &[u32]) -> Vec<String> {
 
 fn meshtastic_content_fields(content: &MeshtasticContent) -> Vec<Field> {
     match content {
-        MeshtasticContent::Text { text: message } => fields(&[("Text", text(Some(message)))]),
+        MeshtasticContent::Text { text: message } => {
+            fields(&[("text", "Text", text(Some(message)))])
+        }
         MeshtasticContent::Position {
             lat,
             lon,
@@ -195,15 +244,17 @@ fn meshtastic_content_fields(content: &MeshtasticContent) -> Vec<Field> {
             ground_speed_kmh,
             precision_bits,
         } => fields(&[
-            ("Position", position(*lat, *lon)),
-            ("Altitude", number(*altitude_m, Unit::Metres, 0)),
-            ("Satellites", count(*satellites)),
+            ("position", "Position", position(*lat, *lon)),
+            ("altitude", "Altitude", number(*altitude_m, Unit::Metres, 0)),
+            ("satellites", "Satellites", count(*satellites)),
             (
+                "ground_speed",
                 "Ground speed",
                 number(*ground_speed_kmh, Unit::KilometresPerHour, 0),
             ),
-            ("Fix time", time(*fix)),
+            ("fix_time", "Fix time", time(*fix)),
             (
+                "precision",
                 "Precision",
                 precision_bits.and_then(|bits| text_of(format!("{bits} bits"))),
             ),
@@ -217,13 +268,13 @@ fn meshtastic_content_fields(content: &MeshtasticContent) -> Vec<Field> {
             licensed,
             public_key,
         } => fields(&[
-            ("Node", text(Some(id))),
-            ("Long name", text(Some(long_name))),
-            ("Short name", text(Some(short_name))),
-            ("Hardware", count(*hw_model)),
-            ("Role", count(*role)),
-            ("Licensed", only_if(*licensed)),
-            ("Public key", text(public_key.as_deref())),
+            ("node", "Node", text(Some(id))),
+            ("long_name", "Long name", text(Some(long_name))),
+            ("short_name", "Short name", text(Some(short_name))),
+            ("hardware", "Hardware", count(*hw_model)),
+            ("role", "Role", count(*role)),
+            ("licensed", "Licensed", only_if(*licensed)),
+            ("public_key", "Public key", text(public_key.as_deref())),
         ]),
         MeshtasticContent::Telemetry {
             kind,
@@ -231,8 +282,12 @@ fn meshtastic_content_fields(content: &MeshtasticContent) -> Vec<Field> {
             metrics,
         } => telemetry_fields(kind, *at, metrics),
         MeshtasticContent::Routing { error, route } => fields(&[
-            ("Routing", text_of(error.as_deref().unwrap_or("ack"))),
-            ("Route", joined_text(&node_ids(route), " → ")),
+            (
+                "routing",
+                "Routing",
+                text_of(error.as_deref().unwrap_or("ack")),
+            ),
+            ("route", "Route", joined_text(&node_ids(route), " → ")),
         ]),
         MeshtasticContent::Traceroute {
             route,
@@ -241,10 +296,12 @@ fn meshtastic_content_fields(content: &MeshtasticContent) -> Vec<Field> {
             snr_back_db,
         } => fields(&[
             (
+                "route",
                 "Route",
                 joined_text(&hops_with_snr(route, snr_towards_db), " → "),
             ),
             (
+                "route_back",
                 "Route back",
                 joined_text(&hops_with_snr(route_back, snr_back_db), " → "),
             ),
@@ -258,10 +315,10 @@ fn meshtastic_content_fields(content: &MeshtasticContent) -> Vec<Field> {
             expire,
             ..
         } => fields(&[
-            ("Waypoint", text(Some(name))),
-            ("Description", text(Some(description))),
-            ("Position", position(*lat, *lon)),
-            ("Expires", time(*expire)),
+            ("waypoint", "Waypoint", text(Some(name))),
+            ("description", "Description", text(Some(description))),
+            ("position", "Position", position(*lat, *lon)),
+            ("expires", "Expires", time(*expire)),
         ]),
         MeshtasticContent::MapReport {
             long_name,
@@ -272,24 +329,28 @@ fn meshtastic_content_fields(content: &MeshtasticContent) -> Vec<Field> {
             altitude_m,
             online_nodes,
         } => fields(&[
-            ("Long name", text(Some(long_name))),
-            ("Short name", text(Some(short_name))),
-            ("Firmware", text(Some(firmware_version))),
-            ("Position", position(*lat, *lon)),
-            ("Altitude", number(*altitude_m, Unit::Metres, 0)),
-            ("Online nodes", count(*online_nodes)),
+            ("long_name", "Long name", text(Some(long_name))),
+            ("short_name", "Short name", text(Some(short_name))),
+            ("firmware", "Firmware", text(Some(firmware_version))),
+            ("position", "Position", position(*lat, *lon)),
+            ("altitude", "Altitude", number(*altitude_m, Unit::Metres, 0)),
+            ("online_nodes", "Online nodes", count(*online_nodes)),
         ]),
-        MeshtasticContent::Data { bytes } => fields(&[("Data", text(Some(bytes)))]),
+        MeshtasticContent::Data { bytes } => fields(&[("data", "Data", text(Some(bytes)))]),
     }
 }
 
 fn telemetry_fields(kind: &str, at: Option<u32>, metrics: &[MeshtasticMetric]) -> Vec<Field> {
-    let mut shown = fields(&[("Telemetry", text(Some(kind))), ("Time", time(at))]);
+    let mut shown = fields(&[
+        ("telemetry", "Telemetry", text(Some(kind))),
+        ("time", "Time", time(at)),
+    ]);
     shown.extend(metrics.iter().filter_map(|metric| {
-        Some(Field {
-            label: metric.name.clone(),
-            value: number(Some(metric.value), Unit::None, 2)?,
-        })
+        Some(Field::new(
+            key_of(&metric.name),
+            metric.name.clone(),
+            number(Some(metric.value), Unit::None, 2)?,
+        ))
     }));
     shown
 }
@@ -306,8 +367,8 @@ fn neighbor_fields(node: u32, neighbors: &[MeshtasticNeighbor]) -> Vec<Field> {
         })
         .collect();
     fields(&[
-        ("Node", text_of(MeshtasticPacket::node_id(node))),
-        ("Neighbors", joined_text(&heard, ", ")),
+        ("node", "Node", text_of(MeshtasticPacket::node_id(node))),
+        ("neighbors", "Neighbors", joined_text(&heard, ", ")),
     ])
 }
 
@@ -332,11 +393,15 @@ fn meshcore_fields(packet: &MeshcorePacket) -> Vec<Field> {
         .map(|code| format!("0x{code:04X}"))
         .collect();
     let mut shown = fields(&[
-        ("Route", text_of(route(packet.route))),
-        ("Type", text_of(packet.payload_type.label())),
-        ("Version", count(Some(packet.version))),
-        ("Transport codes", joined_text(&codes, ", ")),
-        ("Path", joined_text(&packet.path, " → ")),
+        ("route", "Route", text_of(route(packet.route))),
+        ("type", "Type", text_of(packet.payload_type.label())),
+        ("version", "Version", count(Some(packet.version))),
+        (
+            "transport_codes",
+            "Transport codes",
+            joined_text(&codes, ", "),
+        ),
+        ("path", "Path", joined_text(&packet.path, " → ")),
     ]);
     shown.extend(meshcore_content_fields(&packet.content));
     shown
@@ -377,12 +442,13 @@ fn meshcore_content_fields(content: &MeshcoreContent) -> Vec<Field> {
             lon,
             signature_ok,
         } => fields(&[
-            ("Name", text(name.as_deref())),
-            ("Node type", text_of(node_type(*kind))),
-            ("Position", position(*lat, *lon)),
-            ("Advertised", time(Some(*timestamp))),
-            ("Public key", text(Some(public_key))),
+            ("name", "Name", text(name.as_deref())),
+            ("node_type", "Node type", text_of(node_type(*kind))),
+            ("position", "Position", position(*lat, *lon)),
+            ("advertised", "Advertised", time(Some(*timestamp))),
+            ("public_key", "Public key", text(Some(public_key))),
             (
+                "signature",
                 "Signature",
                 text_of(if *signature_ok { "verified" } else { "failed" }),
             ),
@@ -394,10 +460,14 @@ fn meshcore_content_fields(content: &MeshcoreContent) -> Vec<Field> {
             sender,
             text: message,
         } => fields(&[
-            ("Channel", channel(name.as_deref(), *channel_hash)),
-            ("Sender", text(sender.as_deref())),
-            ("Sent", time(*timestamp)),
-            ("Text", text(message.as_deref())),
+            (
+                "channel",
+                "Channel",
+                channel(name.as_deref(), *channel_hash),
+            ),
+            ("sender", "Sender", text(sender.as_deref())),
+            ("sent", "Sent", time(*timestamp)),
+            ("text", "Text", text(message.as_deref())),
         ]),
         MeshcoreContent::GroupData {
             channel_hash,
@@ -405,52 +475,62 @@ fn meshcore_content_fields(content: &MeshcoreContent) -> Vec<Field> {
             data_type,
             data,
         } => fields(&[
-            ("Channel", channel(name.as_deref(), *channel_hash)),
-            ("Data type", data_type.and_then(|kind| hex(kind.into(), 4))),
-            ("Data", text(data.as_deref())),
+            (
+                "channel",
+                "Channel",
+                channel(name.as_deref(), *channel_hash),
+            ),
+            (
+                "data_type",
+                "Data type",
+                data_type.and_then(|kind| hex(kind.into(), 4)),
+            ),
+            ("data", "Data", text(data.as_deref())),
         ]),
         MeshcoreContent::Encrypted {
             destination,
             source,
             mac,
         } => fields(&[
-            ("Source", text(Some(source))),
-            ("Destination", text(Some(destination))),
-            ("MAC", text(Some(mac))),
+            ("source", "Source", text(Some(source))),
+            ("destination", "Destination", text(Some(destination))),
+            ("mac", "MAC", text(Some(mac))),
         ]),
         MeshcoreContent::AnonRequest {
             destination,
             public_key,
         } => fields(&[
-            ("Destination", text(Some(destination))),
-            ("Public key", text(Some(public_key))),
+            ("destination", "Destination", text(Some(destination))),
+            ("public_key", "Public key", text(Some(public_key))),
         ]),
-        MeshcoreContent::Ack { checksum } => fields(&[("Checksum", hex((*checksum).into(), 8))]),
+        MeshcoreContent::Ack { checksum } => {
+            fields(&[("checksum", "Checksum", hex((*checksum).into(), 8))])
+        }
         MeshcoreContent::Trace {
             tag,
             auth_code,
             flags,
             hops,
         } => fields(&[
-            ("Tag", hex((*tag).into(), 8)),
-            ("Auth code", hex((*auth_code).into(), 8)),
-            ("Flags", hex((*flags).into(), 2)),
-            ("Hops", joined_text(hops, " → ")),
+            ("tag", "Tag", hex((*tag).into(), 8)),
+            ("auth_code", "Auth code", hex((*auth_code).into(), 8)),
+            ("flags", "Flags", hex((*flags).into(), 2)),
+            ("hops", "Hops", joined_text(hops, " → ")),
         ]),
         MeshcoreContent::Control { subtype, data } => fields(&[
-            ("Subtype", hex((*subtype).into(), 2)),
-            ("Data", text(Some(data))),
+            ("subtype", "Subtype", hex((*subtype).into(), 2)),
+            ("data", "Data", text(Some(data))),
         ]),
         MeshcoreContent::Multipart {
             remaining,
             inner_type,
             data,
         } => fields(&[
-            ("Remaining", count(Some(*remaining))),
-            ("Inner type", hex((*inner_type).into(), 2)),
-            ("Data", text(Some(data))),
+            ("remaining", "Remaining", count(Some(*remaining))),
+            ("inner_type", "Inner type", hex((*inner_type).into(), 2)),
+            ("data", "Data", text(Some(data))),
         ]),
-        MeshcoreContent::Raw { data } => fields(&[("Data", text(Some(data)))]),
+        MeshcoreContent::Raw { data } => fields(&[("data", "Data", text(Some(data)))]),
     }
 }
 

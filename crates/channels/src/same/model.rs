@@ -175,16 +175,17 @@ impl EventPayload for SameMessage {
 fn same_fields(message: &SameMessage) -> Vec<Field> {
     let shown = match &message.body {
         SameBody::Alert(alert) => alert_fields(alert),
-        SameBody::EndOfMessage => fields(&[("Header", text_of("NNNN (end of message)"))]),
+        SameBody::EndOfMessage => fields(&[("header", "Header", text_of("NNNN (end of message)"))]),
     };
     [
         shown,
         fields(&[
             (
+                "bursts",
                 "Bursts",
                 text_of(format!("{}/{SAME_BURSTS}", message.copies)),
             ),
-            ("Raw", text(Some(&message.raw))),
+            ("raw", "Raw", text(Some(&message.raw))),
         ]),
     ]
     .concat()
@@ -198,9 +199,10 @@ fn alert_fields(alert: &SameAlert) -> Vec<Field> {
         .collect::<Vec<_>>()
         .join("\n");
     fields(&[
-        ("Event", text_of(alert.headline())),
-        ("Event code", text_of(&alert.event)),
+        ("event", "Event", text_of(alert.headline())),
+        ("event_code", "Event code", text_of(&alert.event)),
         (
+            "originator",
             "Originator",
             text_of(
                 alert
@@ -209,11 +211,15 @@ fn alert_fields(alert: &SameAlert) -> Vec<Field> {
                     .unwrap_or_else(|| alert.originator.clone()),
             ),
         ),
-        ("Originator code", text_of(&alert.originator)),
-        ("Areas", text(Some(&areas))),
-        ("Valid for", text_of(alert.valid_for())),
-        ("Issued", text_of(alert.issued())),
-        ("Station", text_of(&alert.station)),
+        (
+            "originator_code",
+            "Originator code",
+            text_of(&alert.originator),
+        ),
+        ("areas", "Areas", text(Some(&areas))),
+        ("valid_for", "Valid for", text_of(alert.valid_for())),
+        ("issued", "Issued", text_of(alert.issued())),
+        ("station", "Station", text_of(&alert.station)),
     ])
 }
 

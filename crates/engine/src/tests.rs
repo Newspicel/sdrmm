@@ -33,6 +33,7 @@ mod lanes;
 mod origin;
 mod placement;
 mod recording;
+mod reopen;
 mod scanning;
 mod time_machine;
 

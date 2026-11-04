@@ -140,30 +140,32 @@ impl EventPayload for WsprSpot {
 
 fn wsjt_fields(m: &WsjtMessage) -> Vec<Field> {
     fields(&[
-        ("SNR", number(Some(m.snr_db), Unit::Db, 0)),
-        ("Audio", number(Some(m.audio_hz), Unit::Hz, 1)),
+        ("snr", "SNR", number(Some(m.snr_db), Unit::Db, 0)),
+        ("audio", "Audio", number(Some(m.audio_hz), Unit::Hz, 1)),
         (
+            "time_offset",
             "Time offset",
             number(Some(m.time_offset_s), Unit::Seconds, 2),
         ),
-        ("Hard errors", count(Some(m.hard_errors))),
-        ("Message", text(Some(&m.text))),
+        ("hard_errors", "Hard errors", count(Some(m.hard_errors))),
+        ("message", "Message", text(Some(&m.text))),
     ])
 }
 
 fn wspr_fields(s: &WsprSpot) -> Vec<Field> {
     fields(&[
-        ("Callsign", text(Some(&s.callsign))),
-        ("Grid", text(s.grid.as_deref())),
-        ("Power", number(Some(s.power_dbm), Unit::Dbm, 0)),
-        ("SNR", number(Some(s.snr_db), Unit::Db, 0)),
-        ("Audio", number(Some(s.audio_hz), Unit::Hz, 1)),
+        ("callsign", "Callsign", text(Some(&s.callsign))),
+        ("grid", "Grid", text(s.grid.as_deref())),
+        ("power", "Power", number(Some(s.power_dbm), Unit::Dbm, 0)),
+        ("snr", "SNR", number(Some(s.snr_db), Unit::Db, 0)),
+        ("audio", "Audio", number(Some(s.audio_hz), Unit::Hz, 1)),
         (
+            "time_offset",
             "Time offset",
             number(Some(s.time_offset_s), Unit::Seconds, 2),
         ),
-        ("Drift", number(Some(s.drift_hz), Unit::Hz, 1)),
-        ("Message", text(Some(&s.text))),
+        ("drift", "Drift", number(Some(s.drift_hz), Unit::Hz, 1)),
+        ("message", "Message", text(Some(&s.text))),
     ])
 }
 

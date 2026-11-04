@@ -2,27 +2,29 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { useFusionStore } from "../../lib/fusion";
-import type { DfEstimate, DfFusionState, DfStation, PatchGraph, PatchNode } from "../../lib/types";
-import { CATALOG, catalogBody } from "../../test/catalog";
+import type {
+  ChannelStatus,
+  DfEstimate,
+  DfFusionState,
+  DfStation,
+  PatchGraph,
+  PatchNode,
+} from "../../lib/types";
+import { catalogBody } from "../../test/catalog";
 import { renderFace } from "../../test/faceHarness";
 import { placed } from "../../test/fixtures";
 import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../../test/resolved";
 import { HeatMarks } from "./FusionHeat";
 import { TriangulationFace } from "./TriangulationFace";
 import {
-  decayWith,
-  estimateLabel,
   fusionSources,
   geoToGrid,
-  guidanceText,
   insideBox,
   NO_SOURCES,
-  spreadLabel,
   stationAge,
   stationAlign,
   stationBearing,
   stationSigma,
-  triangulationSettings,
 } from "./triangulation";
 
 function station(last_seen: string, over: Partial<DfStation> = {}): DfStation {
@@ -81,27 +83,24 @@ const FUSED: DfFusionState = {
   refused: 0,
 };
 
-afterEach(() => {
-  useFusionStore.setState({ byNode: {} });
-});
+const FUSED_STATUS: ChannelStatus = {
+  readouts: [
+    {
+      key: "estimate",
+      label: "Estimate",
+      value: { type: "position", value: { lat: 51.95012, lon: 13.05033 } },
+    },
+    { key: "spread", label: "Spread", value: { type: "text", value: "120 m × 40 m" } },
+    {
+      key: "guidance",
+      label: "Guidance",
+      value: { type: "text", value: "Drive across · 123° · 2.4 km" },
+    },
+  ],
+};
 
-describe("spreadLabel", () => {
-  it("reads the ellipse in units a driver can judge", () => {
-    expect(
-      spreadLabel({
-        lat: 51.5,
-        lon: 7.0,
-        ellipse_major_m: 2_400,
-        ellipse_minor_m: 180,
-        ellipse_bearing_deg: 45,
-        converged: false,
-        samples: 6,
-      }),
-    ).toBe("2.4 km × 180 m");
-    expect(spreadLabel(null)).toBe("-");
-    expect(estimateLabel(null)).toBe("-");
-    expect(estimateLabel(FUSED.estimate ?? null)).toBe("51.95012, 13.05033");
-  });
+afterEach(() => {
+  useFusionStore.setState({ byNode: {}, statusByNode: {} });
 });
 
 describe("stationAge", () => {
@@ -200,44 +199,6 @@ describe("fusionSources", () => {
   });
 });
 
-describe("guidanceText", () => {
-  it("says which way to drive and how far", () => {
-    expect(guidanceText(FUSED)).toEqual({ text: "Drive across · 123°", title: "2.4 km away" });
-  });
-
-  it("says why there is no guidance", () => {
-    expect(guidanceText(undefined)).toEqual({ text: "-" });
-    expect(guidanceText({ samples: 0, no_guide_position: true }).title).toBe(
-      "Wire a GPS in to guide it",
-    );
-    expect(guidanceText({ samples: 0, no_bearings: true }).title).toBe(
-      "No bearings to steer by yet",
-    );
-  });
-});
-
-describe("decay", () => {
-  it("keeps a chosen half life and starts a new one at five minutes", () => {
-    expect(decayWith("fixed", { kind: "auto" })).toEqual({ kind: "fixed" });
-    expect(decayWith("half_life", { kind: "auto" })).toEqual({
-      kind: "half_life",
-      seconds: 300,
-    });
-    expect(decayWith("half_life", { kind: "half_life", seconds: 42 })).toEqual({
-      kind: "half_life",
-      seconds: 42,
-    });
-  });
-
-  it("falls back to the catalog settings", () => {
-    expect(triangulationSettings(TRI, CATALOG)?.decay).toEqual({ kind: "auto" });
-    expect(triangulationSettings(placed("tri", { kind: "triangulation" }), CATALOG)).toEqual(
-      triangulationSettings(TRI, CATALOG),
-    );
-    expect(triangulationSettings(placed("walk", catalogBody("hunt")), CATALOG)).toBeNull();
-  });
-});
-
 describe("TriangulationFace", () => {
   it("asks for finders when nothing is wired", () => {
     const html = renderFace(TriangulationFace, TRI, { graph: { nodes: [TRI], edges: [] } });
@@ -248,7 +209,7 @@ describe("TriangulationFace", () => {
   });
 
   it("shows the estimate, guidance, stations and lost bearings", () => {
-    useFusionStore.setState({ byNode: { tri: FUSED } });
+    useFusionStore.setState({ byNode: { tri: FUSED }, statusByNode: { tri: FUSED_STATUS } });
     const html = renderFace(TriangulationFace, TRI, { graph: WIRED });
     expect(html).toContain("1 of 3 reporting");
     expect(html).toContain("51.95012, 13.05033");

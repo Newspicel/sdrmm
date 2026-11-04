@@ -5,8 +5,10 @@ import { useActivityStore } from "./activity";
 import {
   AUDIO_RECORDINGS_KEY,
   BOOKMARKS_KEY,
+  CHANNEL_TYPES_KEY,
   DECODER_LOG_KEY,
   DEVICES_KEY,
+  PATCH_CATALOG_KEY,
   PHONES_KEY,
   PRESETS_KEY,
   RECORDINGS_KEY,
@@ -209,6 +211,10 @@ export function invalidateScope(queryClient: QueryClient, scope: StateScope): vo
       void queryClient.invalidateQueries({ queryKey: PHONES_KEY });
       break;
     case "missions":
+      break;
+    case "decoders":
+      void queryClient.invalidateQueries({ queryKey: CHANNEL_TYPES_KEY });
+      void queryClient.invalidateQueries({ queryKey: PATCH_CATALOG_KEY });
       break;
   }
 }

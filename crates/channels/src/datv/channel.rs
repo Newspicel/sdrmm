@@ -69,7 +69,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "datv".to_owned(),
     name: "DATV (DVB-S / S2)".to_owned(),
     summary: "Digital amateur TV over DVB-S and S2".to_owned(),
-    family: DecoderFamily::Broadcast,
+    family: DecoderFamily::BROADCAST,
     bandwidth_hz: occupied_hz(&DatvParams::default()),
     input_rate_hz: input_rate_hz(&DatvParams::default()),
     has_audio: true,

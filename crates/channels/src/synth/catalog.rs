@@ -20,7 +20,7 @@ use crate::sstv::SstvMode;
 use crate::wefax::WefaxIoc;
 use crate::wefax::WefaxLpm;
 use crate::{
-    AmTx, AprsTx, ChannelCtx, ChannelTx, SsbTx, TxPayload,
+    AmTx, AprsTx, ChannelCtx, ChannelTx, NativeTx, SsbTx, TxPayload,
     synth::{self, dv, weak_signal},
 };
 use sdrmm_wire::{ChannelParams, ChannelSettings, Sideband, Squelch};

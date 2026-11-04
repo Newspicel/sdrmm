@@ -4,7 +4,10 @@ use utoipa::ToSchema;
 pub mod beamformer;
 pub mod correlator;
 pub mod df;
+mod forms;
+pub mod plugin;
 pub mod polarimeter;
+mod readouts;
 pub mod spatial;
 pub mod stitch;
 
@@ -153,15 +156,18 @@ macro_rules! define_processor_enums {
             #[cfg(feature = "probe")]
             #[serde(rename = $probe_id)]
             $probe($probe_params),
+            #[serde(rename = "plugin")]
+            Plugin($crate::processor::plugin::PluginParams),
         }
 
         impl ProcessorParams {
             #[must_use]
-            pub const fn type_id(&self) -> &'static str {
+            pub fn type_id(&self) -> &str {
                 match self {
                     $(Self::$variant(_) => $type_id,)*
                     #[cfg(feature = "probe")]
                     Self::$probe(_) => $probe_id,
+                    Self::Plugin(params) => &params.type_id,
                 }
             }
 
@@ -171,6 +177,7 @@ macro_rules! define_processor_enums {
                     $(Self::$variant(params) => params.problem(),)*
                     #[cfg(feature = "probe")]
                     Self::$probe(params) => params.problem(),
+                    Self::Plugin(params) => params.problem(),
                 }
             }
 
@@ -187,13 +194,25 @@ macro_rules! define_processor_enums {
                 #[serde(rename = $type_id)]
                 $variant($reading),
             )*
+            #[serde(rename = "plugin")]
+            Plugin($crate::processor::plugin::PluginReading),
         }
 
         impl ProcessorReading {
             #[must_use]
-            pub const fn type_id(&self) -> &'static str {
+            pub fn type_id(&self) -> &str {
                 match self {
                     $(Self::$variant(_) => $type_id,)*
+                    Self::Plugin(reading) => &reading.type_id,
+                }
+            }
+
+            /// The readouts and health a face shows for this reading.
+            #[must_use]
+            pub fn status(&self) -> $crate::channel::ChannelStatus {
+                match self {
+                    $(Self::$variant(reading) => reading.status(),)*
+                    Self::Plugin(reading) => reading.status(),
                 }
             }
 

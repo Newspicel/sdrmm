@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, DecoderSettings, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, DecoderSettings, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -107,23 +107,31 @@ impl EventPayload for PerReport {
     fn present(&self, _kind: &EventKind) -> Presentation {
         Presentation {
             fields: fields(&[
-                ("PER", number(Some(self.per * 100.0), Unit::Percent, 2)),
                 (
+                    "per",
+                    "PER",
+                    number(Some(self.per * 100.0), Unit::Percent, 2),
+                ),
+                (
+                    "received",
                     "Received",
                     text_of(format!("{} of {}", self.received, self.expected)),
                 ),
-                ("Missed", count(Some(self.missed as f64))),
-                ("CRC failed", count(Some(self.errored as f64))),
+                ("missed", "Missed", count(Some(self.missed as f64))),
+                ("crc_failed", "CRC failed", count(Some(self.errored as f64))),
                 (
+                    "ber",
                     "BER",
                     self.ber.and_then(|ber| text_of(format!("{ber:.2e}"))),
                 ),
                 (
+                    "bit_errors",
                     "Bit errors",
                     text_of(format!("{} of {}", self.bit_errors, self.bits)),
                 ),
-                ("Last frame", count(self.last_sequence)),
+                ("last_frame", "Last frame", count(self.last_sequence)),
                 (
+                    "restarts",
                     "Restarts",
                     count(Some(self.restarts).filter(|restarts| *restarts > 0)),
                 ),
@@ -133,9 +141,14 @@ impl EventPayload for PerReport {
     }
 }
 
+/// Long enough to watch a link change as an antenna or level is adjusted.
+const PER_TREND_S: u32 = 600;
+
 pub(crate) fn per_kind() -> KindSpec {
     KindSpec::of::<PerReport>("PER", "PER", Hue::Muted)
         .caps(&[Capability::Log])
+        .view(KindView::meter("per", 0.0, 100.0))
+        .view(KindView::trend(&["per"], PER_TREND_S))
         .build()
 }
 
@@ -169,5 +182,16 @@ mod model_tests {
         assert_eq!(view.field("Received"), text_of("98 of 100").as_ref());
         assert_eq!(view.field("BER"), text_of("1.20e-4").as_ref());
         assert_eq!(view.field("Restarts"), None);
+    }
+
+    #[test]
+    fn the_meter_and_trend_read_the_packet_error_rate() {
+        let report = PerReport {
+            received: 98,
+            expected: 100,
+            per: 0.02,
+            ..PerReport::default()
+        };
+        crate::testutil::assert_views_hold(&per_kind(), &[sdrmm_wire::DecoderEvent::of(&report)]);
     }
 }

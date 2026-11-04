@@ -17,7 +17,7 @@ use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily, Si
 
 use crate::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx,
-    NativeChannel, TxPayload, check_input_rate, clamp_full_scale,
+    NativeChannel, NativeTx, TxPayload, check_input_rate, clamp_full_scale,
     tx::{Burst, TxQueue},
     voice_leveller,
 };
@@ -29,7 +29,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "ssb".to_owned(),
     name: "SSB".to_owned(),
     summary: "Single sideband voice, USB or LSB".to_owned(),
-    family: DecoderFamily::AnalogVoice,
+    family: DecoderFamily::ANALOG_VOICE,
     bandwidth_hz: 3_000.0,
     input_rate_hz: 48_000.0,
     has_audio: true,
@@ -161,7 +161,7 @@ pub struct SsbTx {
     burst: Burst,
 }
 
-impl ChannelTx for SsbTx {
+impl NativeTx for SsbTx {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
@@ -181,7 +181,9 @@ impl ChannelTx for SsbTx {
             burst: Burst::new(ctx.input_rate),
         })
     }
+}
 
+impl ChannelTx for SsbTx {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         self.audio_bp = audio_bandpass(&p)?;

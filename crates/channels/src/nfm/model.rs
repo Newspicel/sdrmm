@@ -123,12 +123,13 @@ impl EventPayload for ToneSquelchStatus {
         parts.push(squelch.to_owned());
         Presentation {
             fields: fields(&[
-                ("CTCSS", number(self.ctcss_hz, Unit::Hz, 1)),
+                ("ctcss", "CTCSS", number(self.ctcss_hz, Unit::Hz, 1)),
                 (
+                    "dcs",
                     "DCS",
                     self.dcs_code.and_then(|code| text_of(format!("{code:03}"))),
                 ),
-                ("Audio", text_of(squelch)),
+                ("audio", "Audio", text_of(squelch)),
             ]),
             verified: Some(false),
             ..Presentation::of(joined(parts))
@@ -141,8 +142,13 @@ impl EventPayload for ScramblerStatus {
         let found = self.inversion_hz.is_some();
         Presentation {
             fields: fields(&[
-                ("Inversion", number(self.inversion_hz, Unit::Hz, 0)),
                 (
+                    "inversion",
+                    "Inversion",
+                    number(self.inversion_hz, Unit::Hz, 0),
+                ),
+                (
+                    "confidence",
                     "Confidence",
                     percent(self.confidence as f32).filter(|_| found),
                 ),

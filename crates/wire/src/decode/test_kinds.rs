@@ -138,7 +138,7 @@ pub(crate) fn kinds() -> Vec<KindSpec> {
     vec![
         KindSpec::of::<ProbeStation>("Probe station", "Stations", Hue::Teal)
             .caps(&[Log, Station, Geo])
-            .symbol(Symbol::Plane)
+            .symbol(Symbol::PLANE)
             .sighting()
             .build(),
         KindSpec::of::<ProbeText>("Probe text", "Texts", Hue::Muted)
@@ -146,7 +146,7 @@ pub(crate) fn kinds() -> Vec<KindSpec> {
             .build(),
         KindSpec::of::<ProbeTrack>("Probe track", "Tracks", Hue::Orange)
             .caps(&[Log, Station, Geo, Track])
-            .symbol(Symbol::Plane)
+            .symbol(Symbol::PLANE)
             .sighting()
             .build(),
     ]

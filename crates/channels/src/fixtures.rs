@@ -81,8 +81,8 @@ use num_complex::Complex;
 use sdrmm_wire::{ChannelParams, ChannelSettings, DecoderEvent, EventKind};
 
 use crate::{
-    AprsTx, ChannelCtx, ChannelOutputs, ChannelRx, ChannelTx, Ft4Channel, Ft8Channel, TxPayload,
-    WsprChannel,
+    AprsTx, ChannelCtx, ChannelOutputs, ChannelRx, ChannelTx, Ft4Channel, Ft8Channel, NativeTx,
+    TxPayload, WsprChannel,
     airtime::scene::Scene,
     channel_filter, create, descriptors, input_rate, synth,
     synth::{dv, weak_signal},

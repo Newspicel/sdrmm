@@ -15,8 +15,9 @@ function row(over: Partial<LogRow> = {}): LogRow {
     source: "digital",
     live: true,
     fields: [
-      { label: "Talkgroup", value: { type: "text", value: "9" } },
+      { key: "talkgroup", label: "Talkgroup", value: { type: "text", value: "9" } },
       {
+        key: "duration",
         label: "Duration",
         value: { type: "number", value: { value: 2.5, unit: "seconds", digits: 1 } },
       },

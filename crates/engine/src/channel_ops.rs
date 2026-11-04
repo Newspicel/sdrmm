@@ -1,20 +1,27 @@
+use std::sync::MutexGuard;
+
 use sdrmm_device::DeviceError;
 use sdrmm_wire::{ChannelInfo, ChannelSettings, DeviceSettings, ServerEvent, StateScope};
 
 use crate::{
-    ChannelAudioRecording, ChannelMedia, Engine, EngineError, RebuildEntry,
+    ChannelAudioRecording, ChannelMedia, Engine, EngineError, Inner, RebuildEntry,
     planning::{descriptor_for, tuner_reaches, validate_channel, validate_streams},
     runtime::{ChannelHost, DspCommand},
     sinks::BasebandSinks,
 };
 
+/// A host built for a channel as it stands, with the engine still locked so it goes in before
+/// anything moves again.
+pub(crate) struct Settled<'a> {
+    pub(crate) inner: MutexGuard<'a, Inner>,
+    pub(crate) built: Result<Box<ChannelHost>, EngineError>,
+    pub(crate) settings: ChannelSettings,
+}
+
 impl Engine {
-    pub(crate) fn rebuild_channel(
-        &self,
-        ds: u32,
-        rebuild: RebuildEntry,
-        dead: &mut Vec<ChannelMedia>,
-    ) {
+    /// Builds a host for the channel `rebuild` names, again whenever its lane or settings moved
+    /// during the build; `None` once the channel or its device set is gone.
+    pub(crate) fn settle_host(&self, ds: u32, rebuild: RebuildEntry) -> Option<Settled<'_>> {
         let RebuildEntry {
             id,
             stream,
@@ -23,9 +30,7 @@ impl Engine {
         } = rebuild;
         let (mut built_rate, mut built_center, node) = {
             let inner = self.lock();
-            let Some(state) = inner.device_sets.get(&ds) else {
-                return;
-            };
+            let state = inner.device_sets.get(&ds)?;
             let node = state
                 .channels
                 .iter()
@@ -46,58 +51,75 @@ impl Engine {
                     )
                     .map_err(EngineError::from)
                 });
-            let mut inner = self.lock();
-            let Some(state) = inner.device_sets.get_mut(&ds) else {
-                return;
-            };
+            let inner = self.lock();
+            let state = inner.device_sets.get(&ds)?;
             let current_rate = state.lane_rate(stream);
             let current_center = state.lane_center(stream);
-            let Some(info) = state.channels.iter().find(|c| c.id == id) else {
-                return;
-            };
-            if current_rate != built_rate
-                || current_center != built_center
-                || info.settings != settings
+            let info = state.channels.iter().find(|c| c.id == id)?;
+            if current_rate == built_rate
+                && current_center == built_center
+                && info.settings == settings
             {
-                settings = info.settings.clone();
-                built_rate = current_rate;
-                built_center = current_center;
-                continue;
+                return Some(Settled {
+                    inner,
+                    built,
+                    settings,
+                });
             }
-            let orphaned = state.release_baseband_sinks(id, stream);
-            match built {
-                Ok(mut host) => {
-                    if let Some(media) = state.media.get(&id) {
-                        host.position_changed(media.position.as_ref());
-                    }
-                    state.send_dsp(
-                        stream,
-                        DspCommand::AddChannel {
-                            id,
-                            host,
-                            reset_state: false,
-                        },
-                    );
-                    state.rearm_audio_recording(id, stream);
-                    inner.revision += 1;
-                    drop(inner);
-                    self.close_baseband_sinks(ds, id, orphaned, "the channel was rebuilt");
-                }
-                Err(e) => {
-                    tracing::error!(ds, channel = id, error = %e, "channel rebuild failed after rate change; removing channel");
-                    state.channels.retain(|c| c.id != id);
-                    dead.extend(state.media.remove(&id));
-                    let recordings = state.take_audio_recordings(id);
-                    state.send_dsp(stream, DspCommand::RemoveChannel { id });
-                    inner.revision += 1;
-                    drop(inner);
-                    for recording in recordings {
-                        recording.join();
-                    }
-                    self.close_baseband_sinks(ds, id, orphaned, "the channel was removed");
-                }
-            }
+            settings = info.settings.clone();
+            built_rate = current_rate;
+            built_center = current_center;
+        }
+    }
+
+    pub(crate) fn rebuild_channel(
+        &self,
+        ds: u32,
+        rebuild: RebuildEntry,
+        dead: &mut Vec<ChannelMedia>,
+    ) {
+        let (id, stream) = (rebuild.id, rebuild.stream);
+        let Some(Settled {
+            mut inner, built, ..
+        }) = self.settle_host(ds, rebuild)
+        else {
             return;
+        };
+        let Some(state) = inner.device_sets.get_mut(&ds) else {
+            return;
+        };
+        let orphaned = state.release_baseband_sinks(id, stream);
+        match built {
+            Ok(mut host) => {
+                if let Some(media) = state.media.get(&id) {
+                    host.position_changed(media.position.as_ref());
+                }
+                state.send_dsp(
+                    stream,
+                    DspCommand::AddChannel {
+                        id,
+                        host,
+                        reset_state: false,
+                    },
+                );
+                state.rearm_audio_recording(id, stream);
+                inner.revision += 1;
+                drop(inner);
+                self.close_baseband_sinks(ds, id, orphaned, "the channel was rebuilt");
+            }
+            Err(e) => {
+                tracing::error!(ds, channel = id, error = %e, "channel rebuild failed after rate change; removing channel");
+                state.channels.retain(|c| c.id != id);
+                dead.extend(state.media.remove(&id));
+                let recordings = state.take_audio_recordings(id);
+                state.send_dsp(stream, DspCommand::RemoveChannel { id });
+                inner.revision += 1;
+                drop(inner);
+                for recording in recordings {
+                    recording.join();
+                }
+                self.close_baseband_sinks(ds, id, orphaned, "the channel was removed");
+            }
         }
     }
 

@@ -8,23 +8,55 @@ import {
   entryComplete,
   type Form,
   fieldValue,
+  isQuiet,
+  listEntries,
+  presetIndex,
   type Settings,
   shownFields,
+  shownNumber,
+  shownSpec,
+  storedNumber,
+  withPreset,
 } from "../lib/settingsForm";
-import type { SettingField } from "../lib/types";
+import type { Control, NumberSpec, PresetOption, SettingField } from "../lib/types";
 import { Button } from "./BaseControls";
 import { Checkbox } from "./Checkbox";
-import { BTN_SM } from "./controls";
+import { BTN_SM, type Options } from "./controls";
 import { SettingChip } from "./face/Chips";
 import { HzField } from "./HzField";
 import { Icon } from "./Icon";
 import { NumberField, OptionalNumberField } from "./NumberField";
-import { rowKeys } from "./rowKeys";
 import { Select } from "./Select";
 import { TextField } from "./TextField";
 
 export function listShown(entries: readonly unknown[], empty: string | null | undefined): string {
   return entries.length === 0 ? (empty ?? "none") : String(entries.length);
+}
+
+let entrySerial = 0;
+
+function freshId(): string {
+  entrySerial += 1;
+  return `entry-${entrySerial}`;
+}
+
+/** `ids` cut or grown to `count`, keeping the ids it has so their rows stay mounted. */
+export function fitIds(ids: readonly string[], count: number): string[] {
+  const kept = ids.slice(0, count);
+  return [...kept, ...Array.from({ length: count - kept.length }, freshId)];
+}
+
+/** Row ids that follow entries through edits and removals, so a nested control stays open. */
+function useEntryIds(count: number): { ids: readonly string[]; removeAt: (index: number) => void } {
+  const [ids, setIds] = useState<readonly string[]>(() => fitIds([], count));
+  const fitted = ids.length === count ? ids : fitIds(ids, count);
+  if (fitted !== ids) {
+    setIds(fitted);
+  }
+  return {
+    ids: fitted,
+    removeAt: (index) => setIds((current) => current.filter((_, at) => at !== index)),
+  };
 }
 
 export function ListChip({
@@ -68,7 +100,7 @@ function ListEditor({
   entries: readonly Settings[];
   onChange: (entries: Settings[]) => void;
 }) {
-  const rows = rowKeys(entries);
+  const rows = useEntryIds(entries.length);
   const [draft, setDraft] = useState<Settings | null>(null);
   const keep = (next: Settings): void => {
     if (entryComplete(item, next)) {
@@ -82,12 +114,15 @@ function ListEditor({
     <div className="flex flex-col gap-2">
       {entries.map((entry, index) => (
         <EntryRow
-          key={rows[index]}
+          key={rows.ids[index]}
           item={item}
           entry={entry}
           name={`${label} ${index + 1}`}
           onEdit={(next) => onChange(entries.with(index, next))}
-          onRemove={() => onChange(entries.filter((_, at) => at !== index))}
+          onRemove={() => {
+            rows.removeAt(index);
+            onChange(entries.filter((_, at) => at !== index));
+          }}
         />
       ))}
       {draft !== null && (
@@ -131,10 +166,11 @@ function EntryRow({
         {shownFields(item, entry).map((field) => (
           <ItemControl
             key={`${field.key}:${field.label}`}
+            item={item}
+            entry={entry}
             field={field}
             name={`${name} ${field.label}`}
-            value={fieldValue(field, entry)}
-            onCommit={(value) => onEdit(committed(item, entry, field.key, value))}
+            onEdit={onEdit}
           />
         ))}
       </div>
@@ -152,18 +188,108 @@ function EntryRow({
 
 const ITEM = "min-w-0 flex-1 basis-24";
 
-function ItemControl({
+/** One field of a list entry. Presets and nested lists edit the whole entry. */
+export function ItemControl({
+  item,
+  entry,
   field,
+  name,
+  onEdit,
+}: {
+  item: Form;
+  entry: Settings;
+  field: SettingField;
+  name: string;
+  onEdit: (next: Settings) => void;
+}) {
+  const control = field.control.type === "live" ? field.control.fallback : field.control;
+  const value = fieldValue(field, entry);
+  const onCommit = (next: unknown): void => onEdit(committed(item, entry, field.key, next));
+  switch (control.type) {
+    case "preset":
+      return (
+        <ItemPreset
+          name={name}
+          options={control.options}
+          chosen={presetIndex(item, entry, control.options)}
+          onPick={(option) => onEdit(withPreset(item, entry, option))}
+        />
+      );
+    case "list":
+      return (
+        <ListChip
+          label={field.label}
+          title={field.title ?? field.label}
+          item={control.item}
+          entries={listEntries(value)}
+          empty={control.empty}
+          quiet={isQuiet(field, value)}
+          onChange={onCommit}
+        />
+      );
+    default:
+      return (
+        <ValueControl
+          field={field}
+          control={control}
+          name={name}
+          value={value}
+          onCommit={onCommit}
+        />
+      );
+  }
+}
+
+const CUSTOM = -1;
+
+function ItemPreset({
+  name,
+  options,
+  chosen,
+  onPick,
+}: {
+  name: string;
+  options: readonly PresetOption[];
+  chosen: number;
+  onPick: (option: PresetOption) => void;
+}) {
+  const items: Options<number> = [
+    ...options.map((option, index) => ({
+      value: index,
+      label: option.label,
+      ...(option.title == null ? {} : { title: option.title }),
+    })),
+    ...(chosen === CUSTOM ? [{ value: CUSTOM, label: "Custom", disabled: true }] : []),
+  ];
+  return (
+    <Select
+      label={name}
+      className={ITEM}
+      value={chosen}
+      options={items}
+      onChange={(index) => {
+        const option = options[index];
+        if (option !== undefined) {
+          onPick(option);
+        }
+      }}
+    />
+  );
+}
+
+function ValueControl({
+  field,
+  control,
   name,
   value,
   onCommit,
 }: {
   field: SettingField;
+  control: Control;
   name: string;
   value: unknown;
   onCommit: (value: unknown) => void;
 }) {
-  const control = field.control.type === "live" ? field.control.fallback : field.control;
   switch (control.type) {
     case "choice": {
       const { options, chosen } = choiceItems(control.options, value);
@@ -178,7 +304,14 @@ function ItemControl({
       );
     }
     case "number":
-      return <ItemNumber name={name} spec={control} value={value} onCommit={onCommit} />;
+      return (
+        <ItemNumber
+          name={name}
+          spec={shownSpec(control)}
+          value={shownNumber(control, value)}
+          onCommit={(shown) => onCommit(storedNumber(control, shown))}
+        />
+      );
     case "toggle":
       return <Checkbox label={name} checked={value === true} onChange={onCommit} />;
     case "text":
@@ -205,7 +338,7 @@ function ItemNumber({
   onCommit,
 }: {
   name: string;
-  spec: Extract<SettingField["control"], { type: "number" }>;
+  spec: NumberSpec;
   value: unknown;
   onCommit: (value: number | null) => void;
 }) {

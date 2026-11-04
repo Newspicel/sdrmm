@@ -42,7 +42,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "eot".to_owned(),
     name: "End-of-Train".to_owned(),
     summary: "Railroad EOT telemetry and HOT commands".to_owned(),
-    family: DecoderFamily::Utility,
+    family: DecoderFamily::UTILITY,
     bandwidth_hz: 12_500.0,
     input_rate_hz: RATE,
     has_audio: false,

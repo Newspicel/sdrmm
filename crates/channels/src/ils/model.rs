@@ -81,18 +81,28 @@ fn ils_component(component: IlsComponent) -> &'static str {
 
 fn ils_fields(i: &IlsReading) -> Vec<Field> {
     fields(&[
-        ("Component", text_of(ils_component(i.component))),
         (
+            "component",
+            "Component",
+            text_of(ils_component(i.component)),
+        ),
+        (
+            "modulation_90",
             "90 Hz",
             number(Some(i.modulation_90 * 100.0), Unit::Percent, 2),
         ),
         (
+            "modulation_150",
             "150 Hz",
             number(Some(i.modulation_150 * 100.0), Unit::Percent, 2),
         ),
-        ("DDM", number(Some(i.ddm), Unit::None, 4)),
-        ("Dots", number(Some(i.deviation_dots), Unit::None, 2)),
-        ("Signal", number(Some(i.signal_db), Unit::Db, 1)),
+        ("ddm", "DDM", number(Some(i.ddm), Unit::None, 4)),
+        (
+            "dots",
+            "Dots",
+            number(Some(i.deviation_dots), Unit::None, 2),
+        ),
+        ("signal", "Signal", number(Some(i.signal_db), Unit::Db, 1)),
     ])
 }
 

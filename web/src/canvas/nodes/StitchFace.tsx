@@ -1,33 +1,18 @@
 import { Button } from "../../components/BaseControls";
 import { BTN_SM, TABLE_CELL, TABLE_HEAD } from "../../components/controls";
-import { Chips, ChoiceChip, ToggleChip } from "../../components/face/Chips";
-import { Readout, Readouts } from "../../components/face/Readouts";
 import { processorStatusOf, useArrayStore } from "../../lib/arrays";
 import { STITCH_LIMITS } from "../../lib/limits";
-import { isStale, readingOf, useProcessorStore } from "../../lib/processors";
-import type { PatchNode, PatchNodeOf, StitchParams, StitchReading } from "../../lib/types";
+import { isStale, readingOf, readoutsOf, useProcessorStore } from "../../lib/processors";
+import type { PatchNode, StitchReading } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
 import { useWorkspaceContext } from "../context";
 import { arrayOf } from "../lanes";
-import { settingsOf } from "../newNode";
-import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
+import { NodeForm, StatusGrid } from "./NodeForm";
+import { FaceBody, NodeShell } from "./NodeShell";
 import { ProcessorFooter } from "./ProcessorFooter";
 import { ProcessorError } from "./ProcessorHealth";
-import {
-  ageLabel,
-  NO_CATALOG,
-  processorGate,
-  processorSubtitle,
-  useProcessorEdit,
-} from "./processorFace";
-import {
-  needsSpread,
-  SPREAD_CHIP,
-  STITCH_BLENDS,
-  spreadArrayEdit,
-  stitchChips,
-  stitchRow,
-} from "./stitch";
+import { ageLabel, processorGate, processorSubtitle } from "./processorFace";
+import { needsSpread, SPREAD_CHIP, spreadArrayEdit, stitchChips, stitchRow } from "./stitch";
 
 const AGE_TICK_MS = 1_000;
 const STITCH_REPORT_MS = STITCH_LIMITS.report_ms;
@@ -39,11 +24,9 @@ export function StitchFace({ node }: { node: PatchNode }) {
   const array = arrayOf(workspace.resolved, node.id);
   const status = useArrayStore((store) => (array === null ? undefined : store.byNode[array]));
   const now = useNow(AGE_TICK_MS);
-  const edit = useProcessorEdit(node as PatchNodeOf<"stitch">);
   if (node.kind !== "stitch") {
     return null;
   }
-  const settings = settingsOf(node, workspace.context.catalog);
   const reading = readingOf(state, "stitch");
   const stale = state !== undefined && isStale(state.receivedAt, now, STITCH_REPORT_MS);
   const processor = processorStatusOf(status, node.id);
@@ -70,23 +53,12 @@ export function StitchFace({ node }: { node: PatchNode }) {
       )}
     >
       <FaceBody>
-        {settings === null ? (
-          <FaceEmpty hint={NO_CATALOG} />
-        ) : (
-          <>
-            <div className={stale ? "opacity-45" : ""}>
-              <Readouts columns={2}>
-                <Readout label="Center">{mhz(reading?.center_hz)}</Readout>
-                <Readout label="Span">{mhz(reading?.span_hz)}</Readout>
-                <Readout label="Lanes">{String(reading?.lanes.length ?? 0)}</Readout>
-                <Readout label="Age">{ageLabel(state?.receivedAt, now)}</Readout>
-              </Readouts>
-              <LaneTable reading={reading} />
-            </div>
-            <StitchChips settings={settings} edit={edit} />
-            <ProcessorError status={processor} />
-          </>
-        )}
+        <div className={stale ? "opacity-45" : ""}>
+          <StatusGrid readouts={readoutsOf(state)} age={ageLabel(state?.receivedAt, now)} />
+          <LaneTable reading={reading} />
+        </div>
+        <NodeForm node={node} />
+        <ProcessorError status={processor} />
       </FaceBody>
       <ProcessorFooter
         status={processor}
@@ -106,10 +78,6 @@ export function StitchFace({ node }: { node: PatchNode }) {
       />
     </NodeShell>
   );
-}
-
-function mhz(hz: number | undefined): string {
-  return hz === undefined ? "-" : `${(hz / 1e6).toFixed(3)} MHz`;
 }
 
 function LaneTable({ reading }: { reading: StitchReading | null }) {
@@ -142,49 +110,5 @@ function LaneTable({ reading }: { reading: StitchReading | null }) {
         })}
       </tbody>
     </table>
-  );
-}
-
-function StitchChips({
-  settings,
-  edit,
-}: {
-  settings: StitchParams;
-  edit: (next: Partial<StitchParams>) => void;
-}) {
-  return (
-    <Chips>
-      <ChoiceChip
-        label="Blend"
-        title="Blend"
-        value={settings.blend}
-        options={STITCH_BLENDS}
-        onChange={(blend) => edit({ blend })}
-      />
-      <ToggleChip
-        label="Equalise"
-        title="Match noise floors"
-        on={settings.noise_equalise}
-        onChange={(noise_equalise) => edit({ noise_equalise })}
-      />
-      <ToggleChip
-        label="Flatten"
-        title="Undo each lane's filter droop"
-        on={settings.flatten}
-        onChange={(flatten) => edit({ flatten })}
-      />
-      <ToggleChip
-        label="Spurs"
-        title="Drop lane spurs in overlaps"
-        on={settings.spur_reject}
-        onChange={(spur_reject) => edit({ spur_reject })}
-      />
-      <ToggleChip
-        label="Phase"
-        title="Line up phase across seams"
-        on={settings.match_phase}
-        onChange={(match_phase) => edit({ match_phase })}
-      />
-    </Chips>
   );
 }

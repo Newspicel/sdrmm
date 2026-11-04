@@ -1,4 +1,4 @@
-//! Write an sdr-- decoder as a WASM plugin.
+//! Write an sdr-- decoder, and with it a transmitter or an array processor, as a WASM plugin.
 //!
 //! Implement [`Plugin`] for a type, call [`export!`] once, and build the crate as a `cdylib` for
 //! `wasm32-unknown-unknown`. The server loads the `.wasm` from its plugins directory and the
@@ -7,6 +7,8 @@
 
 pub mod kernels;
 mod outputs;
+pub mod processor;
+pub mod transmit;
 
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
@@ -14,10 +16,12 @@ pub mod abi;
 
 pub use num_complex::Complex;
 pub use outputs::Outputs;
+pub use processor::{ArrayOutputs, Lanes, Processor};
 pub use sdrmm_dsp as dsp;
 pub use sdrmm_modem as modem;
 pub use sdrmm_wire as wire;
 pub use serde_json;
+pub use transmit::{Payload, Transmitter};
 
 use sdrmm_wire::{
     EventKind,
@@ -50,11 +54,14 @@ pub trait Plugin: Sized {
 
 /// Parses settings JSON the way the host will, absent fields taking their defaults.
 pub fn settings<S: DeserializeOwned>(json: &[u8]) -> Result<S, String> {
-    let value: Value = if json.is_empty() {
-        Value::Object(serde_json::Map::new())
-    } else {
-        serde_json::from_slice(json).map_err(|error| error.to_string())?
-    };
+    if json.is_empty() {
+        return from_value(Value::Null);
+    }
+    from_value(serde_json::from_slice(json).map_err(|error| error.to_string())?)
+}
+
+/// Settings from parsed JSON, `null` taking every default.
+pub fn from_value<S: DeserializeOwned>(value: Value) -> Result<S, String> {
     let value = if value.is_null() {
         Value::Object(serde_json::Map::new())
     } else {
@@ -116,7 +123,7 @@ macro_rules! export {
 
             #[unsafe(no_mangle)]
             pub extern "C" fn sdrmm_close(handle: i32) {
-                $crate::abi::close::<$plugin>(handle);
+                $crate::abi::close(handle);
             }
 
             #[unsafe(no_mangle)]

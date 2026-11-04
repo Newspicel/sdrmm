@@ -65,19 +65,40 @@ export function isAtBottom(m: ScrollMetrics, tolerancePx = 8): boolean {
   return m.scrollHeight - m.scrollTop - m.clientHeight <= tolerancePx;
 }
 
-/** Every field label the entities show, in the order they first appear. */
-export function fieldColumns(entities: readonly Pick<Entity, "view">[]): string[] {
-  const labels = new Set<string>();
-  for (const entity of entities) {
-    for (const field of entity.view.fields ?? []) {
-      labels.add(field.label);
-    }
-  }
-  return [...labels];
+/** A table column: the field `key` it reads and the `label` it shows. */
+export interface FieldColumn {
+  key: string;
+  label: string;
 }
 
-export function fieldNamed(fields: readonly Field[] | undefined, label: string): Field | undefined {
-  return fields?.find((field) => field.label === label);
+/** Every field the entities show, by key, in the order they first appear. */
+export function fieldColumns(entities: readonly Pick<Entity, "view">[]): FieldColumn[] {
+  return keyedColumns(entities.map((entity) => entity.view.fields ?? []));
+}
+
+function keyedColumns(fieldLists: readonly (readonly Field[])[]): FieldColumn[] {
+  const labels = new Map<string, string>();
+  for (const fields of fieldLists) {
+    for (const field of fields) {
+      if (!labels.has(field.key)) {
+        labels.set(field.key, field.label);
+      }
+    }
+  }
+  return [...labels].map(([key, label]) => ({ key, label }));
+}
+
+/** The columns `keys` names, each headed by the label its field carries, else its key. */
+export function namedColumns(
+  keys: readonly string[],
+  fieldLists: readonly (readonly Field[])[],
+): FieldColumn[] {
+  const labels = new Map(keyedColumns(fieldLists).map((column) => [column.key, column.label]));
+  return keys.map((key) => ({ key, label: labels.get(key) ?? key }));
+}
+
+export function fieldKeyed(fields: readonly Field[] | undefined, key: string): Field | undefined {
+  return fields?.find((field) => field.key === key);
 }
 
 function pad2(n: number): string {

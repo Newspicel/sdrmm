@@ -83,13 +83,17 @@ impl EventPayload for RadioClockFrame {
 
 fn radio_clock_fields(r: &RadioClockFrame, standard: &str) -> Vec<Field> {
     fields(&[
-        ("Service", text_of(standard)),
-        ("Civil time", text(Some(&r.datetime))),
-        ("UTC offset", r.utc_offset_minutes.and_then(utc_offset)),
-        ("DST", flag(Some(r.dst))),
-        ("Leap warning", only_if(r.leap_warning)),
-        ("DUT1", number(r.dut1_seconds, Unit::Seconds, 1)),
-        ("Symbols", text(Some(&r.symbols))),
+        ("service", "Service", text_of(standard)),
+        ("civil_time", "Civil time", text(Some(&r.datetime))),
+        (
+            "utc_offset",
+            "UTC offset",
+            r.utc_offset_minutes.and_then(utc_offset),
+        ),
+        ("dst", "DST", flag(Some(r.dst))),
+        ("leap_warning", "Leap warning", only_if(r.leap_warning)),
+        ("dut1", "DUT1", number(r.dut1_seconds, Unit::Seconds, 1)),
+        ("symbols", "Symbols", text(Some(&r.symbols))),
     ])
 }
 

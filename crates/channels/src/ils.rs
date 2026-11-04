@@ -21,7 +21,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "ils".to_owned(),
     name: "ILS localizer / glideslope".to_owned(),
     summary: "ILS landing guidance deviation".to_owned(),
-    family: DecoderFamily::Aviation,
+    family: DecoderFamily::AVIATION,
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,

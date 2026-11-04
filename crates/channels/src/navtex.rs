@@ -98,7 +98,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "navtex".to_owned(),
     name: "NAVTEX".to_owned(),
     summary: "Maritime safety text broadcasts".to_owned(),
-    family: DecoderFamily::Marine,
+    family: DecoderFamily::MARINE,
     bandwidth_hz: 600.0,
     input_rate_hz: 8_000.0,
     has_audio: false,

@@ -11,7 +11,7 @@ const STOPPED: &str = "Stopped";
 fn processor_status(record: &ProcessorRecord) -> ProcessorStatus {
     let mut status = record
         .stats
-        .status(&record.spec.node, record.kind, record.error.clone());
+        .status(&record.spec.node, &record.kind, record.error.clone());
     status.running &= record.installed;
     status
 }

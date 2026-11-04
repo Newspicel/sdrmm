@@ -61,7 +61,10 @@ pub struct PskText {
 
 impl EventPayload for PskText {
     fn present(&self, _kind: &EventKind) -> Presentation {
-        text_pane(&self.text, fields(&[("Mode", text_of(self.baud.label()))]))
+        text_pane(
+            &self.text,
+            fields(&[("mode", "Mode", text_of(self.baud.label()))]),
+        )
     }
 }
 

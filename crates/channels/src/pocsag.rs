@@ -55,7 +55,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "pocsag".to_owned(),
     name: "POCSAG".to_owned(),
     summary: "POCSAG pager messages".to_owned(),
-    family: DecoderFamily::Paging,
+    family: DecoderFamily::PAGING,
     bandwidth_hz: 12_500.0,
     input_rate_hz: 24_000.0,
     has_audio: false,

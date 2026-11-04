@@ -41,6 +41,7 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_ports: &[BEAM_PORT],
     steer_port: Some(STEER_PORT),
     surface: None,
+    settings: sdrmm_wire::BeamformerParams::form,
     needs,
     band: |params| settings(params).and_then(band),
     tuning: |_| TuningNeed::Together,

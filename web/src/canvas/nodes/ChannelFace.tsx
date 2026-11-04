@@ -10,6 +10,7 @@ import {
 import { BTN_PRIMARY } from "../../components/controls";
 import { ANY_FREQUENCY, tuningRange } from "../../components/dial";
 import { dialId } from "../../components/FrequencyDial";
+import { HealthStats, hasHealth } from "../../components/face/Health";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import {
   DROPS_HINT,
@@ -23,7 +24,7 @@ import { useChannelStatus } from "../../lib/channelStatus";
 import { audioPassing, heardHz, useLevelStore } from "../../lib/levels";
 import { channelQueueSummary, queueLagging, usePipelineHealth } from "../../lib/pipeline";
 import { controllerOf, heldByOf, runsOf, sweptBy } from "../../lib/resolved";
-import type { BandMiss, Field, PatchNode, PatchNodeOf } from "../../lib/types";
+import type { BandMiss, ChannelStatus, Field, PatchNode, PatchNodeOf } from "../../lib/types";
 import { channelSettingsOf, liveChannelOf, useChannelEdit } from "../../lib/useChannelEdit";
 import type { ChannelEdit } from "../../lib/useChannelPatch";
 import { keyedFields } from "../../sinks/Fields";
@@ -149,10 +150,10 @@ export function ChannelFace({ node }: { node: PatchNode }) {
       </FaceBody>
       <FaceFooter>
         {live !== null && (
-          <ChannelHealth
+          <ChannelFooterStats
             deviceSet={live.deviceSet}
             channel={live.id}
-            readouts={channelStatus?.readouts ?? []}
+            status={channelStatus}
             rejected={channel?.rejected ?? 0}
             skipped={channel?.skipped ?? 0}
           />
@@ -207,25 +208,27 @@ function faceStatus({
   return undefined;
 }
 
-function ChannelHealth({
+function ChannelFooterStats({
   deviceSet,
   channel,
-  readouts,
+  status,
   rejected,
   skipped,
 }: {
   deviceSet: number;
   channel: number;
-  readouts: readonly Field[];
+  status: ChannelStatus | undefined;
   rejected: number;
   skipped: number;
 }) {
-  const health = usePipelineHealth((state) => state.health);
-  const summary = channelQueueSummary(health, deviceSet, channel);
+  const pipeline = usePipelineHealth((state) => state.health);
+  const summary = channelQueueSummary(pipeline, deviceSet, channel);
   const dropped = summary?.dropped ?? 0;
+  const readouts = status?.readouts ?? [];
   if (
     !queueLagging(summary) &&
     dropped === 0 &&
+    !hasHealth(status?.health) &&
     readouts.length === 0 &&
     rejected === 0 &&
     skipped === 0
@@ -234,6 +237,7 @@ function ChannelHealth({
   }
   return (
     <FaceStats>
+      <HealthStats health={status?.health} />
       <StatusReadouts readouts={readouts} />
       {queueLagging(summary) && (
         <Stat label="Queue" title={summary.detail} tone="warn">

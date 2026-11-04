@@ -56,18 +56,38 @@ fn score(candidate: &ProtocolMatch) -> String {
 fn ident_fields(r: &IdentReport) -> Vec<Field> {
     let Some(loudest) = r.loudest() else {
         return fields(&[
-            ("Modulation", text_of(Modulation::None.label())),
-            ("Loudest bin", number(Some(r.snr_db), Unit::Db, 1)),
+            (
+                "modulation",
+                "Modulation",
+                text_of(Modulation::None.label()),
+            ),
+            (
+                "loudest_bin",
+                "Loudest bin",
+                number(Some(r.snr_db), Unit::Db, 1),
+            ),
         ]);
     };
     let mut shown = fields(&[
-        ("Signals", count(Some(r.signals.len() as f64))),
-        ("Frequency", number(Some(loudest.frequency_hz), Unit::Hz, 0)),
-        ("Modulation", text_of(modulation_label(loudest))),
-        ("Confidence", percent(loudest.confidence)),
+        ("signals", "Signals", count(Some(r.signals.len() as f64))),
+        (
+            "frequency",
+            "Frequency",
+            number(Some(loudest.frequency_hz), Unit::Hz, 0),
+        ),
+        (
+            "modulation",
+            "Modulation",
+            text_of(modulation_label(loudest)),
+        ),
+        ("confidence", "Confidence", percent(loudest.confidence)),
     ]);
     shown.extend(signal_fields(loudest));
-    shown.extend(fields(&[("Candidates", text(Some(&candidates(r))))]));
+    shown.extend(fields(&[(
+        "candidates",
+        "Candidates",
+        text(Some(&candidates(r))),
+    )]));
     shown
 }
 
@@ -75,29 +95,49 @@ fn signal_fields(s: &IdentSignal) -> Vec<Field> {
     let levels = Some(s.features.frequency_levels).filter(|levels| *levels > 1);
     let duty = Some(s.features.duty).filter(|duty| *duty < 0.99);
     fields(&[
-        ("Bandwidth", number(Some(s.bandwidth_hz), Unit::Hz, 0)),
-        ("Off tune", number(Some(s.center_offset_hz), Unit::Hz, 0)),
-        ("SNR", number(Some(s.snr_db), Unit::Db, 1)),
-        ("Symbol rate", number(s.symbol_rate_hz, Unit::Baud, 0)),
-        ("Deviation", number(s.deviation_hz, Unit::Hz, 0)),
         (
+            "bandwidth",
+            "Bandwidth",
+            number(Some(s.bandwidth_hz), Unit::Hz, 0),
+        ),
+        (
+            "off_tune",
+            "Off tune",
+            number(Some(s.center_offset_hz), Unit::Hz, 0),
+        ),
+        ("snr", "SNR", number(Some(s.snr_db), Unit::Db, 1)),
+        (
+            "symbol_rate",
+            "Symbol rate",
+            number(s.symbol_rate_hz, Unit::Baud, 0),
+        ),
+        (
+            "deviation",
+            "Deviation",
+            number(s.deviation_hz, Unit::Hz, 0),
+        ),
+        (
+            "burst",
             "Burst",
             number(s.burst_ms.map(|ms| ms / 1_000.0), Unit::Seconds, 5),
         ),
         (
+            "burst_period",
             "Burst period",
             number(s.burst_period_ms.map(|ms| ms / 1_000.0), Unit::Seconds, 4),
         ),
         (
+            "ofdm_symbol",
             "OFDM symbol",
             number(s.ofdm_symbol_us.map(|us| us / 1e6), Unit::Seconds, 6),
         ),
         (
+            "ofdm_guard",
             "OFDM guard",
             number(s.ofdm_guard_us.map(|us| us / 1e6), Unit::Seconds, 6),
         ),
-        ("Duty", duty.and_then(percent)),
-        ("Frequency levels", count(levels)),
+        ("duty", "Duty", duty.and_then(percent)),
+        ("frequency_levels", "Frequency levels", count(levels)),
     ])
 }
 

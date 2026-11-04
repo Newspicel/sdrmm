@@ -37,7 +37,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "sarsat".to_owned(),
     name: "406 MHz beacon".to_owned(),
     summary: "COSPAS-SARSAT EPIRB, ELT and PLB bursts".to_owned(),
-    family: DecoderFamily::Utility,
+    family: DecoderFamily::UTILITY,
     bandwidth_hz: SARSAT_BANDWIDTH_HZ,
     input_rate_hz: RATE,
     has_audio: false,

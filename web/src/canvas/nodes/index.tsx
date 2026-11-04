@@ -7,6 +7,7 @@ import { ArrayFace } from "./ArrayFace";
 import { AudioFxFace } from "./AudioFxFace";
 import { BasebandScopeFace } from "./BasebandScopeFace";
 import { BeamformerFace } from "./BeamformerFace";
+import { BearingFixFace } from "./BearingFixFace";
 import { ChannelFace } from "./ChannelFace";
 import { CorrelatorFace } from "./CorrelatorFace";
 import { DecoderLogFace } from "./DecoderLogFace";
@@ -21,6 +22,7 @@ import { MapFace } from "./MapFace";
 import { NetworkExportFace } from "./NetworkExportFace";
 import { CanvasSurface } from "./NodeShell";
 import { NoteFace } from "./NoteFace";
+import { PluginProcessorFace } from "./PluginProcessorFace";
 import { PolarimeterFace } from "./PolarimeterFace";
 import { PropagationFace } from "./PropagationFace";
 import { RadarFace } from "./RadarFace";
@@ -81,6 +83,7 @@ export const NODE_TYPES: Record<NodeKind, ComponentType<NodeProps<Node<FlowData>
   satellite: mount(SatelliteFace),
   rotator: mount(RotatorFace),
   triangulation: mount(TriangulationFace),
+  bearing_fix: mount(BearingFixFace),
   array: mount(ArrayFace),
   df: mount(DfFace),
   beamformer: mount(BeamformerFace),
@@ -89,6 +92,7 @@ export const NODE_TYPES: Record<NodeKind, ComponentType<NodeProps<Node<FlowData>
   spatial_spectrum: mount(SpatialSpectrumFace),
   correlator: mount(CorrelatorFace),
   polarimeter: mount(PolarimeterFace),
+  processor: mount(PluginProcessorFace),
   note: mount(NoteFace),
 };
 
@@ -121,6 +125,7 @@ export const FACES: Record<NodeKind, Face> = {
   satellite: SatelliteFace,
   rotator: RotatorFace,
   triangulation: TriangulationFace,
+  bearing_fix: BearingFixFace,
   array: ArrayFace,
   df: DfFace,
   beamformer: BeamformerFace,
@@ -129,6 +134,7 @@ export const FACES: Record<NodeKind, Face> = {
   spatial_spectrum: SpatialSpectrumFace,
   correlator: CorrelatorFace,
   polarimeter: PolarimeterFace,
+  processor: PluginProcessorFace,
   note: NoteFace,
 };
 

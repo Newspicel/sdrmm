@@ -3,13 +3,15 @@ import { recordEvent } from "../lib/diagnostics";
 import { unwrapTrail } from "../lib/map/bounds";
 import { setSourceData } from "../lib/map/sources";
 import { entityKey, lastSeenMs } from "../lib/sinks";
-import type { Entity, Hue, MapSymbol } from "../lib/types";
+import type { Entity, Hue } from "../lib/types";
 import { type Lnglat, lnglat } from "./geometry";
 import { addShape, emptyShapes, type ShapeFeatures } from "./shapes";
 import {
   DOT_RADIUS,
   ICON_SCALE,
   iconName,
+  type KnownSymbol,
+  knownSymbol,
   LABEL_OFFSET_EM,
   labelInk,
   SYMBOL_ICON,
@@ -42,13 +44,13 @@ export const HIT_SLOP_PX = 9;
 export const FADE_AFTER_MS = 300_000;
 const MIN_FRESH = 0.25;
 
-const SYMBOLS = Object.keys(SYMBOL_ICON) as MapSymbol[];
+const SYMBOLS = Object.keys(SYMBOL_ICON) as KnownSymbol[];
 
 export interface EntityProps {
   key: string;
   color: string;
   label: string;
-  symbol: MapSymbol;
+  symbol: KnownSymbol;
   offset: number;
   radius: number;
   heading?: number;
@@ -81,6 +83,7 @@ export function entityCollection(entities: readonly Entity[], colors: HueColors)
       continue;
     }
     const heading = place.heading_deg ?? undefined;
+    const symbol = knownSymbol(entity.symbol);
     features.push({
       type: "Feature",
       geometry: { type: "Point", coordinates: lnglat(place.at) },
@@ -88,9 +91,9 @@ export function entityCollection(entities: readonly Entity[], colors: HueColors)
         key: entityKey(entity.key),
         color: colors[entity.hue],
         label: entityLabel(entity),
-        symbol: entity.symbol,
-        offset: LABEL_OFFSET_EM[entity.symbol],
-        radius: DOT_RADIUS[entity.symbol],
+        symbol,
+        offset: LABEL_OFFSET_EM[symbol],
+        radius: DOT_RADIUS[symbol],
         ...(heading === undefined ? {} : { heading }),
       },
     });

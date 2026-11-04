@@ -20,7 +20,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "vor".to_owned(),
     name: "VOR".to_owned(),
     summary: "Bearing to a VOR beacon".to_owned(),
-    family: DecoderFamily::Aviation,
+    family: DecoderFamily::AVIATION,
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,
@@ -407,6 +407,34 @@ mod tests {
             assert!(error.abs() < 0.5, "{radial} => {}", reading.radial_deg);
             assert!(reading.confidence > 0.8);
         }
+    }
+
+    #[test]
+    fn a_located_vor_shows_its_radial_as_a_true_bearing_ray() {
+        let params = VorParams {
+            station: Some("TST".to_owned()),
+            station_lat: Some(50.0),
+            station_lon: Some(8.0),
+            magnetic_declination_deg: 3.0,
+            ..VorParams::default()
+        };
+        let mut channel = VorChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(ChannelParams::of(&params).expect("vor settings")),
+        )
+        .expect("channel");
+        let events = run_events(&mut channel, &crate::synth::vor::transmission(200.0, 2));
+        let reading = events
+            .iter()
+            .filter_map(|event| event.read::<VorReading>())
+            .next_back()
+            .expect("VOR reading");
+        let view = sdrmm_wire::present::EventPayload::present(&reading, &EventKind::named("vor"));
+        let ray = view.bearing.expect("a located VOR shows a ray");
+        assert_eq!((ray.from.lat, ray.from.lon), (50.0, 8.0));
+        assert!((ray.true_deg - 203.0).abs() < 0.5, "{ray:?}");
+        assert!(ray.sigma_deg.is_some_and(|sigma| sigma < 3.0), "{ray:?}");
+        assert_eq!(view.entity.as_deref(), Some("TST"));
     }
 
     #[test]

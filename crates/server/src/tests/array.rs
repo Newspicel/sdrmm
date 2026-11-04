@@ -954,6 +954,7 @@ async fn processor_reports_and_surfaces_are_forwarded() {
             if let Ok(ServerEvent::ProcessorUpdate {
                 node,
                 reading: sent,
+                ..
             }) = events.recv().await
                 && node == "radar"
                 && matches!(

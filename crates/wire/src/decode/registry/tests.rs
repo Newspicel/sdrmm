@@ -230,3 +230,25 @@ fn the_process_catalog_answers_for_installed_kinds() {
     let view = ProbeText::event("CQ").present();
     assert_eq!(view.text.as_deref(), Some("CQ"));
 }
+
+#[test]
+fn a_repeated_field_key_is_numbered_so_each_names_one_field() {
+    use crate::present::{Field, FieldValue, unique_keys};
+    let text = |key: &str| Field::new(key, "Label", FieldValue::Text(key.to_owned()));
+    let keys: Vec<String> = unique_keys(vec![text("volume"), text("volume_2"), text("volume")])
+        .into_iter()
+        .map(|field| field.key)
+        .collect();
+    assert_eq!(keys, ["volume", "volume_2", "volume_3"]);
+}
+
+#[test]
+fn a_view_names_every_field_it_reads() {
+    let table = KindView::table(&["callsign", "altitude"])
+        .sorted("altitude", true)
+        .keyed("icao");
+    assert_eq!(table.fields(), ["callsign", "altitude", "altitude", "icao"]);
+    assert_eq!(KindView::meter("per", 0.0, 100.0).fields(), ["per"]);
+    assert_eq!(KindView::trend(&["nf", "y"], 60).fields(), ["nf", "y"]);
+    assert!(KindView::Picture.fields().is_empty());
+}

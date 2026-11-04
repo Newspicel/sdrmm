@@ -104,12 +104,16 @@ fn pocsag_fields(p: &PocsagMessage) -> Vec<Field> {
         .get(usize::from(p.function))
         .map_or_else(|| p.function.to_string(), char::to_string);
     fields(&[
-        ("RIC", text_of(format!("{:07}", p.address))),
-        ("Function", text_of(format!("{letter} ({})", p.function))),
-        ("Baud", number(Some(p.baud), Unit::Baud, 0)),
-        ("Payload", text_of(pocsag_payload(p.payload))),
-        ("Repaired", repaired(p.errors_corrected)),
-        ("Text", text(Some(&p.text))),
+        ("ric", "RIC", text_of(format!("{:07}", p.address))),
+        (
+            "function",
+            "Function",
+            text_of(format!("{letter} ({})", p.function)),
+        ),
+        ("baud", "Baud", number(Some(p.baud), Unit::Baud, 0)),
+        ("payload", "Payload", text_of(pocsag_payload(p.payload))),
+        ("repaired", "Repaired", repaired(p.errors_corrected)),
+        ("text", "Text", text(Some(&p.text))),
     ])
 }
 

@@ -7,7 +7,7 @@ function update(node: string, status: ChannelStatus): ServerEvent {
 }
 
 const SEARCHING: ChannelStatus = {
-  readouts: [{ label: "Lock", value: { type: "flag", value: false } }],
+  readouts: [{ key: "lock", label: "Lock", value: { type: "flag", value: false } }],
 };
 
 afterEach(() => useChannelStatusStore.getState().reset());
@@ -16,7 +16,11 @@ describe("useChannelStatusStore", () => {
   it("keeps only the latest status per channel node", () => {
     const { observe } = useChannelStatusStore.getState();
     observe(update("a", SEARCHING));
-    observe(update("a", { readouts: [{ label: "Lock", value: { type: "flag", value: true } }] }));
+    observe(
+      update("a", {
+        readouts: [{ key: "lock", label: "Lock", value: { type: "flag", value: true } }],
+      }),
+    );
     observe(update("b", SEARCHING));
     const byNode = useChannelStatusStore.getState().byNode;
     expect(Object.keys(byNode)).toHaveLength(2);

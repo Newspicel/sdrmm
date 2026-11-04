@@ -2,7 +2,9 @@ use std::sync::{Arc, TryLockError, atomic::Ordering};
 
 use sdrmm_channels::{
     ChannelError,
-    array_processor::{LaneFormat, ProcessorDescriptor, ProcessorNeeds, processor_descriptor},
+    array_processor::{
+        LaneFormat, ProcessorDescriptor, ProcessorNeeds, descriptor_for, processor_plugin,
+    },
 };
 use sdrmm_device::lock;
 use sdrmm_wire::{GpuUse, ProcessorParams, ServerEvent, StateScope, array::MAX_VIRTUAL_LANES};
@@ -36,7 +38,7 @@ pub(crate) struct LaneOut {
 #[derive(Clone)]
 pub(crate) struct ProcessorRecord {
     pub(crate) spec: ProcessorSpec,
-    pub(crate) kind: &'static str,
+    pub(crate) kind: String,
     pub(crate) lanes: Vec<LaneOut>,
     pub(crate) stats: Arc<ProcessorStats>,
     pub(crate) radar: Option<Arc<RadarPlan>>,
@@ -57,7 +59,7 @@ impl ProcessorRecord {
     fn refused(spec: &ProcessorSpec, error: &EngineError) -> Self {
         Self {
             spec: spec.clone(),
-            kind: spec.params.type_id(),
+            kind: spec.params.type_id().to_owned(),
             lanes: Vec::new(),
             stats: Arc::new(ProcessorStats::default()),
             radar: None,
@@ -190,6 +192,24 @@ fn free_stream(state: &DeviceSetState) -> Result<u32, EngineError> {
         .ok_or_else(|| ChannelError::Refused(TOO_MANY_LANES).into())
 }
 
+fn reopens(record: &ProcessorRecord, type_ids: &[String]) -> bool {
+    let ProcessorParams::Plugin(plugin) = &record.spec.params else {
+        return false;
+    };
+    type_ids.contains(&plugin.type_id)
+        || (!record.installed && processor_plugin(&plugin.type_id).is_some())
+}
+
+/// `spec` with what its plugin type needs now, which a reload may have changed.
+fn on_loaded(mut spec: ProcessorSpec) -> ProcessorSpec {
+    if let ProcessorParams::Plugin(plugin) = &mut spec.params
+        && let Some(factory) = processor_plugin(&plugin.type_id)
+    {
+        plugin.needs = factory.kind().needs;
+    }
+    spec
+}
+
 fn processor<'a>(
     inner: &'a Inner,
     node: &str,
@@ -220,6 +240,33 @@ impl Engine {
             scope: StateScope::Arrays,
         });
         installed
+    }
+
+    /// Rebuilds every processor of `type_ids` on the factory loaded now, and every one refused
+    /// for a type that has since loaded. Their settings, wires and stats stay.
+    pub fn reopen_processors(&self, type_ids: &[String]) -> Vec<EngineError> {
+        let _edits = lock(&self.array_edits);
+        let due: Vec<ProcessorSpec> = self
+            .lock()
+            .arrays
+            .values()
+            .flat_map(|state| state.processors.values())
+            .filter(|record| reopens(record, type_ids))
+            .map(|record| on_loaded(record.spec.clone()))
+            .collect();
+        let mut errors = Vec::new();
+        for spec in &due {
+            if let Err(error) = self.install_processor(spec, None, true) {
+                self.note_processor_refusal(spec, &error);
+                errors.push(error);
+            }
+        }
+        if !due.is_empty() {
+            self.emit(ServerEvent::StateChanged {
+                scope: StateScope::Arrays,
+            });
+        }
+        errors
     }
 
     pub fn remove_processor(&self, node: &str) -> Result<(), EngineError> {
@@ -405,9 +452,8 @@ impl Engine {
         carried: Option<ProcessorRecord>,
         force: bool,
     ) -> Result<(), EngineError> {
-        let type_id = spec.params.type_id();
-        let descriptor = processor_descriptor(type_id)
-            .ok_or_else(|| ChannelError::UnknownType(type_id.to_owned()))?;
+        let descriptor = descriptor_for(&spec.params)
+            .ok_or_else(|| ChannelError::UnknownType(spec.params.type_id().to_owned()))?;
         if let Some(problem) = spec.params.problem() {
             return Err(ChannelError::Refused(problem).into());
         }
@@ -475,7 +521,7 @@ impl Engine {
                             && (descriptor.lane_format)(&spec.params, &ctx, *port) == lane.format
                     })
             });
-        if previous.kind != descriptor.type_id
+        if previous.kind != spec.params.type_id()
             || previous.spec.steer_from != spec.steer_from
             || !same_lanes
         {
@@ -555,7 +601,7 @@ impl Engine {
         let opened = self.open_lanes(spec, view.anchor, view.previous.as_ref(), &formats)?;
         let record = ProcessorRecord {
             spec: spec.clone(),
-            kind: descriptor.type_id,
+            kind: spec.params.type_id().to_owned(),
             lanes: opened.iter().map(|lane| lane.out.clone()).collect(),
             stats,
             radar: built.radar,
@@ -825,7 +871,7 @@ impl Engine {
             let mut stale: Vec<String> = Vec::new();
             let mut moved: Vec<(u32, u32, LaneFormat)> = Vec::new();
             for record in state.processors.values_mut() {
-                let Some(descriptor) = processor_descriptor(record.kind) else {
+                let Some(descriptor) = descriptor_for(&record.spec.params) else {
                     continue;
                 };
                 let ctx = shape.ctx(&record.spec.node, &frame);

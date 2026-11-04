@@ -55,6 +55,7 @@ mod position;
 mod publishing;
 pub mod recording;
 mod refusal;
+mod reopen;
 pub mod runtime;
 pub mod scanner;
 mod sinks;

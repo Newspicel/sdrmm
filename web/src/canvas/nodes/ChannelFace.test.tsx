@@ -55,7 +55,7 @@ function channel(rejected: number, skipped = 0): ChannelInfo {
   };
 }
 
-function face(rejected: number, skipped = 0): string {
+function face(rejected: number, skipped = 0, descriptor = DESCRIPTOR): string {
   const set: DeviceSet = {
     id: 1,
     device: { driver: "virtual", key: "band", label: "Test band" },
@@ -78,7 +78,7 @@ function face(rejected: number, skipped = 0): string {
     devices: new Map([["radio", set]]),
     channels: new Map([["ble", channel(rejected, skipped)]]),
     owners: new Map([["ble", "radio"]]),
-    channelTypes: [DESCRIPTOR],
+    channelTypes: [descriptor],
   });
 }
 
@@ -95,6 +95,7 @@ describe("ChannelFace", () => {
         ble: {
           readouts: [
             {
+              key: "snr",
               label: "SNR",
               value: { type: "number", value: { value: 18.4, unit: "db", digits: 1 } },
             },
@@ -105,6 +106,39 @@ describe("ChannelFace", () => {
     const html = face(0);
     expect(html).toContain("SNR");
     expect(html).toContain("18.4 dB");
+  });
+
+  it("puts the standard health in the footer", () => {
+    useChannelStatusStore.setState({
+      byNode: { ble: { health: { lock: true, freq_error_hz: 250, errors_per_s: 0.5 } } },
+    });
+    const html = face(0);
+    expect(html).toContain('aria-label="Locked"');
+    expect(html).toContain("+250 Hz");
+    expect(html).toContain("0.5/s");
+    expect(html).not.toContain("Signal to noise ratio");
+  });
+
+  it("names what an Auto option found while the decoder runs", () => {
+    const auto: ChannelDescriptor = {
+      ...DESCRIPTOR,
+      settings: [
+        {
+          key: "link",
+          label: "Link",
+          control: {
+            type: "choice",
+            options: [{ value: "channel", label: "Auto", status: "mode" }],
+          },
+        },
+      ],
+    };
+    useChannelStatusStore.setState({
+      byNode: {
+        ble: { readouts: [{ key: "mode", label: "Mode", value: { type: "text", value: "TM1" } }] },
+      },
+    });
+    expect(face(0, 0, auto)).toContain("Auto TM1");
   });
 
   it("shows packets that synced but failed their check", () => {

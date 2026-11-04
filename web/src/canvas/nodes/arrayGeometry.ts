@@ -10,7 +10,6 @@ const STEPS_PER_M = 1_000;
 export const POSITION_STEP_M = 1 / STEPS_PER_M;
 
 const PREVIEW_FILL = 0.36;
-const SHAPE_TOLERANCE = 1e-3;
 
 export interface ElementXyz {
   x: number;
@@ -169,100 +168,6 @@ export function overlappingRows(
   const wired = positions.slice(0, lanes).map(asXyz);
   return wired.flatMap((row, index) =>
     wired.slice(0, index).some((earlier) => distance(earlier, row) < toleranceM) ? [index] : [],
-  );
-}
-
-interface Span {
-  from: ElementXyz;
-  unit: ElementXyz;
-  length: number;
-}
-
-function spanOf(from: ElementXyz, to: ElementXyz): Span {
-  const length = distance(from, to);
-  return {
-    from,
-    unit: { x: (to.x - from.x) / length, y: (to.y - from.y) / length, z: (to.z - from.z) / length },
-    length,
-  };
-}
-
-function widestSpan(positions: readonly ElementXyz[]): Span | null {
-  let widest: Span | null = null;
-  for (let a = 0; a < positions.length; a++) {
-    for (let b = a + 1; b < positions.length; b++) {
-      const from = positions[a];
-      const to = positions[b];
-      if (from !== undefined && to !== undefined && distance(from, to) > (widest?.length ?? 0)) {
-        widest = spanOf(from, to);
-      }
-    }
-  }
-  return widest;
-}
-
-function along(span: Span, point: ElementXyz): number {
-  return (
-    (point.x - span.from.x) * span.unit.x +
-    (point.y - span.from.y) * span.unit.y +
-    (point.z - span.from.z) * span.unit.z
-  );
-}
-
-function offLine(span: Span, point: ElementXyz): number {
-  const run = along(span, point);
-  return Math.hypot(
-    point.x - span.from.x - run * span.unit.x,
-    point.y - span.from.y - run * span.unit.y,
-    point.z - span.from.z - run * span.unit.z,
-  );
-}
-
-function lineSpan(positions: readonly ElementXyz[]): Span | null {
-  const span = widestSpan(positions);
-  if (span === null) {
-    return null;
-  }
-  const tolerance = SHAPE_TOLERANCE * span.length;
-  return positions.every((point) => offLine(span, point) <= tolerance) ? span : null;
-}
-
-function level(positions: readonly ElementXyz[], tolerance: number): boolean {
-  const meanZ = positions.reduce((sum, point) => sum + point.z, 0) / positions.length;
-  return positions.every((point) => Math.abs(point.z - meanZ) <= tolerance);
-}
-
-function levelLine(positions: readonly ElementXyz[]): Span | null {
-  const span = lineSpan(positions);
-  return span !== null && level(positions, SHAPE_TOLERANCE * span.length) ? span : null;
-}
-
-export function isCollinear(geometry: ArrayGeometry, lanes: number): boolean {
-  return geometry.kind === "ula" || lineSpan(elementPositions(geometry, lanes)) !== null;
-}
-
-export function isLevelLine(geometry: ArrayGeometry, lanes: number): boolean {
-  return geometry.kind === "ula" || levelLine(elementPositions(geometry, lanes)) !== null;
-}
-
-function evenlySpaced(positions: readonly ElementXyz[]): boolean {
-  const span = levelLine(positions);
-  if (span === null) {
-    return false;
-  }
-  const runs = positions.map((point) => along(span, point)).toSorted((a, b) => a - b);
-  const step = span.length / (runs.length - 1);
-  const tolerance = SHAPE_TOLERANCE * span.length;
-  return runs.every(
-    (run, index) => index === 0 || Math.abs(run - (runs[index - 1] ?? run) - step) <= tolerance,
-  );
-}
-
-export function allowsStructured(geometry: ArrayGeometry, lanes: number): boolean {
-  return (
-    geometry.kind === "uca" ||
-    geometry.kind === "ula" ||
-    evenlySpaced(elementPositions(geometry, lanes))
   );
 }
 

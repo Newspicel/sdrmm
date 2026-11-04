@@ -2434,7 +2434,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DfFusionState"
+                  "$ref": "#/components/schemas/DfFusionView"
                 }
               }
             }
@@ -7202,6 +7202,28 @@
           }
         }
       },
+      "ArrayNeeds": {
+        "type": "object",
+        "description": "What a processor needs of the array before its results mean anything.",
+        "properties": {
+          "gain": {
+            "type": "boolean",
+            "default": false
+          },
+          "geometry": {
+            "type": "boolean",
+            "default": false
+          },
+          "phase": {
+            "type": "boolean",
+            "default": false
+          },
+          "time": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
       "ArrayNode": {
         "type": "object",
         "properties": {
@@ -9499,6 +9521,42 @@
           }
         }
       },
+      "ChannelHealth": {
+        "type": "object",
+        "description": "The few facts every channel face shows in one footer, whatever the decoder. Each is unset\nwhile the decoder cannot tell.",
+        "properties": {
+          "errors_per_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "Frames or blocks that failed their check, per second."
+          },
+          "freq_error_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "How far the signal sits from the tuned frequency."
+          },
+          "lock": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "The decoder holds sync, carrier or frame lock."
+          },
+          "snr_db": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          }
+        }
+      },
       "ChannelInfo": {
         "type": "object",
         "required": [
@@ -9738,13 +9796,16 @@
       },
       "ChannelStatus": {
         "type": "object",
-        "description": "What a running decoder reports about itself between events: readouts for its node face and\nthe options it found for `Live` settings, keyed by the setting.",
+        "description": "What a running decoder reports about itself between events: the standard health footer,\nreadouts for its node face and the options it found for `Live` settings, keyed by the\nsetting.",
         "properties": {
           "choices": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ParamChoice"
             }
+          },
+          "health": {
+            "$ref": "#/components/schemas/ChannelHealth"
           },
           "readouts": {
             "type": "array",
@@ -10605,6 +10666,63 @@
                 "type": "string",
                 "enum": [
                   "list"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Elements of the wired array, numbered from one on the face and from zero in the\nsetting. The face knows how many the array has.",
+            "required": [
+              "pick",
+              "type"
+            ],
+            "properties": {
+              "empty": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "What no lane picked means, shown in place of `none`."
+              },
+              "except": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Never offers the lane the setting at this key holds; a lane picked there leaves\nthis setting."
+              },
+              "pick": {
+                "$ref": "#/components/schemas/LanePick"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "lanes"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A short list of numbers, each in the spec's range.",
+            "required": [
+              "spec",
+              "max_len",
+              "type"
+            ],
+            "properties": {
+              "max_len": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "spec": {
+                "$ref": "#/components/schemas/NumberSpec"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "numbers"
                 ]
               }
             }
@@ -11645,18 +11763,7 @@
       },
       "DecoderFamily": {
         "type": "string",
-        "enum": [
-          "analog_voice",
-          "digital_voice",
-          "aviation",
-          "marine",
-          "amateur",
-          "paging",
-          "video",
-          "broadcast",
-          "weather",
-          "utility"
-        ]
+        "description": "The palette group a decoder sits in."
       },
       "DecoderLogEntry": {
         "type": "object",
@@ -12622,6 +12729,22 @@
           }
         }
       },
+      "DfFusionView": {
+        "type": "object",
+        "description": "A triangulation as a read returns it: its state and the readouts its face shows.",
+        "required": [
+          "state",
+          "status"
+        ],
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/DfFusionState"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChannelStatus"
+          }
+        }
+      },
       "DfMission": {
         "type": "object",
         "properties": {
@@ -13515,6 +13638,12 @@
           "verifies": {
             "type": "boolean",
             "description": "A decode of this kind shows the signal is the decoder's. Free text a decoder reads out of\nany noise does not."
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KindView"
+            }
           }
         }
       },
@@ -14233,11 +14362,16 @@
       },
       "Field": {
         "type": "object",
+        "description": "One named value of a presentation. `key` stays fixed while `label` may change or be\ntranslated, so tables, sorts and view hints refer to `key`.",
         "required": [
+          "key",
           "label",
           "value"
         ],
         "properties": {
+          "key": {
+            "type": "string"
+          },
           "label": {
             "type": "string"
           },
@@ -15306,6 +15440,122 @@
           "type": "string"
         }
       },
+      "KindView": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "One row per entity, newest values merged, columns in this order.",
+            "required": [
+              "columns",
+              "type"
+            ],
+            "properties": {
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "key": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The field that tells rows apart; unset uses the presentation's entity."
+              },
+              "sort": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SortKey"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "table"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The newest value of a field drawn on a range.",
+            "required": [
+              "field",
+              "min",
+              "max",
+              "type"
+            ],
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "max": {
+                "type": "number",
+                "format": "double"
+              },
+              "min": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "meter"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A field plotted over time, the last `window_s` seconds.",
+            "required": [
+              "fields",
+              "window_s",
+              "type"
+            ],
+            "properties": {
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "trend"
+                ]
+              },
+              "window_s": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The newest picture the kind carries.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "picture"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "How the frontend lays out a kind's events beyond the plain log. Each names fields by\n`Field::key`, so a renamed label keeps its column."
+      },
       "LaneLevel": {
         "type": "object",
         "required": [
@@ -15323,6 +15573,15 @@
             "minimum": 0
           }
         }
+      },
+      "LanePick": {
+        "type": "string",
+        "description": "How a `Lanes` setting stores what is picked.",
+        "enum": [
+          "one",
+          "list",
+          "mask"
+        ]
       },
       "LaneWeight": {
         "type": "object",
@@ -18099,12 +18358,44 @@
             ],
             "properties": {
               "data": {
+                "$ref": "#/components/schemas/ProcessorNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "processor"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
                 "$ref": "#/components/schemas/TriangulationNode"
               },
               "kind": {
                 "type": "string",
                 "enum": [
                   "triangulation"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "bearing_fix"
                 ]
               }
             }
@@ -18176,7 +18467,9 @@
           "spatial_spectrum",
           "correlator",
           "polarimeter",
+          "processor",
           "triangulation",
+          "bearing_fix",
           "note"
         ]
       },
@@ -18229,6 +18522,10 @@
           "needs_channel_type": {
             "type": "boolean"
           },
+          "needs_processor_type": {
+            "type": "boolean",
+            "description": "A node of this kind runs one of the catalog's `processors`."
+          },
           "ports": {
             "type": "array",
             "items": {
@@ -18237,6 +18534,13 @@
           },
           "role": {
             "$ref": "#/components/schemas/Role"
+          },
+          "settings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettingField"
+            },
+            "description": "The form a face renders for this node's settings, in order."
           },
           "summary": {
             "type": "string"
@@ -18341,6 +18645,14 @@
             "items": {
               "$ref": "#/components/schemas/ParamOption"
             }
+          },
+          "scale": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The control shows the stored value divided by this, so a setting kept in Hz can be\ntyped in MHz. `min`, `max`, `step` and presets stay in stored units."
           },
           "step": {
             "type": [
@@ -18665,6 +18977,13 @@
           "label": {
             "type": "string"
           },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A status readout key whose text follows the label while the decoder runs, as an\n`Auto` option shows what it found."
+          },
           "title": {
             "type": [
               "string",
@@ -18921,6 +19240,13 @@
             "items": {
               "$ref": "#/components/schemas/PortTypeInfo"
             }
+          },
+          "processors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProcessorType"
+            },
+            "description": "Array processors the loaded plugins bring."
           }
         }
       },
@@ -19578,6 +19904,67 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "PluginReading": {
+        "type": "object",
+        "description": "What a plugin processor reported. Built once per type with every readout in place, so a\nreport only writes numbers.",
+        "required": [
+          "type_id"
+        ],
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the processor stopped, once it has."
+          },
+          "health": {
+            "$ref": "#/components/schemas/ChannelHealth"
+          },
+          "readouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginReadout"
+            }
+          },
+          "type_id": {
+            "type": "string"
+          }
+        }
+      },
+      "PluginReadout": {
+        "type": "object",
+        "description": "One declared readout and its latest value.",
+        "required": [
+          "key",
+          "label",
+          "unit",
+          "digits"
+        ],
+        "properties": {
+          "digits": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/Unit"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
           }
         }
       },
@@ -20489,6 +20876,16 @@
           "tuning_mode"
         ]
       },
+      "ProcessorNode": {
+        "type": "object",
+        "description": "A patch node running a plugin processor.",
+        "properties": {
+          "processor_type": {
+            "type": "string"
+          },
+          "settings": {}
+        }
+      },
       "ProcessorReading": {
         "oneOf": [
           {
@@ -20616,6 +21013,24 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "reading",
+              "type"
+            ],
+            "properties": {
+              "reading": {
+                "$ref": "#/components/schemas/PluginReading"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "plugin"
+                ]
+              }
+            }
           }
         ]
       },
@@ -20703,6 +21118,61 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "ProcessorType": {
+        "type": "object",
+        "description": "An array processor a plugin declares, as the patch catalog lists it.",
+        "required": [
+          "type_id",
+          "name"
+        ],
+        "properties": {
+          "defaults": {
+            "description": "What a fresh node starts on."
+          },
+          "emits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventKind"
+            },
+            "description": "Kinds of the events it emits, each one the plugin declares."
+          },
+          "max_lanes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "min_lanes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "needs": {
+            "$ref": "#/components/schemas/ArrayNeeds"
+          },
+          "readouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReadoutSpec"
+            }
+          },
+          "settings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettingField"
+            },
+            "description": "The form a face renders for its settings."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "type_id": {
+            "type": "string"
           }
         }
       },
@@ -22090,6 +22560,30 @@
           },
           "value": {
             "$ref": "#/components/schemas/ReadoutValue"
+          }
+        }
+      },
+      "ReadoutSpec": {
+        "type": "object",
+        "description": "One number a processor reports, in the order its values arrive.",
+        "required": [
+          "key",
+          "label"
+        ],
+        "properties": {
+          "digits": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/Unit"
           }
         }
       },
@@ -24409,6 +24903,10 @@
                   },
                   "reading": {
                     "$ref": "#/components/schemas/ProcessorReading"
+                  },
+                  "status": {
+                    "$ref": "#/components/schemas/ChannelStatus",
+                    "description": "Readouts and health derived from `reading`, for any face to show."
                   }
                 }
               },
@@ -24439,6 +24937,10 @@
                   },
                   "state": {
                     "$ref": "#/components/schemas/DfFusionState"
+                  },
+                  "status": {
+                    "$ref": "#/components/schemas/ChannelStatus",
+                    "description": "Readouts derived from `state`."
                   }
                 }
               },
@@ -24778,6 +25280,13 @@
           "control"
         ],
         "properties": {
+          "at_most": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Never above the setting at this key; lowering that one pulls this one down with it."
+          },
           "control": {
             "$ref": "#/components/schemas/Control"
           },
@@ -24794,6 +25303,13 @@
             "type": "array",
             "items": {},
             "description": "Values that mean the setting is off, so the control renders muted."
+          },
+          "section": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The fold a face groups this field under; unset sits with the main controls."
           },
           "title": {
             "type": [
@@ -25287,6 +25803,20 @@
           }
         }
       },
+      "SortKey": {
+        "type": "object",
+        "required": [
+          "field"
+        ],
+        "properties": {
+          "descending": {
+            "type": "boolean"
+          },
+          "field": {
+            "type": "string"
+          }
+        }
+      },
       "SourceRule": {
         "type": "string",
         "enum": [
@@ -25764,6 +26294,21 @@
                 "type": "string",
                 "enum": [
                   "missions"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The decoder registry changed, as a plugin reload changes it: channel types, event kinds\nand the patch catalog.",
+            "required": [
+              "scope"
+            ],
+            "properties": {
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "decoders"
                 ]
               }
             }
@@ -26442,23 +26987,7 @@
       },
       "Symbol": {
         "type": "string",
-        "enum": [
-          "plane",
-          "ship",
-          "station",
-          "balloon",
-          "drone",
-          "beacon",
-          "node",
-          "person",
-          "vehicle",
-          "satellite",
-          "antenna",
-          "fix",
-          "target",
-          "echo",
-          "dot"
-        ]
+        "description": "The icon an entity of a kind wears on the map."
       },
       "SyncState": {
         "type": "string",

@@ -66,10 +66,17 @@ pub(crate) fn datv_form() -> Vec<SettingField> {
         )
         .title("Choose an input stream identifier on a multistream carrier")
         .when("standard", [DatvStandard::DvbS2]),
-        SettingField::new("code_rate", "FEC", Control::choice::<DatvCodeRate>())
-            .title("DVB-S code rate")
-            .quiet(DatvCodeRate::Auto)
-            .when("standard", [DatvStandard::DvbS]),
+        SettingField::new(
+            "code_rate",
+            "FEC",
+            Control::choice_showing(
+                DatvCodeRate::Auto,
+                crate::broadcast_media::CODE_RATE_READOUT,
+            ),
+        )
+        .title("DVB-S code rate")
+        .quiet(DatvCodeRate::Auto)
+        .when("standard", [DatvStandard::DvbS]),
     ]
 }
 

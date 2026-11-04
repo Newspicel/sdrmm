@@ -69,7 +69,7 @@ fn descriptor(type_id: &str, name: &str, summary: &str, kind: EventKind) -> Chan
         type_id: type_id.to_owned(),
         name: name.to_owned(),
         summary: summary.to_owned(),
-        family: DecoderFamily::Amateur,
+        family: DecoderFamily::AMATEUR,
         bandwidth_hz: 3_200.0,
         input_rate_hz: INPUT_RATE_HZ,
         has_audio: false,

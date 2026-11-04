@@ -35,7 +35,7 @@ const ship: DecoderEvent = { kind: "probe_other", data: {} };
 const PLANE_VIEW: Presentation = {
   summary: "3C6444 · DLH123 · 35000 ft",
   entity: "3C6444",
-  fields: [{ label: "ICAO", value: { type: "text", value: "3C6444" } }],
+  fields: [{ key: "icao", label: "ICAO", value: { type: "text", value: "3C6444" } }],
 };
 
 const SHIP_VIEW: Presentation = { summary: "211234560 · NORDLICHT", entity: "211234560" };

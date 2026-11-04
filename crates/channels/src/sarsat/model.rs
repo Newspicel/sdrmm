@@ -172,17 +172,17 @@ impl EventPayload for SarsatMessage {
 impl SarsatMessage {
     fn fields(&self) -> Vec<Field> {
         fields(&[
-            ("Beacon", text_of(self.beacon.label())),
-            ("Hex ID", text(Some(&self.hex_id))),
-            ("ID", text(self.identity.as_deref())),
-            ("Country", count(Some(self.country))),
-            ("Protocol", text_of(self.protocol.label())),
-            ("Position", position(self.lat, self.lon)),
-            ("121.5 MHz", flag(self.homing)),
-            ("Self-test", only_if(self.self_test)),
-            ("BCH", text_of(self.checks())),
-            ("Repaired", repaired(self.errors_corrected)),
-            ("Message", text(Some(&self.message))),
+            ("beacon", "Beacon", text_of(self.beacon.label())),
+            ("hex_id", "Hex ID", text(Some(&self.hex_id))),
+            ("id", "ID", text(self.identity.as_deref())),
+            ("country", "Country", count(Some(self.country))),
+            ("protocol", "Protocol", text_of(self.protocol.label())),
+            ("position", "Position", position(self.lat, self.lon)),
+            ("homing", "121.5 MHz", flag(self.homing)),
+            ("self_test", "Self-test", only_if(self.self_test)),
+            ("bch", "BCH", text_of(self.checks())),
+            ("repaired", "Repaired", repaired(self.errors_corrected)),
+            ("message", "Message", text(Some(&self.message))),
         ])
     }
 
@@ -198,7 +198,7 @@ impl SarsatMessage {
 pub(crate) fn sarsat_kind() -> KindSpec {
     KindSpec::of::<SarsatMessage>("406 MHz beacon", "Beacons", Hue::Pink)
         .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-        .symbol(Symbol::Beacon)
+        .symbol(Symbol::BEACON)
         .sighting()
         .build()
 }

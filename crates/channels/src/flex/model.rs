@@ -94,18 +94,19 @@ impl EventPayload for FlexMessage {
 
 fn flex_fields(p: &FlexMessage) -> Vec<Field> {
     fields(&[
-        ("Address", text_of(p.address)),
-        ("Payload", text_of(pager_payload(p.payload))),
-        ("Mode", text_of(format!("{}/{}", p.baud, p.levels))),
-        ("Cycle", count(Some(p.cycle))),
-        ("Frame", count(Some(p.frame))),
-        ("Phase", text_of(p.phase)),
+        ("address", "Address", text_of(p.address)),
+        ("payload", "Payload", text_of(pager_payload(p.payload))),
+        ("mode", "Mode", text_of(format!("{}/{}", p.baud, p.levels))),
+        ("cycle", "Cycle", count(Some(p.cycle))),
+        ("frame", "Frame", count(Some(p.frame))),
+        ("phase", "Phase", text_of(p.phase)),
         (
+            "complete",
             "Complete",
             flag(Some(p.complete).filter(|complete| !complete)),
         ),
-        ("Repaired", repaired(p.errors_corrected)),
-        ("Text", text(Some(&p.text))),
+        ("repaired", "Repaired", repaired(p.errors_corrected)),
+        ("text", "Text", text(Some(&p.text))),
     ])
 }
 

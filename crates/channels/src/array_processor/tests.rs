@@ -73,6 +73,17 @@ fn descriptor_lane_ports_match_the_wire_port_table() {
 }
 
 #[test]
+fn descriptor_forms_are_the_forms_the_catalog_publishes() {
+    for type_id in PROCESSOR_TYPE_IDS {
+        let descriptor = processor_descriptor(type_id).expect("registered");
+        let kind = NodeKind::parse(type_id).expect("node kind");
+        let form = (descriptor.settings)();
+        assert!(!form.is_empty(), "{type_id} has no form");
+        assert_eq!(form, kind.info().settings, "{type_id}");
+    }
+}
+
+#[test]
 fn descriptors_read_their_own_settings() {
     let df = ProcessorParams::Df(DfParams::default());
     let descriptor = processor_descriptor("df").expect("df");

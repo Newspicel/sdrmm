@@ -15,28 +15,34 @@ mod params;
 mod status;
 
 pub use choices::{ParamChoice, ParamOption, SettingChoice};
-pub use form::{Condition, Control, NumberSpec, PresetOption, SettingField, lookup};
+pub use form::{Condition, Control, LanePick, NumberSpec, PresetOption, SettingField, lookup};
 pub use if_filter::{
     DEFAULT_IF_NOTCH_WIDTH_HZ, IfFilter, IfNotch, MAX_IF_EDGE_HZ, MAX_IF_NOTCH_WIDTH_HZ,
     MAX_IF_NOTCHES, MIN_IF_NOTCH_WIDTH_HZ, MIN_IF_PASSBAND_HZ,
 };
 pub use params::{ChannelParams, DecoderSettings};
-pub use status::ChannelStatus;
+pub use status::{ChannelHealth, ChannelStatus};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum DecoderFamily {
-    AnalogVoice,
-    DigitalVoice,
-    Aviation,
-    Marine,
-    Amateur,
-    Paging,
-    Video,
-    Broadcast,
-    Weather,
-    #[default]
-    Utility,
+crate::open_name::open_name!(
+    /// The palette group a decoder sits in.
+    DecoderFamily {
+        ANALOG_VOICE = "analog_voice",
+        DIGITAL_VOICE = "digital_voice",
+        AVIATION = "aviation",
+        MARINE = "marine",
+        AMATEUR = "amateur",
+        PAGING = "paging",
+        VIDEO = "video",
+        BROADCAST = "broadcast",
+        WEATHER = "weather",
+        UTILITY = "utility",
+    }
+);
+
+impl Default for DecoderFamily {
+    fn default() -> Self {
+        Self::UTILITY
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

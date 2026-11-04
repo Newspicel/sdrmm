@@ -14,6 +14,8 @@ export interface PaletteItem {
   summary: string;
   kind: NodeKind;
   type?: ChannelDescriptor;
+  /** The plugin processor a processor node runs. */
+  processorType?: string;
 }
 
 export interface PaletteGroup {
@@ -34,7 +36,7 @@ export const SECTIONS: readonly { id: PaletteSection; title: string }[] = Object
   SECTION_TITLES,
 ).map(([id, title]) => ({ id: id as PaletteSection, title }));
 
-export const FAMILIES = {
+export const FAMILIES: Readonly<Record<string, string>> = {
   analog_voice: "Analog voice",
   digital_voice: "Digital voice",
   aviation: "Aviation",
@@ -45,7 +47,22 @@ export const FAMILIES = {
   broadcast: "Broadcast digital",
   weather: "Weather and satellites",
   utility: "Utility",
-} satisfies Record<DecoderFamily, string>;
+};
+
+export function familyTitle(family: DecoderFamily): string {
+  return FAMILIES[family] ?? family.charAt(0).toUpperCase() + family.slice(1).replaceAll("_", " ");
+}
+
+export function familyOf(type: ChannelDescriptor): DecoderFamily {
+  return type.family ?? "utility";
+}
+
+/** Built-in families in their set order, then any a plugin brought, by name. */
+export function familiesOf(types: readonly ChannelDescriptor[]): DecoderFamily[] {
+  const known = Object.keys(FAMILIES);
+  const added = new Set(types.map(familyOf).filter((family) => !known.includes(family)));
+  return [...known, ...[...added].toSorted()];
+}
 
 export function paletteGroups(
   catalog: PatchCatalog,
@@ -55,7 +72,9 @@ export function paletteGroups(
     SECTIONS.map((section) => [section.id, []]),
   );
   for (const entry of catalog.nodes) {
-    if (entry.needs_channel_type !== true) {
+    if (entry.needs_processor_type === true) {
+      sections.get(entry.category)?.push(...processorItems(catalog, entry.kind));
+    } else if (entry.needs_channel_type !== true) {
       sections.get(entry.category)?.push({
         id: entry.kind,
         name: entry.name,
@@ -74,13 +93,23 @@ export function paletteGroups(
   ).filter((group) => group.items.length > 0);
 }
 
+function processorItems(catalog: PatchCatalog, kind: NodeKind): PaletteItem[] {
+  return (catalog.processors ?? []).map((type) => ({
+    id: `processor:${type.type_id}`,
+    name: type.name,
+    summary: type.summary ?? "",
+    kind,
+    processorType: type.type_id,
+  }));
+}
+
 export function decoderGroups(channelTypes: readonly ChannelDescriptor[]): PaletteGroup[] {
-  return (Object.keys(FAMILIES) as DecoderFamily[])
+  return familiesOf(channelTypes)
     .map((family) => ({
       id: `family:${family}`,
-      title: FAMILIES[family],
+      title: familyTitle(family),
       section: "channel" as const,
-      items: channelItems(channelTypes.filter((type) => (type.family ?? "utility") === family)),
+      items: channelItems(channelTypes.filter((type) => familyOf(type) === family)),
     }))
     .filter((group) => group.items.length > 0);
 }

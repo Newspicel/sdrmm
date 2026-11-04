@@ -8,10 +8,10 @@ impl EventPayload for BroadcastData {
         let body = (self.media_type == PLAIN_TEXT).then(|| String::from_utf8_lossy(&self.bytes));
         Presentation {
             fields: fields(&[
-                ("Name", text(Some(&self.name))),
-                ("Type", text(Some(&self.media_type))),
-                ("Bytes", count(Some(self.bytes.len() as f64))),
-                ("Text", text(body.as_deref())),
+                ("name", "Name", text(Some(&self.name))),
+                ("type", "Type", text(Some(&self.media_type))),
+                ("bytes", "Bytes", count(Some(self.bytes.len() as f64))),
+                ("text", "Text", text(body.as_deref())),
             ]),
             ..Presentation::of(format!("{} · {} bytes", self.name, self.bytes.len()))
         }

@@ -16,7 +16,7 @@ use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily
 
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx, NativeChannel,
-    TxPayload, check_input_rate,
+    NativeTx, TxPayload, check_input_rate,
     tx::{Burst, TxQueue},
 };
 
@@ -48,7 +48,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "aprs".to_owned(),
     name: "APRS / AX.25".to_owned(),
     summary: "Amateur packet positions and messages".to_owned(),
-    family: DecoderFamily::Amateur,
+    family: DecoderFamily::AMATEUR,
     bandwidth_hz: 12_500.0,
     input_rate_hz: 48_000.0,
     has_audio: false,
@@ -1187,7 +1187,7 @@ impl AprsTx {
     }
 }
 
-impl ChannelTx for AprsTx {
+impl NativeTx for AprsTx {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
@@ -1210,7 +1210,9 @@ impl ChannelTx for AprsTx {
             burst: Burst::new(ctx.input_rate),
         })
     }
+}
 
+impl ChannelTx for AprsTx {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         check_params(&p)?;

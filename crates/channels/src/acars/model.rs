@@ -78,20 +78,20 @@ impl EventPayload for AcarsMessage {
 fn acars_fields(a: &AcarsMessage) -> Vec<Field> {
     let direction = if a.downlink { "downlink" } else { "uplink" };
     fields(&[
-        ("Registration", text(Some(&a.registration))),
-        ("Flight", text(a.flight.as_deref())),
-        ("Label", text(Some(&a.label))),
-        ("Sublabel", text(a.sublabel.as_deref())),
-        ("MFI", text(a.mfi.as_deref())),
-        ("Mode", text_of(a.mode)),
-        ("Block", text_of(a.block_id)),
-        ("Direction", text_of(direction)),
-        ("Sequence", text(a.seq_no.as_deref())),
-        ("Ack", a.ack.map_or_else(|| text_of("NAK"), text_of)),
-        ("Continues", only_if(a.more)),
-        ("Reassembly", text(a.assstat.as_deref())),
-        ("Position", position(a.lat, a.lon)),
-        ("Text", text(Some(&a.text))),
+        ("registration", "Registration", text(Some(&a.registration))),
+        ("flight", "Flight", text(a.flight.as_deref())),
+        ("label", "Label", text(Some(&a.label))),
+        ("sublabel", "Sublabel", text(a.sublabel.as_deref())),
+        ("mfi", "MFI", text(a.mfi.as_deref())),
+        ("mode", "Mode", text_of(a.mode)),
+        ("block", "Block", text_of(a.block_id)),
+        ("direction", "Direction", text_of(direction)),
+        ("sequence", "Sequence", text(a.seq_no.as_deref())),
+        ("ack", "Ack", a.ack.map_or_else(|| text_of("NAK"), text_of)),
+        ("continues", "Continues", only_if(a.more)),
+        ("reassembly", "Reassembly", text(a.assstat.as_deref())),
+        ("position", "Position", position(a.lat, a.lon)),
+        ("text", "Text", text(Some(&a.text))),
     ])
 }
 
@@ -112,7 +112,7 @@ fn acars_summary(a: &AcarsMessage) -> String {
 pub(crate) fn acars_kind() -> KindSpec {
     KindSpec::of::<AcarsMessage>("ACARS", "Aircraft", Hue::Teal)
         .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-        .symbol(Symbol::Plane)
+        .symbol(Symbol::PLANE)
         .sighting()
         .build()
 }

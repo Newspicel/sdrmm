@@ -39,7 +39,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "stanag".to_owned(),
     name: "STANAG modem identifier".to_owned(),
     summary: "Names HF military modems".to_owned(),
-    family: DecoderFamily::Utility,
+    family: DecoderFamily::UTILITY,
     bandwidth_hz: PASSBAND_HIGH_HZ - PASSBAND_LOW_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

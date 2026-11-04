@@ -470,10 +470,10 @@ fn publish_sites(state: &AppState, node: &str, anchor: u32, sites: RadarSites) {
 }
 
 fn emit(state: &AppState, node: &str, update: RadarUpdate) {
-    state.engine.emit_event(ServerEvent::ProcessorUpdate {
-        node: node.to_owned(),
-        reading: Box::new(ProcessorReading::PassiveRadar(update)),
-    });
+    state.engine.emit_event(ServerEvent::processor_update(
+        node.to_owned(),
+        ProcessorReading::PassiveRadar(update),
+    ));
 }
 
 fn refusal(

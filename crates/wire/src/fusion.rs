@@ -252,9 +252,14 @@ impl EventPayload for NavGuide {
             place: Some(Place::at(at)),
             shapes,
             fields: fields(&[
-                ("Target", text_of(target.kind.label())),
-                ("Distance", number(Some(target.distance_m), Unit::Metres, 0)),
+                ("target", "Target", text_of(target.kind.label())),
                 (
+                    "distance",
+                    "Distance",
+                    number(Some(target.distance_m), Unit::Metres, 0),
+                ),
+                (
+                    "bearing",
                     "Bearing",
                     number(Some(target.bearing_deg), Unit::Degrees, 0),
                 ),
@@ -286,6 +291,22 @@ pub struct DfStation {
     pub moving: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub align_deg: Option<f32>,
+}
+
+/// A triangulation as a read returns it: its state and the readouts its face shows.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct DfFusionView {
+    pub state: DfFusionState,
+    pub status: crate::ChannelStatus,
+}
+
+impl From<DfFusionState> for DfFusionView {
+    fn from(state: DfFusionState) -> Self {
+        Self {
+            status: state.status(),
+            state,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -337,20 +358,44 @@ impl DfBearing {
             .ok()
             .filter(|peaks| *peaks > 0);
         fields(&[
-            ("Station", text(self.station_id.as_deref())),
-            ("Bearing", number(Some(self.bearing_deg), Unit::Degrees, 2)),
-            ("Spread", number(Some(self.sigma_deg), Unit::Degrees, 1)),
-            ("Confidence", percent(self.confidence)),
-            ("Seen from", position(self.lat, self.lon)),
-            ("Accuracy", number(self.accuracy_m, Unit::Metres, 0)),
-            ("Heading", number(self.heading_deg, Unit::Degrees, 0)),
-            ("Relative", number(self.relative_deg, Unit::Degrees, 1)),
-            ("Mirror", number(self.mirror_deg, Unit::Degrees, 1)),
-            ("Frequency", number(self.freq_hz, Unit::Hz, 0)),
-            ("SNR", number(self.snr_db, Unit::Db, 1)),
-            ("Source", text_of(self.source.label())),
-            ("Moving", only_if(self.moving)),
-            ("Other peaks", count(peaks)),
+            ("station", "Station", text(self.station_id.as_deref())),
+            (
+                "bearing",
+                "Bearing",
+                number(Some(self.bearing_deg), Unit::Degrees, 2),
+            ),
+            (
+                "spread",
+                "Spread",
+                number(Some(self.sigma_deg), Unit::Degrees, 1),
+            ),
+            ("confidence", "Confidence", percent(self.confidence)),
+            ("seen_from", "Seen from", position(self.lat, self.lon)),
+            (
+                "accuracy",
+                "Accuracy",
+                number(self.accuracy_m, Unit::Metres, 0),
+            ),
+            (
+                "heading",
+                "Heading",
+                number(self.heading_deg, Unit::Degrees, 0),
+            ),
+            (
+                "relative",
+                "Relative",
+                number(self.relative_deg, Unit::Degrees, 1),
+            ),
+            (
+                "mirror",
+                "Mirror",
+                number(self.mirror_deg, Unit::Degrees, 1),
+            ),
+            ("frequency", "Frequency", number(self.freq_hz, Unit::Hz, 0)),
+            ("snr", "SNR", number(self.snr_db, Unit::Db, 1)),
+            ("source", "Source", text_of(self.source.label())),
+            ("moving", "Moving", only_if(self.moving)),
+            ("other_peaks", "Other peaks", count(peaks)),
         ])
     }
 
@@ -410,35 +455,123 @@ impl EventPayload for DfEstimate {
 impl DfEstimate {
     fn fields(&self) -> Vec<Field> {
         fields(&[
-            ("Position", position(Some(self.lat), Some(self.lon))),
             (
+                "position",
+                "Position",
+                position(Some(self.lat), Some(self.lon)),
+            ),
+            (
+                "major_axis",
                 "Major axis",
                 number(Some(self.ellipse_major_m), Unit::Metres, 0),
             ),
             (
+                "minor_axis",
                 "Minor axis",
                 number(Some(self.ellipse_minor_m), Unit::Metres, 0),
             ),
             (
+                "ellipse_bearing",
                 "Ellipse bearing",
                 number(Some(self.ellipse_bearing_deg), Unit::Degrees, 1),
             ),
-            ("Bearings", count(Some(self.samples))),
-            ("Converged", flag(Some(self.converged))),
+            ("bearings", "Bearings", count(Some(self.samples))),
+            ("converged", "Converged", flag(Some(self.converged))),
         ])
     }
 
     fn ellipse(&self, center: LatLon) -> Option<Shape> {
-        let axis = |metres: f64| {
-            let half = (metres / 2.0) as f32;
-            (half.is_finite() && half > 0.0).then_some(half)
-        };
-        Some(Shape::Ellipse {
+        ellipse_shape(
             center,
-            major_m: axis(self.ellipse_major_m)?,
-            minor_m: axis(self.ellipse_minor_m)?,
-            bearing_deg: bearing(Some(self.ellipse_bearing_deg))?,
-        })
+            self.ellipse_major_m,
+            self.ellipse_minor_m,
+            self.ellipse_bearing_deg,
+        )
+    }
+}
+
+fn ellipse_shape(center: LatLon, major_m: f64, minor_m: f64, bearing_deg: f64) -> Option<Shape> {
+    let axis = |metres: f64| {
+        let half = (metres / 2.0) as f32;
+        (half.is_finite() && half > 0.0).then_some(half)
+    };
+    Some(Shape::Ellipse {
+        center,
+        major_m: axis(major_m)?,
+        minor_m: axis(minor_m)?,
+        bearing_deg: bearing(Some(bearing_deg))?,
+    })
+}
+
+/// A live fix where the newest bearing from each station crosses. The ellipse axes are full
+/// lengths at one sigma, as on [`DfEstimate`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct BearingFix {
+    pub lat: f64,
+    pub lon: f64,
+    pub ellipse_major_m: f64,
+    pub ellipse_minor_m: f64,
+    pub ellipse_bearing_deg: f64,
+    pub stations: u32,
+    pub spread_m: f64,
+}
+
+impl EventPayload for BearingFix {
+    fn present(&self, _kind: &EventKind) -> Presentation {
+        let center = lat_lon(Some(self.lat), Some(self.lon));
+        Presentation {
+            entity: Some(FIX_ENTITY.to_owned()),
+            place: center.map(Place::at),
+            shapes: center
+                .and_then(|center| {
+                    ellipse_shape(
+                        center,
+                        self.ellipse_major_m,
+                        self.ellipse_minor_m,
+                        self.ellipse_bearing_deg,
+                    )
+                })
+                .into_iter()
+                .collect(),
+            fields: self.fields(),
+            ..Presentation::of(format!(
+                "{:.5}, {:.5} · ±{:.0} m · {} stations",
+                self.lat, self.lon, self.ellipse_major_m, self.stations
+            ))
+        }
+    }
+}
+
+impl BearingFix {
+    fn fields(&self) -> Vec<Field> {
+        fields(&[
+            (
+                "position",
+                "Position",
+                position(Some(self.lat), Some(self.lon)),
+            ),
+            (
+                "major_axis",
+                "Major axis",
+                number(Some(self.ellipse_major_m), Unit::Metres, 0),
+            ),
+            (
+                "minor_axis",
+                "Minor axis",
+                number(Some(self.ellipse_minor_m), Unit::Metres, 0),
+            ),
+            (
+                "ellipse_bearing",
+                "Ellipse bearing",
+                number(Some(self.ellipse_bearing_deg), Unit::Degrees, 1),
+            ),
+            ("stations", "Stations", count(Some(self.stations))),
+            (
+                "spread",
+                "Spread",
+                number(Some(self.spread_m), Unit::Metres, 0),
+            ),
+        ])
     }
 }
 
@@ -713,6 +846,45 @@ mod tests {
         );
         assert_eq!(view.field("Source"), text(Some("array")).as_ref());
         assert_eq!(view.field("Other peaks"), count(Some(1)).as_ref());
+    }
+
+    #[test]
+    fn a_bearing_fix_draws_its_ellipse_and_counts_its_stations() {
+        let fix = BearingFix {
+            lat: 50.1,
+            lon: 8.2,
+            ellipse_major_m: 2_400.0,
+            ellipse_minor_m: 900.0,
+            ellipse_bearing_deg: 30.0,
+            stations: 3,
+            spread_m: 420.0,
+        };
+        let view = fix.present(&EventKind::BEARING_FIX);
+        assert_eq!(
+            view.labels(),
+            [
+                "Position",
+                "Major axis",
+                "Minor axis",
+                "Ellipse bearing",
+                "Stations",
+                "Spread"
+            ]
+        );
+        assert_eq!(
+            view.shapes,
+            [Shape::Ellipse {
+                center: LatLon {
+                    lat: 50.1,
+                    lon: 8.2
+                },
+                major_m: 1_200.0,
+                minor_m: 450.0,
+                bearing_deg: 30.0,
+            }]
+        );
+        assert_eq!(view.field("Stations"), count(Some(3)).as_ref());
+        assert_eq!(view.entity.as_deref(), Some(FIX_ENTITY));
     }
 
     #[test]

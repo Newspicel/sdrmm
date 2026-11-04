@@ -5,16 +5,17 @@ import {
   appendTranscript,
   buildTranscript,
   fieldColumns,
-  fieldNamed,
+  fieldKeyed,
   formatAge,
   formatClock,
   isAtBottom,
+  namedColumns,
   TARGET_MAX_AGE_MS,
   TARGET_STALE_MS,
 } from "./decoderViews";
 
-function text(label: string, value: string): Field {
-  return { label, value: { type: "text", value } };
+function text(label: string, value: string, key = label.toLowerCase()): Field {
+  return { key, label, value: { type: "text", value } };
 }
 
 describe("ageing", () => {
@@ -65,17 +66,30 @@ describe("transcripts", () => {
 });
 
 describe("field columns", () => {
-  it("joins the labels of every entity in order of first appearance", () => {
+  it("joins the keys of every entity in order of first appearance", () => {
     const entities = [
       { view: { summary: "", fields: [text("Alt", "1"), text("Speed", "2")] } },
-      { view: { summary: "", fields: [text("Squawk", "7000"), text("Alt", "3")] } },
+      { view: { summary: "", fields: [text("Squawk", "7000"), text("Höhe", "3", "alt")] } },
       { view: { summary: "" } },
     ];
-    expect(fieldColumns(entities)).toEqual(["Alt", "Speed", "Squawk"]);
+    expect(fieldColumns(entities)).toEqual([
+      { key: "alt", label: "Alt" },
+      { key: "speed", label: "Speed" },
+      { key: "squawk", label: "Squawk" },
+    ]);
   });
 
-  it("finds a field by its label", () => {
-    expect(fieldNamed([text("Alt", "1")], "Alt")?.value).toEqual({ type: "text", value: "1" });
-    expect(fieldNamed(undefined, "Alt")).toBeUndefined();
+  it("heads named columns by label and keeps an unseen key", () => {
+    expect(namedColumns(["speed", "gone"], [[text("Speed", "2")]])).toEqual([
+      { key: "speed", label: "Speed" },
+      { key: "gone", label: "gone" },
+    ]);
+  });
+
+  it("finds a field by its key, never its label", () => {
+    const alt = text("Altitude", "1", "alt");
+    expect(fieldKeyed([alt], "alt")?.value).toEqual({ type: "text", value: "1" });
+    expect(fieldKeyed([alt], "Altitude")).toBeUndefined();
+    expect(fieldKeyed(undefined, "alt")).toBeUndefined();
   });
 });

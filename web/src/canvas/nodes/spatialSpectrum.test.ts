@@ -8,11 +8,9 @@ import {
   columnArgmax,
   cursorText,
   hoverAt,
-  peakText,
   rotateRows,
   rowDeg,
   rowShift,
-  topPeaks,
 } from "./spatialSpectrum";
 
 function frame(bearings: number, bins: number, cells: number[]): SpatialSpectrumFrame {
@@ -75,25 +73,6 @@ describe("spatial spectrum peaks", () => {
     const grid = frame(3, 2, [1, 9, 7, 2, 3, 4]);
     expect(columnArgmax(grid.cells, 3, 2, 0)).toEqual({ row: 1, level: 7 });
     expect(columnArgmax(grid.cells, 3, 2, 1)).toEqual({ row: 0, level: 9 });
-  });
-
-  it("lists the three strongest peaks in the chosen frame", () => {
-    const reading = {
-      at: "now",
-      peaks: [
-        { freq_hz: 433_920_000, bearing_deg: 137, db: -60, true_deg: 227 },
-        { freq_hz: 145_000_000, bearing_deg: 10, db: -40 },
-        { freq_hz: 1e6, bearing_deg: 0, db: -90 },
-        { freq_hz: 2e6, bearing_deg: 0, db: -95 },
-      ],
-    };
-    const peaks = topPeaks(reading);
-    expect(peaks.map((peak) => peak.db)).toEqual([-40, -60, -90]);
-    const second = peaks[1];
-    expect(second === undefined ? "" : peakText(second, "true")).toBe("433.920 MHz 227°");
-    expect(second === undefined ? "" : peakText(second, "relative")).toBe("433.920 MHz 137°");
-    const first = peaks[0];
-    expect(first === undefined ? "" : peakText(first, "true", 90)).toBe("145.000 MHz 100°");
   });
 
   it("colours the trail by bearing and brightness by power", () => {

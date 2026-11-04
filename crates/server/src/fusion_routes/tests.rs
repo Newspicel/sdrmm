@@ -143,9 +143,9 @@ async fn fused(
         let next = tokio::time::Instant::now() + Duration::from_millis(200);
         loop {
             match tokio::time::timeout_at(next.min(deadline), events.recv()).await {
-                Ok(Ok(ServerEvent::DfFusionUpdate { node: from, state }))
-                    if from == node && wanted(&state) =>
-                {
+                Ok(Ok(ServerEvent::DfFusionUpdate {
+                    node: from, state, ..
+                })) if from == node && wanted(&state) => {
                     return *state;
                 }
                 Ok(Ok(_) | Err(broadcast::error::RecvError::Lagged(_))) => {}

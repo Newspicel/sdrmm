@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -53,14 +53,34 @@ pub struct CwSkimmerSpot {
     pub snr_db: f32,
 }
 
+/// Spots this close together come from one signal, whose tracked offset wanders a little.
+const SIGNAL_GROUP_HZ: f32 = 50.0;
+
+impl CwSkimmerSpot {
+    /// The offset the spot's signal is known by, so its spots share one row.
+    #[must_use]
+    pub fn signal_hz(&self) -> f32 {
+        (self.offset_hz / SIGNAL_GROUP_HZ).round() * SIGNAL_GROUP_HZ + 0.0
+    }
+}
+
 impl EventPayload for CwSkimmerSpot {
     fn present(&self, _kind: &EventKind) -> Presentation {
         Presentation {
             fields: fields(&[
-                ("Offset", number(Some(self.offset_hz), Unit::Hz, 0)),
-                ("Speed", number(Some(self.wpm), Unit::Wpm, 0)),
-                ("SNR", number(Some(self.snr_db), Unit::Db, 1)),
-                ("Text", text(Some(&self.text))),
+                (
+                    "signal",
+                    "Signal",
+                    number(Some(self.signal_hz()), Unit::Hz, 0),
+                ),
+                (
+                    "offset",
+                    "Offset",
+                    number(Some(self.offset_hz), Unit::Hz, 0),
+                ),
+                ("speed", "Speed", number(Some(self.wpm), Unit::Wpm, 0)),
+                ("snr", "SNR", number(Some(self.snr_db), Unit::Db, 1)),
+                ("text", "Text", text(Some(&self.text))),
             ]),
             ..Presentation::of(format!(
                 "{:+.0} Hz · {:.0} WPM · {}",
@@ -73,6 +93,11 @@ impl EventPayload for CwSkimmerSpot {
 pub(crate) fn cw_skimmer_kind() -> KindSpec {
     KindSpec::of::<CwSkimmerSpot>("CW skimmer", "CW spots", Hue::Muted)
         .caps(&[Capability::Log])
+        .view(
+            KindView::table(&["signal", "speed", "snr", "text"])
+                .sorted("signal", false)
+                .keyed("signal"),
+        )
         .build()
 }
 
@@ -82,4 +107,30 @@ impl EventContract for CwSkimmerSpot {
 
 impl sdrmm_wire::DecoderSettings for CwSkimmerParams {
     const TYPE_ID: &'static str = "cw_skimmer";
+}
+
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+
+    fn spot(offset_hz: f32) -> CwSkimmerSpot {
+        CwSkimmerSpot {
+            offset_hz,
+            text: "CQ".to_owned(),
+            wpm: 24.0,
+            snr_db: 12.0,
+        }
+    }
+
+    #[test]
+    fn a_wandering_signal_keeps_one_row() {
+        assert_eq!(spot(1_237.0).signal_hz(), 1_250.0);
+        assert_eq!(spot(1_262.0).signal_hz(), 1_250.0);
+        assert_eq!(spot(-1_237.0).signal_hz(), -1_250.0);
+        assert_eq!(spot(-10.0).signal_hz().to_bits(), 0.0_f32.to_bits());
+        crate::testutil::assert_views_hold(
+            &cw_skimmer_kind(),
+            &[sdrmm_wire::DecoderEvent::of(&spot(1_237.0))],
+        );
+    }
 }

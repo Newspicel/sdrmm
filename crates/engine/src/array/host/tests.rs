@@ -31,6 +31,7 @@ pub(crate) static TALKER: ProcessorDescriptor = ProcessorDescriptor {
     lane_ports: &[],
     steer_port: Some("steer"),
     surface: None,
+    settings: Vec::new,
     needs: |_| ProcessorNeeds::default(),
     band: |_| None,
     tuning: |_| TuningNeed::Any,

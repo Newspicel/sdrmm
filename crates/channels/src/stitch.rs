@@ -24,6 +24,7 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_ports: &[STITCH_WIDE_PORT],
     steer_port: None,
     surface: None,
+    settings: sdrmm_wire::StitchParams::form,
     needs: |_| ProcessorNeeds::TIME,
     band: |_| None,
     tuning: |_| TuningNeed::Spread,

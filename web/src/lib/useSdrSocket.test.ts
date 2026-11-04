@@ -1,6 +1,13 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import { PHONES_KEY, STATE_KEY, TOOL_RUN_KEY, WORKSPACES_KEY } from "./api";
+import {
+  CHANNEL_TYPES_KEY,
+  PATCH_CATALOG_KEY,
+  PHONES_KEY,
+  STATE_KEY,
+  TOOL_RUN_KEY,
+  WORKSPACES_KEY,
+} from "./api";
 import { invalidateReads, invalidateScope } from "./useSdrSocket";
 
 function seeded(): QueryClient {
@@ -22,6 +29,16 @@ describe("invalidateScope", () => {
     const client = seeded();
     invalidateScope(client, { scope: "missions" });
     expect(client.getQueryState(PHONES_KEY)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(STATE_KEY)?.isInvalidated).toBe(false);
+  });
+
+  it("refreshes channel types and the catalog when plugins reload", () => {
+    const client = seeded();
+    client.setQueryData(CHANNEL_TYPES_KEY, { channels: [] });
+    client.setQueryData(PATCH_CATALOG_KEY, {});
+    invalidateScope(client, { scope: "decoders" });
+    expect(client.getQueryState(CHANNEL_TYPES_KEY)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(PATCH_CATALOG_KEY)?.isInvalidated).toBe(true);
     expect(client.getQueryState(STATE_KEY)?.isInvalidated).toBe(false);
   });
 

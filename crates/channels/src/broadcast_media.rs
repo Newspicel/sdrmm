@@ -13,7 +13,8 @@ use std::{
 use ffmpeg_the_third::codec::Id;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use sdrmm_wire::{
-    ChannelStatus, DecoderEvent, EventContract, ParamChoice, ParamOption, present::EventPayload,
+    ChannelHealth, ChannelStatus, DecoderEvent, EventContract, ParamChoice, ParamOption,
+    present::EventPayload,
 };
 
 use crate::{
@@ -42,13 +43,29 @@ const OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 /// and the services it found offered for the `service_key` setting.
 pub(crate) fn publish_status(out: &mut ChannelOutputs, status: BroadcastStatus, service_key: &str) {
     out.events.push(DecoderEvent::of(&status));
+    let mut readouts = status.present(&BroadcastStatus::KIND).fields;
+    readouts.retain(|field| !HEALTH_FIELDS.contains(&field.key.as_str()));
     out.status = Some(ChannelStatus {
-        readouts: status.present(&BroadcastStatus::KIND).fields,
+        health: health(&status),
+        readouts,
         choices: vec![ParamChoice {
             name: service_key.to_owned(),
             options: status.services.iter().map(service_option).collect(),
         }],
     });
+}
+
+/// Lock always; SNR and frequency error only while locked, as a searching receiver has
+/// measured neither.
+fn health(status: &BroadcastStatus) -> ChannelHealth {
+    let health = ChannelHealth::default().lock(status.locked);
+    if status.locked {
+        health
+            .snr(status.snr_db)
+            .freq_error(f64::from(status.frequency_error_hz))
+    } else {
+        health
+    }
 }
 
 /// The newest status a broadcast decoder published into `out`.
@@ -70,6 +87,7 @@ fn service_option(service: &BroadcastService) -> ParamOption {
             label.to_owned()
         },
         title: None,
+        status: None,
     }
 }
 

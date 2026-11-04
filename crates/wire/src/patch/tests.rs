@@ -716,7 +716,13 @@ fn the_only_type_level_cycles_are_the_guarded_transforms() {
         .collect();
     assert_eq!(
         cycle,
-        vec!["event_filter", "audio_fx", "passive_radar", "triangulation"]
+        vec![
+            "event_filter",
+            "audio_fx",
+            "passive_radar",
+            "triangulation",
+            "bearing_fix"
+        ]
     );
 }
 
@@ -755,8 +761,10 @@ fn every_node_the_palette_offers_round_trips_and_validates_on_its_own() {
         assert_eq!(back, entry.default_body);
 
         let mut node = node("solo", back);
-        if let NodeBody::Channel(channel) = &mut node.body {
-            channel.channel_type = "probe_voice".to_owned();
+        match &mut node.body {
+            NodeBody::Channel(channel) => channel.channel_type = "probe_voice".to_owned(),
+            NodeBody::Processor(processor) => processor.processor_type = "probe_meter".to_owned(),
+            _ => {}
         }
         let graph = PatchGraph {
             nodes: vec![node],

@@ -52,7 +52,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "sstv".to_owned(),
     name: "SSTV".to_owned(),
     summary: "Slow scan TV pictures".to_owned(),
-    family: DecoderFamily::Video,
+    family: DecoderFamily::VIDEO,
     bandwidth_hz: TONE_HIGH_HZ - TONE_LOW_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

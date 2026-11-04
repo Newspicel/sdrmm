@@ -12,7 +12,7 @@ use super::{
     acars, adsb, ais, atv, dect, dv, ermes, flex, gnss, morse, navtex, pocsag, radio_clock, rds,
     rtty, selcall, sstv,
 };
-use crate::{AprsTx, ChannelCtx, ChannelTx, TxPayload};
+use crate::{AprsTx, ChannelCtx, ChannelTx, NativeTx, TxPayload};
 
 const NARROW: f64 = 240_000.0;
 const AUDIO: f64 = 48_000.0;

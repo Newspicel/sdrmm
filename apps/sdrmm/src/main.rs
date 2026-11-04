@@ -181,9 +181,6 @@ fn run(mut args: Args) -> anyhow::Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("cannot create {}", parent.display()))?;
     }
-    let _plugins = sdrmm_plugins::PluginWatcher::start(plugins_dir)
-        .map_err(|error| tracing::error!(%error, "plugins are off"))
-        .ok();
     let engine = Engine::with_registry(
         sdrmm_engine::builtin_registry_accelerated(
             Some(recordings_dir.clone()),
@@ -191,6 +188,14 @@ fn run(mut args: Args) -> anyhow::Result<()> {
         ),
         Some(recordings_dir),
     );
+    let reopen = std::sync::Arc::downgrade(&engine);
+    let _plugins = sdrmm_plugins::PluginWatcher::start(plugins_dir, move |replaced| {
+        if let Some(engine) = reopen.upgrade() {
+            engine.plugins_reloaded(replaced);
+        }
+    })
+    .map_err(|error| tracing::error!(%error, "plugins are off"))
+    .ok();
     let config = Config {
         bind: args.bind,
         db_path: Some(db_path),

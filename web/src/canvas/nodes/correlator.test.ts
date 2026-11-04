@@ -5,7 +5,6 @@ import {
   baselineOptions,
   baselineSeries,
   baselineText,
-  channelOptions,
   FRINGE_POINTS,
   linePath,
   phasePath,
@@ -45,12 +44,6 @@ describe("correlator baselines", () => {
     expect(baselineText(baseline(0, 1, { phase_deg: 37.2, snr_db: 18.4 }))).toBe(
       "0.82 ∠37° 1.2 ns 18 dB",
     );
-  });
-
-  it("offers no more channels than the FFT has bins", () => {
-    const options = channelOptions(64);
-    expect(options.find((option) => option.value === 64)?.disabled).toBe(false);
-    expect(options.find((option) => option.value === 128)?.disabled).toBe(true);
   });
 });
 

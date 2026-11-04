@@ -31,6 +31,7 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_ports: &[],
     steer_port: None,
     surface: Some(StreamKind::Visibility),
+    settings: sdrmm_wire::CorrelatorParams::form,
     needs: |_| ProcessorNeeds::CALIBRATED,
     band: |_| None,
     tuning: |_| TuningNeed::Together,

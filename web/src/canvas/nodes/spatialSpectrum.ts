@@ -1,15 +1,13 @@
 import type { Options } from "../../components/controls";
 import { bearingHue } from "../../gl/spatial";
 import type { SpatialSpectrumFrame } from "../../lib/frame";
-import { SPATIAL_LIMITS as LIMITS, powersOfTwo } from "../../lib/limits";
-import type { SpatialMethod, SpatialPeak, SpatialReading } from "../../lib/types";
+import type { SpatialPeak, SpatialReading } from "../../lib/types";
 
 export { bearingHue, columnArgmax } from "../../gl/spatial";
 
 export type BearingFrame = "relative" | "true";
 export type SpatialView = "map" | "trail";
 
-export const PEAK_ROWS = 3;
 export const BEARING_TICKS = [0, 90, 180, 270, 360] as const;
 
 export function frameOptions(trueKnown: boolean): Options<BearingFrame> {
@@ -28,47 +26,6 @@ export const VIEW_OPTIONS: Options<SpatialView> = [
   { value: "map", label: "Map", title: "Bearing over frequency" },
   { value: "trail", label: "Trail", title: "Frequency over time, colour is bearing" },
 ];
-
-export const METHOD_OPTIONS: Options<SpatialMethod> = [
-  { value: "bartlett", label: "Bartlett", title: "Robust, wide peaks" },
-  { value: "capon", label: "Capon", title: "Sharper peaks" },
-  { value: "music", label: "MUSIC", title: "Sharpest, needs clean signals" },
-];
-
-const FULL_CIRCLE_DEG = 360;
-
-export const BIN_OPTIONS: Options<number> = powersOfTwo(LIMITS.bins).map((value) => ({
-  value,
-  label: String(value),
-}));
-
-export function columnOptions(bins: number): Options<number> {
-  return powersOfTwo(LIMITS.columns).map((value) => ({
-    value,
-    label: String(value),
-    disabled: value > bins,
-    title: value > bins ? "More than the FFT" : undefined,
-  }));
-}
-
-function circleSteps(): number[] {
-  const steps: number[] = [];
-  for (
-    let deg = Math.ceil(LIMITS.azimuth_step_deg.min);
-    deg <= LIMITS.azimuth_step_deg.max;
-    deg++
-  ) {
-    if (FULL_CIRCLE_DEG % deg === 0) {
-      steps.push(deg);
-    }
-  }
-  return steps;
-}
-
-export const STEP_OPTIONS: Options<number> = circleSteps().map((deg) => ({
-  value: deg,
-  label: `${deg}°`,
-}));
 
 export function binHz(col: number, bins: number, centerHz: number, spanHz: number): number {
   return centerHz - spanHz / 2 + ((col + 0.5) * spanHz) / bins;
@@ -149,12 +106,4 @@ export function cursorText(hz: number, bearing: number, db: number | null): stri
 
 export function peakBearing(peak: SpatialPeak, frame: BearingFrame, offsetDeg = 0): number {
   return frame === "true" ? (peak.true_deg ?? peak.bearing_deg + offsetDeg) : peak.bearing_deg;
-}
-
-export function peakText(peak: SpatialPeak, frame: BearingFrame, offsetDeg = 0): string {
-  return `${mhz(peak.freq_hz)} ${degreeText(peakBearing(peak, frame, offsetDeg))}`;
-}
-
-export function topPeaks(reading: SpatialReading | null): SpatialPeak[] {
-  return (reading?.peaks ?? []).toSorted((a, b) => b.db - a.db).slice(0, PEAK_ROWS);
 }

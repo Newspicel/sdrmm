@@ -9,19 +9,19 @@ use std::{
 use sdrmm_channels::{
     ChannelError,
     array_processor::{
-        ArrayBlock, ArrayCtx, ArrayProcessor, Execution, LaneBuffer, MAX_EVENTS_PER_BLOCK,
-        MAX_LANE_PORTS, OutputSlots, OutputTally, ProcessorAction, ProcessorDescriptor,
-        ProcessorFaults, ProcessorNeeds, ProcessorOutput, ResetCause, Steer, TuningNeed,
-        create_processor, processor_descriptor,
+        ArrayBlock, ArrayCtx, ArrayProcessor, EventBytes, Execution, LaneBuffer,
+        MAX_EVENTS_PER_BLOCK, MAX_LANE_PORTS, OutputSlots, OutputTally, ProcessorAction,
+        ProcessorDescriptor, ProcessorFaults, ProcessorNeeds, ProcessorOutput, ResetCause, Steer,
+        TuningNeed, create_processor, descriptor_for, processor_plugin,
     },
     df::reserved_bearing,
 };
 use sdrmm_dsp::manifold::ManifoldTable;
 use sdrmm_wire::{
     ArrayGeometry, ArrayTuningMode, Coherence, DecodedRecord, DecoderEvent, DfBearing, EventOrigin,
-    GpuUse, NO_CHANNEL, ProcessorGate, ProcessorParams, ProcessorReading, ProcessorStatus,
-    RangeDopplerOwned, SpatialSpectrumOwned, StreamKind, SurfaceFrame, VisibilityOwned,
-    patch::MAX_NODE_ID_LEN,
+    GpuUse, NO_CHANNEL, PluginReading, ProcessorGate, ProcessorParams, ProcessorReading,
+    ProcessorStatus, RangeDopplerOwned, SpatialSpectrumOwned, StreamKind, SurfaceFrame,
+    VisibilityOwned, patch::MAX_NODE_ID_LEN, plugin::read_events,
 };
 use tokio::sync::broadcast;
 
@@ -41,6 +41,7 @@ const PUBLISH_SLOTS: usize = 16;
 const SURFACE_CELLS: usize = 1 << 19;
 const STEER_WORDS: usize = 12;
 const STEER_READS: usize = 4;
+const EVENT_BYTES: usize = 16 * 1024;
 
 pub(crate) struct ProcessorStats {
     pub(crate) gated_samples: AtomicU64,
@@ -310,6 +311,7 @@ enum Out {
     Report,
     Surface,
     Event,
+    Events,
 }
 
 pub(crate) struct Packet {
@@ -317,8 +319,27 @@ pub(crate) struct Packet {
     reading: Option<ProcessorReading>,
     surface: Option<SurfaceFrame>,
     bearing: DfBearing,
+    events: EventBytes,
     seq: u32,
     freq_hz: f64,
+}
+
+/// The reading slot a processor of `params` fills: a plugin's carries the readouts its type
+/// declares. Built afresh for every slot, since a clone drops the room reserved in it.
+fn reserved_reading(params: &ProcessorParams) -> Option<ProcessorReading> {
+    match params {
+        ProcessorParams::Plugin(plugin) => processor_plugin(&plugin.type_id)
+            .map(|factory| ProcessorReading::Plugin(PluginReading::reserved(factory.kind()))),
+        _ => ProcessorReading::empty(params.type_id()),
+    }
+}
+
+/// Room for one block's events; only a plugin hands events on as JSON.
+fn event_room(params: &ProcessorParams) -> usize {
+    match params {
+        ProcessorParams::Plugin(_) => EVENT_BYTES,
+        _ => 0,
+    }
 }
 
 fn surface_slot(kind: Option<StreamKind>) -> Option<SurfaceFrame> {
@@ -344,6 +365,7 @@ pub(crate) struct Outputs {
     report: Option<ProcessorReading>,
     surface: Option<SurfaceFrame>,
     bearings: Vec<DfBearing>,
+    events: Option<EventBytes>,
     lanes: Vec<LaneBuffer>,
     sinks: Vec<Option<VirtualLaneSink>>,
     lane_ratio: [f64; MAX_LANE_PORTS],
@@ -373,18 +395,21 @@ impl Outputs {
         }
         let mut sinks: Vec<Option<VirtualLaneSink>> = std::mem::take(&mut plan.sinks);
         sinks.resize_with(ports, || None);
-        let type_id = descriptor.type_id;
+        let reading = reserved_reading(&plan.params);
+        let room = event_room(&plan.params);
         let kind = descriptor.surface;
         let node = plan.node.clone();
         let sink = plan.outputs.clone();
+        let params = plan.params.clone();
         let publisher = Publisher::new(
             "sdrmm-array-pub",
             PUBLISH_SLOTS,
             || Packet {
                 out: Out::Report,
-                reading: ProcessorReading::empty(type_id),
+                reading: reserved_reading(&params),
                 surface: surface_slot(kind),
                 bearing: reserved_bearing(MAX_NODE_ID_LEN),
+                events: EventBytes::with_capacity(room),
                 seq: 0,
                 freq_hz: 0.0,
             },
@@ -392,11 +417,12 @@ impl Outputs {
             || {},
         )?;
         Ok(Self {
-            report: ProcessorReading::empty(type_id),
+            report: reading,
             surface: surface_slot(kind),
             bearings: (0..MAX_EVENTS_PER_BLOCK)
                 .map(|_| reserved_bearing(MAX_NODE_ID_LEN))
                 .collect(),
+            events: (room > 0).then(|| EventBytes::with_capacity(room)),
             lanes,
             sinks,
             lane_ratio,
@@ -424,7 +450,8 @@ impl Outputs {
                 surface: self.surface.as_mut(),
                 bearings: &mut self.bearings,
                 lanes: &mut self.lanes,
-            });
+            })
+            .with_events(self.events.as_mut());
             work(&mut out);
             out.tally()
         };
@@ -464,7 +491,17 @@ impl Outputs {
                 .dropped_surfaces
                 .fetch_add(surfaces_lost, Ordering::Relaxed);
         }
-        let mut lost = tally.dropped_bearings;
+        let mut lost = tally.dropped_bearings + tally.dropped_events;
+        if tally.events
+            && let Some(events) = self.events.as_mut()
+            && !self.publisher.submit(|packet| {
+                packet.out = Out::Events;
+                packet.freq_hz = self.freq_hz;
+                std::mem::swap(&mut packet.events, events);
+            })
+        {
+            lost += 1;
+        }
         for bearing in self.bearings.iter_mut().take(tally.bearings) {
             let freq_hz = bearing.freq_hz.unwrap_or(self.freq_hz);
             if !self.publisher.submit(|packet| {
@@ -559,25 +596,43 @@ fn publish(node: &str, sinks: &HostSinks, packet: &mut Packet) {
                 });
             }
         }
-        Out::Event => {
-            let record = DecodedRecord {
-                origin: Some(EventOrigin {
-                    node: node.to_owned(),
-                    transmission: 0,
-                }),
-                device_set: sinks.anchor,
-                channel: NO_CHANNEL,
-                at: format!("{:.9}", jiff::Timestamp::now()),
-                freq_hz: packet.freq_hz,
-                event: DecoderEvent::of(&packet.bearing),
-                sinks: Vec::new(),
-                callsign: None,
-                view: None,
-            };
-            if sinks.decoded.send(record).is_err() {
-                tracing::debug!(node, "array event had no listener");
+        Out::Event => send_event(
+            node,
+            sinks,
+            packet.freq_hz,
+            DecoderEvent::of(&packet.bearing),
+        ),
+        Out::Events => match read_events(packet.events.as_slice()) {
+            Ok(events) => {
+                for event in events {
+                    send_event(node, sinks, packet.freq_hz, event);
+                }
             }
-        }
+            Err(error) => {
+                sinks.decoded_lost.fetch_add(1, Ordering::Relaxed);
+                tracing::warn!(node, %error, "processor events did not parse");
+            }
+        },
+    }
+}
+
+fn send_event(node: &str, sinks: &HostSinks, freq_hz: f64, event: DecoderEvent) {
+    let record = DecodedRecord {
+        origin: Some(EventOrigin {
+            node: node.to_owned(),
+            transmission: 0,
+        }),
+        device_set: sinks.anchor,
+        channel: NO_CHANNEL,
+        at: format!("{:.9}", jiff::Timestamp::now()),
+        freq_hz,
+        event,
+        sinks: Vec::new(),
+        callsign: None,
+        view: None,
+    };
+    if sinks.decoded.send(record).is_err() {
+        tracing::debug!(node, "array event had no listener");
     }
 }
 
@@ -621,9 +676,8 @@ pub(crate) struct ProcessorHost {
 
 impl ProcessorHost {
     pub(crate) fn build(plan: HostPlan, frame: &LiveFrame) -> Result<BuiltHost, EngineError> {
-        let type_id = plan.params.type_id();
-        let descriptor = processor_descriptor(type_id)
-            .ok_or_else(|| ChannelError::UnknownType(type_id.to_owned()))?;
+        let descriptor = descriptor_for(&plan.params)
+            .ok_or_else(|| ChannelError::UnknownType(plan.params.type_id().to_owned()))?;
         let ctx = plan.shape.ctx(&plan.node, frame);
         let (host, radar) = match (descriptor.execution)(&plan.params, &ctx) {
             Execution::Inline => {
@@ -658,9 +712,8 @@ impl ProcessorHost {
         frame: &LiveFrame,
         runner: Box<dyn DedicatedRunner>,
     ) -> Result<Box<Self>, EngineError> {
-        let type_id = plan.params.type_id();
-        let descriptor = processor_descriptor(type_id)
-            .ok_or_else(|| ChannelError::UnknownType(type_id.to_owned()))?;
+        let descriptor = descriptor_for(&plan.params)
+            .ok_or_else(|| ChannelError::UnknownType(plan.params.type_id().to_owned()))?;
         Self::assemble(plan, frame, descriptor, Runner::Dedicated(runner), true)
     }
 

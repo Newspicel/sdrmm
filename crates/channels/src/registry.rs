@@ -11,7 +11,9 @@ use sdrmm_wire::{
 };
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelRx, ChannelTx, NativeChannel};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelRx, ChannelTx, NativeChannel, NativeTx,
+};
 
 /// Where a channel sits in its own baseband and what it needs fed.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -167,7 +169,7 @@ where
     }
 
     #[must_use]
-    pub fn tx<T: ChannelTx + 'static>(mut self) -> Self {
+    pub fn tx<T: NativeTx + 'static>(mut self) -> Self {
         self.tx = Some(boxed_tx::<T>);
         self
     }
@@ -365,7 +367,7 @@ fn boxed<C: NativeChannel + 'static>(
     Ok(Box::new(C::new(ctx, settings)?))
 }
 
-fn boxed_tx<C: ChannelTx + 'static>(
+fn boxed_tx<C: NativeTx + 'static>(
     ctx: ChannelCtx,
     settings: ChannelSettings,
 ) -> Result<Box<dyn ChannelTx>, ChannelError> {
@@ -432,9 +434,10 @@ pub fn registry() -> Arc<Registry> {
         .clone()
 }
 
-/// Opens `plugins` beside the built-in decoders, replacing every plugin loaded before. A plugin
-/// may not take a built-in decoder's type id.
-pub fn install_plugins(plugins: Vec<Arc<dyn Decoder>>) -> Result<(), ChannelError> {
+/// Opens `plugins` beside the built-in decoders, replacing every plugin loaded before, and
+/// returns the type ids now on a different decoder than before: their running channels still
+/// hold the old one. A plugin may not take a built-in decoder's type id.
+pub fn install_plugins(plugins: Vec<Arc<dyn Decoder>>) -> Result<Vec<String>, ChannelError> {
     for plugin in &plugins {
         let type_id = &plugin.descriptor().type_id;
         if BUILT_IN
@@ -446,10 +449,20 @@ pub fn install_plugins(plugins: Vec<Arc<dyn Decoder>>) -> Result<(), ChannelErro
             )));
         }
     }
+    let mut current = CURRENT.write().unwrap_or_else(PoisonError::into_inner);
+    let replaced = plugins
+        .iter()
+        .filter(|plugin| {
+            current
+                .find(&plugin.descriptor().type_id)
+                .is_some_and(|old| !Arc::ptr_eq(old, plugin))
+        })
+        .map(|plugin| plugin.descriptor().type_id.clone())
+        .collect();
     let registry = Registry::new(BUILT_IN.iter().cloned().chain(plugins).collect());
     registry.publish_kinds();
-    *CURRENT.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(registry);
-    Ok(())
+    *current = Arc::new(registry);
+    Ok(replaced)
 }
 
 /// Makes sure the decoders' event kinds are known before anything reads the event catalog.

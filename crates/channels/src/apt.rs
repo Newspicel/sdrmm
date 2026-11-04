@@ -37,7 +37,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "apt".to_owned(),
     name: "NOAA APT".to_owned(),
     summary: "NOAA weather satellite pictures".to_owned(),
-    family: DecoderFamily::Weather,
+    family: DecoderFamily::WEATHER,
     bandwidth_hz: 40_000.0,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

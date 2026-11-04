@@ -1,25 +1,20 @@
 import { useLayoutEffect, useRef } from "react";
 import { Button } from "../components/BaseControls";
-import { BTN, TABLE_CELL, TABLE_HEAD } from "../components/controls";
-import {
-  ageClass,
-  buildTranscript,
-  fieldColumns,
-  fieldNamed,
-  formatAge,
-  isAtBottom,
-} from "../components/decoderViews";
-import { capturedImageUrl } from "../lib/api";
+import { BTN } from "../components/controls";
+import { buildTranscript, fieldColumns, isAtBottom } from "../components/decoderViews";
 import { copyText } from "../lib/copyText";
-import { kindHas, kindLabel, useEventKinds } from "../lib/eventKinds";
-import { entityKey, groupsOf, lastSeenMs, type SinkGroup, type SinkView } from "../lib/sinks";
+import { kindHas, kindLabel, kindViews, useEventKinds } from "../lib/eventKinds";
+import { groupsOf, type SinkGroup, type SinkView } from "../lib/sinks";
 import { toastError } from "../lib/toasts";
-import type { CapturedImage, Entity, EventKindEntry } from "../lib/types";
+import type { CapturedImage, EventKindEntry } from "../lib/types";
 import { Fields } from "./Fields";
-import { formatValue } from "./values";
+import { KindViews, ViewTable } from "./KindViews";
+import { Pictures } from "./Pictures";
+import { tableRows } from "./viewData";
 
 const PANE = "flex flex-col gap-2 p-3";
 const EMPTY = "text-sm text-ink-dim";
+const PICTURES = 6;
 
 export function ReadoutView({
   feed,
@@ -54,7 +49,10 @@ export function ReadoutView({
   );
 }
 
-/** The view a kind's capabilities pick: stations, a transcript, pictures, else the latest record. */
+/**
+ * The views a kind declares, else the one its capabilities pick: stations, a transcript,
+ * pictures, else the latest record.
+ */
 export function GroupView({
   group,
   pictures,
@@ -66,89 +64,29 @@ export function GroupView({
   entries: readonly EventKindEntry[];
   now: number;
 }) {
+  const own = pictures.filter((picture) => picture.node === group.source);
+  const views = kindViews(group.kind, entries);
+  if (views.length > 0) {
+    return <KindViews group={group} views={views} pictures={own} now={now} />;
+  }
   if (kindHas(group.kind, "station", entries) && group.entities.length > 0) {
-    return <EntityTable entities={group.entities} now={now} />;
+    return (
+      <ViewTable
+        rows={tableRows(group, null)}
+        columns={fieldColumns(group.entities)}
+        named
+        initialSort={null}
+        now={now}
+      />
+    );
   }
   if (kindHas(group.kind, "text", entries)) {
     return <Transcript group={group} />;
   }
-  const own = pictures.filter((picture) => picture.node === group.source);
   if (kindHas(group.kind, "picture", entries) && own.length > 0) {
-    return <Pictures pictures={own} />;
+    return <Pictures pictures={own} limit={PICTURES} />;
   }
   return <LatestRecord group={group} />;
-}
-
-function EntityTable({ entities, now }: { entities: readonly Entity[]; now: number }) {
-  const rows = entities.toSorted((a, b) => lastSeenMs(b) - lastSeenMs(a));
-  const columns = fieldColumns(rows);
-  return (
-    <div className={`${PANE} overflow-x-auto`}>
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="border-b border-line">
-            <th className={TABLE_HEAD} scope="col">
-              Name
-            </th>
-            {columns.length === 0 ? (
-              <th className={TABLE_HEAD} scope="col">
-                Last
-              </th>
-            ) : (
-              columns.map((column) => (
-                <th key={column} className={TABLE_HEAD} scope="col">
-                  {column}
-                </th>
-              ))
-            )}
-            <th className={TABLE_HEAD} scope="col">
-              Age
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((entity) => (
-            <EntityRow
-              key={entityKey(entity.key)}
-              entity={entity}
-              columns={columns}
-              ageMs={Math.max(0, now - lastSeenMs(entity))}
-            />
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function EntityRow({
-  entity,
-  columns,
-  ageMs,
-}: {
-  entity: Entity;
-  columns: readonly string[];
-  ageMs: number;
-}) {
-  const fields = entity.view.fields;
-  return (
-    <tr className={`border-b border-line/40 ${ageClass(ageMs)}`} title={entity.view.summary}>
-      <td className={`${TABLE_CELL} font-semibold`}>{entity.view.label ?? entity.key.id}</td>
-      {columns.length === 0 ? (
-        <td className={TABLE_CELL}>{entity.view.summary}</td>
-      ) : (
-        columns.map((column) => {
-          const field = fieldNamed(fields, column);
-          return (
-            <td key={column} className={TABLE_CELL}>
-              {field === undefined ? "-" : formatValue(field.value)}
-            </td>
-          );
-        })
-      )}
-      <td className={`${TABLE_CELL} text-right`}>{formatAge(ageMs)}</td>
-    </tr>
-  );
 }
 
 function Transcript({ group }: { group: SinkGroup }) {
@@ -190,35 +128,6 @@ function Transcript({ group }: { group: SinkGroup }) {
       >
         {text}
       </pre>
-    </div>
-  );
-}
-
-const PICTURES = 6;
-
-function Pictures({ pictures }: { pictures: readonly CapturedImage[] }) {
-  return (
-    <div className="grid grid-cols-2 gap-1 p-3">
-      {pictures.slice(0, PICTURES).map((picture) => {
-        const title = `${picture.mode} ${picture.width} × ${picture.height}`;
-        if (picture.image == null) {
-          return (
-            <span
-              key={picture.id}
-              className="text-2xs text-warn"
-              title={picture.image_error ?? title}
-            >
-              {picture.mode}
-            </span>
-          );
-        }
-        const url = capturedImageUrl(picture.image.url);
-        return (
-          <a key={picture.id} href={url} target="_blank" rel="noreferrer" title={title}>
-            <img src={url} alt={title} className="w-full rounded-inset object-contain" />
-          </a>
-        );
-      })}
     </div>
   );
 }

@@ -1,27 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { RELATIVE_MARKS, spectrumPath, TRUE_MARKS } from "../../components/Rose";
 import { isStale } from "../../lib/processors";
-import type { ArrayGeometry, DfPeak, DfReading } from "../../lib/types";
-import { allowsStructured } from "./arrayGeometry";
+import type { DfPeak, DfReading } from "../../lib/types";
 import {
-  algorithmOptions,
   bearingLabel,
   dfChips,
-  elevationBlock,
   frameOptions,
   frameRotation,
   NEEDS_HEADING,
-  NEEDS_LINE_OR_CIRCLE,
-  peakSummary,
   peakText,
   roseLetters,
   roseNeedles,
   roseWedge,
   shownFrame,
-  sigmaText,
-  smoothingTitle,
-  sourceOptions,
-  TOO_MANY_SOURCES,
 } from "./df";
 
 function peak(overrides: Partial<DfPeak> = {}): DfPeak {
@@ -49,69 +40,6 @@ function dfReading(overrides: Partial<DfReading> = {}): DfReading {
     ...overrides,
   };
 }
-
-const SCATTERED: ArrayGeometry = {
-  kind: "explicit",
-  positions: [
-    { x_m: 0, y_m: 0 },
-    { x_m: 0.4, y_m: 0.1 },
-    { x_m: 0.1, y_m: 0.5 },
-  ],
-};
-
-const EVEN_ROW: ArrayGeometry = {
-  kind: "explicit",
-  positions: [
-    { x_m: 0.8, y_m: 0.8 },
-    { x_m: 0, y_m: 0 },
-    { x_m: 0.4, y_m: 0.4 },
-  ],
-};
-
-function disabled(geometry: ArrayGeometry): string[] {
-  return algorithmOptions(allowsStructured(geometry, 3))
-    .filter((option) => option.disabled === true)
-    .map((option) => option.value);
-}
-
-describe("algorithmOptions", () => {
-  it("offers root-MUSIC and ESPRIT only for a line or a circle", () => {
-    expect(disabled({ kind: "ula", spacing_m: 0.4, axis_deg: 90 })).toEqual([]);
-    expect(disabled({ kind: "uca", radius_m: 0.35 })).toEqual([]);
-    expect(disabled(EVEN_ROW)).toEqual([]);
-    expect(disabled(SCATTERED)).toEqual(["root_music", "esprit"]);
-    const uneven = {
-      ...EVEN_ROW,
-      positions: [...EVEN_ROW.positions.slice(0, 2), { x_m: 0.2, y_m: 0.2 }],
-    };
-    expect(disabled(uneven)).toEqual(["root_music", "esprit"]);
-    const refused = algorithmOptions(false).find((option) => option.value === "esprit");
-    expect(refused?.title).toBe(NEEDS_LINE_OR_CIRCLE);
-    expect(algorithmOptions(false).find((option) => option.value === "capon")?.disabled).toBe(
-      false,
-    );
-    expect(smoothingTitle(false)).toBe(NEEDS_LINE_OR_CIRCLE);
-    expect(smoothingTitle(true)).not.toBe(NEEDS_LINE_OR_CIRCLE);
-  });
-
-  it("counts sources up to one less than the lanes and keeps a stored count", () => {
-    expect(sourceOptions(5).map((option) => option.label)).toEqual(["Auto", "1", "2", "3", "4"]);
-    expect(sourceOptions(0).map((option) => option.label)).toEqual(["Auto", "1"]);
-    expect(sourceOptions(16)).toHaveLength(16);
-    const kept = sourceOptions(3, 4);
-    expect(kept.map((option) => option.value)).toEqual([0, 1, 2, 3, 4]);
-    expect(
-      kept.filter((option) => option.title === TOO_MANY_SOURCES).map((option) => option.value),
-    ).toEqual([3, 4]);
-  });
-
-  it("refuses elevation on a line and with a grid-free method or smoothing", () => {
-    expect(elevationBlock(true, "music", 0)).toBe("Needs a 2D array");
-    expect(elevationBlock(false, "esprit", 0)).toBe("Needs a grid method");
-    expect(elevationBlock(false, "music", 2)).toBe("Needs a grid method");
-    expect(elevationBlock(false, "capon", 0)).toBeNull();
-  });
-});
 
 describe("bearing frame", () => {
   it("rotates the spectrum by the array azimuth", () => {
@@ -151,8 +79,6 @@ describe("bearing frame", () => {
     ]);
     expect(roseWedge([first], "relative")).toEqual({ deg: 47, sigmaDeg: 3.1 });
     expect(roseWedge([], "true")).toBeNull();
-    expect(peakSummary(second, "true")).toBe("290° 40% ±0.4°");
-    expect(sigmaText(3.1)).toBe("3°");
     expect(bearingLabel(359.7)).toBe("000°");
     expect(bearingLabel(-5)).toBe("355°");
   });

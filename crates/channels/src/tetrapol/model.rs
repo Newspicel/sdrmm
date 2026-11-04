@@ -284,22 +284,24 @@ fn tetrapol_fields(m: &TetrapolMessage) -> Vec<Field> {
         _ => None,
     };
     let mut shown = fields(&[
-        ("Channel", text_of(m.channel.label())),
-        ("Frame", count(m.frame)),
-        ("Scrambling", count(Some(m.scrambling))),
+        ("channel", "Channel", text_of(m.channel.label())),
+        ("frame", "Frame", count(m.frame)),
+        ("scrambling", "Scrambling", count(Some(m.scrambling))),
         (
+            "address",
             "Address",
             m.address.and_then(|address| text_of(address.label())),
         ),
-        ("Message", text(name)),
+        ("message", "Message", text(name)),
     ]);
     shown.extend(payload_fields(&m.payload));
     shown.extend(fields(&[
         (
+            "rejected",
             "Rejected",
             count(Some(m.rejected).filter(|rejected| *rejected > 0)),
         ),
-        ("Data", text(Some(&m.data))),
+        ("data", "Data", text(Some(&m.data))),
     ]));
     shown
 }
@@ -311,7 +313,7 @@ fn payload_fields(payload: &TetrapolPayload) -> Vec<Field> {
             group_call_fields(call)
         }
         TetrapolPayload::GroupIdle { cause } | TetrapolPayload::GroupEnd { cause } => {
-            fields(&[("Cause", count(Some(*cause)))])
+            fields(&[("cause", "Cause", count(Some(*cause)))])
         }
         TetrapolPayload::Paging { terminals } => {
             let terminals = terminals
@@ -319,40 +321,52 @@ fn payload_fields(payload: &TetrapolPayload) -> Vec<Field> {
                 .map(|address| address.label())
                 .collect::<Vec<_>>()
                 .join(", ");
-            fields(&[("Terminals", text(Some(&terminals)))])
+            fields(&[("terminals", "Terminals", text(Some(&terminals)))])
         }
         TetrapolPayload::Voice { seconds } => {
-            fields(&[("Voice", number(Some(*seconds), Unit::Seconds, 1))])
+            fields(&[("voice", "Voice", number(Some(*seconds), Unit::Seconds, 1))])
         }
         TetrapolPayload::Other { codop, .. } => {
-            fields(&[("Codop", text_of(format!("{codop:#04x}")))])
+            fields(&[("codop", "Codop", text_of(format!("{codop:#04x}")))])
         }
     }
 }
 
 fn system_info_fields(info: &TetrapolSystemInfo) -> Vec<Field> {
     fields(&[
-        ("Cell", text_of(info.cell.label())),
-        ("Country", count(info.country)),
-        ("Network", count(info.network)),
-        ("Location area", count(info.location_area)),
-        ("Uplink code", count(Some(info.uplink_scrambling))),
-        ("Ciphered", flag(Some(info.ciphered))),
-        ("Home only", only_if(info.home_only)),
-        ("Superframe", count(info.superframe)),
-        ("Control channel", count(info.control_channel)),
+        ("cell", "Cell", text_of(info.cell.label())),
+        ("country", "Country", count(info.country)),
+        ("network", "Network", count(info.network)),
+        ("location_area", "Location area", count(info.location_area)),
+        (
+            "uplink_code",
+            "Uplink code",
+            count(Some(info.uplink_scrambling)),
+        ),
+        ("ciphered", "Ciphered", flag(Some(info.ciphered))),
+        ("home_only", "Home only", only_if(info.home_only)),
+        ("superframe", "Superframe", count(info.superframe)),
+        (
+            "control_channel",
+            "Control channel",
+            count(info.control_channel),
+        ),
     ])
 }
 
 fn group_call_fields(call: &TetrapolGroupCall) -> Vec<Field> {
     fields(&[
-        ("Group", count(Some(call.group))),
-        ("Call", text_of(call.call_type.label())),
-        ("Coverage", count(Some(call.coverage))),
-        ("Traffic channel", count(call.channel)),
-        ("Downlink code", count(call.downlink_scrambling)),
-        ("Uplink code", count(call.uplink_scrambling)),
-        ("Encrypted", flag(Some(!call.key.clear()))),
+        ("group", "Group", count(Some(call.group))),
+        ("call", "Call", text_of(call.call_type.label())),
+        ("coverage", "Coverage", count(Some(call.coverage))),
+        ("traffic_channel", "Traffic channel", count(call.channel)),
+        (
+            "downlink_code",
+            "Downlink code",
+            count(call.downlink_scrambling),
+        ),
+        ("uplink_code", "Uplink code", count(call.uplink_scrambling)),
+        ("encrypted", "Encrypted", flag(Some(!call.key.clear()))),
     ])
 }
 

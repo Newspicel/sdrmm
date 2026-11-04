@@ -417,6 +417,33 @@ fn triangulation_accepts_only_bearing_sources() {
 }
 
 #[test]
+fn a_bearing_fix_takes_bearings_and_hands_a_fix_to_a_map() {
+    let wired = graph(
+        vec![
+            node("src", body("df")),
+            node("fix", body("bearing_fix")),
+            node("map", body("map")),
+        ],
+        vec![
+            edge(("src", "events"), ("fix", "events")),
+            edge(("fix", "events"), ("map", "events")),
+        ],
+    );
+    assert!(wired.validate().is_ok());
+    let wrong = graph(
+        vec![
+            channel("src", "probe_station"),
+            node("fix", body("bearing_fix")),
+        ],
+        vec![edge(("src", "events"), ("fix", "events"))],
+    );
+    assert_eq!(
+        refusal(&wrong).as_deref(),
+        Some("Bearing fix takes bearings")
+    );
+}
+
+#[test]
 fn a_position_wire_names_its_source() {
     let wired = graph(
         vec![
@@ -479,6 +506,14 @@ fn processor_params_follow_the_body() {
     for entry in PatchCatalog::build().nodes {
         let body = &entry.default_body;
         match body.processor_params() {
+            Some(params) if entry.needs_processor_type => {
+                assert!(body.is_array_processor(), "{}", entry.kind);
+                assert!(
+                    matches!(params, crate::processor::ProcessorParams::Plugin(_)),
+                    "{}",
+                    entry.kind
+                );
+            }
             Some(params) => {
                 assert!(body.is_array_processor(), "{}", entry.kind);
                 assert_eq!(params.type_id(), entry.kind.as_str());

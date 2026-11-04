@@ -113,6 +113,34 @@ async fn the_df_drive_example_wires_every_lane_into_one_array() {
 }
 
 #[tokio::test]
+async fn the_vor_fix_example_crosses_both_radials_onto_the_map() {
+    let app = test_router();
+    let (status, body) = import(&app, "vor-fix").await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let created: sdrmm_wire::CreatedRowId = serde_json::from_slice(&body).expect("json");
+    let (_, body) = request(
+        app.clone(),
+        "GET",
+        &format!("/api/workspaces/{}", created.id),
+        None,
+    )
+    .await;
+    let detail: sdrmm_wire::WorkspaceDetail = serde_json::from_slice(&body).expect("json");
+    detail.snapshot.validate().expect("a valid workspace");
+    let patch = sdrmm_wire::patch::resolve::compile(&detail.snapshot.graph, &Default::default())
+        .expect("compiles");
+    let sources = |node: &str| -> Vec<String> {
+        patch
+            .feeds(node, "events")
+            .iter()
+            .map(|feed| feed.source.clone())
+            .collect()
+    };
+    assert_eq!(sources("fix"), ["vor-a", "vor-b"]);
+    assert!(sources("map").contains(&"fix".to_owned()));
+}
+
+#[tokio::test]
 async fn an_unknown_example_is_not_found() {
     let app = test_router();
     let (status, _) = import(&app, "nope").await;

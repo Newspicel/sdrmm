@@ -24,7 +24,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "remote_id".to_owned(),
     name: "Drone Remote ID".to_owned(),
     summary: "Drone ID and position over Bluetooth and Wi-Fi".to_owned(),
-    family: DecoderFamily::Aviation,
+    family: DecoderFamily::AVIATION,
     bandwidth_hz: RemoteIdLink::default().bandwidth_hz(),
     input_rate_hz: RemoteIdLink::default().input_rate_hz(),
     has_audio: false,

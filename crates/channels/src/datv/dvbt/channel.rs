@@ -25,7 +25,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "dvbt".to_owned(),
     name: "DVB-T/T2".to_owned(),
     summary: "DVB-T and T2 digital TV".to_owned(),
-    family: DecoderFamily::Broadcast,
+    family: DecoderFamily::BROADCAST,
     bandwidth_hz: 8_000_000.0,
     input_rate_hz: INPUT_RATE,
     has_audio: true,

@@ -1,18 +1,7 @@
-import type { PolarimeterParams, PolarimeterReading } from "../../lib/types";
-
-type Hand = NonNullable<PolarimeterReading["hand"]>;
-
 export const ELLIPSE_POINTS = 64;
-export const PICK_TWO = "Pick two lanes";
 export const LINEAR_DEG = 2;
 export const ARROW_STEP = 0.35;
 export const ARROW_SIZE = 5;
-
-const HAND_TEXT: Readonly<Record<Hand, string>> = { right: "RH", left: "LH", linear: "Lin" };
-
-export function handText(hand: Hand | undefined): string {
-  return HAND_TEXT[hand ?? "linear"];
-}
 
 function toRadians(deg: number): number {
   return (deg * Math.PI) / 180;
@@ -100,21 +89,4 @@ export function senseArrow(
     arc: `M${pointText(start)}L${pointText(back)}`,
     head: `M${pointText(left)}L${pointText(tip)}L${pointText(right)}Z`,
   };
-}
-
-export function laneEdit(
-  settings: PolarimeterParams,
-  which: "h_lane" | "v_lane",
-  lane: number,
-): Partial<PolarimeterParams> | null {
-  const other = which === "h_lane" ? settings.v_lane : settings.h_lane;
-  return lane === other ? null : { [which]: lane };
-}
-
-export function stokesText(value: number): string {
-  return value.toFixed(2);
-}
-
-export function percentText(fraction: number): string {
-  return `${Math.round(Math.min(1, Math.max(0, fraction)) * 100)}%`;
 }

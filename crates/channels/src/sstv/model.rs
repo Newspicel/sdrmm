@@ -1,5 +1,5 @@
 use crate::default_true;
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -164,8 +164,8 @@ impl EventPayload for SstvPicture {
         Presentation {
             fields: picture_fields(
                 &[
-                    ("Mode", text_of(self.mode.label())),
-                    ("Size", picture_size(self.width, self.height)),
+                    ("mode", "Mode", text_of(self.mode.label())),
+                    ("size", "Size", picture_size(self.width, self.height)),
                 ],
                 self.lines,
                 self.complete,
@@ -183,6 +183,7 @@ impl EventPayload for SstvPicture {
 pub(crate) fn sstv_kind() -> KindSpec {
     KindSpec::of::<SstvPicture>("SSTV", "Pictures", Hue::Orange)
         .caps(&[Capability::Log, Capability::Picture])
+        .view(KindView::Picture)
         .build()
 }
 

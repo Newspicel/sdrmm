@@ -1,4 +1,4 @@
-use sdrmm_wire::{EventContract, Hue, KindSpec};
+use sdrmm_wire::{EventContract, Hue, KindSpec, SettingChoice};
 use serde::{Deserialize, Serialize};
 
 use crate::dab::DabTransmissionMode;
@@ -136,6 +136,18 @@ pub struct BroadcastStatus {
     pub superframe: Option<SuperframeStatus>,
 }
 
+/// The readout naming the system a decoder found, which its `Auto` system option shows.
+pub(crate) const SYSTEM_READOUT: &str = "system";
+
+/// The readout naming the DAB transmission mode found, which `Auto` shows.
+pub(crate) const TRANSMISSION_MODE_READOUT: &str = "transmission_mode";
+
+/// The readout naming the code rate found, which `Auto` shows.
+pub(crate) const CODE_RATE_READOUT: &str = "code_rate";
+
+/// Fields the standard health footer already shows, left out of a face's readouts.
+pub(crate) const HEALTH_FIELDS: [&str; 3] = ["locked", "snr", "offset"];
+
 impl EventPayload for BroadcastStatus {
     fn present(&self, _kind: &EventKind) -> Presentation {
         let system = self.system.label();
@@ -143,21 +155,41 @@ impl EventPayload for BroadcastStatus {
         let state = if self.locked { "locked" } else { "searching" };
         Presentation {
             fields: fields(&[
-                ("System", text_of(system)),
-                ("Locked", flag(Some(self.locked))),
-                ("SNR", number(Some(self.snr_db), Unit::Db, 1)),
-                ("Offset", number(Some(self.frequency_error_hz), Unit::Hz, 0)),
-                ("Service", text(self.label.as_deref())),
-                ("Ensemble", text(self.ensemble_label.as_deref())),
+                (SYSTEM_READOUT, "System", text_of(system)),
+                ("locked", "Locked", flag(Some(self.locked))),
+                ("snr", "SNR", number(Some(self.snr_db), Unit::Db, 1)),
                 (
+                    "offset",
+                    "Offset",
+                    number(Some(self.frequency_error_hz), Unit::Hz, 0),
+                ),
+                (
+                    TRANSMISSION_MODE_READOUT,
+                    "Mode",
+                    self.transmission_mode
+                        .filter(|mode| *mode != DabTransmissionMode::Auto)
+                        .and_then(|mode| text_of(mode.choice_label())),
+                ),
+                ("service", "Service", text(self.label.as_deref())),
+                ("ensemble", "Ensemble", text(self.ensemble_label.as_deref())),
+                (
+                    "bitrate",
                     "Bitrate",
                     self.bitrate_kbps
                         .map(|kbps| FieldValue::Text(format!("{kbps} kbit/s"))),
                 ),
-                ("Code rate", text(self.code_rate.as_deref())),
-                ("Now", text(self.dynamic_label.as_deref())),
-                ("Frames", count(Some(f64::from(self.frames_ok)))),
-                ("Bad frames", count(Some(f64::from(self.frames_bad)))),
+                (
+                    CODE_RATE_READOUT,
+                    "Code rate",
+                    text(self.code_rate.as_deref()),
+                ),
+                ("now", "Now", text(self.dynamic_label.as_deref())),
+                ("frames", "Frames", count(Some(f64::from(self.frames_ok)))),
+                (
+                    "bad_frames",
+                    "Bad frames",
+                    count(Some(f64::from(self.frames_bad))),
+                ),
             ]),
             ..Presentation::of(format!("{name} {state} {:.1} dB", self.snr_db))
         }

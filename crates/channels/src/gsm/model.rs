@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -569,22 +569,30 @@ fn gsm_fields(f: &GsmFrame) -> Vec<Field> {
         None => f.channel.label().to_owned(),
     };
     let mut shown = fields(&[
-        ("Message", text_of(f.summary())),
-        ("Cell", text(f.cgi.as_deref())),
-        ("Band", f.band.and_then(|band| text_of(band.label()))),
-        ("ARFCN", count(f.arfcn)),
-        ("BSIC", text_of(f.bsic_label())),
-        ("Frame", count(Some(f.frame_number))),
-        ("Timeslot", count(Some(f.timeslot))),
-        ("Channel", text_of(channel)),
+        ("message", "Message", text_of(f.summary())),
+        ("cell", "Cell", text(f.cgi.as_deref())),
+        (
+            "band",
+            "Band",
+            f.band.and_then(|band| text_of(band.label())),
+        ),
+        ("arfcn", "ARFCN", count(f.arfcn)),
+        ("bsic", "BSIC", text_of(f.bsic_label())),
+        ("frame", "Frame", count(Some(f.frame_number))),
+        ("timeslot", "Timeslot", count(Some(f.timeslot))),
+        ("channel", "Channel", text_of(channel)),
     ]);
     if let GsmMessage::SystemInformation { cell, .. } = &f.message {
         shown.extend(cell_fields(cell));
     }
     shown.extend(fields(&[
-        ("Offset", number(Some(f.frequency_error_hz), Unit::Hz, 0)),
-        ("SNR", number(Some(f.snr_db), Unit::Db, 1)),
-        ("Raw", text(Some(&f.raw))),
+        (
+            "offset",
+            "Offset",
+            number(Some(f.frequency_error_hz), Unit::Hz, 0),
+        ),
+        ("snr", "SNR", number(Some(f.snr_db), Unit::Db, 1)),
+        ("raw", "Raw", text(Some(&f.raw))),
     ]));
     shown
 }
@@ -604,12 +612,33 @@ fn cell_fields(cell: &GsmCell) -> Vec<Field> {
         .collect::<Vec<_>>()
         .join(", ");
     fields(&[
-        ("CCCH", cell.ccch.and_then(|ccch| text_of(ccch.label()))),
-        ("Cell channels", text(Some(&list(&cell.cell_channels)))),
-        ("Neighbours", text(Some(&list(&cell.neighbours)))),
-        ("RxLev min", number(cell.rxlev_access_min_dbm, Unit::Dbm, 0)),
-        ("Max power level", count(cell.ms_txpwr_max_cch)),
         (
+            "ccch",
+            "CCCH",
+            cell.ccch.and_then(|ccch| text_of(ccch.label())),
+        ),
+        (
+            "cell_channels",
+            "Cell channels",
+            text(Some(&list(&cell.cell_channels))),
+        ),
+        (
+            "neighbours",
+            "Neighbours",
+            text(Some(&list(&cell.neighbours))),
+        ),
+        (
+            "rxlev_min",
+            "RxLev min",
+            number(cell.rxlev_access_min_dbm, Unit::Dbm, 0),
+        ),
+        (
+            "max_power_level",
+            "Max power level",
+            count(cell.ms_txpwr_max_cch),
+        ),
+        (
+            "periodic_update",
             "Periodic update",
             number(
                 cell.t3212_min.map(|minutes| f64::from(minutes) * 60.0),
@@ -617,9 +646,9 @@ fn cell_fields(cell: &GsmCell) -> Vec<Field> {
                 0,
             ),
         ),
-        ("Barred", only_if(cell.barred)),
-        ("GPRS", only_if(cell.gprs)),
-        ("System information", text(Some(&si))),
+        ("barred", "Barred", only_if(cell.barred)),
+        ("gprs", "GPRS", only_if(cell.gprs)),
+        ("system_information", "System information", text(Some(&si))),
     ])
 }
 
@@ -627,6 +656,20 @@ pub(crate) fn gsm_kind() -> KindSpec {
     KindSpec::of::<GsmFrame>("GSM", "Cells", Hue::Muted)
         .caps(&[Capability::Log, Capability::Station])
         .sighting()
+        .view(
+            KindView::table(&[
+                "cell",
+                "band",
+                "arfcn",
+                "bsic",
+                "ccch",
+                "neighbours",
+                "offset",
+                "snr",
+            ])
+            .sorted("arfcn", false)
+            .keyed("cell"),
+        )
         .build()
 }
 
@@ -673,9 +716,8 @@ mod model_tests {
         assert_eq!(cell.cgi().as_deref(), Some("262-02-318-11225"));
     }
 
-    #[test]
-    fn a_system_information_frame_lists_the_cell() {
-        let frame: GsmFrame = serde_json::from_value(serde_json::json!({
+    fn system_information() -> GsmFrame {
+        serde_json::from_value(serde_json::json!({
             "arfcn": 62, "band": "gsm900", "bsic": 45, "frame_number": 1234, "timeslot": 0,
             "channel": "bcch", "cgi": "262-01-4711-3", "snr_db": 18.25,
             "frequency_error_hz": -120.4, "raw": "55",
@@ -686,8 +728,20 @@ mod model_tests {
                     "system_information": ["si1", "si3"] },
             },
         }))
-        .unwrap();
-        let view = frame.present(&EventKind::named("gsm"));
+        .unwrap()
+    }
+
+    #[test]
+    fn the_cell_table_names_fields_a_frame_shows() {
+        crate::testutil::assert_views_hold(
+            &gsm_kind(),
+            &[sdrmm_wire::DecoderEvent::of(&system_information())],
+        );
+    }
+
+    #[test]
+    fn a_system_information_frame_lists_the_cell() {
+        let view = system_information().present(&EventKind::named("gsm"));
         assert_eq!(view.field("Band"), text_of("GSM 900").as_ref());
         assert_eq!(view.field("BSIC"), text_of("5-5").as_ref());
         assert_eq!(view.field("Channel"), text_of("BCCH").as_ref());

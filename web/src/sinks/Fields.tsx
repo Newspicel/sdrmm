@@ -4,9 +4,9 @@ import { formatValue } from "./values";
 export function keyedFields(fields: readonly Field[]): [string, Field][] {
   const seen = new Map<string, number>();
   return fields.map((field) => {
-    const count = (seen.get(field.label) ?? 0) + 1;
-    seen.set(field.label, count);
-    return [count === 1 ? field.label : `${field.label}#${count}`, field];
+    const count = (seen.get(field.key) ?? 0) + 1;
+    seen.set(field.key, count);
+    return [count === 1 ? field.key : `${field.key}#${count}`, field];
   });
 }
 

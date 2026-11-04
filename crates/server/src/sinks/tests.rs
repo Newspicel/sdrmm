@@ -381,7 +381,7 @@ fn a_satellite_wired_to_a_map_is_an_entity_with_footprint_and_track() {
         sdrmm_wire::present::Shape::Circle { .. }
     ));
     assert!(matches!(shapes[1], sdrmm_wire::present::Shape::Line { .. }));
-    assert_eq!(entities[0].symbol, Some(sdrmm_wire::Symbol::Satellite));
+    assert_eq!(entities[0].symbol, Some(sdrmm_wire::Symbol::SATELLITE));
 }
 
 #[test]

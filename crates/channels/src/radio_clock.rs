@@ -25,7 +25,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "radio_clock".to_owned(),
     name: "Radio clock (DCF77 / WWVB / MSF / JJY)".to_owned(),
     summary: "Time from DCF77, WWVB, MSF or JJY".to_owned(),
-    family: DecoderFamily::Paging,
+    family: DecoderFamily::PAGING,
     bandwidth_hz: 200.0,
     input_rate_hz: RATE,
     has_audio: false,

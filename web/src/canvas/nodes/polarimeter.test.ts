@@ -1,30 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { PolarimeterParams } from "../../lib/types";
-import { CATALOG } from "../../test/catalog";
-import { defaultSettings } from "../newNode";
-import {
-  ellipsePath,
-  ellipsePoint,
-  handText,
-  laneEdit,
-  percentText,
-  senseArrow,
-  senseStep,
-} from "./polarimeter";
+import { ellipsePath, ellipsePoint, senseArrow, senseStep } from "./polarimeter";
 
 function points(path: string): [number, number][] {
   return [...path.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map((match) => [
     Number(match[1]),
     Number(match[2]),
   ]);
-}
-
-function defaults(): PolarimeterParams {
-  const settings = defaultSettings(CATALOG, "polarimeter");
-  if (settings === null) {
-    throw new Error("the catalog has no polarimeter");
-  }
-  return settings;
 }
 
 describe("ellipsePath", () => {
@@ -72,21 +53,5 @@ describe("rotation sense", () => {
     const arrow = senseArrow(30, 20, 0.4, 40, 48);
     expect(arrow?.head.endsWith("Z")).toBe(true);
     expect(points(arrow?.head ?? "")).toHaveLength(3);
-  });
-});
-
-describe("polarimeter labels and lanes", () => {
-  it("names the hand", () => {
-    expect(handText("right")).toBe("RH");
-    expect(handText("left")).toBe("LH");
-    expect(handText(undefined)).toBe("Lin");
-    expect(percentText(0.874)).toBe("87%");
-    expect(percentText(1.4)).toBe("100%");
-  });
-
-  it("refuses the same lane for H and V", () => {
-    const settings = defaults();
-    expect(laneEdit(settings, "h_lane", settings.v_lane)).toBeNull();
-    expect(laneEdit(settings, "v_lane", 3)).toEqual({ v_lane: 3 });
   });
 });

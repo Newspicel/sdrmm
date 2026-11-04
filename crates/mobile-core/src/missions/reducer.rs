@@ -316,7 +316,9 @@ impl Reducer {
         match event {
             ServerEvent::StateChanged { scope } => self.state_changed(&scope, now_ms),
             ServerEvent::HuntUpdate { device_set, status } => self.hunt(device_set, *status),
-            ServerEvent::ProcessorUpdate { node, reading } => self.reading(&node, *reading, now_ms),
+            ServerEvent::ProcessorUpdate { node, reading, .. } => {
+                self.reading(&node, *reading, now_ms)
+            }
             ServerEvent::ArrayUpdate { status } => {
                 let routed = match &mut self.open {
                     Some(Open {
@@ -339,7 +341,7 @@ impl Reducer {
                     self.emit_df(now_ms);
                 }
             }
-            ServerEvent::DfFusionUpdate { node, state } => {
+            ServerEvent::DfFusionUpdate { node, state, .. } => {
                 let routed = match &mut self.open {
                     Some(Open {
                         view: View::Df { drive, fusion, .. },

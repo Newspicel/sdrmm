@@ -1,5 +1,5 @@
 use crate::default_true;
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, Symbol};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView, Symbol};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -112,18 +112,22 @@ fn track(a: &AdsbMessage, icao: &str) -> sdrmm_wire::present::TrackFix {
 
 fn adsb_fields(a: &AdsbMessage, icao: &str) -> Vec<Field> {
     fields(&[
-        ("ICAO", Some(FieldValue::Text(icao.to_owned()))),
-        ("Callsign", text(a.callsign.as_deref())),
-        ("Format", count(Some(a.df))),
-        ("Type code", count(a.type_code)),
-        ("Altitude", number(a.altitude_ft, Unit::Feet, 0)),
-        ("On ground", flag(a.on_ground)),
-        ("Position", position(a.lat, a.lon)),
-        ("Speed", number(a.ground_speed_kt, Unit::Knots, 1)),
-        ("Track", number(a.track_deg, Unit::Degrees, 0)),
-        ("Climb", number(a.vertical_rate_fpm, Unit::FeetPerMinute, 0)),
-        ("Squawk", text(a.squawk.as_deref())),
-        ("Raw", text(Some(&a.raw))),
+        ("icao", "ICAO", Some(FieldValue::Text(icao.to_owned()))),
+        ("callsign", "Callsign", text(a.callsign.as_deref())),
+        ("format", "Format", count(Some(a.df))),
+        ("type_code", "Type code", count(a.type_code)),
+        ("altitude", "Altitude", number(a.altitude_ft, Unit::Feet, 0)),
+        ("on_ground", "On ground", flag(a.on_ground)),
+        ("position", "Position", position(a.lat, a.lon)),
+        ("speed", "Speed", number(a.ground_speed_kt, Unit::Knots, 1)),
+        ("track", "Track", number(a.track_deg, Unit::Degrees, 0)),
+        (
+            "climb",
+            "Climb",
+            number(a.vertical_rate_fpm, Unit::FeetPerMinute, 0),
+        ),
+        ("squawk", "Squawk", text(a.squawk.as_deref())),
+        ("raw", "Raw", text(Some(&a.raw))),
     ])
 }
 
@@ -149,8 +153,15 @@ pub(crate) fn adsb_kind() -> KindSpec {
             Capability::Geo,
             Capability::Track,
         ])
-        .symbol(Symbol::Plane)
+        .symbol(Symbol::PLANE)
         .sighting()
+        .view(
+            KindView::table(&[
+                "icao", "callsign", "altitude", "speed", "track", "climb", "squawk", "position",
+            ])
+            .sorted("altitude", true)
+            .keyed("icao"),
+        )
         .build()
 }
 
@@ -323,5 +334,18 @@ mod model_tests {
             }))
         );
         assert_eq!(view.field("On ground"), Some(&FieldValue::Flag(false)));
+    }
+
+    #[test]
+    fn the_aircraft_table_names_fields_a_message_shows() {
+        let sample = DecoderEvent::tagged(
+            AdsbMessage::KIND,
+            &serde_json::json!({
+                "icao": "3c6444", "df": 17, "raw": "8D", "callsign": "DLH123",
+                "altitude_ft": 37000, "ground_speed_kt": 451.4, "track_deg": 271.6,
+                "vertical_rate_fpm": -1088, "squawk": "1000", "lat": 52.52, "lon": 13.405,
+            }),
+        );
+        crate::testutil::assert_views_hold(&adsb_kind(), &[sample]);
     }
 }

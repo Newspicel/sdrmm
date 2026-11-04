@@ -41,6 +41,7 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_ports: &[],
     steer_port: None,
     surface: None,
+    settings: sdrmm_wire::DfParams::form,
     needs: |_| ProcessorNeeds::ALL,
     band: |params| settings(params).map(|df| (df.offset_hz, df.bandwidth_hz)),
     tuning: |_| TuningNeed::Together,

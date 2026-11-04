@@ -1,5 +1,6 @@
 mod array_hardware;
 mod array_lifecycle;
+mod array_plugin;
 mod array_processors;
 mod array_realtime;
 mod array_record;

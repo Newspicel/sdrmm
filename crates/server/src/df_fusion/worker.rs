@@ -192,10 +192,7 @@ fn nav_record(node: &str, guide: NavGuide) -> DecodedRecord {
 }
 
 fn emit(engine: &Engine, node: &str, state: DfFusionState) {
-    engine.emit_event(ServerEvent::DfFusionUpdate {
-        node: node.to_owned(),
-        state: Box::new(state),
-    });
+    engine.emit_event(ServerEvent::fusion_update(node.to_owned(), state));
 }
 
 fn publish_frame(surfaces: Option<&SurfaceHub>, node: &str, frame: FusionGridOwned) {

@@ -22,6 +22,12 @@ pub struct SettingField {
     /// Values that mean the setting is off, so the control renders muted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub quiet: Vec<Value>,
+    /// The fold a face groups this field under; unset sits with the main controls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
+    /// Never above the setting at this key; lowering that one pulls this one down with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at_most: Option<String>,
 }
 
 /// Shows a field only while another field holds one of these values; with none listed, while
@@ -68,6 +74,35 @@ pub enum Control {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         empty: Option<String>,
     },
+    /// Elements of the wired array, numbered from one on the face and from zero in the
+    /// setting. The face knows how many the array has.
+    Lanes {
+        pick: LanePick,
+        /// Never offers the lane the setting at this key holds; a lane picked there leaves
+        /// this setting.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        except: Option<String>,
+        /// What no lane picked means, shown in place of `none`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        empty: Option<String>,
+    },
+    /// A short list of numbers, each in the spec's range.
+    Numbers {
+        spec: NumberSpec,
+        max_len: usize,
+    },
+}
+
+/// How a `Lanes` setting stores what is picked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LanePick {
+    /// One lane index.
+    One,
+    /// A list of lane indices.
+    List,
+    /// A bit per lane.
+    Mask,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -90,6 +125,10 @@ pub struct NumberSpec {
     pub step: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
+    /// The control shows the stored value divided by this, so a setting kept in Hz can be
+    /// typed in MHz. `min`, `max`, `step` and presets stay in stored units.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
     /// Unset is allowed and shows this placeholder.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub optional: Option<String>,
@@ -108,6 +147,8 @@ impl SettingField {
             fallback: None,
             when: Vec::new(),
             quiet: Vec::new(),
+            section: None,
+            at_most: None,
         }
     }
 
@@ -158,6 +199,18 @@ impl SettingField {
         self.quiet.extend(serde_json::to_value(value).ok());
         self
     }
+
+    #[must_use]
+    pub fn section(mut self, section: &str) -> Self {
+        self.section = Some(section.to_owned());
+        self
+    }
+
+    #[must_use]
+    pub fn at_most(mut self, key: &str) -> Self {
+        self.at_most = Some(key.to_owned());
+        self
+    }
 }
 
 impl Control {
@@ -165,6 +218,25 @@ impl Control {
     pub fn choice<T: SettingChoice>() -> Self {
         Self::Choice {
             options: T::all().iter().copied().map(of).collect(),
+        }
+    }
+
+    /// Every variant of `T`, with `auto` showing the status readout `readout`, what the
+    /// running decoder found.
+    #[must_use]
+    pub fn choice_showing<T: SettingChoice + PartialEq>(auto: T, readout: &str) -> Self {
+        Self::Choice {
+            options: T::all()
+                .iter()
+                .map(|&value| {
+                    let option = of(value);
+                    if value == auto {
+                        option.status(readout)
+                    } else {
+                        option
+                    }
+                })
+                .collect(),
         }
     }
 
@@ -236,6 +308,43 @@ impl Control {
     }
 
     #[must_use]
+    pub const fn lane() -> Self {
+        Self::Lanes {
+            pick: LanePick::One,
+            except: None,
+            empty: None,
+        }
+    }
+
+    /// Lanes stored as `pick`, never the one the setting at `except` holds.
+    #[must_use]
+    pub fn lanes_except(pick: LanePick, except: &str) -> Self {
+        Self::Lanes {
+            pick,
+            except: Some(except.to_owned()),
+            empty: None,
+        }
+    }
+
+    /// A `Lanes` control that names what no lane picked means.
+    #[must_use]
+    pub fn or_empty(self, empty: &str) -> Self {
+        match self {
+            Self::Lanes { pick, except, .. } => Self::Lanes {
+                pick,
+                except,
+                empty: Some(empty.to_owned()),
+            },
+            other => other,
+        }
+    }
+
+    #[must_use]
+    pub const fn numbers(spec: NumberSpec, max_len: usize) -> Self {
+        Self::Numbers { spec, max_len }
+    }
+
+    #[must_use]
     pub fn list(item: Vec<SettingField>, empty: &str) -> Self {
         Self::List {
             item,
@@ -288,6 +397,15 @@ impl NumberSpec {
         Self::new(min, max, step).unit("Hz")
     }
 
+    /// A setting kept in Hz, typed in MHz.
+    #[must_use]
+    pub fn mhz(min: f64, max: f64, step: f64) -> Self {
+        Self {
+            scale: Some(1e6),
+            ..Self::new(min, max, step).unit("MHz")
+        }
+    }
+
     #[must_use]
     pub fn unit(mut self, unit: &str) -> Self {
         self.unit = Some(unit.to_owned());
@@ -297,6 +415,14 @@ impl NumberSpec {
     #[must_use]
     pub fn optional(mut self, placeholder: &str) -> Self {
         self.optional = Some(placeholder.to_owned());
+        self
+    }
+
+    /// Shown divided by `scale` and named `unit`, as Hz typed in kHz.
+    #[must_use]
+    pub fn scaled(mut self, scale: f64, unit: &str) -> Self {
+        self.scale = Some(scale);
+        self.unit = Some(unit.to_owned());
         self
     }
 
@@ -354,11 +480,29 @@ fn check_control(type_id: &str, key: &str, control: &Control, value: &Value) -> 
             }
             _ => Ok(()),
         },
+        Control::Numbers { spec, max_len } => check_numbers(type_id, key, spec, *max_len, value),
         Control::Choice { .. }
         | Control::Toggle
         | Control::Text { .. }
-        | Control::Preset { .. } => Ok(()),
+        | Control::Preset { .. }
+        | Control::Lanes { .. } => Ok(()),
     }
+}
+
+fn check_numbers(
+    type_id: &str,
+    key: &str,
+    spec: &NumberSpec,
+    max_len: usize,
+    value: &Value,
+) -> Result<(), String> {
+    let entries = value.as_array().map_or(&[][..], Vec::as_slice);
+    if entries.len() > max_len {
+        return Err(format!("{type_id} {key} holds more than {max_len}"));
+    }
+    entries
+        .iter()
+        .try_for_each(|entry| check_number(type_id, key, spec, entry))
 }
 
 fn check_number(type_id: &str, key: &str, spec: &NumberSpec, value: &Value) -> Result<(), String> {

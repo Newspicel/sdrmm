@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, DecoderSettings, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, DecoderSettings, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -30,6 +30,9 @@ pub const MIN_AIRTIME_MARGIN_DB: f32 = 3.0;
 pub const MAX_AIRTIME_MARGIN_DB: f32 = 30.0;
 
 pub const SURVEY_CENTRES: usize = 6;
+
+/// Long enough to catch a microwave oven's cycle or a burst of traffic.
+const BUSY_TREND_S: u32 = 600;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -95,6 +98,15 @@ impl WifiBand {
             Self::Ghz2_4 => "2.4 GHz",
             Self::Ghz5 => "5 GHz",
             Self::Ghz6 => "6 GHz",
+        }
+    }
+
+    /// The band in a field key; channel numbers repeat across bands.
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Ghz2_4 => "2g4",
+            Self::Ghz5 => "5g",
+            Self::Ghz6 => "6g",
         }
     }
 }
@@ -174,6 +186,18 @@ impl IsmKind {
         Self::Continuous,
     ];
 
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Wifi => "wifi",
+            Self::Bluetooth => "bluetooth",
+            Self::Ieee802154 => "ieee802154",
+            Self::MicrowaveOven => "microwave_oven",
+            Self::Narrowband => "narrowband",
+            Self::Wideband => "wideband",
+            Self::Continuous => "continuous",
+        }
+    }
+
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -232,7 +256,7 @@ impl IsmSurveyReport {
 impl EventPayload for WifiOccupancyReport {
     fn present(&self, _kind: &EventKind) -> Presentation {
         let mut shown: Vec<Field> = self.channels.iter().filter_map(channel_field).collect();
-        shown.extend(fields(&[("Measured", share(self.measured))]));
+        shown.extend(fields(&[("measured", "Measured", share(self.measured))]));
         Presentation {
             fields: shown,
             ..Presentation::of(self.summary())
@@ -253,26 +277,27 @@ fn channel_field(channel: &WifiChannelLoad) -> Option<Field> {
             .floor_dbfs
             .map(|floor| format!("floor {floor:.0} dBFS")),
     );
-    text_of(parts.join(" · ")).map(|value| Field {
-        label: format!("{} ch {}", channel.band.label(), channel.number),
-        value,
-    })
+    let key = format!("ch_{}_{}", channel.band.key(), channel.number);
+    let label = format!("{} ch {}", channel.band.label(), channel.number);
+    text_of(parts.join(" · ")).map(|value| Field::new(key, label, value))
 }
 
 impl EventPayload for IsmSurveyReport {
     fn present(&self, _kind: &EventKind) -> Presentation {
         let mut shown = fields(&[
             (
+                "window",
                 "Window",
                 text_of(format!("{} to {}", hertz(self.low_hz), hertz(self.high_hz))),
             ),
-            ("Busy", share(self.busy)),
+            ("busy", "Busy", share(self.busy)),
         ]);
         shown.extend(self.kinds.iter().filter_map(kind_field));
         shown.extend(fields(&[
-            ("Floor", number(self.floor_dbfs, Unit::Dbfs, 0)),
-            ("Measured", share(self.measured)),
+            ("floor", "Floor", number(self.floor_dbfs, Unit::Dbfs, 0)),
+            ("measured", "Measured", share(self.measured)),
             (
+                "dropped",
                 "Dropped",
                 count(Some(self.dropped).filter(|dropped| *dropped > 0)),
             ),
@@ -299,10 +324,7 @@ fn kind_field(load: &IsmKindLoad) -> Option<Field> {
         load.airtime * 100.0,
         load.mean_us
     ))
-    .map(|value| Field {
-        label: load.kind.label().to_owned(),
-        value,
-    })
+    .map(|value| Field::new(load.kind.key(), load.kind.label(), value))
 }
 
 pub(crate) fn wifi_occupancy_kind() -> KindSpec {
@@ -318,6 +340,8 @@ impl EventContract for WifiOccupancyReport {
 pub(crate) fn ism_survey_kind() -> KindSpec {
     KindSpec::of::<IsmSurveyReport>("2.4 GHz", "2.4 GHz", Hue::Muted)
         .caps(&[Capability::Log])
+        .view(KindView::meter("busy", 0.0, 100.0))
+        .view(KindView::trend(&["busy"], BUSY_TREND_S))
         .build()
 }
 
@@ -399,8 +423,9 @@ mod model_tests {
         };
         let view = report.present(&EventKind::named("wifi_occupancy"));
         assert_eq!(view.labels(), ["2.4 GHz ch 6", "Measured"]);
+        assert_eq!(view.keys(), ["ch_2g4_6", "measured"]);
         assert_eq!(
-            view.field("2.4 GHz ch 6"),
+            view.field("ch_2g4_6"),
             text_of("35% busy · -40 dBFS · floor -90 dBFS").as_ref()
         );
         assert_eq!(
@@ -438,5 +463,53 @@ mod model_tests {
             text_of("12 bursts · 2.0% · 380 µs · 2402, 2480 MHz").as_ref()
         );
         assert_eq!(view.field("Dropped"), None);
+    }
+
+    #[test]
+    fn every_kind_and_band_keeps_its_own_key() {
+        let survey = IsmSurveyReport {
+            window_ms: 1000,
+            low_hz: 2.4e9,
+            high_hz: 2.48e9,
+            measured: 1.0,
+            busy: 0.2,
+            floor_dbfs: Some(-90.0),
+            kinds: IsmKind::ALL
+                .iter()
+                .map(|&kind| IsmKindLoad {
+                    kind,
+                    bursts: 1,
+                    airtime: 0.01,
+                    mean_us: 100.0,
+                    peak_dbfs: -30.0,
+                    centres_mhz: Vec::new(),
+                })
+                .collect(),
+            dropped: 0,
+        };
+        crate::testutil::assert_views_hold(
+            &ism_survey_kind(),
+            &[sdrmm_wire::DecoderEvent::of(&survey)],
+        );
+        let channel = |band, number| WifiChannelLoad {
+            band,
+            number,
+            centre_hz: 0.0,
+            busy: 0.1,
+            level_dbfs: None,
+            peak_dbfs: None,
+            floor_dbfs: None,
+        };
+        let wifi = WifiOccupancyReport {
+            window_ms: 1000,
+            measured: 1.0,
+            channels: vec![
+                channel(WifiBand::Ghz2_4, 1),
+                channel(WifiBand::Ghz6, 1),
+                channel(WifiBand::Ghz5, 36),
+            ],
+        }
+        .present(&EventKind::named("wifi_occupancy"));
+        assert_eq!(wifi.keys(), ["ch_2g4_1", "ch_6g_1", "ch_5g_36", "measured"]);
     }
 }

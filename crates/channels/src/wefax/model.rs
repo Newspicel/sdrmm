@@ -1,5 +1,5 @@
 use crate::default_true;
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -127,9 +127,9 @@ impl EventPayload for WefaxPicture {
         Presentation {
             fields: picture_fields(
                 &[
-                    ("IOC", count(Some(self.ioc.value()))),
-                    ("LPM", count(Some(self.lpm.value()))),
-                    ("Size", picture_size(self.width, self.lines)),
+                    ("ioc", "IOC", count(Some(self.ioc.value()))),
+                    ("lpm", "LPM", count(Some(self.lpm.value()))),
+                    ("size", "Size", picture_size(self.width, self.lines)),
                 ],
                 self.lines,
                 self.complete,
@@ -143,6 +143,7 @@ impl EventPayload for WefaxPicture {
 pub(crate) fn wefax_kind() -> KindSpec {
     KindSpec::of::<WefaxPicture>("WEFAX", "Pictures", Hue::Orange)
         .caps(&[Capability::Log, Capability::Picture])
+        .view(KindView::Picture)
         .build()
 }
 

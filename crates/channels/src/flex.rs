@@ -54,7 +54,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "flex".to_owned(),
     name: "FLEX pager".to_owned(),
     summary: "FLEX pager messages".to_owned(),
-    family: DecoderFamily::Paging,
+    family: DecoderFamily::PAGING,
     bandwidth_hz: 12_500.0,
     input_rate_hz: RATE,
     has_audio: false,

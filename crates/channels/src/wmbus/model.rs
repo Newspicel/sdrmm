@@ -1,3 +1,5 @@
+use sdrmm_wire::present::key_of;
+use sdrmm_wire::present::unique_keys;
 use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
 use serde::{Deserialize, Serialize};
 
@@ -354,11 +356,12 @@ impl WmbusMessage {
 
     fn fields(&self) -> Vec<Field> {
         let mut shown = fields(&[
-            ("Meter", text(Some(&self.station()))),
-            ("Type", text(Some(self.device()))),
-            ("Version", count(Some(self.version))),
-            ("Via", text(self.via.as_deref())),
+            ("meter", "Meter", text(Some(&self.station()))),
+            ("type", "Type", text(Some(self.device()))),
+            ("version", "Version", count(Some(self.version))),
+            ("via", "Via", text(self.via.as_deref())),
             (
+                "link",
                 "Link",
                 text(Some(&format!(
                     "mode {} format {}, {}",
@@ -368,26 +371,32 @@ impl WmbusMessage {
                 ))),
             ),
             (
+                "ci",
                 "CI",
                 self.ci.and_then(|ci| text(Some(&format!("{ci:02X}")))),
             ),
-            ("Access", count(self.access)),
+            ("access", "Access", count(self.access)),
             (
+                "status",
                 "Status",
                 self.status.and_then(|st| text(Some(&format!("{st:02X}")))),
             ),
-            ("Security", text(Some(self.security.label()))),
+            ("security", "Security", text(Some(self.security.label()))),
         ]);
-        shown.extend(self.records.iter().map(|record| Field {
-            label: record.label(),
-            value: sdrmm_wire::present::FieldValue::Text(record.reading()),
+        shown.extend(self.records.iter().map(|record| {
+            let label = record.label();
+            Field::new(
+                key_of(&label),
+                label,
+                sdrmm_wire::present::FieldValue::Text(record.reading()),
+            )
         }));
         shown.extend(fields(&[
-            ("Repaired", repaired(self.corrected)),
-            ("SNR", number(Some(self.snr_db), Unit::Db, 1)),
-            ("Frame", text(Some(&self.frame))),
+            ("repaired", "Repaired", repaired(self.corrected)),
+            ("snr", "SNR", number(Some(self.snr_db), Unit::Db, 1)),
+            ("frame", "Frame", text(Some(&self.frame))),
         ]));
-        shown
+        unique_keys(shown)
     }
 }
 

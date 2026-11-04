@@ -124,7 +124,7 @@ use sdrmm_channels::WmbusParams;
 use sdrmm_channels::WsjtParams;
 use sdrmm_channels::WsprParams;
 use sdrmm_channels::YsfParams;
-use sdrmm_channels::{AprsTx, ChannelCtx, ChannelTx, MicE, MicEBit, TxPayload, synth};
+use sdrmm_channels::{AprsTx, ChannelCtx, ChannelTx, MicE, MicEBit, NativeTx, TxPayload, synth};
 use sdrmm_channels::{DabMode, DabParams, DabTransmissionMode};
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_recording::RecordingDriver;

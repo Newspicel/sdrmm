@@ -81,16 +81,17 @@ fn navtex_fields(n: &NavtexMessage) -> Vec<Field> {
         .clone()
         .or_else(|| n.subject.map(String::from));
     fields(&[
-        ("Header", text(n.header().as_deref())),
-        ("Station", n.station.and_then(text_of)),
-        ("Subject", text(subject.as_deref())),
+        ("header", "Header", text(n.header().as_deref())),
+        ("station", "Station", n.station.and_then(text_of)),
+        ("subject", "Subject", text(subject.as_deref())),
         (
+            "serial",
             "Serial",
             n.serial.and_then(|serial| text_of(format!("{serial:02}"))),
         ),
-        ("Complete", flag(Some(n.complete))),
-        ("Repaired", repaired(n.errors_corrected)),
-        ("Text", text(Some(&n.text))),
+        ("complete", "Complete", flag(Some(n.complete))),
+        ("repaired", "Repaired", repaired(n.errors_corrected)),
+        ("text", "Text", text(Some(&n.text))),
     ])
 }
 

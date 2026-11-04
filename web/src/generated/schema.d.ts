@@ -2141,6 +2141,17 @@ export interface components {
             /** Format: int64 */
             uncertain: number;
         };
+        /** @description What a processor needs of the array before its results mean anything. */
+        ArrayNeeds: {
+            /** @default false */
+            gain: boolean;
+            /** @default false */
+            geometry: boolean;
+            /** @default false */
+            phase: boolean;
+            /** @default false */
+            time: boolean;
+        };
         ArrayNode: {
             /**
              * @default {
@@ -2842,6 +2853,26 @@ export interface components {
             trunks?: boolean;
             type_id: string;
         };
+        /**
+         * @description The few facts every channel face shows in one footer, whatever the decoder. Each is unset
+         *     while the decoder cannot tell.
+         */
+        ChannelHealth: {
+            /**
+             * Format: float
+             * @description Frames or blocks that failed their check, per second.
+             */
+            errors_per_s?: number | null;
+            /**
+             * Format: double
+             * @description How far the signal sits from the tuned frequency.
+             */
+            freq_error_hz?: number | null;
+            /** @description The decoder holds sync, carrier or frame lock. */
+            lock?: boolean | null;
+            /** Format: float */
+            snr_db?: number | null;
+        };
         ChannelInfo: {
             audio_recordings?: components["schemas"]["AudioRecordingStatus"][];
             band?: components["schemas"]["ChannelBand"] | null;
@@ -2914,11 +2945,13 @@ export interface components {
             squelch?: components["schemas"]["Squelch"];
         };
         /**
-         * @description What a running decoder reports about itself between events: readouts for its node face and
-         *     the options it found for `Live` settings, keyed by the setting.
+         * @description What a running decoder reports about itself between events: the standard health footer,
+         *     readouts for its node face and the options it found for `Live` settings, keyed by the
+         *     setting.
          */
         ChannelStatus: {
             choices?: components["schemas"]["ParamChoice"][];
+            health?: components["schemas"]["ChannelHealth"];
             readouts?: components["schemas"]["Field"][];
         };
         ChannelTarget: {
@@ -3168,6 +3201,22 @@ export interface components {
             item: components["schemas"]["SettingField"][];
             /** @enum {string} */
             type: "list";
+        } | {
+            /** @description What no lane picked means, shown in place of `none`. */
+            empty?: string | null;
+            /**
+             * @description Never offers the lane the setting at this key holds; a lane picked there leaves
+             *     this setting.
+             */
+            except?: string | null;
+            pick: components["schemas"]["LanePick"];
+            /** @enum {string} */
+            type: "lanes";
+        } | {
+            max_len: number;
+            spec: components["schemas"]["NumberSpec"];
+            /** @enum {string} */
+            type: "numbers";
         };
         ControlAck: {
             error?: string | null;
@@ -3444,8 +3493,8 @@ export interface components {
             data: unknown;
             kind: components["schemas"]["EventKind"];
         };
-        /** @enum {string} */
-        DecoderFamily: "analog_voice" | "digital_voice" | "aviation" | "marine" | "amateur" | "paging" | "video" | "broadcast" | "weather" | "utility";
+        /** @description The palette group a decoder sits in. */
+        DecoderFamily: string;
         DecoderLogEntry: {
             at: string;
             callsign?: components["schemas"]["Callsign"] | null;
@@ -3671,6 +3720,11 @@ export interface components {
             /** Format: int32 */
             samples: number;
             stations?: components["schemas"]["DfStation"][];
+        };
+        /** @description A triangulation as a read returns it: its state and the readouts its face shows. */
+        DfFusionView: {
+            state: components["schemas"]["DfFusionState"];
+            status: components["schemas"]["ChannelStatus"];
         };
         DfMission: {
             array?: string | null;
@@ -3968,6 +4022,7 @@ export interface components {
              *     any noise does not.
              */
             verifies?: boolean;
+            views?: components["schemas"]["KindView"][];
         };
         EventOrigin: {
             node: string;
@@ -4143,7 +4198,12 @@ export interface components {
             listening: boolean;
             node: string;
         };
+        /**
+         * @description One named value of a presentation. `key` stays fixed while `label` may change or be
+         *     translated, so tables, sorts and view hints refer to `key`.
+         */
         Field: {
+            key: string;
             label: string;
             value: components["schemas"]["FieldValue"];
         };
@@ -4445,12 +4505,46 @@ export interface components {
         /** @enum {string} */
         Keeps: "history" | "clips" | "pictures";
         KindSet: string[];
+        /**
+         * @description How the frontend lays out a kind's events beyond the plain log. Each names fields by
+         *     `Field::key`, so a renamed label keeps its column.
+         */
+        KindView: {
+            columns: string[];
+            /** @description The field that tells rows apart; unset uses the presentation's entity. */
+            key?: string | null;
+            sort?: components["schemas"]["SortKey"] | null;
+            /** @enum {string} */
+            type: "table";
+        } | {
+            field: string;
+            /** Format: double */
+            max: number;
+            /** Format: double */
+            min: number;
+            /** @enum {string} */
+            type: "meter";
+        } | {
+            fields: string[];
+            /** @enum {string} */
+            type: "trend";
+            /** Format: int32 */
+            window_s: number;
+        } | {
+            /** @enum {string} */
+            type: "picture";
+        };
         LaneLevel: {
             /** Format: float */
             peak_db: number;
             /** Format: int32 */
             stream: number;
         };
+        /**
+         * @description How a `Lanes` setting stores what is picked.
+         * @enum {string}
+         */
+        LanePick: "one" | "list" | "mask";
         LaneWeight: {
             /** Format: float */
             amplitude_db: number;
@@ -5089,9 +5183,16 @@ export interface components {
             /** @enum {string} */
             kind: "polarimeter";
         } | {
+            data: components["schemas"]["ProcessorNode"];
+            /** @enum {string} */
+            kind: "processor";
+        } | {
             data: components["schemas"]["TriangulationNode"];
             /** @enum {string} */
             kind: "triangulation";
+        } | {
+            /** @enum {string} */
+            kind: "bearing_fix";
         } | {
             data: components["schemas"]["NoteNode"];
             /** @enum {string} */
@@ -5100,7 +5201,7 @@ export interface components {
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "triangulation" | "note";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "processor" | "triangulation" | "bearing_fix" | "note";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -5113,8 +5214,12 @@ export interface components {
             kind: components["schemas"]["NodeKind"];
             name: string;
             needs_channel_type?: boolean;
+            /** @description A node of this kind runs one of the catalog's `processors`. */
+            needs_processor_type?: boolean;
             ports: components["schemas"]["PortSpec"][];
             role: components["schemas"]["Role"];
+            /** @description The form a face renders for this node's settings, in order. */
+            settings?: components["schemas"]["SettingField"][];
             summary?: string;
         };
         NoiseBlankerSettings: {
@@ -5149,6 +5254,12 @@ export interface components {
             /** @description Unset is allowed and shows this placeholder. */
             optional?: string | null;
             presets?: components["schemas"]["ParamOption"][];
+            /**
+             * Format: double
+             * @description The control shows the stored value divided by this, so a setting kept in Hz can be
+             *     typed in MHz. `min`, `max`, `step` and presets stay in stored units.
+             */
+            scale?: number | null;
             /** Format: double */
             step?: number | null;
             unit?: string | null;
@@ -5228,6 +5339,11 @@ export interface components {
         };
         ParamOption: {
             label: string;
+            /**
+             * @description A status readout key whose text follows the label while the decoder runs, as an
+             *     `Auto` option shows what it found.
+             */
+            status?: string | null;
             title?: string | null;
             value: unknown;
         };
@@ -5369,6 +5485,8 @@ export interface components {
             feeds?: components["schemas"]["FeedEntry"][];
             nodes: components["schemas"]["NodeTypeInfo"][];
             port_types: components["schemas"]["PortTypeInfo"][];
+            /** @description Array processors the loaded plugins bring. */
+            processors?: components["schemas"]["ProcessorType"][];
         };
         PatchChannelRequest: {
             base?: components["schemas"]["ChannelSettings"] | null;
@@ -5525,6 +5643,27 @@ export interface components {
             position_samples: number;
             /** Format: int64 */
             total_samples: number;
+        };
+        /**
+         * @description What a plugin processor reported. Built once per type with every readout in place, so a
+         *     report only writes numbers.
+         */
+        PluginReading: {
+            /** @description Why the processor stopped, once it has. */
+            error?: string | null;
+            health?: components["schemas"]["ChannelHealth"];
+            readouts?: components["schemas"]["PluginReadout"][];
+            type_id: string;
+        };
+        /** @description One declared readout and its latest value. */
+        PluginReadout: {
+            /** Format: int32 */
+            digits: number;
+            key: string;
+            label: string;
+            unit: components["schemas"]["Unit"];
+            /** Format: double */
+            value?: number | null;
         };
         Pointer: {
             at?: components["schemas"]["Position"] | null;
@@ -5786,6 +5925,11 @@ export interface components {
         ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder";
         /** @enum {string} */
         ProcessorGate: "sync" | "phase" | "gain" | "calibrating" | "retuning" | "tier" | "tuning_mode";
+        /** @description A patch node running a plugin processor. */
+        ProcessorNode: {
+            processor_type?: string;
+            settings?: unknown;
+        };
         ProcessorReading: {
             reading: components["schemas"]["DfReading"];
             /** @enum {string} */
@@ -5814,6 +5958,10 @@ export interface components {
             reading: components["schemas"]["PolarimeterReading"];
             /** @enum {string} */
             type: "polarimeter";
+        } | {
+            reading: components["schemas"]["PluginReading"];
+            /** @enum {string} */
+            type: "plugin";
         };
         ProcessorStatus: {
             /** Format: int64 */
@@ -5839,6 +5987,24 @@ export interface components {
             solver_failures: number;
             /** Format: int64 */
             truncated?: number;
+        };
+        /** @description An array processor a plugin declares, as the patch catalog lists it. */
+        ProcessorType: {
+            /** @description What a fresh node starts on. */
+            defaults?: unknown;
+            /** @description Kinds of the events it emits, each one the plugin declares. */
+            emits?: components["schemas"]["EventKind"][];
+            /** Format: int32 */
+            max_lanes?: number;
+            /** Format: int32 */
+            min_lanes?: number;
+            name: string;
+            needs?: components["schemas"]["ArrayNeeds"];
+            readouts?: components["schemas"]["ReadoutSpec"][];
+            /** @description The form a face renders for its settings. */
+            settings?: components["schemas"]["SettingField"][];
+            summary?: string;
+            type_id: string;
         };
         PropagationCell: {
             /** Format: double */
@@ -6236,6 +6402,14 @@ export interface components {
             /** Format: int32 */
             stream?: number | null;
             value: components["schemas"]["ReadoutValue"];
+        };
+        /** @description One number a processor reports, in the order its values arrive. */
+        ReadoutSpec: {
+            /** Format: int32 */
+            digits?: number;
+            key: string;
+            label: string;
+            unit?: components["schemas"]["Unit"];
         };
         ReadoutValue: {
             /** @enum {string} */
@@ -6840,6 +7014,8 @@ export interface components {
             data: {
                 node: string;
                 reading: components["schemas"]["ProcessorReading"];
+                /** @description Readouts and health derived from `reading`, for any face to show. */
+                status?: components["schemas"]["ChannelStatus"];
             };
             /** @enum {string} */
             type: "ProcessorUpdate";
@@ -6847,6 +7023,8 @@ export interface components {
             data: {
                 node: string;
                 state: components["schemas"]["DfFusionState"];
+                /** @description Readouts derived from `state`. */
+                status?: components["schemas"]["ChannelStatus"];
             };
             /** @enum {string} */
             type: "DfFusionUpdate";
@@ -6930,6 +7108,8 @@ export interface components {
          *     dotted key (`header.length`) names a field of a nested object.
          */
         SettingField: {
+            /** @description Never above the setting at this key; lowering that one pulls this one down with it. */
+            at_most?: string | null;
             control: components["schemas"]["Control"];
             /** @description What the control shows and commits first while the setting is unset. */
             fallback?: unknown;
@@ -6937,6 +7117,8 @@ export interface components {
             label: string;
             /** @description Values that mean the setting is off, so the control renders muted. */
             quiet?: unknown[];
+            /** @description The fold a face groups this field under; unset sits with the main controls. */
+            section?: string | null;
             title?: string | null;
             /** @description Shown only while every one of these holds. */
             when?: components["schemas"]["Condition"][];
@@ -7057,6 +7239,10 @@ export interface components {
             azimuth_deg: number;
             /** Format: double */
             elevation_deg: number;
+        };
+        SortKey: {
+            descending?: boolean;
+            field: string;
         };
         /** @enum {string} */
         SourceRule: "dominance" | "mdl";
@@ -7213,6 +7399,9 @@ export interface components {
         } | {
             /** @enum {string} */
             scope: "missions";
+        } | {
+            /** @enum {string} */
+            scope: "decoders";
         };
         StateSnapshot: {
             arrays?: components["schemas"]["ArrayStatus"][];
@@ -7403,8 +7592,8 @@ export interface components {
             /** Format: int64 */
             workspace: number;
         };
-        /** @enum {string} */
-        Symbol: "plane" | "ship" | "station" | "balloon" | "drone" | "beacon" | "node" | "person" | "vehicle" | "satellite" | "antenna" | "fix" | "target" | "echo" | "dot";
+        /** @description The icon an entity of a kind wears on the map. */
+        Symbol: string;
         /** @enum {string} */
         SyncState: "idle" | "searching" | "locked" | "drifting" | "lost";
         Tap: {
@@ -9878,7 +10067,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DfFusionState"];
+                    "application/json": components["schemas"]["DfFusionView"];
                 };
             };
             /** @description No triangulation with that id */

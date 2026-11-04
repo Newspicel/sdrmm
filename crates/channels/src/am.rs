@@ -12,7 +12,7 @@ use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily};
 
 use crate::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx,
-    NativeChannel, TxPayload, check_input_rate, clamp_full_scale,
+    NativeChannel, NativeTx, TxPayload, check_input_rate, clamp_full_scale,
     tx::{Burst, TxQueue},
     voice_leveller,
 };
@@ -25,7 +25,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "am".to_owned(),
     name: "AM".to_owned(),
     summary: "AM voice, airband and shortwave".to_owned(),
-    family: DecoderFamily::AnalogVoice,
+    family: DecoderFamily::ANALOG_VOICE,
     bandwidth_hz: 10_000.0,
     input_rate_hz: 48_000.0,
     has_audio: true,
@@ -141,7 +141,7 @@ pub struct AmTx {
     burst: Burst,
 }
 
-impl ChannelTx for AmTx {
+impl NativeTx for AmTx {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
@@ -156,7 +156,9 @@ impl ChannelTx for AmTx {
             burst: Burst::new(ctx.input_rate),
         })
     }
+}
 
+impl ChannelTx for AmTx {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.audio_lp = audio_lowpass(&params(&settings)?)?;
         Ok(())

@@ -1,6 +1,6 @@
 [package]
 name = "sdrmm-plugin-example"
-description = "A carrier detector, as a template for WASM decoder plugins"
+description = "A carrier detector and a lane meter, as a template for WASM plugins"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

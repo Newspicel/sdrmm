@@ -31,7 +31,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "same".to_owned(),
     name: "SAME alerts".to_owned(),
     summary: "NOAA Weather Radio and EAS alert headers".to_owned(),
-    family: DecoderFamily::Weather,
+    family: DecoderFamily::WEATHER,
     bandwidth_hz: SAME_BANDWIDTH_HZ,
     input_rate_hz: RATE,
     has_audio: false,

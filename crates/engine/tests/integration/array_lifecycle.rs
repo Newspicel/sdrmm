@@ -244,7 +244,7 @@ mod probed {
             .unwrap();
         let before = wait_calibrated(&bench.engine, LOCK_WAIT);
         assert!(before.lanes.iter().all(|lane| lane.gaps == 0));
-        let pause = Duration::from_millis(400);
+        let pause = Duration::from_millis(900);
         bench
             .engine
             .hold_array(ARRAY, move || std::thread::sleep(pause))

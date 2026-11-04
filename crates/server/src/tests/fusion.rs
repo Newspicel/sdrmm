@@ -1,4 +1,4 @@
-use sdrmm_wire::{DfBearing, DfFusionState, ServerEvent, TriangulationParams, geo, geo::LatLon};
+use sdrmm_wire::{DfBearing, DfFusionView, ServerEvent, TriangulationParams, geo, geo::LatLon};
 
 use super::*;
 
@@ -59,7 +59,9 @@ async fn the_fusion_route_serves_and_clears_a_triangulation_grid() {
     }
     let (status, body) = request(app.clone(), "GET", "/api/fusion/cross", None).await;
     assert_eq!(status, StatusCode::OK);
-    let fused: DfFusionState = serde_json::from_slice(&body).expect("json");
+    let view: DfFusionView = serde_json::from_slice(&body).expect("json");
+    assert_eq!(view.status, view.state.status());
+    let fused = view.state;
     let estimate = fused.estimate.expect("two stations give an estimate");
     let error = geo::distance_m(
         LatLon {
@@ -79,11 +81,11 @@ async fn the_fusion_route_serves_and_clears_a_triangulation_grid() {
         .expect("the clear is announced");
     assert!(matches!(
         told,
-        ServerEvent::DfFusionUpdate { ref node, ref state } if node == "cross" && state.samples == 0
+        ServerEvent::DfFusionUpdate { ref node, ref state, .. } if node == "cross" && state.samples == 0
     ));
     let (_, body) = request(app, "GET", "/api/fusion/cross", None).await;
-    let cleared: DfFusionState = serde_json::from_slice(&body).expect("json");
-    assert_eq!(cleared.samples, 0);
+    let cleared: DfFusionView = serde_json::from_slice(&body).expect("json");
+    assert_eq!(cleared.state.samples, 0);
 }
 
 #[tokio::test]

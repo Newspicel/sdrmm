@@ -20,6 +20,7 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 
 | Kind | Name | Shows as | Facts |
 |---|---|---|---|
+| `bearing_fix` | Bearing fix | Fixes | log, station, geo |
 | `broadcast_data` | Broadcast data | Services | log |
 | `call` | Call | Calls | log, station, voice, duration, clip |
 | `df` | Bearing | Bearings | log, station, geo, bearing |
@@ -66,7 +67,7 @@ Ports follow the decoder the node runs.
 | `position` | in | Position | A live fix and the heading it comes with | one |
 | `baseband` | out | Baseband | One channel, filtered and decimated | many |
 | `audio` | out | Audio | Live audio | many |
-| `events` | out | Events | 11 kinds | many. Decoded messages and calls. Analog calls need squelch |
+| `events` | out | Events | 12 kinds | many. Decoded messages and calls. Analog calls need squelch |
 | `video` | out | Video | Decoded video frames and pictures | many |
 
 ## Tools
@@ -88,7 +89,7 @@ Catches and decodes everything in view
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one |
-| `events` | out | Events | 11 kinds | many |
+| `events` | out | Events | 12 kinds | many |
 
 ### Trunk system
 
@@ -106,8 +107,8 @@ Passes only matching events
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 11 kinds | many |
-| `events` | out | Events | 11 kinds | many |
+| `events` | in | Events | 12 kinds | many |
+| `events` | out | Events | 12 kinds | many |
 
 ### Audio FX
 
@@ -221,6 +222,15 @@ Polarisation of two crossed antennas
 | `array` | in | Array | One lane per antenna element | one |
 | `beam` | out | IQ | derived | many. Matched to the wave |
 
+### Processor
+
+An array processor from a plugin
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `array` | in | Array | One lane per antenna element | one |
+| `events` | out | Events | 12 kinds | many |
+
 ### Triangulation
 
 Crosses bearings into a position
@@ -230,6 +240,15 @@ Crosses bearings into a position
 | `events` | in | Events | Bearing | many. Bearings |
 | `position` | in | Position | A live fix and the heading it comes with | one. Vehicle to guide |
 | `events` | out | Events | Fix, Guidance | many |
+
+### Bearing fix
+
+Live fix from each station's newest bearing
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `events` | in | Events | Bearing | many. Bearings with a known origin |
+| `events` | out | Events | Bearing fix | many |
 
 ### Note
 
@@ -267,7 +286,7 @@ Decoded positions on a map
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 7 kinds | many |
+| `events` | in | Events | 8 kinds | many |
 | `position` | in | Position | A live fix and the heading it comes with | many |
 
 ### Signal survey
@@ -294,7 +313,7 @@ Current decoder state
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 11 kinds | many |
+| `events` | in | Events | 12 kinds | many |
 
 ### Decoder log
 
@@ -302,7 +321,7 @@ Every decoded message in a table
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 8 kinds | many, keeps history, clips |
+| `events` | in | Events | 9 kinds | many, keeps history, clips |
 
 ### Event output
 
@@ -310,7 +329,7 @@ Sends events out, saves call audio
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 8 kinds | many |
+| `events` | in | Events | 9 kinds | many |
 
 ### Video
 
@@ -363,7 +382,7 @@ Saves logged rows as CSV or JSON
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 8 kinds | many, keeps history |
+| `events` | in | Events | 9 kinds | many, keeps history |
 
 ### Rotator
 

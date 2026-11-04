@@ -61,13 +61,13 @@ impl EventPayload for ErmesMessage {
 
 fn ermes_fields(p: &ErmesMessage) -> Vec<Field> {
     fields(&[
-        ("Address", text_of(p.local_address)),
-        ("Number", count(Some(p.message_number))),
-        ("Payload", text_of(pager_payload(p.payload))),
-        ("Urgent", flag(Some(p.urgent))),
-        ("Alert", count(Some(p.alert))),
-        ("Repaired", repaired(p.errors_corrected)),
-        ("Text", text(Some(&p.text))),
+        ("address", "Address", text_of(p.local_address)),
+        ("number", "Number", count(Some(p.message_number))),
+        ("payload", "Payload", text_of(pager_payload(p.payload))),
+        ("urgent", "Urgent", flag(Some(p.urgent))),
+        ("alert", "Alert", count(Some(p.alert))),
+        ("repaired", "Repaired", repaired(p.errors_corrected)),
+        ("text", "Text", text(Some(&p.text))),
     ])
 }
 

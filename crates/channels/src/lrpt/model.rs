@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -102,13 +102,25 @@ impl EventPayload for LrptImage {
         Presentation {
             fields: picture_fields(
                 &[
-                    ("Mode", text_of(self.mode.label())),
-                    ("Size", picture_size(self.width, self.lines)),
-                    ("APIDs", text(Some(&apids))),
-                    ("Frames", count(Some(self.frames))),
-                    ("Frames repaired", count(Some(self.frames_corrected))),
-                    ("Frames failed", count(Some(self.frames_failed))),
-                    ("Packets lost", count(Some(self.packets_lost))),
+                    ("mode", "Mode", text_of(self.mode.label())),
+                    ("size", "Size", picture_size(self.width, self.lines)),
+                    ("apids", "APIDs", text(Some(&apids))),
+                    ("frames", "Frames", count(Some(self.frames))),
+                    (
+                        "frames_repaired",
+                        "Frames repaired",
+                        count(Some(self.frames_corrected)),
+                    ),
+                    (
+                        "frames_failed",
+                        "Frames failed",
+                        count(Some(self.frames_failed)),
+                    ),
+                    (
+                        "packets_lost",
+                        "Packets lost",
+                        count(Some(self.packets_lost)),
+                    ),
                 ],
                 self.lines,
                 self.complete,
@@ -122,6 +134,7 @@ impl EventPayload for LrptImage {
 pub(crate) fn lrpt_kind() -> KindSpec {
     KindSpec::of::<LrptImage>("Meteor LRPT", "Pictures", Hue::Orange)
         .caps(&[Capability::Log, Capability::Picture])
+        .view(KindView::Picture)
         .build()
 }
 

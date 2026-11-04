@@ -46,6 +46,7 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_ports: &[],
     steer_port: None,
     surface: Some(StreamKind::RangeDoppler),
+    settings: sdrmm_wire::radar::PassiveRadarParams::form,
     needs: |_| ProcessorNeeds::TIME,
     band: |_| None,
     tuning: |_| TuningNeed::Together,

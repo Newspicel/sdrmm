@@ -1,4 +1,5 @@
 use super::*;
+use crate::dab::DabTransmissionMode;
 
 fn access_units(mut bytes: &[u8]) -> Vec<&[u8]> {
     let mut units = Vec::new();
@@ -502,7 +503,14 @@ fn a_published_status_is_an_event_and_offers_its_services() {
 
     assert_eq!(latest_status(&out), Some(status));
     let face = out.status.expect("a channel status");
-    assert!(face.readouts.iter().any(|field| field.label == "Locked"));
+    assert_eq!(face.health.lock, Some(true));
+    assert!(
+        face.readouts
+            .iter()
+            .all(|field| !HEALTH_FIELDS.contains(&field.key.as_str())),
+        "the footer shows lock, SNR and offset: {:?}",
+        face.readouts
+    );
     let [choice] = face.choices.as_slice() else {
         panic!("one choice: {:?}", face.choices);
     };
@@ -513,4 +521,90 @@ fn a_published_status_is_an_event_and_offers_its_services() {
         .map(|option| (option.value.clone(), option.label.as_str()))
         .collect();
     assert_eq!(options, [(0x1234.into(), "Radio One"), (7.into(), "7")]);
+}
+
+#[test]
+fn the_health_footer_shows_snr_and_offset_only_while_locked() {
+    let locked = BroadcastStatus {
+        system: BroadcastSystem::Dab,
+        locked: true,
+        snr_db: 14.5,
+        frequency_error_hz: -120.0,
+        transmission_mode: Some(DabTransmissionMode::Ii),
+        ..BroadcastStatus::default()
+    };
+    let mut out = ChannelOutputs::default();
+    publish_status(&mut out, locked.clone(), "service_id");
+    let face = out.status.take().expect("a channel status");
+    assert_eq!(
+        face.health,
+        ChannelHealth::default()
+            .lock(true)
+            .snr(14.5)
+            .freq_error(-120.0)
+    );
+    assert_eq!(
+        face.readout(TRANSMISSION_MODE_READOUT)
+            .map(|field| &field.value),
+        Some(&sdrmm_wire::present::FieldValue::Text("II".to_owned()))
+    );
+    assert_eq!(
+        face.readout(SYSTEM_READOUT).map(|field| &field.value),
+        Some(&sdrmm_wire::present::FieldValue::Text("DAB".to_owned()))
+    );
+
+    publish_status(
+        &mut out,
+        BroadcastStatus {
+            locked: false,
+            ..locked
+        },
+        "service_id",
+    );
+    let face = out.status.expect("a channel status");
+    assert_eq!(face.health, ChannelHealth::default().lock(false));
+}
+
+#[test]
+fn every_auto_option_shows_a_readout_the_status_carries() {
+    let status = BroadcastStatus {
+        locked: true,
+        transmission_mode: Some(DabTransmissionMode::I),
+        code_rate: Some("3/4".to_owned()),
+        ..BroadcastStatus::default()
+    };
+    let keys: Vec<String> = status
+        .present(&BroadcastStatus::KIND)
+        .fields
+        .into_iter()
+        .map(|field| field.key)
+        .collect();
+    let forms = [
+        crate::dab::dab_form(),
+        crate::drm::drm_form(),
+        crate::datv::datv_form(),
+    ];
+    let shown: Vec<String> = forms
+        .iter()
+        .flatten()
+        .filter_map(|field| match &field.control {
+            sdrmm_wire::Control::Choice { options } => Some(options),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|option| option.status.clone())
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            SYSTEM_READOUT,
+            TRANSMISSION_MODE_READOUT,
+            SYSTEM_READOUT,
+            CODE_RATE_READOUT
+        ]
+    );
+    assert!(
+        shown.iter().all(|key| keys.contains(key)),
+        "{shown:?} not all among {keys:?}"
+    );
 }

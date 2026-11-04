@@ -52,9 +52,10 @@ impl EventPayload for SelcallSequence {
         let system = self.system.label();
         Presentation {
             fields: fields(&[
-                ("Plan", text_of(system)),
-                ("Code", text(Some(&self.code))),
+                ("plan", "Plan", text_of(system)),
+                ("code", "Code", text(Some(&self.code))),
                 (
+                    "tone",
                     "Tone",
                     number(Some(f64::from(self.tone_ms) / 1_000.0), Unit::Seconds, 3),
                 ),

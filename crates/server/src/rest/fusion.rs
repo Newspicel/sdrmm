@@ -15,18 +15,18 @@ impl From<NoTriangulation> for AppError {
     get, path = "/api/fusion/{node}",
     params(("node" = String, Path, description = "Triangulation node id")),
     responses(
-        (status = 200, description = "Where the bearings so far say the transmitter is", body = DfFusionState),
+        (status = 200, description = "Where the bearings so far say the transmitter is", body = DfFusionView),
         (status = 404, description = "No triangulation with that id", body = ApiError),
     ),
 )]
 pub(super) async fn get_fusion(
     State(state): State<AppState>,
     Path(node): Path<String>,
-) -> Result<Json<DfFusionState>, AppError> {
+) -> Result<Json<DfFusionView>, AppError> {
     state
         .fusion
         .state(&node)
-        .map(Json)
+        .map(|fused| Json(fused.into()))
         .ok_or_else(|| NoTriangulation(node).into())
 }
 

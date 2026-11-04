@@ -82,7 +82,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "adsb".to_owned(),
     name: "ADS-B (1090ES)".to_owned(),
     summary: "Aircraft positions on 1090 MHz".to_owned(),
-    family: DecoderFamily::Aviation,
+    family: DecoderFamily::AVIATION,
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

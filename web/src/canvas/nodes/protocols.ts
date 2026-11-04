@@ -1,5 +1,5 @@
 import type { ChannelDescriptor, DecoderFamily } from "../../lib/types";
-import { FAMILIES } from "../palette";
+import { familiesOf, familyOf, familyTitle } from "../palette";
 
 export interface Protocol {
   kind: string;
@@ -25,12 +25,12 @@ export interface ProtocolPreset {
 }
 
 export function protocolGroups(types: readonly ChannelDescriptor[]): ProtocolGroup[] {
-  return (Object.keys(FAMILIES) as DecoderFamily[])
+  return familiesOf(types)
     .map((family) => ({
       family,
-      title: FAMILIES[family],
+      title: familyTitle(family),
       protocols: types
-        .filter((type) => type.identifiable === true && (type.family ?? "utility") === family)
+        .filter((type) => type.identifiable === true && familyOf(type) === family)
         .map((type) => ({
           kind: type.type_id,
           label: type.name.replace(/\s*\(.*\)$/, ""),

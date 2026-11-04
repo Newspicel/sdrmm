@@ -305,3 +305,33 @@ pub(crate) fn drop_hex_damaged(value: &mut serde_json::Value) {
         _ => {}
     }
 }
+
+/// Every field a view of `spec` names is one some sample presents, and no sample presents
+/// one key twice.
+pub(crate) fn assert_views_hold(spec: &sdrmm_wire::KindSpec, samples: &[DecoderEvent]) {
+    let kind = &spec.entry.kind;
+    assert!(!spec.entry.views.is_empty(), "{kind} declares no view");
+    let mut shown = std::collections::BTreeSet::new();
+    for sample in samples {
+        assert_eq!(sample.kind, *kind, "a sample of another kind");
+        let view = spec
+            .codec
+            .present(kind, &sample.data())
+            .unwrap_or_else(|error| panic!("{kind} sample reads: {error}"));
+        let keys = view.keys();
+        let unique: std::collections::BTreeSet<&str> = keys.iter().copied().collect();
+        assert_eq!(unique.len(), keys.len(), "{kind} repeats a key: {keys:?}");
+        shown.extend(keys.into_iter().map(str::to_owned));
+    }
+    for view in &spec.entry.views {
+        let missing: Vec<&str> = view
+            .fields()
+            .into_iter()
+            .filter(|field| !shown.contains(*field))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{kind} view names {missing:?}, shown {shown:?}"
+        );
+    }
+}

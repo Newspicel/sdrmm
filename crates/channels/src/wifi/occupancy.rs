@@ -26,7 +26,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "wifi_occupancy".to_owned(),
     name: "Wi-Fi occupancy".to_owned(),
     summary: "Busy time of each Wi-Fi channel, energy only".to_owned(),
-    family: DecoderFamily::Utility,
+    family: DecoderFamily::UTILITY,
     bandwidth_hz: 2.0 * usable_half_hz(WifiOccupancyParams::default().span),
     input_rate_hz: WifiOccupancyParams::default().span.sample_rate_hz(),
     has_audio: false,

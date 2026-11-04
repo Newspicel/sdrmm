@@ -149,21 +149,53 @@ impl EventPayload for RadiosondeFrame {
 impl RadiosondeFrame {
     fn fields(&self) -> Vec<Field> {
         let mut shown = fields(&[
-            ("Serial", text(Some(&self.serial))),
-            ("Type", text_of(self.sonde.label())),
-            ("Frame", count(self.frame)),
-            ("Time", trimmed(self.time.as_deref()).map(FieldValue::Time)),
-            ("Position", position(self.lat, self.lon)),
-            ("Altitude", number(self.altitude_m, Unit::Metres, 0)),
-            ("Climb", number(self.climb_ms, Unit::MetresPerSecond, 1)),
-            ("Speed", number(self.speed_ms, Unit::MetresPerSecond, 1)),
-            ("Heading", number(self.heading_deg, Unit::Degrees, 0)),
-            ("Temperature", number(self.temperature_c, Unit::Celsius, 1)),
-            ("Humidity", number(self.humidity_pct, Unit::Percent, 0)),
-            ("Pressure", number(self.pressure_hpa, Unit::Hectopascal, 1)),
-            ("Satellites", count(self.satellites)),
-            ("Battery", number(self.battery_v, Unit::Volts, 2)),
-            ("Repaired", repaired(self.errors_corrected)),
+            ("serial", "Serial", text(Some(&self.serial))),
+            ("type", "Type", text_of(self.sonde.label())),
+            ("frame", "Frame", count(self.frame)),
+            (
+                "time",
+                "Time",
+                trimmed(self.time.as_deref()).map(FieldValue::Time),
+            ),
+            ("position", "Position", position(self.lat, self.lon)),
+            (
+                "altitude",
+                "Altitude",
+                number(self.altitude_m, Unit::Metres, 0),
+            ),
+            (
+                "climb",
+                "Climb",
+                number(self.climb_ms, Unit::MetresPerSecond, 1),
+            ),
+            (
+                "speed",
+                "Speed",
+                number(self.speed_ms, Unit::MetresPerSecond, 1),
+            ),
+            (
+                "heading",
+                "Heading",
+                number(self.heading_deg, Unit::Degrees, 0),
+            ),
+            (
+                "temperature",
+                "Temperature",
+                number(self.temperature_c, Unit::Celsius, 1),
+            ),
+            (
+                "humidity",
+                "Humidity",
+                number(self.humidity_pct, Unit::Percent, 0),
+            ),
+            (
+                "pressure",
+                "Pressure",
+                number(self.pressure_hpa, Unit::Hectopascal, 1),
+            ),
+            ("satellites", "Satellites", count(self.satellites)),
+            ("battery", "Battery", number(self.battery_v, Unit::Volts, 2)),
+            ("repaired", "Repaired", repaired(self.errors_corrected)),
         ]);
         shown.extend(
             self.forecast
@@ -183,12 +215,18 @@ impl SondeForecast {
             "Burst est."
         };
         fields(&[
-            (burst, number(Some(self.burst_altitude_m), Unit::Metres, 0)),
             (
+                "burst",
+                burst,
+                number(Some(self.burst_altitude_m), Unit::Metres, 0),
+            ),
+            (
+                "landing",
                 "Landing",
                 position(Some(self.landing.lat), Some(self.landing.lon)),
             ),
             (
+                "lands_in",
                 "Lands in",
                 number(Some(self.landing_in_s.max(0.0)), Unit::Seconds, 0),
             ),
@@ -202,12 +240,12 @@ impl SondeForecast {
         });
         let burst = Shape::Pin {
             at: self.burst,
-            symbol: Symbol::Dot,
+            symbol: Symbol::DOT,
             label: "Burst".to_owned(),
         };
         let landing = Shape::Pin {
             at: self.landing,
-            symbol: Symbol::Target,
+            symbol: Symbol::TARGET,
             label: "Landing".to_owned(),
         };
         path.into_iter().chain([burst, landing]).collect()
@@ -217,7 +255,7 @@ impl SondeForecast {
 pub(crate) fn radiosonde_kind() -> KindSpec {
     KindSpec::of::<RadiosondeFrame>("Radiosonde", "Sondes", Hue::Orange)
         .caps(&[Capability::Log, Capability::Station, Capability::Geo])
-        .symbol(Symbol::Balloon)
+        .symbol(Symbol::BALLOON)
         .sighting()
         .build()
 }

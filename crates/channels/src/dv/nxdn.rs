@@ -71,7 +71,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "nxdn".to_owned(),
     name: "NXDN".to_owned(),
     summary: "NXDN two-way radio voice".to_owned(),
-    family: DecoderFamily::DigitalVoice,
+    family: DecoderFamily::DIGITAL_VOICE,
     bandwidth_hz: 6_250.0,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,

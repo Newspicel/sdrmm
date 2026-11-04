@@ -3,7 +3,9 @@
 A plugin is a decoder compiled to WebAssembly. Drop the `.wasm` into the plugins folder
 (`--plugins-dir`, default `sdrmm/plugins` in the platform data folder) and it appears next to the
 built-in decoders: same palette entry, same settings form, same logs, maps and wires. The folder is
-watched, so a rebuilt plugin is loaded again on its own.
+watched, so a rebuilt plugin is loaded again on its own, and its running channels reopen on the new
+build with their settings and wires. A channel the new build refuses keeps the old one and the
+reason shows as an error.
 
 ## Write one
 
@@ -28,7 +30,28 @@ A plugin crate depends on `sdrmm-plugin`, builds as a `cdylib`, implements `Plug
 
 The settings form is what the channel node shows: choices, numbers with ranges and units,
 toggles, text, conditional fields and lists. The frontend draws it from the manifest, so a plugin
-ships no UI code.
+ships no UI code. Event kinds carry view hints (table, meter, trend, picture) and a map symbol; a
+status carries the health footer (lock, SNR, frequency error, errors per second). A family or
+symbol the server does not know gets its own palette group or a dot on the map.
+
+## Transmit
+
+Set `can_transmit` on the descriptor, implement `Transmitter` and call `export_transmit!` once.
+`submit()` takes audio or a frame, `generate()` fills baseband at the input rate. The example's
+`Beacon` sends frames as two-tone FSK.
+
+## Array processors
+
+A plugin can also bring an array processor: it runs on every lane of an Array node at once, like
+the direction finder. Declare it as the manifest's `processor` (type id, name, lane range, needs,
+settings form, readouts, emitted kinds), implement `Processor` and call `export_processor!` once.
+`process()` gets one block of every lane and sets readouts by their declared order, the health
+footer and events. Its node has the same form and readouts as any other, without a plot. The
+example's `LaneMeter` reports each lane's power and phase against the first.
+
+## ABI
+
+The server runs plugins built for its own ABI version and refuses any other.
 
 ## Speed
 

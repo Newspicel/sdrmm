@@ -9,6 +9,7 @@ import type {
   DecoderEvent,
   EventKindEntry,
   Field,
+  KindView,
   PatchCatalog,
 } from "../lib/types";
 import { CATALOG } from "../test/catalog";
@@ -17,8 +18,8 @@ import { ReadoutView } from "./ReadoutView";
 
 const NOW = Date.parse("2026-09-21T10:00:05Z");
 
-function kind(name: string, caps: Capability[]): EventKindEntry {
-  return { kind: name, name, noun: name, caps, hue: "teal", lifetime: { type: "instant" } };
+function kind(name: string, caps: Capability[], views: KindView[] = []): EventKindEntry {
+  return { kind: name, name, noun: name, caps, hue: "teal", lifetime: { type: "instant" }, views };
 }
 
 const KINDS: EventKindEntry[] = [
@@ -26,14 +27,43 @@ const KINDS: EventKindEntry[] = [
   kind("probe_text", ["log", "text"]),
   kind("probe_picture", ["log", "picture"]),
   kind("probe_plain", ["log"]),
+  kind(
+    "probe_table",
+    ["log", "station"],
+    [
+      {
+        type: "table",
+        columns: ["station", "snr"],
+        sort: { field: "snr", descending: true },
+        key: "station",
+      },
+    ],
+  ),
+  kind("probe_meter", ["log"], [{ type: "meter", field: "snr", min: 0, max: 40 }]),
+  kind("probe_trend", ["log"], [{ type: "trend", fields: ["snr"], window_s: 60 }]),
+  kind("probe_shot", ["log"], [{ type: "picture" }]),
 ];
 
 function event(name: string): DecoderEvent {
   return { kind: name, data: {} };
 }
 
-function text(label: string, value: string): Field {
-  return { label, value: { type: "text", value } };
+function text(label: string, value: string, key = label.toLowerCase()): Field {
+  return { key, label, value: { type: "text", value } };
+}
+
+function snr(db: number): Field {
+  return {
+    key: "snr",
+    label: "SNR",
+    value: { type: "number", value: { value: db, unit: "db", digits: 1 } },
+  };
+}
+
+function heads(html: string): string[] {
+  return [...html.matchAll(/<th[^>]*>(.*?)<\/th>/g)].map((match) =>
+    (match[1] ?? "").replace(/<[^>]+>/g, ""),
+  );
 }
 
 function line(chunk: string, at: string) {
@@ -57,7 +87,7 @@ function render(feed: SinkView): string {
 }
 
 describe("readout", () => {
-  it("tabulates stations with a column per field label, in order of first appearance", () => {
+  it("tabulates stations with a column per field key, in order of first appearance", () => {
     const html = render({
       ...EMPTY_SINK,
       entities: [
@@ -68,12 +98,12 @@ describe("readout", () => {
         }),
         sinkEntity("probe", "probe_station", "B2", event("probe_station"), {
           summary: "B2 parked",
-          fields: [text("Squawk", "7000")],
+          fields: [text("Squawk", "7000"), text("Höhe", "1200 ft", "altitude")],
         }),
       ],
     });
-    const heads = [...html.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((match) => match[1]);
-    expect(heads).toEqual(["Name", "Altitude", "Speed", "Squawk", "Age"]);
+    expect(heads(html)).toEqual(["Name", "Altitude", "Speed", "Squawk", "Age"]);
+    expect(html).toContain("1200 ft");
     expect(html).toContain("ALPHA");
     expect(html).toContain("B2");
     expect(html).toContain("37000 ft");
@@ -154,5 +184,86 @@ describe("readout", () => {
     });
     expect(html).toContain("probe · probe_plain");
     expect(html).toContain("probe · probe_text");
+  });
+});
+
+function reading(kindName: string, station: string, db: number, at: string) {
+  return sinkRecord(
+    "probe",
+    event(kindName),
+    { summary: station, fields: [text("Station", station), snr(db)] },
+    at,
+  );
+}
+
+describe("declared views", () => {
+  it("tabulates rows by the key field, merged and sorted by the hint", () => {
+    const html = render({
+      ...EMPTY_SINK,
+      records: [
+        reading("probe_table", "ALPHA", 12, "2026-09-21T10:00:04Z"),
+        reading("probe_table", "BRAVO", 30, "2026-09-21T10:00:03Z"),
+        reading("probe_table", "ALPHA", 5, "2026-09-21T10:00:01Z"),
+      ],
+    });
+    expect(heads(html)).toEqual(["Station", "SNR ↓", "Age"]);
+    expect(html.indexOf("BRAVO")).toBeLessThan(html.indexOf("ALPHA"));
+    expect(html).toContain("12.0 dB");
+    expect(html).not.toContain("5.0 dB");
+    expect(html).toContain('aria-sort="descending"');
+  });
+
+  it("draws the newest value of a meter field on its range", () => {
+    const html = render({
+      ...EMPTY_SINK,
+      records: [
+        reading("probe_meter", "A", 10, "2026-09-21T10:00:04Z"),
+        reading("probe_meter", "A", 30, "2026-09-21T10:00:01Z"),
+      ],
+    });
+    expect(html).toContain('role="meter"');
+    expect(html).toContain('aria-valuenow="25"');
+    expect(html).toContain("10.0 dB");
+  });
+
+  it("plots a trend field over its window", () => {
+    const html = render({
+      ...EMPTY_SINK,
+      records: [
+        reading("probe_trend", "A", 20, "2026-09-21T10:00:04Z"),
+        reading("probe_trend", "A", 10, "2026-09-21T09:59:59Z"),
+      ],
+    });
+    expect(html).toContain("<polyline");
+    expect(html).toContain('aria-label="Last 60 s"');
+    expect(html).toContain("20.0 dB");
+  });
+
+  it("shows only the newest picture of a picture view", () => {
+    const shot: CapturedImage = {
+      id: 1,
+      node: "probe",
+      source: "probe",
+      mode: "Shot",
+      device_set: 1,
+      channel: 1,
+      at: "2026-09-21T10:00:00Z",
+      freq_hz: 145_000_000,
+      width: 64,
+      height: 64,
+      lines: 64,
+      complete: true,
+      image: { url: "/api/images/1.png", media_type: "image/png" },
+    };
+    const html = render({
+      ...EMPTY_SINK,
+      pictures: [
+        { ...shot, id: 2, image: { url: "/api/images/2.png", media_type: "image/png" } },
+        shot,
+      ],
+      records: [sinkRecord("probe", event("probe_shot"), { summary: "shot" })],
+    });
+    expect(html.match(/<img/g)).toHaveLength(1);
+    expect(html).toContain("/api/images/2.png");
   });
 });

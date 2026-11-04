@@ -619,7 +619,7 @@ async fn radar_update(
     tokio::time::timeout(WAIT, async {
         loop {
             match events.recv().await {
-                Ok(ServerEvent::ProcessorUpdate { node, reading }) if node == RADAR => {
+                Ok(ServerEvent::ProcessorUpdate { node, reading, .. }) if node == RADAR => {
                     if let ProcessorReading::PassiveRadar(update) = *reading
                         && wanted(&update)
                     {

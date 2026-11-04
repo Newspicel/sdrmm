@@ -30,6 +30,7 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_ports: &[BEAM_PORT],
     steer_port: None,
     surface: None,
+    settings: sdrmm_wire::PolarimeterParams::form,
     needs: |_| ProcessorNeeds::CALIBRATED,
     band: |params| settings(params).map(|polar| (polar.offset_hz, polar.bandwidth_hz)),
     tuning: |_| TuningNeed::Together,

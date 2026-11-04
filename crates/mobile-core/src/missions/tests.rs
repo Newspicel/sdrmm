@@ -445,10 +445,10 @@ fn radar_readings_refresh_and_go_stale_after_5_s() {
     let mut reducer = listed(vec![radar("pr1")]);
     reducer.handle(Input::Open("pr1".to_owned()), T0);
     let fresh = reducer.handle(
-        event(ServerEvent::ProcessorUpdate {
-            node: "pr1".to_owned(),
-            reading: Box::new(ProcessorReading::PassiveRadar(RadarUpdate::default())),
-        }),
+        event(ServerEvent::processor_update(
+            "pr1".to_owned(),
+            ProcessorReading::PassiveRadar(RadarUpdate::default()),
+        )),
         T0,
     );
     assert!(matches!(emitted(&fresh).as_slice(), [CoreEvent::Radar { view }] if !view.stale));
@@ -742,10 +742,10 @@ fn a_df_reading_projects_and_retargets_once() {
         T0,
     );
     let fusion = |north_m| {
-        event(ServerEvent::DfFusionUpdate {
-            node: "tri1".to_owned(),
-            state: Box::new(fused(NavTargetKind::Probe, north_m)),
-        })
+        event(ServerEvent::fusion_update(
+            "tri1".to_owned(),
+            fused(NavTargetKind::Probe, north_m),
+        ))
     };
     let first = reducer.handle(fusion(2_000.0), T0 + 1_000);
     let retargets = |effects: &[Effect]| {
@@ -768,10 +768,10 @@ fn a_df_reading_projects_and_retargets_once() {
         ..DfReading::default()
     };
     let effects = reducer.handle(
-        event(ServerEvent::ProcessorUpdate {
-            node: "df1".to_owned(),
-            reading: Box::new(ProcessorReading::Df(reading)),
-        }),
+        event(ServerEvent::processor_update(
+            "df1".to_owned(),
+            ProcessorReading::Df(reading),
+        )),
         T0 + 41_000,
     );
     let view = emitted(&effects)

@@ -18,7 +18,7 @@ import {
 
 const SECTION_KEY = "sdrmm.palette.section";
 
-export function NodePalette({ onAdd }: { onAdd: (kind: NodeKind, channelType?: string) => void }) {
+export function NodePalette({ onAdd }: { onAdd: (kind: NodeKind, typeId?: string) => void }) {
   const workspace = useWorkspaceContext();
   const [query, setQuery] = useState("");
   const [section, setSection] = useState<PaletteSection>(storedSection);
@@ -29,7 +29,7 @@ export function NodePalette({ onAdd }: { onAdd: (kind: NodeKind, channelType?: s
   const shown = searching ? found : sectionGroups(all, section);
   const pick = (item: PaletteItem | undefined) => {
     if (item !== undefined) {
-      onAdd(item.kind, item.type?.type_id);
+      onAdd(item.kind, item.type?.type_id ?? item.processorType);
     }
   };
   const choose = (next: PaletteSection) => {

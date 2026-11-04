@@ -1,4 +1,4 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -64,16 +64,24 @@ fn rds_fields(r: &RdsUpdate) -> Vec<Field> {
         .collect::<Vec<_>>()
         .join(", ");
     fields(&[
-        ("PI", text(r.pi.as_deref())),
-        ("Station", text(r.ps.as_deref())),
-        ("Programme", text(programme.as_deref())),
-        ("Traffic", flag(r.tp)),
-        ("Announcement", flag(r.ta)),
-        ("Content", content.and_then(text_of)),
-        ("Alt. frequencies", text(Some(&alternatives))),
-        ("Groups", count(Some(r.groups as f64))),
-        ("Block errors", count(Some(r.block_errors as f64))),
-        ("Radiotext", text(r.radiotext.as_deref())),
+        ("pi", "PI", text(r.pi.as_deref())),
+        ("station", "Station", text(r.ps.as_deref())),
+        ("programme", "Programme", text(programme.as_deref())),
+        ("traffic", "Traffic", flag(r.tp)),
+        ("announcement", "Announcement", flag(r.ta)),
+        ("content", "Content", content.and_then(text_of)),
+        (
+            "alt_frequencies",
+            "Alt. frequencies",
+            text(Some(&alternatives)),
+        ),
+        ("groups", "Groups", count(Some(r.groups as f64))),
+        (
+            "block_errors",
+            "Block errors",
+            count(Some(r.block_errors as f64)),
+        ),
+        ("radiotext", "Radiotext", text(r.radiotext.as_deref())),
     ])
 }
 
@@ -90,6 +98,18 @@ pub(crate) fn rds_kind() -> KindSpec {
     KindSpec::of::<RdsUpdate>("RDS", "Stations", Hue::Muted)
         .caps(&[Capability::Log, Capability::Station])
         .sighting()
+        .view(
+            KindView::table(&[
+                "pi",
+                "station",
+                "programme",
+                "radiotext",
+                "traffic",
+                "announcement",
+                "block_errors",
+            ])
+            .keyed("pi"),
+        )
         .build()
 }
 
@@ -134,5 +154,22 @@ mod model_tests {
             view.fields.last().map(|field| field.label.as_str()),
             Some("Radiotext")
         );
+    }
+
+    #[test]
+    fn the_station_table_names_fields_an_update_shows() {
+        let update = RdsUpdate {
+            pi: Some("D3C3".to_owned()),
+            ps: Some("RADIO 1".to_owned()),
+            radiotext: Some("Now playing".to_owned()),
+            pty_name: Some("Pop Music".to_owned()),
+            tp: Some(true),
+            ta: Some(false),
+            groups: 100,
+            blocks: 400,
+            block_errors: 3,
+            ..RdsUpdate::default()
+        };
+        crate::testutil::assert_views_hold(&rds_kind(), &[sdrmm_wire::DecoderEvent::of(&update)]);
     }
 }

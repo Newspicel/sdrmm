@@ -1,9 +1,17 @@
 import { create } from "zustand";
 import { omitNodes } from "./byNode";
-import type { ProcessorKind, ProcessorReading, ReadingOf, ServerEvent } from "./types";
+import type {
+  ChannelStatus,
+  Field,
+  ProcessorKind,
+  ProcessorReading,
+  ReadingOf,
+  ServerEvent,
+} from "./types";
 
 export interface ProcessorState {
   reading: ProcessorReading;
+  status?: ChannelStatus;
   receivedAt: number;
 }
 
@@ -22,9 +30,9 @@ export const useProcessorStore = create<ProcessorStore>((set) => ({
     if (event.type !== "ProcessorUpdate") {
       return;
     }
-    const { node, reading } = event.data;
+    const { node, reading, status } = event.data;
     set((state) => ({
-      byNode: { ...state.byNode, [node]: { reading, receivedAt: Date.now() } },
+      byNode: { ...state.byNode, [node]: { reading, status, receivedAt: Date.now() } },
     }));
   },
   forget: (nodes) => set((state) => ({ byNode: omitNodes(state.byNode, nodes) })),
@@ -43,4 +51,10 @@ export function readingOf<T extends ProcessorKind>(
 
 export function isStale(receivedAt: number, now: number, periodMs: number): boolean {
   return now - receivedAt > Math.max(3 * periodMs, STALE_FLOOR_MS);
+}
+
+const NO_READOUTS: readonly Field[] = [];
+
+export function readoutsOf(state: ProcessorState | undefined): readonly Field[] {
+  return state?.status?.readouts ?? NO_READOUTS;
 }

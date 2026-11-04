@@ -157,6 +157,15 @@ describe("decoderGroups", () => {
     const { family: _family, ...bare } = TYPES[0]!;
     expect(decoderGroups([bare]).map((group) => group.title)).toEqual(["Utility"]);
   });
+
+  it("gives a plugin family its own group after the built-in ones", () => {
+    const plugin = { ...TYPES[0]!, type_id: "aurora", family: "space_weather" };
+    expect(decoderGroups([plugin, ...TYPES]).map((group) => group.title)).toEqual([
+      "Analog voice",
+      "Aviation",
+      "Space weather",
+    ]);
+  });
 });
 
 describe("sectionGroups", () => {
@@ -249,7 +258,7 @@ describe("the palette sections", () => {
     );
     for (const entry of WIRE_CATALOG.nodes) {
       expect(listed, `${entry.kind} is in no section`).toContain(entry.category);
-      if (entry.needs_channel_type !== true) {
+      if (entry.needs_channel_type !== true && entry.needs_processor_type !== true) {
         expect(offered.has(entry.kind), `${entry.kind} is in no palette group`).toBe(true);
       }
     }

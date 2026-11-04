@@ -20,7 +20,8 @@ const WALKERS: [&str; 10] = [
     ".position_source(",
 ];
 
-const KIND_MATCHES: [&str; 8] = [
+const KIND_MATCHES: [&str; 9] = [
+    "bearing_fix.rs",
     "calls/bindings.rs",
     "calls/tracker.rs",
     "df_fusion/worker.rs",

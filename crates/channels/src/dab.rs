@@ -1,3 +1,4 @@
+use crate::broadcast_media::{SYSTEM_READOUT, TRANSMISSION_MODE_READOUT};
 use crate::registry::Native;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
@@ -46,13 +47,17 @@ pub(crate) fn dab_decoder() -> Native<DabParams> {
 
 pub(crate) fn dab_form() -> Vec<SettingField> {
     vec![
-        SettingField::new("mode", "Type", Control::choice::<DabMode>())
-            .title("DAB generation")
-            .quiet(DabMode::Auto),
+        SettingField::new(
+            "mode",
+            "Type",
+            Control::choice_showing(DabMode::Auto, SYSTEM_READOUT),
+        )
+        .title("DAB generation")
+        .quiet(DabMode::Auto),
         SettingField::new(
             "transmission_mode",
             "Mode",
-            Control::choice::<DabTransmissionMode>(),
+            Control::choice_showing(DabTransmissionMode::Auto, TRANSMISSION_MODE_READOUT),
         )
         .title("DAB transmission mode")
         .quiet(DabTransmissionMode::Auto),

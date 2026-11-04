@@ -595,3 +595,54 @@ fn an_m10_week_lands_near_today_on_both_sides_of_a_rollover() {
     }
     assert_eq!(m10::gps_week(5_000), None);
 }
+
+fn forecast_lines(view: &sdrmm_wire::present::Presentation) -> usize {
+    view.shapes
+        .iter()
+        .filter(|shape| {
+            matches!(
+                shape,
+                sdrmm_wire::present::Shape::Line {
+                    style: sdrmm_wire::present::LineStyle::Forecast,
+                    ..
+                }
+            )
+        })
+        .count()
+}
+
+fn pins(view: &sdrmm_wire::present::Presentation) -> Vec<&str> {
+    view.shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            sdrmm_wire::present::Shape::Pin { label, .. } => Some(label.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_rising_sonde_is_sent_with_its_burst_and_landing_for_the_map() {
+    let truth = flight(SondeType::Rs41);
+    assert!(truth.east_ms > 0.0 && truth.north_ms < 0.0);
+    let frames = decode(
+        Some(SondeType::Rs41),
+        &transmission(SondeType::Rs41, 6, RATE),
+    );
+    let last = frames.last().expect("frames");
+    let forecast = last.forecast.as_ref().expect("a rising sonde is forecast");
+    assert!(!forecast.burst_seen);
+    assert!(
+        (forecast.burst_altitude_m - f64::from(DEFAULT_SONDE_BURST_M)).abs() < 1e-6,
+        "{forecast:?}"
+    );
+    assert!(forecast.landing_in_s > 0.0, "{forecast:?}");
+    let (lat, lon) = (last.lat.expect("lat"), last.lon.expect("lon"));
+    assert!(
+        forecast.burst.lon > lon && forecast.burst.lat < lat,
+        "{forecast:?}"
+    );
+    let view = sdrmm_wire::present::EventPayload::present(last, &EventKind::named("radiosonde"));
+    assert_eq!(forecast_lines(&view), 1);
+    assert_eq!(pins(&view), ["Burst", "Landing"]);
+}

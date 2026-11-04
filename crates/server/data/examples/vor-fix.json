@@ -1,0 +1,192 @@
+{
+  "version": 2,
+  "name": "VOR fix",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": 0.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "vor-a",
+          "kind": "channel",
+          "data": {
+            "channel_type": "vor",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 520.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "vor-b",
+          "kind": "channel",
+          "data": {
+            "channel_type": "vor",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 520.0,
+            "y": 380.0
+          }
+        },
+        {
+          "id": "fix",
+          "kind": "bearing_fix",
+          "position": {
+            "x": 1040.0,
+            "y": 200.0
+          }
+        },
+        {
+          "id": "map",
+          "kind": "map",
+          "position": {
+            "x": 1460.0,
+            "y": 120.0
+          }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## VOR fix\n\nTwo **VOR** channels read their radials. Give each its station position and declination from a chart.\n\n**Bearing fix** crosses the newest radial from each station into your position, drawn on the **Map** with its error ellipse."
+          },
+          "position": {
+            "x": 0.0,
+            "y": 420.0
+          },
+          "size": {
+            "w": 460.0,
+            "h": 300.0
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "vor-a",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "vor-b",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "vor-a",
+            "port": "events"
+          },
+          "to": {
+            "node": "fix",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "vor-b",
+            "port": "events"
+          },
+          "to": {
+            "node": "fix",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "vor-a",
+            "port": "events"
+          },
+          "to": {
+            "node": "map",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "vor-b",
+            "port": "events"
+          },
+          "to": {
+            "node": "map",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "fix",
+            "port": "events"
+          },
+          "to": {
+            "node": "map",
+            "port": "events"
+          }
+        }
+      ]
+    },
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 4
+        }
+      ]
+    }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 113500000.0,
+          "sample_rate": 2400000.0
+        }
+      }
+    ],
+    "channels": [
+      {
+        "node": "vor-a",
+        "settings": {
+          "frequency_hz": 112900000.0,
+          "params": {
+            "type": "vor",
+            "settings": {}
+          }
+        }
+      },
+      {
+        "node": "vor-b",
+        "settings": {
+          "frequency_hz": 114300000.0,
+          "params": {
+            "type": "vor",
+            "settings": {}
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,4 +1,5 @@
-use sdrmm_wire::{Capability, DecoderSettings, EventContract, Hue, KindSpec};
+use sdrmm_wire::present::key_of;
+use sdrmm_wire::{Capability, DecoderSettings, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -6,9 +7,17 @@ use sdrmm_wire::EventKind;
 use sdrmm_wire::present::EventPayload;
 use sdrmm_wire::present::Field;
 use sdrmm_wire::present::Presentation;
+use sdrmm_wire::present::Unit;
 use sdrmm_wire::present::fields;
+use sdrmm_wire::present::number;
+use sdrmm_wire::present::only_if;
 use sdrmm_wire::present::text_of;
 use sdrmm_wire::units::hertz;
+
+use super::stations::STATIONS;
+
+/// An ionospheric disturbance builds and fades over tens of minutes.
+const SID_TREND_S: u32 = 3_600;
 
 pub const MIN_SID_REPORT_S: u16 = 1;
 
@@ -101,8 +110,9 @@ impl SidReport {
 
 impl EventPayload for SidReport {
     fn present(&self, _kind: &EventKind) -> Presentation {
-        let mut shown: Vec<Field> = self.stations.iter().filter_map(station_field).collect();
+        let mut shown: Vec<Field> = self.stations.iter().flat_map(station_fields).collect();
         shown.extend(fields(&[(
+            "floor",
             "Floor",
             text_of(format!("{:.0} dBFS/Hz", self.floor_dbfs_hz)),
         )]));
@@ -113,28 +123,59 @@ impl EventPayload for SidReport {
     }
 }
 
-fn station_field(station: &SidStationLevel) -> Option<Field> {
-    let mut parts = vec![
-        format!("{:.1} dBFS", station.level_dbfs),
-        format!("SNR {:.0} dB", station.snr_db.round() + 0.0),
-    ];
-    parts.extend(
-        station
-            .deviation_db()
-            .map(|deviation| format!("{deviation:+.1} dB")),
-    );
-    if station.disturbed {
-        parts.push("SID".to_owned());
-    }
-    text_of(parts.join(" · ")).map(|value| Field {
-        label: format!("{} {}", station.call, hertz(station.frequency_hz)),
-        value,
-    })
+/// A station's key prefix: its call and frequency in whole hertz, as one call can send on
+/// two frequencies. It stays fixed however frequencies are written.
+fn station_key(call: &str, frequency_hz: f64) -> String {
+    format!("{}_{frequency_hz:.0}", key_of(call))
+}
+
+fn station_fields(station: &SidStationLevel) -> Vec<Field> {
+    let key = station_key(&station.call, station.frequency_hz);
+    let name = format!("{} {}", station.call, hertz(station.frequency_hz));
+    fields(&[
+        (
+            &format!("{key}_level"),
+            &name,
+            number(Some(station.level_dbfs), Unit::Dbfs, 1),
+        ),
+        (
+            &format!("{key}_snr"),
+            &format!("{name} SNR"),
+            number(Some(station.snr_db.round() + 0.0), Unit::Db, 0),
+        ),
+        (
+            &format!("{key}_deviation"),
+            &format!("{name} Δ"),
+            number(station.deviation_db(), Unit::Db, 1),
+        ),
+        (
+            &format!("{key}_sid"),
+            &format!("{name} SID"),
+            only_if(station.disturbed),
+        ),
+    ])
+}
+
+/// `measure` of every station the decoder knows, plotted over time.
+fn station_trend(measure: &str) -> KindView {
+    let keys: Vec<String> = STATIONS
+        .iter()
+        .map(|station| {
+            format!(
+                "{}_{measure}",
+                station_key(station.call, station.frequency_hz)
+            )
+        })
+        .collect();
+    let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+    KindView::trend(&keys, SID_TREND_S)
 }
 
 pub(crate) fn sid_kind() -> KindSpec {
     KindSpec::of::<SidReport>("SID", "SID", Hue::Muted)
         .caps(&[Capability::Log])
+        .view(station_trend("level"))
+        .view(station_trend("deviation"))
         .build()
 }
 
@@ -220,10 +261,66 @@ mod model_tests {
             }],
         }
         .present(&EventKind::named("sid"));
-        assert_eq!(view.labels(), ["DHO38 23.4 kHz", "Floor"]);
         assert_eq!(
-            view.field("DHO38 23.4 kHz"),
-            text_of("-40.0 dBFS · SNR 30 dB · +6.0 dB · SID").as_ref()
+            view.labels(),
+            [
+                "DHO38 23.4 kHz",
+                "DHO38 23.4 kHz SNR",
+                "DHO38 23.4 kHz Δ",
+                "DHO38 23.4 kHz SID",
+                "Floor"
+            ]
         );
+        assert_eq!(
+            view.keys(),
+            [
+                "dho38_23400_level",
+                "dho38_23400_snr",
+                "dho38_23400_deviation",
+                "dho38_23400_sid",
+                "floor"
+            ]
+        );
+        assert_eq!(
+            view.field("dho38_23400_level"),
+            number(Some(-40.0_f32), Unit::Dbfs, 1).as_ref()
+        );
+        assert_eq!(
+            view.field("dho38_23400_deviation"),
+            number(Some(6.0_f32), Unit::Db, 1).as_ref()
+        );
+    }
+
+    #[test]
+    fn the_trends_name_a_level_and_deviation_for_every_station() {
+        let stations = STATIONS
+            .iter()
+            .map(|station| SidStationLevel {
+                call: station.call.to_owned(),
+                frequency_hz: station.frequency_hz,
+                level_dbfs: -50.0,
+                snr_db: 20.0,
+                baseline_dbfs: Some(-52.0),
+                disturbed: false,
+            })
+            .collect();
+        let report = SidReport {
+            window_ms: 5_000,
+            floor_dbfs_hz: -120.0,
+            stations,
+        };
+        crate::testutil::assert_views_hold(&sid_kind(), &[sdrmm_wire::DecoderEvent::of(&report)]);
+    }
+
+    #[test]
+    fn a_call_on_two_frequencies_keeps_two_keys() {
+        let keys: Vec<String> = STATIONS
+            .iter()
+            .map(|station| station_key(station.call, station.frequency_hz))
+            .collect();
+        assert!(keys.contains(&"hwu_18300".to_owned()), "{keys:?}");
+        assert!(keys.contains(&"hwu_21750".to_owned()), "{keys:?}");
+        let unique: std::collections::BTreeSet<_> = keys.iter().collect();
+        assert_eq!(unique.len(), keys.len());
     }
 }

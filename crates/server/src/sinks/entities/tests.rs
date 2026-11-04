@@ -5,6 +5,7 @@ use sdrmm_wire::{DecoderEvent, EventKind, EventOrigin};
 use super::*;
 
 fn from(source: &str, event: DecoderEvent) -> DecodedRecord {
+    sdrmm_channels::registry::init();
     DecodedRecord {
         origin: Some(EventOrigin {
             node: source.to_owned(),

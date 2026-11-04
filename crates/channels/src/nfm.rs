@@ -13,11 +13,14 @@ use sdrmm_dsp::{
     Biquad, Compander, Decimator, Deemphasis, RealDecimator, design_lowpass, one_pole_coeff,
 };
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
-use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
+use sdrmm_wire::{
+    CallGate, ChannelDescriptor, ChannelHealth, ChannelSettings, ChannelStatus, DecoderEvent,
+    DecoderFamily,
+};
 
 use crate::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx,
-    NativeChannel, TxPayload, check_input_rate, clamp_full_scale,
+    NativeChannel, NativeTx, TxPayload, check_input_rate, clamp_full_scale,
     tone_squelch::{AUDIO_CORNER_HZ, ToneSquelch, is_standard_ctcss, is_standard_dcs},
     tx::{Burst, TxQueue},
     voice_inversion::{
@@ -40,7 +43,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "nfm".to_owned(),
     name: "NFM".to_owned(),
     summary: "Narrowband FM voice with CTCSS and DCS".to_owned(),
-    family: DecoderFamily::AnalogVoice,
+    family: DecoderFamily::ANALOG_VOICE,
     bandwidth_hz: 12_500.0,
     input_rate_hz: 48_000.0,
     has_audio: true,
@@ -57,6 +60,8 @@ pub struct NfmChannel {
     audio_lp: RealDecimator,
     demod_buf: Vec<f32>,
     tone: Option<Tone>,
+    /// The tone was switched off and its footer still shows its last lock.
+    tone_dropped: bool,
     scrambler: Option<Scrambler>,
     expander: Option<Compander>,
 }
@@ -234,6 +239,8 @@ struct Tone {
     dcs_code: Option<u16>,
     detector: ToneSquelch,
     reported: ToneSquelchStatus,
+    /// The footer has not shown this mode's lock yet.
+    announce: bool,
 }
 
 impl Tone {
@@ -248,6 +255,7 @@ impl Tone {
                 dcs_code: None,
                 open: p.tone_mode == NfmToneMode::Detect,
             },
+            announce: true,
         }
     }
 
@@ -255,6 +263,17 @@ impl Tone {
         self.mode = p.tone_mode;
         self.ctcss_hz = p.ctcss_hz;
         self.dcs_code = p.dcs_code;
+        self.announce = true;
+    }
+
+    /// Locked while the tone set is heard, or with none set, while any tone is.
+    fn health(&self) -> ChannelHealth {
+        let heard = self.reported.ctcss_hz.is_some() || self.reported.dcs_code.is_some();
+        let locked = match self.mode {
+            NfmToneMode::Ctcss | NfmToneMode::Dcs => self.reported.open,
+            NfmToneMode::Off | NfmToneMode::Detect => heard,
+        };
+        ChannelHealth::default().lock(locked)
     }
 
     fn reset(&mut self) {
@@ -276,9 +295,16 @@ impl Tone {
             dcs_code: heard.dcs_code,
             open,
         };
-        if status != self.reported {
+        let changed = status != self.reported;
+        if changed {
             out.events.push(DecoderEvent::of(&status));
             self.reported = status;
+        }
+        if changed || std::mem::take(&mut self.announce) {
+            out.status = Some(ChannelStatus {
+                health: self.health(),
+                ..ChannelStatus::default()
+            });
         }
         open
     }
@@ -388,6 +414,7 @@ impl NativeChannel for NfmChannel {
             audio_lp: audio_lowpass(),
             demod_buf: Vec::new(),
             tone: (p.tone_mode != NfmToneMode::Off).then(|| Tone::new(p)),
+            tone_dropped: false,
             scrambler: (p.scrambler_mode != NfmScramblerMode::Off).then(|| Scrambler::new(p)),
             expander: p.compander.then(expander),
         })
@@ -400,7 +427,7 @@ impl ChannelRx for NfmChannel {
         check_params(p)?;
         self.demod = discriminator(DESCRIPTOR.input_rate_hz, p);
         match (&mut self.tone, p.tone_mode) {
-            (_, NfmToneMode::Off) => self.tone = None,
+            (_, NfmToneMode::Off) => self.tone_dropped |= self.tone.take().is_some(),
             (Some(tone), _) => tone.configure(p),
             (none, _) => *none = Some(Tone::new(p)),
         }
@@ -440,6 +467,9 @@ impl ChannelRx for NfmChannel {
         let mut open = true;
         if let Some(tone) = &mut self.tone {
             open = tone.step(&self.demod_buf, out);
+        }
+        if std::mem::take(&mut self.tone_dropped) {
+            out.status = Some(ChannelStatus::default());
         }
         self.subaudible_cut.process(&mut self.demod_buf);
         self.deemphasis.process(&mut self.demod_buf);
@@ -494,7 +524,7 @@ fn tx_inverter(p: &NfmParams, rate: f64) -> Option<VoiceInverter> {
     }
 }
 
-impl ChannelTx for NfmTx {
+impl NativeTx for NfmTx {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
@@ -517,7 +547,9 @@ impl ChannelTx for NfmTx {
             phase: 0.0,
         })
     }
+}
 
+impl ChannelTx for NfmTx {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = &params(&settings)?;
         check_bandwidth(p)?;
@@ -971,6 +1003,38 @@ mod tests {
                 Some(23),
                 "{offset_hz} Hz offset"
             );
+        }
+    }
+
+    fn last_status(chan: &mut NfmChannel, iq: &[Complex<f32>]) -> Option<ChannelStatus> {
+        let mut out = ChannelOutputs::default();
+        let mut last = None;
+        for block in iq.chunks(4_096) {
+            out.reset();
+            chan.process(block, &mut out);
+            last = out.status.take().or(last);
+        }
+        last
+    }
+
+    #[test]
+    fn the_footer_locks_while_the_wanted_tone_is_heard() {
+        let iq = signalling_iq(&ctcss_audio(88.5, SUBAUDIBLE, RATE, TONE_LEN));
+        for (want, locked) in [(88.5, true), (91.5, false)] {
+            let mut chan = tone_channel(tone_params(NfmToneMode::Ctcss, Some(want), None));
+            let health = last_status(&mut chan, &iq).map(|status| status.health);
+            assert_eq!(
+                health.and_then(|health| health.lock),
+                Some(locked),
+                "{want}"
+            );
+
+            chan.apply(settings(
+                ChannelParams::of(&tone_params(NfmToneMode::Off, None, None)).expect("nfm"),
+            ))
+            .expect("tone off");
+            let cleared = last_status(&mut chan, &iq[..4_096]).expect("a cleared footer");
+            assert!(cleared.health.is_empty(), "{want}: {cleared:?}");
         }
     }
 

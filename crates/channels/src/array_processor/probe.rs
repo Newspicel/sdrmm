@@ -30,6 +30,7 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_ports: PROBE_PORTS,
     steer_port: None,
     surface: None,
+    settings: Vec::new,
     needs,
     band: |_| None,
     tuning,

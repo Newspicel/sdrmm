@@ -32,7 +32,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "freedv".to_owned(),
     name: "FreeDV 1600".to_owned(),
     summary: "FreeDV HF digital voice".to_owned(),
-    family: DecoderFamily::DigitalVoice,
+    family: DecoderFamily::DIGITAL_VOICE,
     bandwidth_hz: HIGH_EDGE_HZ - LOW_EDGE_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,

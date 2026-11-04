@@ -105,7 +105,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "acars".to_owned(),
     name: "ACARS".to_owned(),
     summary: "Aircraft text messages on VHF".to_owned(),
-    family: DecoderFamily::Aviation,
+    family: DecoderFamily::AVIATION,
     bandwidth_hz: 12_500.0,
     input_rate_hz: 24_000.0,
     has_audio: false,

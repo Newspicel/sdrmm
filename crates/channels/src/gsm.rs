@@ -35,7 +35,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "gsm".to_owned(),
     name: "GSM".to_owned(),
     summary: "GSM cell broadcast, paging and signalling".to_owned(),
-    family: DecoderFamily::Utility,
+    family: DecoderFamily::UTILITY,
     bandwidth_hz: GSM_CHANNEL_SPACING_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

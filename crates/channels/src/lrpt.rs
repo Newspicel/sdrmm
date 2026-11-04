@@ -57,7 +57,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "lrpt".to_owned(),
     name: "Meteor LRPT".to_owned(),
     summary: "Meteor-M weather satellite pictures".to_owned(),
-    family: DecoderFamily::Weather,
+    family: DecoderFamily::WEATHER,
     bandwidth_hz: 140_000.0,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

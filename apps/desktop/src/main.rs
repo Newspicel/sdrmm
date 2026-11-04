@@ -32,12 +32,6 @@ fn main() -> anyhow::Result<()> {
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
-            match sdrmm_plugins::PluginWatcher::start(data_dir.join("plugins")) {
-                Ok(watcher) => {
-                    app.manage(std::sync::Mutex::new(watcher));
-                }
-                Err(error) => tracing::error!(%error, "plugins are off"),
-            }
             let db = data_dir.join("sdrmm.db");
             if let Err(error @ sdrmm_server::StoreError::NewerSchema { .. }) =
                 sdrmm_server::Store::open(Some(&db))
@@ -47,6 +41,17 @@ fn main() -> anyhow::Result<()> {
             }
             let engine = Engine::new(Some(data_dir.join("recordings")));
             app.manage(engine.clone());
+            let reopen = Arc::downgrade(&engine);
+            match sdrmm_plugins::PluginWatcher::start(data_dir.join("plugins"), move |replaced| {
+                if let Some(engine) = reopen.upgrade() {
+                    engine.plugins_reloaded(replaced);
+                }
+            }) {
+                Ok(watcher) => {
+                    app.manage(std::sync::Mutex::new(watcher));
+                }
+                Err(error) => tracing::error!(%error, "plugins are off"),
+            }
             let config = sdrmm_server::Config {
                 bind: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
                 db_path: Some(db),

@@ -37,7 +37,7 @@ import type {
   DeviceInfo,
   DeviceSettings,
   DevicesResponse,
-  DfFusionState,
+  DfFusionView,
   DiagnosticsReport,
   DoctorReport,
   ErrorCode,
@@ -648,7 +648,7 @@ export function toolRunQuery(request: ToolRequest | null) {
 export function fusionQuery(node: string) {
   return queryOptions({
     queryKey: [...FUSION_KEY, node] as const,
-    queryFn: async (): Promise<DfFusionState> =>
+    queryFn: async (): Promise<DfFusionView> =>
       unwrap(await client.GET("/api/fusion/{node}", { params: { path: { node } } })),
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,

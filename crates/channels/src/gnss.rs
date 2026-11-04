@@ -29,7 +29,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     type_id: "gnss".to_owned(),
     name: "GNSS lab (GPS L1 C/A)".to_owned(),
     summary: "GPS satellite acquisition and tracking".to_owned(),
-    family: DecoderFamily::Utility,
+    family: DecoderFamily::UTILITY,
     bandwidth_hz: 2_046_000.0,
     input_rate_hz: RATE,
     has_audio: false,

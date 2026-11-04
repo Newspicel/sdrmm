@@ -202,25 +202,27 @@ impl EventPayload for IsmMessage {
 
 fn ism_fields(m: &IsmMessage) -> Vec<Field> {
     let mut shown = fields(&[
-        ("Model", text(Some(&m.model))),
-        ("ID", text(Some(&m.id))),
-        ("Channel", text(m.channel.as_deref())),
+        ("model", "Model", text(Some(&m.model))),
+        ("id", "ID", text(Some(&m.id))),
+        ("channel", "Channel", text(m.channel.as_deref())),
     ]);
     shown.extend(reading_fields(m));
     shown.extend(fields(&[
         (
+            "signal",
             "Signal",
             text_of(format!("{} {}", m.modulation.label(), m.coding.label())),
         ),
         (
+            "timing",
             "Timing",
             m.short_us
                 .and_then(|short| text_of(format!("{short}/{} µs", m.long_us.unwrap_or(short)))),
         ),
-        ("Check", text_of(m.integrity.label())),
-        ("SNR", number(Some(m.snr_db), Unit::Db, 1)),
-        ("Bits", count(Some(m.bits))),
-        ("Raw", text(Some(&m.raw))),
+        ("check", "Check", text_of(m.integrity.label())),
+        ("snr", "SNR", number(Some(m.snr_db), Unit::Db, 1)),
+        ("bits", "Bits", count(Some(m.bits))),
+        ("raw", "Raw", text(Some(&m.raw))),
     ]));
     shown
 }
@@ -231,25 +233,50 @@ fn reading_fields(m: &IsmMessage) -> Vec<Field> {
         .map(|open| if open { "open" } else { "closed" });
     let battery = m.battery_ok.map(|ok| if ok { "ok" } else { "low" });
     fields(&[
-        ("Temperature", number(m.temperature_c, Unit::Celsius, 1)),
-        ("Temperature 2", number(m.temperature_2_c, Unit::Celsius, 1)),
-        ("Humidity", number(m.humidity_pct, Unit::Percent, 0)),
         (
+            "temperature",
+            "Temperature",
+            number(m.temperature_c, Unit::Celsius, 1),
+        ),
+        (
+            "temperature_2",
+            "Temperature 2",
+            number(m.temperature_2_c, Unit::Celsius, 1),
+        ),
+        (
+            "humidity",
+            "Humidity",
+            number(m.humidity_pct, Unit::Percent, 0),
+        ),
+        (
+            "pressure",
             "Pressure",
             number(m.pressure_kpa.map(|kpa| kpa * 10.0), Unit::Hectopascal, 0),
         ),
-        ("Wind", number(m.wind_avg_m_s, Unit::MetresPerSecond, 1)),
-        ("Gust", number(m.wind_max_m_s, Unit::MetresPerSecond, 1)),
-        ("Wind from", number(m.wind_dir_deg, Unit::Degrees, 0)),
-        ("Rain", number(m.rain_mm, Unit::Millimetres, 1)),
-        ("UV", number(m.uv_index, Unit::None, 1)),
-        ("Light", number(m.light_lux, Unit::Lux, 0)),
-        ("Contact", contact.and_then(text_of)),
-        ("Tamper", flag(m.tamper)),
-        ("Alarm", flag(m.alarm)),
-        ("Command", count(m.command)),
-        ("Tristate", text(m.tristate.as_deref())),
-        ("Battery", battery.and_then(text_of)),
+        (
+            "wind",
+            "Wind",
+            number(m.wind_avg_m_s, Unit::MetresPerSecond, 1),
+        ),
+        (
+            "gust",
+            "Gust",
+            number(m.wind_max_m_s, Unit::MetresPerSecond, 1),
+        ),
+        (
+            "wind_from",
+            "Wind from",
+            number(m.wind_dir_deg, Unit::Degrees, 0),
+        ),
+        ("rain", "Rain", number(m.rain_mm, Unit::Millimetres, 1)),
+        ("uv", "UV", number(m.uv_index, Unit::None, 1)),
+        ("light", "Light", number(m.light_lux, Unit::Lux, 0)),
+        ("contact", "Contact", contact.and_then(text_of)),
+        ("tamper", "Tamper", flag(m.tamper)),
+        ("alarm", "Alarm", flag(m.alarm)),
+        ("command", "Command", count(m.command)),
+        ("tristate", "Tristate", text(m.tristate.as_deref())),
+        ("battery", "Battery", battery.and_then(text_of)),
     ])
 }
 
