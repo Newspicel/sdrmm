@@ -176,6 +176,11 @@ fn the_radar_transmitter_reads_the_fix_of_its_wired_position() {
 fn a_position_problem_leaves_with_its_wire() {
     let (engine, mut graph, _, _) = bench();
     graph.edges.retain(|edge| edge.to.node != "planes");
+    for node in &mut graph.nodes {
+        if let NodeBody::Gps(gps) = &mut node.body {
+            gps.source = None;
+        }
+    }
     let mut snapshot = WorkspaceSnapshot::empty();
     snapshot.graph = graph;
     let store = crate::Store::open(None).expect("store");
