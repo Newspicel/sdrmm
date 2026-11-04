@@ -1,3 +1,7 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+mod model;
+pub use model::*;
 pub(crate) mod burst;
 pub(crate) mod coding;
 mod dedicated;
@@ -17,12 +21,12 @@ use monitor::Monitor;
 use num_complex::Complex;
 use receiver::Receiver;
 use sdrmm_dsp::{Decimator, design_lowpass};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    GSM_CHANNEL_SPACING_HZ, GsmParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const FILTER_TAPS: usize = 47;
 const FILTER_CUTOFF_HZ: f64 = 120_000.0;
@@ -35,7 +39,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: GSM_CHANNEL_SPACING_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    emits: vec![EventKind::Gsm],
+    emits: vec![EventKind::named("gsm")],
     ..ChannelDescriptor::default()
 });
 
@@ -51,13 +55,10 @@ pub(crate) fn channel_filter() -> ChannelFilter {
 }
 
 fn params(settings: &ChannelSettings) -> Result<GsmParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Gsm(p) => Ok(*p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "gsm channel got {} params",
-            other.type_id()
-        ))),
-    }
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub struct GsmChannel {
@@ -66,11 +67,10 @@ pub struct GsmChannel {
     frequency_hz: f64,
 }
 
-impl ChannelRx for GsmChannel {
+impl NativeChannel for GsmChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         Ok(Self {
@@ -79,7 +79,9 @@ impl ChannelRx for GsmChannel {
             frequency_hz: settings.frequency_hz,
         })
     }
+}
 
+impl ChannelRx for GsmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.monitor.set_params(params(&settings)?);
         if settings.frequency_hz != self.frequency_hz {
@@ -97,12 +99,31 @@ impl ChannelRx for GsmChannel {
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.receiver.process(iq, &mut self.monitor);
         out.events
-            .extend(self.monitor.drain().map(DecoderEvent::Gsm));
+            .extend(self.monitor.drain().map(|frame| DecoderEvent::of(&frame)));
     }
 
     fn rejected(&self) -> u32 {
         self.monitor.rejected()
     }
+}
+
+pub(crate) fn gsm_decoder() -> Native<GsmParams> {
+    Native::new::<GsmChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .form(gsm_form)
+        .kinds(gsm_kinds)
+}
+
+pub(crate) fn gsm_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("paging", "Paging", Control::Toggle).title("Show paging and assignments"),
+        SettingField::new("follow", "Follow", Control::Toggle)
+            .title("Follow assigned SDCCH on this carrier"),
+    ]
+}
+
+fn gsm_kinds() -> Vec<KindSpec> {
+    vec![crate::gsm::gsm_kind()]
 }
 
 #[cfg(test)]

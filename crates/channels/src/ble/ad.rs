@@ -1,4 +1,7 @@
-use sdrmm_wire::{BleBeacon, BleFlags, BleManufacturer, BleService};
+use crate::ble::BleBeacon;
+use crate::ble::BleFlags;
+use crate::ble::BleManufacturer;
+use crate::ble::BleService;
 
 use super::{beacon, names};
 

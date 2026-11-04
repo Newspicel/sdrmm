@@ -1,5 +1,7 @@
+use crate::ism::IsmCoding;
+use crate::ism::IsmIntegrity;
+use crate::ism::IsmMessage;
 use sdrmm_dsp::crc8_msb;
-use sdrmm_wire::{IsmCoding, IsmIntegrity, IsmMessage};
 
 use crate::ism::{
     bits::{Bits, add_bytes},

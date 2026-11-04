@@ -6,12 +6,13 @@ use std::sync::{Arc, OnceLock};
 use num_complex::Complex;
 use sdrmm_dsp::manifold::{Direction, Geometry, Vec3};
 use sdrmm_dsp::scene::{ArrayScene, SceneEcho, SceneSignal, SceneSource};
-use sdrmm_wire::frame::{SurfaceFrame, VisibilityOwned};
-use sdrmm_wire::radar::{
-    AoaState, CfarParams, ClutterMethod, ClutterParams, Illuminator, LIGHT_SPEED_M_S,
-    MAX_ECA_ORDER, PassiveRadarParams, RadarUpdate, ReferenceCleaning, TrackChange,
-};
 use sdrmm_wire::{ArrayGeometry, ArrayTuningMode, Coherence, DfParams, ProcessorParams, Winding};
+use sdrmm_wire::{frame::SurfaceFrame, frame::VisibilityOwned};
+use sdrmm_wire::{
+    radar::AoaState, radar::CfarParams, radar::ClutterMethod, radar::ClutterParams,
+    radar::Illuminator, radar::LIGHT_SPEED_M_S, radar::MAX_ECA_ORDER, radar::PassiveRadarParams,
+    radar::RadarUpdate, radar::ReferenceCleaning, radar::TrackChange,
+};
 
 use super::*;
 use crate::ChannelError;

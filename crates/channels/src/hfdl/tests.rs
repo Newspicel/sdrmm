@@ -3,6 +3,7 @@ use crate::testutil::{run_events, settings};
 use fec::SETTINGS;
 use modulate::{burst_symbols, modulate};
 use pdu::build::{acars_mpdu, spdu};
+use sdrmm_wire::ChannelParams;
 
 struct Noise(u64);
 
@@ -36,13 +37,16 @@ pub(crate) fn fixture() -> crate::fixtures::Fixture {
     let mut iq = gap();
     iq.extend(burst_iq(&spdu(7, 1_234, 52), 0, 0.0));
     iq.extend(gap());
-    crate::fixtures::Fixture::new(ChannelParams::Hfdl(HfdlParams::default()), iq)
+    crate::fixtures::Fixture::new(
+        ChannelParams::new("hfdl", &HfdlParams::default()).expect("hfdl settings"),
+        iq,
+    )
 }
 
 fn channel() -> HfdlChannel {
     HfdlChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Hfdl(HfdlParams::default())),
+        settings(ChannelParams::new("hfdl", &HfdlParams::default()).expect("hfdl settings")),
     )
     .expect("channel")
 }
@@ -76,7 +80,8 @@ fn decodes_a_ground_station_squitter() {
     assert!(
         events
             .iter()
-            .any(|event| matches!(event, DecoderEvent::Hfdl(message) if message.crc_ok && message.message_type == "squitter"))
+            .filter_map(|event| crate::datalink::read(event, "hfdl"))
+            .any(|message| message.crc_ok && message.message_type == "squitter")
     );
 }
 
@@ -115,7 +120,10 @@ fn acars_message_carries_quality() {
     iq.extend(burst_iq(&acars_mpdu(), 1, -35.0));
     iq.extend(gap());
     let events = run_events(&mut channel(), &with_noise(iq, 0.01, 7));
-    let Some(DecoderEvent::Hfdl(message)) = events.first() else {
+    let Some(message) = events
+        .first()
+        .and_then(|event| crate::datalink::read(event, "hfdl"))
+    else {
         panic!("no HFDL event");
     };
     assert_eq!(message.message_type, "acars");

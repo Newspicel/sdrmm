@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 
+use crate::apt::AvhrrChannel;
 use num_complex::Complex;
-use sdrmm_wire::AvhrrChannel;
 
 use crate::apt::geometry::{
     CHANNEL_WEDGE, DEVIATION_HZ, FRAME_LINES, IMAGE_START, LINE_WORDS, MARKER_LINES, MINUTE_LINES,

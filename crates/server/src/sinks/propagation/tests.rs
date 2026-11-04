@@ -1,4 +1,5 @@
-use sdrmm_wire::{DecoderEvent, EventOrigin, WsjtMessage};
+use sdrmm_channels::WsjtMessage;
+use sdrmm_wire::{DecoderEvent, EventOrigin};
 
 use super::*;
 
@@ -46,13 +47,16 @@ fn ft8(text: &str) -> DecodedRecord {
         channel: 0,
         at: "2026-08-16T12:00:00Z".to_owned(),
         freq_hz: 14_074_000.0,
-        event: DecoderEvent::Ft8(WsjtMessage {
-            text: text.to_owned(),
-            snr_db: -12.0,
-            audio_hz: 1_500.0,
-            time_offset_s: 0.0,
-            hard_errors: 0,
-        }),
+        event: DecoderEvent::tagged(
+            sdrmm_wire::EventKind::named("ft8"),
+            &WsjtMessage {
+                text: text.to_owned(),
+                snr_db: -12.0,
+                audio_hz: 1_500.0,
+                time_offset_s: 0.0,
+                hard_errors: 0,
+            },
+        ),
         sinks: Vec::new(),
         view: None,
         callsign: None,

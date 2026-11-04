@@ -1,5 +1,9 @@
+use crate::lrpt::LrptImage;
+use crate::lrpt::LrptMode;
+use crate::lrpt::LrptParams;
+use crate::nfm::NfmParams;
 use num_complex::Complex;
-use sdrmm_wire::{ChannelParams, LrptImage, LrptMode, LrptParams, NfmParams};
+use sdrmm_wire::ChannelParams;
 
 use super::{
     frame::Deframer,
@@ -24,7 +28,7 @@ const ROWS: u16 = 3;
 fn channel(mode: LrptMode) -> LrptChannel {
     LrptChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Lrpt(LrptParams { mode })),
+        settings(ChannelParams::new("lrpt", &LrptParams { mode }).expect("lrpt settings")),
     )
     .expect("builds")
 }
@@ -49,10 +53,11 @@ fn run(chan: &mut LrptChannel, iq: &[Complex<f32>], lens: &[usize], received: &m
         received.progress += out.video.len();
         received.images.append(&mut out.images);
         for event in out.events.drain(..) {
-            match event {
-                DecoderEvent::Lrpt(image) => received.events.push(image),
-                other => panic!("unexpected event {other:?}"),
-            }
+            received.events.push(
+                event
+                    .read::<LrptImage>()
+                    .unwrap_or_else(|| panic!("unexpected event {event:?}")),
+            )
         }
         at = end;
     }
@@ -213,7 +218,7 @@ fn wrong_params_and_rates_are_rejected() {
     assert!(
         LrptChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Nfm(NfmParams::default())),
+            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
         )
         .is_err()
     );
@@ -222,14 +227,16 @@ fn wrong_params_and_rates_are_rejected() {
             ChannelCtx {
                 input_rate: 48_000.0
             },
-            settings(ChannelParams::Lrpt(LrptParams::default())),
+            settings(ChannelParams::new("lrpt", &LrptParams::default()).expect("lrpt settings")),
         )
         .is_err()
     );
     let mut chan = channel(LrptMode::Qpsk72);
     assert!(
-        chan.apply(settings(ChannelParams::Nfm(NfmParams::default())))
-            .is_err()
+        chan.apply(settings(
+            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")
+        ))
+        .is_err()
     );
 }
 

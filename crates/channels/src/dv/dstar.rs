@@ -1,5 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{KindSpec, SettingField};
 use std::sync::LazyLock;
 
+use crate::dv::DstarParams;
 use num_complex::Complex;
 use sdrmm_dsp::{crc16_x25, hamming_distance};
 use sdrmm_modem::{
@@ -7,12 +10,15 @@ use sdrmm_modem::{
     pulse::{self, Norm},
 };
 use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
-    DstarParams, DvFrame, DvFrameKind, DvMode, EventKind,
+    CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, DecoderEvent, DecoderFamily,
+    DvFrame, DvFrameKind, EventKind,
 };
 
 use super::{INPUT_RATE_HZ, tap_symbols, vocoder::DstarVocoder};
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 pub(crate) const BAUD: f64 = 4_800.0;
 pub(crate) const DEVIATION_HZ: f64 = 1_200.0;
@@ -57,8 +63,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    emits: vec![EventKind::Dv],
+    emits: vec![EventKind::DV],
     calls: Some(CallGate::Frames),
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
@@ -91,14 +98,15 @@ pub(crate) fn cpm_params(sps: f64) -> CpmParams {
     )
 }
 
-fn params(settings: &ChannelSettings) -> Result<&DstarParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Dstar(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "dstar channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn dv_frame(kind: DvFrameKind) -> DvFrame {
+    DvFrame::new("D-STAR", kind)
+}
+
+fn params(settings: &ChannelSettings) -> Result<DstarParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -109,11 +117,10 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     super::channel_filter(BANDWIDTH_HZ)
 }
 
-impl ChannelRx for DstarChannel {
+impl NativeChannel for DstarChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         params(&settings)?;
@@ -138,7 +145,9 @@ impl ChannelRx for DstarChannel {
             shadow: ChannelOutputs::default(),
         })
     }
+}
 
+impl ChannelRx for DstarChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings)?;
         Ok(())
@@ -372,7 +381,7 @@ impl Decoder {
                 if self.header.len() == HEADER_BYTES
                     && let Some(frame) = self.header_frame()
                 {
-                    out.events.push(DecoderEvent::Dv(frame));
+                    out.events.push(DecoderEvent::of(&frame));
                 }
             }
             TYPE_TEXT => {
@@ -381,7 +390,7 @@ impl Decoder {
                 self.text[slot..slot + SEGMENT_BYTES].copy_from_slice(&packet[1..PACKET_BYTES]);
                 self.blocks |= 1 << block;
                 if let Some(frame) = self.message_frame() {
-                    out.events.push(DecoderEvent::Dv(frame));
+                    out.events.push(DecoderEvent::of(&frame));
                 }
             }
             _ => {}
@@ -395,7 +404,7 @@ impl Decoder {
     }
 
     fn call_frame(&self, kind: DvFrameKind) -> DvFrame {
-        let mut frame = DvFrame::new(DvMode::Dstar, kind);
+        let mut frame = dv_frame(kind);
         frame.destination_call = self.call(19, CALLSIGN_LEN);
         frame.source_call = self.call(27, CALLSIGN_LEN);
         frame.via = self.call(3, CALLSIGN_LEN);
@@ -434,6 +443,26 @@ impl Decoder {
     }
 }
 
+fn dstar_signatures() -> Vec<sdrmm_wire::SignalSignature> {
+    super::mode_signatures("dstar", super::AMATEUR_VU)
+}
+
+pub(crate) fn dstar_decoder() -> Native<DstarParams> {
+    Native::new::<DstarChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .signatures(dstar_signatures)
+        .form(dstar_form)
+        .kinds(dstar_kinds)
+}
+
+pub(crate) fn dstar_form() -> Vec<SettingField> {
+    Vec::new()
+}
+
+fn dstar_kinds() -> Vec<KindSpec> {
+    vec![]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -442,13 +471,14 @@ mod tests {
         synth::dv::dstar as tx,
         testutil::settings,
     };
+    use sdrmm_wire::ChannelParams;
 
     fn channel() -> DstarChannel {
         DstarChannel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Dstar(DstarParams::default())),
+            settings(ChannelParams::new("dstar", &DstarParams::default()).expect("dstar settings")),
         )
         .expect("dstar channel")
     }
@@ -460,7 +490,7 @@ mod tests {
         let frames = decode(&mut channel(), &iq);
 
         let header = frames.first().expect("a decoded frame");
-        assert_eq!(header.mode, DvMode::Dstar);
+        assert_eq!(header.mode, "D-STAR");
         assert_eq!(header.kind, DvFrameKind::Header);
         assert_eq!(header.source_call.as_deref(), Some(call.mycall.as_str()));
         assert_eq!(
@@ -575,13 +605,10 @@ mod tests {
             decoder.packet_complete(&packet, &mut out);
         }
 
-        let frames: Vec<&DvFrame> = out
+        let frames: Vec<DvFrame> = out
             .events
             .iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Dv(frame) => Some(frame),
-                _ => None,
-            })
+            .filter_map(DecoderEvent::read::<DvFrame>)
             .collect();
         let header_frame = frames
             .iter()

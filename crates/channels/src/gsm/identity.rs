@@ -1,6 +1,8 @@
 use std::fmt::Write;
 
-use sdrmm_wire::{GsmIdentity, GsmIdentityKind};
+use crate::gsm::GsmIdentity;
+
+use crate::gsm::GsmIdentityKind;
 
 const FILLER: u8 = 0xF;
 

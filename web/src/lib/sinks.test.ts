@@ -12,19 +12,19 @@ import {
 } from "./sinks";
 import type { CapturedImage, ClientCommand, DecoderEvent } from "./types";
 
-const PLANE: DecoderEvent = { kind: "adsb", data: { icao: "3c6444", df: 17, raw: "8d" } };
-const RTTY: DecoderEvent = { kind: "rtty", data: { text: "CQ" } };
+const PLANE: DecoderEvent = { kind: "probe_station", data: {} };
+const TEXT: DecoderEvent = { kind: "probe_text", data: {} };
 
 function picture(id: number): CapturedImage {
   return {
     id,
-    node: "sstv",
+    node: "probe_picture",
     sinks: ["screen"],
     device_set: 1,
     channel: 2,
     at: "2026-08-16T10:00:00Z",
     freq_hz: 14_230_000,
-    source: "sstv",
+    source: "probe_picture",
     mode: "Martin M1",
     width: 320,
     height: 256,
@@ -34,7 +34,7 @@ function picture(id: number): CapturedImage {
 }
 
 function plane(source: string) {
-  return sinkEntity(source, "adsb", "3C6444", PLANE, { summary: "DLH123" });
+  return sinkEntity(source, "probe_station", "3C6444", PLANE, { summary: "DLH123" });
 }
 
 describe("sink feeds", () => {
@@ -44,8 +44,8 @@ describe("sink feeds", () => {
     const view = snapshotView({
       entities: [plane("north")],
       records: [
-        sinkRecord("rtty", RTTY, { summary: "1" }),
-        sinkRecord("rtty", RTTY, { summary: "2" }),
+        sinkRecord("probe_text", TEXT, { summary: "1" }),
+        sinkRecord("probe_text", TEXT, { summary: "2" }),
       ],
       tracks: [],
       surfaces: [],
@@ -56,7 +56,7 @@ describe("sink feeds", () => {
     const next = updatedView(view, {
       upserts: [plane("south")],
       removed: [plane("north").key],
-      records: [sinkRecord("rtty", RTTY, { summary: "3" })],
+      records: [sinkRecord("probe_text", TEXT, { summary: "3" })],
       lost: 2,
     });
 
@@ -81,7 +81,7 @@ describe("sink feeds", () => {
 
   it("caps its records", () => {
     const many = Array.from({ length: SINK_RECORDS + 5 }, (_, n) =>
-      sinkRecord("rtty", RTTY, { summary: String(n) }),
+      sinkRecord("probe_text", TEXT, { summary: String(n) }),
     );
     expect(updatedView(EMPTY_SINK, { records: many, lost: 0 }).records).toHaveLength(SINK_RECORDS);
   });
@@ -90,12 +90,12 @@ describe("sink feeds", () => {
     const groups = groupsOf({
       ...EMPTY_SINK,
       entities: [plane("north"), plane("south")],
-      records: [sinkRecord("rtty", RTTY, { summary: "CQ" })],
+      records: [sinkRecord("probe_text", TEXT, { summary: "CQ" })],
     });
     expect(groups.map((group) => `${group.source}/${group.kind}`)).toEqual([
-      "north/adsb",
-      "rtty/rtty",
-      "south/adsb",
+      "north/probe_station",
+      "probe_text/probe_text",
+      "south/probe_station",
     ]);
   });
 

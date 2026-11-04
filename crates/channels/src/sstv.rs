@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 mod carrier;
 pub(crate) mod modes;
 
@@ -9,14 +14,11 @@ use modes::{
 };
 use num_complex::Complex;
 use sdrmm_dsp::FmDemod;
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    SstvMode, SstvModulation, SstvParams, SstvPicture,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage, VideoPicture,
-    check_input_rate,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
+    NativeChannel, VideoPicture, check_input_rate,
 };
 
 pub(crate) const INPUT_RATE_HZ: f64 = 16_000.0;
@@ -55,7 +57,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
     has_video: true,
-    emits: vec![EventKind::Sstv],
+    emits: vec![EventKind::named("sstv")],
     ..ChannelDescriptor::default()
 });
 
@@ -72,14 +74,8 @@ pub(crate) fn channel_filter(p: &SstvParams) -> Result<ChannelFilter, ChannelErr
     )))
 }
 
-fn params(settings: &ChannelSettings) -> Result<&SstvParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Sstv(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "sstv channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<SstvParams, ChannelError> {
+    crate::settings_of::<SstvParams>(settings)
 }
 
 fn samples(ms: f64, rate: f64) -> f64 {
@@ -605,7 +601,7 @@ impl SstvChannel {
         let elapsed = self.track.head.saturating_sub(self.picture.started);
         let duration_ms = (elapsed as f64 * 1_000.0 / self.rate) as u32;
         let picture = self.picture.snapshot();
-        out.events.push(DecoderEvent::Sstv(SstvPicture {
+        out.events.push(DecoderEvent::of(&SstvPicture {
             seq: self.seq,
             mode: self.picture.timing.mode,
             width: self.picture.width,
@@ -625,11 +621,10 @@ impl SstvChannel {
     }
 }
 
-impl ChannelRx for SstvChannel {
+impl NativeChannel for SstvChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
@@ -650,7 +645,9 @@ impl ChannelRx for SstvChannel {
             seq: 0,
         })
     }
+}
 
+impl ChannelRx for SstvChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         if p.mode != self.forced {
@@ -690,10 +687,69 @@ impl ChannelRx for SstvChannel {
     }
 }
 
+const SSTV_SPOTS: &[HzRange] = &[
+    HzRange::spot_khz(3_730.0, 3.0),
+    HzRange::spot_khz(7_171.0, 3.0),
+    HzRange::spot_khz(14_230.0, 3.0),
+    HzRange::spot_khz(21_340.0, 3.0),
+    HzRange::spot_khz(28_680.0, 3.0),
+    HzRange::mhz(145.49, 145.51),
+];
+
+fn sstv_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "SSTV",
+            &[
+                Modulation::Fm,
+                Modulation::Ssb,
+                Modulation::Fsk2,
+                Modulation::Fsk4,
+                Modulation::Fsk8,
+                Modulation::Unknown,
+            ],
+            HzRange::new(800.0, 3_000.0),
+            "a 1200 to 2300 Hz video tone on a picture frequency",
+        )
+        .on(SSTV_SPOTS),
+    ]
+}
+
+pub(crate) fn sstv_decoder() -> Native<SstvParams> {
+    Native::new::<SstvChannel>(occupied_band)
+        .filter(channel_filter)
+        .signatures(sstv_signatures)
+        .form(sstv_form)
+        .kinds(sstv_kinds)
+}
+
+pub(crate) fn sstv_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("modulation", "Mod", Control::choice::<SstvModulation>())
+            .title("Modulation"),
+        SettingField::new(
+            "mode",
+            "Mode",
+            Control::optional_choice::<SstvMode>("Follow VIS"),
+        )
+        .title("Scanning mode")
+        .quiet(Option::<SstvMode>::None),
+        SettingField::new("slant_correction", "Slant", Control::Toggle)
+            .title("Straighten pictures from a sender whose clock runs off"),
+        SettingField::new("keep_partial", "Partial", Control::Toggle)
+            .title("Keep unfinished pictures"),
+    ]
+}
+
+fn sstv_kinds() -> Vec<KindSpec> {
+    vec![crate::sstv::sstv_kind()]
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::nfm::NfmParams;
     use num_complex::Complex;
-    use sdrmm_wire::{ChannelParams, NfmParams, SstvMode, SstvParams};
+    use sdrmm_wire::ChannelParams;
 
     use super::{
         modes::{BREAK_MS, LEADER_MS},
@@ -713,7 +769,7 @@ mod tests {
     fn channel(p: SstvParams) -> SstvChannel {
         SstvChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Sstv(p)),
+            settings(ChannelParams::of(&p).expect("settings")),
         )
         .expect("builds")
     }
@@ -742,10 +798,11 @@ mod tests {
             received.progress += out.video.len();
             received.images.append(&mut out.images);
             for event in &out.events {
-                match event {
-                    DecoderEvent::Sstv(picture) => received.events.push(*picture),
-                    other => panic!("unexpected event {other:?}"),
-                }
+                received.events.push(
+                    event
+                        .read::<SstvPicture>()
+                        .unwrap_or_else(|| panic!("unexpected event {event:?}")),
+                )
             }
             at = end;
         }
@@ -1155,11 +1212,13 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(SstvParams::default());
-        let err = chan.apply(settings(ChannelParams::Nfm(NfmParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = SstvChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Nfm(NfmParams::default())),
+            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -1170,7 +1229,7 @@ mod tests {
             ChannelCtx {
                 input_rate: 48_000.0,
             },
-            settings(ChannelParams::Sstv(SstvParams::default())),
+            settings(ChannelParams::new("sstv", &SstvParams::default()).expect("sstv settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -1183,10 +1242,16 @@ mod tests {
         let mut out = ChannelOutputs::default();
         chan.process(&iq[..iq.len() / 4], &mut out);
         assert!(chan.picture.active);
-        chan.apply(settings(ChannelParams::Sstv(SstvParams {
-            mode: Some(SstvMode::ScottieS1),
-            ..SstvParams::default()
-        })))
+        chan.apply(settings(
+            ChannelParams::new(
+                "sstv",
+                &SstvParams {
+                    mode: Some(SstvMode::ScottieS1),
+                    ..SstvParams::default()
+                },
+            )
+            .expect("sstv settings"),
+        ))
         .expect("applies");
         assert!(!chan.picture.active);
     }
@@ -1278,10 +1343,16 @@ mod tests {
         let mut out = ChannelOutputs::default();
         chan.process(&iq[..iq.len() / 4], &mut out);
         assert!(chan.picture.active);
-        chan.apply(settings(ChannelParams::Sstv(SstvParams {
-            modulation: SstvModulation::Fm,
-            ..SstvParams::default()
-        })))
+        chan.apply(settings(
+            ChannelParams::new(
+                "sstv",
+                &SstvParams {
+                    modulation: SstvModulation::Fm,
+                    ..SstvParams::default()
+                },
+            )
+            .expect("sstv settings"),
+        ))
         .expect("applies");
         assert!(!chan.picture.active);
     }

@@ -287,7 +287,7 @@ fn unix_time(seconds: i64) -> Option<FieldValue> {
 const SATELLITE_ENTITY: &str = "satellite";
 
 impl EventPayload for SatelliteFix {
-    fn present(&self, _kind: EventKind) -> Presentation {
+    fn present(&self, _kind: &EventKind) -> Presentation {
         let label = self.label();
         let Some(ground) = self.ground else {
             return Presentation {
@@ -388,7 +388,7 @@ mod fix_tests {
                 lon: 10.0,
             },
         ];
-        let view = fix(track.clone()).present(EventKind::Satellite);
+        let view = fix(track.clone()).present(&EventKind::SATELLITE);
 
         assert_eq!(view.entity.as_deref(), Some(SATELLITE_ENTITY));
         assert!(!view.gone);
@@ -414,14 +414,14 @@ mod fix_tests {
     #[test]
     fn a_satellite_without_a_track_draws_only_its_footprint() {
         assert_eq!(
-            fix(Vec::new()).present(EventKind::Satellite).shapes.len(),
+            fix(Vec::new()).present(&EventKind::SATELLITE).shapes.len(),
             1
         );
     }
 
     #[test]
     fn a_status_without_a_ground_point_says_the_satellite_is_gone() {
-        let view = SatelliteFix::of(&SatelliteStatus::default()).present(EventKind::Satellite);
+        let view = SatelliteFix::of(&SatelliteStatus::default()).present(&EventKind::SATELLITE);
         assert!(view.gone);
         assert_eq!(view.entity.as_deref(), Some(SATELLITE_ENTITY));
         assert_eq!(view.place, None);

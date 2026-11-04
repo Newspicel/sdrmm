@@ -1,9 +1,20 @@
 use std::f64::consts::PI;
 
-use sdrmm_wire::{
-    HeightReference, OperatorLocationType, RemoteIdLocation, RemoteIdMessage, RemoteIdSystem,
-    UaStatus, UaType, UasIdType,
-};
+use crate::remote_id::HeightReference;
+
+use crate::remote_id::OperatorLocationType;
+
+use crate::remote_id::RemoteIdLocation;
+
+use crate::remote_id::RemoteIdMessage;
+
+use crate::remote_id::RemoteIdSystem;
+
+use crate::remote_id::UaStatus;
+
+use crate::remote_id::UaType;
+
+use crate::remote_id::UasIdType;
 
 pub(crate) const OUIS: [[u8; 3]; 4] = [
     [0x60, 0x60, 0x1F],
@@ -126,7 +137,8 @@ pub(crate) fn messages(data: &[u8]) -> Option<Vec<RemoteIdMessage>> {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{OperatorLocationType, RemoteIdMessage};
+    use crate::remote_id::OperatorLocationType;
+    use crate::remote_id::RemoteIdMessage;
 
     use super::{is_drone_id, messages};
     use crate::remote_id::ble::tests::bytes;

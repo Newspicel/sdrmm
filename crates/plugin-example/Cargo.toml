@@ -1,0 +1,20 @@
+[package]
+name = "sdrmm-plugin-example"
+description = "A carrier detector, as a template for WASM decoder plugins"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+sdrmm-plugin.workspace = true
+serde.workspace = true

@@ -10,6 +10,16 @@ const PEAK_FALL_DB_PER_S: f32 = 20.0;
 
 pub const LEVEL_FLOOR_DB: f32 = -140.0;
 
+/// Power in dB, held at `floor_db` so silence reads as a floor and never as minus infinity.
+#[must_use]
+pub fn power_db(power: f32, floor_db: f32) -> f32 {
+    if power > 0.0 {
+        (10.0 * power.log10()).max(floor_db)
+    } else {
+        floor_db
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct LevelMeter {
     mean: f32,
@@ -69,10 +79,10 @@ impl LevelMeter {
 
     #[must_use]
     pub fn level_db(&self) -> f32 {
-        if !self.power.is_finite() || self.power <= 0.0 {
+        if !self.power.is_finite() {
             return LEVEL_FLOOR_DB;
         }
-        (10.0 * self.power.log10()).max(LEVEL_FLOOR_DB)
+        power_db(self.power, LEVEL_FLOOR_DB)
     }
 
     #[must_use]
@@ -85,6 +95,16 @@ impl LevelMeter {
 mod tests {
     use super::*;
     use crate::testutil::{XorShift32, complex_tone};
+
+    #[test]
+    fn power_in_db_holds_at_the_floor_for_silence() {
+        assert_eq!(power_db(1.0, -150.0), 0.0);
+        assert!((power_db(0.01, -150.0) + 20.0).abs() < 1e-5);
+        assert_eq!(power_db(1e-20, -150.0), -150.0);
+        assert_eq!(power_db(0.0, -150.0), -150.0);
+        assert_eq!(power_db(-1.0, -150.0), -150.0);
+        assert_eq!(power_db(f32::NAN, -150.0), -150.0);
+    }
 
     const RATE: f64 = 48_000.0;
 

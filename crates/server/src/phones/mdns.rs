@@ -2,11 +2,9 @@ use std::{thread::JoinHandle, time::Duration};
 
 use mdns_sd::{DaemonEvent, Receiver, ServiceDaemon, ServiceInfo};
 use sdrmm_wire::{
-    API_PROTOCOL, MdnsState, PhoneEndpoint,
-    phone::{
-        MDNS_SERVICE_TYPE, MDNS_TXT_KEY_NAME, MDNS_TXT_KEY_PIN, MDNS_TXT_KEY_PROTOCOL,
-        MDNS_TXT_KEY_SERVER, MDNS_TXT_KEY_VERSION, MDNS_TXT_VERSION,
-    },
+    API_PROTOCOL, MdnsState, PhoneEndpoint, phone::MDNS_SERVICE_TYPE, phone::MDNS_TXT_KEY_NAME,
+    phone::MDNS_TXT_KEY_PIN, phone::MDNS_TXT_KEY_PROTOCOL, phone::MDNS_TXT_KEY_SERVER,
+    phone::MDNS_TXT_KEY_VERSION, phone::MDNS_TXT_VERSION,
 };
 
 const MAX_INSTANCE_BYTES: usize = 63;

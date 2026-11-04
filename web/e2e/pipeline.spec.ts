@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { paramsWith } from "../src/components/channelSettings";
 import type { WorkletReport } from "../src/lib/audio/worklet";
 import { decodeAudio } from "../src/lib/frame";
 import type { ChannelSettings, StateSnapshot, WorkspaceSnapshot } from "../src/lib/types";
@@ -243,10 +244,7 @@ for (const { fallback, delayOutput, wideband } of [
                   frequency_hz: settings.frequency_hz + offset,
                   params:
                     settings.params.type === "wfm"
-                      ? {
-                          ...settings.params,
-                          settings: { ...settings.params.settings, stereo: offset === -100 },
-                        }
+                      ? paramsWith("wfm", { ...settings.params.settings, stereo: offset === -100 })
                       : settings.params,
                 } satisfies ChannelSettings,
               },

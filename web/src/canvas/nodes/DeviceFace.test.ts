@@ -367,7 +367,7 @@ function carrying(out: boolean[], stream = 0): DeviceSet["channels"] {
     out_of_band: missed ? { reason: "tuned_away" } : null,
     settings: {
       frequency_hz: 100_000_000,
-      params: { type: "nfm", settings: {} },
+      params: { type: "voice", settings: {} },
     } as DeviceSet["channels"][number]["settings"],
   }));
 }

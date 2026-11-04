@@ -4,6 +4,7 @@ mod report;
 mod tests;
 
 pub use heading::HeadingAverager;
+pub use report::reserved_bearing;
 
 use std::sync::Arc;
 
@@ -17,9 +18,9 @@ use sdrmm_dsp::doa::{
 use sdrmm_dsp::linalg::CMat;
 use sdrmm_dsp::manifold::{AliasReport, ElevationSpan, Manifold, ManifoldError};
 use sdrmm_dsp::special::wrap_deg;
-use sdrmm_wire::array::{MAX_ARRAY_LANES, MIN_ARRAY_LANES};
 use sdrmm_wire::processor::df::DF_POINTS;
 use sdrmm_wire::{DfAlgorithm, DfParams, ProcessorParams, SourceRule, UlaSide};
+use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use crate::ChannelError;
 use crate::array_processor::{

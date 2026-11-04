@@ -1200,7 +1200,7 @@ async fn a_decoder_keeps_its_own_frequency_and_the_radio_comes_to_it() {
     apply(&app, workspace).await;
 
     let set = &get_state(&app).await.device_sets[0];
-    let default_hz = sdrmm_wire::ChannelSettings::default_for("nfm")
+    let default_hz = sdrmm_channels::default_settings("nfm")
         .expect("nfm")
         .frequency_hz;
     assert_eq!(
@@ -1216,7 +1216,7 @@ async fn a_channel_node_holds_its_settings_before_any_radio_carries_it() {
     let snapshot = virtual_snapshot("band", &[("voice", "nfm", "iq")]);
     let workspace = put_active_workspace(&app, &snapshot).await;
 
-    let mut settings = sdrmm_wire::ChannelSettings::default_for("nfm").expect("nfm is built in");
+    let mut settings = sdrmm_channels::default_settings("nfm").expect("nfm is built in");
     settings.frequency_hz = 100_012_500.0;
     settings.squelch = sdrmm_wire::Squelch::Manual { level_db: -70.0 };
     let (status, _) = request(
@@ -1264,7 +1264,7 @@ async fn settings_of_another_channel_type_are_refused() {
     let snapshot = virtual_snapshot("band", &[("voice", "nfm", "iq")]);
     put_active_workspace(&app, &snapshot).await;
 
-    let settings = sdrmm_wire::ChannelSettings::default_for("am").expect("am is built in");
+    let settings = sdrmm_channels::default_settings("am").expect("am is built in");
     let (status, _) = request(
         app.clone(),
         "PATCH",
@@ -1490,7 +1490,7 @@ async fn hold_by_hand(app: &Router, set: u32, center_hz: f64) {
 }
 
 async fn hold_channel(app: &Router, node: &str, frequency_hz: f64) {
-    let mut settings = sdrmm_wire::ChannelSettings::default_for("nfm").expect("nfm is built in");
+    let mut settings = sdrmm_channels::default_settings("nfm").expect("nfm is built in");
     settings.frequency_hz = frequency_hz;
     let (status, body) = request(
         app.clone(),
@@ -1639,7 +1639,7 @@ async fn applying_never_adopts_a_channel_opened_for_no_node() {
     let workspace =
         put_active_workspace(&app, &virtual_snapshot("band", &[("voice", "nfm", "iq")])).await;
     let set = state.engine.create_device_set("virtual:band").unwrap();
-    let settings = ChannelSettings::default_for("nfm").unwrap();
+    let settings = sdrmm_channels::default_settings("nfm").unwrap();
     let stray = state.engine.add_channel(set, 0, settings).unwrap();
     let report = apply(&app, workspace).await;
     assert!(report.refused.is_empty(), "{report:?}");

@@ -3,7 +3,9 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 use num_complex::Complex;
 use sdrmm_dsp::fast_arg;
 
-use super::taps::{Fir, lowpass_taps};
+use sdrmm_dsp::design_lowpass_blackman_harris;
+
+use super::taps::Fir;
 
 const FREQ_ALPHA: f32 = 0.0004;
 const TIMING_GAIN: f64 = 0.1;
@@ -30,7 +32,10 @@ impl CoherentMskDemod {
         let samples_per_bit = channel_rate / bit_rate;
         Self {
             samples_per_bit,
-            lowpass: Fir::new(lowpass_taps(0.6 * bit_rate / channel_rate, LOWPASS_TAPS), 1),
+            lowpass: Fir::new(
+                design_lowpass_blackman_harris(LOWPASS_TAPS, 0.6 * bit_rate / channel_rate),
+                1,
+            ),
             filtered: Vec::new(),
             bit_samples: Vec::with_capacity(samples_per_bit.ceil() as usize + 2),
             theta: 0.0,

@@ -1,4 +1,6 @@
-use sdrmm_wire::{LoraKey, LoraPayload, LoraProtocol};
+use crate::lora::LoraKey;
+use crate::lora::LoraPayload;
+use crate::lora::LoraProtocol;
 
 use super::{lorawan, meshcore, meshtastic};
 

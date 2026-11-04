@@ -1,5 +1,5 @@
+use crate::sarsat::SarsatProtocol;
 use num_complex::Complex;
-use sdrmm_wire::SarsatProtocol;
 
 use super::silence;
 use crate::sarsat::{

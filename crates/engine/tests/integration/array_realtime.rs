@@ -17,9 +17,9 @@ use crate::common::array::{
 };
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    ArrayStatus, ProcessorParams, ProcessorReading,
-    processor::{beamformer::BeamformerParams, spatial::SpatialSpectrumParams},
-    radar::{GpuUse, PassiveRadarParams, RadarHealth},
+    ArrayStatus, ProcessorParams, ProcessorReading, processor::beamformer::BeamformerParams,
+    processor::spatial::SpatialSpectrumParams, radar::GpuUse, radar::PassiveRadarParams,
+    radar::RadarHealth,
 };
 
 const RUN: Duration = Duration::from_secs(30);

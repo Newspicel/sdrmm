@@ -1,4 +1,4 @@
-use sdrmm_wire::LoraKey;
+use crate::lora::LoraKey;
 
 use crate::crypto;
 

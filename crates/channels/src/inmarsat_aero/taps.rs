@@ -1,61 +1,4 @@
-use std::f64::consts::{PI, SQRT_2};
-
 use num_complex::Complex;
-
-const BLACKMAN_HARRIS: [f64; 4] = [0.35875, 0.48829, 0.14128, 0.01168];
-
-fn blackman_harris(count: usize) -> Vec<f64> {
-    (0..count)
-        .map(|index| {
-            let x = 2.0 * PI * index as f64 / (count as f64 - 1.0);
-            BLACKMAN_HARRIS[0] - BLACKMAN_HARRIS[1] * x.cos() + BLACKMAN_HARRIS[2] * (2.0 * x).cos()
-                - BLACKMAN_HARRIS[3] * (3.0 * x).cos()
-        })
-        .collect()
-}
-
-pub(super) fn lowpass_taps(cutoff: f64, count: usize) -> Vec<f32> {
-    let window = blackman_harris(count);
-    let center = (count as f64 - 1.0) / 2.0;
-    let taps: Vec<f64> = window
-        .iter()
-        .enumerate()
-        .map(|(index, weight)| {
-            let t = index as f64 - center;
-            let sinc = if t.abs() < 1e-12 {
-                2.0 * cutoff
-            } else {
-                (2.0 * PI * cutoff * t).sin() / (PI * t)
-            };
-            sinc * weight
-        })
-        .collect();
-    let sum: f64 = taps.iter().sum();
-    taps.into_iter().map(|tap| (tap / sum) as f32).collect()
-}
-
-pub(super) fn rrc_taps(samples_per_symbol: f64, count: usize, beta: f64) -> Vec<f32> {
-    let middle = (count - 1) as f64 / 2.0;
-    let taps: Vec<f64> = (0..count)
-        .map(|index| rrc_pulse((index as f64 - middle) / samples_per_symbol, beta))
-        .collect();
-    let energy = taps.iter().map(|tap| tap * tap).sum::<f64>().sqrt();
-    taps.into_iter().map(|tap| (tap / energy) as f32).collect()
-}
-
-fn rrc_pulse(t: f64, beta: f64) -> f64 {
-    if t.abs() < 1e-9 {
-        return 1.0 - beta + 4.0 * beta / PI;
-    }
-    if (t.abs() - 1.0 / (4.0 * beta)).abs() < 1e-9 {
-        let quarter = PI / (4.0 * beta);
-        return (beta / SQRT_2)
-            * ((1.0 + 2.0 / PI) * quarter.sin() + (1.0 - 2.0 / PI) * quarter.cos());
-    }
-    let pt = PI * t;
-    ((pt * (1.0 - beta)).sin() + 4.0 * beta * t * (pt * (1.0 + beta)).cos())
-        / (pt * (1.0 - (4.0 * beta * t).powi(2)))
-}
 
 pub(super) struct Fir {
     taps: Vec<f32>,
@@ -122,11 +65,13 @@ impl Fir {
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_dsp::design_lowpass_blackman_harris;
+
     use super::*;
 
     #[test]
     fn lowpass_passes_dc_and_blocks_high_frequencies() {
-        let mut fir = Fir::new(lowpass_taps(0.1, 101), 1);
+        let mut fir = Fir::new(design_lowpass_blackman_harris(101, 0.1), 1);
         let mut out = Vec::new();
         fir.process(&vec![Complex::new(1.0, 0.0); 512], &mut out);
         let mean = out[200..].iter().map(|value| value.re).sum::<f32>() / 312.0;
@@ -142,7 +87,7 @@ mod tests {
 
     #[test]
     fn decimation_keeps_every_second_output() {
-        let taps = lowpass_taps(0.05, 15);
+        let taps = design_lowpass_blackman_harris(15, 0.05);
         let input: Vec<Complex<f32>> = (0..64)
             .map(|index| Complex::new(index as f32, -(index as f32)))
             .collect();
@@ -153,11 +98,5 @@ mod tests {
         half.process(&input, &mut decimated);
         let expected: Vec<_> = every.iter().skip(1).step_by(2).copied().collect();
         assert_eq!(decimated, expected);
-    }
-
-    #[test]
-    fn rrc_has_unit_energy() {
-        let energy: f32 = rrc_taps(9.14, 55, 1.0).iter().map(|tap| tap * tap).sum();
-        assert!((energy - 1.0).abs() < 1e-5);
     }
 }

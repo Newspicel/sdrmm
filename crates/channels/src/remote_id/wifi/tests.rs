@@ -1,4 +1,8 @@
-use sdrmm_wire::{HeightReference, RemoteIdMessage, RemoteIdPhy, RemoteIdTransport, UaStatus};
+use crate::remote_id::HeightReference;
+use crate::remote_id::RemoteIdMessage;
+use crate::remote_id::RemoteIdPhy;
+use crate::remote_id::RemoteIdTransport;
+use crate::remote_id::UaStatus;
 
 use sdrmm_modem::wifi::{append_fcs, fcs_ok};
 
@@ -13,7 +17,7 @@ fn with_fcs(text: &str) -> Vec<u8> {
     append_fcs(bytes(text))
 }
 
-fn heard(mpdu: &[u8], phy: RemoteIdPhy) -> sdrmm_wire::RemoteIdFrame {
+fn heard(mpdu: &[u8], phy: RemoteIdPhy) -> crate::remote_id::RemoteIdFrame {
     frame(
         &Mpdu {
             bytes: mpdu,

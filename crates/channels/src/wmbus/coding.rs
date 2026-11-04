@@ -1,3 +1,5 @@
+use sdrmm_dsp::crc16_msb;
+
 const CODES: [u8; 16] = [
     0x16, 0x0D, 0x0E, 0x0B, 0x1C, 0x19, 0x1A, 0x13, 0x2C, 0x25, 0x26, 0x23, 0x34, 0x31, 0x32, 0x29,
 ];
@@ -58,18 +60,7 @@ pub(super) fn manchester(soft: &[f32]) -> u8 {
 }
 
 pub(crate) fn crc(bytes: &[u8]) -> u16 {
-    let mut crc = 0u16;
-    for &byte in bytes {
-        crc ^= u16::from(byte) << 8;
-        for _ in 0..8 {
-            crc = if crc & 0x8000 != 0 {
-                (crc << 1) ^ CRC_POLY
-            } else {
-                crc << 1
-            };
-        }
-    }
-    !crc
+    !crc16_msb(CRC_POLY, 0, bytes)
 }
 
 pub(super) fn crc_holds(bytes: &[u8], at: usize) -> bool {

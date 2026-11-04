@@ -6,8 +6,8 @@ use std::{
 use sdrmm_channels::{ChannelError, array_processor::MAX_LANES};
 use sdrmm_wire::{
     ArrayFailure, ArrayGain, ArrayTune, ArrayTuningMode, Capabilities, Coherence, DcArtifact,
-    DeviceSetStatus, DeviceSettings, GeometryError, NoiseSource,
-    array::{MAX_ARRAY_GAIN_DB, MAX_ARRAY_LANES, MIN_ARRAY_GAIN_DB, MIN_ARRAY_LANES},
+    DeviceSetStatus, DeviceSettings, GeometryError, NoiseSource, array::MAX_ARRAY_GAIN_DB,
+    array::MAX_ARRAY_LANES, array::MIN_ARRAY_GAIN_DB, array::MIN_ARRAY_LANES,
 };
 
 use super::Lease;

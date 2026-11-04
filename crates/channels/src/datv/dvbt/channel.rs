@@ -1,15 +1,16 @@
 use std::sync::LazyLock;
 
+use crate::broadcast_media::BroadcastService;
+use crate::broadcast_media::BroadcastServiceKind;
+use crate::broadcast_media::{BroadcastStatus, publish_status};
+use crate::datv::DvbtParams;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
-use sdrmm_wire::{
-    BroadcastService, BroadcastServiceKind, ChannelDescriptor, ChannelParams, ChannelSettings,
-    DecoderFamily, DvbtParams, EventKind,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, ClickProfile, DecoderFamily, EventContract};
 
 use super::frontend::Frontend;
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
     broadcast_media::BroadcastMedia,
     check_rate,
     datv::{
@@ -29,7 +30,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE,
     has_audio: true,
     has_video: true,
-    emits: vec![EventKind::Broadcast],
+    emits: vec![BroadcastStatus::KIND],
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
@@ -46,13 +48,10 @@ pub fn channel_filter(params: &DvbtParams) -> ChannelFilter {
 }
 
 fn params(settings: &ChannelSettings) -> Result<DvbtParams, ChannelError> {
-    match settings.params {
-        ChannelParams::Dvbt(params) => Ok(params),
-        ref other => Err(ChannelError::InvalidSettings(format!(
-            "DVB-T received {} settings",
-            other.type_id()
-        ))),
-    }
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 #[derive(PartialEq, Eq)]
@@ -142,11 +141,11 @@ impl DvbtChannel {
         status.video_frames_bad = self.media.video_errors;
         status.video_error = self.media.video_error.clone();
         status.services = services;
-        out.broadcast = Some(status);
+        publish_status(out, status, "program");
     }
 }
 
-impl ChannelRx for DvbtChannel {
+impl NativeChannel for DvbtChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
@@ -169,6 +168,9 @@ impl ChannelRx for DvbtChannel {
             was_locked: false,
         })
     }
+}
+
+impl ChannelRx for DvbtChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let wanted = params(&settings)?;
         if wanted.standard != self.params.standard
@@ -219,15 +221,21 @@ impl ChannelRx for DvbtChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::broadcast_media::latest_status;
+    use sdrmm_wire::ChannelParams;
 
-    fn settings(bandwidth: sdrmm_wire::DvbtBandwidth) -> ChannelSettings {
+    fn settings(bandwidth: crate::datv::DvbtBandwidth) -> ChannelSettings {
         ChannelSettings {
             frequency_hz: 0.0,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Dvbt(DvbtParams {
-                bandwidth,
-                ..Default::default()
-            }),
+            params: ChannelParams::new(
+                "dvbt",
+                &DvbtParams {
+                    bandwidth,
+                    ..Default::default()
+                },
+            )
+            .expect("dvbt settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         }
@@ -236,18 +244,18 @@ mod tests {
     #[test]
     fn narrow_channels_decode_from_a_two_and_a_half_megasample_radio() {
         for bandwidth in [
-            sdrmm_wire::DvbtBandwidth::Khz250,
-            sdrmm_wire::DvbtBandwidth::Khz333,
-            sdrmm_wire::DvbtBandwidth::Khz500,
-            sdrmm_wire::DvbtBandwidth::Mhz1,
-            sdrmm_wire::DvbtBandwidth::Mhz1_7,
-            sdrmm_wire::DvbtBandwidth::Mhz2,
+            crate::datv::DvbtBandwidth::Khz250,
+            crate::datv::DvbtBandwidth::Khz333,
+            crate::datv::DvbtBandwidth::Khz500,
+            crate::datv::DvbtBandwidth::Mhz1,
+            crate::datv::DvbtBandwidth::Mhz1_7,
+            crate::datv::DvbtBandwidth::Mhz2,
         ] {
             decodes_through_radio_chain(bandwidth, 2_500_000.0);
         }
     }
 
-    fn decodes_through_radio_chain(bandwidth: sdrmm_wire::DvbtBandwidth, radio_rate: f64) {
+    fn decodes_through_radio_chain(bandwidth: crate::datv::DvbtBandwidth, radio_rate: f64) {
         let channel_settings = settings(bandwidth);
         let input_rate = crate::input_rate(&channel_settings.params);
         assert_eq!(input_rate, bandwidth.sample_rate_hz());
@@ -279,7 +287,7 @@ mod tests {
         );
         out.reset();
         receiver.report(&mut out);
-        let status = out.broadcast.as_ref().expect("broadcast status");
+        let status = latest_status(&out).expect("broadcast status");
         assert!(
             (status.frequency_error_hz - 600.0).abs() < 30.0,
             "{bandwidth:?} {}",
@@ -298,12 +306,12 @@ mod tests {
 
     #[test]
     fn changing_bandwidth_discards_decoder_and_media_state() {
-        let bandwidth = sdrmm_wire::DvbtBandwidth::Mhz1_7;
+        let bandwidth = crate::datv::DvbtBandwidth::Mhz1_7;
         let mut receiver = DvbtChannel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE,
             },
-            settings(sdrmm_wire::DvbtBandwidth::Mhz8),
+            settings(crate::datv::DvbtBandwidth::Mhz8),
         )
         .unwrap();
         let iq = crate::synth::dvbt::waveform(crate::synth::dvbt::defaults(), 180);
@@ -323,10 +331,10 @@ mod tests {
     fn every_bandwidth_discovers_services_at_its_native_clock() {
         let iq = crate::synth::dvbt::waveform(crate::synth::dvbt::defaults(), 180);
         for bandwidth in [
-            sdrmm_wire::DvbtBandwidth::Mhz1_7,
-            sdrmm_wire::DvbtBandwidth::Mhz6,
-            sdrmm_wire::DvbtBandwidth::Mhz7,
-            sdrmm_wire::DvbtBandwidth::Mhz8,
+            crate::datv::DvbtBandwidth::Mhz1_7,
+            crate::datv::DvbtBandwidth::Mhz6,
+            crate::datv::DvbtBandwidth::Mhz7,
+            crate::datv::DvbtBandwidth::Mhz8,
         ] {
             let params = DvbtParams {
                 bandwidth,
@@ -339,7 +347,7 @@ mod tests {
                 ChannelSettings {
                     frequency_hz: 0.0,
                     squelch: sdrmm_wire::Squelch::Off,
-                    params: ChannelParams::Dvbt(params),
+                    params: ChannelParams::new("dvbt", &params).expect("dvbt settings"),
                     blanker: Default::default(),
                     if_filter: Default::default(),
                 },
@@ -360,13 +368,13 @@ mod tests {
     #[test]
     fn narrow_t2_channel_recovers_transport_from_a_two_megasample_radio() {
         let params = DvbtParams {
-            standard: sdrmm_wire::DvbtStandard::DvbT2,
-            bandwidth: sdrmm_wire::DvbtBandwidth::Mhz1_7,
+            standard: crate::datv::DvbtStandard::DvbT2,
+            bandwidth: crate::datv::DvbtBandwidth::Mhz1_7,
             plp: Some(7),
             ..Default::default()
         };
         let mut config = settings(params.bandwidth);
-        config.params = ChannelParams::Dvbt(params);
+        config.params = ChannelParams::new("dvbt", &params).expect("dvbt settings");
         let rate = crate::input_rate(&config.params);
         assert_eq!(rate, 131_000_000.0 / 71.0);
         let bytes = include_bytes!("../../../../../fixtures/dvbt2/rf_2k_qpsk.f32");
@@ -397,13 +405,16 @@ mod tests {
             channel.process(&filtered, &mut out);
         }
         channel.report(&mut out);
-        let status = out.broadcast.as_ref().unwrap();
-        assert_eq!(status.system, sdrmm_wire::BroadcastSystem::DvbT2);
+        let status = latest_status(&out).unwrap();
+        assert_eq!(
+            status.system,
+            crate::broadcast_media::BroadcastSystem::DvbT2
+        );
         assert_eq!(status.frames_ok, 4, "{status:?}");
         assert_eq!(status.frames_bad, 0, "{status:?}");
         let mut changed = params;
         changed.plp = Some(9);
-        config.params = ChannelParams::Dvbt(changed);
+        config.params = ChannelParams::new("dvbt", &changed).expect("dvbt settings");
         channel.apply(config).unwrap();
         assert!(!channel.receiver.locked());
     }
@@ -411,11 +422,11 @@ mod tests {
     #[test]
     fn t2_iq_discovers_program_and_delivers_audio_and_video() {
         let params = DvbtParams {
-            standard: sdrmm_wire::DvbtStandard::DvbT2,
+            standard: crate::datv::DvbtStandard::DvbT2,
             ..Default::default()
         };
         let mut config = settings(params.bandwidth);
-        config.params = ChannelParams::Dvbt(params);
+        config.params = ChannelParams::new("dvbt", &params).expect("dvbt settings");
         let rate = params.sample_rate_hz();
         let bytes = include_bytes!("../../../../../fixtures/dvbt2/rf_32k_media.f32");
         let iq: Vec<_> = bytes
@@ -487,13 +498,13 @@ mod tests {
             (power / 10f32.powf(snr_db / 10.0) * 1.5).sqrt(),
         );
         let params = DvbtParams {
-            standard: sdrmm_wire::DvbtStandard::DvbT2,
-            bandwidth: sdrmm_wire::DvbtBandwidth::Mhz1_7,
+            standard: crate::datv::DvbtStandard::DvbT2,
+            bandwidth: crate::datv::DvbtBandwidth::Mhz1_7,
             plp: None,
             ..Default::default()
         };
         let mut config = settings(params.bandwidth);
-        config.params = ChannelParams::Dvbt(params);
+        config.params = ChannelParams::new("dvbt", &params).expect("dvbt settings");
         let rate = crate::input_rate(&config.params);
         let mut channel = DvbtChannel::new(ChannelCtx { input_rate: rate }, config).unwrap();
         let mut out = ChannelOutputs::default();
@@ -501,9 +512,7 @@ mod tests {
             channel.process(block, &mut out);
         }
         channel.report(&mut out);
-        out.broadcast
-            .as_ref()
-            .map_or((0, 0), |status| (status.frames_ok, status.frames_bad))
+        latest_status(&out).map_or((0, 0), |status| (status.frames_ok, status.frames_bad))
     }
 
     #[test]

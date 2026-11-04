@@ -197,7 +197,7 @@ impl Engine {
             let started_at = jiff::Timestamp::now();
             let writer = audio_recording::create_writer(
                 &dir,
-                &sdrmm_recorder::audio_stem(started_at, source.mode, source.freq_hz),
+                &sdrmm_recorder::audio_stem(started_at, &source.mode, source.freq_hz),
                 sdrmm_channels::AUDIO_RATE,
                 source.channels,
             )?;
@@ -286,7 +286,7 @@ impl Engine {
             stream: channel.stream,
             channels: sdrmm_channels::audio_channels(&channel.settings.params),
             device_rate: sample_rate_of(&state.settings),
-            mode: channel.settings.params.type_id(),
+            mode: channel.settings.params.type_id().to_owned(),
             freq_hz: channel.settings.frequency_hz,
         })
     }
@@ -528,7 +528,7 @@ struct AudioSource {
     stream: u32,
     channels: u8,
     device_rate: f64,
-    mode: &'static str,
+    mode: String,
     freq_hz: f64,
 }
 

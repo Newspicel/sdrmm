@@ -1,13 +1,17 @@
+use crate::registry::Native;
+use sdrmm_wire::{EventContract, KindSpec, NumberSpec, SettingField};
+mod model;
+pub use model::*;
 use std::{f32::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
 use sdrmm_dsp::fft::FftPair;
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    GnssFrame, GnssParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const RATE: f64 = 2_048_000.0;
 const SAMPLES_PER_MS: usize = 2_048;
@@ -29,7 +33,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2_046_000.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Gnss],
+    emits: vec![GnssFrame::KIND],
     ..ChannelDescriptor::default()
 });
 
@@ -68,14 +72,8 @@ pub struct GnssChannel {
     nav: NavDecoder,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&GnssParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Gnss(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "gnss channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<GnssParams, ChannelError> {
+    crate::settings_of::<GnssParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -86,19 +84,20 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     ChannelFilter::Passthrough
 }
 
-impl ChannelRx for GnssChannel {
+impl NativeChannel for GnssChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = *params(&settings)?;
+        let p = params(&settings)?;
         Ok(Self::build(p))
     }
+}
 
+impl ChannelRx for GnssChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let p = *params(&settings)?;
+        let p = params(&settings)?;
         if p != self.params {
             *self = Self::build(p);
         }
@@ -178,7 +177,7 @@ impl GnssChannel {
             };
             if let Some((found, _)) = confirmed {
                 self.lock = Some(found);
-                out.events.push(DecoderEvent::Gnss(self.event(found, None)));
+                out.events.push(DecoderEvent::of(&self.event(found, None)));
             }
             return;
         }
@@ -293,7 +292,7 @@ impl GnssChannel {
                 for chunk in chunks {
                     if let Some(nav) = self.nav.feed(sum(chunk) >= 0.0) {
                         out.events
-                            .push(DecoderEvent::Gnss(self.event(lock, Some(nav))));
+                            .push(DecoderEvent::of(&self.event(lock, Some(nav))));
                     }
                 }
                 let consumed = phase + ((self.prompt_ms.len() - phase) / 20) * 20;
@@ -309,7 +308,7 @@ impl GnssChannel {
                 self.prompt_ms.drain(..20);
                 if let Some(nav) = self.nav.feed(bit) {
                     out.events
-                        .push(DecoderEvent::Gnss(self.event(lock, Some(nav))));
+                        .push(DecoderEvent::of(&self.event(lock, Some(nav))));
                 }
             }
         }
@@ -548,6 +547,37 @@ fn check_word(raw: u32, previous_d29: bool, previous_d30: bool) -> Option<u32> {
         .iter()
         .fold(0_u32, |v, &bit| (v << 1) | u32::from(bit));
     (parity == raw & 0x3F).then_some(data)
+}
+
+pub(crate) fn gnss_decoder() -> Native<GnssParams> {
+    Native::new::<GnssChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(1_575_420_000.0)
+        .form(gnss_form)
+        .kinds(gnss_kinds)
+}
+
+pub(crate) fn gnss_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("prn", "PRN", NumberSpec::new(1.0, 32.0, 1.0))
+            .title("GPS L1 C/A satellite PRN"),
+        SettingField::new(
+            "doppler_hz",
+            "Doppler",
+            NumberSpec::hz(500.0, 20_000.0, 500.0),
+        )
+        .title("Symmetric Doppler search span"),
+        SettingField::new(
+            "threshold",
+            "Acquire",
+            NumberSpec::new(1.5, 100.0, 0.1).unit("× floor"),
+        )
+        .title("Correlation peak-to-floor acquisition threshold"),
+    ]
+}
+
+fn gnss_kinds() -> Vec<KindSpec> {
+    vec![gnss_kind()]
 }
 
 #[cfg(test)]

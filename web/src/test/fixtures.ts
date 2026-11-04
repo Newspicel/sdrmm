@@ -2,9 +2,7 @@ import type {
   ArrayLaneStatus,
   ArrayStatus,
   Capabilities,
-  DecodedRecord,
   DeviceSet,
-  DfBearing,
   PatchNode,
   RadarDetection,
   RadarUpdate,
@@ -125,23 +123,5 @@ export function radarUpdate(detections: RadarDetection[], seq = 1): RadarUpdate 
     detections,
     tracks: [],
     truth: [],
-  };
-}
-
-export function bearingRecord(
-  finder: string,
-  bearing: Partial<DfBearing>,
-  at = "2026-09-28T12:00:00Z",
-): DecodedRecord {
-  return {
-    at,
-    channel: 4_294_967_295,
-    device_set: 1,
-    freq_hz: 145_000_000,
-    origin: { node: finder, transmission: 0 },
-    event: {
-      kind: "df",
-      data: { bearing_deg: 137, confidence: 0.8, sigma_deg: 3, lat: 52, lon: 13, ...bearing },
-    },
   };
 }

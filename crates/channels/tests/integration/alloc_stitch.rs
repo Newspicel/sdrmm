@@ -74,7 +74,7 @@ impl Host {
         let mut out = ProcessorOutput::new(OutputSlots {
             report: self.report.as_mut(),
             surface: None,
-            events: &mut [],
+            bearings: &mut [],
             lanes: &mut self.wide,
         });
         processor.process(&block(lanes, unix_ns), &mut out);

@@ -1,7 +1,49 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+use sdrmm_wire::{KindSpec, SettingField};
+mod model;
+pub use model::*;
 mod ac_cache;
 mod demod;
 mod fec;
 mod lms;
+const HFDL_BANDS: &[HzRange] = &[HzRange::khz(2_500.0, 22_000.0)];
+
+fn hfdl_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "HFDL",
+            &[Modulation::Psk2, Modulation::Psk4, Modulation::Unknown],
+            HzRange::new(1_500.0, 3_500.0),
+            "1800 baud phase keying in an aeronautical HF channel",
+        )
+        .symbol_rate(HzRange::about(1_800.0, 0.06))
+        .on(HFDL_BANDS),
+    ]
+}
+
+fn hfdl_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("hfdl"))
+}
+
+pub(crate) fn hfdl_decoder() -> Native<HfdlParams> {
+    Native::new::<HfdlChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(10_081_000.0)
+        .signatures(hfdl_signatures)
+        .trial(hfdl_trial)
+        .form(hfdl_form)
+        .kinds(hfdl_kinds)
+}
+
+pub(crate) fn hfdl_form() -> Vec<SettingField> {
+    Vec::new()
+}
+
+fn hfdl_kinds() -> Vec<KindSpec> {
+    vec![crate::datalink::hfdl_kind()]
+}
+
 #[cfg(test)]
 mod modulate;
 mod pdu;
@@ -9,17 +51,16 @@ mod systable;
 
 use std::{f64::consts::PI, sync::LazyLock};
 
+use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, Nco};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DataLinkMessage, DecoderEvent,
-    DecoderFamily, EventKind, HfdlParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
     datalink::{self, Quality},
 };
 use demod::{Burst, HfdlDemod};
@@ -39,7 +80,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Hfdl],
+    emits: vec![EventKind::named("hfdl")],
     ..ChannelDescriptor::default()
 });
 
@@ -140,14 +181,8 @@ pub struct HfdlChannel {
     events: Vec<HfdlEvent>,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&HfdlParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Hfdl(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "HFDL channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<HfdlParams, ChannelError> {
+    crate::settings_of::<HfdlParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -158,11 +193,10 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     datalink::channel_filter(RATE, HALF_BANDWIDTH)
 }
 
-impl ChannelRx for HfdlChannel {
+impl NativeChannel for HfdlChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         params(&settings)?;
@@ -171,7 +205,9 @@ impl ChannelRx for HfdlChannel {
             events: Vec::new(),
         })
     }
+}
 
+impl ChannelRx for HfdlChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings).map(|_| ())
     }
@@ -181,7 +217,7 @@ impl ChannelRx for HfdlChannel {
         out.events.extend(
             self.events
                 .drain(..)
-                .map(|event| DecoderEvent::Hfdl(message(&event))),
+                .map(|event| DecoderEvent::tagged(EventKind::named("hfdl"), &message(&event))),
         );
     }
 }

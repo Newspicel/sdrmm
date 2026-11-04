@@ -1,6 +1,5 @@
 use sdrmm_wire::{
-    PatchEdge, PatchGraph, WorkspaceNoticeKind,
-    patch::resolve::{self, ResolveCtx},
+    PatchEdge, PatchGraph, WorkspaceNoticeKind, patch::resolve, patch::resolve::ResolveCtx,
 };
 use serde_json::Value;
 
@@ -14,7 +13,7 @@ pub(super) fn drop_refused_edges(snapshot: &mut Value) -> Vec<WorkspaceNoticeKin
         return Vec::new();
     };
     let ctx = ResolveCtx {
-        descriptors: Some(sdrmm_channels::descriptor_table()),
+        descriptors: Some(&sdrmm_channels::descriptors()),
         live: None,
     };
     let (_, mut refused) = resolve::compile_draft(&graph, &ctx);

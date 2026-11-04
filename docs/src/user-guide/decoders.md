@@ -39,11 +39,11 @@ recording came from.
 | DVB-T/T2 | DVB-T HP and LP, T2-Base and Lite, SISO and MISO, 1K to 32K, PLP choice, audio, video | GSE, multi-RF TFS |
 | GNSS lab | GPS L1 C/A acquisition, tracking and navigation data, one PRN per channel | Position fix |
 
-## DMR trunking
+## Trunking
 
-Add **DMR trunk system**, wire Device `iq`, and enter the control channel in MHz under
-**Control**. Set **Protocol** or leave it on **Auto-detect**. The node runs the DMR channels it
-needs.
+Add **Trunk system**, wire Device `iq`, and enter the control channel in MHz under **Control**.
+Set **Protocol** or leave it on **Auto-detect**. The node runs the channels it needs, on the
+first decoder that trunks (DMR) or the one picked under **Decoder**.
 
 | Protocol | Finds its channels by |
 |---|---|

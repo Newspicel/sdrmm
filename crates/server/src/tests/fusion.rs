@@ -1,7 +1,4 @@
-use sdrmm_wire::{
-    DfBearing, DfFusionState, ServerEvent, TriangulationParams,
-    geo::{self, LatLon},
-};
+use sdrmm_wire::{DfBearing, DfFusionState, ServerEvent, TriangulationParams, geo, geo::LatLon};
 
 use super::*;
 

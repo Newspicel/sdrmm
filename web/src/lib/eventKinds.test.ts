@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { CATALOG } from "../test/catalog";
+import { PROBE_CATALOG } from "../test/kinds";
 import { isEventKind, kindHas, kindLabel } from "./eventKinds";
 
-const KINDS = CATALOG.event_kinds;
+const KINDS = PROBE_CATALOG.event_kinds;
 
 describe("event kinds", () => {
   it("labels every kind the server serves", () => {
@@ -10,20 +10,20 @@ describe("event kinds", () => {
     for (const entry of KINDS) {
       expect(kindLabel(entry.kind, KINDS)).toBe(entry.name);
     }
-    expect(kindLabel("adsb", KINDS)).toBe("ADS-B");
+    expect(kindLabel("probe_plane", KINDS)).toBe("Probe plane");
     expect(kindLabel("ident", KINDS)).toBe("Signal ID");
   });
 
   it("falls back for a kind this build does not know", () => {
-    expect(kindLabel("dmr", KINDS)).toBe("DMR");
-    expect(isEventKind("dmr", KINDS)).toBe(false);
-    expect(isEventKind("navtex", KINDS)).toBe(true);
+    expect(kindLabel("unheard", KINDS)).toBe("UNHEARD");
+    expect(isEventKind("unheard", KINDS)).toBe(false);
+    expect(isEventKind("probe_text", KINDS)).toBe(true);
   });
 
   it("reads capabilities from the row", () => {
-    expect(kindHas("adsb", "geo", KINDS)).toBe(true);
+    expect(kindHas("probe_plane", "geo", KINDS)).toBe(true);
     expect(kindHas("call", "voice", KINDS)).toBe(true);
-    expect(kindHas("pocsag", "geo", KINDS)).toBe(false);
-    expect(kindHas("dmr", "log", KINDS)).toBe(false);
+    expect(kindHas("probe_pager", "geo", KINDS)).toBe(false);
+    expect(kindHas("unheard", "log", KINDS)).toBe(false);
   });
 });

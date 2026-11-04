@@ -1,4 +1,6 @@
-use super::code::{codeword_bit, codeword_len, gray, hamming_encode};
+use sdrmm_modem::constellation::tables::gray;
+
+use super::code::{codeword_bit, codeword_len, hamming_encode};
 
 pub(crate) const MAX_BITS: usize = 12;
 
@@ -76,7 +78,7 @@ fn bit_llrs(values: &[f32], out: &mut [f32]) {
     let mut ones = [f32::MIN; MAX_BITS];
     let mut zeros = [f32::MIN; MAX_BITS];
     for (m, &value) in values.iter().enumerate() {
-        let data = gray(m as u16);
+        let data = gray(m as u32);
         for b in 0..bits {
             let slot = if (data >> b) & 1 == 1 {
                 &mut ones[b]
@@ -150,7 +152,7 @@ mod tests {
             noise: 1.0,
         };
         demapper.llrs(&energies, statistics, false, &mut llrs);
-        let data = gray((symbol - 1) as u16);
+        let data = gray((symbol - 1) as u32);
         for (j, llr) in llrs.iter().enumerate() {
             let set = (data >> (6 - j)) & 1 == 1;
             assert_eq!(*llr > 0.0, set, "bit {j}");
@@ -174,8 +176,8 @@ mod tests {
             demapper.llrs(&energies, statistics, true, &mut llrs);
             let decided = llrs
                 .iter()
-                .fold(0u16, |acc, &l| (acc << 1) | u16::from(l > 0.0));
-            assert_eq!(decided, gray(m as u16), "error {error}");
+                .fold(0u32, |acc, &l| (acc << 1) | u32::from(l > 0.0));
+            assert_eq!(decided, gray(m as u32), "error {error}");
         }
     }
 

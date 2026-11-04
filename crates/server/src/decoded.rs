@@ -110,10 +110,14 @@ mod tests {
     use std::sync::Arc;
 
     use sdrmm_wire::{
-        AdsbMessage, ChannelNode, ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent,
-        DeviceBackend, DeviceRef, EventFilterNode, FilterMode, NodeBody, PatchEdge, PatchNode,
-        PortRef, Position, WorkspaceSnapshot, WsprSpot,
+        ChannelNode, ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent, DeviceBackend,
+        DeviceRef, EventFilterNode, FilterMode, NodeBody, PatchEdge, PatchNode, PortRef, Position,
+        WorkspaceSnapshot,
     };
+
+    use sdrmm_channels::AdsbMessage;
+
+    use sdrmm_channels::WsprSpot;
     use tokio::time::{Duration, timeout};
 
     use super::*;
@@ -143,7 +147,7 @@ mod tests {
     }
 
     fn adsb(icao: &str, callsign: &str) -> DecoderEvent {
-        DecoderEvent::Adsb(AdsbMessage {
+        DecoderEvent::of(&AdsbMessage {
             icao: icao.to_owned(),
             df: 17,
             callsign: Some(callsign.to_owned()),
@@ -317,7 +321,7 @@ mod tests {
             callsign: None,
             view: None,
         };
-        let spot = DecoderEvent::Wspr(WsprSpot {
+        let spot = DecoderEvent::of(&WsprSpot {
             text: "DL1ABC JO62 37".to_owned(),
             callsign: "DL1ABC".to_owned(),
             grid: None,

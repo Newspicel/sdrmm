@@ -202,7 +202,7 @@ fn fix_record(status: &SatelliteStatus) -> DecodedRecord {
         channel: NO_CHANNEL,
         at: format!("{:.9}", jiff::Timestamp::now()),
         freq_hz: status.downlink_hz.unwrap_or_default(),
-        event: DecoderEvent::Satellite(SatelliteFix::of(status)),
+        event: DecoderEvent::of(&SatelliteFix::of(status)),
         sinks: Vec::new(),
         view: None,
         callsign: None,

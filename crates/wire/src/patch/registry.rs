@@ -4,10 +4,10 @@ use utoipa::ToSchema;
 use super::{
     ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioRecorderNode, BASEBAND_PORT, BEAM_PORT,
     BEARING_PORT, BasebandRecorderNode, CONTROL_PORT, ChannelNode, DecoderLogNode, DeviceNode,
-    DmrTrunkNode, EVENTS_PORT, EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps,
-    NodeCategory, POSITION_PORT, Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo,
-    RADAR_TRUTH_PORT, RADAR_TX_PORT, RecorderNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode,
-    SignalMapNode, TriangulationNode, VIDEO_PORT, input, output,
+    EVENTS_PORT, EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps, NodeCategory,
+    POSITION_PORT, Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo, RADAR_TRUTH_PORT,
+    RADAR_TX_PORT, RecorderNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalMapNode,
+    TriangulationNode, TrunkNode, VIDEO_PORT, input, output,
 };
 use crate::{
     channel::ChannelDescriptor,
@@ -108,6 +108,8 @@ pub struct PatchCatalog {
     pub nodes: Vec<NodeTypeInfo>,
     pub port_types: Vec<PortTypeInfo>,
     pub event_kinds: Vec<EventKindEntry>,
+    #[serde(default)]
+    pub feeds: Vec<crate::decode::FeedEntry>,
 }
 
 impl PatchCatalog {
@@ -116,7 +118,8 @@ impl PatchCatalog {
         Self {
             nodes: NodeKind::ALL.iter().map(|kind| kind.info()).collect(),
             port_types: P::ALL.iter().map(|port_type| port_type.info()).collect(),
-            event_kinds: EventKind::entries(),
+            event_kinds: crate::decode::catalog().entries(),
+            feeds: crate::decode::catalog().feed_entries(),
         }
     }
 }
@@ -200,12 +203,19 @@ fn events_out(accept: Accept) -> PortSpec {
     output(EVENTS_PORT, Payload::events(accept))
 }
 
+macro_rules! kinds {
+    ($($kind:ident),+ $(,)?) => {{
+        const KINDS: &[EventKind] = &[$(EventKind::$kind),+];
+        Accept::Kinds(KINDS)
+    }};
+}
+
 macro_rules! port_row {
     (array_in) => {
         input(ARRAY_PORT, Payload::Array)
     };
     (events_out($note:literal $(, $kind:ident)*)) => {
-        events_out(Accept::Kinds(&[$(EventKind::$kind),*])).noted($note)
+        events_out(kinds!($($kind),*)).noted($note)
     };
     (bearing_out($note:literal)) => {
         output(BEARING_PORT, Payload::Bearing).noted($note)
@@ -222,10 +232,10 @@ macro_rules! port_row {
     (tx_in($note:literal)) => {
         input(RADAR_TX_PORT, Payload::Position).noted($note)
     };
-    (adsb_in($note:literal)) => {
-        input(RADAR_TRUTH_PORT, Payload::events(Accept::Kinds(&[EventKind::Adsb])))
+    (truth_in($note:literal)) => {
+        input(RADAR_TRUTH_PORT, Payload::events(Accept::Caps(&[Capability::Track])))
             .many()
-            .takes("ADS-B")
+            .takes("tracks")
             .noted($note)
     };
 }
@@ -247,7 +257,7 @@ macro_rules! lane_outputs {
 
 macro_rules! nodes {
     ($((
-        $variant:ident $(($body:ty))?,
+        $variant:ident $(($body:ty))? $(| $alias:literal)?,
         $kind:literal,
         $category:ident,
         $name:literal,
@@ -259,7 +269,7 @@ macro_rules! nodes {
         #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
         #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
         pub enum NodeBody {
-            $($variant $(($body))?,)*
+            $($(#[serde(alias = $alias)])? $variant $(($body))?,)*
         }
 
         #[derive(
@@ -267,7 +277,7 @@ macro_rules! nodes {
         )]
         #[serde(rename_all = "snake_case")]
         pub enum NodeKind {
-            $($variant,)*
+            $($(#[serde(alias = $alias)])? $variant,)*
         }
 
         impl NodeKind {
@@ -283,7 +293,7 @@ macro_rules! nodes {
             #[must_use]
             pub fn parse(text: &str) -> Option<Self> {
                 match text {
-                    $($kind => Some(Self::$variant),)*
+                    $($kind $(| $alias)? => Some(Self::$variant),)*
                     _ => None,
                 }
             }
@@ -443,13 +453,13 @@ macro_rules! node_registry {
                 iq_in(),
                 events_out(Accept::Any),
             ]),
-            (DmrTrunk(DmrTrunkNode), "dmr_trunk", Tool, "DMR trunk system",
-                "Follows calls across a DMR trunk system", Role::Plain,
+            (Trunk(TrunkNode) | "dmr_trunk", "trunk", Tool, "Trunk system",
+                "Follows calls across a trunked radio system", Role::Plain,
                 Face::sized(480, 360).min(380, 240), [
                 iq_in().noted(
                     "the radio the control channel sits on; the system runs its own decoders",
                 ),
-                events_out(Accept::Kinds(&[EventKind::Dv, EventKind::Call])),
+                events_out(kinds!(DV, CALL)),
                 audio_out(),
             ]),
             (EventFilter(EventFilterNode), "event_filter", Tool, "Event filter",
@@ -507,7 +517,7 @@ macro_rules! node_registry {
                 iq_in().noted("The lane it watches"),
                 output(CONTROL_PORT, Payload::control(SWEEP)).one(),
                 position_in().noted("Where you stand and which way you point"),
-                events_out(Accept::Kinds(&[EventKind::Df])).noted("Sweep and mark bearings"),
+                events_out(kinds!(DF)).noted("Sweep and mark bearings"),
             ]),
             (Schedule(ScheduleNode), "schedule", Tool, "Schedule",
                 "Runs radios and recorders by the clock", Role::Plain, Face::fit(360), [
@@ -520,7 +530,7 @@ macro_rules! node_registry {
                 output(CONTROL_PORT, Payload::control(SATELLITE_VERBS)).noted(
                     "decoders to tune and Doppler correct, rotators to point, radios to run",
                 ),
-                events_out(Accept::Kinds(&[EventKind::Satellite]))
+                events_out(kinds!(SATELLITE))
                     .noted("Position and ground track for a Map"),
             ]),
             (Rotator(RotatorNode), "rotator", Output, "Rotator",
@@ -534,9 +544,9 @@ macro_rules! node_registry {
             )*
             (Triangulation(TriangulationNode), "triangulation", Tool, "Triangulation",
                 "Crosses bearings into a position", Role::Plain, Face::fit(400), [
-                events_in(Accept::Kinds(&[EventKind::Df])).takes("bearings").noted("Bearings"),
+                events_in(kinds!(DF)).takes("bearings").noted("Bearings"),
                 position_in().noted("Vehicle to guide"),
-                events_out(Accept::Kinds(&[EventKind::DfFix, EventKind::Nav])),
+                events_out(kinds!(DF_FIX, NAV)),
             ]),
             (Note(NoteNode), "note", Tool, "Note", "Markdown you leave on the canvas",
                 Role::Plain, Face::sized(320, 200).min(200, 120), []),
@@ -694,9 +704,9 @@ fn narrow_channel(
     let Some(descriptor) = descriptor else {
         return declared;
     };
-    let mut emitted: KindSet = descriptor.emits.iter().copied().collect();
+    let mut emitted: KindSet = descriptor.emits.iter().cloned().collect();
     if descriptor.calls.is_some() {
-        emitted = emitted.with(EventKind::Call);
+        emitted = emitted.with(EventKind::CALL);
     }
     declared
         .into_iter()
@@ -708,7 +718,9 @@ fn narrow_channel(
             _ => true,
         })
         .map(|port| match port.payload {
-            Payload::Events { .. } => port.carrying(Payload::Events { kinds: emitted }),
+            Payload::Events { .. } => port.carrying(Payload::Events {
+                kinds: emitted.clone(),
+            }),
             _ => port,
         })
         .collect()
@@ -724,8 +736,8 @@ fn monitor_kinds(
     descriptors
         .iter()
         .filter(|descriptor| descriptor.identifiable && monitor.decodes(&descriptor.type_id))
-        .flat_map(|descriptor| descriptor.emits.iter().copied())
-        .chain([EventKind::Transmission])
+        .flat_map(|descriptor| descriptor.emits.iter().cloned())
+        .chain([EventKind::TRANSMISSION])
         .collect()
 }
 
@@ -733,7 +745,9 @@ fn carrying_events(declared: Vec<PortSpec>, kinds: KindSet) -> Vec<PortSpec> {
     declared
         .into_iter()
         .map(|port| match port.payload {
-            Payload::Events { .. } => port.carrying(Payload::Events { kinds }),
+            Payload::Events { .. } => port.carrying(Payload::Events {
+                kinds: kinds.clone(),
+            }),
             _ => port,
         })
         .collect()

@@ -1,4 +1,5 @@
-use sdrmm_wire::{IsmCoding, IsmMessage};
+use crate::ism::IsmCoding;
+use crate::ism::IsmMessage;
 
 use crate::ism::{
     bits::{Bits, Packed, reflect_nibbles},

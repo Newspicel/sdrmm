@@ -67,7 +67,7 @@ export const GERMAN_AMATEUR_PLAN: BandPlan = {
       official_name: "160 m: narrow band digital",
       start_hz: 1838000,
       stop_hz: 1843000,
-      aliases: ["160 m digital", "ft8"],
+      aliases: ["160 m digital", "weak signal"],
     },
     {
       id: "de:38001:1850000:1890000",
@@ -115,7 +115,7 @@ export const GERMAN_AMATEUR_PLAN: BandPlan = {
       official_name: "80 m: narrow band digital",
       start_hz: 3570000,
       stop_hz: 3600000,
-      aliases: ["80 m digital", "ft8"],
+      aliases: ["80 m digital", "weak signal"],
     },
     {
       id: "de:75*001:5351500:5366500",
@@ -154,7 +154,7 @@ export const GERMAN_AMATEUR_PLAN: BandPlan = {
       official_name: "20 m: narrow band digital",
       start_hz: 14070000,
       stop_hz: 14099000,
-      aliases: ["20 m digital", "ft8"],
+      aliases: ["20 m digital", "weak signal"],
     },
     {
       id: "de:126001:14250000:14350000",

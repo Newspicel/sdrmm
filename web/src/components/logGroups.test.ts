@@ -8,11 +8,11 @@ function entry(id: number, freqHz: number, station: string | null): DecoderLogEn
     at: "2026-10-05T10:00:00Z",
     device_set: 0,
     channel: 0,
-    kind: "adsb",
+    kind: "probe",
     freq_hz: freqHz,
     station,
     summary: `row ${id}`,
-    event: { kind: "adsb", data: { icao: station ?? "", df: 17, raw: "" } },
+    event: { kind: "probe", data: {} },
   };
 }
 

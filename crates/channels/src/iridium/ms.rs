@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use super::frame::bits_to_u32;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MsFrame {
     pub block: u8,
@@ -45,29 +47,25 @@ pub enum MsContent {
     },
 }
 
-fn int(bits: &[u8]) -> u32 {
-    bits.iter().fold(0u32, |v, &b| (v << 1) | b as u32)
-}
-
 pub fn parse(blocks: &[Vec<u8>]) -> Option<MsFrame> {
     if blocks.is_empty() || blocks[0].len() != 21 {
         return None;
     }
     let h = &blocks[0];
     let ms_type = h[0];
-    if int(&h[1..5]) != 0 {
+    if bits_to_u32(&h[1..5]) != 0 {
         return None;
     }
-    let block = int(&h[5..9]) as u8;
-    let frame = int(&h[9..15]) as u8;
-    let bch_blocks = int(&h[15..19]) as usize;
+    let block = bits_to_u32(&h[5..9]) as u8;
+    let frame = bits_to_u32(&h[9..15]) as u8;
+    let bch_blocks = bits_to_u32(&h[15..19]) as usize;
     if bch_blocks < 2 {
         return None;
     }
     let group = if ms_type == 1 {
         "A".to_string()
     } else {
-        int(&h[19..21]).to_string()
+        bits_to_u32(&h[19..21]).to_string()
     };
 
     let mut blocks: Vec<&Vec<u8>> = blocks.iter().take(2 * bch_blocks).collect();
@@ -78,7 +76,7 @@ pub fn parse(blocks: &[Vec<u8>]) -> Option<MsFrame> {
         if blocks.len() < 2 {
             return None;
         }
-        let ctr1 = int(&blocks[0][..12]) as u16;
+        let ctr1 = bits_to_u32(&blocks[0][..12]) as u16;
         acq = Some(MsAcq {
             unknown1: h[19],
             secondary: h[20],
@@ -111,9 +109,9 @@ pub fn parse(blocks: &[Vec<u8>]) -> Option<MsFrame> {
         .iter()
         .rev()
         .fold(0u32, |v, &b| (v << 1) | b as u32);
-    let format = int(&rest[22..27]) as u8;
-    let seq = int(&rest[27..33]) as u8;
-    if int(&rest[33..37]) != 0 {
+    let format = bits_to_u32(&rest[22..27]) as u8;
+    let seq = bits_to_u32(&rest[27..33]) as u8;
+    if bits_to_u32(&rest[33..37]) != 0 {
         return Some(out);
     }
     let data = &rest[43..];
@@ -124,7 +122,10 @@ pub fn parse(blocks: &[Vec<u8>]) -> Option<MsFrame> {
         _ => None,
     }
     .unwrap_or_else(|| MsContent::Raw {
-        hex: data.chunks(8).map(|c| format!("{:02x}", int(c))).collect(),
+        hex: data
+            .chunks(8)
+            .map(|c| format!("{:02x}", bits_to_u32(c)))
+            .collect(),
     });
     out.body = Some(MsBody {
         ric,
@@ -145,11 +146,11 @@ fn msg_checksum(blocks: &[&Vec<u8>]) -> bool {
     let mut csum = 0u32;
     for (idx, b) in blocks.iter().enumerate() {
         if idx != 1 {
-            csum += int(&b[..8]);
+            csum += bits_to_u32(&b[..8]);
         }
-        csum += int(&b[8..16]);
+        csum += bits_to_u32(&b[8..16]);
         if idx != 0 {
-            csum += int(&b[16..]);
+            csum += bits_to_u32(&b[16..]);
         }
     }
     (csum_val + csum) % 1024 == 1023
@@ -167,12 +168,12 @@ fn ascii_content(data: &[u8], body_blocks: &[&Vec<u8>]) -> Option<MsContent> {
         if rest.len() < 4 {
             return None;
         }
-        let lfl = int(&rest[..4]) as usize;
+        let lfl = bits_to_u32(&rest[..4]) as usize;
         if lfl == 0 || rest.len() < 4 + 2 * lfl {
             return None;
         }
-        ctr = int(&rest[4..4 + lfl]) as u8;
-        ctr_max = int(&rest[4 + lfl..4 + 2 * lfl]) as u8;
+        ctr = bits_to_u32(&rest[4..4 + lfl]) as u8;
+        ctr_max = bits_to_u32(&rest[4 + lfl..4 + 2 * lfl]) as u8;
         rest = &rest[4 + 2 * lfl..];
     }
     if rest.len() < 8 || rest[0] != 0 {
@@ -181,7 +182,7 @@ fn ascii_content(data: &[u8], body_blocks: &[&Vec<u8>]) -> Option<MsContent> {
     let chars = &rest[8..];
     let mut text = String::new();
     for ch in chars.as_chunks::<7>().0.iter() {
-        let c = int(ch);
+        let c = bits_to_u32(ch);
         if c == 3 {
             break;
         }
@@ -207,7 +208,7 @@ fn bcd_content(data: &[u8]) -> Option<MsContent> {
         .as_chunks::<4>()
         .0
         .iter()
-        .map(|c| format!("{:x}", int(c)))
+        .map(|c| format!("{:x}", bits_to_u32(c)))
         .collect();
     Some(MsContent::Bcd { digits })
 }

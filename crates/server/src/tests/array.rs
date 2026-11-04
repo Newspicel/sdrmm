@@ -933,7 +933,7 @@ async fn processor_reports_and_surfaces_are_forwarded() {
             bearing_deg: None,
             lat: None,
             lon: None,
-            icao: None,
+            target: None,
         }],
         ..RadarUpdate::default()
     };

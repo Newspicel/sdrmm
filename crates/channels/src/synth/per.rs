@@ -1,5 +1,5 @@
+use crate::per::PerParams;
 use num_complex::Complex;
-use sdrmm_wire::PerParams;
 
 use super::{fsk, silence};
 use crate::per::{deviation_hz, frame::frame_bits};

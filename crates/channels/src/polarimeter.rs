@@ -3,10 +3,11 @@ use sdrmm_dsp::beamform::{LaneNoise, WeightRamp, WeightSet};
 use sdrmm_dsp::covariance::SampleCovariance;
 use sdrmm_dsp::linalg::{CMat, Eigen, HermitianEigen};
 use sdrmm_dsp::polar::{Hand as PolarHand, Stokes, matched_weights};
-use sdrmm_wire::array::{MAX_ARRAY_LANES, MIN_ARRAY_LANES};
+use sdrmm_dsp::power_db;
 use sdrmm_wire::{
     BEAM_PORT, Hand, PolarimeterParams, PolarimeterReading, ProcessorParams, ProcessorReading,
 };
+use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use crate::ChannelError;
 use crate::array_processor::{
@@ -89,11 +90,7 @@ const fn wire_hand(hand: PolarHand) -> Hand {
 }
 
 fn db(power: f32) -> f32 {
-    if power > 0.0 {
-        (10.0 * power.log10()).max(POWER_FLOOR_DB)
-    } else {
-        POWER_FLOOR_DB
-    }
+    power_db(power, POWER_FLOOR_DB)
 }
 
 fn unsolved<E>(_: E) -> ChannelError {

@@ -1,10 +1,12 @@
 #![allow(clippy::expect_used)]
 
+use crate::aprs::AprsMode;
+use crate::aprs::AprsParams;
+use crate::atv::AtvParams;
+use crate::selcall::SelcallSystem;
+use crate::sstv::SstvMode;
 use num_complex::Complex;
-use sdrmm_wire::{
-    AprsMode, AprsParams, AtvParams, ChannelParams, ChannelSettings, SelcallSystem, Squelch,
-    SstvMode,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings, Squelch};
 
 use super::{
     acars, adsb, ais, atv, dect, dv, ermes, flex, gnss, morse, navtex, pocsag, radio_clock, rds,
@@ -240,10 +242,11 @@ fn aprs_packet() -> Vec<Complex<f32>> {
     let settings = ChannelSettings {
         frequency_hz: 0.0,
         squelch: Squelch::Off,
-        params: ChannelParams::Aprs(AprsParams {
+        params: ChannelParams::of(&AprsParams {
             mode: AprsMode::Afsk1200,
             ..AprsParams::default()
-        }),
+        })
+        .unwrap_or_else(|e| panic!("aprs settings: {e}")),
         blanker: Default::default(),
         if_filter: Default::default(),
     };

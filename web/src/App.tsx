@@ -136,6 +136,7 @@ export function App() {
     channelNodes,
     graph,
     stepHz,
+    channelTypes: channelTypes.data?.types ?? [],
     setStepHz,
     workspace,
     tuneNode,

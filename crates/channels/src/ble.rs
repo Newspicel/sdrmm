@@ -1,3 +1,7 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+mod model;
+pub use model::*;
 pub(crate) mod ad;
 mod beacon;
 mod names;
@@ -8,10 +12,7 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_modem::ble::{self as phy, Lane, Packet, Sink, band::Band};
-use sdrmm_wire::{
-    BleAdi, BleAdvert, BleLink, BleParams, BlePhy, ChannelDescriptor, ChannelParams,
-    ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use self::{
     ad::Fields,
@@ -19,7 +20,8 @@ use self::{
     repeats::{Fnv, Repeats},
 };
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_rate, datalink,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel, check_rate,
+    datalink,
 };
 
 const PASSBAND: f64 = 0.55;
@@ -33,18 +35,12 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BleLink::default().bandwidth_hz(),
     input_rate_hz: BleLink::default().input_rate_hz(),
     has_audio: false,
-    emits: vec![EventKind::Ble],
+    emits: vec![EventKind::named("ble")],
     ..ChannelDescriptor::default()
 });
 
 fn params(settings: &ChannelSettings) -> Result<BleParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Ble(params) => Ok(*params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "BLE channel got {} params",
-            other.type_id()
-        ))),
-    }
+    crate::settings_of::<BleParams>(settings)
 }
 
 pub(crate) fn occupied_band(link: BleLink) -> (f64, f64) {
@@ -131,11 +127,10 @@ pub struct BleChannel {
     unreadable: u32,
 }
 
-impl ChannelRx for BleChannel {
+impl NativeChannel for BleChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
         check_rate(ctx, &DESCRIPTOR, params.link.input_rate_hz())?;
@@ -147,7 +142,9 @@ impl ChannelRx for BleChannel {
             unreadable: 0,
         })
     }
+}
 
+impl ChannelRx for BleChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params.link.input_rate_hz() != self.link.input_rate_hz() {
@@ -203,7 +200,7 @@ impl Sink for Events<'_> {
         let fields = Fields::read(pdu.data);
         *self.unreadable = self.unreadable.saturating_add(fields.truncated);
         self.events
-            .push(DecoderEvent::Ble(advert(&pdu, &packet, repeats, fields)));
+            .push(DecoderEvent::of(&advert(&pdu, &packet, repeats, fields)));
     }
 }
 
@@ -265,6 +262,26 @@ pub(crate) fn advert(
         aux: extended.aux,
         data: ad::hex(pdu.data),
     }
+}
+
+pub(crate) fn ble_decoder() -> Native<BleParams> {
+    Native::new::<BleChannel>(|p: &BleParams| occupied_band(p.link))
+        .filter(|p| Ok(channel_filter(p.link)))
+        .input_rate(|p| p.link.input_rate_hz())
+        .home(2_426_000_000.0)
+        .form(ble_form)
+        .kinds(ble_kinds)
+}
+
+pub(crate) fn ble_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("link", "Link", Control::choice::<BleLink>())
+            .title("Bluetooth channels to listen on"),
+    ]
+}
+
+fn ble_kinds() -> Vec<KindSpec> {
+    vec![crate::ble::ble_kind()]
 }
 
 #[cfg(test)]

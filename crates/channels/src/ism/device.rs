@@ -1,4 +1,7 @@
-use sdrmm_wire::{IsmCoding, IsmIntegrity, IsmMessage, IsmModulation};
+use crate::ism::IsmCoding;
+use crate::ism::IsmIntegrity;
+use crate::ism::IsmMessage;
+use crate::ism::IsmModulation;
 
 use super::{
     bits::{Bits, hex},

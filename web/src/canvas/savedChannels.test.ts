@@ -4,7 +4,7 @@ import type { ChannelSettings, WorkspaceDetail } from "../lib/types";
 import { savedChannelsOf, withSavedChannel } from "./savedChannels";
 
 function settings(frequencyHz: number): ChannelSettings {
-  return { frequency_hz: frequencyHz, params: { type: "nfm", settings: {} } };
+  return { frequency_hz: frequencyHz, params: { type: "voice", settings: {} } };
 }
 
 type SavedChannel = NonNullable<NonNullable<WorkspaceDetail["state"]>["channels"]>[number];
@@ -22,7 +22,12 @@ function detail(channels: SavedChannel[]): WorkspaceDetail {
       graph: {
         nodes: [
           { id: "dev", kind: "device", position: { x: 0, y: 0 }, data: {} },
-          { id: "voice", kind: "channel", position: { x: 0, y: 0 }, data: { channel_type: "nfm" } },
+          {
+            id: "voice",
+            kind: "channel",
+            position: { x: 0, y: 0 },
+            data: { channel_type: "voice" },
+          },
         ],
         edges: [{ from: { node: "dev", port: "iq" }, to: { node: "voice", port: "iq" } }],
       },

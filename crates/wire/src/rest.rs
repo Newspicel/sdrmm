@@ -3,7 +3,7 @@ use utoipa::ToSchema;
 
 use crate::{
     channel::{ChannelDescriptor, ChannelSettings},
-    decode::{DecoderEvent, DvMode},
+    decode::DecoderEvent,
     device::{DeviceInfo, DeviceSettings},
 };
 
@@ -44,9 +44,13 @@ pub struct VoiceCall {
 
 impl VoiceCall {
     #[must_use]
+    /// The mode as a decoder labels it, or its type id in capitals when it has no label.
     pub fn mode_label(&self) -> String {
-        DvMode::from_type_id(&self.mode)
-            .map_or_else(|| self.mode.to_uppercase(), |mode| mode.label().to_owned())
+        if self.mode.chars().any(char::is_uppercase) {
+            self.mode.clone()
+        } else {
+            self.mode.to_uppercase()
+        }
     }
 }
 
@@ -1086,10 +1090,10 @@ mod tests {
                 .iter()
                 .map(|(node, frequency_hz)| crate::WorkspaceChannel {
                     node: (*node).to_owned(),
-                    settings: ChannelSettings {
-                        frequency_hz: *frequency_hz,
-                        ..ChannelSettings::default_for("nfm").expect("nfm settings")
-                    },
+                    settings: ChannelSettings::new(
+                        *frequency_hz,
+                        crate::ChannelParams::bare("probe"),
+                    ),
                 })
                 .collect(),
             devices: devices

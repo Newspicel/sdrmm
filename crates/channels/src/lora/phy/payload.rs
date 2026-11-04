@@ -1,4 +1,5 @@
-use sdrmm_wire::{LoraCodingRate, LoraIntegrity};
+use crate::lora::LoraCodingRate;
+use crate::lora::LoraIntegrity;
 
 use super::{
     Frame,

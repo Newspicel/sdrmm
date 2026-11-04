@@ -1,4 +1,4 @@
-use sdrmm_wire::SarsatProtocol;
+use crate::sarsat::SarsatProtocol;
 
 use super::Bits;
 

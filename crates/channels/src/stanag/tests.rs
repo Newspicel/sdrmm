@@ -1,11 +1,14 @@
 mod air;
 mod synth;
 
+use crate::NativeChannel;
+use crate::stanag::StanagInterleave;
+use crate::stanag::StanagModem;
+use crate::stanag::StanagParams;
+use crate::stanag::StanagRate;
+use crate::stanag::StanagReport;
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelParams, DecoderEvent, StanagInterleave, StanagModem, StanagParams, StanagRate,
-    StanagReport,
-};
+use sdrmm_wire::ChannelParams;
 
 use super::{INPUT_RATE_HZ, StanagChannel, channel_filter, preamble::RATES};
 use crate::{ChannelCtx, ChannelOutputs, ChannelRx, testutil::settings};
@@ -19,7 +22,7 @@ fn channel() -> StanagChannel {
         ChannelCtx {
             input_rate: INPUT_RATE_HZ,
         },
-        settings(ChannelParams::Stanag(StanagParams::default())),
+        settings(ChannelParams::new("stanag", &StanagParams::default()).expect("stanag settings")),
     )
     .unwrap()
 }
@@ -33,9 +36,10 @@ fn run(channel: &mut StanagChannel, iq: &[Complex<f32>]) -> Vec<StanagReport> {
         filter.process(block, &mut filtered);
         out.reset();
         channel.process(&filtered, &mut out);
-        reports.extend(out.events.drain(..).map(|event| match event {
-            DecoderEvent::Stanag(report) => report,
-            other => panic!("unexpected {other:?}"),
+        reports.extend(out.events.drain(..).map(|event| {
+            event
+                .read::<StanagReport>()
+                .unwrap_or_else(|| panic!("unexpected {event:?}"))
         }));
     }
     reports
@@ -217,7 +221,9 @@ fn the_dial_frequency_places_the_carrier() {
         },
         sdrmm_wire::ChannelSettings {
             frequency_hz: 8_502_000.0,
-            ..settings(ChannelParams::Stanag(StanagParams::default()))
+            ..settings(
+                ChannelParams::new("stanag", &StanagParams::default()).expect("stanag settings"),
+            )
         },
     )
     .unwrap();
@@ -233,7 +239,9 @@ fn settings_out_of_range_are_refused() {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Stanag(StanagParams { window_s })),
+            settings(
+                ChannelParams::new("stanag", &StanagParams { window_s }).expect("stanag settings"),
+            ),
         );
         assert!(refused.is_err(), "{window_s}");
     }
@@ -241,7 +249,9 @@ fn settings_out_of_range_are_refused() {
         ChannelCtx {
             input_rate: INPUT_RATE_HZ,
         },
-        settings(ChannelParams::Sid(sdrmm_wire::SidParams::default())),
+        settings(
+            ChannelParams::new("sid", &crate::sid::SidParams::default()).expect("sid settings"),
+        ),
     );
     assert!(wrong.is_err());
 }

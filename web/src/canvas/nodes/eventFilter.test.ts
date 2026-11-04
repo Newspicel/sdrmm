@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_FILTER_IDS, MAX_FILTER_KINDS, MAX_FILTER_TEXT_LEN } from "../../lib/limits";
 import type { EventKind, Feed } from "../../lib/types";
 import { CATALOG } from "../../test/catalog";
+import { PROBE_CATALOG } from "../../test/kinds";
 import {
   filterSaid,
   formatIds,
@@ -16,7 +17,7 @@ import {
   toTriState,
 } from "./eventFilter";
 
-const KINDS = CATALOG.event_kinds;
+const KINDS = PROBE_CATALOG.event_kinds;
 
 describe("parseIds", () => {
   it("takes commas, spaces and newlines alike", () => {
@@ -62,12 +63,14 @@ function feed(source: string, kinds: EventKind[]): Feed {
 
 describe("offeredBy", () => {
   it("offers what the server says each wire carries, each kind once", () => {
-    expect(offeredBy([feed("sat", ["satellite"]), feed("dmr", ["dv", "call"])])).toEqual([
+    expect(offeredBy([feed("sat", ["satellite"]), feed("radio", ["dv", "call"])])).toEqual([
       "call",
       "dv",
       "satellite",
     ]);
-    expect(offeredBy([feed("adsb", ["adsb"]), feed("adsb2", ["adsb"])])).toEqual(["adsb"]);
+    expect(offeredBy([feed("air", ["probe_plane"]), feed("air2", ["probe_plane"])])).toEqual([
+      "probe_plane",
+    ]);
   });
 
   it("offers nothing when nothing is wired", () => {
@@ -77,14 +80,14 @@ describe("offeredBy", () => {
 
 describe("predicatesFor", () => {
   it("offers an aircraft wire no talkgroups", () => {
-    const shown = predicatesFor(["adsb"], KINDS);
+    const shown = predicatesFor(["probe_plane"], KINDS);
     expect(shown).toEqual(["stations", "contains", "has_position"]);
     expect(shown).not.toContain("talkgroups");
     expect(shown).not.toContain("encrypted");
   });
 
   it("offers a pager wire neither talkgroups nor position", () => {
-    expect(predicatesFor(["pocsag"], KINDS)).toEqual(["stations", "contains"]);
+    expect(predicatesFor(["probe_pager"], KINDS)).toEqual(["stations", "contains"]);
   });
 
   it("offers a call wire the voice predicates and a duration", () => {
@@ -105,7 +108,7 @@ describe("predicatesFor", () => {
   });
 
   it("offers the union across a mixed wire", () => {
-    const shown = predicatesFor(["adsb", "call"], KINDS);
+    const shown = predicatesFor(["probe_plane", "call"], KINDS);
     expect(shown).toContain("has_position");
     expect(shown).toContain("talkgroups");
   });
@@ -113,12 +116,12 @@ describe("predicatesFor", () => {
 
 describe("stationLabel", () => {
   it("names what the wire actually carries", () => {
-    expect(stationLabel(["adsb"], KINDS)).toBe("Aircraft");
-    expect(stationLabel(["ais"], KINDS)).toBe("Vessels");
+    expect(stationLabel(["probe_plane"], KINDS)).toBe("Aircraft");
+    expect(stationLabel(["probe_ship"], KINDS)).toBe("Vessels");
     expect(stationLabel(["call", "dv"], KINDS)).toBe("Radios seen");
-    expect(stationLabel(["adsb", "pocsag"], KINDS)).toBe("Stations");
-    expect(stationLabel(["acars", "adsb"], KINDS)).toBe("Aircraft");
-    expect(stationLabel(["rtty"], KINDS)).toBe("Stations");
+    expect(stationLabel(["probe_plane", "probe_pager"], KINDS)).toBe("Stations");
+    expect(stationLabel(["probe_link", "probe_plane"], KINDS)).toBe("Aircraft");
+    expect(stationLabel(["probe_text"], KINDS)).toBe("Stations");
     expect(stationLabel([], KINDS)).toBe("Stations");
   });
 });
@@ -151,8 +154,8 @@ describe("filterSaid", () => {
   });
 
   it("leads with drop when the filter removes what matches", () => {
-    expect(filterSaid({ mode: "drop", kinds: ["pocsag"], contains: "TEST" })).toBe(
-      'drop pocsag · "TEST"',
+    expect(filterSaid({ mode: "drop", kinds: ["probe_pager"], contains: "TEST" })).toBe(
+      'drop probe_pager · "TEST"',
     );
   });
 
@@ -165,12 +168,12 @@ const titles = (kinds: string[]) => sectionsFor(kinds, KINDS).map((s) => s.title
 
 describe("sectionsFor", () => {
   it("gives an aircraft wire only the sections that apply", () => {
-    expect(titles(["adsb"])).toEqual(["Any event", "Position"]);
+    expect(titles(["probe_plane"])).toEqual(["Any event", "Position"]);
   });
 
   it("gives a pager wire one section", () => {
-    expect(titles(["pocsag"])).toEqual(["Any event"]);
-    expect(sectionsFor(["pocsag"], KINDS)[0]?.predicates).toEqual(["stations", "contains"]);
+    expect(titles(["probe_pager"])).toEqual(["Any event"]);
+    expect(sectionsFor(["probe_pager"], KINDS)[0]?.predicates).toEqual(["stations", "contains"]);
   });
 
   it("gives a call wire the voice section", () => {
@@ -185,16 +188,16 @@ describe("sectionsFor", () => {
   });
 
   it("narrows when a kind is picked out of a mixed wire", () => {
-    expect(titles(["adsb", "call"])).toEqual(["Any event", "Position", "Voice"]);
-    expect(titles(["adsb"])).toEqual(["Any event", "Position"]);
+    expect(titles(["probe_plane", "call"])).toEqual(["Any event", "Position", "Voice"]);
+    expect(titles(["probe_plane"])).toEqual(["Any event", "Position"]);
     expect(titles(["call"])).toEqual(["Any event", "Voice"]);
   });
 
   it("names the kinds each section judges, and nothing more", () => {
-    const mixed = sectionsFor(["adsb", "call"], KINDS);
+    const mixed = sectionsFor(["probe_plane", "call"], KINDS);
     expect(mixed.map((s) => [s.title, s.applies])).toEqual([
-      ["Any event", ["adsb", "call"]],
-      ["Position", ["adsb"]],
+      ["Any event", ["call", "probe_plane"]],
+      ["Position", ["probe_plane"]],
       ["Voice", ["call"]],
     ]);
   });

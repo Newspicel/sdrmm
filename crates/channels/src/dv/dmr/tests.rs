@@ -1,4 +1,5 @@
-use sdrmm_wire::{DmrSlots, SymbolPlane};
+use crate::dv::DmrSlots;
+use sdrmm_wire::SymbolPlane;
 
 use super::*;
 use crate::{
@@ -7,16 +8,23 @@ use crate::{
     synth::dv::dmr as tx,
     testutil::settings,
 };
+use sdrmm_wire::ChannelParams;
 
 fn channel(slots: DmrSlots) -> DmrChannel {
     DmrChannel::new(
         ChannelCtx {
             input_rate: INPUT_RATE_HZ,
         },
-        settings(ChannelParams::Dmr(DmrParams {
-            slots,
-            ignore_crc: false,
-        })),
+        settings(
+            ChannelParams::new(
+                "dmr",
+                &DmrParams {
+                    slots,
+                    ignore_crc: false,
+                },
+            )
+            .expect("dmr settings"),
+        ),
     )
     .expect("dmr channel")
 }
@@ -159,7 +167,7 @@ fn tier_three_grant_exposes_channel_slot_and_flags() {
     payload[30] = true;
     put(&mut payload, 32, 24, 9_001);
     put(&mut payload, 56, 24, 1_234_567);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 0b110001, &payload, false);
     assert_eq!(frame.channel, Some(37));
     assert_eq!(frame.slot, Some(2));
@@ -188,7 +196,7 @@ fn a_grant_names_the_timeslot_it_hands_out_not_the_one_it_arrived_on() {
 fn a_data_grant_is_followed_but_marked_as_data() {
     let mut payload = [false; 96];
     put(&mut payload, 16, 12, 37);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 52, &payload, false);
     assert_eq!(frame.channel, Some(37));
     assert_eq!(frame.data.as_deref(), Some("data call"));
@@ -198,12 +206,12 @@ fn a_data_grant_is_followed_but_marked_as_data() {
 fn a_tier_two_outbound_activation_is_not_read_as_a_grant() {
     let mut payload = [false; 96];
     put(&mut payload, 16, 12, 37);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 56, &payload, false);
     assert_eq!(frame.channel, None);
     assert_eq!(frame.trunk_protocol, None);
 
-    let mut tier_three = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut tier_three = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut tier_three, 0, 56, &payload, true);
     assert_eq!(tier_three.channel, Some(37));
 }
@@ -218,7 +226,7 @@ fn aloha_reads_its_parameters_where_the_standard_puts_them() {
     payload[35] = true;
     put(&mut payload, 36, 4, 11);
     put(&mut payload, 56, 24, 4_001);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 25, &payload, false);
 
     assert_eq!(frame.trunk_protocol, Some(DvTrunkProtocol::TierThree));
@@ -331,7 +339,7 @@ fn an_off_air_capacity_max_aloha_reads_as_its_site_announced_itself() {
     }
     assert_eq!(bits_to_u32(&payload, 2, 6), 25, "not an ALOHA");
 
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 25, &payload, false);
 
     assert_eq!(frame.network_id, Some(1));
@@ -349,7 +357,7 @@ fn the_system_identity_code_splits_by_the_model_it_declares() {
         put(&mut payload, 40, 2, model);
         put(&mut payload, 42, net_bits, net);
         put(&mut payload, 42 + net_bits, site_bits, site);
-        let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+        let mut frame = dv_frame(DvFrameKind::Control);
         decode_tier_three_csbk(&mut frame, 0, 25, &payload, false);
         (frame.network_id, frame.site_id)
     };
@@ -369,7 +377,7 @@ fn an_adjacent_site_announcement_names_the_neighbour_control_channel() {
     put(&mut payload, 27, 8, 200);
     payload[57] = true;
     put(&mut payload, 68, 12, 811);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 40, &payload, false);
 
     assert_eq!(frame.opcode.as_deref(), Some("broadcast, adjacent site"));
@@ -389,7 +397,7 @@ fn a_vote_now_announcement_names_the_channel_to_move_to() {
     let mut payload = [false; 96];
     put(&mut payload, 16, 5, 2);
     put(&mut payload, 68, 12, 42);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 40, &payload, false);
 
     assert_eq!(frame.opcode.as_deref(), Some("broadcast, vote now advice"));
@@ -404,7 +412,7 @@ fn an_announce_tscc_names_both_control_channels_of_the_site() {
     put(&mut payload, 29, 4, 5);
     put(&mut payload, 56, 12, 811);
     put(&mut payload, 68, 12, 812);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 40, &payload, false);
 
     assert_eq!(frame.channel, Some(811));
@@ -419,7 +427,7 @@ fn a_move_tscc_names_the_channel_the_radio_must_go_to() {
     let mut payload = [false; 96];
     put(&mut payload, 44, 12, 900);
     put(&mut payload, 56, 24, 4_001);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 57, &payload, false);
 
     assert_eq!(frame.channel, Some(900));
@@ -432,7 +440,7 @@ fn an_ahoy_names_the_service_it_asks_for() {
     put(&mut payload, 28, 4, 14);
     put(&mut payload, 32, 24, 9_001);
     put(&mut payload, 56, 24, 4_001);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 28, &payload, false);
 
     assert_eq!(
@@ -449,7 +457,7 @@ fn a_registration_acknowledgement_names_itself() {
     put(&mut payload, 16, 7, 2);
     put(&mut payload, 32, 24, 9_001);
     put(&mut payload, 56, 24, 4_001);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 32, &payload, false);
 
     assert_eq!(
@@ -465,7 +473,7 @@ fn a_capacity_max_channel_update_reports_both_timeslots() {
     put(&mut payload, 16, 12, 811);
     put(&mut payload, 32, 24, 9_001);
     put(&mut payload, 56, 24, 9_002);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_vendor_csbk(&mut frame, 0x10, 33, &payload);
 
     assert_eq!(frame.trunk_protocol, Some(DvTrunkProtocol::TierThree));
@@ -483,7 +491,7 @@ fn a_capacity_max_update_skips_a_timeslot_nobody_is_using() {
     let mut payload = [false; 96];
     put(&mut payload, 16, 12, 811);
     put(&mut payload, 32, 24, 9_001);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_vendor_csbk(&mut frame, 0x10, 33, &payload);
 
     assert_eq!(frame.slot_activity.len(), 1);
@@ -496,7 +504,7 @@ fn advantage_mode_reads_the_shorter_talkgroup_fields() {
     put(&mut payload, 16, 12, 811);
     put(&mut payload, 28, 10, 501);
     put(&mut payload, 38, 10, 502);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_vendor_csbk(&mut frame, 0x10, 34, &payload);
 
     assert_eq!(frame.slot_activity.len(), 2);
@@ -516,7 +524,7 @@ fn an_off_air_advantage_update_names_the_talkgroup_its_grant_named() {
         ][index / 8];
         *bit = byte >> (7 - index % 8) & 1 == 1;
     }
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_vendor_csbk(&mut frame, 0x10, 34, &payload);
 
     assert_eq!(frame.channel, Some(22));
@@ -540,7 +548,7 @@ fn absolute_channel_definition_uses_125_hz_steps() {
     put(&mut payload, 57, 10, 456);
     put(&mut payload, 67, 13, 2000);
     let mut bytes = Vec::new();
-    pack_bytes(&payload[..80], &mut bytes);
+    pack_msb_into(&payload[..80], &mut bytes);
     put(&mut payload, 80, 16, u64::from(dmr_crc16(&bytes)));
     assert!(valid_mbc_crc(&payload));
     assert_eq!(
@@ -599,7 +607,7 @@ fn decode_audio(iq: &[Complex<f32>]) -> (Vec<DvFrame>, Vec<f32>) {
         chan.process(block, &mut out);
         audio.extend_from_slice(&out.audio_pcm);
         for event in out.events.drain(..) {
-            let DecoderEvent::Dv(frame) = event else {
+            let Some(frame) = event.read::<DvFrame>() else {
                 panic!("unexpected event")
             };
             frames.push(frame);
@@ -663,7 +671,7 @@ fn decodes_a_call_from_header_to_terminator() {
         .iter()
         .find(|f| f.kind == DvFrameKind::Header)
         .expect("voice LC header");
-    assert_eq!(header.mode, DvMode::Dmr);
+    assert_eq!(header.mode, "DMR");
     assert_eq!(header.slot, Some(1));
     assert_eq!(header.color_code, Some(u16::from(call.color_code)));
     assert_eq!(header.group_call, Some(true));
@@ -770,7 +778,7 @@ fn decodes_a_recorded_call() {
         chan.process(&filtered, &mut out);
         audio.extend_from_slice(&out.audio_pcm);
         for event in out.events.drain(..) {
-            let DecoderEvent::Dv(frame) = event else {
+            let Some(frame) = event.read::<DvFrame>() else {
                 panic!("unexpected event")
             };
             frames.push(frame);
@@ -851,10 +859,16 @@ fn tolerant_channel() -> DmrChannel {
         ChannelCtx {
             input_rate: INPUT_RATE_HZ,
         },
-        settings(ChannelParams::Dmr(DmrParams {
-            slots: DmrSlots::Both,
-            ignore_crc: true,
-        })),
+        settings(
+            ChannelParams::new(
+                "dmr",
+                &DmrParams {
+                    slots: DmrSlots::Both,
+                    ignore_crc: true,
+                },
+            )
+            .expect("dmr settings"),
+        ),
     )
     .expect("dmr channel")
 }
@@ -874,7 +888,7 @@ fn a_live_control_channel_decodes_in_the_blocks_a_radio_delivers() {
         out.reset();
         chan.process(&filtered, &mut out);
         for event in out.events.drain(..) {
-            if let DecoderEvent::Dv(frame) = event {
+            if let Some(frame) = event.read::<DvFrame>() {
                 frames.push(frame);
             }
         }
@@ -900,10 +914,16 @@ fn decodes_a_recorded_tier_three_control_channel() {
         ChannelCtx {
             input_rate: INPUT_RATE_HZ,
         },
-        settings(ChannelParams::Dmr(DmrParams {
-            slots: DmrSlots::Both,
-            ignore_crc: true,
-        })),
+        settings(
+            ChannelParams::new(
+                "dmr",
+                &DmrParams {
+                    slots: DmrSlots::Both,
+                    ignore_crc: true,
+                },
+            )
+            .expect("dmr settings"),
+        ),
     )
     .expect("dmr channel");
     let mut filter = channel_filter();
@@ -1102,7 +1122,7 @@ fn a_short_lc_last_fragment_at_the_wrong_length_clears_the_buffer() {
 fn a_block_that_sums_up_starts_the_count_over() {
     let mut payload = [false; 96];
     let mut bytes = Vec::new();
-    pack_bytes(&payload[..80], &mut bytes);
+    pack_msb_into(&payload[..80], &mut bytes);
     put(
         &mut payload,
         80,
@@ -1258,7 +1278,7 @@ fn vendor_dispatch_decodes_connect_plus_and_capacity_plus_fields() {
     write_bits(&mut connect, 64, 4, 2);
     connect[68] = true;
     write_bits(&mut connect, 72, 8, 2);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_vendor_csbk(&mut frame, 0x06, 0x03, &connect);
     assert_eq!(frame.source, Some(151_015));
     assert_eq!(frame.destination, Some(1_216));
@@ -1274,7 +1294,7 @@ fn vendor_dispatch_decodes_connect_plus_and_capacity_plus_fields() {
     let mut capacity = [false; 96];
     write_bits(&mut capacity, 16, 2, 3);
     write_bits(&mut capacity, 20, 4, 7);
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_vendor_csbk(&mut frame, 0x10, 0x3E, &capacity);
     assert_eq!(frame.rest_channel, Some(7));
 }
@@ -1529,11 +1549,11 @@ fn retuning_forgets_the_call_in_progress() {
     chan.retuned();
     out.reset();
     chan.process(&iq[iq.len() / 2..], &mut out);
-    let frames: Vec<&DvFrame> = out
+    let frames: Vec<DvFrame> = out
         .events
         .iter()
         .map(|event| {
-            let DecoderEvent::Dv(frame) = event else {
+            let Some(frame) = event.read::<DvFrame>() else {
                 panic!("unexpected event")
             };
             frame

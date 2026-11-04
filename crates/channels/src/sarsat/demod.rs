@@ -4,7 +4,9 @@ use sdrmm_dsp::{BitSync, Decimator, Nco, RealDecimator, design_lowpass, fft::Tra
 pub(crate) const RATE: f64 = 24_000.0;
 pub(crate) const BIT_RATE: f64 = 400.0;
 pub(crate) const CHIP_RATE: f64 = 2.0 * BIT_RATE;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const PHASE_DEVIATION: f64 = 1.1;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const PREAMBLE_S: f64 = 0.16;
 const DECIMATION: usize = 3;
 const WORK_RATE: f64 = RATE / DECIMATION as f64;

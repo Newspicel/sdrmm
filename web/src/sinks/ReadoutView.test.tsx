@@ -1,127 +1,158 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PANELS } from "../components/DecoderPanels";
 import { patchCatalogQuery } from "../lib/api";
 import { EMPTY_SINK, type SinkView } from "../lib/sinks";
-import type { DecoderEvent } from "../lib/types";
+import type {
+  Capability,
+  CapturedImage,
+  DecoderEvent,
+  EventKindEntry,
+  Field,
+  PatchCatalog,
+} from "../lib/types";
 import { CATALOG } from "../test/catalog";
 import { sinkEntity, sinkRecord } from "../test/sinks";
-import type { Panels } from "./panels";
 import { ReadoutView } from "./ReadoutView";
 
 const NOW = Date.parse("2026-09-21T10:00:05Z");
-const SHIP: DecoderEvent = {
-  kind: "aprs",
-  data: { source: "DL1ABC", destination: "APRS", path: [], info: "" },
-} as never;
 
-function rtty(text: string, at: string) {
-  return sinkRecord("rtty", { kind: "rtty", data: { text } }, { summary: text, text }, at);
+function kind(name: string, caps: Capability[]): EventKindEntry {
+  return { kind: name, name, noun: name, caps, hue: "teal", lifetime: { type: "instant" } };
 }
 
-function render(feed: SinkView, panels: Panels = {}): string {
+const KINDS: EventKindEntry[] = [
+  kind("probe_station", ["log", "station"]),
+  kind("probe_text", ["log", "text"]),
+  kind("probe_picture", ["log", "picture"]),
+  kind("probe_plain", ["log"]),
+];
+
+function event(name: string): DecoderEvent {
+  return { kind: name, data: {} };
+}
+
+function text(label: string, value: string): Field {
+  return { label, value: { type: "text", value } };
+}
+
+function line(chunk: string, at: string) {
+  return sinkRecord(
+    "probe",
+    event("probe_text"),
+    { summary: chunk, text: chunk, fields: [text("Speed", "22 WPM")] },
+    at,
+  );
+}
+
+function render(feed: SinkView): string {
   const client = new QueryClient();
-  client.setQueryData(patchCatalogQuery().queryKey, CATALOG);
+  const catalog: PatchCatalog = { ...CATALOG, event_kinds: [...CATALOG.event_kinds, ...KINDS] };
+  client.setQueryData(patchCatalogQuery().queryKey, catalog);
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
-      <ReadoutView feed={feed} panels={panels} sourceName={(source) => source} now={NOW} />
+      <ReadoutView feed={feed} sourceName={(source) => source} now={NOW} />
     </QueryClientProvider>,
   );
 }
 
 describe("readout", () => {
-  it("lists station entities in a generic table", () => {
+  it("tabulates stations with a column per field label, in order of first appearance", () => {
     const html = render({
       ...EMPTY_SINK,
       entities: [
-        sinkEntity("aprs", "aprs", "DL1ABC", SHIP, {
-          summary: "DL1ABC: position",
-          label: "DL1ABC-9",
+        sinkEntity("probe", "probe_station", "A1", event("probe_station"), {
+          summary: "A1 high",
+          label: "ALPHA",
+          fields: [text("Altitude", "37000 ft"), text("Speed", "451 kt")],
+        }),
+        sinkEntity("probe", "probe_station", "B2", event("probe_station"), {
+          summary: "B2 parked",
+          fields: [text("Squawk", "7000")],
         }),
       ],
     });
-    expect(html).toContain("DL1ABC-9");
-    expect(html).toContain("DL1ABC: position");
+    const heads = [...html.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((match) => match[1]);
+    expect(heads).toEqual(["Name", "Altitude", "Speed", "Squawk", "Age"]);
+    expect(html).toContain("ALPHA");
+    expect(html).toContain("B2");
+    expect(html).toContain("37000 ft");
+    expect(html).toContain("7000");
     expect(html).toContain("5s");
   });
 
-  it("shows the latest record of a kind without a station", () => {
+  it("shows the summary when no station carries fields", () => {
     const html = render({
       ...EMPTY_SINK,
-      records: [
-        sinkRecord("clock", { kind: "radio_clock", data: {} } as never, {
-          summary: "DCF77 10:00",
-          fields: [{ label: "Station", value: { type: "text", value: "DCF77" } }],
+      entities: [
+        sinkEntity("probe", "probe_station", "C3", event("probe_station"), {
+          summary: "C3: position",
         }),
       ],
     });
-    expect(html).toContain("DCF77 10:00");
-    expect(html).toContain("Station");
+    expect(html).toContain("Last");
+    expect(html).toContain("C3: position");
   });
 
-  it("joins the text of a text kind", () => {
+  it("joins the text of a text kind and shows its newest fields", () => {
     const html = render({
       ...EMPTY_SINK,
-      records: [rtty("DE DL1ABC", "2026-09-21T10:00:02Z"), rtty("CQ CQ ", "2026-09-21T10:00:01Z")],
+      records: [line("DE DL1ABC", "2026-09-21T10:00:02Z"), line("CQ CQ ", "2026-09-21T10:00:01Z")],
     });
     expect(html).toContain("CQ CQ DE DL1ABC");
+    expect(html).toContain("22 WPM");
+    expect(html).toContain("Copy all");
   });
 
-  it("renders a panel from its props", () => {
-    const html = render(
-      {
-        ...EMPTY_SINK,
-        entities: [
-          sinkEntity(
-            "adsb",
-            "adsb",
-            "3C6444",
-            { kind: "adsb", data: { icao: "3c6444", df: 17, raw: "8d", callsign: "DLH123" } },
-            { summary: "DLH123" },
-          ),
-        ],
-      },
-      PANELS,
-    );
-    expect(html).toContain("Aircraft");
-    expect(html).toContain("DLH123");
-  });
-
-  it("shows the broadcast status a channel sent down its wire", () => {
-    const html = render(
-      {
-        ...EMPTY_SINK,
-        records: [
-          sinkRecord(
-            "dab",
-            {
-              kind: "broadcast",
-              data: {
-                system: "dab_plus",
-                locked: true,
-                snr_db: 18,
-                frequency_error_hz: 0,
-                label: "Radio Eins",
-                dynamic_label: "Now playing",
-              },
-            },
-            { summary: "Radio Eins locked" },
-          ),
-        ],
-      },
-      PANELS,
-    );
-    expect(html).toContain("Radio Eins");
-    expect(html).toContain("Now playing");
-  });
-
-  it("shows only what its own feed holds, so a filter upstream decides", () => {
+  it("shows the pictures a picture kind's decoder captured", () => {
+    const picture: CapturedImage = {
+      id: 7,
+      node: "probe",
+      source: "probe",
+      mode: "Probe 36",
+      device_set: 1,
+      channel: 1,
+      at: "2026-09-21T10:00:00Z",
+      freq_hz: 145_000_000,
+      width: 320,
+      height: 240,
+      lines: 240,
+      complete: true,
+      image: { url: "/api/images/7.png", media_type: "image/png" },
+    };
     const html = render({
       ...EMPTY_SINK,
-      records: [sinkRecord("pager", { kind: "pocsag", data: {} } as never, { summary: "ALERT 1" })],
+      pictures: [picture, { ...picture, id: 8, node: "elsewhere" }],
+      records: [sinkRecord("probe", event("probe_picture"), { summary: "picture" })],
     });
-    expect(html).toContain("ALERT 1");
-    expect(html).not.toContain("DLH123");
+    expect(html).toContain("<img");
+    expect(html).toContain("Probe 36 320 × 240");
+    expect(html.match(/<img/g)).toHaveLength(1);
+  });
+
+  it("shows the latest record of any other kind", () => {
+    const html = render({
+      ...EMPTY_SINK,
+      records: [
+        sinkRecord("probe", event("probe_plain"), {
+          summary: "Station 10:00",
+          fields: [text("Station", "TEST")],
+        }),
+      ],
+    });
+    expect(html).toContain("Station 10:00");
+    expect(html).toContain("TEST");
+  });
+
+  it("names each group when a feed holds several", () => {
+    const html = render({
+      ...EMPTY_SINK,
+      records: [
+        sinkRecord("probe", event("probe_plain"), { summary: "ALERT 1" }),
+        line("CQ", "2026-09-21T10:00:01Z"),
+      ],
+    });
+    expect(html).toContain("probe · probe_plain");
+    expect(html).toContain("probe · probe_text");
   });
 });

@@ -1,3 +1,5 @@
+use sdrmm_dsp::crc_msb_bits;
+
 #[derive(Clone, Debug)]
 pub struct BitReader<'a> {
     bytes: &'a [u8],
@@ -125,34 +127,14 @@ impl BitWriter {
 
 #[must_use]
 pub fn crc(poly: u32, width: u32, bits: impl IntoIterator<Item = bool>) -> u32 {
-    let mask = (1u32 << width) - 1;
-    let top = 1u32 << (width - 1);
-    let mut register = mask;
-    for bit in bits {
-        let feedback = (register & top != 0) != bit;
-        register = (register << 1) & mask;
-        if feedback {
-            register ^= poly & mask;
-        }
-    }
-    !register & mask
+    let mask = u32::MAX >> (32 - width);
+    crc_msb_bits(poly, width, mask, bits) ^ mask
 }
 
 pub fn byte_bits(bytes: &[u8]) -> impl Iterator<Item = bool> + '_ {
     bytes
         .iter()
         .flat_map(|&byte| (0..8).rev().map(move |shift| byte >> shift & 1 == 1))
-}
-
-pub fn pack(bits: &[bool], out: &mut Vec<u8>) {
-    out.clear();
-    for chunk in bits.chunks(8) {
-        let mut byte = 0u8;
-        for (index, &bit) in chunk.iter().enumerate() {
-            byte |= u8::from(bit) << (7 - index);
-        }
-        out.push(byte);
-    }
 }
 
 #[cfg(test)]

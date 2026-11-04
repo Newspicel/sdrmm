@@ -172,7 +172,7 @@ pub(super) fn insert_statement(table: &str) -> String {
 pub(super) struct Columns {
     pub at: Vec<String>,
     pub output: Vec<String>,
-    pub kind: Vec<&'static str>,
+    pub kind: Vec<String>,
     pub device_set: Vec<i64>,
     pub channel: Vec<i64>,
     pub freq_hz: Vec<f64>,
@@ -187,7 +187,7 @@ pub(super) fn columns(batch: &[Delivery]) -> Columns {
         let facts = &delivery.message.facts;
         columns.at.push(facts.at.clone());
         columns.output.push(delivery.node.clone());
-        columns.kind.push(facts.kind);
+        columns.kind.push(facts.kind.clone());
         columns.device_set.push(i64::from(facts.device_set));
         columns.channel.push(i64::from(facts.channel));
         columns.freq_hz.push(facts.freq_hz);

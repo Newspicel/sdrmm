@@ -1,9 +1,9 @@
+use crate::datv::DatvCodeRate;
 use num_complex::Complex;
 use sdrmm_dsp::{
     CONFIDENT, ConvCode, DVB_DISPERSAL, DVB_PRIMITIVE, Depuncturer, ERASURE, Prbs, ReedSolomon,
-    Soft, StreamViterbiK7, ViterbiK7,
+    Soft, StreamViterbiK7, ViterbiK7, word_msb,
 };
-use sdrmm_wire::DatvCodeRate;
 
 pub const PACKET: usize = 188;
 pub const CODEWORD: usize = 204;
@@ -273,9 +273,7 @@ impl DvbsMetrics {
 }
 
 fn pack_byte(bits: &[bool], start: usize) -> u8 {
-    bits[start..start + 8]
-        .iter()
-        .fold(0u8, |byte, &bit| byte << 1 | u8::from(bit))
+    word_msb(&bits[start..start + 8]) as u8
 }
 
 fn sync_offset(bits: &[bool]) -> Option<(usize, bool)> {

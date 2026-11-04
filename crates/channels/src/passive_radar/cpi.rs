@@ -11,9 +11,9 @@ use sdrmm_dsp::radar::cfar::{
 };
 use sdrmm_dsp::radar::cluster::{Cluster, Clusterer, MAX_SNAPSHOTS};
 use sdrmm_dsp::radar::track::{MAX_MEASUREMENTS, Measurement, TrackAoa, TrackView, Tracker};
-use sdrmm_wire::radar::{
-    AoaState, MAX_RADAR_DETECTIONS, MAX_RADAR_TRACKS, RADAR_TRACK_EVENT_REPEAT_S, RadarAxes,
-    TrackChange,
+use sdrmm_wire::{
+    radar::AoaState, radar::MAX_RADAR_DETECTIONS, radar::MAX_RADAR_TRACKS,
+    radar::RADAR_TRACK_EVENT_REPEAT_S, radar::RadarAxes, radar::TrackChange,
 };
 
 use super::assemble::CpiJob;

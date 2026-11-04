@@ -35,7 +35,7 @@ const TRACK: RadarTrack = {
   misses: 0,
   trail: [],
   aoa: { azimuth_deg: 231, sigma_deg: 3, quality: 0.8 },
-  adsb: { icao: "3C6444", callsign: "DLH4AB" },
+  truth: { id: "3C6444", callsign: "DLH4AB" },
 };
 
 afterEach(() => {
@@ -56,7 +56,7 @@ describe("RadarFace", () => {
     expect(renderFace(RadarFace, RADAR, { graph: graph(true) })).not.toContain("no tx");
   });
 
-  it("lists tracks with their bearing frame and ADS-B match", () => {
+  it("lists tracks with their bearing frame and truth match", () => {
     useArrayStore
       .getState()
       .seed([arrayStatus("arr", { lanes: [0, 1, 2, 3, 4].map((lane) => laneStatus(lane)) })]);

@@ -1,8 +1,9 @@
 use std::f64::consts::TAU;
 
+use crate::radiosonde::RadiosondeFrame;
+use crate::radiosonde::SondeType;
 use num_complex::Complex;
 use sdrmm_dsp::crc16_msb;
-use sdrmm_wire::{DecoderEvent, RadiosondeFrame, SondeType};
 
 use super::{
     demod::RATE,
@@ -278,7 +279,7 @@ impl Imet {
         self.packets.rejected()
     }
 
-    pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<DecoderEvent>) {
+    pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<RadiosondeFrame>) {
         for &sample in audio {
             let mark = self.afsk.push(sample);
             if let Some(byte) = self.uart.push(mark) {
@@ -287,7 +288,7 @@ impl Imet {
         }
     }
 
-    fn byte(&mut self, byte: u8, out: &mut Vec<DecoderEvent>) {
+    fn byte(&mut self, byte: u8, out: &mut Vec<RadiosondeFrame>) {
         if self.len == BUFFER {
             self.consume(1);
         }
@@ -298,7 +299,7 @@ impl Imet {
         }
     }
 
-    fn scan(&mut self, out: &mut Vec<DecoderEvent>) -> Option<usize> {
+    fn scan(&mut self, out: &mut Vec<RadiosondeFrame>) -> Option<usize> {
         if self.len == 0 {
             return None;
         }
@@ -324,7 +325,7 @@ impl Imet {
             return Some(1);
         }
         if let Some(frame) = self.packets.packet(packet) {
-            out.push(DecoderEvent::Radiosonde(frame));
+            out.push(frame);
         }
         Some(need)
     }

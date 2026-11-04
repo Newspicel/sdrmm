@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::ParityCode;
+use sdrmm_dsp::{ParityCode, crc8_msb};
 
 use super::{bits, c4fm, dibits, filler};
 
@@ -119,7 +119,7 @@ fn header_info(call: &Call) -> Vec<bool> {
         .iter()
         .map(|chunk| chunk.iter().fold(0u8, |acc, &b| acc << 1 | u8::from(b)))
         .collect();
-    bytes.push(crc8(&bytes));
+    bytes.push(crc8_msb(0x07, 0, &bytes));
 
     let mut blocks = Vec::with_capacity(120);
     for &byte in &bytes {
@@ -143,19 +143,4 @@ fn header_info(call: &Call) -> Vec<bool> {
         .zip(sequence)
         .map(|(bit, key)| bit ^ key)
         .collect()
-}
-
-fn crc8(data: &[u8]) -> u8 {
-    let mut crc = 0u8;
-    for &byte in data {
-        crc ^= byte;
-        for _ in 0..8 {
-            crc = if crc & 0x80 != 0 {
-                crc << 1 ^ 0x07
-            } else {
-                crc << 1
-            };
-        }
-    }
-    crc
 }

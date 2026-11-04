@@ -1,5 +1,9 @@
+use crate::apt::AptImage;
+use crate::apt::AptParams;
+use crate::apt::AvhrrChannel;
+use crate::nfm::NfmParams;
 use num_complex::Complex;
-use sdrmm_wire::{AptImage, AptParams, AvhrrChannel, ChannelParams, NfmParams};
+use sdrmm_wire::ChannelParams;
 
 use super::{
     geometry::{LINE_WORDS, Side},
@@ -21,7 +25,7 @@ const EDGE_GUARD: usize = 12;
 fn channel(p: AptParams) -> AptChannel {
     AptChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Apt(p)),
+        settings(ChannelParams::of(&p).expect("settings")),
     )
     .expect("builds")
 }
@@ -50,10 +54,11 @@ fn run(chan: &mut AptChannel, iq: &[Complex<f32>], lens: &[usize]) -> Received {
         received.progress += out.video.len();
         received.images.append(&mut out.images);
         for event in &out.events {
-            match event {
-                DecoderEvent::Apt(image) => received.events.push(*image),
-                other => panic!("unexpected event {other:?}"),
-            }
+            received.events.push(
+                event
+                    .read::<AptImage>()
+                    .unwrap_or_else(|| panic!("unexpected event {event:?}")),
+            )
         }
         at = end;
     }
@@ -256,11 +261,13 @@ fn retuning_keeps_a_partial_when_asked() {
 #[test]
 fn mismatched_params_variant_is_rejected() {
     let mut chan = channel(AptParams::default());
-    let err = chan.apply(settings(ChannelParams::Nfm(NfmParams::default())));
+    let err = chan.apply(settings(
+        ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+    ));
     assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     let built = AptChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Nfm(NfmParams::default())),
+        settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
     );
     assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
 }
@@ -271,7 +278,7 @@ fn wrong_input_rate_is_rejected() {
         ChannelCtx {
             input_rate: 48_000.0,
         },
-        settings(ChannelParams::Apt(AptParams::default())),
+        settings(ChannelParams::new("apt", &AptParams::default()).expect("apt settings")),
     );
     assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
 }

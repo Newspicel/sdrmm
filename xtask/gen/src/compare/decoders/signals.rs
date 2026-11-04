@@ -394,79 +394,56 @@ pub const SIGNALS: &[Signal] = &[
 ];
 
 fn adsb(event: &DecoderEvent) -> Option<String> {
-    match event {
-        DecoderEvent::Adsb(message) => Some(message.raw.to_ascii_uppercase()),
-        _ => None,
-    }
+    let message = event.read::<sdrmm_channels::AdsbMessage>()?;
+    Some(message.raw.to_ascii_uppercase())
 }
 
 fn ais(event: &DecoderEvent) -> Option<String> {
-    match event {
-        DecoderEvent::Ais(message) => parse::nmea_payloads(&message.nmea).into_iter().next(),
-        _ => None,
-    }
+    let message = event.read::<sdrmm_channels::AisMessage>()?;
+    parse::nmea_payloads(&message.nmea).into_iter().next()
 }
 
 fn aprs(event: &DecoderEvent) -> Option<String> {
-    match event {
-        DecoderEvent::Aprs(packet) => Some(packet.tnc2.clone()),
-        _ => None,
-    }
+    Some(event.read::<sdrmm_channels::AprsPacket>()?.tnc2)
 }
 
 fn pocsag(event: &DecoderEvent) -> Option<String> {
-    match event {
-        DecoderEvent::Pocsag(message) => Some(format!("{} {}", message.address, message.text)),
-        _ => None,
-    }
+    let message = event.read::<sdrmm_channels::PocsagMessage>()?;
+    Some(format!("{} {}", message.address, message.text))
 }
 
 fn flex(event: &DecoderEvent) -> Option<String> {
-    match event {
-        DecoderEvent::Flex(message) => Some(format!("{} {}", message.address, message.text)),
-        _ => None,
-    }
+    let message = event.read::<sdrmm_channels::FlexMessage>()?;
+    Some(format!("{} {}", message.address, message.text))
 }
 
 fn selcall(event: &DecoderEvent) -> Option<String> {
-    match event {
-        DecoderEvent::Selcall(sequence) => Some(sequence.code.clone()),
-        _ => None,
-    }
+    Some(event.read::<sdrmm_channels::SelcallSequence>()?.code)
 }
 
 fn acars(event: &DecoderEvent) -> Option<String> {
-    match event {
-        DecoderEvent::Acars(message) => Some(format!(
-            "{} {} {}",
-            message.registration, message.label, message.text
-        )),
-        _ => None,
-    }
+    let message = event.read::<sdrmm_channels::AcarsMessage>()?;
+    Some(format!(
+        "{} {} {}",
+        message.registration, message.label, message.text
+    ))
 }
 
 fn ft8(event: &DecoderEvent) -> Option<String> {
-    match event {
-        DecoderEvent::Ft8(message) => Some(message.text.clone()),
-        _ => None,
+    if event.kind != "ft8" {
+        return None;
     }
+    Some(event.payload::<sdrmm_channels::WsjtMessage>()?.text)
 }
 
 fn addresses(event: &DecoderEvent) -> Option<String> {
-    match event {
-        DecoderEvent::Dv(frame) => {
-            let (source, destination) = (frame.source?, frame.destination?);
-            Some(format!("{source} {destination}"))
-        }
-        _ => None,
-    }
+    let frame = event.read::<sdrmm_wire::DvFrame>()?;
+    let (source, destination) = (frame.source?, frame.destination?);
+    Some(format!("{source} {destination}"))
 }
 
 fn callsign(event: &DecoderEvent) -> Option<String> {
-    match event {
-        DecoderEvent::Dv(frame) => frame.source_call.clone(),
-        _ => None,
-    }
+    event.read::<sdrmm_wire::DvFrame>()?.source_call
 }
 
 #[cfg(test)]

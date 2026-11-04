@@ -17,7 +17,7 @@ import {
 } from "./api";
 import { useArrayStore } from "./arrays";
 import { audioEngine } from "./audio/useChannelAudio";
-import { useBroadcastStore } from "./broadcast";
+import { useChannelStatusStore } from "./channelStatus";
 import { recordEvent } from "./diagnostics";
 import { useFusionStore } from "./fusion";
 import { useHuntStore } from "./hunt";
@@ -108,7 +108,7 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     s.on("event", useReadouts.getState().observe);
     s.on("event", useScannerStore.getState().observe);
     s.on("event", useHuntStore.getState().observe);
-    s.on("event", useBroadcastStore.getState().observe);
+    s.on("event", useChannelStatusStore.getState().observe);
     s.on("event", usePositionStore.getState().observe);
     s.on("event", useSatelliteStore.getState().observe);
     s.on("event", useRotatorStore.getState().observe);

@@ -16,6 +16,7 @@ mod refused;
 mod silent_events;
 mod sources;
 mod steer;
+mod truth;
 mod tx;
 mod watched_lanes;
 mod wires;
@@ -29,6 +30,7 @@ const STEPS: &[Step] = &[
     generators::generators_join_the_virtual_backend,
     backends::clear_unknown_backends,
     steer::steer_from_bearing,
+    truth::truth_from_adsb,
     tx::drop_tx_wires,
     clip_wires::drop_clip_wires,
     silent_events::drop_silent_event_wires,
@@ -41,7 +43,9 @@ const ONCE: &[(&str, Step)] = &[
     ("step:split_kraken_banks", banks::split_kraken_banks),
 ];
 
+/// Registers the decoders first, so a step only drops an event kind no decoder offers.
 pub(super) fn run(snapshot: &mut Value) -> Vec<WorkspaceNoticeKind> {
+    sdrmm_channels::registry::init();
     STEPS.iter().flat_map(|step| step(snapshot)).collect()
 }
 

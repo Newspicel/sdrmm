@@ -10,7 +10,7 @@ function node(id: string, body: Partial<PatchNode> & Pick<PatchNode, "kind">): P
 const graph: PatchGraph = {
   nodes: [
     node("dev", { kind: "device", data: { device: { backend: "rtlsdr", serial: "7" } } }),
-    node("ch", { kind: "channel", data: { channel_type: "nfm" }, label: "Tower" }),
+    node("ch", { kind: "channel", data: { channel_type: "voice" }, label: "Tower" }),
     node("spk", { kind: "speaker" }),
   ],
   edges: [
@@ -47,7 +47,7 @@ describe("pasteNodes", () => {
     expect(pasted.nodes[3]).toEqual({
       id: "ch2",
       kind: "channel",
-      data: { channel_type: "nfm" },
+      data: { channel_type: "voice" },
       label: "Tower",
       position: { x: 132, y: 232 },
     });

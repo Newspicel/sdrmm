@@ -6,7 +6,7 @@ use std::{
 use sdrmm_engine::{Engine, monitor::MonitorHandle};
 use sdrmm_wire::{
     DecodedRecord, DecoderEvent, DeviceSetStatus, EVENTS_PORT, EventOrigin, IQ_PORT, Keeps,
-    NodeBody, ProblemSource, ServerEvent, SpectrumMonitorNode, StateScope,
+    NodeBody, ProblemSource, ServerEvent, SpectrumMonitorNode, StateScope, Transmission,
 };
 use tokio::sync::{broadcast::error::RecvError, watch};
 
@@ -176,8 +176,9 @@ fn start(
             let Some(engine) = weak.upgrade() else {
                 return;
             };
+            let transmission = output.event.read::<Transmission>();
             if !output.audio.is_empty()
-                && let DecoderEvent::Transmission(transmission) = &mut output.event
+                && let Some(mut transmission) = transmission.clone()
             {
                 let (audio, evicted) = calls.store_clip(&output.audio);
                 transmission.audio = Some(audio);
@@ -186,12 +187,11 @@ fn start(
                         "older audio evicted by the temporary buffer limit".to_owned()
                     });
                 }
+                output.event = DecoderEvent::of(&transmission);
             }
-            let at = match &output.event {
-                DecoderEvent::Transmission(t) => t.ended_at.clone(),
-                _ => None,
-            }
-            .unwrap_or_else(|| format!("{:.9}", jiff::Timestamp::now()));
+            let at = transmission
+                .and_then(|t| t.ended_at)
+                .unwrap_or_else(|| format!("{:.9}", jiff::Timestamp::now()));
             engine.publish_decoded(DecodedRecord {
                 origin: Some(EventOrigin {
                     node: origin.clone(),

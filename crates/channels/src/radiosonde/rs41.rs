@@ -1,7 +1,8 @@
 pub(crate) mod ptu;
 
+use crate::radiosonde::RadiosondeFrame;
+use crate::radiosonde::SondeType;
 use sdrmm_dsp::{ReedSolomon, crc16_msb};
-use sdrmm_wire::{DecoderEvent, RadiosondeFrame, SondeType};
 
 use super::{
     demod::{Polarity, SymbolClock, SyncMatcher},
@@ -334,7 +335,7 @@ impl Rs41 {
         self.frames.rejected()
     }
 
-    pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<DecoderEvent>) {
+    pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<RadiosondeFrame>) {
         for &sample in audio {
             if let Some(symbol) = self.clock.push(sample) {
                 self.bit(symbol > 0.0, out);
@@ -342,7 +343,7 @@ impl Rs41 {
         }
     }
 
-    fn bit(&mut self, bit: bool, out: &mut Vec<DecoderEvent>) {
+    fn bit(&mut self, bit: bool, out: &mut Vec<RadiosondeFrame>) {
         match &mut self.receive {
             Receive::Hunt => {
                 if let Some(polarity) = self.sync.push(bit) {
@@ -380,7 +381,7 @@ impl Rs41 {
                     self.receive = Receive::Hunt;
                     self.sync.clear();
                     if let Some(frame) = self.frames.decode(&mut self.frame, len) {
-                        out.push(DecoderEvent::Radiosonde(frame));
+                        out.push(frame);
                     }
                 }
             }

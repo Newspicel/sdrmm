@@ -1,11 +1,11 @@
 use num_complex::Complex;
 use sdrmm_dsp::stitch::{STITCH_FFT, StitchError, StitchOptions, Stitcher, output_rate};
-use sdrmm_wire::array::{MAX_ARRAY_LANES, MIN_ARRAY_LANES};
 use sdrmm_wire::processor::stitch::STITCH_REPORT_MS;
 use sdrmm_wire::{
     ProcessorParams, ProcessorReading, STITCH_WIDE_PORT, StitchBlend, StitchLane, StitchParams,
     StitchReading,
 };
+use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use crate::ChannelError;
 use crate::array_processor::{

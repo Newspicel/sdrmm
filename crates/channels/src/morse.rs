@@ -1,13 +1,18 @@
+use crate::registry::Native;
+use sdrmm_wire::{EventContract, KindSpec, NumberSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, Envelope, KeyingSlicer, design_lowpass};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    MorseParams, MorseText,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const CHANNEL_TAPS: usize = 257;
 
@@ -42,7 +47,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 400.0,
     input_rate_hz: 8_000.0,
     has_audio: false,
-    emits: vec![EventKind::Morse],
+    emits: vec![MorseText::KIND],
     ..ChannelDescriptor::default()
 });
 
@@ -156,14 +161,8 @@ pub struct MorseChannel {
     text: String,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&MorseParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Morse(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "morse channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<MorseParams, ChannelError> {
+    crate::settings_of::<MorseParams>(settings)
 }
 
 fn check_params(p: &MorseParams) -> Result<(), ChannelError> {
@@ -352,7 +351,7 @@ impl MorseChannel {
         }
         let mut text = std::mem::take(&mut self.unproven);
         text.push_str(&std::mem::take(&mut self.text));
-        out.events.push(DecoderEvent::Morse(MorseText {
+        out.events.push(DecoderEvent::of(&MorseText {
             text,
             wpm: self.wpm(),
         }));
@@ -398,14 +397,13 @@ impl MorseChannel {
     }
 }
 
-impl ChannelRx for MorseChannel {
+impl NativeChannel for MorseChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = params(&settings)?;
+        let p = &params(&settings)?;
         check_params(p)?;
         let rate = ctx.input_rate;
         Ok(Self {
@@ -436,9 +434,11 @@ impl ChannelRx for MorseChannel {
             text: String::new(),
         })
     }
+}
 
+impl ChannelRx for MorseChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let p = params(&settings)?;
+        let p = &params(&settings)?;
         check_params(p)?;
         self.fixed_wpm = p.wpm;
         if let Some(wpm) = p.wpm {
@@ -475,12 +475,49 @@ impl ChannelRx for MorseChannel {
     }
 }
 
+fn morse_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "Morse (CW)",
+            &[Modulation::Ook, Modulation::Carrier],
+            HzRange::new(0.0, 2_500.0),
+            "a keyed carrier at hand speed",
+        )
+        .symbol_rate(HzRange::new(4.0, 80.0)),
+    ]
+}
+
+pub(crate) fn morse_decoder() -> Native<MorseParams> {
+    Native::new::<MorseChannel>(occupied_band)
+        .filter(channel_filter)
+        .signatures(morse_signatures)
+        .form(morse_form)
+        .kinds(morse_kinds)
+}
+
+pub(crate) fn morse_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("bandwidth_hz", "BW", NumberSpec::hz(50.0, 3_000.0, 50.0))
+            .title("CW filter bandwidth"),
+        SettingField::new(
+            "wpm",
+            "Speed",
+            NumberSpec::new(5.0, 60.0, 1.0).unit("WPM").optional("auto"),
+        )
+        .title("Morse speed, empty to auto-track"),
+    ]
+}
+
+fn morse_kinds() -> Vec<KindSpec> {
+    vec![morse_kind()]
+}
+
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::RttyParams;
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::{synth, testutil::settings};
+    use crate::{rtty::RttyParams, synth, testutil::settings};
 
     const RATE: f64 = 8_000.0;
     const CALL: &str = "CQ CQ DE DL1ABC K";
@@ -488,10 +525,13 @@ mod tests {
     fn channel(wpm: Option<f32>) -> MorseChannel {
         MorseChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Morse(MorseParams {
-                bandwidth_hz: 400.0,
-                wpm,
-            })),
+            settings(
+                ChannelParams::of(&MorseParams {
+                    bandwidth_hz: 400.0,
+                    wpm,
+                })
+                .expect("morse settings"),
+            ),
         )
         .unwrap()
     }
@@ -515,8 +555,8 @@ mod tests {
             out.reset();
             chan.process(&iq[pos..end], &mut out);
             for event in &out.events {
-                let DecoderEvent::Morse(m) = event else {
-                    panic!("morse channel emitted {}", event.kind())
+                let Some(m) = event.read::<MorseText>() else {
+                    panic!("morse channel emitted {}", event.kind)
                 };
                 assert!(!m.text.is_empty(), "empty chunk");
                 text.push_str(&m.text);
@@ -576,9 +616,9 @@ mod tests {
         let joined: String = out
             .events
             .iter()
-            .map(|e| match e {
-                DecoderEvent::Morse(m) => m.text.as_str(),
-                other => panic!("morse channel emitted {}", other.kind()),
+            .map(|e| match e.read::<MorseText>() {
+                Some(m) => m.text,
+                None => panic!("morse channel emitted {}", e.kind),
             })
             .collect();
         assert_eq!(joined, sent);
@@ -661,9 +701,9 @@ mod tests {
         let (ragged, _) = decode_ragged(&mut chan, &iq);
         let joined: String = one_shot
             .iter()
-            .map(|e| match e {
-                DecoderEvent::Morse(m) => m.text.as_str(),
-                other => panic!("morse channel emitted {}", other.kind()),
+            .map(|e| match e.read::<MorseText>() {
+                Some(m) => m.text,
+                None => panic!("morse channel emitted {}", e.kind),
             })
             .collect();
         assert_eq!(joined, ragged);
@@ -673,11 +713,13 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(None);
-        let err = chan.apply(settings(ChannelParams::Rtty(RttyParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("rtty", &RttyParams::default()).expect("rtty settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = MorseChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Rtty(RttyParams::default())),
+            settings(ChannelParams::new("rtty", &RttyParams::default()).expect("rtty settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -711,7 +753,7 @@ mod tests {
             ChannelCtx {
                 input_rate: 48_000.0,
             },
-            settings(ChannelParams::Morse(MorseParams::default())),
+            settings(ChannelParams::of(&MorseParams::default()).expect("morse settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

@@ -8,10 +8,10 @@ use jiff::Timestamp;
 use sdrmm_dsp::radar::assign::Assignment;
 use sdrmm_engine::{EngineError, ProcessorAction};
 use sdrmm_wire::{
-    ARRAY_PORT, AdsbMessage, AoaState, ArrayFailure, ArrayStatus, DecodedRecord, DecoderEvent,
+    ARRAY_PORT, AoaState, ArrayFailure, ArrayStatus, Capability, DecodedRecord, DecoderEvent,
     EventOrigin, NO_CHANNEL, NodeBody, PassiveRadarParams, PatchGraph, ProcessorReading,
     RADAR_TX_PORT, RadarProblem, RadarSites, RadarTrack, RadarTrackEvent, RadarUpdate,
-    ReferenceMode, ResolvedPatch, ServerEvent, TrackState,
+    ReferenceMode, ResolvedPatch, ServerEvent, TrackState, present::TrackFix,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
 
@@ -65,7 +65,7 @@ struct Enrichment {
     bearing_deg: Option<f32>,
     lat: Option<f64>,
     lon: Option<f64>,
-    icao: Option<String>,
+    target: Option<String>,
 }
 
 impl Enrichment {
@@ -74,7 +74,7 @@ impl Enrichment {
             bearing_deg: track.aoa.and_then(|aoa| aoa.bearing_deg),
             lat: track.fix.map(|fix| fix.lat),
             lon: track.fix.map(|fix| fix.lon),
-            icao: track.adsb.as_ref().map(|adsb| adsb.icao.clone()),
+            target: track.truth.as_ref().map(|truth| truth.id.clone()),
         }
     }
 
@@ -82,7 +82,7 @@ impl Enrichment {
         event.bearing_deg = self.bearing_deg;
         event.lat = self.lat;
         event.lon = self.lon;
-        event.icao.clone_from(&self.icao);
+        event.target.clone_from(&self.target);
     }
 }
 
@@ -168,7 +168,7 @@ impl RadarNode {
         update.truth.clear();
         for track in &mut update.tracks {
             track.fix = None;
-            track.adsb = None;
+            track.truth = None;
         }
         let Some(baseline) = sites.both() else {
             return;
@@ -379,7 +379,7 @@ impl RadarHub {
         }
     }
 
-    fn observe(&self, node: &str, at: Timestamp, message: &AdsbMessage) {
+    fn observe(&self, node: &str, at: Timestamp, message: &TrackFix) {
         if let Some(entry) = self.lock().get_mut(node) {
             entry.aircraft.observe(at, message);
         }
@@ -444,7 +444,7 @@ fn publish(
             channel: NO_CHANNEL,
             at: at.clone(),
             freq_hz: update.axes.carrier_hz,
-            event: DecoderEvent::Radar(event),
+            event: DecoderEvent::of(&event),
             sinks: Vec::new(),
             callsign: None,
             view: None,
@@ -462,7 +462,7 @@ fn publish_sites(state: &AppState, node: &str, anchor: u32, sites: RadarSites) {
         channel: NO_CHANNEL,
         at: now_at(),
         freq_hz: 0.0,
-        event: DecoderEvent::RadarSites(sites),
+        event: DecoderEvent::of(&sites),
         sinks: Vec::new(),
         callsign: None,
         view: None,
@@ -565,7 +565,14 @@ async fn feed_truth(state: AppState, mut records: broadcast::Receiver<Decoded>) 
 }
 
 fn observe(state: &AppState, record: &DecodedRecord) {
-    let DecoderEvent::Adsb(message) = &record.event else {
+    if !record.event.kind.has(Capability::Track) {
+        return;
+    }
+    let view = record
+        .view
+        .clone()
+        .unwrap_or_else(|| record.event.present());
+    let Some(message) = &view.track else {
         return;
     };
     let at = record

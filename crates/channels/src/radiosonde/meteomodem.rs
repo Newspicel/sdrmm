@@ -1,4 +1,4 @@
-use sdrmm_wire::{DecoderEvent, RadiosondeFrame};
+use crate::radiosonde::RadiosondeFrame;
 
 use super::{
     demod::{SymbolClock, SyncMatcher},
@@ -114,7 +114,7 @@ impl Meteomodem {
         self.frames.rejected()
     }
 
-    pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<DecoderEvent>) {
+    pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<RadiosondeFrame>) {
         for &sample in audio {
             if let Some(symbol) = self.clock.push(sample) {
                 self.symbol(symbol, out);
@@ -122,7 +122,7 @@ impl Meteomodem {
         }
     }
 
-    fn symbol(&mut self, symbol: f32, out: &mut Vec<DecoderEvent>) {
+    fn symbol(&mut self, symbol: f32, out: &mut Vec<RadiosondeFrame>) {
         let Receive::Collect {
             len,
             expected,
@@ -171,7 +171,7 @@ impl Meteomodem {
             let len = *len;
             self.restart();
             if let Some(frame) = self.frames.decode(&self.frame[..len], self.accept) {
-                out.push(DecoderEvent::Radiosonde(frame));
+                out.push(frame);
             }
         }
     }

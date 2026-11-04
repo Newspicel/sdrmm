@@ -12,7 +12,6 @@ import { CorrelatorFace } from "./CorrelatorFace";
 import { DecoderLogFace } from "./DecoderLogFace";
 import { DeviceFace } from "./DeviceFace";
 import { DfFace } from "./DfFace";
-import { DmrTrunkFace } from "./DmrTrunkFace";
 import { EventFilterFace } from "./EventFilterFace";
 import { EventOutputFace } from "./EventOutputFace";
 import { ExportFace } from "./ExportFace";
@@ -38,6 +37,7 @@ import { SpeakerFace } from "./SpeakerFace";
 import { SpectrumMonitorFace } from "./SpectrumMonitorFace";
 import { StitchFace } from "./StitchFace";
 import { TriangulationFace } from "./TriangulationFace";
+import { TrunkFace } from "./TrunkFace";
 import { VideoFace } from "./VideoFace";
 
 type Face = ComponentType<{ node: PatchNode }>;
@@ -65,7 +65,7 @@ export const NODE_TYPES: Record<NodeKind, ComponentType<NodeProps<Node<FlowData>
   propagation: mount(PropagationFace),
   readout: mount(ReadoutFace),
   decoder_log: mount(DecoderLogFace),
-  dmr_trunk: mount(DmrTrunkFace),
+  trunk: mount(TrunkFace),
   spectrum_monitor: mount(SpectrumMonitorFace),
   event_filter: mount(EventFilterFace),
   audio_fx: mount(AudioFxFace),
@@ -105,7 +105,7 @@ export const FACES: Record<NodeKind, Face> = {
   propagation: PropagationFace,
   readout: ReadoutFace,
   decoder_log: DecoderLogFace,
-  dmr_trunk: DmrTrunkFace,
+  trunk: TrunkFace,
   spectrum_monitor: SpectrumMonitorFace,
   event_filter: EventFilterFace,
   audio_fx: AudioFxFace,

@@ -276,13 +276,13 @@ fn full_update() -> RadarUpdate {
                 lat: 52.4,
                 lon: 13.2,
                 alt_m: 9_000.0,
-                alt_from_adsb: true,
+                alt_from_truth: true,
                 major_m: 2_000.0,
                 minor_m: 500.0,
                 orientation_deg: 40.0,
             }),
-            adsb: Some(AdsbMatch {
-                icao: "3C6444".to_owned(),
+            truth: Some(TrackMatch {
+                id: "3C6444".to_owned(),
                 callsign: Some("DLH4AB".to_owned()),
             }),
             trail: vec![RadarTrailPoint {
@@ -290,8 +290,8 @@ fn full_update() -> RadarUpdate {
                 doppler_hz: 118.0,
             }],
         }],
-        truth: vec![AdsbTruth {
-            icao: "3C6444".to_owned(),
+        truth: vec![TrackTruth {
+            id: "3C6444".to_owned(),
             callsign: Some("DLH4AB".to_owned()),
             range_km: 32.4,
             doppler_hz: 121.0,
@@ -386,7 +386,7 @@ fn track_events_never_reach_the_wire() {
         bearing_deg: None,
         lat: None,
         lon: None,
-        icao: None,
+        target: None,
     });
     let json = serde_json::to_string(&update).expect("serialize");
     let back: RadarUpdate = serde_json::from_str(&json).expect("deserialize");
@@ -474,9 +474,9 @@ fn a_track_lists_range_motion_and_match() {
         bearing_deg: None,
         lat: Some(50.0),
         lon: Some(8.5),
-        icao: Some("3C6444".to_owned()),
+        target: Some("3C6444".to_owned()),
     };
-    let view = track.present(EventKind::Radar);
+    let view = track.present(&EventKind::RADAR);
     assert_eq!(
         view.labels(),
         [
@@ -487,7 +487,7 @@ fn a_track_lists_range_motion_and_match() {
             "Doppler",
             "SNR",
             "Position",
-            "ICAO"
+            "Target"
         ]
     );
     assert_eq!(view.field("Track"), text(Some("T7")).as_ref());
@@ -523,7 +523,7 @@ fn sites(ranges_km: Vec<f32>) -> RadarSites {
 
 #[test]
 fn radar_sites_pin_both_ends_and_ring_each_echo() {
-    let view = sites(vec![12.5, 0.0]).present(EventKind::RadarSites);
+    let view = sites(vec![12.5, 0.0]).present(&EventKind::RADAR_SITES);
 
     let pins: Vec<&str> = view
         .shapes
@@ -552,7 +552,7 @@ fn radar_sites_pin_both_ends_and_ring_each_echo() {
 
 #[test]
 fn radar_sites_without_geometry_leave_the_map() {
-    let view = RadarSites::default().present(EventKind::RadarSites);
+    let view = RadarSites::default().present(&EventKind::RADAR_SITES);
     assert!(view.gone);
     assert_eq!(view.entity.as_deref(), Some(RADAR_SITES_ENTITY));
 }

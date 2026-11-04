@@ -1,5 +1,7 @@
+use crate::NativeChannel;
+use crate::tetra::TetraParams;
 use num_complex::Complex;
-use sdrmm_wire::{ChannelParams, DecoderEvent, DvFrame, DvFrameKind, DvMode, TetraParams};
+use sdrmm_wire::{ChannelParams, DvFrame, DvFrameKind};
 
 use super::{INPUT_RATE_HZ, TetraChannel, cmce, sds::Payload};
 use crate::{
@@ -13,7 +15,7 @@ fn channel() -> TetraChannel {
         ChannelCtx {
             input_rate: INPUT_RATE_HZ,
         },
-        settings(ChannelParams::Tetra(TetraParams::default())),
+        settings(ChannelParams::new("tetra", &TetraParams::default()).expect("tetra settings")),
     )
     .unwrap()
 }
@@ -22,9 +24,9 @@ fn decode(iq: &[Complex<f32>]) -> (Vec<DvFrame>, u32) {
     let mut channel = channel();
     let frames = run_events(&mut channel, iq)
         .into_iter()
-        .map(|event| match event {
-            DecoderEvent::Dv(frame) => frame,
-            other => panic!("unexpected event {other:?}"),
+        .map(|event| match event.read::<DvFrame>() {
+            Some(frame) => frame,
+            None => panic!("unexpected event {event:?}"),
         })
         .collect();
     (frames, channel.rejected())
@@ -43,7 +45,7 @@ fn sample() -> Vec<Complex<f32>> {
 
 fn assert_full_scenario(frames: &[DvFrame]) {
     let cell = Cell::default();
-    assert!(frames.iter().all(|frame| frame.mode == DvMode::Tetra));
+    assert!(frames.iter().all(|frame| frame.mode == "TETRA"));
     let sysinfo = opcode(frames, "SYSINFO");
     assert_eq!(sysinfo.system_id, Some(cell.mcc));
     assert_eq!(sysinfo.network_id, Some(u32::from(cell.mnc)));

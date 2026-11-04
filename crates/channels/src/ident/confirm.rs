@@ -1,14 +1,10 @@
 use num_complex::Complex;
 use sdrmm_dsp::Ddc;
-use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecoderEvent, ProtocolMatch, SelcallParams, SelcallSystem,
-    UNKNOWN_MODEL,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, ProtocolMatch};
 
-use super::detect::Band;
+use super::{Catalog, detect::Band};
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, channel_filter, create,
-    descriptor_of,
 };
 
 const MAX_TRIALS: usize = 3;
@@ -19,54 +15,19 @@ const DEMOTION: f32 = 0.4;
 
 const SAME_CENTRE: f64 = 0.5;
 
-fn decoded(type_id: &str, event: &DecoderEvent) -> bool {
-    match (type_id, event) {
-        ("pocsag", DecoderEvent::Pocsag(_))
-        | ("flex", DecoderEvent::Flex(_))
-        | ("ermes", DecoderEvent::Ermes(_))
-        | ("eot", DecoderEvent::Eot(_))
-        | ("same", DecoderEvent::Same(_))
-        | ("sarsat", DecoderEvent::Sarsat(_))
-        | ("tetrapol", DecoderEvent::Tetrapol(_))
-        | ("wmbus", DecoderEvent::Wmbus(_))
-        | ("ais", DecoderEvent::Ais(_))
-        | ("acars", DecoderEvent::Acars(_))
-        | ("aprs", DecoderEvent::Aprs(_))
-        | ("wfm", DecoderEvent::Rds(_))
-        | ("selcall", DecoderEvent::Selcall(_)) => true,
-        ("dsc", DecoderEvent::Dsc(message))
-        | ("vdl2", DecoderEvent::Vdl2(message))
-        | ("hfdl", DecoderEvent::Hfdl(message))
-        | ("inmarsat_stdc", DecoderEvent::InmarsatStdc(message))
-        | ("inmarsat_aero", DecoderEvent::InmarsatAero(message)) => message.crc_ok,
-        ("ism", DecoderEvent::Ism(message)) => message.model != UNKNOWN_MODEL,
-        _ => false,
-    }
+/// `event` proves the trial: one of the decoder's proof kinds, not failing its own check.
+fn decoded(descriptor: &ChannelDescriptor, catalog: &Catalog, event: &DecoderEvent) -> bool {
+    descriptor
+        .trial
+        .as_ref()
+        .is_some_and(|trial| trial.proof.contains(&event.kind))
+        && catalog.events().present(event).verified != Some(false)
 }
 
-fn confirmable(type_id: &str) -> bool {
-    matches!(
-        type_id,
-        "pocsag"
-            | "flex"
-            | "ermes"
-            | "eot"
-            | "same"
-            | "sarsat"
-            | "tetrapol"
-            | "wmbus"
-            | "ais"
-            | "acars"
-            | "aprs"
-            | "wfm"
-            | "selcall"
-            | "dsc"
-            | "vdl2"
-            | "hfdl"
-            | "inmarsat_stdc"
-            | "inmarsat_aero"
-            | "ism"
-    )
+fn confirmable(catalog: &Catalog, type_id: &str) -> bool {
+    catalog
+        .descriptor(type_id)
+        .is_some_and(|descriptor| descriptor.trial.is_some())
 }
 
 struct Live {
@@ -118,20 +79,27 @@ impl Confirmer {
     pub(crate) fn confirm(
         &mut self,
         candidates: &mut Vec<ProtocolMatch>,
+        catalog: &Catalog,
         iq: &[Complex<f32>],
         rate: f64,
         band: &Band,
         frequency_hz: f64,
     ) {
-        let mut confirmed_any = self.feed_live(candidates, iq, band);
+        let mut confirmed_any = self.feed_live(candidates, catalog, iq, band);
         let mut trials = 0;
         for candidate in candidates.iter_mut() {
             if trials >= MAX_TRIALS {
                 break;
             }
-            let Some(type_id) = candidate.type_id.clone().filter(|t| confirmable(t)) else {
+            let Some(descriptor) = candidate
+                .type_id
+                .as_deref()
+                .and_then(|type_id| catalog.descriptor(type_id))
+                .filter(|descriptor| descriptor.trial.is_some())
+            else {
                 continue;
             };
+            let type_id = descriptor.type_id.clone();
             if candidate.confirmed || self.is_live(&type_id, band) {
                 continue;
             }
@@ -140,11 +108,11 @@ impl Confirmer {
                 continue;
             }
             trials += 1;
-            for settings in variants(&type_id, frequency_hz) {
+            for settings in variants(descriptor, frequency_hz) {
                 if self.live.len() >= MAX_LIVE {
                     break;
                 }
-                let live = match start(&type_id, settings, rate, band) {
+                let live = match start(descriptor, settings, rate, band) {
                     Ok(live) => live,
                     Err(error) => {
                         self.refuse(&type_id, candidate, &error);
@@ -153,7 +121,7 @@ impl Confirmer {
                 };
                 self.live.push(live);
                 let last = self.live.len() - 1;
-                let frames = self.run(last, iq, band);
+                let frames = self.run(last, catalog, iq, band);
                 if frames > 0 {
                     mark(candidate, frames);
                     confirmed_any = true;
@@ -162,7 +130,10 @@ impl Confirmer {
         }
         if confirmed_any {
             for candidate in candidates.iter_mut() {
-                let rival = candidate.type_id.as_deref().is_some_and(confirmable);
+                let rival = candidate
+                    .type_id
+                    .as_deref()
+                    .is_some_and(|type_id| confirmable(catalog, type_id));
                 if rival && !candidate.confirmed {
                     candidate.score *= DEMOTION;
                 }
@@ -178,6 +149,7 @@ impl Confirmer {
     fn feed_live(
         &mut self,
         candidates: &mut Vec<ProtocolMatch>,
+        catalog: &Catalog,
         iq: &[Complex<f32>],
         band: &Band,
     ) -> bool {
@@ -186,7 +158,7 @@ impl Confirmer {
             if self.live[index].seen || !same_signal(&self.live[index], band) {
                 continue;
             }
-            let frames = self.run(index, iq, band);
+            let frames = self.run(index, catalog, iq, band);
             if frames == 0 {
                 continue;
             }
@@ -197,7 +169,7 @@ impl Confirmer {
             {
                 Some(candidate) => mark(candidate, frames),
                 None => {
-                    if let Some(descriptor) = descriptor_of(&type_id) {
+                    if let Some(descriptor) = catalog.descriptor(&type_id) {
                         let mut candidate = ProtocolMatch {
                             name: descriptor.name.clone(),
                             type_id: Some(type_id),
@@ -237,7 +209,7 @@ impl Confirmer {
             .any(|live| live.type_id == type_id && same_signal(live, band))
     }
 
-    fn run(&mut self, index: usize, iq: &[Complex<f32>], band: &Band) -> usize {
+    fn run(&mut self, index: usize, catalog: &Catalog, iq: &[Complex<f32>], band: &Band) -> usize {
         let live = &mut self.live[index];
         live.seen = true;
         live.center_hz = band.center_hz;
@@ -246,11 +218,13 @@ impl Confirmer {
         live.filter.process(&self.tuned, &mut self.filtered);
         self.out.reset();
         live.channel.process(&self.filtered, &mut self.out);
-        let type_id = live.type_id.as_str();
+        let Some(descriptor) = catalog.descriptor(&live.type_id) else {
+            return 0;
+        };
         self.out
             .events
             .iter()
-            .filter(|event| decoded(type_id, event))
+            .filter(|event| decoded(descriptor, catalog, event))
             .count()
     }
 }
@@ -270,31 +244,33 @@ fn same_signal(live: &Live, band: &Band) -> bool {
     (live.center_hz - band.center_hz).abs() <= narrower * SAME_CENTRE
 }
 
-fn variants(type_id: &str, frequency_hz: f64) -> Vec<ChannelSettings> {
-    let Some(mut settings) = ChannelSettings::default_for(type_id) else {
+fn variants(descriptor: &ChannelDescriptor, frequency_hz: f64) -> Vec<ChannelSettings> {
+    let Some(mut settings) = descriptor.defaults.clone() else {
         return Vec::new();
     };
     settings.frequency_hz = frequency_hz;
-    if type_id != "selcall" {
+    let tried = descriptor
+        .trial
+        .as_ref()
+        .map_or(&[][..], |trial| trial.settings.as_slice());
+    if tried.is_empty() {
         return vec![settings];
     }
-    [SelcallSystem::Ccir1, SelcallSystem::Zvei1]
-        .into_iter()
-        .map(|system| ChannelSettings {
-            params: ChannelParams::Selcall(SelcallParams { system }),
+    tried
+        .iter()
+        .map(|params| ChannelSettings {
+            params: params.clone(),
             ..settings.clone()
         })
         .collect()
 }
 
 fn start(
-    type_id: &str,
+    descriptor: &ChannelDescriptor,
     settings: ChannelSettings,
     rate: f64,
     band: &Band,
 ) -> Result<Live, ChannelError> {
-    let descriptor =
-        descriptor_of(type_id).ok_or_else(|| ChannelError::UnknownType(type_id.to_owned()))?;
     let ddc = Ddc::new(rate, descriptor.input_rate_hz, band.center_hz)
         .map_err(|e| ChannelError::InvalidSettings(e.to_string()))?;
     let filter = channel_filter(&settings.params)?;
@@ -305,7 +281,7 @@ fn start(
         &settings,
     )?;
     Ok(Live {
-        type_id: type_id.to_owned(),
+        type_id: descriptor.type_id.clone(),
         center_hz: band.center_hz,
         bandwidth_hz: band.bandwidth_hz,
         ddc,
@@ -341,14 +317,52 @@ mod tests {
         }
     }
 
+    fn dsc(crc_ok: bool) -> DecoderEvent {
+        DecoderEvent::tagged(
+            sdrmm_wire::EventKind::named("dsc"),
+            &crate::datalink::DataLinkMessage {
+                message_type: "Distress".to_owned(),
+                station: None,
+                text: None,
+                crc_ok,
+                fec_corrected: None,
+                snr_db: None,
+                frequency_error_hz: None,
+                lat: None,
+                lon: None,
+                raw: None,
+                area: None,
+                details: serde_json::Value::Null,
+            },
+        )
+    }
+
+    #[test]
+    fn only_a_frame_passing_its_check_proves_a_trial() {
+        let catalog = Catalog::registered();
+        let descriptor = catalog.descriptor("dsc").expect("dsc is registered");
+        assert!(decoded(descriptor, &catalog, &dsc(true)));
+        assert!(!decoded(descriptor, &catalog, &dsc(false)));
+        let nfm = catalog.descriptor("nfm").expect("nfm is registered");
+        assert!(!confirmable(&catalog, &nfm.type_id));
+    }
+
     #[test]
     fn a_decoder_that_will_not_start_is_explained_and_not_tried_again() {
         let mut confirmer = Confirmer::new();
+        let catalog = Catalog::registered();
         let mut candidates = vec![pocsag()];
         let iq = vec![Complex::new(0.0, 0.0); 4_096];
         let unusable_rate = f64::NAN;
 
-        confirmer.confirm(&mut candidates, &iq, unusable_rate, &band(), 148_000_000.0);
+        confirmer.confirm(
+            &mut candidates,
+            &catalog,
+            &iq,
+            unusable_rate,
+            &band(),
+            148_000_000.0,
+        );
         assert!(
             candidates[0].why.contains("will not start"),
             "nothing said why: {:?}",
@@ -358,7 +372,14 @@ mod tests {
 
         confirmer.sweep();
         candidates[0].why.clear();
-        confirmer.confirm(&mut candidates, &iq, unusable_rate, &band(), 148_000_000.0);
+        confirmer.confirm(
+            &mut candidates,
+            &catalog,
+            &iq,
+            unusable_rate,
+            &band(),
+            148_000_000.0,
+        );
         assert_eq!(confirmer.refused.len(), 1, "the decoder was started again");
         assert!(
             !candidates[0].why.is_empty(),

@@ -211,11 +211,11 @@ function RadarMarks({
           const { x, y } = at({ rangeKm: truth.range_km, dopplerHz: truth.doppler_hz });
           return (
             <path
-              key={truth.icao}
+              key={truth.id}
               d={`M${x} ${y - TRUTH_R}L${x + TRUTH_R} ${y + TRUTH_R}L${x - TRUTH_R} ${y + TRUTH_R}Z`}
               className="fill-none stroke-hue-amber"
             >
-              <title>{truth.callsign ?? truth.icao}</title>
+              <title>{truth.callsign ?? truth.id}</title>
             </path>
           );
         })}

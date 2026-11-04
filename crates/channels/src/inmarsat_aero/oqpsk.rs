@@ -4,13 +4,13 @@ use std::{
 };
 
 use num_complex::Complex;
-use sdrmm_dsp::fast_arg;
+use sdrmm_dsp::{design_rrc_unit_energy, fast_arg};
 
 use super::{
     acquisition::CoarseAcquisition,
     frame::{FrameDecoder, FrameHeader, HEADER_BITS, HIGH_RATE_BPS, UW},
     framer::DecodedFrame,
-    taps::{Fir, rrc_taps},
+    taps::Fir,
 };
 
 pub(super) const BIT_RATE: u32 = HIGH_RATE_BPS;
@@ -208,7 +208,10 @@ impl OqpskDemod {
         let samples_per_symbol = channel_rate / (bit_rate / 2.0);
         Self {
             fs: channel_rate,
-            rrc: Fir::new(rrc_taps(samples_per_symbol, RRC_TAPS, rrc_beta), 1),
+            rrc: Fir::new(
+                design_rrc_unit_energy(samples_per_symbol, rrc_beta, RRC_TAPS),
+                1,
+            ),
             nco_freq_hz: 0.0,
             nco_phase: 0.0,
             phase_trim: 0.0,
@@ -420,7 +423,7 @@ mod modulator {
                 }
             }
         }
-        let taps = rrc_taps(sample_rate / symbol_rate, 129, rrc_beta);
+        let taps = design_rrc_unit_energy(sample_rate / symbol_rate, rrc_beta, 129);
         let mut shaped_i = Vec::new();
         let mut shaped_q = Vec::new();
         Fir::new(taps.clone(), 1).process(&in_phase, &mut shaped_i);

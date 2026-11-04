@@ -9,7 +9,7 @@ function node(id: string, body: Partial<PatchNode> & Pick<PatchNode, "kind">): P
 const nodes: PatchNode[] = [
   node("device:a3ca5d1f", { kind: "device", label: "RTL-SDR 0", data: {} }),
   node("device:bare", { kind: "device", data: {} }),
-  node("channel:1", { kind: "channel", data: { channel_type: "nfm" } }),
+  node("channel:1", { kind: "channel", data: { channel_type: "voice" } }),
 ];
 
 describe("applyToasts", () => {
@@ -31,7 +31,7 @@ describe("applyToasts", () => {
         nodes,
       ),
     ).toEqual([
-      "NFM: no room left",
+      "VOICE: no room left",
       "RTL-SDR 0: radio not connected",
       "device:bare: radio not connected",
     ]);

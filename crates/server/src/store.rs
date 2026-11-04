@@ -957,7 +957,7 @@ impl Store {
     ) -> Result<i64, StoreError> {
         validate_name(name)?;
         let snapshot = settled(snapshot.clone());
-        snapshot.validate_against(sdrmm_channels::descriptor_table())?;
+        snapshot.validate_against(&sdrmm_channels::descriptors())?;
         let json = serde_json::to_string(&snapshot)?;
         let now = now_rfc3339();
         let conn = self.lock();
@@ -986,7 +986,7 @@ impl Store {
     ) -> Result<i64, StoreError> {
         let mut document = export.clone();
         document.snapshot.graph.settle_arrays();
-        document.validate_against(sdrmm_channels::descriptor_table())?;
+        document.validate_against(&sdrmm_channels::descriptors())?;
         document.forget_absent_nodes();
         let json = serde_json::to_string(&document.snapshot)?;
         let now = now_rfc3339();
@@ -1014,7 +1014,7 @@ impl Store {
     ) -> Result<WorkspaceDetail, StoreError> {
         let settled = req.snapshot.clone().map(settled);
         if let Some(snapshot) = &settled {
-            snapshot.validate_against(sdrmm_channels::descriptor_table())?;
+            snapshot.validate_against(&sdrmm_channels::descriptors())?;
         }
         if let Some(name) = &req.name {
             validate_name(name)?;
@@ -1438,7 +1438,7 @@ fn rebase(
     let mut merged = crate::merge::merge_typed(&base, ours, held).map_err(|_| conflict())?;
     merged.drop_dangling();
     merged
-        .validate_against(sdrmm_channels::descriptor_table())
+        .validate_against(&sdrmm_channels::descriptors())
         .map_err(|_| conflict())?;
     Ok(merged)
 }
@@ -1848,7 +1848,7 @@ fn migrate_trunk_carriers(snapshot: &mut serde_json::Value) {
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|node| node_kind(node) == Some(NodeKind::DmrTrunk.as_str()))
+        .filter(|node| node_kind(node) == Some(NodeKind::Trunk.as_str()))
         .filter_map(|node| node.get("id")?.as_str().map(str::to_owned))
         .collect();
     if systems.is_empty() {
@@ -1893,7 +1893,7 @@ fn migrate_call_buffers(snapshot: &mut serde_json::Value) {
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|node| node_kind(node) == Some(NodeKind::DmrTrunk.as_str()))
+        .filter(|node| node_kind(node) == Some(NodeKind::Trunk.as_str()))
         .filter_map(|node| node.get("id")?.as_str().map(str::to_owned))
         .collect();
     if let Some(nodes) = graph

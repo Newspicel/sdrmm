@@ -1,11 +1,13 @@
 use core::ops::Range;
 
 use sdrmm_dsp::correlator::{BandVisibility, CorrelatorError, FxCorrelator};
-use sdrmm_wire::array::{MAX_ARRAY_LANES, MIN_ARRAY_LANES};
-use sdrmm_wire::processor::correlator::{MAX_BASELINES, MAX_VISIBILITY_CELLS};
 use sdrmm_wire::{
     Baseline, CorrelatorParams, CorrelatorReading, ProcessorParams, ProcessorReading, StreamKind,
     SurfaceFrame, VisibilityOwned,
+};
+use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
+use sdrmm_wire::{
+    processor::correlator::MAX_BASELINES, processor::correlator::MAX_VISIBILITY_CELLS,
 };
 
 use crate::ChannelError;

@@ -4,8 +4,8 @@ use std::{
 };
 
 use sdrmm_wire::{
-    DmrChannelEntry, DmrDiscovery, DvFrame, DvFrameKind, DvTrunkProtocol, TrunkChannel,
-    TrunkChannelSource,
+    DvFrame, DvFrameKind, DvTrunkProtocol, TrunkChannel, TrunkChannelEntry, TrunkChannelSource,
+    TrunkDiscovery,
 };
 
 use super::Heard;
@@ -167,7 +167,7 @@ pub(crate) struct Prospector {
 }
 
 impl Prospector {
-    pub(crate) fn new(discovery: &DmrDiscovery, channel_map: &[DmrChannelEntry]) -> Self {
+    pub(crate) fn new(discovery: &TrunkDiscovery, channel_map: &[TrunkChannelEntry]) -> Self {
         let mut prospector = Self {
             candidates: Vec::new(),
             cursor: 0,
@@ -195,7 +195,11 @@ impl Prospector {
         prospector
     }
 
-    pub(crate) fn configure(&mut self, discovery: &DmrDiscovery, channel_map: &[DmrChannelEntry]) {
+    pub(crate) fn configure(
+        &mut self,
+        discovery: &TrunkDiscovery,
+        channel_map: &[TrunkChannelEntry],
+    ) {
         self.manual = channel_map
             .iter()
             .map(|entry| (entry.lcn, entry.freq_hz))
@@ -207,7 +211,7 @@ impl Prospector {
             discovery
                 .ranges
                 .iter()
-                .flat_map(sdrmm_wire::DmrSearchRange::frequencies)
+                .flat_map(sdrmm_wire::TrunkSearchRange::frequencies)
                 .collect()
         } else {
             Vec::new()
@@ -232,7 +236,7 @@ impl Prospector {
         let candidates: Vec<u64> = (0..=below + above)
             .map(|step| first + step * RASTER_HZ)
             .filter(|freq_hz| reach.contains(freq_hz))
-            .take(sdrmm_wire::MAX_DMR_SEARCH_CANDIDATES)
+            .take(sdrmm_wire::MAX_TRUNK_SEARCH_CANDIDATES)
             .collect();
         self.adopt_candidates(candidates);
     }
@@ -377,7 +381,7 @@ impl Prospector {
         found
     }
 
-    pub(crate) fn adopt(&mut self, channels: &[DmrChannelEntry]) {
+    pub(crate) fn adopt(&mut self, channels: &[TrunkChannelEntry]) {
         for entry in channels {
             self.learned.entry(entry.lcn).or_insert(entry.freq_hz);
         }
@@ -808,17 +812,17 @@ fn identifies_a_call(frame: &DvFrame) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{DmrSearchRange, DvMode, DvTrunkProtocol};
+    use sdrmm_wire::{DvTrunkProtocol, TrunkSearchRange};
 
     use super::*;
 
     const LCN: u16 = 17;
     const TRAFFIC_HZ: u64 = 451_012_500;
 
-    fn discovery() -> DmrDiscovery {
-        DmrDiscovery {
+    fn discovery() -> TrunkDiscovery {
+        TrunkDiscovery {
             enabled: true,
-            ranges: vec![DmrSearchRange {
+            ranges: vec![TrunkSearchRange {
                 start_hz: 451_000_000,
                 end_hz: 451_050_000,
                 step_hz: 12_500,
@@ -841,7 +845,7 @@ mod tests {
         DvFrame {
             rest_channel: Some(rest),
             trunk_protocol: Some(DvTrunkProtocol::CapacityPlus),
-            ..DvFrame::new(DvMode::Dmr, DvFrameKind::Control)
+            ..DvFrame::new("DMR", DvFrameKind::Control)
         }
     }
 
@@ -939,7 +943,7 @@ mod tests {
             source: Some(source),
             trunk_protocol: Some(DvTrunkProtocol::TierThree),
             crc_verified: Some(true),
-            ..DvFrame::new(DvMode::Dmr, DvFrameKind::Control)
+            ..DvFrame::new("DMR", DvFrameKind::Control)
         }
     }
 
@@ -948,7 +952,7 @@ mod tests {
             slot: Some(1),
             destination: Some(destination),
             source: Some(source),
-            ..DvFrame::new(DvMode::Dmr, DvFrameKind::Header)
+            ..DvFrame::new("DMR", DvFrameKind::Header)
         }
     }
 
@@ -979,7 +983,7 @@ mod tests {
     #[test]
     fn a_search_without_a_named_band_covers_what_the_radio_can_hear() {
         let mut prospector = Prospector::new(
-            &DmrDiscovery {
+            &TrunkDiscovery {
                 enabled: true,
                 ranges: Vec::new(),
                 max_probes: 4,
@@ -1123,7 +1127,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.note_grant(LCN, 1, 91, Some(4001), now);
-        let mut cach = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+        let mut cach = DvFrame::new("DMR", DvFrameKind::Control);
         cach.trunk_protocol = Some(DvTrunkProtocol::TierThree);
         cach.control_channel = Some(false);
         prospector.note_probe(TRAFFIC_HZ, &cach, now);
@@ -1150,7 +1154,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.note_grant(LCN, 1, 91, Some(4001), now);
-        let mut cach = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+        let mut cach = DvFrame::new("DMR", DvFrameKind::Control);
         cach.trunk_protocol = Some(DvTrunkProtocol::TierThree);
         cach.control_channel = Some(false);
         prospector.note_probe(TRAFFIC_HZ, &cach, now);
@@ -1209,7 +1213,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.note_grant(LCN, 1, 91, Some(4001), now);
-        let mut payload = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+        let mut payload = DvFrame::new("DMR", DvFrameKind::Control);
         payload.trunk_protocol = Some(DvTrunkProtocol::TierThree);
         payload.control_channel = Some(false);
 
@@ -1225,7 +1229,7 @@ mod tests {
     }
 
     fn control_channel_at(colour: u16) -> DvFrame {
-        let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+        let mut frame = DvFrame::new("DMR", DvFrameKind::Control);
         frame.trunk_protocol = Some(DvTrunkProtocol::TierThree);
         frame.control_channel = Some(true);
         frame.color_code = Some(colour);
@@ -1267,7 +1271,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.note_grant(LCN, 1, 91, Some(4001), now);
-        let mut control = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+        let mut control = DvFrame::new("DMR", DvFrameKind::Control);
         control.trunk_protocol = Some(DvTrunkProtocol::TierThree);
         control.control_channel = Some(true);
 
@@ -1327,7 +1331,7 @@ mod tests {
     fn a_manual_entry_answers_without_any_search() {
         let prospector = Prospector::new(
             &discovery(),
-            &[DmrChannelEntry {
+            &[TrunkChannelEntry {
                 lcn: LCN,
                 freq_hz: TRAFFIC_HZ,
             }],
@@ -1340,7 +1344,7 @@ mod tests {
     fn a_grant_for_a_known_channel_starts_no_search() {
         let mut prospector = Prospector::new(
             &discovery(),
-            &[DmrChannelEntry {
+            &[TrunkChannelEntry {
                 lcn: LCN,
                 freq_hz: TRAFFIC_HZ,
             }],
@@ -1403,9 +1407,9 @@ mod tests {
     }
 
     fn a_plan_over(entries: &[(u16, u64)]) -> Prospector {
-        let map: Vec<DmrChannelEntry> = entries
+        let map: Vec<TrunkChannelEntry> = entries
             .iter()
-            .map(|(lcn, freq_hz)| DmrChannelEntry {
+            .map(|(lcn, freq_hz)| TrunkChannelEntry {
                 lcn: *lcn,
                 freq_hz: *freq_hz,
             })
@@ -1556,7 +1560,7 @@ mod tests {
     fn a_saved_plan_comes_back_as_something_the_search_found() {
         let mut prospector = prospector();
 
-        prospector.adopt(&[DmrChannelEntry {
+        prospector.adopt(&[TrunkChannelEntry {
             lcn: LCN,
             freq_hz: TRAFFIC_HZ,
         }]);
@@ -1575,7 +1579,7 @@ mod tests {
         prospector.note_grant(LCN, 1, 91, Some(4001), now);
         bind(&mut prospector, &voice(91, 4001), now);
 
-        prospector.adopt(&[DmrChannelEntry {
+        prospector.adopt(&[TrunkChannelEntry {
             lcn: LCN,
             freq_hz: 451_000_000,
         }]);
@@ -1588,7 +1592,7 @@ mod tests {
             slot: Some(1),
             destination: Some(destination),
             source: Some(source),
-            ..DvFrame::new(DvMode::Dmr, DvFrameKind::Data)
+            ..DvFrame::new("DMR", DvFrameKind::Data)
         }
     }
 
@@ -1673,7 +1677,7 @@ mod tests {
 
     #[test]
     fn a_disabled_search_probes_nothing() {
-        let mut prospector = Prospector::new(&DmrDiscovery::default(), &[]);
+        let mut prospector = Prospector::new(&TrunkDiscovery::default(), &[]);
         let now = Instant::now();
         prospector.note_grant(LCN, 1, 91, Some(4001), now);
 
@@ -1704,7 +1708,7 @@ mod tests {
     fn the_published_map_names_where_every_frequency_came_from() {
         let mut prospector = Prospector::new(
             &discovery(),
-            &[DmrChannelEntry {
+            &[TrunkChannelEntry {
                 lcn: 1,
                 freq_hz: 451_000_000,
             }],

@@ -3,8 +3,8 @@ use std::time::Instant;
 use sdrmm_engine::Engine;
 use sdrmm_serial::UsbPortInfo;
 use sdrmm_wire::{
-    GpsNode, HeadingSource, PatchNode, Position, WorkspaceSnapshot,
-    phone::{PHONE_NOT_PAIRED, PHONE_OFFLINE, PHONE_SILENT},
+    GpsNode, HeadingSource, PatchNode, Position, WorkspaceSnapshot, phone::PHONE_NOT_PAIRED,
+    phone::PHONE_OFFLINE, phone::PHONE_SILENT,
 };
 
 use super::{

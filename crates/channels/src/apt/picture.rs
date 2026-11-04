@@ -1,4 +1,4 @@
-use sdrmm_wire::AvhrrChannel;
+use crate::apt::AvhrrChannel;
 
 use super::{
     geometry::{LINE_WORDS, Side, WEDGE_LINES},

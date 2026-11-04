@@ -1,4 +1,5 @@
-use sdrmm_wire::{MeshtasticContent, MeshtasticNeighbor};
+use crate::lora::MeshtasticContent;
+use crate::lora::MeshtasticNeighbor;
 
 use super::ports;
 use super::proto::{each_field, repeated_fixed32, repeated_varint};

@@ -1,5 +1,10 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, NumberSpec, SettingField};
+mod model;
+pub use model::*;
 mod agreement;
 mod catalog;
+pub(crate) use catalog::Catalog;
 mod chirp;
 mod classify;
 mod confirm;
@@ -12,12 +17,14 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass, flat_bandwidth_hz};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    IdentFeatures, IdentParams, IdentReport, IdentSignal, MAX_IDENT_BANDWIDTH_HZ,
-    MIN_IDENT_BANDWIDTH_HZ, Modulation,
+    ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind, IdentFeatures,
+    IdentReport, IdentSignal, Modulation,
 };
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const INPUT_RATE_HZ: f64 = 240_000.0;
 
@@ -53,7 +60,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: MAX_IDENT_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    emits: vec![EventKind::Ident],
+    emits: vec![EventKind::IDENT],
     ..ChannelDescriptor::default()
 });
 
@@ -66,19 +73,17 @@ pub struct IdentChannel {
     meter: features::Meter,
     tracker: agreement::Tracker,
     confirmer: confirm::Confirmer,
+    catalog: Catalog,
     artifact_hz: Option<f64>,
     block_power: Vec<f64>,
     last_heard: Option<bool>,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&IdentParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Ident(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "ident channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<IdentParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 fn check_params(p: &IdentParams) -> Result<(), ChannelError> {
@@ -173,7 +178,9 @@ impl IdentChannel {
         let mut verdict = self
             .tracker
             .settle(band, classify::classify(band, &waveform));
-        let mut candidates = catalog::candidates(verdict.modulation, band, &waveform, dial);
+        let mut candidates = self
+            .catalog
+            .candidates(verdict.modulation, band, &waveform, dial);
         framing::confirm(&mut candidates, &self.window, INPUT_RATE_HZ, band);
         if looks_analog(verdict.modulation)
             && band.bandwidth_hz <= PROBE_BANDWIDTH_HZ
@@ -187,6 +194,7 @@ impl IdentChannel {
         }
         self.confirmer.confirm(
             &mut candidates,
+            &self.catalog,
             &self.window,
             INPUT_RATE_HZ,
             band,
@@ -292,14 +300,13 @@ const fn shifts(modulation: Modulation) -> bool {
     )
 }
 
-impl ChannelRx for IdentChannel {
+impl NativeChannel for IdentChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let params = *params(&settings)?;
+        let params = params(&settings)?;
         check_params(&params)?;
         Ok(Self {
             window: Vec::with_capacity(interval_samples(&params).min(MAX_WINDOW)),
@@ -310,14 +317,17 @@ impl ChannelRx for IdentChannel {
             meter: features::Meter::new(),
             tracker: agreement::Tracker::new(),
             confirmer: confirm::Confirmer::new(),
+            catalog: Catalog::registered(),
             artifact_hz: None,
             block_power: Vec::with_capacity(MAX_WINDOW / OCCUPANCY_BLOCK),
             last_heard: None,
         })
     }
+}
 
+impl ChannelRx for IdentChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let params = *params(&settings)?;
+        let params = params(&settings)?;
         check_params(&params)?;
         if interval_samples(&params) != interval_samples(&self.params)
             || settings.frequency_hz != self.frequency_hz
@@ -355,7 +365,7 @@ impl ChannelRx for IdentChannel {
                 let report = self.analyse();
                 if self.worth_reporting(&report) {
                     self.last_heard = Some(!report.signals.is_empty());
-                    out.events.push(DecoderEvent::Ident(report));
+                    out.events.push(DecoderEvent::of(&report));
                 }
                 self.restart();
             }
@@ -363,19 +373,12 @@ impl ChannelRx for IdentChannel {
     }
 }
 
-pub(crate) fn in_allocation(kind: &str, frequency_hz: f64) -> bool {
-    catalog::in_allocation(kind, frequency_hz)
-}
-
-pub(crate) fn identifiable(kind: &str) -> bool {
-    catalog::identifiable(kind)
-}
-
 pub(crate) fn identify(
     iq: &[Complex<f32>],
     rate: f64,
     band: &detect::Band,
     center: f64,
+    catalog: &Catalog,
 ) -> IdentSignal {
     let mut signal = IdentSignal {
         frequency_hz: center + band.center_hz,
@@ -414,7 +417,7 @@ pub(crate) fn identify(
         square_line_db: waveform.square_line_db,
         quartic_line_db: waveform.quartic_line_db,
     };
-    signal.candidates = catalog::candidates(
+    signal.candidates = catalog.candidates(
         verdict.modulation,
         band,
         &waveform,
@@ -433,18 +436,57 @@ pub(crate) fn identify(
     signal
 }
 
+pub(crate) fn ident_decoder() -> Native<IdentParams> {
+    Native::new::<IdentChannel>(occupied_band)
+        .filter(channel_filter)
+        .form(ident_form)
+}
+
+const BANDWIDTHS_HZ: [f64; 4] = [12_500.0, 50_000.0, 100_000.0, 192_000.0];
+
+pub(crate) fn ident_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new(
+            "bandwidth_hz",
+            "Width",
+            Control::values(&BANDWIDTHS_HZ, sdrmm_wire::units::hertz),
+        )
+        .title("Search bandwidth"),
+        SettingField::new(
+            "interval_ms",
+            "Every",
+            NumberSpec::new(
+                f64::from(MIN_IDENT_INTERVAL_MS),
+                f64::from(MAX_IDENT_INTERVAL_MS),
+                250.0,
+            )
+            .unit("ms"),
+        )
+        .title("Milliseconds of signal each report is measured from"),
+        SettingField::new(
+            "threshold_db",
+            "Detect",
+            NumberSpec::new(
+                f64::from(MIN_IDENT_THRESHOLD_DB),
+                f64::from(MAX_IDENT_THRESHOLD_DB),
+                1.0,
+            )
+            .unit("dB"),
+        )
+        .title("Decibels above the noise floor a signal must reach"),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
 
     use num_complex::Complex;
-    use sdrmm_wire::{
-        ChannelSettings, DecoderEvent, IdentParams, IdentReport, IdentSignal, Modulation,
-    };
+    use sdrmm_wire::{ChannelSettings, IdentReport, IdentSignal, Modulation};
 
-    use super::{INPUT_RATE_HZ, IdentChannel, MAX_WINDOW};
+    use super::{INPUT_RATE_HZ, IdentChannel, IdentParams, MAX_WINDOW};
     use crate::{
-        ChannelCtx, ChannelOutputs, ChannelRx,
+        ChannelCtx, ChannelOutputs, ChannelRx, NativeChannel,
         synth::{self, dv as tgdv},
         testutil::{complex_noise, realtime_budget},
     };
@@ -466,7 +508,7 @@ mod tests {
         ChannelSettings {
             frequency_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: sdrmm_wire::ChannelParams::Ident(params),
+            params: sdrmm_wire::ChannelParams::new("ident", &params).expect("ident settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         }
@@ -493,9 +535,9 @@ mod tests {
             out.reset();
             channel.process(&iq[pos..end], &mut out);
             for event in out.events.drain(..) {
-                match event {
-                    DecoderEvent::Ident(report) => reports.push(report),
-                    other => panic!("unexpected {} event", other.kind()),
+                match event.read::<IdentReport>() {
+                    Some(report) => reports.push(report),
+                    None => panic!("unexpected {} event", event.kind),
                 }
             }
             pos = end;

@@ -6,14 +6,14 @@ Send live IQ or decoded events to other programs.
 |---|---|---|
 | Network IQ | UDP or TCP | GNU Radio and other raw IQ tools |
 | Network IQ | rtl_tcp server | rtl_433 and other rtl_tcp clients |
-| Event output | ADS-B Beast TCP | Flight tracking feeders |
+| Event output | Feed (ADS-B Beast) | Flight tracking feeders |
 | Event output | Webhook, Matrix, MQTT | Chat, automation and alerts |
 | Event output | Notification | Alerts in the desktop app |
 | Event output | PostgreSQL, InfluxDB | Databases |
 | Event output | CSV file | Spreadsheets and logs |
 | Event output | Network interface | IP packets from DAB and DVB-S2 |
 
-Network IQ and Beast ports skip the server's token and TLS. Keep them on trusted networks. A
+Network IQ and feed ports skip the server's token and TLS. Keep them on trusted networks. A
 listener address belongs to the server: use its LAN address or `0.0.0.0` to accept other
 machines.
 
@@ -60,10 +60,13 @@ A channel's `baseband` works too if it covers the sensor. Commands from the clie
 the radio; set that on the canvas. Up to eight clients can connect. A slow one is dropped without
 affecting the others.
 
-## ADS-B Beast
+## Feeds
+
+A feed streams events in a format other software reads. Decoders bring their own formats; ADS-B
+brings Beast.
 
 1. Wire the ADS-B channel's `events` into **Event output**.
-2. Pick **ADS-B Beast TCP**, set **Listen** to `127.0.0.1:30005`, and press **Open server**.
+2. Pick **Feed**, format **Beast**, keep **Listen** at `127.0.0.1:30005`, and press **Open server**.
 3. Point your feeder at that address.
 
 The server sends [Beast binary frames](https://wiki.jetvision.de/wiki/Mode-S_Beast:Data_Output_Formats)

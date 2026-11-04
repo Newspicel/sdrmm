@@ -12,9 +12,9 @@ import type { IqLane } from "../lanes";
 import { useNodePlacement } from "../placement";
 import { lockedChannels } from "./channelNode";
 import { autoTuning, laneLocked } from "./deviceNode";
-import { type TrunkChannelOwner, trunkChannelRoles } from "./dmrTrunk";
 import type { FrameMeta } from "./scopeFeed";
 import { type ScopePick, takeCreationTune, tuneOnCreate } from "./scopePick";
+import { type TrunkChannelOwner, trunkChannelRoles } from "./trunk";
 
 const NO_OWNERS: ReadonlyMap<number, TrunkChannelOwner> = new Map();
 

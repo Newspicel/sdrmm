@@ -7,7 +7,14 @@ import { DEFAULT_SQUELCH_DB, nudgedSquelch, SQUELCH_OFF } from "./components/cha
 import { TUNE_STEPS_HZ } from "./components/dial";
 import { dialId } from "./components/FrequencyDial";
 import { pushToast, toastError } from "./lib/toasts";
-import type { ChannelInfo, ChannelSettings, DeviceSet, PatchGraph, PatchNode } from "./lib/types";
+import type {
+  ChannelDescriptor,
+  ChannelInfo,
+  ChannelSettings,
+  DeviceSet,
+  PatchGraph,
+  PatchNode,
+} from "./lib/types";
 import type { ChannelEdit } from "./lib/useChannelPatch";
 import { forStream } from "./lib/useDevicePatch";
 
@@ -34,6 +41,7 @@ export interface NodeHotkeys {
   selectedNode: PatchNode | null;
   selectedHz: number | null;
   stepHz: number;
+  channelTypes: readonly ChannelDescriptor[];
   tuneNode: (node: string, hz: number) => void;
   applyEdit: (node: string, edit: ChannelEdit) => void;
   retype?: typeof retypeNode;
@@ -62,8 +70,10 @@ export function nodeHotkeys(
     cycleMode: (direction) => {
       const node = decoder();
       if (node?.kind === "channel") {
-        const wanted = nextAnalogMode(node.data.channel_type, direction);
-        (b.retype ?? retypeNode)(node.id, wanted).catch(toastError);
+        const wanted = nextAnalogMode(node.data.channel_type, direction, b.channelTypes);
+        if (wanted !== null) {
+          (b.retype ?? retypeNode)(node.id, wanted).catch(toastError);
+        }
       }
     },
     adjustSquelch: (deltaDb) => {

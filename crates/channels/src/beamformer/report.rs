@@ -1,3 +1,4 @@
+use sdrmm_dsp::power_db;
 use sdrmm_wire::{BeamMode, BeamformerReading, LaneWeight, ProcessorReading};
 
 use super::{Beamformer, Path, steered};
@@ -8,11 +9,7 @@ pub const WEIGHT_FLOOR_DB: f32 = -100.0;
 pub const POWER_FLOOR_DB: f32 = -150.0;
 
 fn db(power: f32) -> f32 {
-    if power > 0.0 {
-        (10.0 * power.log10()).max(POWER_FLOOR_DB)
-    } else {
-        POWER_FLOOR_DB
-    }
+    power_db(power, POWER_FLOOR_DB)
 }
 
 fn pattern_byte(level: f32) -> u8 {

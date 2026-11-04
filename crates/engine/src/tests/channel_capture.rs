@@ -14,7 +14,7 @@ async fn channel_levels_are_measured_and_pushed_without_invalidating_state() {
             ChannelSettings {
                 frequency_hz: TEST_CENTER_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Nfm(NfmParams::default()),
+                params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -85,7 +85,7 @@ async fn a_channel_level_reports_the_gate_that_let_audio_through() {
             ChannelSettings {
                 frequency_hz: TEST_CENTER_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Nfm(NfmParams::default()),
+                params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -98,7 +98,7 @@ async fn a_channel_level_reports_the_gate_that_let_audio_through() {
             ChannelSettings {
                 frequency_hz: TEST_CENTER_HZ,
                 squelch: sdrmm_wire::Squelch::Manual { level_db: 0.0 },
-                params: ChannelParams::Nfm(NfmParams::default()),
+                params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },

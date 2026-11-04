@@ -82,8 +82,9 @@
     }
   },
   {
-    "kind": "dmr_trunk",
+    "kind": "trunk",
     "data": {
+      "decoder": "",
       "protocol": "auto",
       "discovery": {
         "enabled": false,

@@ -182,7 +182,7 @@ pub(super) fn reach(
             held,
         )?;
         merged.drop_dangling();
-        merged.validate_against(sdrmm_channels::descriptor_table())?;
+        merged.validate_against(&sdrmm_channels::descriptors())?;
         merged
     };
     let (after_state, before_state) = (state_at(conn, id, seq)?, state_at(conn, id, prior)?);

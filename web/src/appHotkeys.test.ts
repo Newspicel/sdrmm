@@ -1,12 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import { type NodeHotkeys, nodeHotkeys, PICK_A_DECODER, PICK_A_RADIO } from "./appHotkeys";
-import type { PatchNode } from "./lib/types";
+import type { ChannelDescriptor, PatchNode } from "./lib/types";
+
+const VOICE: ChannelDescriptor[] = ["low", "high"].map((type_id) => ({
+  type_id,
+  name: type_id,
+  analog_voice: true,
+  bandwidth_hz: 1,
+  input_rate_hz: 1,
+}));
 
 const DEVICE = { id: "dev", kind: "device", data: {}, position: { x: 0, y: 0 } } as PatchNode;
-const NFM = {
+const VOICE_NODE = {
   id: "voice",
   kind: "channel",
-  data: { channel_type: "nfm" },
+  data: { channel_type: "low" },
   position: { x: 0, y: 0 },
 } as PatchNode;
 
@@ -21,6 +29,7 @@ function hotkeys(over: Partial<NodeHotkeys>) {
     selectedNode: null,
     selectedHz: null,
     stepHz: 12_500,
+    channelTypes: VOICE,
     ...calls,
     ...over,
   });
@@ -57,11 +66,11 @@ describe("node hotkeys", () => {
   });
 
   it("retype the selected decoder through the server", () => {
-    const { actions, retype } = hotkeys({ selectedNode: NFM, selectedHz: 145e6 });
+    const { actions, retype } = hotkeys({ selectedNode: VOICE_NODE, selectedHz: 145e6 });
 
     actions.cycleMode(1);
 
-    expect(retype).toHaveBeenCalledWith("voice", "wfm");
+    expect(retype).toHaveBeenCalledWith("voice", "high");
   });
 
   it("squelch only a selected decoder", () => {
@@ -70,7 +79,7 @@ describe("node hotkeys", () => {
     expect(applyEdit).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(PICK_A_DECODER);
 
-    const decoder = hotkeys({ selectedNode: NFM, selectedHz: 1 });
+    const decoder = hotkeys({ selectedNode: VOICE_NODE, selectedHz: 1 });
     decoder.actions.toggleSquelch();
     expect(decoder.applyEdit).toHaveBeenCalledWith("voice", expect.any(Function));
   });

@@ -1,5 +1,30 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+mod model;
+pub use model::*;
 mod phasing;
 mod picture;
+pub(crate) fn wefax_decoder() -> Native<WefaxParams> {
+    Native::new::<WefaxChannel>(occupied_band)
+        .filter(channel_filter)
+        .form(wefax_form)
+        .kinds(wefax_kinds)
+}
+
+pub(crate) fn wefax_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("ioc", "IOC", Control::choice::<WefaxIoc>())
+            .title("Index of cooperation"),
+        SettingField::new("lpm", "LPM", Control::choice::<WefaxLpm>()).title("Lines per minute"),
+        SettingField::new("keep_partial", "Partial", Control::Toggle)
+            .title("Keep unfinished charts"),
+    ]
+}
+
+fn wefax_kinds() -> Vec<KindSpec> {
+    vec![crate::wefax::wefax_kind()]
+}
+
 #[cfg(test)]
 mod tests;
 mod tones;
@@ -11,16 +36,13 @@ use num_complex::Complex;
 use phasing::{Lock, Phasing, Scan};
 use picture::Picture;
 use sdrmm_dsp::{FirC, FmDemod, design_lowpass};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    WefaxIoc, WefaxParams, WefaxPicture,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use tones::{Signal, ToneDetector, ToneKind};
 use track::Track;
 
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
-    check_input_rate,
+    NativeChannel, check_input_rate,
 };
 
 pub(crate) const INPUT_RATE_HZ: f64 = 12_000.0;
@@ -47,7 +69,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
     has_video: true,
-    emits: vec![EventKind::Wefax],
+    emits: vec![EventKind::named("wefax")],
     ..ChannelDescriptor::default()
 });
 
@@ -65,14 +87,8 @@ pub(crate) fn channel_filter(p: &WefaxParams) -> Result<ChannelFilter, ChannelEr
     )))
 }
 
-fn params(settings: &ChannelSettings) -> Result<&WefaxParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Wefax(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "wefax channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<WefaxParams, ChannelError> {
+    crate::settings_of::<WefaxParams>(settings)
 }
 
 #[cfg(any(test, feature = "synth"))]
@@ -255,7 +271,7 @@ impl WefaxChannel {
         self.seq = self.seq.wrapping_add(1);
         let elapsed = end.saturating_sub(self.picture.started);
         let picture = self.picture.snapshot();
-        out.events.push(DecoderEvent::Wefax(WefaxPicture {
+        out.events.push(DecoderEvent::of(&WefaxPicture {
             seq: self.seq,
             ioc: self.picture.ioc,
             lpm: self.picture.lpm,
@@ -281,11 +297,10 @@ impl WefaxChannel {
     }
 }
 
-impl ChannelRx for WefaxChannel {
+impl NativeChannel for WefaxChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         Ok(Self {
@@ -296,16 +311,18 @@ impl ChannelRx for WefaxChannel {
             phasing: Phasing::new(),
             picture: Picture::empty(),
             rate: ctx.input_rate,
-            params: *params(&settings)?,
+            params: params(&settings)?,
             heard_ioc: None,
             armed_at: None,
             began: None,
             seq: 0,
         })
     }
+}
 
+impl ChannelRx for WefaxChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let next = *params(&settings)?;
+        let next = params(&settings)?;
         if next.lpm != self.params.lpm {
             self.drop_all();
         }

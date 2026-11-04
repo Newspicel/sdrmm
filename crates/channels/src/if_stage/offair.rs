@@ -1,8 +1,10 @@
+use crate::NativeChannel;
 use std::f64::consts::TAU;
 
+use crate::wfm::WfmParams;
 use num_complex::Complex;
 use sdrmm_dsp::{Ddc, FracResampler};
-use sdrmm_wire::{ChannelParams, IfFilter, IfNotch, WfmParams};
+use sdrmm_wire::{ChannelParams, IfFilter, IfNotch};
 
 use super::IfStage;
 use crate::{
@@ -20,10 +22,11 @@ const SETTLE_S: f64 = 0.1;
 const MAX_LAG: usize = 400;
 
 fn wfm_mono() -> ChannelParams {
-    ChannelParams::Wfm(WfmParams {
+    ChannelParams::of(&WfmParams {
         stereo: false,
         ..WfmParams::default()
     })
+    .expect("wfm settings")
 }
 
 fn upsampled(bytes: &[u8]) -> Vec<Complex<f32>> {

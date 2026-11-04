@@ -1,4 +1,4 @@
-use sdrmm_wire::SarsatBeacon;
+use crate::sarsat::SarsatBeacon;
 
 use super::*;
 

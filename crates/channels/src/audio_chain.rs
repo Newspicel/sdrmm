@@ -12,41 +12,19 @@ const AGC_TARGET_RMS: f32 = 0.25;
 const AGC_MAX_GAIN: f32 = 100.0;
 const BUTTERWORTH_Q: [f64; 2] = [0.541_196_1, 1.306_562_9];
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ClickProfile {
-    #[default]
-    Discriminator,
-    Detector,
-    Vocoder,
+pub use sdrmm_wire::ClickProfile;
+
+/// The click shape of the detector that made `params`' audio, as its decoder declares it.
+#[must_use]
+pub fn click_profile(params: &ChannelParams) -> ClickProfile {
+    crate::descriptor(params.type_id()).map_or_else(ClickProfile::default, |d| d.click)
 }
 
-impl ClickProfile {
-    #[must_use]
-    pub fn for_params(params: &ChannelParams) -> Self {
-        match params {
-            ChannelParams::Am(_) | ChannelParams::Ssb(_) | ChannelParams::Atv(_) => Self::Detector,
-            ChannelParams::Dmr(_)
-            | ChannelParams::Dstar(_)
-            | ChannelParams::Ysf(_)
-            | ChannelParams::Nxdn(_)
-            | ChannelParams::P25(_)
-            | ChannelParams::Dpmr(_)
-            | ChannelParams::M17(_)
-            | ChannelParams::Freedv(_)
-            | ChannelParams::Dab(_)
-            | ChannelParams::Datv(_)
-            | ChannelParams::Dvbt(_)
-            | ChannelParams::Drm(_) => Self::Vocoder,
-            _ => Self::Discriminator,
-        }
-    }
-
-    fn width_s(self) -> f64 {
-        match self {
-            Self::Discriminator => 100e-6,
-            Self::Detector => 400e-6,
-            Self::Vocoder => 60e-6,
-        }
+fn click_width_s(profile: ClickProfile) -> f64 {
+    match profile {
+        ClickProfile::Discriminator => 100e-6,
+        ClickProfile::Detector => 400e-6,
+        ClickProfile::Vocoder => 60e-6,
     }
 }
 
@@ -235,7 +213,7 @@ impl Plane {
             (slot, true) => {
                 *slot = Some(ClickRemover::new(
                     rate,
-                    profile.width_s(),
+                    click_width_s(profile),
                     settings.click_removal.threshold,
                 ));
             }
@@ -358,9 +336,10 @@ fn notch(rate: f64, settings: &NotchSettings) -> Biquad {
 
 #[cfg(test)]
 mod tests {
+    use crate::ssb::SsbParams;
     use sdrmm_wire::{
         AudioAgcMode, AudioFilterSettings, ClickRemovalSettings, DenoiseSettings,
-        NotchSettings as Notch, SsbParams,
+        NotchSettings as Notch,
     };
 
     use super::*;
@@ -580,26 +559,28 @@ mod tests {
 
     #[test]
     fn every_mode_lands_on_the_detector_that_made_its_audio() {
-        use sdrmm_wire::{DmrParams, NfmParams, WfmParams};
+        use crate::dv::DmrParams;
+        use crate::nfm::NfmParams;
+        use crate::wfm::WfmParams;
         for (params, profile) in [
             (
-                ChannelParams::Nfm(NfmParams::default()),
+                ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 ClickProfile::Discriminator,
             ),
             (
-                ChannelParams::Wfm(WfmParams::default()),
+                ChannelParams::new("wfm", &WfmParams::default()).expect("wfm settings"),
                 ClickProfile::Discriminator,
             ),
             (
-                ChannelParams::Ssb(SsbParams::default()),
+                ChannelParams::new("ssb", &SsbParams::default()).expect("ssb settings"),
                 ClickProfile::Detector,
             ),
             (
-                ChannelParams::Dmr(DmrParams::default()),
+                ChannelParams::new("dmr", &DmrParams::default()).expect("dmr settings"),
                 ClickProfile::Vocoder,
             ),
         ] {
-            assert_eq!(ClickProfile::for_params(&params), profile, "{params:?}");
+            assert_eq!(click_profile(&params), profile, "{params:?}");
         }
     }
 

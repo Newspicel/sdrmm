@@ -327,7 +327,7 @@ fn egc_message_carries_decoded_circular_geometry() {
     assert_eq!(geometry["radius_nm"], 300);
     assert_eq!(
         events[0].area,
-        Some(sdrmm_wire::SeaArea::Circle {
+        Some(crate::inmarsat_stdc::SeaArea::Circle {
             center: sdrmm_wire::LatLon {
                 lat: 14.0,
                 lon: -66.0

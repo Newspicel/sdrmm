@@ -7,23 +7,9 @@ import type {
   IfFilter,
   IfNotch,
   NotchSettings,
-  ParamChoice,
-  ParamLimit,
   Squelch,
 } from "../lib/types";
-import type { Options } from "./controls";
 import { formatSignedHz } from "./format";
-
-export type ChannelTypeId = ChannelParams["type"];
-
-export type ChannelParamsOf<K extends ChannelTypeId> = Extract<
-  ChannelParams,
-  { type: K }
->["settings"];
-
-export type Settled<P> = P extends { settings: infer S }
-  ? Omit<P, "settings"> & { settings: { [F in keyof S]-?: S[F] } }
-  : never;
 
 export function settledParams(
   params: ChannelParams,
@@ -38,7 +24,14 @@ export function settledParams(
       settled[name] = value;
     }
   }
-  return { ...params, settings: settled } as ChannelParams;
+  return paramsWith(params.type, settled);
+}
+
+export function paramsWith(
+  type: string,
+  settings: Readonly<Record<string, unknown>>,
+): ChannelParams {
+  return { type, settings: settings };
 }
 
 export function channelFrequencyHz(settings: ChannelSettings): number {
@@ -166,51 +159,6 @@ export function nudgedSquelch(squelch: Squelch | undefined, deltaDb: number): Sq
   };
 }
 
-type Choice<V> = Extract<NonNullable<V>, string | number>;
-
-export function choiceOptions<V>(choices: readonly ParamChoice[], name: string): Options<V> {
-  const found = choices.find((choice) => choice.name === name);
-  return (found?.options ?? []).map((option) => ({
-    value: option.value as V,
-    label: option.label,
-    ...(option.title == null ? {} : { title: option.title }),
-  }));
-}
-
-export function choicesOf<S extends object, F extends keyof S & string>(
-  choices: readonly ParamChoice[],
-  _settings: S,
-  field: F,
-): Options<Choice<S[F]>> {
-  return choiceOptions(choices, field);
-}
-
-export function unsetAs<V, U extends string>(options: Options<V | null>, unset: U): Options<V | U> {
-  return options.map((option) => ({ ...option, value: option.value ?? unset }));
-}
-
-export interface NumberLimit {
-  min?: number;
-  max?: number;
-  step?: number;
-}
-
-export function limitOf(limits: readonly ParamLimit[] | undefined, name: string): NumberLimit {
-  const found = limits?.find((limit) => limit.name === name);
-  if (found === undefined) {
-    return {};
-  }
-  return { min: found.min, max: found.max, step: found.step ?? undefined };
-}
-
-export function scaledLimit(limit: NumberLimit, factor: number): NumberLimit {
-  return {
-    min: limit.min === undefined ? undefined : limit.min * factor,
-    max: limit.max === undefined ? undefined : limit.max * factor,
-    step: limit.step === undefined ? undefined : limit.step * factor,
-  };
-}
-
 export const AUDIO_DEFAULTS = {
   blankerThreshold: AUDIO.blanker_threshold_seed,
   clickThreshold: AUDIO.click_threshold_seed,
@@ -304,70 +252,17 @@ export function reachesHz(frequencyHz: number, window: RadioWindow | null): bool
   return window === null || (frequencyHz >= window.lowHz && frequencyHz <= window.highHz);
 }
 
-const LORA_BANDWIDTH_HZ: Record<NonNullable<ChannelParamsOf<"lora">["bandwidth"]>, number> = {
-  khz7_8: 500_000 / 64,
-  khz10_4: 500_000 / 48,
-  khz15_6: 500_000 / 32,
-  khz20_8: 500_000 / 24,
-  khz31_25: 500_000 / 16,
-  khz41_7: 500_000 / 12,
-  khz62_5: 500_000 / 8,
-  khz125: 500_000 / 4,
-  khz250: 500_000 / 2,
-  khz500: 500_000,
-};
-
-const REMOTE_ID_WIDTH_HZ: Record<NonNullable<ChannelParamsOf<"remote_id">["link"]>, number> = {
-  bluetooth: 2_000_000,
-  bluetooth_band: 18_000_000,
-  wifi: 20_000_000,
-};
-
-const BLE_WIDTH_HZ: Record<NonNullable<ChannelParamsOf<"ble">["link"]>, number> = {
-  channel: 2_000_000,
-  band: 18_000_000,
-};
-
-const PER_BAUD: Record<NonNullable<ChannelParamsOf<"per">["baud"]>, number> = {
-  baud1200: 1_200,
-  baud2400: 2_400,
-  baud4800: 4_800,
-  baud9600: 9_600,
-};
-
-const AIRTIME_WIDTH_HZ: Record<NonNullable<ChannelParamsOf<"wifi_occupancy">["span"]>, number> = {
-  mhz20: 17_000_000,
-  mhz40: 37_000_000,
-  mhz80: 77_000_000,
-};
-
-export function paramBandwidthHz(params: ChannelParams): number | null {
-  if (params.type === "ble") {
-    return BLE_WIDTH_HZ[params.settings.link ?? "channel"];
-  }
-  if (params.type === "wifi_occupancy" || params.type === "ism_survey") {
-    return AIRTIME_WIDTH_HZ[params.settings.span ?? "mhz20"];
-  }
-  if (params.type === "per") {
-    return 3 * PER_BAUD[params.settings.baud ?? "baud9600"];
-  }
-  if (params.type === "remote_id") {
-    return REMOTE_ID_WIDTH_HZ[params.settings.link ?? "bluetooth"];
-  }
-  if (params.type === "lora") {
-    return LORA_BANDWIDTH_HZ[params.settings.bandwidth ?? "khz125"] ?? null;
-  }
-  return "bandwidth_hz" in params.settings && typeof params.settings.bandwidth_hz === "number"
-    ? params.settings.bandwidth_hz
-    : null;
-}
-
+/** The width a decoder's own settings choose, else the width its descriptor declares. */
 export function channelWidthHz(
   params: ChannelParams | undefined,
   descriptor: ChannelDescriptor | undefined,
+  band?: { low_hz: number; high_hz: number } | null,
 ): number | null {
-  const width =
-    (params === undefined ? null : paramBandwidthHz(params)) ?? descriptor?.bandwidth_hz;
+  if (band != null && band.high_hz > band.low_hz) {
+    return band.high_hz - band.low_hz;
+  }
+  const own = params?.settings?.bandwidth_hz;
+  const width = typeof own === "number" ? own : descriptor?.bandwidth_hz;
   return width !== undefined && Number.isFinite(width) && width > 0 ? width : null;
 }
 

@@ -1,4 +1,6 @@
-use sdrmm_wire::{GsmDedicated, GsmLapdmFrame, GsmProtocol};
+use crate::gsm::GsmDedicated;
+use crate::gsm::GsmLapdmFrame;
+use crate::gsm::GsmProtocol;
 
 use super::{
     coding::BLOCK_BYTES,
@@ -101,7 +103,7 @@ pub(crate) fn describe(link: &Link<'_>) -> Option<GsmDedicated> {
     Some(dedicated)
 }
 
-fn identity(protocol: GsmProtocol, code: u8, info: &[u8]) -> Option<sdrmm_wire::GsmIdentity> {
+fn identity(protocol: GsmProtocol, code: u8, info: &[u8]) -> Option<crate::gsm::GsmIdentity> {
     let after_classmark = |at: usize| {
         let length = usize::from(*info.get(at)?);
         sized_identity(info.get(at + 1 + length..)?)
@@ -232,7 +234,7 @@ fn cc_name(code: u8) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::GsmIdentityKind;
+    use crate::gsm::GsmIdentityKind;
 
     use super::*;
 

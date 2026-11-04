@@ -167,12 +167,16 @@ impl Accept {
     pub fn kinds(self) -> KindSet {
         match self {
             Self::Any => KindSet::all(),
-            Self::Caps(caps) => EventKind::ALL
-                .iter()
-                .copied()
-                .filter(|kind| caps.iter().all(|cap| kind.has(*cap)))
-                .collect(),
-            Self::Kinds(kinds) => kinds.iter().copied().collect(),
+            Self::Caps(caps) => {
+                let catalog = crate::decode::catalog();
+                catalog
+                    .all()
+                    .iter()
+                    .filter(|kind| caps.iter().all(|cap| catalog.has(kind, *cap)))
+                    .cloned()
+                    .collect()
+            }
+            Self::Kinds(kinds) => kinds.iter().cloned().collect(),
         }
     }
 }
@@ -217,7 +221,7 @@ impl Payload {
     #[must_use]
     pub fn kinds(&self) -> KindSet {
         match self {
-            Self::Events { kinds } => *kinds,
+            Self::Events { kinds } => kinds.clone(),
             _ => KindSet::EMPTY,
         }
     }
@@ -229,7 +233,7 @@ impl Payload {
                 offered.iter().all(|origin| origins.contains(origin))
             }
             (Self::Events { kinds }, Self::Events { kinds: offered }) => {
-                offered.is_empty() || !kinds.intersection(*offered).is_empty()
+                offered.is_empty() || !kinds.intersection(offered).is_empty()
             }
             (Self::Control { verbs }, Self::Control { verbs: offered }) => {
                 offered.iter().any(|verb| verbs.contains(verb))
@@ -245,7 +249,7 @@ impl Payload {
                 [IqOrigin::Radio] => Some("a radio lane".to_owned()),
                 _ => None,
             },
-            Self::Events { kinds } => kinds_noun(*kinds),
+            Self::Events { kinds } => kinds_noun(kinds),
             Self::Control { verbs } => match verbs.as_slice() {
                 [verb] => Some(verb.noun().to_owned()),
                 _ => None,
@@ -270,17 +274,17 @@ const CAP_NOUNS: &[(Capability, &str)] = &[
     (Capability::Voice, "voice"),
 ];
 
-fn kinds_noun(kinds: KindSet) -> Option<String> {
-    if kinds == KindSet::all() {
+fn kinds_noun(kinds: &KindSet) -> Option<String> {
+    if *kinds == KindSet::all() {
         return None;
     }
     if let Some((_, noun)) = CAP_NOUNS
         .iter()
-        .find(|(cap, _)| KindSet::with_cap(*cap) == kinds)
+        .find(|(cap, _)| KindSet::with_cap(*cap) == *kinds)
     {
         return Some((*noun).to_owned());
     }
-    let names: Vec<&str> = kinds.iter().map(EventKind::name).collect();
+    let names: Vec<String> = kinds.iter().map(EventKind::name).collect();
     Some(names.join(", "))
 }
 

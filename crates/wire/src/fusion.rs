@@ -226,7 +226,7 @@ pub struct NavGuide {
 }
 
 impl EventPayload for NavGuide {
-    fn present(&self, _kind: EventKind) -> Presentation {
+    fn present(&self, _kind: &EventKind) -> Presentation {
         let Some(target) = self.target else {
             return Presentation {
                 entity: Some(NAV_ENTITY.to_owned()),
@@ -312,7 +312,7 @@ pub struct DfFusionState {
 }
 
 impl EventPayload for DfBearing {
-    fn present(&self, _kind: EventKind) -> Presentation {
+    fn present(&self, _kind: &EventKind) -> Presentation {
         let from = lat_lon(self.lat, self.lon);
         let ray = from.and_then(|from| self.ray(from));
         Presentation {
@@ -389,7 +389,7 @@ fn finite(value: f32) -> Option<f32> {
 }
 
 impl EventPayload for DfEstimate {
-    fn present(&self, _kind: EventKind) -> Presentation {
+    fn present(&self, _kind: &EventKind) -> Presentation {
         let center = lat_lon(Some(self.lat), Some(self.lon));
         Presentation {
             entity: Some(FIX_ENTITY.to_owned()),
@@ -464,7 +464,7 @@ mod tests {
             target: Some(target),
             from: Some(from),
         }
-        .present(EventKind::Nav);
+        .present(&EventKind::NAV);
 
         assert_eq!(view.label.as_deref(), Some("Estimate"));
         assert_eq!(
@@ -480,7 +480,7 @@ mod tests {
                 style: LineStyle::Route,
             }]
         );
-        assert!(NavGuide::default().present(EventKind::Nav).gone);
+        assert!(NavGuide::default().present(&EventKind::NAV).gone);
     }
 
     fn plain(bearing_deg: f32, confidence: f32) -> DfBearing {
@@ -687,7 +687,7 @@ mod tests {
             others: vec![DfOtherPeak::default()],
             ..plain(123.456, 0.8)
         };
-        let view = seen.present(EventKind::Df);
+        let view = seen.present(&EventKind::DF);
         assert_eq!(
             view.labels(),
             [
@@ -727,7 +727,7 @@ mod tests {
             samples: 7,
             mass: 1.0,
         };
-        let view = fix.present(EventKind::DfFix);
+        let view = fix.present(&EventKind::DF_FIX);
         assert_eq!(
             view.field("Position"),
             position(Some(50.1), Some(8.2)).as_ref()

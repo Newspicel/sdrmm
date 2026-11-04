@@ -1,5 +1,5 @@
+use crate::ism::IsmModulation;
 use num_complex::Complex;
-use sdrmm_wire::IsmModulation;
 
 use super::{RATE, fsk::Fsk};
 

@@ -1,6 +1,6 @@
 use std::f64::consts::TAU;
 
-use sdrmm_wire::WefaxIoc;
+use crate::wefax::WefaxIoc;
 
 use super::{BLACK_HZ, STOP_TONE_HZ, WHITE_HZ, samples};
 
@@ -270,7 +270,7 @@ mod tests {
     fn noise_is_neither_a_tone_nor_a_carrier() {
         let noise = complex_noise(0x5eed_1234, 0.4, 120_000);
         let mut filtered = Vec::new();
-        super::super::channel_filter(&sdrmm_wire::WefaxParams::default())
+        super::super::channel_filter(&crate::wefax::WefaxParams::default())
             .expect("filter")
             .process(&noise, &mut filtered);
         let (signals, outage) = listen(&filtered);

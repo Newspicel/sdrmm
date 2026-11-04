@@ -36,7 +36,9 @@ Radio / network / recording → DSP engine → audio, events, spectrum, IQ
 | `sdrmm-device-sdrconnect` | SDRplay SDRconnect over its WebSocket API |
 | `sdrmm-device-kiwisdr` | KiwiSDR over its WebSocket API |
 | `sdrmm-device-cr8` | Dragon Labs CR-8 through the vendor SDK, loaded at runtime |
-| `sdrmm-channels` | Analog demodulators, protocol decoders, their descriptors, and signal synthesis |
+| `sdrmm-channels` | Every built-in decoder, each a module with its settings, events and registration, plus the decoder registry and signal synthesis |
+| `sdrmm-plugins` | Loads WASM decoder plugins into the registry |
+| `sdrmm-plugin` | SDK for writing a decoder plugin |
 | `sdrmm-recorder` | SigMF writing, reading, scanning, and export |
 | `sdrmm-orbit` | SGP4, pass prediction, and Doppler |
 | `sdrmm-tools` | Antenna calculator and NanoVNA |
@@ -45,6 +47,10 @@ Radio / network / recording → DSP engine → audio, events, spectrum, IQ
 | `sdrmm-engine` | Device supervision, channelization, scanning, streams, recording, and state snapshots |
 | `sdrmm-server` | REST, WebSocket, MCP, persistence, band plans, auth, phones, and embedded assets |
 | `sdrmm-mobile-core` | Pairing, pinned TLS client, missions, and pose fusion for the phone apps |
+
+Nothing outside `sdrmm-channels` names a decoder. The engine, server and frontend read the decoder
+registry: descriptors, settings forms, event kinds with their presenters, feeds and trunking. A
+shared behavior is a capability or facet a decoder declares.
 
 `apps/sdrmm` is the CLI and owns the process. `apps/desktop` starts the same server on a random
 loopback port and opens it in a Tauri window. Both probe SoapySDR in a short-lived child process.

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use sdrmm_wire::{BroadcastData, DecodedRecord, DecoderEvent, EventOutputTarget};
+use sdrmm_wire::{BroadcastData, DecodedRecord, EventOutputTarget};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 use super::{Binding, status::Statuses};
@@ -96,9 +96,10 @@ impl Outputs {
     }
 
     pub fn push(&self, bindings: &[Binding], record: &DecodedRecord) {
-        let DecoderEvent::BroadcastData(data) = &record.event else {
+        let Some(data) = record.event.read::<BroadcastData>() else {
             return;
         };
+        let data = &data;
         for binding in bindings {
             let Some(entry) = self.entries.get(&binding.node) else {
                 continue;
@@ -162,6 +163,8 @@ fn ip_packet(data: &BroadcastData) -> Result<&[u8], &'static str> {
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_wire::DecoderEvent;
+
     use super::*;
     fn data(protocol: u16, bytes: Vec<u8>) -> BroadcastData {
         BroadcastData {
@@ -207,7 +210,7 @@ mod tests {
             channel: 2,
             at: "2026-09-16T00:00:00Z".to_owned(),
             freq_hz: 1e9,
-            event: DecoderEvent::BroadcastData(data(0x86dd, bytes.clone())),
+            event: DecoderEvent::of(&data(0x86dd, bytes.clone())),
             view: None,
         };
         outputs.push(std::slice::from_ref(&binding), &elsewhere);

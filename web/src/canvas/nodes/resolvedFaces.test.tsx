@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChannelInfo, DeviceSet, PatchGraph, PatchNode } from "../../lib/types";
 import { renderFace } from "../../test/faceHarness";
 import { deviceSet, placed } from "../../test/fixtures";
+import { PROBE_CATALOG } from "../../test/kinds";
 import { resolvedBy } from "../../test/recorded";
 import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../../test/resolved";
 import { ChannelFace } from "./ChannelFace";
@@ -21,7 +22,7 @@ function call(id: number): ChannelInfo {
     id,
     node: "trunk",
     stream: 0,
-    settings: { frequency_hz: 451_000_000, params: { type: "dmr", settings: {} } as never },
+    settings: { frequency_hz: 451_000_000, params: { type: "digital", settings: {} } },
   };
 }
 
@@ -115,7 +116,7 @@ describe("faces read the resolved patch", () => {
       id: 3,
       node: "nfm",
       stream: 0,
-      settings: { frequency_hz: 118_000_000, params: { type: "nfm", settings: {} } as never },
+      settings: { frequency_hz: 118_000_000, params: { type: "nfm", settings: {} } },
     };
     const set = deviceSet({ channels: [live] });
     const wiring = {
@@ -142,7 +143,11 @@ describe("faces read the resolved patch", () => {
           {
             feeds: [
               { source: "sat", port: "events", payload: { type: "events", kinds: ["satellite"] } },
-              { source: "plane", port: "events", payload: { type: "events", kinds: ["adsb"] } },
+              {
+                source: "plane",
+                port: "events",
+                payload: { type: "events", kinds: ["probe_plane"] },
+              },
             ],
           },
         ),
@@ -150,9 +155,10 @@ describe("faces read the resolved patch", () => {
     ]);
     const html = renderFace(EventFilterFace, filter, {
       graph: { nodes: [filter], edges: [] },
+      catalog: PROBE_CATALOG,
       resolved,
     });
     expect(html).toContain(`aria-label="Match Satellite events"`);
-    expect(html).toContain(`aria-label="Match ADS-B events"`);
+    expect(html).toContain(`aria-label="Match Probe plane events"`);
   });
 });

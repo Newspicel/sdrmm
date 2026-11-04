@@ -1,5 +1,5 @@
 use sdrmm_device::DeviceRegistry;
-use sdrmm_wire::{DecodedRecord, DecoderEvent, DvFrameKind, DvMode};
+use sdrmm_wire::{DecodedRecord, DecoderEvent, DvFrameKind};
 
 use super::*;
 
@@ -15,7 +15,7 @@ fn new_call(encrypted: bool) -> NewCall {
         mode: "dmr".to_owned(),
         frame: Some(DvFrame {
             encrypted: Some(encrypted),
-            ..DvFrame::new(DvMode::Dmr, DvFrameKind::Header)
+            ..DvFrame::new("DMR", DvFrameKind::Header)
         }),
         audio_error: None,
     }
@@ -33,7 +33,7 @@ async fn a_binding_that_arrives_without_a_state_event_still_records() {
         .add_channel_for(
             set,
             0,
-            sdrmm_wire::ChannelSettings::default_for("dmr").expect("dmr is built in"),
+            sdrmm_channels::default_settings("dmr").expect("dmr is built in"),
             Some("radio"),
         )
         .expect("add channel");
@@ -68,10 +68,10 @@ async fn a_binding_that_arrives_without_a_state_event_still_records() {
             channel,
             at: "2026-08-14T10:00:00Z".to_owned(),
             freq_hz: 451_125_000.0,
-            event: DecoderEvent::Dv(DvFrame {
+            event: DecoderEvent::of(&DvFrame {
                 slot: Some(1),
                 destination: Some(91),
-                ..DvFrame::new(DvMode::Dmr, kind)
+                ..DvFrame::new("DMR", kind)
             }),
             view: None,
         });
@@ -92,7 +92,7 @@ async fn a_binding_that_arrives_without_a_state_event_still_records() {
 
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].node, "radio");
-    assert_eq!(listed[0].mode, "dmr");
+    assert_eq!(listed[0].mode, "DMR");
 }
 
 fn calling(device_set: u32, channel: u32) -> Resolved {

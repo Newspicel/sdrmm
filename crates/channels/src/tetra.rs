@@ -1,3 +1,7 @@
+use crate::registry::Native;
+use sdrmm_wire::{KindSpec, SettingField};
+mod model;
+pub use model::*;
 mod bits;
 pub(crate) mod burst;
 mod cell;
@@ -7,6 +11,21 @@ pub(crate) mod demod;
 mod llc;
 mod mac;
 mod sds;
+pub(crate) fn tetra_decoder() -> Native<TetraParams> {
+    Native::new::<TetraChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .form(tetra_form)
+        .kinds(tetra_kinds)
+}
+
+pub(crate) fn tetra_form() -> Vec<SettingField> {
+    Vec::new()
+}
+
+fn tetra_kinds() -> Vec<KindSpec> {
+    vec![]
+}
+
 #[cfg(test)]
 mod tests;
 mod upper;
@@ -17,15 +36,17 @@ use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_modem::constellation::{Constellation, tables};
 use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
-    DvFrame, EventKind, TetraParams,
+    CallGate, ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, DvFrame, EventKind,
 };
 
 use self::{
     cell::Receiver,
     demod::{Demod, Dibit, INPUT_RATE_HZ, SYMBOL_RATE},
 };
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 pub(crate) const BANDWIDTH_HZ: f64 = 25_000.0;
 const OCCUPIED_HZ: f64 = 24_300.0;
@@ -39,7 +60,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    emits: vec![EventKind::Dv],
+    emits: vec![EventKind::DV],
     calls: Some(CallGate::Frames),
     ..ChannelDescriptor::default()
 });
@@ -53,14 +74,11 @@ pub struct TetraChannel {
     constellation: Option<Constellation>,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&TetraParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Tetra(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "tetra channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<TetraParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -74,11 +92,10 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     ))
 }
 
-impl ChannelRx for TetraChannel {
+impl NativeChannel for TetraChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         params(&settings)?;
@@ -91,7 +108,9 @@ impl ChannelRx for TetraChannel {
             constellation: tables::psk_rotated(4, FRAC_PI_4).ok(),
         })
     }
+}
 
+impl ChannelRx for TetraChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings)?;
         Ok(())
@@ -111,7 +130,7 @@ impl ChannelRx for TetraChannel {
                 .push(dibit.first, dibit.second, &mut self.frames);
         }
         out.events
-            .extend(self.frames.drain(..).map(DecoderEvent::Dv));
+            .extend(self.frames.drain(..).map(|frame| DecoderEvent::of(&frame)));
     }
 
     fn rejected(&self) -> u32 {

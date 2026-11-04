@@ -132,6 +132,7 @@ pub(crate) struct Plan<C> {
     #[cfg(target_arch = "aarch64")]
     pub(super) row_taps: Vec<C>,
     pub(super) reach: usize,
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     pub(super) floats: usize,
     pub(super) folded: bool,
 }
@@ -174,6 +175,7 @@ where
         let (rows, row_taps) = rows::<T, C>(&reversed, phases, stride);
         Self {
             reach,
+            #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
             floats: reach * T::FLOATS,
             taps,
             #[cfg(target_arch = "aarch64")]

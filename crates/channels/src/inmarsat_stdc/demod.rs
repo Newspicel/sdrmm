@@ -1,7 +1,7 @@
-use std::{f32::consts::TAU, f64::consts::PI};
+use std::f32::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::fft::Transform;
+use sdrmm_dsp::{design_lowpass_blackman_harris, design_rrc_unit_energy, fft::Transform};
 
 pub const RATE: f64 = 12_000.0;
 pub const SYMBOL_RATE: f64 = 1_200.0;
@@ -19,47 +19,6 @@ const CARRIER_LOCKED: f32 = 0.7;
 const SOFT_LIMIT: f32 = 2.0;
 const HISTORY: usize = 24;
 const RESNAP_BINS: f32 = 4.0;
-
-pub fn lowpass_taps(cutoff: f64, count: usize) -> Vec<f32> {
-    const A: [f64; 4] = [0.35875, 0.48829, 0.14128, 0.01168];
-    let center = (count as f64 - 1.0) / 2.0;
-    let taps: Vec<f64> = (0..count)
-        .map(|index| {
-            let x = 2.0 * PI * index as f64 / (count as f64 - 1.0);
-            let window = A[0] - A[1] * x.cos() + A[2] * (2.0 * x).cos() - A[3] * (3.0 * x).cos();
-            let t = index as f64 - center;
-            let sinc = if t.abs() < 1e-12 {
-                2.0 * cutoff
-            } else {
-                (2.0 * PI * cutoff * t).sin() / (PI * t)
-            };
-            sinc * window
-        })
-        .collect();
-    let sum: f64 = taps.iter().sum();
-    taps.into_iter().map(|tap| (tap / sum) as f32).collect()
-}
-
-pub fn rrc_taps(beta: f64, samples_per_symbol: f64, count: usize) -> Vec<f32> {
-    let center = (count as f64 - 1.0) / 2.0;
-    let taps: Vec<f64> = (0..count)
-        .map(|index| {
-            let t = (index as f64 - center) / samples_per_symbol;
-            if t.abs() < 1e-12 {
-                1.0 - beta + 4.0 * beta / PI
-            } else if beta > 0.0 && (t.abs() - 1.0 / (4.0 * beta)).abs() < 1e-9 {
-                let a = PI / (4.0 * beta);
-                (beta / 2.0_f64.sqrt()) * ((1.0 + 2.0 / PI) * a.sin() + (1.0 - 2.0 / PI) * a.cos())
-            } else {
-                let numerator =
-                    (PI * t * (1.0 - beta)).sin() + 4.0 * beta * t * (PI * t * (1.0 + beta)).cos();
-                numerator / (PI * t * (1.0 - (4.0 * beta * t).powi(2)))
-            }
-        })
-        .collect();
-    let energy: f64 = taps.iter().map(|tap| tap * tap).sum::<f64>().sqrt();
-    taps.into_iter().map(|tap| (tap / energy) as f32).collect()
-}
 
 pub struct SampleFir {
     taps: Vec<f32>,
@@ -126,8 +85,15 @@ impl BpskDemod {
         let matched_taps = (8.0 * samples_per_symbol).round() as usize | 1;
         Self {
             samples_per_symbol,
-            lowpass: SampleFir::new(lowpass_taps(LOWPASS_CUTOFF_HZ / channel_rate, LOWPASS_TAPS)),
-            matched: SampleFir::new(rrc_taps(RRC_BETA, samples_per_symbol, matched_taps)),
+            lowpass: SampleFir::new(design_lowpass_blackman_harris(
+                LOWPASS_TAPS,
+                LOWPASS_CUTOFF_HZ / channel_rate,
+            )),
+            matched: SampleFir::new(design_rrc_unit_energy(
+                samples_per_symbol,
+                RRC_BETA,
+                matched_taps,
+            )),
             fft: Transform::forward(COARSE_FFT),
             coarse: Vec::with_capacity(COARSE_FFT),
             locked: false,

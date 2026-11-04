@@ -1,24 +1,27 @@
+use crate::registry::Native;
+use sdrmm_wire::{KindSpec, SettingField};
 mod classify;
 mod tally;
 
 use std::sync::LazyLock;
 
+use crate::airtime::{
+    AIRTIME_REPORT_MS, DEFAULT_SURVEY_MARGIN_DB, IsmSurveyParams, IsmSurveyReport, airtime_form,
+    ism_survey_kind,
+};
 use num_complex::Complex;
 use sdrmm_dsp::{
     airtime::{Burst, Bursts, PowerFrames, QuietFloor, band_degrees},
     fastmath::{fast_db_to_power, fast_power_db},
 };
-use sdrmm_wire::{
-    AIRTIME_REPORT_MS, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily, EventKind, IsmSurveyParams, IsmSurveyReport,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use self::{
     classify::{Shape, classify},
     tally::Tally,
 };
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
     airtime::{
         self, BIN_HZ, FLOOR_RISE_DB, REPORT_FRAMES, WARMUP_FRAMES, bin_offset_hz, bins_between,
         fft_len, frame_s, gated, threshold, usable_half_hz,
@@ -38,21 +41,14 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2.0 * usable_half_hz(IsmSurveyParams::default().span),
     input_rate_hz: IsmSurveyParams::default().span.sample_rate_hz(),
     has_audio: false,
-    emits: vec![EventKind::IsmSurvey],
+    emits: vec![EventKind::named("ism_survey")],
     ..ChannelDescriptor::default()
 });
 
 fn params(settings: &ChannelSettings) -> Result<IsmSurveyParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::IsmSurvey(params) => {
-            airtime::check_margin(params.margin_db)?;
-            Ok(*params)
-        }
-        other => Err(ChannelError::InvalidSettings(format!(
-            "2.4 GHz survey channel got {} params",
-            other.type_id()
-        ))),
-    }
+    let params: IsmSurveyParams = crate::settings_of(settings)?;
+    airtime::check_margin(params.margin_db)?;
+    Ok(params)
 }
 
 pub(crate) fn input_rate(params: &IsmSurveyParams) -> f64 {
@@ -167,11 +163,10 @@ fn shape(burst: &Burst, frequency_hz: f64, len: usize) -> Shape {
     }
 }
 
-impl ChannelRx for IsmSurveyChannel {
+impl NativeChannel for IsmSurveyChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
         check_rate(ctx, &DESCRIPTOR, input_rate(&params))?;
@@ -188,7 +183,9 @@ impl ChannelRx for IsmSurveyChannel {
             dropped: 0,
         })
     }
+}
 
+impl ChannelRx for IsmSurveyChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params.span != self.params.span {
@@ -248,7 +245,7 @@ impl ChannelRx for IsmSurveyChannel {
                 }
                 let lost = bursts.dropped() - *dropped;
                 *dropped = bursts.dropped();
-                out.events.push(DecoderEvent::IsmSurvey(IsmSurveyReport {
+                out.events.push(DecoderEvent::of(&IsmSurveyReport {
                     window_ms: AIRTIME_REPORT_MS,
                     low_hz: *frequency_hz - usable_half_hz(params.span),
                     high_hz: *frequency_hz + usable_half_hz(params.span),
@@ -263,6 +260,23 @@ impl ChannelRx for IsmSurveyChannel {
             }
         });
     }
+}
+
+pub(crate) fn ism_survey_decoder() -> Native<IsmSurveyParams> {
+    Native::new::<IsmSurveyChannel>(occupied_band)
+        .filter(|p| Ok(channel_filter(p)))
+        .input_rate(input_rate)
+        .home(2_442_000_000.0)
+        .form(ism_survey_form)
+        .kinds(ism_survey_kinds)
+}
+
+pub(crate) fn ism_survey_form() -> Vec<SettingField> {
+    airtime_form(DEFAULT_SURVEY_MARGIN_DB)
+}
+
+fn ism_survey_kinds() -> Vec<KindSpec> {
+    vec![ism_survey_kind()]
 }
 
 #[cfg(test)]

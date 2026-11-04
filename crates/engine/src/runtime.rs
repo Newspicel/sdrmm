@@ -13,7 +13,9 @@ mod worker;
 pub use capture::CaptureRuntime;
 pub(crate) use capture::VirtualLaneSink;
 pub(crate) use capture::ring_capacity;
-pub(crate) use channel::{ChannelHost, ChannelSinks, DecodedSink, RawDecoded, RawImage, reaches};
+pub(crate) use channel::{
+    ChannelHost, ChannelSinks, Decoded, DecodedSink, RawDecoded, RawImage, reaches,
+};
 pub(crate) use command::DspCommand;
 pub use frontend::DspMeta;
 pub(crate) use patches::DeviceRuntime;

@@ -66,6 +66,7 @@ pub struct SpectrumMonitor {
     rejected: Vec<Rejected>,
     overloaded: bool,
     clipping: bool,
+    catalog: ident::Catalog,
 }
 
 impl SpectrumMonitor {
@@ -99,6 +100,7 @@ impl SpectrumMonitor {
             rejected: Vec::with_capacity(MAX_REJECTED),
             overloaded: false,
             clipping: false,
+            catalog: ident::Catalog::registered(),
         })
     }
 
@@ -117,7 +119,7 @@ impl SpectrumMonitor {
             let take = (window_len - self.window.len()).min(remaining.len());
             let samples = &remaining[..take];
             for track in &mut self.tracks {
-                feed(track, samples, &mut output);
+                feed(track, samples, &mut output, &self.catalog);
             }
             self.window.extend_from_slice(samples);
             let excess = (self.history.len() + samples.len()).saturating_sub(self.history_capacity);
@@ -176,7 +178,7 @@ impl SpectrumMonitor {
             let signal = if faint {
                 self.identify_retained(&band)
             } else {
-                ident::identify(&self.window, self.rate, &band, self.center)
+                ident::identify(&self.window, self.rate, &band, self.center, &self.catalog)
             };
             if signal.confidence < self.settings.min_confidence
                 || !self.wanted(&signal)
@@ -192,7 +194,7 @@ impl SpectrumMonitor {
             let start = end.saturating_sub(self.history.len() as u64);
             let mut track = Track {
                 id: self.next_id,
-                choices: decoder::choices(&signal, &self.settings).into(),
+                choices: decoder::choices(&signal, &self.settings, &self.catalog).into(),
                 signal,
                 segment: start,
                 last_seen: end,
@@ -206,7 +208,7 @@ impl SpectrumMonitor {
             self.next_id += 1;
             self.start_trials(&mut track);
             let buffered = self.history.make_contiguous();
-            feed(&mut track, buffered, output);
+            feed(&mut track, buffered, output, &self.catalog);
             self.tracks.push(track);
         }
         if clipping && !self.clipping {
@@ -233,6 +235,7 @@ impl SpectrumMonitor {
                     end,
                     self.rate,
                     TransmissionState::Completed,
+                    &self.catalog,
                 ));
                 continue;
             }
@@ -242,6 +245,7 @@ impl SpectrumMonitor {
                     end,
                     self.rate,
                     TransmissionState::Continued,
+                    &self.catalog,
                 ));
                 track.segment = end;
             }
@@ -275,7 +279,7 @@ impl SpectrumMonitor {
                 track.choices.clear();
                 track.tried.retain(|kind| !confirmed(kind));
             }
-            for kind in decoder::choices(&signal, &self.settings) {
+            for kind in decoder::choices(&signal, &self.settings, &self.catalog) {
                 if !track.tried.contains(&kind)
                     && !track.choices.contains(&kind)
                     && !track.decoders.iter().any(|decoder| decoder.kind == kind)
@@ -289,7 +293,7 @@ impl SpectrumMonitor {
         {
             track
                 .decoders
-                .retain(|decoder| decoder.selected(&track.signal));
+                .retain(|decoder| decoder.selected(&track.signal, &self.catalog));
             track.trial_at = end;
         }
         let first = track.decoders.len();
@@ -300,7 +304,7 @@ impl SpectrumMonitor {
             track.error = Some("decoder retry starts after retained IQ".to_owned());
         }
         for decoder in &mut track.decoders[first..] {
-            let (events, error) = decoder.process(self.history.make_contiguous());
+            let (events, error) = decoder.process(self.history.make_contiguous(), &self.catalog);
             if error.is_some() {
                 track.error = error;
             }
@@ -322,7 +326,7 @@ impl SpectrumMonitor {
         let start = history
             .len()
             .saturating_sub((rate * IDENTIFY_SECONDS) as usize);
-        ident::identify(&history[start..], rate, band, center)
+        ident::identify(&history[start..], rate, band, center, &self.catalog)
     }
 
     fn recently_rejected(&self, frequency_hz: f64, band: &ident::detect::Band) -> bool {
@@ -353,7 +357,7 @@ impl SpectrumMonitor {
         signal
             .candidates
             .iter()
-            .find_map(|candidate| candidate.type_id.as_deref().filter(|kind| *kind != "ident"))
+            .find_map(|candidate| candidate.type_id.as_deref())
             .map_or(self.settings.report_unidentified, |kind| {
                 self.settings.decodes(kind)
             })
@@ -365,7 +369,13 @@ impl SpectrumMonitor {
                 break;
             };
             track.tried.push(kind.clone());
-            match Decoder::new(&kind, self.rate, &track.signal, self.settings.keep_clips) {
+            match Decoder::new(
+                &kind,
+                self.rate,
+                &track.signal,
+                self.settings.keep_clips,
+                &self.catalog,
+            ) {
                 Ok(decoder) => track.decoders.push(decoder),
                 Err(error) => track.error = Some(error.to_string()),
             }
@@ -383,7 +393,7 @@ impl SpectrumMonitor {
             if let Some(error) = error {
                 track.error = Some(error.to_owned());
             }
-            transmission(&mut track, end, self.rate, state)
+            transmission(&mut track, end, self.rate, state, &self.catalog)
         }));
         output
     }
@@ -393,7 +403,7 @@ impl SpectrumMonitor {
             transmission: 0,
             frequency_hz: self.center,
             audio: Vec::new(),
-            event: DecoderEvent::Transmission(Transmission {
+            event: DecoderEvent::of(&Transmission {
                 id: 0,
                 state: TransmissionState::Problem,
                 signal: IdentSignal::default(),
@@ -412,9 +422,14 @@ impl SpectrumMonitor {
     }
 }
 
-fn feed(track: &mut Track, iq: &[Complex<f32>], output: &mut Vec<MonitorOutput>) {
+fn feed(
+    track: &mut Track,
+    iq: &[Complex<f32>],
+    output: &mut Vec<MonitorOutput>,
+    catalog: &ident::Catalog,
+) {
     for decoder in &mut track.decoders {
-        let (events, error) = decoder.process(iq);
+        let (events, error) = decoder.process(iq, catalog);
         if error.is_some() {
             track.error = error;
         }
@@ -435,11 +450,17 @@ fn feed(track: &mut Track, iq: &[Complex<f32>], output: &mut Vec<MonitorOutput>)
     }
 }
 
-fn transmission(track: &mut Track, end: u64, rate: f64, state: TransmissionState) -> MonitorOutput {
+fn transmission(
+    track: &mut Track,
+    end: u64,
+    rate: f64,
+    state: TransmissionState,
+    catalog: &ident::Catalog,
+) -> MonitorOutput {
     let selected = track
         .decoders
         .iter_mut()
-        .filter(|decoder| decoder.selected(&track.signal))
+        .filter(|decoder| decoder.selected(&track.signal, catalog))
         .max_by_key(|decoder| decoder.verified);
     let decoder_confirmed = selected.as_ref().is_some_and(|decoder| decoder.verified);
     let (decoder, audio) = selected.map_or((None, Vec::new()), |decoder| {
@@ -455,7 +476,7 @@ fn transmission(track: &mut Track, end: u64, rate: f64, state: TransmissionState
         transmission: track.id,
         frequency_hz: track.signal.frequency_hz,
         audio,
-        event: DecoderEvent::Transmission(Transmission {
+        event: DecoderEvent::of(&Transmission {
             id: track.id,
             state,
             signal: track.signal.clone(),

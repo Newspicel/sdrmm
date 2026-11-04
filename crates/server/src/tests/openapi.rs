@@ -58,9 +58,6 @@ fn openapi_registers_paths_and_ws_schemas() {
         "ClientCommand schema missing"
     );
     for schema in [
-        "DvbtParams",
-        "DvbtBandwidth",
-        "BroadcastData",
         "ChannelParams",
         "ChannelSettings",
         "PresetSnapshot",
@@ -80,54 +77,9 @@ fn openapi_registers_paths_and_ws_schemas() {
         "LogLine",
         "LogLevel",
         "ErrorCode",
-        "VoiceCall",
         "CapturedImage",
         "CapturedImagesResponse",
-        "SstvParams",
-        "SstvPicture",
         "DecoderEvent",
-        "FlexMessage",
-        "ErmesMessage",
-        "EotMessage",
-        "EotParams",
-        "SameMessage",
-        "SameParams",
-        "SarsatMessage",
-        "SarsatParams",
-        "TetrapolMessage",
-        "TetrapolParams",
-        "CwSkimmerSpot",
-        "SelcallSequence",
-        "LoraParams",
-        "LoraKey",
-        "LoraFrame",
-        "RemoteIdFrame",
-        "RemoteIdParams",
-        "BleAdvert",
-        "BleParams",
-        "WifiOccupancyReport",
-        "WifiOccupancyParams",
-        "IsmMessage",
-        "IsmParams",
-        "WmbusMessage",
-        "WmbusParams",
-        "IsmModulation",
-        "IsmCoding",
-        "IsmIntegrity",
-        "IsmSurveyReport",
-        "IsmSurveyParams",
-        "NoiseFigureReport",
-        "NoiseFigureParams",
-        "PerReport",
-        "PerParams",
-        "SidReport",
-        "SidParams",
-        "StanagReport",
-        "StanagParams",
-        "LorawanFrame",
-        "MeshtasticPacket",
-        "MeshcorePacket",
-        "FreeDvParams",
         "DeletedCount",
         "PatchGraph",
         "EventOutputNode",
@@ -150,24 +102,14 @@ fn openapi_registers_paths_and_ws_schemas() {
         "NanoVnaDeviceReport",
         "NanoVnaCalibration",
         "NanoVnaCalStep",
+        "ChannelDescriptor",
+        "SettingField",
+        "ChannelStatus",
+        "EventKindEntry",
     ] {
         assert!(
             spec.contains(&format!("\"{schema}\"")),
             "{schema} schema missing"
-        );
-    }
-    let spec: serde_json::Value = serde_json::from_str(&spec).expect("spec is JSON");
-    for params in ["VorParams", "IlsParams"] {
-        let report_ms = &spec["components"]["schemas"][params]["properties"]["report_ms"];
-        assert_eq!(
-            report_ms["minimum"],
-            serde_json::json!(sdrmm_wire::MIN_NAVAID_REPORT_MS),
-            "{params} report_ms minimum"
-        );
-        assert_eq!(
-            report_ms["maximum"],
-            serde_json::json!(sdrmm_wire::MAX_NAVAID_REPORT_MS),
-            "{params} report_ms maximum"
         );
     }
 }

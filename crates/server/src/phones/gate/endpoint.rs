@@ -1,9 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
-use sdrmm_wire::{
-    PhoneEndpoint,
-    phone::{MAX_PAIR_HOSTS, key_check, valid_pair_host},
-};
+use sdrmm_wire::{PhoneEndpoint, phone::MAX_PAIR_HOSTS, phone::key_check, phone::valid_pair_host};
 
 use crate::auth::ListenerRole;
 

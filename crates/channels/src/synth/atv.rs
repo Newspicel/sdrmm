@@ -1,7 +1,10 @@
 use std::f64::consts::TAU;
 
+use crate::atv::AtvColor;
+use crate::atv::AtvModulation;
+use crate::atv::AtvParams;
+use crate::atv::AtvStandard;
 use num_complex::Complex;
-use sdrmm_wire::{AtvColor, AtvModulation, AtvParams, AtvStandard};
 
 const SYNC: f32 = 0.0;
 const BLANKING: f32 = 0.3;
@@ -302,7 +305,7 @@ fn add_sound_subcarrier(video: &mut [f32], rate: f64, sound: Option<(f64, f64)>)
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::AtvParams;
+    use crate::atv::AtvParams;
 
     use super::*;
 

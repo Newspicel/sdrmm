@@ -1,6 +1,6 @@
 use num_complex::Complex;
 use sdrmm_dsp::radar::cma::ReferenceCma;
-use sdrmm_wire::radar::{ReferenceCleaning, ReferenceHealth, ReferenceMode};
+use sdrmm_wire::{radar::ReferenceCleaning, radar::ReferenceHealth, radar::ReferenceMode};
 
 use super::dab_remod::DabRemod;
 use crate::ChannelError;

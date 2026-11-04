@@ -1,16 +1,20 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+use sdrmm_wire::{KindSpec, SettingField};
+mod model;
+pub use model::*;
 pub(crate) mod burst;
 
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{BitSync, Decimator, FmDemod, RealDecimator, ToneCorrelator, design_lowpass};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    MAX_SAME_BANDWIDTH_HZ, MIN_SAME_BANDWIDTH_HZ, SAME_BANDWIDTH_HZ, SAME_BAUD, SAME_MARK_HZ,
-    SAME_SPACE_HZ, SameParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 use burst::{Bursts, Framer};
 
 pub(crate) const RATE: f64 = 50_000.0;
@@ -31,7 +35,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: SAME_BANDWIDTH_HZ,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Same],
+    emits: vec![EventKind::named("same")],
     ..ChannelDescriptor::default()
 });
 
@@ -92,14 +96,8 @@ pub struct SameChannel {
     clock: u64,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&SameParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Same(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "same channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<SameParams, ChannelError> {
+    crate::settings_of::<SameParams>(settings)
 }
 
 fn check_params(params: &SameParams) -> Result<(), ChannelError> {
@@ -129,14 +127,13 @@ pub(crate) fn channel_filter(params: &SameParams) -> Result<ChannelFilter, Chann
     )))
 }
 
-impl ChannelRx for SameChannel {
+impl NativeChannel for SameChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        check_params(params(&settings)?)?;
+        check_params(&params(&settings)?)?;
         Ok(Self {
             demod: Demod::new(),
             framer: Framer::default(),
@@ -145,9 +142,11 @@ impl ChannelRx for SameChannel {
             clock: 0,
         })
     }
+}
 
+impl ChannelRx for SameChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        check_params(params(&settings)?)
+        check_params(&params(&settings)?)
     }
 
     fn retuned(&mut self) {
@@ -167,7 +166,7 @@ impl ChannelRx for SameChannel {
         }
         self.bursts.expire(self.clock);
         for message in self.bursts.take() {
-            out.events.push(DecoderEvent::Same(message));
+            out.events.push(DecoderEvent::of(&message));
         }
         self.bits = bits;
     }
@@ -175,6 +174,43 @@ impl ChannelRx for SameChannel {
     fn rejected(&self) -> u32 {
         self.bursts.rejected()
     }
+}
+
+const NWR_CHANNELS: &[HzRange] = &[HzRange::mhz(162.4, 162.56)];
+
+fn same_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "SAME alert header (AFSK over FM)",
+            &[Modulation::Fm, Modulation::Fsk2],
+            HzRange::new(6_000.0, 20_000.0),
+            "521 baud tones inside an FM channel on a weather radio frequency",
+        )
+        .symbol_rate(HzRange::about(520.83, 0.06))
+        .deviation(HzRange::new(2_000.0, 5_500.0))
+        .on(NWR_CHANNELS),
+    ]
+}
+
+fn same_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("same"))
+}
+
+pub(crate) fn same_decoder() -> Native<SameParams> {
+    Native::new::<SameChannel>(occupied_band)
+        .filter(channel_filter)
+        .signatures(same_signatures)
+        .trial(same_trial)
+        .form(same_form)
+        .kinds(same_kinds)
+}
+
+pub(crate) fn same_form() -> Vec<SettingField> {
+    vec![SettingField::bandwidth(&[12_500.0, 25_000.0])]
+}
+
+fn same_kinds() -> Vec<KindSpec> {
+    vec![crate::same::same_kind()]
 }
 
 #[cfg(test)]

@@ -155,10 +155,11 @@ async fn prune(store: &Arc<Store>, engine: &Weak<Engine>, max_rows: u64) {
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_channels::AdsbMessage;
     use sdrmm_wire::{
-        AdsbMessage, ChannelNode, ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent,
-        DecoderLogQuery, DeviceBackend, DeviceRef, NodeBody, PatchEdge, PatchNode, PortRef,
-        Position, ServerEvent, WorkspaceSnapshot,
+        ChannelNode, ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent, DecoderLogQuery,
+        DeviceBackend, DeviceRef, NodeBody, PatchEdge, PatchNode, PortRef, Position, ServerEvent,
+        WorkspaceSnapshot,
     };
     use tokio::sync::broadcast;
 
@@ -186,7 +187,7 @@ mod tests {
             channel: 0,
             at: jiff::Timestamp::now().to_string(),
             freq_hz: 1_090_000_000.0,
-            event: DecoderEvent::Adsb(AdsbMessage {
+            event: DecoderEvent::of(&AdsbMessage {
                 icao: icao.to_string(),
                 df: 17,
                 raw: "8D3C6444".to_string(),

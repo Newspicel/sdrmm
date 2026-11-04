@@ -3,8 +3,8 @@ use std::sync::Arc;
 use jiff::{SignedDuration, Timestamp};
 use sdrmm_wire::{
     API_PROTOCOL, GpsNode, NodeBody, OfferState, PairRequest, PairResponse, PatchGraph, PatchNode,
-    PhoneEndpoint, PhonePlatform, PhoneToken, Position, PositionSource,
-    phone::{MAX_PHONE_NAME_LEN, PAIR_MAX_FAILURES, key_check, valid_pair_code},
+    PhoneEndpoint, PhonePlatform, PhoneToken, Position, PositionSource, phone::MAX_PHONE_NAME_LEN,
+    phone::PAIR_MAX_FAILURES, phone::key_check, phone::valid_pair_code,
 };
 
 use super::{pairing::draw_code, *};

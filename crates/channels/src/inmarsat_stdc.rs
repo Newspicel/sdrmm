@@ -1,15 +1,19 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+use sdrmm_wire::{KindSpec, SettingField};
+mod model;
+pub use model::*;
 use std::{ops::RangeInclusive, sync::LazyLock};
 
+use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DataLinkMessage, DecoderEvent,
-    DecoderFamily, EventKind, InmarsatStdcParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
     datalink::{self, Quality},
 };
 
@@ -17,6 +21,43 @@ mod demod;
 mod fields;
 mod frame;
 mod packet;
+
+const INMARSAT_BAND: &[HzRange] = &[HzRange::mhz(1_525.0, 1_559.0)];
+
+fn inmarsat_stdc_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "Inmarsat STD-C",
+            &[Modulation::Psk2, Modulation::Unknown],
+            HzRange::new(2_000.0, 6_000.0),
+            "1200 baud BPSK from a geostationary satellite",
+        )
+        .symbol_rate(HzRange::about(1_200.0, 0.06))
+        .on(INMARSAT_BAND),
+    ]
+}
+
+fn inmarsat_stdc_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("inmarsat_stdc"))
+}
+
+pub(crate) fn inmarsat_stdc_decoder() -> Native<InmarsatStdcParams> {
+    Native::new::<InmarsatStdcChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(1_541_450_000.0)
+        .signatures(inmarsat_stdc_signatures)
+        .trial(inmarsat_stdc_trial)
+        .form(inmarsat_stdc_form)
+        .kinds(inmarsat_stdc_kinds)
+}
+
+pub(crate) fn inmarsat_stdc_form() -> Vec<SettingField> {
+    Vec::new()
+}
+
+fn inmarsat_stdc_kinds() -> Vec<KindSpec> {
+    vec![crate::datalink::inmarsat_stdc_kind()]
+}
 
 #[cfg(test)]
 mod equivalence;
@@ -46,7 +87,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::InmarsatStdc],
+    emits: vec![EventKind::named("inmarsat_stdc")],
     ..ChannelDescriptor::default()
 });
 
@@ -230,14 +271,8 @@ pub struct InmarsatStdcChannel {
     packets: Vec<StdcPacket>,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&InmarsatStdcParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::InmarsatStdc(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "inmarsat STD-C channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<InmarsatStdcParams, ChannelError> {
+    crate::settings_of::<InmarsatStdcParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -248,11 +283,10 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     datalink::channel_filter(RATE, HALF_BANDWIDTH)
 }
 
-impl ChannelRx for InmarsatStdcChannel {
+impl NativeChannel for InmarsatStdcChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         params(&settings)?;
@@ -261,18 +295,18 @@ impl ChannelRx for InmarsatStdcChannel {
             packets: Vec::new(),
         })
     }
+}
 
+impl ChannelRx for InmarsatStdcChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings).map(|_| ())
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.decoder.process(iq, &mut self.packets);
-        out.events.extend(
-            self.packets
-                .drain(..)
-                .map(|packet| DecoderEvent::InmarsatStdc(to_datalink(&packet))),
-        );
+        out.events.extend(self.packets.drain(..).map(|packet| {
+            DecoderEvent::tagged(EventKind::named("inmarsat_stdc"), &to_datalink(&packet))
+        }));
     }
 }
 
@@ -282,6 +316,7 @@ pub(crate) use tests::fixture;
 #[cfg(test)]
 mod tests {
     use sdrmm_dsp::Ddc;
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
     use crate::testutil::{run_events, settings};
@@ -317,7 +352,8 @@ mod tests {
         bits.extend(&symbols);
         bits.extend(&symbols);
         crate::fixtures::Fixture::new(
-            ChannelParams::InmarsatStdc(InmarsatStdcParams::default()),
+            ChannelParams::new("inmarsat_stdc", &InmarsatStdcParams::default())
+                .expect("inmarsat_stdc settings"),
             modulate::modulate(&bits, 1_200.0, RATE, 0.0, 0.5),
         )
     }
@@ -331,16 +367,17 @@ mod tests {
         let iq = modulate::modulate(&bits, 1_200.0, RATE, 0.0, 0.5);
         let mut channel = InmarsatStdcChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::InmarsatStdc(InmarsatStdcParams::default())),
+            settings(
+                ChannelParams::new("inmarsat_stdc", &InmarsatStdcParams::default())
+                    .expect("inmarsat_stdc settings"),
+            ),
         )
         .expect("channel");
         let events = run_events(&mut channel, &iq);
         let message = events
             .iter()
-            .find_map(|event| match event {
-                DecoderEvent::InmarsatStdc(message) if message.crc_ok => Some(message),
-                _ => None,
-            })
+            .filter_map(|event| crate::datalink::read(event, "inmarsat_stdc"))
+            .find(|message| message.crc_ok)
             .expect("bulletin board");
         assert_eq!(message.message_type, "bulletin-board");
         assert_eq!(message.details["type"], "std_c");

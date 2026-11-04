@@ -77,7 +77,6 @@ pub struct Limits {
     pub light_speed_m_s: f64,
     pub band_seed_hz: f64,
     pub spectrum_signal_margin_db: f32,
-    pub sonde_burst_m: u32,
     pub array: ArrayLimits,
     pub fusion: FusionLimits,
     pub radar: RadarLimits,
@@ -100,7 +99,6 @@ pub struct Limits {
     pub audio: AudioLimits,
     pub if_filter: IfFilterLimits,
     pub survey: SurveyLimits,
-    pub wmbus: WmbusLimits,
     pub workspace_state_version: u32,
 }
 
@@ -216,19 +214,6 @@ pub const SURVEY_LIMITS: SurveyLimits = SurveyLimits {
     metres_per_degree_lon: crate::survey::METRES_PER_DEGREE_LON,
     metres_per_degree_lat: crate::survey::METRES_PER_DEGREE_LAT,
     min_cos_lat: crate::survey::MIN_COS_LAT,
-};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub struct WmbusLimits {
-    pub keys: usize,
-    pub meter_digits: usize,
-    pub key_digits: usize,
-}
-
-pub const WMBUS_LIMITS: WmbusLimits = WmbusLimits {
-    keys: crate::wmbus::MAX_WMBUS_KEYS,
-    meter_digits: crate::wmbus::METER_DIGITS,
-    key_digits: crate::wmbus::KEY_DIGITS,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -557,7 +542,6 @@ pub const LIMITS: Limits = Limits {
     light_speed_m_s: LIGHT_SPEED_M_S,
     band_seed_hz: DEFAULT_BAND_HZ,
     spectrum_signal_margin_db: crate::frame::SPECTRUM_SIGNAL_MARGIN_DB,
-    sonde_burst_m: crate::weather::DEFAULT_SONDE_BURST_M,
     array: ARRAY_LIMITS,
     fusion: FUSION_LIMITS,
     radar: RADAR_LIMITS,
@@ -599,7 +583,6 @@ pub const LIMITS: Limits = Limits {
     audio: AUDIO_LIMITS,
     if_filter: IF_FILTER_LIMITS,
     survey: SURVEY_LIMITS,
-    wmbus: WMBUS_LIMITS,
     workspace_state_version: crate::workspace_state::WORKSPACE_STATE_VERSION,
 };
 

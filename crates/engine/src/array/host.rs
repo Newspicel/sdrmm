@@ -14,13 +14,14 @@ use sdrmm_channels::{
         ProcessorFaults, ProcessorNeeds, ProcessorOutput, ResetCause, Steer, TuningNeed,
         create_processor, processor_descriptor,
     },
+    df::reserved_bearing,
 };
 use sdrmm_dsp::manifold::ManifoldTable;
 use sdrmm_wire::{
-    ArrayGeometry, ArrayTuningMode, BearingSource, Coherence, DecodedRecord, DecoderEvent,
-    DfBearing, EventOrigin, GpuUse, NO_CHANNEL, ProcessorGate, ProcessorParams, ProcessorReading,
-    ProcessorStatus, RangeDopplerOwned, SpatialSpectrumOwned, StreamKind, SurfaceFrame,
-    VisibilityOwned, patch::MAX_NODE_ID_LEN, processor::df::DF_POINTS,
+    ArrayGeometry, ArrayTuningMode, Coherence, DecodedRecord, DecoderEvent, DfBearing, EventOrigin,
+    GpuUse, NO_CHANNEL, ProcessorGate, ProcessorParams, ProcessorReading, ProcessorStatus,
+    RangeDopplerOwned, SpatialSpectrumOwned, StreamKind, SurfaceFrame, VisibilityOwned,
+    patch::MAX_NODE_ID_LEN,
 };
 use tokio::sync::broadcast;
 
@@ -40,7 +41,6 @@ const PUBLISH_SLOTS: usize = 16;
 const SURFACE_CELLS: usize = 1 << 19;
 const STEER_WORDS: usize = 12;
 const STEER_READS: usize = 4;
-const MAX_OTHERS: usize = 3;
 
 pub(crate) struct ProcessorStats {
     pub(crate) gated_samples: AtomicU64,
@@ -316,32 +316,9 @@ pub(crate) struct Packet {
     out: Out,
     reading: Option<ProcessorReading>,
     surface: Option<SurfaceFrame>,
-    event: DecoderEvent,
+    bearing: DfBearing,
     seq: u32,
     freq_hz: f64,
-}
-
-pub(crate) fn event_slot() -> DecoderEvent {
-    DecoderEvent::Df(DfBearing {
-        bearing_deg: 0.0,
-        confidence: 0.0,
-        lat: None,
-        lon: None,
-        station_id: Some(String::with_capacity(MAX_NODE_ID_LEN)),
-        node: String::with_capacity(MAX_NODE_ID_LEN),
-        sigma_deg: 0.0,
-        accuracy_m: None,
-        heading_deg: None,
-        heading_sigma_deg: None,
-        relative_deg: None,
-        mirror_deg: None,
-        freq_hz: None,
-        source: BearingSource::Array,
-        moving: false,
-        others: Vec::with_capacity(MAX_OTHERS),
-        likelihood: Vec::with_capacity(DF_POINTS),
-        snr_db: None,
-    })
 }
 
 fn surface_slot(kind: Option<StreamKind>) -> Option<SurfaceFrame> {
@@ -363,17 +340,10 @@ fn surface_slot(kind: Option<StreamKind>) -> Option<SurfaceFrame> {
     }
 }
 
-fn event_freq(event: &DecoderEvent) -> Option<f64> {
-    match event {
-        DecoderEvent::Df(bearing) => bearing.freq_hz,
-        _ => None,
-    }
-}
-
 pub(crate) struct Outputs {
     report: Option<ProcessorReading>,
     surface: Option<SurfaceFrame>,
-    events: Vec<DecoderEvent>,
+    bearings: Vec<DfBearing>,
     lanes: Vec<LaneBuffer>,
     sinks: Vec<Option<VirtualLaneSink>>,
     lane_ratio: [f64; MAX_LANE_PORTS],
@@ -414,7 +384,7 @@ impl Outputs {
                 out: Out::Report,
                 reading: ProcessorReading::empty(type_id),
                 surface: surface_slot(kind),
-                event: event_slot(),
+                bearing: reserved_bearing(MAX_NODE_ID_LEN),
                 seq: 0,
                 freq_hz: 0.0,
             },
@@ -424,7 +394,9 @@ impl Outputs {
         Ok(Self {
             report: ProcessorReading::empty(type_id),
             surface: surface_slot(kind),
-            events: (0..MAX_EVENTS_PER_BLOCK).map(|_| event_slot()).collect(),
+            bearings: (0..MAX_EVENTS_PER_BLOCK)
+                .map(|_| reserved_bearing(MAX_NODE_ID_LEN))
+                .collect(),
             lanes,
             sinks,
             lane_ratio,
@@ -450,7 +422,7 @@ impl Outputs {
             let mut out = ProcessorOutput::new(OutputSlots {
                 report: self.report.as_mut(),
                 surface: self.surface.as_mut(),
-                events: &mut self.events,
+                bearings: &mut self.bearings,
                 lanes: &mut self.lanes,
             });
             work(&mut out);
@@ -492,13 +464,13 @@ impl Outputs {
                 .dropped_surfaces
                 .fetch_add(surfaces_lost, Ordering::Relaxed);
         }
-        let mut lost = tally.dropped_events;
-        for event in self.events.iter_mut().take(tally.events) {
-            let freq_hz = event_freq(event).unwrap_or(self.freq_hz);
+        let mut lost = tally.dropped_bearings;
+        for bearing in self.bearings.iter_mut().take(tally.bearings) {
+            let freq_hz = bearing.freq_hz.unwrap_or(self.freq_hz);
             if !self.publisher.submit(|packet| {
                 packet.out = Out::Event;
                 packet.freq_hz = freq_hz;
-                std::mem::swap(&mut packet.event, event);
+                std::mem::swap(&mut packet.bearing, bearing);
             }) {
                 lost += 1;
             }
@@ -597,7 +569,7 @@ fn publish(node: &str, sinks: &HostSinks, packet: &mut Packet) {
                 channel: NO_CHANNEL,
                 at: format!("{:.9}", jiff::Timestamp::now()),
                 freq_hz: packet.freq_hz,
-                event: packet.event.clone(),
+                event: DecoderEvent::of(&packet.bearing),
                 sinks: Vec::new(),
                 callsign: None,
                 view: None,

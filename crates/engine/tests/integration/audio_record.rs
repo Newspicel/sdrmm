@@ -6,14 +6,16 @@ use std::{
     time::{Duration, Instant},
 };
 
+use sdrmm_channels::AdsbParams;
+use sdrmm_channels::NfmParams;
+use sdrmm_channels::WfmParams;
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_recording::RecordingDriver;
 use sdrmm_device_virtual::{NFM_CARRIER_OFFSET_HZ, VirtualDriver};
 use sdrmm_engine::Engine;
 use sdrmm_recorder::read_audio_info;
 use sdrmm_wire::{
-    AdsbParams, AudioRecordingStatus, AudioRoute, ChannelParams, ChannelSettings, DeviceSettings,
-    NfmParams, WfmParams,
+    AudioRecordingStatus, AudioRoute, ChannelParams, ChannelSettings, DeviceSettings,
 };
 
 const TEST_RATE: f64 = 2_400_000.0;
@@ -72,7 +74,7 @@ fn nfm_channel(engine: &Engine, ds: u32) -> u32 {
             ds,
             0,
             settings(
-                ChannelParams::Nfm(NfmParams::default()),
+                ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 NFM_CARRIER_OFFSET_HZ,
             ),
         )
@@ -268,7 +270,7 @@ async fn a_stereo_channel_records_two_channel_audio() {
             ds,
             0,
             settings(
-                ChannelParams::Wfm(WfmParams::default()),
+                ChannelParams::new("wfm", &WfmParams::default()).expect("wfm settings"),
                 sdrmm_device_virtual::WFM_CARRIER_OFFSET_HZ,
             ),
         )
@@ -346,7 +348,10 @@ async fn a_mode_change_to_a_silent_decoder_finishes_the_recording() {
         .patch_channel(
             ds,
             ch,
-            settings(ChannelParams::Adsb(AdsbParams::default()), 0.0),
+            settings(
+                ChannelParams::new("adsb", &AdsbParams::default()).expect("adsb settings"),
+                0.0,
+            ),
         )
         .unwrap();
 
@@ -375,7 +380,10 @@ async fn what_cannot_be_recorded_is_refused_rather_than_left_running_empty() {
         .add_channel(
             ds,
             0,
-            settings(ChannelParams::Adsb(AdsbParams::default()), 0.0),
+            settings(
+                ChannelParams::new("adsb", &AdsbParams::default()).expect("adsb settings"),
+                0.0,
+            ),
         )
         .unwrap();
     let refused = start(&engine, ds, adsb).unwrap_err();
@@ -411,7 +419,7 @@ async fn skipping_silence_pauses_while_the_squelch_is_shut() {
     let shut = ChannelSettings {
         squelch: sdrmm_wire::Squelch::Manual { level_db: 50.0 },
         ..settings(
-            ChannelParams::Nfm(NfmParams::default()),
+            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
             NFM_CARRIER_OFFSET_HZ,
         )
     };

@@ -1,4 +1,5 @@
 use num_complex::Complex;
+use sdrmm_dsp::crc_msb_bits;
 
 use super::{
     Constellation, DecodeError, Frame, Rate,
@@ -236,14 +237,7 @@ fn shortening(mask: &mut [bool], information: usize, order: &[usize]) -> Result<
 }
 
 pub fn crc(bits: &[bool]) -> u32 {
-    bits.iter().fold(u32::MAX, |mut state, &bit| {
-        let feedback = bit ^ (state >> 31 != 0);
-        state <<= 1;
-        if feedback {
-            state ^= 0x04c11db7;
-        }
-        state
-    })
+    crc_msb_bits(0x04c11db7, 32, u32::MAX, bits.iter().copied())
 }
 
 #[cfg(test)]

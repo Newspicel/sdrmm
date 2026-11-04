@@ -1,6 +1,6 @@
 use sdrmm_wire::{
-    ChannelNode, ChannelParams, ChannelSettings, DeviceBackend, DeviceNode, DeviceRef, NfmParams,
-    NodeBody, NoiseBlankerSettings, PatchEdge, PatchGraph, PatchNode, PortRef, PortType, Position,
+    ChannelNode, ChannelParams, ChannelSettings, DeviceBackend, DeviceNode, DeviceRef, NodeBody,
+    NoiseBlankerSettings, PatchEdge, PatchGraph, PatchNode, PortRef, PortType, Position,
     RackLayout, Squelch, WorkspaceSnapshot,
 };
 
@@ -57,7 +57,7 @@ pub fn settings(index: usize) -> ChannelSettings {
     ChannelSettings {
         frequency_hz: CENTER_HZ + signal::offset_hz(index),
         squelch: Squelch::Off,
-        params: ChannelParams::Nfm(NfmParams::default()),
+        params: ChannelParams::bare("nfm"),
         blanker: NoiseBlankerSettings::default(),
         if_filter: Default::default(),
     }

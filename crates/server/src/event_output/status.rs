@@ -93,5 +93,5 @@ impl Statuses {
 }
 
 fn reports(target: &EventOutputTarget) -> bool {
-    !matches!(target, EventOutputTarget::Beast { .. })
+    !matches!(target, EventOutputTarget::Feed { .. })
 }

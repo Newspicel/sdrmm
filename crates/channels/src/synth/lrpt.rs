@@ -1,6 +1,6 @@
+use crate::lrpt::LrptMode;
 use num_complex::Complex;
 use sdrmm_dsp::{design_rrc, fec::ccsds_rs::CcsdsReedSolomon};
-use sdrmm_wire::LrptMode;
 
 use crate::lrpt::{
     image::{FIRST_APID, IMAGE_HEADER, MCU_ID_AT, MCUS_PER_ROW, QUALITY_AT, TELEMETRY_APID, WIDTH},

@@ -1,6 +1,12 @@
 mod track;
 
-use sdrmm_wire::{DectBand, DectFrame, DectSide, DectUpdate};
+use crate::dect::DectBand;
+
+use crate::dect::DectFrame;
+
+use crate::dect::DectSide;
+
+use crate::dect::DectUpdate;
 use track::{Track, set, slot_distance};
 
 use super::{

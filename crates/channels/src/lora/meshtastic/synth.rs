@@ -1,4 +1,4 @@
-use sdrmm_wire::MeshtasticPacket;
+use crate::lora::MeshtasticPacket;
 
 use super::proto::Writer;
 use super::{HOP_START_SHIFT, channel_hash, expand_psk, nonce, ports};

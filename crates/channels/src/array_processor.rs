@@ -2,11 +2,11 @@ use std::fmt::Write as _;
 
 use num_complex::Complex;
 use sdrmm_dsp::manifold::{Geometry, ManifoldError, ManifoldTable, Vec3, Winding as DspWinding};
-use sdrmm_wire::array::{MAX_ARRAY_LANES, MIN_ARRAY_LANES};
 use sdrmm_wire::{
-    ArrayGeometry, ArrayTuningMode, CalPhase, CalSourceKind, Coherence, DecoderEvent,
-    ProcessorParams, ProcessorReading, StreamKind, SurfaceFrame, Winding,
+    ArrayGeometry, ArrayTuningMode, CalPhase, CalSourceKind, Coherence, DfBearing, ProcessorParams,
+    ProcessorReading, StreamKind, SurfaceFrame, Winding,
 };
+use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use crate::ChannelError;
 
@@ -352,7 +352,7 @@ impl LaneWriter<'_> {
 pub struct OutputSlots<'a> {
     pub report: Option<&'a mut ProcessorReading>,
     pub surface: Option<&'a mut SurfaceFrame>,
-    pub events: &'a mut [DecoderEvent],
+    pub bearings: &'a mut [DfBearing],
     pub lanes: &'a mut [LaneBuffer],
 }
 
@@ -360,11 +360,11 @@ pub struct OutputSlots<'a> {
 pub struct OutputTally {
     pub report: bool,
     pub surface: bool,
-    pub events: usize,
+    pub bearings: usize,
     pub steer: Option<Steer>,
     pub dropped_reports: u64,
     pub dropped_surfaces: u64,
-    pub dropped_events: u64,
+    pub dropped_bearings: u64,
 }
 
 pub struct ProcessorOutput<'a> {
@@ -414,20 +414,22 @@ impl<'a> ProcessorOutput<'a> {
         self.tally.surface |= self.slots.surface.is_some();
     }
 
-    pub fn event(&mut self) -> Option<&mut DecoderEvent> {
-        let limit = self.slots.events.len().min(MAX_EVENTS_PER_BLOCK);
-        if self.tally.events < limit {
-            self.slots.events.get_mut(self.tally.events)
+    /// The next bearing slot; the engine turns published bearings into events off the DSP
+    /// thread, so filling one allocates nothing.
+    pub fn bearing(&mut self) -> Option<&mut DfBearing> {
+        let limit = self.slots.bearings.len().min(MAX_EVENTS_PER_BLOCK);
+        if self.tally.bearings < limit {
+            self.slots.bearings.get_mut(self.tally.bearings)
         } else {
-            self.tally.dropped_events += 1;
+            self.tally.dropped_bearings += 1;
             None
         }
     }
 
-    pub fn publish_event(&mut self) {
-        let limit = self.slots.events.len().min(MAX_EVENTS_PER_BLOCK);
-        if self.tally.events < limit {
-            self.tally.events += 1;
+    pub fn publish_bearing(&mut self) {
+        let limit = self.slots.bearings.len().min(MAX_EVENTS_PER_BLOCK);
+        if self.tally.bearings < limit {
+            self.tally.bearings += 1;
         }
     }
 

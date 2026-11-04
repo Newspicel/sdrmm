@@ -23,6 +23,13 @@ pub(super) async fn patch_node_channel(
     author: Author,
     Json(req): Json<PatchChannelRequest>,
 ) -> Result<StatusCode, AppError> {
+    sdrmm_channels::check(&req.settings).map_err(|error| {
+        rejection(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid request body",
+            error.to_string(),
+        )
+    })?;
     tokio::task::spawn_blocking(move || {
         set_channel(
             &state,

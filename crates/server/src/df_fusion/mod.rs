@@ -8,9 +8,8 @@ use std::{
 
 use sdrmm_wire::{
     DfBearing, DfEstimate, DfFusionState, DfStation, FusionGridOwned, NavTarget, NodeBody,
-    PatchGraph, PositionFix, StreamKind, TriangulationParams,
-    fusion::{FUSION_FIXED_HALF_LIFE_S, FUSION_MOVING_HALF_LIFE_S, FusionDecay},
-    geo::{self, LatLon},
+    PatchGraph, PositionFix, StreamKind, TriangulationParams, fusion::FUSION_FIXED_HALF_LIFE_S,
+    fusion::FUSION_MOVING_HALF_LIFE_S, fusion::FusionDecay, geo, geo::LatLon,
 };
 
 use crate::{AppState, fusion_routes, rest::AppError};

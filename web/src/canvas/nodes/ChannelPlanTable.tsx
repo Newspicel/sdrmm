@@ -4,7 +4,7 @@ import { BTN_SM, TABLE_CELL, TABLE_HEAD } from "../../components/controls";
 import { MHZ_DIGITS } from "../../components/format";
 import { OptionalNumberField } from "../../components/NumberField";
 import { Unit } from "../../components/Unit";
-import type { DmrChannelEntry, TrunkChannel } from "../../lib/types";
+import type { TrunkChannel, TrunkChannelEntry } from "../../lib/types";
 import {
   channelEntry,
   MAX_LOGICAL_CHANNEL,
@@ -15,7 +15,7 @@ import {
   usable,
   withChannel,
   withoutChannel,
-} from "./dmrTrunk";
+} from "./trunk";
 
 export function ChannelPlanTable({
   label,
@@ -27,10 +27,10 @@ export function ChannelPlanTable({
 }: {
   label: string;
   rows: readonly TrunkChannel[];
-  entries: readonly DmrChannelEntry[];
-  found: readonly DmrChannelEntry[];
+  entries: readonly TrunkChannelEntry[];
+  found: readonly TrunkChannelEntry[];
   following: ReadonlySet<number>;
-  onChange: (entries: DmrChannelEntry[]) => void;
+  onChange: (entries: TrunkChannelEntry[]) => void;
 }) {
   const [lcn, setLcn] = useState<number | null>(null);
   const [mhz, setMhz] = useState<number | null>(null);

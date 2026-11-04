@@ -1,15 +1,20 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+use sdrmm_wire::{KindSpec, SettingField};
+mod model;
+pub use model::*;
 pub(crate) mod frame;
 
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{BitSync, Decimator, FmDemod, Nco, RealDecimator, SyncDetector, design_lowpass};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EotMessage,
-    EotParams, EotReport, EventKind,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 use frame::{Decoded, HEAD, HEAD_BLOCK_BITS, HEAD_COPIES, REAR, REAR_BITS};
 
 const RATE: f64 = 48_000.0;
@@ -41,7 +46,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Eot],
+    emits: vec![EventKind::named("eot")],
     ..ChannelDescriptor::default()
 });
 
@@ -191,14 +196,8 @@ pub struct EotChannel {
     last: Option<(u64, u32, EotReport)>,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&EotParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Eot(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "eot channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<EotParams, ChannelError> {
+    crate::settings_of::<EotParams>(settings)
 }
 
 fn check_params(params: &EotParams) -> Result<(), ChannelError> {
@@ -328,7 +327,7 @@ impl EotChannel {
         if repeat {
             return;
         }
-        out.events.push(DecoderEvent::Eot(EotMessage {
+        out.events.push(DecoderEvent::of(&EotMessage {
             unit_address: decoded.unit_address,
             report: decoded.report,
             errors_corrected: decoded.errors,
@@ -344,14 +343,13 @@ impl EotChannel {
     }
 }
 
-impl ChannelRx for EotChannel {
+impl NativeChannel for EotChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        check_params(params(&settings)?)?;
+        check_params(&params(&settings)?)?;
         frame::prepare();
         Ok(Self {
             demod: Demod::new(),
@@ -366,9 +364,11 @@ impl ChannelRx for EotChannel {
             last: None,
         })
     }
+}
 
+impl ChannelRx for EotChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        check_params(params(&settings)?)
+        check_params(&params(&settings)?)
     }
 
     fn retuned(&mut self) {
@@ -392,3 +392,45 @@ impl ChannelRx for EotChannel {
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+const EOT_CHANNELS: &[HzRange] = &[
+    HzRange::spot_khz(452_937.5, 6.25),
+    HzRange::spot_khz(457_937.5, 6.25),
+    HzRange::spot_khz(450_262.5, 6.25),
+    HzRange::spot_khz(477_700.0, 6.25),
+];
+
+fn eot_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "End-of-Train (FFSK over FM)",
+            &[Modulation::Fm, Modulation::Fsk2],
+            HzRange::new(6_000.0, 20_000.0),
+            "1200 baud tones inside an FM channel on a railroad telemetry frequency",
+        )
+        .symbol_rate(HzRange::about(1_200.0, 0.06))
+        .deviation(HzRange::new(1_500.0, 5_000.0))
+        .on(EOT_CHANNELS),
+    ]
+}
+
+fn eot_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("eot"))
+}
+
+pub(crate) fn eot_decoder() -> Native<EotParams> {
+    Native::new::<EotChannel>(occupied_band)
+        .filter(channel_filter)
+        .signatures(eot_signatures)
+        .trial(eot_trial)
+        .form(eot_form)
+        .kinds(eot_kinds)
+}
+
+pub(crate) fn eot_form() -> Vec<SettingField> {
+    vec![SettingField::bandwidth(&[12_500.0, 25_000.0])]
+}
+
+fn eot_kinds() -> Vec<KindSpec> {
+    vec![crate::eot::eot_kind()]
+}

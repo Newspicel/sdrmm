@@ -28,11 +28,11 @@ describe("reading a workspace file", () => {
   it("sends an older file as it was written, for the server to upgrade", () => {
     const older = document();
     older.snapshot.graph.nodes.push(
-      { id: "nfm", kind: "channel", data: { channel_type: "nfm" }, position: { x: 0, y: 200 } },
+      { id: "voice", kind: "channel", data: { channel_type: "voice" }, position: { x: 0, y: 200 } },
       { id: "scan", kind: "scanner", data: {}, position: { x: 0, y: 400 } },
     );
     older.snapshot.graph.edges?.push(
-      { from: { node: "dev", port: "iq" }, to: { node: "nfm", port: "iq" } },
+      { from: { node: "dev", port: "iq" }, to: { node: "voice", port: "iq" } },
       { from: { node: "dev", port: "iq" }, to: { node: "scan", port: "iq" } },
     );
 
@@ -40,7 +40,7 @@ describe("reading a workspace file", () => {
 
     expect(read.snapshot.graph.edges).toEqual([
       { from: { node: "dev", port: "iq" }, to: { node: "scope", port: "iq" } },
-      { from: { node: "dev", port: "iq" }, to: { node: "nfm", port: "iq" } },
+      { from: { node: "dev", port: "iq" }, to: { node: "voice", port: "iq" } },
       { from: { node: "dev", port: "iq" }, to: { node: "scan", port: "iq" } },
     ]);
   });

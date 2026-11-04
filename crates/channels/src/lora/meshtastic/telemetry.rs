@@ -1,4 +1,5 @@
-use sdrmm_wire::{MeshtasticContent, MeshtasticMetric};
+use crate::lora::MeshtasticContent;
+use crate::lora::MeshtasticMetric;
 
 use super::proto::{Value, each_field};
 

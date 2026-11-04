@@ -1,6 +1,9 @@
+use sdrmm_channels::AdsbMessage;
+use sdrmm_channels::AprsPacket;
+use sdrmm_channels::NfmParams;
 use sdrmm_wire::{
-    AdsbMessage, AprsPacket, ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent,
-    DeviceBackend, DeviceSettings, NfmParams, PRESET_SNAPSHOT_VERSION, PresetDevice,
+    ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent, DeviceBackend, DeviceSettings,
+    PRESET_SNAPSHOT_VERSION, PresetDevice,
 };
 
 use super::*;
@@ -21,7 +24,7 @@ fn snapshot() -> PresetSnapshot {
             channels: vec![ChannelSettings {
                 frequency_hz: 100_100_000.0,
                 squelch: sdrmm_wire::Squelch::Manual { level_db: -60.0 },
-                params: ChannelParams::Nfm(NfmParams::default()),
+                params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             }],
@@ -506,7 +509,7 @@ fn an_upserted_recording_carries_the_annotation_disk_last_reported() {
 }
 
 fn adsb(icao: &str, callsign: &str) -> DecoderEvent {
-    DecoderEvent::Adsb(AdsbMessage {
+    DecoderEvent::of(&AdsbMessage {
         icao: icao.to_string(),
         df: 17,
         callsign: Some(callsign.to_string()),
@@ -516,7 +519,7 @@ fn adsb(icao: &str, callsign: &str) -> DecoderEvent {
 }
 
 fn aprs(source: &str, tnc2: &str) -> DecoderEvent {
-    DecoderEvent::Aprs(AprsPacket {
+    DecoderEvent::of(&AprsPacket {
         source: source.to_string(),
         destination: "APRS".to_string(),
         tnc2: tnc2.to_string(),
@@ -1478,7 +1481,7 @@ fn a_stored_call_buffer_is_folded_into_its_dmr_system() {
     migrated.validate().expect("valid");
     assert!(migrated.graph.node("buffer").is_none());
     let system = migrated.graph.node("system").expect("system");
-    assert!(matches!(system.body, sdrmm_wire::NodeBody::DmrTrunk(_)));
+    assert!(matches!(system.body, sdrmm_wire::NodeBody::Trunk(_)));
     assert!(
         !migrated
             .graph
@@ -2244,7 +2247,7 @@ fn decoder_log_surfaces_an_unparseable_event_blob() {
     seed(&store);
     store
         .lock()
-        .execute("UPDATE decoder_log SET event = '{\"kind\":\"zzz\"}'", [])
+        .execute("UPDATE decoder_log SET event = '{\"data\":1}'", [])
         .expect("corrupt");
     assert!(matches!(
         store.query_decoder_log(&DecoderLogQuery::default()),

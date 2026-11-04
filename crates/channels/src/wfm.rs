@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, EventContract, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::{f64::consts::FRAC_1_SQRT_2, sync::LazyLock};
 
 use num_complex::Complex;
@@ -5,13 +10,12 @@ use sdrmm_dsp::{
     ComplexOnePole, Decimator, Deemphasis, Nco, Pll, RealDecimator, design_lowpass, one_pole_coeff,
 };
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, EventKind, WfmParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily};
 
 use crate::{
-    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx,
-    check_input_rate, clamp_full_scale, rds::RdsDecoder,
+    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate, clamp_full_scale,
+    rds::{RdsDecoder, RdsUpdate},
 };
 
 const DEVIATION_HZ: f64 = 75_000.0;
@@ -50,7 +54,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 200_000.0,
     input_rate_hz: 240_000.0,
     has_audio: true,
-    emits: vec![EventKind::Rds],
+    emits: vec![RdsUpdate::KIND],
+    analog_voice: true,
     ..ChannelDescriptor::default()
 });
 
@@ -77,14 +82,8 @@ struct StereoDemux {
     target: f32,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&WfmParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Wfm(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "wfm channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<WfmParams, ChannelError> {
+    crate::settings_of::<WfmParams>(settings)
 }
 
 pub(crate) fn channel_filter() -> ChannelFilter {
@@ -168,15 +167,14 @@ impl StereoDemux {
     }
 }
 
-impl ChannelRx for WfmChannel {
+impl NativeChannel for WfmChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
-        let deemphasis = deemphasis(p)?;
+        let deemphasis = deemphasis(&p)?;
         Ok(Self {
             demod: discriminator(ctx.input_rate),
             decim: audio_decimator(ctx.input_rate),
@@ -189,10 +187,12 @@ impl ChannelRx for WfmChannel {
             rds: RdsDecoder::new(ctx.input_rate),
         })
     }
+}
 
+impl ChannelRx for WfmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
-        let deemphasis = deemphasis(p)?;
+        let deemphasis = deemphasis(&p)?;
         self.deemphasis = deemphasis.clone();
         let rate = DESCRIPTOR.input_rate_hz;
         if p.stereo != self.stereo.is_some() {
@@ -229,11 +229,68 @@ impl ChannelRx for WfmChannel {
     }
 }
 
+const FM_BROADCAST: &[HzRange] = &[HzRange::mhz(76.0, 108.0)];
+
+fn wfm_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "FM broadcast",
+            &[Modulation::Fm],
+            HzRange::new(100_000.0, 220_000.0),
+            "wideband FM at broadcast deviation",
+        )
+        .deviation(HzRange::new(15_000.0, 80_000.0))
+        .on(FM_BROADCAST),
+    ]
+}
+
+fn wfm_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(RdsUpdate::KIND)
+}
+
+/// The monitor records mono.
+fn wfm_tune(_signal: &sdrmm_wire::IdentSignal, p: &mut WfmParams) -> f64 {
+    p.stereo = false;
+    0.0
+}
+
+pub(crate) fn wfm_decoder() -> Native<WfmParams> {
+    Native::new::<WfmChannel>(|_| {
+        let half = DESCRIPTOR.bandwidth_hz / 2.0;
+        (-half, half)
+    })
+    .filter(|_| Ok(channel_filter()))
+    .audio_channels(|p: &WfmParams| if p.stereo { 2 } else { 1 })
+    .signatures(wfm_signatures)
+    .tune(wfm_tune)
+    .trial(wfm_trial)
+    .form(wfm_form)
+    .kinds(wfm_kinds)
+}
+
+pub(crate) fn wfm_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new(
+            "deemphasis_us",
+            "De-emph",
+            Control::values(&DEEMPHASIS_US, |us| format!("{us} µs")),
+        )
+        .title("De-emphasis"),
+        SettingField::new("stereo", "Stereo", Control::Toggle)
+            .title("Decode the stereo pilot; mono is quieter on weak signals"),
+    ]
+}
+
+fn wfm_kinds() -> Vec<KindSpec> {
+    vec![crate::rds::rds_kind()]
+}
+
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{DecoderEvent, RdsUpdate, SsbParams};
+    use sdrmm_wire::{ChannelParams, DecoderEvent};
 
     use super::*;
+    use crate::ssb::SsbParams;
     use crate::{
         synth::{
             rds::{Station, transmission},
@@ -249,10 +306,11 @@ mod tests {
     const RIGHT_HZ: f64 = 3_000.0;
 
     fn wfm_params(deemphasis_us: f32, stereo: bool) -> ChannelParams {
-        ChannelParams::Wfm(WfmParams {
+        ChannelParams::of(&WfmParams {
             deemphasis_us,
             stereo,
         })
+        .expect("wfm settings")
     }
 
     fn channel(deemphasis_us: f32) -> WfmChannel {
@@ -315,8 +373,11 @@ mod tests {
     }
 
     fn last_update(events: &[DecoderEvent]) -> RdsUpdate {
-        match events.last() {
-            Some(DecoderEvent::Rds(update)) => update.clone(),
+        match events
+            .last()
+            .map(|event| (event, event.read::<RdsUpdate>()))
+        {
+            Some((_, Some(update))) => update,
             other => panic!("expected an rds update, got {other:?}"),
         }
     }
@@ -354,7 +415,9 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(50.0);
-        let err = chan.apply(settings(ChannelParams::Ssb(SsbParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("ssb", &SsbParams::default()).expect("ssb settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     }
 
@@ -364,7 +427,7 @@ mod tests {
             ChannelCtx {
                 input_rate: 48_000.0,
             },
-            settings(ChannelParams::Wfm(WfmParams::default())),
+            settings(ChannelParams::of(&WfmParams::default()).expect("wfm settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -447,10 +510,7 @@ mod tests {
         );
         let first = events
             .iter()
-            .find_map(|e| match e {
-                DecoderEvent::Rds(u) => Some(u),
-                _ => None,
-            })
+            .find_map(DecoderEvent::read::<RdsUpdate>)
             .expect("the new station reports");
         assert!(
             first.groups >= 1,

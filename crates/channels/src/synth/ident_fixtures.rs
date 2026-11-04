@@ -1,11 +1,11 @@
+use crate::ident::IdentParams;
+use crate::ident::MAX_IDENT_BANDWIDTH_HZ;
+use crate::ident::MIN_IDENT_BANDWIDTH_HZ;
 use num_complex::Complex;
 use sdrmm_dsp::Ddc;
-use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecoderEvent, IdentParams, IdentReport, IdentSignal,
-    MAX_IDENT_BANDWIDTH_HZ, MIN_IDENT_BANDWIDTH_HZ, Modulation, Squelch,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings, IdentReport, IdentSignal, Modulation, Squelch};
 
-use crate::{ChannelCtx, ChannelOutputs, ChannelRx, IdentChannel};
+use crate::{ChannelCtx, ChannelOutputs, ChannelRx, IdentChannel, NativeChannel};
 
 pub const RATE_HZ: f64 = 240_000.0;
 const SECONDS: f64 = 3.0;
@@ -390,12 +390,13 @@ fn run(fixture: &Fixture, iq: &[Complex<f32>]) -> Vec<IdentReport> {
     let settings = ChannelSettings {
         frequency_hz: fixture.dial_hz,
         squelch: Squelch::Off,
-        params: ChannelParams::Ident(IdentParams {
+        params: ChannelParams::of(&IdentParams {
             interval_ms: INTERVAL_MS,
             bandwidth_hz: (fixture.rate * RECORDED_SPAN)
                 .clamp(MIN_IDENT_BANDWIDTH_HZ, MAX_IDENT_BANDWIDTH_HZ),
             ..IdentParams::default()
-        }),
+        })
+        .unwrap_or_else(|e| panic!("ident settings: {e}")),
         blanker: Default::default(),
         if_filter: Default::default(),
     };
@@ -411,10 +412,11 @@ fn run(fixture: &Fixture, iq: &[Complex<f32>]) -> Vec<IdentReport> {
     for block in iq.chunks(BLOCK) {
         out.reset();
         channel.process(block, &mut out);
-        reports.extend(out.events.drain(..).filter_map(|event| match event {
-            DecoderEvent::Ident(report) => Some(report),
-            _ => None,
-        }));
+        reports.extend(
+            out.events
+                .drain(..)
+                .filter_map(|event| event.read::<IdentReport>()),
+        );
     }
     reports
 }

@@ -1,3 +1,5 @@
+use sdrmm_dsp::crc_msb_bits;
+
 use super::bits::Reader;
 
 const FCS_BITS: usize = 32;
@@ -27,18 +29,11 @@ pub(crate) fn tl_sdu(bits: &[bool]) -> Option<&[bool]> {
 }
 
 pub(crate) fn fcs32(bits: &[bool]) -> u32 {
-    let mut crc = u32::MAX;
+    let mut init = u32::MAX;
     if bits.len() < FCS_BITS {
-        crc <<= FCS_BITS - bits.len();
+        init = init.wrapping_shl((FCS_BITS - bits.len()) as u32);
     }
-    for &bit in bits {
-        let feedback = u32::from(bit) ^ crc >> 31;
-        crc <<= 1;
-        if feedback == 1 {
-            crc ^= 0x04C1_1DB7;
-        }
-    }
-    !crc
+    !crc_msb_bits(0x04C1_1DB7, 32, init, bits.iter().copied())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

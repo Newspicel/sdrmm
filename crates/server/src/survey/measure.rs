@@ -1,7 +1,4 @@
-use sdrmm_wire::{
-    SurveyCell,
-    survey::{MAX_SURVEY_CELLS, cell_key},
-};
+use sdrmm_wire::{SurveyCell, survey::MAX_SURVEY_CELLS, survey::cell_key};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Merged {

@@ -1,3 +1,7 @@
+use crate::registry::Native;
+use sdrmm_wire::{ClickProfile, Control, KindSpec, NumberSpec, SettingField};
+mod model;
+pub use model::*;
 use std::{f64::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
@@ -6,14 +10,11 @@ use sdrmm_modem::analog::{
     AmDemod, AmDetector, AmMode, AmParams as AmWaveform, AmRx, AngleDemod, AngleDetector,
     AngleKind, AngleParams, AngleRx,
 };
-use sdrmm_wire::{
-    AtvColor, AtvModulation, AtvParams, AtvStandard, ChannelDescriptor, ChannelParams,
-    ChannelSettings, DecoderFamily,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily};
 
 use crate::{
-    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, VideoPicture,
-    check_input_rate, clamp_full_scale,
+    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    VideoPicture, check_input_rate, clamp_full_scale,
 };
 
 const INPUT_RATE_HZ: f64 = 16_000_000.0;
@@ -60,6 +61,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
     has_video: true,
+    click: ClickProfile::Detector,
     ..ChannelDescriptor::default()
 });
 
@@ -285,14 +287,8 @@ pub struct AtvChannel {
     height: u16,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&AtvParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Atv(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "atv channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<AtvParams, ChannelError> {
+    crate::settings_of::<AtvParams>(settings)
 }
 
 fn check_bandwidth(p: &AtvParams) -> Result<(), ChannelError> {
@@ -661,14 +657,13 @@ fn yuv_to_rgb(y: f32, u: f32, v: f32) -> [u8; 3] {
     ]
 }
 
-impl ChannelRx for AtvChannel {
+impl NativeChannel for AtvChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = params(&settings)?;
+        let p = &params(&settings)?;
         let (front, video_rate) = VideoFront::new(ctx.input_rate, p)?;
         let mut chan = Self {
             params: p.clone(),
@@ -704,10 +699,11 @@ impl ChannelRx for AtvChannel {
         chan.configure(p)?;
         Ok(chan)
     }
+}
 
+impl ChannelRx for AtvChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let p = params(&settings)?;
-        self.configure(p)
+        self.configure(&params(&settings)?)
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
@@ -732,12 +728,53 @@ impl ChannelRx for AtvChannel {
     }
 }
 
+pub(crate) fn atv_decoder() -> Native<AtvParams> {
+    Native::new::<AtvChannel>(occupied_band)
+        .filter(channel_filter)
+        .form(atv_form)
+        .kinds(atv_kinds)
+}
+
+pub(crate) fn atv_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("modulation", "Mod", Control::choice::<AtvModulation>())
+            .title("Modulation"),
+        SettingField::new("standard", "Lines", Control::choice::<AtvStandard>())
+            .title("Scanning standard"),
+        SettingField::new(
+            "bandwidth_hz",
+            "BW",
+            Control::values(
+                &[500_000.0, 1_000_000.0, 1_500_000.0, 1_600_000.0],
+                sdrmm_wire::units::hertz,
+            ),
+        )
+        .title("Channel bandwidth"),
+        SettingField::new("color", "Colour", Control::choice::<AtvColor>())
+            .title("Composite colour system"),
+        SettingField::new(
+            "sound_subcarrier_hz",
+            "Sound",
+            NumberSpec::hz(500_000.0, 7_500_000.0, 500_000.0).optional("off"),
+        )
+        .title("FM sound subcarrier, empty for none"),
+        SettingField::new("interlace", "Interlace", Control::Toggle)
+            .title("Weave both fields into one frame"),
+        SettingField::invert(),
+    ]
+}
+
+fn atv_kinds() -> Vec<KindSpec> {
+    vec![]
+}
+
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::NfmParams;
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
     use crate::{
+        nfm::NfmParams,
         synth::atv::{AtvSource, BAR_LEVELS, COLOR_BARS, bars, color_bars_with_tone},
         testutil::{dominant_tone, realtime_budget, settings},
     };
@@ -747,7 +784,7 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Atv(p)),
+            settings(ChannelParams::of(&p).expect("atv settings")),
         )
         .unwrap()
     }
@@ -988,7 +1025,8 @@ mod tests {
         let mut chan = channel(params_for(AtvStandard::Ccir625, AtvModulation::Am));
         assert_eq!((chan.width, chan.height), (104, 576));
         let p = params_for(AtvStandard::SystemA405, AtvModulation::Fm);
-        chan.apply(settings(ChannelParams::Atv(p.clone()))).unwrap();
+        chan.apply(settings(ChannelParams::of(&p).expect("atv settings")))
+            .unwrap();
         assert_eq!(chan.height, 376);
         let iq = bars(&AtvSource::new(&p, INPUT_RATE_HZ), 4);
         let picture = run(&mut chan, &iq).pop().expect("a picture");
@@ -999,7 +1037,9 @@ mod tests {
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(AtvParams::default());
         assert!(matches!(
-            chan.apply(settings(ChannelParams::Nfm(NfmParams::default()))),
+            chan.apply(settings(
+                ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")
+            )),
             Err(ChannelError::InvalidSettings(_))
         ));
     }
@@ -1020,7 +1060,7 @@ mod tests {
                     ChannelCtx {
                         input_rate: INPUT_RATE_HZ
                     },
-                    settings(ChannelParams::Atv(p)),
+                    settings(ChannelParams::of(&p).expect("atv settings")),
                 ),
                 Err(ChannelError::InvalidSettings(_))
             ));
@@ -1034,7 +1074,7 @@ mod tests {
                 ChannelCtx {
                     input_rate: 48_000.0
                 },
-                settings(ChannelParams::Atv(AtvParams::default())),
+                settings(ChannelParams::of(&AtvParams::default()).expect("atv settings")),
             ),
             Err(ChannelError::InvalidSettings(_))
         ));

@@ -1,4 +1,5 @@
 use num_complex::Complex;
+use sdrmm_dsp::word_msb;
 
 use super::super::pl;
 
@@ -119,7 +120,7 @@ pub fn viterbi(soft: &[f32], bits: &mut [bool]) -> f32 {
 
 #[must_use]
 pub fn word(bits: &[bool]) -> u32 {
-    bits.iter().fold(0, |word, &bit| word << 1 | u32::from(bit))
+    word_msb(bits) as u32
 }
 
 pub fn unpack(value: u32, width: usize, out: &mut [bool]) {

@@ -1,9 +1,20 @@
 use std::fmt::Write;
 
-use sdrmm_wire::{
-    GsmAssignment, GsmBand, GsmChannelType, GsmFrame, GsmLogicalChannel, GsmMessage, GsmParams,
-    GsmSi,
-};
+use crate::gsm::GsmAssignment;
+
+use crate::gsm::GsmBand;
+
+use crate::gsm::GsmChannelType;
+
+use crate::gsm::GsmFrame;
+
+use crate::gsm::GsmLogicalChannel;
+
+use crate::gsm::GsmMessage;
+
+use crate::gsm::GsmParams;
+
+use crate::gsm::GsmSi;
 
 use super::{
     burst::{BLOCK_BURSTS, BURST_DATA, HYPERFRAME, normal_data},
@@ -445,7 +456,7 @@ impl Monitor {
             (Some(protocol), Some(&octet)) => {
                 dedicated::releases(protocol, dedicated::message_type(protocol, octet))
             }
-            _ => description.frame == sdrmm_wire::GsmLapdmFrame::Disc,
+            _ => description.frame == crate::gsm::GsmLapdmFrame::Disc,
         };
         self.emit(decoded, GsmMessage::Dedicated(description));
         release

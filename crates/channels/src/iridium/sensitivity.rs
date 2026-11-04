@@ -59,7 +59,7 @@ pub(super) fn matches(sent: &Sent, found: &Found) -> bool {
 }
 
 fn filtered(iq: &[Complex<f32>]) -> Vec<Complex<f32>> {
-    let mut filter = channel_filter(&sdrmm_wire::IridiumParams::default());
+    let mut filter = channel_filter(&crate::iridium::IridiumParams::default());
     let mut out = Vec::new();
     let mut all = Vec::with_capacity(iq.len());
     for chunk in iq.chunks(8_192) {

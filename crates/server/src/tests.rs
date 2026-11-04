@@ -5,12 +5,15 @@ use axum::{
     http::{Request, StatusCode},
 };
 use http_body_util::BodyExt;
+use sdrmm_channels::AdsbMessage;
+use sdrmm_channels::AprsPacket;
+use sdrmm_channels::NfmParams;
 use sdrmm_wire::{
-    AdsbMessage, ApiError, AprsPacket, Bookmark, CapturedImagesResponse, ChannelParams,
-    ChannelSettings, ChannelTypesResponse, CreatedRowId, DecodedRecord, DecoderEvent,
-    DecoderLogEntry, DecoderLogResponse, DeletedCount, DeviceBackend, DeviceSettings,
-    DevicesResponse, NetworkExportStatus, NfmParams, PreRollStatus, PresetInfo, PresetSnapshot,
-    RecordingStatus, RecordingsResponse, SavedRadio, SerialDevicesResponse, StateSnapshot,
+    ApiError, Bookmark, CapturedImagesResponse, ChannelParams, ChannelSettings,
+    ChannelTypesResponse, CreatedRowId, DecodedRecord, DecoderEvent, DecoderLogEntry,
+    DecoderLogResponse, DeletedCount, DeviceBackend, DeviceSettings, DevicesResponse,
+    NetworkExportStatus, PreRollStatus, PresetInfo, PresetSnapshot, RecordingStatus,
+    RecordingsResponse, SavedRadio, SerialDevicesResponse, StateSnapshot,
 };
 use tower::ServiceExt;
 
@@ -453,10 +456,14 @@ fn nfm_with_inversion_at(frequency_hz: f64, inversion_hz: f64) -> ChannelSetting
     ChannelSettings {
         frequency_hz,
         squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Nfm(NfmParams {
-            inversion_hz: Some(inversion_hz),
-            ..NfmParams::default()
-        }),
+        params: ChannelParams::new(
+            "nfm",
+            &NfmParams {
+                inversion_hz: Some(inversion_hz),
+                ..NfmParams::default()
+            },
+        )
+        .expect("nfm settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     }
@@ -466,7 +473,7 @@ fn nfm_at(offset_hz: f64) -> ChannelSettings {
     ChannelSettings {
         frequency_hz: 100_000_000.0 + offset_hz,
         squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Nfm(NfmParams::default()),
+        params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     }
@@ -817,7 +824,7 @@ fn adsb_record(at: &str, device_set: u32, icao: &str, callsign: &str) -> Decoded
         channel: 0,
         at: at.to_string(),
         freq_hz: 1_090_000_000.0,
-        event: DecoderEvent::Adsb(AdsbMessage {
+        event: DecoderEvent::of(&AdsbMessage {
             icao: icao.to_string(),
             df: 17,
             callsign: Some(callsign.to_string()),
@@ -837,7 +844,7 @@ fn awkward_record(at: &str) -> DecodedRecord {
         channel: 2,
         at: at.to_string(),
         freq_hz: 144_800_000.0,
-        event: DecoderEvent::Aprs(AprsPacket {
+        event: DecoderEvent::of(&AprsPacket {
             source: "DL1ABC-9".to_string(),
             destination: "APRS".to_string(),
             tnc2: "DL1ABC-9>APRS:hello, \"world\"".to_string(),
@@ -849,7 +856,7 @@ fn awkward_record(at: &str) -> DecodedRecord {
 
 fn formula_record(at: &str) -> DecodedRecord {
     DecodedRecord {
-        event: DecoderEvent::Aprs(AprsPacket {
+        event: DecoderEvent::of(&AprsPacket {
             source: "=1+1".to_string(),
             destination: "APRS".to_string(),
             tnc2: "=1+1>APRS:hi".to_string(),

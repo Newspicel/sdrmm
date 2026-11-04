@@ -1,4 +1,4 @@
-use sdrmm_wire::DatvCodeRate;
+use crate::datv::DatvCodeRate;
 
 use super::*;
 use crate::{synth, testutil::realtime_budget};

@@ -207,7 +207,7 @@ impl Sdc {
             return None;
         }
         let mut bytes = Vec::with_capacity(data_bytes + 3);
-        super::bits::pack(&bits[..total], &mut bytes);
+        sdrmm_dsp::pack_msb_into(&bits[..total], &mut bytes);
         let mut check = vec![0u8];
         check
             .extend((0..data_bytes + 2).map(|index| (bytes[index] << 4) | (bytes[index + 1] >> 4)));

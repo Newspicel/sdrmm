@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    ChannelNode, ChannelSettings, DeviceBackend, DeviceNode, DeviceRef, GpsNode, NodeBody,
-    PassiveRadarNode, PatchEdge, PatchGraph, PatchNode, PortRef, Position, PositionFix,
-    PositionSource, RecorderNode, WorkspaceSnapshot,
+    ChannelNode, DeviceBackend, DeviceNode, DeviceRef, GpsNode, NodeBody, PassiveRadarNode,
+    PatchEdge, PatchGraph, PatchNode, PortRef, Position, PositionFix, PositionSource, RecorderNode,
+    WorkspaceSnapshot,
 };
 
 use super::super::routes::{PositionTarget, push};
@@ -61,7 +61,7 @@ fn bench() -> (Arc<Engine>, PatchGraph, u32, u32) {
     registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
     let engine = Engine::with_registry(registry, None);
     let set = engine.create_device_set("virtual:band").expect("radio");
-    let settings = ChannelSettings::default_for("adsb").expect("adsb");
+    let settings = sdrmm_channels::default_settings("adsb").expect("adsb");
     let channel = engine
         .add_channel_for(set, 0, settings, Some("planes"))
         .expect("channel");

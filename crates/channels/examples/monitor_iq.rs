@@ -11,7 +11,7 @@ use sdrmm_channels::{
     monitor::{MonitorOutput, SpectrumMonitor},
 };
 use sdrmm_dsp::Ddc;
-use sdrmm_wire::{ChannelSettings, SpectrumMonitorNode, TransmissionState};
+use sdrmm_wire::{SpectrumMonitorNode, TransmissionState};
 
 fn emit(output: Vec<MonitorOutput>) -> Result<(), Box<dyn Error>> {
     for out in output {
@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let center = args[3].parse::<f64>()?;
     let mut reader = BufReader::new(File::open(&args[1])?);
     let mut monitor = SpectrumMonitor::new(rate, center, SpectrumMonitorNode::default())?;
-    let settings = ChannelSettings::default_for("dmr").ok_or("missing DMR decoder")?;
+    let settings = sdrmm_channels::default_settings("dmr").ok_or("missing DMR decoder")?;
     let mut decoder = create(
         ChannelCtx {
             input_rate: 48_000.0,

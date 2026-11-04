@@ -26,7 +26,7 @@ function channel(id: number, node: string, stream = 0): ChannelInfo {
     id,
     node,
     stream,
-    settings: { frequency_hz: 100_000_000, params: { type: "nfm", settings: {} } as never },
+    settings: { frequency_hz: 100_000_000, params: { type: "voice", settings: {} } },
   };
 }
 
@@ -44,13 +44,13 @@ function patch() {
       [
         resolvedPort(
           { name: "iq", port_type: "iq", direction: "out", multi: "many" },
-          { reaches: [{ sink: "nfm", port: "iq" }] },
+          { reaches: [{ sink: "voice", port: "iq" }] },
         ),
       ],
       { runs: "radio", device_set: 1 },
     ),
     resolvedNodeOf(
-      "nfm",
+      "voice",
       "channel",
       [
         iqIn("dev"),
@@ -67,7 +67,7 @@ function patch() {
         {
           feeds: [
             {
-              source: "nfm",
+              source: "voice",
               port: "audio",
               via: ["fx"],
               tap: { tap: "channel", device_set: 1, channel: 4 },
@@ -97,7 +97,7 @@ function patch() {
             reaches: [
               { sink: "spk", port: "audio" },
               {
-                sink: "nfm",
+                sink: "voice",
                 port: "control",
                 target_runs: { runs: "channel", device_set: 1, channel: 4, stream: 0 },
               },
@@ -111,7 +111,7 @@ function patch() {
   ]);
 }
 
-const live = [deviceSet({ id: 1, channels: [channel(4, "nfm"), channel(6, "trunk")] })];
+const live = [deviceSet({ id: 1, channels: [channel(4, "voice"), channel(6, "trunk")] })];
 
 describe("the resolved store", () => {
   it("applies a resolved patch and problems as they arrive", () => {
@@ -148,27 +148,27 @@ describe("resolved lookups", () => {
     const resolved = patch();
     expect(boundRadios(resolved, live).get("dev")?.id).toBe(1);
     expect(boundRadios(resolved, []).size).toBe(0);
-    expect(boundChannels(resolved, live).get("nfm")?.id).toBe(4);
-    expect(channelOwners(resolved)).toEqual(new Map([["nfm", "dev"]]));
+    expect(boundChannels(resolved, live).get("voice")?.id).toBe(4);
+    expect(channelOwners(resolved)).toEqual(new Map([["voice", "dev"]]));
   });
 
   it("reads feeds and reaches by port", () => {
     const resolved = patch();
-    expect(feedsOf(resolved, "nfm", "iq").map((feed) => feed.source)).toEqual(["dev"]);
-    expect(feedsOf(resolved, "nfm", "audio")).toEqual([]);
-    expect(reachesOf(resolved, "nfm", "audio").map((reach) => reach.sink)).toEqual(["spk"]);
-    expect(feedsOf(null, "nfm", "iq")).toEqual([]);
+    expect(feedsOf(resolved, "voice", "iq").map((feed) => feed.source)).toEqual(["dev"]);
+    expect(feedsOf(resolved, "voice", "audio")).toEqual([]);
+    expect(reachesOf(resolved, "voice", "audio").map((reach) => reach.sink)).toEqual(["spk"]);
+    expect(feedsOf(null, "voice", "iq")).toEqual([]);
   });
 
   it("names the node a decoder is held by, never a hand lock", () => {
     const resolved = resolvedPatch([
-      { ...resolvedNodeOf("nfm", "channel"), held: { by: "wire", node: "scan" } },
-      { ...resolvedNodeOf("am", "channel"), held: { by: "hand" } },
+      { ...resolvedNodeOf("voice", "channel"), held: { by: "wire", node: "scan" } },
+      { ...resolvedNodeOf("talk", "channel"), held: { by: "hand" } },
       { ...resolvedNodeOf("scan", "scanner"), label: "Scanner" },
     ]);
-    expect(heldByOf(resolved, "nfm")).toBe("Scanner");
-    expect(heldByOf(resolved, "am")).toBeNull();
-    expect(heldByOf(null, "nfm")).toBeNull();
+    expect(heldByOf(resolved, "voice")).toBe("Scanner");
+    expect(heldByOf(resolved, "talk")).toBeNull();
+    expect(heldByOf(null, "voice")).toBeNull();
   });
 
   it("names the kinds an input ignores", () => {
@@ -187,20 +187,20 @@ describe("resolved lookups", () => {
 
   it("names every audio stream a port plays as the server does", () => {
     expect(inputsOf(patch(), live, "spk", "audio").map((input) => input.source)).toEqual([
-      "nfm/fx",
+      "voice/fx",
       "trunk",
     ]);
   });
 
   it("reads where a node runs from what the server served", () => {
     const resolved = patch();
-    for (const node of ["dev", "nfm", "scan"]) {
+    for (const node of ["dev", "voice", "scan"]) {
       expect(runningSet(resolved, live, node)?.id).toBe(1);
     }
     expect(runningSet(resolved, live, "lost")).toBeNull();
     expect(runningSet(resolved, live, "spk")).toBeNull();
     expect(controlledChannel(resolved, live, "scan")).toMatchObject({
-      node: "nfm",
+      node: "voice",
       channel: { id: 4 },
     });
     expect(controlledChannel(resolved, live, "lost")).toBeNull();

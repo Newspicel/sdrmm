@@ -24,8 +24,8 @@ use tokio::sync::{
 
 use crate::{NativeShell, calls::Calls, decoded::Decoded, resolved::Resolved};
 
-mod beast;
 pub(crate) mod csv;
+mod feed;
 mod influx;
 mod postgres;
 mod status;
@@ -76,7 +76,7 @@ struct OutputMessage {
 
 struct EventFacts {
     at: String,
-    kind: &'static str,
+    kind: String,
     device_set: u32,
     channel: u32,
     freq_hz: f64,
@@ -144,8 +144,8 @@ pub(crate) async fn run(
     ));
     let mut routing = routing_of(&patch.borrow_and_update());
     let mut tunnels = tunnel::Outputs::new(statuses.clone());
-    let mut beasts = beast::Outputs::default();
-    configure(&routing, &mut tunnels, &mut beasts, &statuses);
+    let mut feeds = feed::Outputs::default();
+    configure(&routing, &mut tunnels, &mut feeds, &statuses);
     let mut status_tick = tokio::time::interval(Duration::from_secs(1));
     let mut decoded_open = true;
     let mut decoded_sequence = 0_u64;
@@ -153,21 +153,21 @@ pub(crate) async fn run(
         tokio::select! {
             _ = status_tick.tick() => {
                 if let Some(engine) = engine.upgrade() {
-                    beasts.publish_status(&engine);
+                    feeds.publish_status(&engine);
                     statuses.publish(&engine);
                 }
             },
             changed = patch.changed() => match changed {
                 Ok(()) => {
                     routing = routing_of(&patch.borrow_and_update());
-                    configure(&routing, &mut tunnels, &mut beasts, &statuses);
+                    configure(&routing, &mut tunnels, &mut feeds, &statuses);
                 }
                 Err(_) => break,
             },
             record = decoded.recv(), if decoded_open => match record {
                 Ok(Decoded::Record(routed)) => {
                     tunnels.push(&routing.bindings, &routed.record);
-                    beasts.push(&routed.record);
+                    feeds.push(&routed.record);
                     decoded_sequence = decoded_sequence.wrapping_add(1);
                     for delivery in decoded_deliveries(&routing, &routed.record, decoded_sequence, &calls) {
                         enqueue(&delivery_tx, &statuses, delivery);
@@ -175,7 +175,7 @@ pub(crate) async fn run(
                 }
                 Ok(Decoded::Lost(count)) | Err(RecvError::Lagged(count)) => {
                     tracing::error!(count, "event output missed decoded events");
-                    beasts.lost(count);
+                    feeds.lost(count);
                     statuses.lost(count);
                 }
                 Err(RecvError::Closed) => decoded_open = false,
@@ -189,12 +189,12 @@ pub(crate) async fn run(
 fn configure(
     routing: &Routing,
     tunnels: &mut tunnel::Outputs,
-    beasts: &mut beast::Outputs,
+    feeds: &mut feed::Outputs,
     statuses: &status::Statuses,
 ) {
     statuses.configure(&routing.bindings);
     tunnels.configure(&routing.bindings);
-    beasts.configure(&routing.bindings);
+    feeds.configure(&routing.bindings);
 }
 
 fn enqueue(delivery_tx: &mpsc::Sender<Delivery>, statuses: &status::Statuses, delivery: Delivery) {
@@ -219,7 +219,7 @@ fn decoded_deliveries(
         .filter(|binding| {
             !matches!(
                 binding.target,
-                EventOutputTarget::Tunnel { .. } | EventOutputTarget::Beast { .. }
+                EventOutputTarget::Tunnel { .. } | EventOutputTarget::Feed { .. }
             )
         })
         .filter(|binding| record.sinks.contains(&binding.node))
@@ -307,7 +307,7 @@ fn routing_of(resolved: &Resolved) -> Routing {
             };
             let connected = !resolved.patch.feeds(&node.id, EVENTS_PORT).is_empty();
             (settings.target.configured()
-                && (!matches!(settings.target, EventOutputTarget::Beast { .. }) || connected))
+                && (!matches!(settings.target, EventOutputTarget::Feed { .. }) || connected))
                 .then(|| Binding {
                     node: node.id.clone(),
                     target: settings.target.clone(),
@@ -424,7 +424,7 @@ async fn deliver(outputs: &mut Outputs<'_>, batch: &[Delivery]) -> Result<(), De
         EventOutputTarget::Recordings => save_recording(outputs.engine, &delivery.message).await,
         EventOutputTarget::Desktop => notify(outputs.shell, &delivery.message).await,
         EventOutputTarget::Csv { file } => csv::append(outputs.engine, file, batch).await,
-        EventOutputTarget::Tunnel { .. } | EventOutputTarget::Beast { .. } => Err(
+        EventOutputTarget::Tunnel { .. } | EventOutputTarget::Feed { .. } => Err(
             DeliveryError::Failed("Network streams use the dedicated writer".to_owned()),
         ),
         EventOutputTarget::Webhook { url, format } => {
@@ -901,7 +901,7 @@ fn event_facts(
 ) -> EventFacts {
     EventFacts {
         at: record.at.clone(),
-        kind: record.event.kind().as_str(),
+        kind: record.event.kind.as_str().to_owned(),
         device_set: record.device_set,
         channel: record.channel,
         freq_hz: record.freq_hz,

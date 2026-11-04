@@ -261,7 +261,7 @@ fn channel_runs(
                 unbound(UnboundReason::NotPlaced)
             }))
         }
-        NodeBody::DmrTrunk(_) => Some(
+        NodeBody::Trunk(_) => Some(
             live.trunk_systems
                 .iter()
                 .find(|system| system.node == node.id)

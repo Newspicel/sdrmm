@@ -1718,95 +1718,10 @@ export interface components {
             server_name: string;
             version: string;
         };
-        AcarsMessage: {
-            ack?: string | null;
-            assstat?: string | null;
-            block_id: string;
-            decoded?: unknown;
-            downlink: boolean;
-            flight?: string | null;
-            label: string;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            mfi?: string | null;
-            mode: string;
-            more: boolean;
-            registration: string;
-            seq_no?: string | null;
-            sublabel?: string | null;
-            text: string;
-        };
-        AcarsParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-        };
         /** @enum {string} */
         Adaptation: "nlms" | "rls";
         /** @enum {string} */
         Admit: "always" | "channel_free" | "color_code_free" | "different_color_code" | "tone_free";
-        AdsbMatch: {
-            callsign?: string | null;
-            icao: string;
-        };
-        AdsbMessage: {
-            /** Format: int32 */
-            altitude_ft?: number | null;
-            callsign?: string | null;
-            /** Format: int32 */
-            df: number;
-            /** Format: double */
-            ground_speed_kt?: number | null;
-            icao: string;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            on_ground?: boolean | null;
-            raw: string;
-            /** Format: int32 */
-            signal_level?: number | null;
-            squawk?: string | null;
-            /** Format: int64 */
-            timestamp_12mhz?: number | null;
-            /** Format: double */
-            track_deg?: number | null;
-            /** Format: int32 */
-            type_code?: number | null;
-            /** Format: int32 */
-            vertical_rate_fpm?: number | null;
-        };
-        AdsbParams: {
-            crc_fix?: boolean;
-            /** Format: double */
-            ref_lat?: number | null;
-            /** Format: double */
-            ref_lon?: number | null;
-        };
-        AdsbTruth: {
-            /** Format: float */
-            age_s: number;
-            /** Format: float */
-            altitude_m: number;
-            /** Format: float */
-            bearing_deg: number;
-            callsign?: string | null;
-            /** Format: float */
-            doppler_hz: number;
-            icao: string;
-            in_view: boolean;
-            /** Format: double */
-            lat: number;
-            /** Format: double */
-            lon: number;
-            /** Format: float */
-            range_km: number;
-            /** Format: int32 */
-            track_id?: number | null;
-        };
-        /** @enum {string} */
-        AeroChannel: "p" | "burst" | "c";
         Agc: {
             /** @enum {string} */
             kind: "none";
@@ -1838,41 +1753,6 @@ export interface components {
         AgcSetting: {
             mode?: string | null;
             on: boolean;
-        };
-        /** @enum {string} */
-        AirtimeSpan: "mhz20" | "mhz40" | "mhz80";
-        /** @enum {string} */
-        AisChannel: "a" | "b";
-        AisMessage: {
-            ais_channel: string;
-            call_sign?: string | null;
-            /** Format: double */
-            cog_deg?: number | null;
-            destination?: string | null;
-            /** Format: int32 */
-            heading_deg?: number | null;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            /** Format: int32 */
-            mmsi: number;
-            /** Format: int32 */
-            msg_type: number;
-            name?: string | null;
-            /** Format: int32 */
-            nav_status?: number | null;
-            nmea: string;
-            /** Format: double */
-            sog_kt?: number | null;
-        };
-        AisParams: {
-            ais_channel?: components["schemas"]["AisChannel"];
-        };
-        AmParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-            sync?: boolean;
         };
         AntennaDesign: {
             /** @enum {string} */
@@ -2051,72 +1931,6 @@ export interface components {
         };
         ApplyTemplateRequest: {
             node: string;
-        };
-        /** @enum {string} */
-        AprsMode: "afsk1200" | "g3ruh9600";
-        AprsPacket: {
-            /** Format: int32 */
-            altitude_ft?: number | null;
-            comment?: string | null;
-            /** Format: double */
-            course_deg?: number | null;
-            destination: string;
-            info: string;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            mic_e_message?: string | null;
-            path?: string[];
-            source: string;
-            /** Format: double */
-            speed_kt?: number | null;
-            symbol?: string | null;
-            tnc2: string;
-            weather?: components["schemas"]["AprsWeather"] | null;
-        };
-        AprsParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-            mode?: components["schemas"]["AprsMode"];
-        };
-        AprsWeather: {
-            /** Format: int32 */
-            humidity_pct?: number | null;
-            /** Format: int32 */
-            luminosity_wm2?: number | null;
-            /** Format: float */
-            pressure_hpa?: number | null;
-            /** Format: float */
-            rain_1h_mm?: number | null;
-            /** Format: float */
-            rain_24h_mm?: number | null;
-            /** Format: float */
-            rain_midnight_mm?: number | null;
-            /** Format: float */
-            snow_24h_mm?: number | null;
-            /** Format: float */
-            temperature_c?: number | null;
-            /** Format: int32 */
-            wind_dir_deg?: number | null;
-            /** Format: float */
-            wind_gust_ms?: number | null;
-            /** Format: float */
-            wind_speed_ms?: number | null;
-        };
-        AptImage: {
-            channel_a?: components["schemas"]["AvhrrChannel"] | null;
-            channel_b?: components["schemas"]["AvhrrChannel"] | null;
-            complete: boolean;
-            /** Format: int32 */
-            duration_ms: number;
-            /** Format: int32 */
-            lines: number;
-            /** Format: int32 */
-            seq: number;
-        };
-        AptParams: {
-            keep_partial?: boolean;
         };
         ArgumentInfo: {
             default: string;
@@ -2472,23 +2286,6 @@ export interface components {
             version?: string | null;
         };
         /** @enum {string} */
-        AtvColor: "monochrome" | "pal" | "ntsc";
-        /** @enum {string} */
-        AtvModulation: "am" | "fm";
-        AtvParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-            color?: components["schemas"]["AtvColor"];
-            interlace?: boolean;
-            invert?: boolean;
-            modulation?: components["schemas"]["AtvModulation"];
-            /** Format: double */
-            sound_subcarrier_hz?: number | null;
-            standard?: components["schemas"]["AtvStandard"];
-        };
-        /** @enum {string} */
-        AtvStandard: "ccir625" | "eia525" | "system_a405";
-        /** @enum {string} */
         AudioAgcMode: "off" | "slow" | "medium" | "fast";
         AudioFilterSettings: {
             enabled?: boolean;
@@ -2547,10 +2344,6 @@ export interface components {
         AuthInfo: {
             token_required: boolean;
         };
-        /** @enum {string} */
-        AuthType: "none" | "uas_id_signature" | "operator_id_signature" | "message_set_signature" | "network_remote_id" | "specific_method" | "reserved" | "private";
-        /** @enum {string} */
-        AvhrrChannel: "ch1" | "ch2" | "ch3a" | "ch3b" | "ch4" | "ch5";
         BandAllocation: {
             aliases?: string[];
             /** Format: double */
@@ -2808,144 +2601,6 @@ export interface components {
         };
         /** @enum {string} */
         BearingSource: "array" | "sweep" | "mark";
-        BeastExportStatus: {
-            address: string;
-            /** Format: int32 */
-            clients: number;
-            error?: string | null;
-            /** Format: int64 */
-            frames: number;
-            listening: boolean;
-            node: string;
-        };
-        BleAddress: {
-            address: string;
-            kind: components["schemas"]["BleAddressKind"];
-        };
-        /** @enum {string} */
-        BleAddressKind: "public" | "random_static" | "resolvable_private" | "non_resolvable_private" | "reserved";
-        BleAdi: {
-            /** Format: int32 */
-            data_id: number;
-            /** Format: int32 */
-            set: number;
-        };
-        BleAdvert: {
-            address?: components["schemas"]["BleAddress"] | null;
-            adi?: components["schemas"]["BleAdi"] | null;
-            /** Format: int32 */
-            appearance?: number | null;
-            aux?: components["schemas"]["BleAuxPointer"] | null;
-            beacon?: components["schemas"]["BleBeacon"] | null;
-            /** Format: int32 */
-            channel?: number | null;
-            data: string;
-            flags?: components["schemas"]["BleFlags"] | null;
-            /** Format: float */
-            level_dbfs: number;
-            manufacturer?: components["schemas"]["BleManufacturer"][];
-            name?: string | null;
-            pdu: components["schemas"]["BlePdu"];
-            phy: components["schemas"]["BlePhy"];
-            /** Format: int32 */
-            repeats?: number;
-            services?: components["schemas"]["BleService"][];
-            target?: components["schemas"]["BleAddress"] | null;
-            /** Format: int32 */
-            tx_power_dbm?: number | null;
-            uri?: string | null;
-        };
-        BleAuxPointer: {
-            /** Format: int32 */
-            channel: number;
-            /** Format: int32 */
-            offset_us: number;
-            phy: components["schemas"]["BlePhy"];
-        };
-        BleBeacon: {
-            /** Format: int32 */
-            major: number;
-            /** Format: int32 */
-            measured_dbm: number;
-            /** Format: int32 */
-            minor: number;
-            /** @enum {string} */
-            type: "ibeacon";
-            uuid: string;
-        } | {
-            id: string;
-            /** Format: int32 */
-            measured_dbm: number;
-            /** @enum {string} */
-            type: "alt_beacon";
-        } | {
-            instance: string;
-            namespace: string;
-            /** Format: int32 */
-            tx_power_dbm: number;
-            /** @enum {string} */
-            type: "eddystone_uid";
-        } | {
-            /** Format: int32 */
-            tx_power_dbm: number;
-            /** @enum {string} */
-            type: "eddystone_url";
-            url: string;
-        } | {
-            /** Format: int32 */
-            adverts: number;
-            /** Format: int32 */
-            battery_mv?: number | null;
-            /** Format: float */
-            temperature_c?: number | null;
-            /** @enum {string} */
-            type: "eddystone_tlm";
-            /** Format: double */
-            uptime_s: number;
-        } | {
-            eid: string;
-            /** Format: int32 */
-            tx_power_dbm: number;
-            /** @enum {string} */
-            type: "eddystone_eid";
-        } | {
-            maintained: boolean;
-            /** @enum {string} */
-            type: "find_my";
-        } | {
-            identifier: string;
-            /** @enum {string} */
-            type: "exposure_notification";
-        } | {
-            model: string;
-            /** @enum {string} */
-            type: "fast_pair";
-        };
-        BleFlags: {
-            general: boolean;
-            le_only: boolean;
-            limited: boolean;
-        };
-        /** @enum {string} */
-        BleLink: "channel" | "band";
-        BleManufacturer: {
-            company?: string | null;
-            /** Format: int32 */
-            company_id: number;
-            data: string;
-        };
-        BleParams: {
-            link?: components["schemas"]["BleLink"];
-        };
-        /** @enum {string} */
-        BlePdu: "adv_ind" | "adv_direct_ind" | "adv_nonconn_ind" | "scan_req" | "scan_rsp" | "connect_ind" | "adv_scan_ind" | "adv_ext_ind" | "aux_adv_ind" | "aux_connect_rsp";
-        /** @enum {string} */
-        BlePhy: "le1m" | "le2m" | "le_coded_s8" | "le_coded_s2" | "le_coded";
-        BleService: {
-            data?: string | null;
-            name?: string | null;
-            uuid: string;
-        };
         Bookmark: {
             /** Format: double */
             freq_hz: number;
@@ -2955,75 +2610,6 @@ export interface components {
             label: string;
             mode?: string | null;
         };
-        BroadcastData: {
-            bytes: number[];
-            label?: number[];
-            media_type: string;
-            name: string;
-            /** Format: int32 */
-            protocol?: number | null;
-            /** Format: int32 */
-            service_id?: number | null;
-        };
-        BroadcastService: {
-            /** Format: int32 */
-            bitrate_kbps?: number | null;
-            /** Format: int32 */
-            id: number;
-            kind: components["schemas"]["BroadcastServiceKind"];
-            label: string;
-            language?: string | null;
-            selected?: boolean;
-        };
-        /** @enum {string} */
-        BroadcastServiceKind: "audio" | "data" | "video";
-        BroadcastStatus: {
-            audio_error?: string | null;
-            /** Format: int32 */
-            audio_frames_bad?: number;
-            /** Format: int32 */
-            audio_frames_ok?: number;
-            /** Format: float */
-            bit_error_rate?: number | null;
-            /** Format: int32 */
-            bitrate_kbps?: number | null;
-            code_rate?: string | null;
-            data_error?: string | null;
-            /** Format: int32 */
-            data_groups_bad?: number;
-            /** Format: int32 */
-            data_groups_ok?: number;
-            dynamic_label?: string | null;
-            /** Format: int32 */
-            ensemble_id?: number | null;
-            ensemble_label?: string | null;
-            /** Format: int32 */
-            frames_bad?: number;
-            /** Format: int32 */
-            frames_ok?: number;
-            /** Format: float */
-            frequency_error_hz: number;
-            label?: string | null;
-            locked: boolean;
-            /** Format: int32 */
-            service_id?: number | null;
-            services?: components["schemas"]["BroadcastService"][];
-            /** Format: float */
-            snr_db: number;
-            superframe?: components["schemas"]["SuperframeStatus"] | null;
-            /** Format: double */
-            symbol_rate?: number | null;
-            system: components["schemas"]["BroadcastSystem"];
-            text?: string | null;
-            transmission_mode?: components["schemas"]["DabTransmissionMode"] | null;
-            video_error?: string | null;
-            /** Format: int32 */
-            video_frames_bad?: number;
-            /** Format: int32 */
-            video_frames_ok?: number;
-        };
-        /** @enum {string} */
-        BroadcastSystem: "dab" | "dab_plus" | "dvb_s" | "dvb_s2" | "dvb_t" | "dvb_t2" | "drm30" | "drm_plus";
         /** @enum {string} */
         CallGate: "frames" | "squelch";
         Callsign: {
@@ -3079,7 +2665,7 @@ export interface components {
             tx_streams?: number;
         };
         /** @enum {string} */
-        Capability: "log" | "station" | "geo" | "bearing" | "spot" | "voice" | "duration" | "text" | "picture" | "clip";
+        Capability: "log" | "station" | "geo" | "bearing" | "spot" | "voice" | "duration" | "text" | "picture" | "clip" | "track";
         CapturedImage: {
             at: string;
             /** Format: int32 */
@@ -3194,6 +2780,13 @@ export interface components {
             /** Format: int32 */
             device_set: number;
         };
+        /** @description Lowest and highest occupied offset from the channel frequency, as its decoder lays it out. */
+        ChannelBand: {
+            /** Format: double */
+            high_hz: number;
+            /** Format: double */
+            low_hz: number;
+        };
         ChannelCapabilities: {
             antennas: string[];
             bandwidth_ranges: components["schemas"]["Range"][];
@@ -3218,28 +2811,40 @@ export interface components {
             stream_formats?: string[];
         };
         ChannelDescriptor: {
+            /** @description One of the plain analog voice modes a channel cycles through when retyped by hotkey. */
+            analog_voice?: boolean;
             /** Format: double */
             bandwidth_hz: number;
             calls?: components["schemas"]["CallGate"] | null;
             can_transmit?: boolean;
-            choices?: components["schemas"]["ParamChoice"][];
+            click?: components["schemas"]["ClickProfile"];
             defaults?: components["schemas"]["ChannelSettings"] | null;
             emits?: components["schemas"]["EventKind"][];
             family?: components["schemas"]["DecoderFamily"];
             has_audio?: boolean;
             has_video?: boolean;
+            /** @description Signal ID can name this decoder's signal: it has `signatures`. */
             identifiable?: boolean;
             /** Format: double */
             input_rate_hz: number;
-            limits?: components["schemas"]["ParamLimit"][];
+            /** @description The demodulator already levels its audio, so an added AGC stage is redundant. */
+            levels_audio?: boolean;
             name: string;
             needs_position?: boolean;
             ports?: components["schemas"]["PortSpec"][];
+            /** @description The form a channel node renders for this decoder's settings, in order. */
+            settings?: components["schemas"]["SettingField"][];
+            /** @description How this decoder's signal shows on the air, for Signal ID. */
+            signatures?: components["schemas"]["SignalSignature"][];
             summary?: string;
+            trial?: components["schemas"]["SignalTrial"] | null;
+            /** @description A trunk system can run on this decoder. */
+            trunks?: boolean;
             type_id: string;
         };
         ChannelInfo: {
             audio_recordings?: components["schemas"]["AudioRecordingStatus"][];
+            band?: components["schemas"]["ChannelBand"] | null;
             baseband_recording?: components["schemas"]["RecordingStatus"] | null;
             /** Format: int32 */
             id: number;
@@ -3284,274 +2889,17 @@ export interface components {
             channel_type: string;
             tuning_locked?: boolean;
         };
+        /**
+         * @description A decoder's settings as the wire carries them: its type id and its own settings object.
+         *
+         *     Only the decoder that owns `type_id` knows the shape of `settings`; everything else passes it
+         *     through untouched.
+         */
         ChannelParams: {
-            settings: components["schemas"]["NfmParams"];
-            /** @enum {string} */
-            type: "nfm";
-        } | {
-            settings: components["schemas"]["SelcallParams"];
-            /** @enum {string} */
-            type: "selcall";
-        } | {
-            settings: components["schemas"]["AmParams"];
-            /** @enum {string} */
-            type: "am";
-        } | {
-            settings: components["schemas"]["SsbParams"];
-            /** @enum {string} */
-            type: "ssb";
-        } | {
-            settings: components["schemas"]["WfmParams"];
-            /** @enum {string} */
-            type: "wfm";
-        } | {
-            settings: components["schemas"]["PocsagParams"];
-            /** @enum {string} */
-            type: "pocsag";
-        } | {
-            settings: components["schemas"]["FlexParams"];
-            /** @enum {string} */
-            type: "flex";
-        } | {
-            settings: components["schemas"]["ErmesParams"];
-            /** @enum {string} */
-            type: "ermes";
-        } | {
-            settings: components["schemas"]["EotParams"];
-            /** @enum {string} */
-            type: "eot";
-        } | {
-            settings: components["schemas"]["SarsatParams"];
-            /** @enum {string} */
-            type: "sarsat";
-        } | {
-            settings: components["schemas"]["AdsbParams"];
-            /** @enum {string} */
-            type: "adsb";
-        } | {
-            settings: components["schemas"]["AisParams"];
-            /** @enum {string} */
-            type: "ais";
-        } | {
-            settings: components["schemas"]["AprsParams"];
-            /** @enum {string} */
-            type: "aprs";
-        } | {
-            settings: components["schemas"]["RttyParams"];
-            /** @enum {string} */
-            type: "rtty";
-        } | {
-            settings: components["schemas"]["MorseParams"];
-            /** @enum {string} */
-            type: "morse";
-        } | {
-            settings: components["schemas"]["CwSkimmerParams"];
-            /** @enum {string} */
-            type: "cw_skimmer";
-        } | {
-            settings: components["schemas"]["NavtexParams"];
-            /** @enum {string} */
-            type: "navtex";
-        } | {
-            settings: components["schemas"]["AcarsParams"];
-            /** @enum {string} */
-            type: "acars";
-        } | {
-            settings: components["schemas"]["AtvParams"];
-            /** @enum {string} */
-            type: "atv";
-        } | {
-            settings: components["schemas"]["SstvParams"];
-            /** @enum {string} */
-            type: "sstv";
-        } | {
-            settings: components["schemas"]["DabParams"];
-            /** @enum {string} */
-            type: "dab";
-        } | {
-            settings: components["schemas"]["DatvParams"];
-            /** @enum {string} */
-            type: "datv";
-        } | {
-            settings: components["schemas"]["DvbtParams"];
-            /** @enum {string} */
-            type: "dvbt";
-        } | {
-            settings: components["schemas"]["DrmParams"];
-            /** @enum {string} */
-            type: "drm";
-        } | {
-            settings: components["schemas"]["DmrParams"];
-            /** @enum {string} */
-            type: "dmr";
-        } | {
-            settings: components["schemas"]["DstarParams"];
-            /** @enum {string} */
-            type: "dstar";
-        } | {
-            settings: components["schemas"]["YsfParams"];
-            /** @enum {string} */
-            type: "ysf";
-        } | {
-            settings: components["schemas"]["NxdnParams"];
-            /** @enum {string} */
-            type: "nxdn";
-        } | {
-            settings: components["schemas"]["P25Params"];
-            /** @enum {string} */
-            type: "p25";
-        } | {
-            settings: components["schemas"]["DpmrParams"];
-            /** @enum {string} */
-            type: "dpmr";
-        } | {
-            settings: components["schemas"]["M17Params"];
-            /** @enum {string} */
-            type: "m17";
-        } | {
-            settings: components["schemas"]["TetraParams"];
-            /** @enum {string} */
-            type: "tetra";
-        } | {
-            settings: components["schemas"]["TetrapolParams"];
-            /** @enum {string} */
-            type: "tetrapol";
-        } | {
-            settings: components["schemas"]["WsjtParams"];
-            /** @enum {string} */
-            type: "ft8";
-        } | {
-            settings: components["schemas"]["WsjtParams"];
-            /** @enum {string} */
-            type: "ft4";
-        } | {
-            settings: components["schemas"]["PskParams"];
-            /** @enum {string} */
-            type: "psk";
-        } | {
-            settings: components["schemas"]["WsprParams"];
-            /** @enum {string} */
-            type: "wspr";
-        } | {
-            settings: components["schemas"]["FreeDvParams"];
-            /** @enum {string} */
-            type: "freedv";
-        } | {
-            settings: components["schemas"]["IdentParams"];
-            /** @enum {string} */
-            type: "ident";
-        } | {
-            settings: components["schemas"]["RadioClockParams"];
-            /** @enum {string} */
-            type: "radio_clock";
-        } | {
-            settings: components["schemas"]["GnssParams"];
-            /** @enum {string} */
-            type: "gnss";
-        } | {
-            settings: components["schemas"]["VorParams"];
-            /** @enum {string} */
-            type: "vor";
-        } | {
-            settings: components["schemas"]["IlsParams"];
-            /** @enum {string} */
-            type: "ils";
-        } | {
-            settings: components["schemas"]["DscParams"];
-            /** @enum {string} */
-            type: "dsc";
-        } | {
-            settings: components["schemas"]["InmarsatStdcParams"];
-            /** @enum {string} */
-            type: "inmarsat_stdc";
-        } | {
-            settings: components["schemas"]["InmarsatAeroParams"];
-            /** @enum {string} */
-            type: "inmarsat_aero";
-        } | {
-            settings: components["schemas"]["Vdl2Params"];
-            /** @enum {string} */
-            type: "vdl2";
-        } | {
-            settings: components["schemas"]["HfdlParams"];
-            /** @enum {string} */
-            type: "hfdl";
-        } | {
-            settings: components["schemas"]["IridiumParams"];
-            /** @enum {string} */
-            type: "iridium";
-        } | {
-            settings: components["schemas"]["DectParams"];
-            /** @enum {string} */
-            type: "dect";
-        } | {
-            settings: components["schemas"]["GsmParams"];
-            /** @enum {string} */
-            type: "gsm";
-        } | {
-            settings: components["schemas"]["AptParams"];
-            /** @enum {string} */
-            type: "apt";
-        } | {
-            settings: components["schemas"]["LrptParams"];
-            /** @enum {string} */
-            type: "lrpt";
-        } | {
-            settings: components["schemas"]["WefaxParams"];
-            /** @enum {string} */
-            type: "wefax";
-        } | {
-            settings: components["schemas"]["SameParams"];
-            /** @enum {string} */
-            type: "same";
-        } | {
-            settings: components["schemas"]["RadiosondeParams"];
-            /** @enum {string} */
-            type: "radiosonde";
-        } | {
-            settings: components["schemas"]["LoraParams"];
-            /** @enum {string} */
-            type: "lora";
-        } | {
-            settings: components["schemas"]["RemoteIdParams"];
-            /** @enum {string} */
-            type: "remote_id";
-        } | {
-            settings: components["schemas"]["BleParams"];
-            /** @enum {string} */
-            type: "ble";
-        } | {
-            settings: components["schemas"]["WifiOccupancyParams"];
-            /** @enum {string} */
-            type: "wifi_occupancy";
-        } | {
-            settings: components["schemas"]["IsmSurveyParams"];
-            /** @enum {string} */
-            type: "ism_survey";
-        } | {
-            settings: components["schemas"]["IsmParams"];
-            /** @enum {string} */
-            type: "ism";
-        } | {
-            settings: components["schemas"]["WmbusParams"];
-            /** @enum {string} */
-            type: "wmbus";
-        } | {
-            settings: components["schemas"]["NoiseFigureParams"];
-            /** @enum {string} */
-            type: "noise_figure";
-        } | {
-            settings: components["schemas"]["PerParams"];
-            /** @enum {string} */
-            type: "per";
-        } | {
-            settings: components["schemas"]["SidParams"];
-            /** @enum {string} */
-            type: "sid";
-        } | {
-            settings: components["schemas"]["StanagParams"];
-            /** @enum {string} */
-            type: "stanag";
+            settings?: {
+                [key: string]: unknown;
+            };
+            type: string;
         };
         ChannelSettings: {
             blanker?: components["schemas"]["NoiseBlankerSettings"];
@@ -3564,6 +2912,14 @@ export interface components {
             if_filter?: components["schemas"]["IfFilter"];
             params: components["schemas"]["ChannelParams"];
             squelch?: components["schemas"]["Squelch"];
+        };
+        /**
+         * @description What a running decoder reports about itself between events: readouts for its node face and
+         *     the options it found for `Live` settings, keyed by the setting.
+         */
+        ChannelStatus: {
+            choices?: components["schemas"]["ParamChoice"][];
+            readouts?: components["schemas"]["Field"][];
         };
         ChannelTarget: {
             /** Format: double */
@@ -3582,6 +2938,11 @@ export interface components {
         };
         /** @enum {string} */
         CheckStatus: "ok" | "warn" | "fail";
+        /**
+         * @description The shape of the impulses a click remover looks for in this decoder's audio.
+         * @enum {string}
+         */
+        ClickProfile: "discriminator" | "detector" | "vocoder";
         ClickRemovalSettings: {
             enabled?: boolean;
             /** Format: float */
@@ -3759,6 +3120,14 @@ export interface components {
         Coherence: "none" | "time_sync" | "phase_coherent";
         /** @enum {string} */
         ComponentSource: "rust" | "web" | "native";
+        /**
+         * @description Shows a field only while another field holds one of these values; with none listed, while
+         *     that field is set at all.
+         */
+        Condition: {
+            any_of: unknown[];
+            key: string;
+        };
         Contact: {
             kind?: components["schemas"]["ContactKind"];
             name: string;
@@ -3768,6 +3137,38 @@ export interface components {
         };
         /** @enum {string} */
         ContactKind: "private" | "group" | "all";
+        Control: {
+            options: components["schemas"]["ParamOption"][];
+            /** @enum {string} */
+            type: "choice";
+        } | (components["schemas"]["NumberSpec"] & {
+            /** @enum {string} */
+            type: "number";
+        }) | {
+            /** @enum {string} */
+            type: "toggle";
+        } | {
+            max_len?: number | null;
+            optional?: boolean;
+            placeholder?: string | null;
+            /** @description Masked while shown, as a key is. */
+            secret?: boolean;
+            /** @enum {string} */
+            type: "text";
+        } | {
+            options: components["schemas"]["PresetOption"][];
+            /** @enum {string} */
+            type: "preset";
+        } | {
+            fallback: components["schemas"]["Control"];
+            /** @enum {string} */
+            type: "live";
+        } | {
+            empty?: string | null;
+            item: components["schemas"]["SettingField"][];
+            /** @enum {string} */
+            type: "list";
+        };
         ControlAck: {
             error?: string | null;
             sweep?: components["schemas"]["SweepStatus"] | null;
@@ -4013,77 +3414,6 @@ export interface components {
             name: string;
             snapshot?: components["schemas"]["WorkspaceSnapshot"] | null;
         };
-        CwSkimmerParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-            /** Format: int32 */
-            max_signals?: number;
-            /** Format: float */
-            threshold_db?: number;
-            /** Format: float */
-            wpm?: number | null;
-        };
-        CwSkimmerSpot: {
-            /** Format: float */
-            offset_hz: number;
-            /** Format: float */
-            snr_db: number;
-            text: string;
-            /** Format: float */
-            wpm: number;
-        };
-        /** @enum {string} */
-        DabMode: "auto" | "dab" | "dab_plus";
-        DabParams: {
-            mode?: components["schemas"]["DabMode"];
-            /** Format: int32 */
-            service_id?: number | null;
-            transmission_mode?: components["schemas"]["DabTransmissionMode"];
-        };
-        /** @enum {string} */
-        DabTransmissionMode: "auto" | "i" | "ii" | "iii" | "iv";
-        DataLinkMessage: {
-            area?: components["schemas"]["SeaArea"] | null;
-            crc_ok: boolean;
-            details: unknown;
-            /** Format: int32 */
-            fec_corrected?: number | null;
-            /** Format: float */
-            frequency_error_hz?: number | null;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            message_type: string;
-            raw?: string | null;
-            /** Format: float */
-            snr_db?: number | null;
-            station?: string | null;
-            text?: string | null;
-        };
-        /** @enum {string} */
-        DatvCodeRate: "auto" | "half" | "two_thirds" | "three_quarters" | "five_sixths" | "seven_eighths";
-        DatvParams: {
-            code_rate?: components["schemas"]["DatvCodeRate"];
-            /** Format: int32 */
-            input_stream?: number | null;
-            /** Format: int32 */
-            program?: number | null;
-            roll_off?: components["schemas"]["DatvRollOff"];
-            standard?: components["schemas"]["DatvStandard"];
-            /** Format: int32 */
-            superframe_payload?: number;
-            /** Format: int32 */
-            superframe_reference?: number;
-            superframe_search?: boolean;
-            superframes?: boolean;
-            /** Format: double */
-            symbol_rate?: number;
-        };
-        /** @enum {string} */
-        DatvRollOff: "pct35" | "pct25" | "pct20" | "pct15" | "pct10" | "pct5";
-        /** @enum {string} */
-        DatvStandard: "dvb_s" | "dvb_s2";
         /**
          * @description Whether a source lands its own DC term at the tuned centre, and whether the blocker that
          *     removes it starts on.
@@ -4104,258 +3434,15 @@ export interface components {
             sinks?: string[];
             view?: components["schemas"]["Presentation"] | null;
         };
+        /**
+         * @description One decoded event: the kind it is and that kind's own payload.
+         *
+         *     The payload travels as JSON text: building one on the DSP thread costs one buffer however many
+         *     fields it has, and the control plane parses it when it reads.
+         */
         DecoderEvent: {
-            data: components["schemas"]["Transmission"];
-            /** @enum {string} */
-            kind: "transmission";
-        } | {
-            data: components["schemas"]["RdsUpdate"];
-            /** @enum {string} */
-            kind: "rds";
-        } | {
-            data: components["schemas"]["PocsagMessage"];
-            /** @enum {string} */
-            kind: "pocsag";
-        } | {
-            data: components["schemas"]["FlexMessage"];
-            /** @enum {string} */
-            kind: "flex";
-        } | {
-            data: components["schemas"]["ErmesMessage"];
-            /** @enum {string} */
-            kind: "ermes";
-        } | {
-            data: components["schemas"]["EotMessage"];
-            /** @enum {string} */
-            kind: "eot";
-        } | {
-            data: components["schemas"]["SarsatMessage"];
-            /** @enum {string} */
-            kind: "sarsat";
-        } | {
-            data: components["schemas"]["TetrapolMessage"];
-            /** @enum {string} */
-            kind: "tetrapol";
-        } | {
-            data: components["schemas"]["AdsbMessage"];
-            /** @enum {string} */
-            kind: "adsb";
-        } | {
-            data: components["schemas"]["AisMessage"];
-            /** @enum {string} */
-            kind: "ais";
-        } | {
-            data: components["schemas"]["AprsPacket"];
-            /** @enum {string} */
-            kind: "aprs";
-        } | {
-            data: components["schemas"]["RttyText"];
-            /** @enum {string} */
-            kind: "rtty";
-        } | {
-            data: components["schemas"]["MorseText"];
-            /** @enum {string} */
-            kind: "morse";
-        } | {
-            data: components["schemas"]["CwSkimmerSpot"];
-            /** @enum {string} */
-            kind: "cw_skimmer";
-        } | {
-            data: components["schemas"]["SelcallSequence"];
-            /** @enum {string} */
-            kind: "selcall";
-        } | {
-            data: components["schemas"]["NavtexMessage"];
-            /** @enum {string} */
-            kind: "navtex";
-        } | {
-            data: components["schemas"]["AcarsMessage"];
-            /** @enum {string} */
-            kind: "acars";
-        } | {
-            data: components["schemas"]["ToneSquelchStatus"];
-            /** @enum {string} */
-            kind: "tone";
-        } | {
-            data: components["schemas"]["ScramblerStatus"];
-            /** @enum {string} */
-            kind: "scrambler";
-        } | {
-            data: components["schemas"]["DvFrame"];
-            /** @enum {string} */
-            kind: "dv";
-        } | {
-            data: components["schemas"]["VoiceCall"];
-            /** @enum {string} */
-            kind: "call";
-        } | {
-            data: components["schemas"]["WsjtMessage"];
-            /** @enum {string} */
-            kind: "ft8";
-        } | {
-            data: components["schemas"]["WsjtMessage"];
-            /** @enum {string} */
-            kind: "ft4";
-        } | {
-            data: components["schemas"]["PskText"];
-            /** @enum {string} */
-            kind: "psk";
-        } | {
-            data: components["schemas"]["WsprSpot"];
-            /** @enum {string} */
-            kind: "wspr";
-        } | {
-            data: components["schemas"]["IdentReport"];
-            /** @enum {string} */
-            kind: "ident";
-        } | {
-            data: components["schemas"]["BroadcastData"];
-            /** @enum {string} */
-            kind: "broadcast_data";
-        } | {
-            data: components["schemas"]["BroadcastStatus"];
-            /** @enum {string} */
-            kind: "broadcast";
-        } | {
-            data: components["schemas"]["RadioClockFrame"];
-            /** @enum {string} */
-            kind: "radio_clock";
-        } | {
-            data: components["schemas"]["GnssFrame"];
-            /** @enum {string} */
-            kind: "gnss";
-        } | {
-            data: components["schemas"]["SstvPicture"];
-            /** @enum {string} */
-            kind: "sstv";
-        } | {
-            data: components["schemas"]["VorReading"];
-            /** @enum {string} */
-            kind: "vor";
-        } | {
-            data: components["schemas"]["IlsReading"];
-            /** @enum {string} */
-            kind: "ils";
-        } | {
-            data: components["schemas"]["DataLinkMessage"];
-            /** @enum {string} */
-            kind: "dsc";
-        } | {
-            data: components["schemas"]["DataLinkMessage"];
-            /** @enum {string} */
-            kind: "inmarsat_stdc";
-        } | {
-            data: components["schemas"]["DataLinkMessage"];
-            /** @enum {string} */
-            kind: "inmarsat_aero";
-        } | {
-            data: components["schemas"]["DataLinkMessage"];
-            /** @enum {string} */
-            kind: "vdl2";
-        } | {
-            data: components["schemas"]["DataLinkMessage"];
-            /** @enum {string} */
-            kind: "hfdl";
-        } | {
-            data: components["schemas"]["DataLinkMessage"];
-            /** @enum {string} */
-            kind: "iridium";
-        } | {
-            data: components["schemas"]["DfBearing"];
-            /** @enum {string} */
-            kind: "df";
-        } | {
-            data: components["schemas"]["DfEstimate"];
-            /** @enum {string} */
-            kind: "df_fix";
-        } | {
-            data: components["schemas"]["RadarTrackEvent"];
-            /** @enum {string} */
-            kind: "radar";
-        } | {
-            data: components["schemas"]["RadarSites"];
-            /** @enum {string} */
-            kind: "radar_sites";
-        } | {
-            data: components["schemas"]["NavGuide"];
-            /** @enum {string} */
-            kind: "nav";
-        } | {
-            data: components["schemas"]["SatelliteFix"];
-            /** @enum {string} */
-            kind: "satellite";
-        } | {
-            data: components["schemas"]["DectFrame"];
-            /** @enum {string} */
-            kind: "dect";
-        } | {
-            data: components["schemas"]["GsmFrame"];
-            /** @enum {string} */
-            kind: "gsm";
-        } | {
-            data: components["schemas"]["AptImage"];
-            /** @enum {string} */
-            kind: "apt";
-        } | {
-            data: components["schemas"]["LrptImage"];
-            /** @enum {string} */
-            kind: "lrpt";
-        } | {
-            data: components["schemas"]["WefaxPicture"];
-            /** @enum {string} */
-            kind: "wefax";
-        } | {
-            data: components["schemas"]["SameMessage"];
-            /** @enum {string} */
-            kind: "same";
-        } | {
-            data: components["schemas"]["RadiosondeFrame"];
-            /** @enum {string} */
-            kind: "radiosonde";
-        } | {
-            data: components["schemas"]["LoraFrame"];
-            /** @enum {string} */
-            kind: "lora";
-        } | {
-            data: components["schemas"]["RemoteIdFrame"];
-            /** @enum {string} */
-            kind: "remote_id";
-        } | {
-            data: components["schemas"]["BleAdvert"];
-            /** @enum {string} */
-            kind: "ble";
-        } | {
-            data: components["schemas"]["WifiOccupancyReport"];
-            /** @enum {string} */
-            kind: "wifi_occupancy";
-        } | {
-            data: components["schemas"]["IsmSurveyReport"];
-            /** @enum {string} */
-            kind: "ism_survey";
-        } | {
-            data: components["schemas"]["IsmMessage"];
-            /** @enum {string} */
-            kind: "ism";
-        } | {
-            data: components["schemas"]["WmbusMessage"];
-            /** @enum {string} */
-            kind: "wmbus";
-        } | {
-            data: components["schemas"]["NoiseFigureReport"];
-            /** @enum {string} */
-            kind: "noise_figure";
-        } | {
-            data: components["schemas"]["PerReport"];
-            /** @enum {string} */
-            kind: "per";
-        } | {
-            data: components["schemas"]["SidReport"];
-            /** @enum {string} */
-            kind: "sid";
-        } | {
-            data: components["schemas"]["StanagReport"];
-            /** @enum {string} */
-            kind: "stanag";
+            data: unknown;
+            kind: components["schemas"]["EventKind"];
         };
         /** @enum {string} */
         DecoderFamily: "analog_voice" | "digital_voice" | "aviation" | "marine" | "amateur" | "paging" | "video" | "broadcast" | "weather" | "utility";
@@ -4406,111 +3493,6 @@ export interface components {
             entries: components["schemas"]["DecoderLogEntry"][];
             /** Format: int64 */
             total: number;
-        };
-        /** @enum {string} */
-        DectArc: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h";
-        /** @enum {string} */
-        DectBand: "eu" | "us";
-        /** @enum {string} */
-        DectCapability: "extended_fp_info" | "double_duplex_bearer" | "double_slot" | "half_slot" | "full_slot" | "frequency_control" | "page_repetition" | "co_setup_on_dummy" | "cl_uplink" | "cl_downlink" | "basic_a_field_setup" | "advanced_a_field_setup" | "b_field_setup" | "cf_messages" | "in_minimum_delay" | "in_normal_delay" | "ip_error_detection" | "ip_error_correction" | "multibearer_connections" | "adpcm" | "gap_basic_speech" | "non_voice_circuit_switched" | "non_voice_packet_switched" | "standard_authentication" | "standard_ciphering" | "location_registration" | "sim_services" | "non_static_fixed_part" | "ciss_services" | "clms_service" | "coms_service" | "access_rights_requests" | "external_handover" | "connection_handover" | "crfp_encryption" | "relay_v2" | "prolonged_preamble" | "frequency_replacement" | "mac_suspend_resume" | "ipq_service" | "extended_fp_info2" | "f_mms_interworking" | "basic_odap" | "gme_transport" | "ip_roaming" | "ethernet" | "token_ring" | "ip" | "ppp" | "v24" | "rap_part1" | "isdn_intermediate_system" | "gps_synchronized" | "tpui_registration" | "emergency_call" | "asymmetric_bearers" | "lrms" | "data_service_profile_d" | "dprs_class3_or4" | "dprs_class2" | "isdn_data_services" | "long_slot640" | "long_slot672" | "eu_mux" | "ipf_advanced" | "sipf_channel" | "gf_channel" | "ule_wrs_delayed_paging" | "extended_fp_info3" | "no_emission_any_carrier" | "wideband_voice" | "packet_data1" | "packet_data2" | "packet_data3" | "packet_data4" | "packet_data5" | "extended_wideband_voice" | "permanent_clir" | "third_party_conference" | "intrusion_call" | "call_deflection" | "multiple_lines" | "no_emission" | "ng_dect5" | "u_nemo" | "u_nemo_opportunistic" | "ule_phase1" | "ule_phase1_revised" | "ule_phase2" | "ule_phase3" | "re_keying" | "dsaa2" | "dsc2" | "light_data" | "half_slot_second_half" | "modulation_bpsk" | "modulation_qpsk" | "modulation8psk" | "modulation16qam" | "modulation64qam" | "high_level_a_field" | "wireless_microphone" | "audio_microphone" | "audio_low_latency_microphone" | "audio_speaker" | "audio_high_resolution" | "audio_gaming_headset";
-        /** @enum {string} */
-        DectCipherState: "clear" | "requested" | "confirmed" | "active" | "stopped";
-        DectFrame: {
-            /** Format: int32 */
-            bursts: number;
-            capabilities?: components["schemas"]["DectCapability"][];
-            /** Format: int32 */
-            carrier?: number | null;
-            /** Format: double */
-            carrier_hz?: number | null;
-            extended_carriers?: boolean;
-            /** Format: int32 */
-            fmid?: number | null;
-            handsets?: number[];
-            identity?: components["schemas"]["DectIdentity"] | null;
-            /** Format: float */
-            level_dbfs: number;
-            /** Format: int32 */
-            multiframe?: number | null;
-            /** Format: int32 */
-            pmid?: number | null;
-            /** Format: int32 */
-            pscn?: number | null;
-            /** Format: int32 */
-            rf_carriers?: number | null;
-            security: components["schemas"]["DectSecurity"];
-            side: components["schemas"]["DectSide"];
-            /** Format: int32 */
-            slot_pair?: number | null;
-            /** Format: int32 */
-            transceivers?: number | null;
-            update: components["schemas"]["DectUpdate"];
-            voice?: components["schemas"]["DectVoice"] | null;
-        };
-        DectIdentity: {
-            arc: components["schemas"]["DectArc"];
-            /** Format: int32 */
-            eic?: number | null;
-            /** Format: int32 */
-            emc?: number | null;
-            /** Format: int32 */
-            fil?: number | null;
-            /** Format: int32 */
-            fpn?: number | null;
-            /** Format: int32 */
-            fps?: number | null;
-            /** Format: int32 */
-            gop?: number | null;
-            /** Format: int32 */
-            mcc?: number | null;
-            /** Format: int32 */
-            mnc?: number | null;
-            multicell?: boolean | null;
-            pari: string;
-            /** Format: int32 */
-            poc?: number | null;
-            rfpi: string;
-            /** Format: int32 */
-            rpn: number;
-            sari_available: boolean;
-        };
-        DectParams: {
-            band?: components["schemas"]["DectBand"];
-            sides?: components["schemas"]["DectSides"];
-            span?: components["schemas"]["DectSpan"];
-        };
-        DectSecurity: {
-            authentication_supported?: boolean | null;
-            /** Format: int32 */
-            cipher_key_index?: number | null;
-            cipher_state: components["schemas"]["DectCipherState"];
-            ciphering_supported?: boolean | null;
-            dsaa2_supported?: boolean | null;
-            dsc2_supported?: boolean | null;
-            /** Format: int32 */
-            encryption_events?: number;
-            last_command?: string | null;
-        };
-        /** @enum {string} */
-        DectSide: "rfp" | "pp";
-        /** @enum {string} */
-        DectSides: "both" | "rfp" | "pp";
-        /** @enum {string} */
-        DectSpan: "carrier" | "band";
-        /** @enum {string} */
-        DectUpdate: "identity" | "system_info" | "capabilities" | "encryption" | "paging" | "bearer" | "voice";
-        DectVoice: {
-            /** Format: int32 */
-            encrypted?: number;
-            /** Format: int32 */
-            frames: number;
-            /** Format: int32 */
-            late?: number;
-            playing: boolean;
-            /** Format: int32 */
-            unsynced?: number;
-            /** Format: int32 */
-            x_crc_errors?: number;
         };
         DeletedCount: {
             /** Format: int64 */
@@ -4655,38 +3637,6 @@ export interface components {
         };
         /** @enum {string} */
         DfAlgorithm: "bartlett" | "capon" | "music" | "root_music" | "esprit";
-        DfBearing: {
-            /** Format: float */
-            accuracy_m?: number | null;
-            /** Format: float */
-            bearing_deg: number;
-            /** Format: float */
-            confidence: number;
-            /** Format: double */
-            freq_hz?: number | null;
-            /** Format: float */
-            heading_deg?: number | null;
-            /** Format: float */
-            heading_sigma_deg?: number | null;
-            /** Format: double */
-            lat?: number | null;
-            likelihood?: number[];
-            /** Format: double */
-            lon?: number | null;
-            /** Format: float */
-            mirror_deg?: number | null;
-            moving?: boolean;
-            node?: string;
-            others?: components["schemas"]["DfOtherPeak"][];
-            /** Format: float */
-            relative_deg?: number | null;
-            /** Format: float */
-            sigma_deg?: number;
-            /** Format: float */
-            snr_db?: number | null;
-            source?: components["schemas"]["BearingSource"];
-            station_id?: string | null;
-        };
         DfEstimate: {
             converged: boolean;
             /** Format: double */
@@ -4729,14 +3679,6 @@ export interface components {
         };
         DfNode: {
             settings?: components["schemas"]["DfParams"];
-        };
-        DfOtherPeak: {
-            /** Format: float */
-            bearing_deg: number;
-            /** Format: float */
-            confidence: number;
-            /** Format: float */
-            sigma_deg: number;
         };
         DfParams: {
             /** @default music */
@@ -4932,42 +3874,6 @@ export interface components {
             radio_id?: string | null;
             time_slot?: components["schemas"]["TimeSlot"];
         };
-        DmrChannelEntry: {
-            /** Format: int64 */
-            freq_hz: number;
-            /** Format: int32 */
-            lcn: number;
-        };
-        DmrDiscovery: {
-            enabled?: boolean;
-            /** Format: int32 */
-            max_probes?: number;
-            ranges?: components["schemas"]["DmrSearchRange"][];
-        };
-        DmrParams: {
-            ignore_crc?: boolean;
-            slots?: components["schemas"]["DmrSlots"];
-        };
-        DmrSearchRange: {
-            /** Format: int64 */
-            end_hz: number;
-            /** Format: int64 */
-            start_hz: number;
-            /** Format: int64 */
-            step_hz: number;
-        };
-        /** @enum {string} */
-        DmrSlots: "both" | "one" | "two";
-        DmrTrunkNode: {
-            channel_map?: components["schemas"]["DmrChannelEntry"][];
-            /** Format: int64 */
-            control_hz?: number | null;
-            discovery?: components["schemas"]["DmrDiscovery"];
-            ignore_crc?: boolean;
-            protocol?: components["schemas"]["DmrTrunkProtocol"];
-        };
-        /** @enum {string} */
-        DmrTrunkProtocol: "auto" | "capacity_plus" | "hytera_xpt" | "tier_three";
         DoctorCheck: {
             detail: string;
             hint?: string | null;
@@ -4982,125 +3888,17 @@ export interface components {
         };
         /** @enum {string} */
         DopplerWindow: "hann" | "blackman_harris" | "rectangular";
-        DpmrParams: Record<string, never>;
         DraggedNode: {
             node: string;
             position: components["schemas"]["Position"];
-        };
-        /** @enum {string} */
-        DrmMode: "auto" | "drm30" | "drm_plus";
-        DrmParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-            mode?: components["schemas"]["DrmMode"];
-            /** Format: int32 */
-            service?: number | null;
         };
         DroppedNode: {
             id: string;
             kind: string;
             label?: string | null;
         };
-        DscParams: Record<string, never>;
-        DstarParams: Record<string, never>;
         /** @enum {string} */
         Duplex: "rx_only" | "tx_only" | "half" | "full";
-        /** @enum {string} */
-        DvbtBandwidth: "khz250" | "khz333" | "khz500" | "mhz1" | "mhz1_7" | "mhz2" | "mhz5" | "mhz10" | "mhz6" | "mhz7" | "mhz8";
-        DvbtParams: {
-            bandwidth?: components["schemas"]["DvbtBandwidth"];
-            low_priority?: boolean;
-            /** Format: int32 */
-            plp?: number | null;
-            /** Format: int32 */
-            program?: number | null;
-            standard?: components["schemas"]["DvbtStandard"];
-        };
-        /** @enum {string} */
-        DvbtStandard: "dvb_t" | "dvb_t2";
-        DvChannelDefinition: {
-            /** Format: int32 */
-            channel: number;
-            /** Format: int32 */
-            color_code?: number | null;
-            /** Format: int64 */
-            rx_hz: number;
-            /** Format: int64 */
-            tx_hz: number;
-        };
-        DvFrame: {
-            /** Format: int32 */
-            algorithm_id?: number | null;
-            /** Format: int32 */
-            channel?: number | null;
-            channel_definition?: components["schemas"]["DvChannelDefinition"] | null;
-            /** Format: int32 */
-            color_code?: number | null;
-            /**
-             * @description Whether the burst came from a trunked site's control channel rather than one of its
-             *     traffic channels, where the air interface says so outright.
-             */
-            control_channel?: boolean | null;
-            crc_verified?: boolean | null;
-            data?: string | null;
-            /** Format: int32 */
-            destination?: number | null;
-            destination_call?: string | null;
-            emergency?: boolean | null;
-            encrypted?: boolean | null;
-            /** Format: int32 */
-            errors_corrected: number;
-            group_call?: boolean | null;
-            /** Format: int32 */
-            key_id?: number | null;
-            kind: components["schemas"]["DvFrameKind"];
-            /** Format: double */
-            lat?: number | null;
-            late_entry?: boolean | null;
-            /** Format: double */
-            lon?: number | null;
-            /** Format: int32 */
-            manufacturer_id?: number | null;
-            message_indicator?: string | null;
-            mode: components["schemas"]["DvMode"];
-            /** Format: int32 */
-            network_id?: number | null;
-            opcode?: string | null;
-            /** Format: int32 */
-            position_error_m?: number | null;
-            /** Format: int32 */
-            rest_channel?: number | null;
-            /** Format: int32 */
-            site_id?: number | null;
-            /** Format: int32 */
-            slot?: number | null;
-            slot_activity?: components["schemas"]["DvSlotActivity"][];
-            /** Format: int32 */
-            source?: number | null;
-            source_call?: string | null;
-            /** Format: int32 */
-            system_id?: number | null;
-            talker_alias?: string | null;
-            text?: string | null;
-            trunk_protocol?: components["schemas"]["DvTrunkProtocol"] | null;
-            vendor?: components["schemas"]["Vendor"] | null;
-            via?: string | null;
-        };
-        /** @enum {string} */
-        DvFrameKind: "header" | "voice" | "terminator" | "control" | "data";
-        /** @enum {string} */
-        DvMode: "dmr" | "dstar" | "ysf" | "nxdn" | "p25" | "dpmr" | "m17" | "freedv" | "tetra";
-        DvSlotActivity: {
-            activity: string;
-            /** Format: int32 */
-            destination?: number | null;
-            /** Format: int32 */
-            destination_hash?: number | null;
-            /** Format: int32 */
-            logical_channel?: number | null;
-            /** Format: int32 */
-            slot: number;
-        };
         /** @enum {string} */
         DvTrunkProtocol: "capacity_plus" | "hytera_xpt" | "tier_three";
         Entity: {
@@ -5122,77 +3920,11 @@ export interface components {
             kind: components["schemas"]["EventKind"];
             source: string;
         };
-        /** @enum {string} */
-        EotArming: "normal" | "arming" | "armed";
-        /** @enum {string} */
-        EotBattery: "not_monitored" | "very_low" | "low" | "ok";
-        EotMessage: {
-            /** Format: int32 */
-            errors_corrected: number;
-            report: components["schemas"]["EotReport"];
-            /** Format: int32 */
-            unit_address: number;
-        };
-        EotParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-        };
-        EotReport: (components["schemas"]["EotStatus"] & {
-            /** @enum {string} */
-            unit: "rear";
-        }) | (components["schemas"]["HotRequest"] & {
-            /** @enum {string} */
-            unit: "head";
-        });
-        EotStatus: {
-            arming: components["schemas"]["EotArming"];
-            battery: components["schemas"]["EotBattery"];
-            /** Format: int32 */
-            battery_charge_pct: number;
-            /** Format: int32 */
-            chaining: number;
-            confirmed: boolean;
-            discretionary: boolean;
-            marker_battery_low: boolean;
-            marker_light: boolean;
-            /** Format: int32 */
-            message_type: number;
-            motion: boolean;
-            /** Format: int32 */
-            pressure_psig: number;
-            turbine: boolean;
-            valve_ok: boolean;
-        };
-        ErmesMessage: {
-            /** Format: int32 */
-            alert: number;
-            /** Format: int32 */
-            errors_corrected: number;
-            /** Format: int32 */
-            local_address: number;
-            /** Format: int32 */
-            message_number: number;
-            payload: components["schemas"]["PagerPayload"];
-            text: string;
-            urgent: boolean;
-        };
-        ErmesParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-            invert?: boolean;
-        };
         /**
          * @description Which part of the server refused. Stable, unlike the wording in `error`.
          * @enum {string}
          */
         ErrorCode: "request" | "not_found" | "conflict" | "unavailable" | "engine" | "storage" | "tool" | "forbidden" | "internal" | "auth" | "rate_limited";
-        /** @enum {string} */
-        EuCategory: "undeclared" | "open" | "specific" | "certified" | "reserved";
-        EuClassification: {
-            category: components["schemas"]["EuCategory"];
-            /** Format: int32 */
-            class?: number | null;
-        };
         EventAudio: {
             media_type: string;
             url: string;
@@ -5214,9 +3946,14 @@ export interface components {
             media_type: string;
             url: string;
         };
-        /** @enum {string} */
-        EventKind: "transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "same" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "wmbus" | "noise_figure" | "per" | "sid" | "stanag";
+        /** @description The name an event kind goes by on the wire, in filters and in the registry. */
+        EventKind: string;
         EventKindEntry: {
+            /**
+             * @description A reading of this kind stands only inside its decoder's allocation: the decoder measures
+             *     whatever carrier it is given.
+             */
+            allocated?: boolean;
             caps: components["schemas"]["Capability"][];
             hue: components["schemas"]["Hue"];
             kind: components["schemas"]["EventKind"];
@@ -5224,6 +3961,11 @@ export interface components {
             name: string;
             noun: string;
             symbol?: components["schemas"]["Symbol"] | null;
+            /**
+             * @description A decode of this kind shows the signal is the decoder's. Free text a decoder reads out of
+             *     any noise does not.
+             */
+            verifies?: boolean;
         };
         EventOrigin: {
             node: string;
@@ -5254,8 +3996,9 @@ export interface components {
         } | {
             address: string;
             enabled?: boolean;
+            format?: string;
             /** @enum {string} */
-            service: "beast";
+            service: "feed";
         } | {
             /** Format: ipv4 */
             address: string;
@@ -5380,6 +4123,24 @@ export interface components {
             tap?: components["schemas"]["Tap"] | null;
             via?: string[];
         };
+        /** @description A feed format as the frontend lists it. */
+        FeedEntry: {
+            default_address: string;
+            format: string;
+            kinds: components["schemas"]["KindSet"];
+            name: string;
+        };
+        FeedStatus: {
+            address: string;
+            /** Format: int32 */
+            clients: number;
+            error?: string | null;
+            format: string;
+            /** Format: int64 */
+            frames: number;
+            listening: boolean;
+            node: string;
+        };
         Field: {
             label: string;
             value: components["schemas"]["FieldValue"];
@@ -5413,30 +4174,6 @@ export interface components {
         };
         /** @enum {string} */
         FilterMode: "keep" | "drop";
-        FlexMessage: {
-            /** Format: int64 */
-            address: number;
-            /** Format: int32 */
-            baud: number;
-            /** @description False when a fragment of a page split over frames never arrived. */
-            complete?: boolean;
-            /** Format: int32 */
-            cycle: number;
-            /** Format: int32 */
-            errors_corrected: number;
-            /** Format: int32 */
-            frame: number;
-            /** Format: int32 */
-            levels: number;
-            payload: components["schemas"]["PagerPayload"];
-            phase: string;
-            text: string;
-        };
-        FlexParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-            invert?: boolean;
-        };
         FmChannel: {
             admit?: components["schemas"]["Admit"];
             bandwidth?: components["schemas"]["Bandwidth"];
@@ -5444,12 +4181,6 @@ export interface components {
             /** Format: int32 */
             squelch?: number | null;
             tx_tone?: components["schemas"]["Tone"] | null;
-        };
-        /** @enum {string} */
-        FreeDvMode: "mode1600";
-        FreeDvParams: {
-            mode?: components["schemas"]["FreeDvMode"];
-            sideband?: components["schemas"]["Sideband"];
         };
         FrequencyRange: {
             /** Format: int64 */
@@ -5501,31 +4232,6 @@ export interface components {
             /** Format: int32 */
             vox?: number | null;
         };
-        GnssFrame: {
-            /** Format: float */
-            cn0_db_hz: number;
-            /** Format: float */
-            code_phase_chips: number;
-            /** Format: float */
-            doppler_hz: number;
-            /** Format: int32 */
-            prn: number;
-            /** Format: int32 */
-            subframe?: number | null;
-            /** Format: int32 */
-            tow_seconds?: number | null;
-            /** Format: int32 */
-            week?: number | null;
-            words?: string[];
-        };
-        GnssParams: {
-            /** Format: int32 */
-            doppler_hz?: number;
-            /** Format: int32 */
-            prn?: number;
-            /** Format: float */
-            threshold?: number;
-        };
         GpsNode: {
             source?: components["schemas"]["PositionSource"] | null;
         };
@@ -5541,135 +4247,10 @@ export interface components {
             contacts?: string[];
             name: string;
         };
-        GsmAssignment: {
-            /** Format: int32 */
-            arfcn?: number | null;
-            channel: components["schemas"]["GsmChannelType"];
-            hopping?: components["schemas"]["GsmHopping"] | null;
-            /** Format: int32 */
-            request: number;
-            /** Format: int32 */
-            subchannel?: number | null;
-            /** Format: int32 */
-            timeslot: number;
-            /** Format: int32 */
-            timing_advance: number;
-            /** Format: int32 */
-            tsc: number;
-        };
-        /** @enum {string} */
-        GsmBand: "gsm450" | "gsm480" | "gsm850" | "gsm900" | "dcs1800" | "pcs1900";
-        /** @enum {string} */
-        GsmCcch: "separate" | "combined" | "two" | "three" | "four";
-        GsmCell: {
-            barred?: boolean;
-            ccch?: components["schemas"]["GsmCcch"] | null;
-            cell_channels?: number[];
-            /** Format: int32 */
-            cell_id?: number | null;
-            gprs?: boolean;
-            /** Format: int32 */
-            lac?: number | null;
-            mcc?: string | null;
-            mnc?: string | null;
-            /** Format: int32 */
-            ms_txpwr_max_cch?: number | null;
-            neighbours?: number[];
-            /** Format: int32 */
-            rxlev_access_min_dbm?: number | null;
-            system_information?: components["schemas"]["GsmSi"][];
-            /** Format: int32 */
-            t3212_min?: number | null;
-        };
-        /** @enum {string} */
-        GsmChannelType: "tch_f" | "tch_h" | "sdcch4" | "sdcch8" | "pdch";
-        GsmDedicated: {
-            /** Format: int32 */
-            cipher?: number | null;
-            frame: components["schemas"]["GsmLapdmFrame"];
-            identity?: components["schemas"]["GsmIdentity"] | null;
-            message?: string | null;
-            protocol?: components["schemas"]["GsmProtocol"] | null;
-            /** Format: int32 */
-            sapi: number;
-        };
-        GsmFrame: {
-            /** Format: int32 */
-            arfcn?: number | null;
-            band?: components["schemas"]["GsmBand"] | null;
-            /** Format: int32 */
-            bsic: number;
-            cgi?: string | null;
-            channel: components["schemas"]["GsmLogicalChannel"];
-            /** Format: int32 */
-            frame_number: number;
-            /** Format: float */
-            frequency_error_hz: number;
-            message: components["schemas"]["GsmMessage"];
-            raw: string;
-            /** Format: float */
-            snr_db: number;
-            /** Format: int32 */
-            subchannel?: number | null;
-            /** Format: int32 */
-            timeslot: number;
-        };
-        GsmHopping: {
-            /** Format: int32 */
-            hsn: number;
-            /** Format: int32 */
-            maio: number;
-        };
-        GsmIdentity: {
-            kind: components["schemas"]["GsmIdentityKind"];
-            value: string;
-        };
-        /** @enum {string} */
-        GsmIdentityKind: "imsi" | "imei" | "imeisv" | "tmsi";
-        /** @enum {string} */
-        GsmLapdmFrame: "i" | "rr" | "rnr" | "rej" | "sabm" | "dm" | "ui" | "disc" | "ua" | "frmr" | "unknown";
-        /** @enum {string} */
-        GsmLogicalChannel: "bcch" | "ccch" | "sdcch" | "sacch";
-        GsmMessage: {
-            cell: components["schemas"]["GsmCell"];
-            si: components["schemas"]["GsmSi"];
-            /** @enum {string} */
-            type: "system_information";
-        } | {
-            identities: components["schemas"]["GsmIdentity"][];
-            /** @enum {string} */
-            type: "paging";
-        } | {
-            assignments: components["schemas"]["GsmAssignment"][];
-            /** @enum {string} */
-            type: "immediate_assignment";
-        } | {
-            requests: number[];
-            /** @enum {string} */
-            type: "assignment_reject";
-        } | (components["schemas"]["GsmDedicated"] & {
-            /** @enum {string} */
-            type: "dedicated";
-        }) | {
-            /** Format: int32 */
-            message_type: number;
-            /** @enum {string} */
-            type: "other";
-        };
-        GsmParams: {
-            follow?: boolean;
-            paging?: boolean;
-        };
-        /** @enum {string} */
-        GsmProtocol: "rr" | "mm" | "cc" | "ss" | "sms" | "gmm" | "sm" | "other";
-        /** @enum {string} */
-        GsmSi: "si1" | "si2" | "si2bis" | "si2ter" | "si2quater" | "si3" | "si4" | "si5" | "si5bis" | "si5ter" | "si6" | "si7" | "si8" | "si9" | "si13";
         /** @enum {string} */
         Hand: "right" | "left" | "linear";
         /** @enum {string} */
         HeadingSource: "compass" | "course" | "fused" | "gnss" | "sensor";
-        /** @enum {string} */
-        HeightReference: "takeoff" | "ground";
         Held: {
             /** @enum {string} */
             by: "hand";
@@ -5682,16 +4263,6 @@ export interface components {
             array: string;
             /** Format: int32 */
             stream: number;
-        };
-        HfdlParams: Record<string, never>;
-        /** @enum {string} */
-        HotCommand: "status_request" | "emergency" | "other";
-        HotRequest: {
-            /** Format: int32 */
-            code: number;
-            command: components["schemas"]["HotCommand"];
-            /** Format: int32 */
-            copies: number;
         };
         /** @enum {string} */
         Hue: "accent" | "muted" | "blue" | "cyan" | "teal" | "green" | "amber" | "orange" | "violet" | "indigo" | "pink";
@@ -5788,74 +4359,12 @@ export interface components {
              */
             mount_offset_deg: number;
         };
-        IdentFeatures: {
-            /** Format: float */
-            carrier_db: number;
-            /** Format: float */
-            duty: number;
-            /** Format: float */
-            envelope_variation: number;
-            /** Format: int32 */
-            frequency_levels: number;
+        /** @description A closed range of a measured quantity, in the unit its field names. */
+        HzRange: {
             /** Format: double */
-            frequency_spread_hz: number;
-            /** Format: float */
-            keying_depth_db: number;
-            /** Format: float */
-            quartic_line_db: number;
-            /** Format: float */
-            spectral_asymmetry: number;
-            /** Format: float */
-            spectral_flatness: number;
-            /** Format: float */
-            square_line_db: number;
-        };
-        IdentParams: {
+            high: number;
             /** Format: double */
-            bandwidth_hz?: number;
-            /** Format: int32 */
-            interval_ms?: number;
-            /** Format: float */
-            threshold_db?: number;
-        };
-        IdentReport: {
-            signals?: components["schemas"]["IdentSignal"][];
-            /**
-             * Format: float
-             * @description The loudest bin over the noise floor, measured even when nothing crossed the threshold.
-             */
-            snr_db: number;
-        };
-        IdentSignal: {
-            /** Format: double */
-            bandwidth_hz: number;
-            /** Format: double */
-            burst_ms?: number | null;
-            /** Format: double */
-            burst_period_ms?: number | null;
-            candidates?: components["schemas"]["ProtocolMatch"][];
-            /** Format: double */
-            center_offset_hz: number;
-            /** Format: float */
-            confidence: number;
-            /** Format: double */
-            deviation_hz?: number | null;
-            features: components["schemas"]["IdentFeatures"];
-            /**
-             * Format: double
-             * @description Where the signal sits on the dial, in absolute Hz.
-             */
-            frequency_hz: number;
-            modulation: components["schemas"]["Modulation"];
-            /** Format: double */
-            ofdm_guard_us?: number | null;
-            /** Format: double */
-            ofdm_symbol_us?: number | null;
-            sideband?: components["schemas"]["Sideband"] | null;
-            /** Format: float */
-            snr_db: number;
-            /** Format: double */
-            symbol_rate_hz?: number | null;
+            low: number;
         };
         /**
          * @description Shapes the IF ahead of the demodulator, so a neighbour is cut before it can capture it.
@@ -5895,30 +4404,6 @@ export interface components {
             /** @enum {string} */
             kind: "custom";
         };
-        /** @enum {string} */
-        IlsComponent: "localizer" | "glideslope";
-        IlsParams: {
-            component?: components["schemas"]["IlsComponent"];
-            /** Format: int32 */
-            report_ms?: number;
-        };
-        IlsReading: {
-            component: components["schemas"]["IlsComponent"];
-            /** Format: float */
-            ddm: number;
-            /** Format: float */
-            deviation_dots: number;
-            /** Format: float */
-            modulation_90: number;
-            /** Format: float */
-            modulation_150: number;
-            /** Format: float */
-            signal_db: number;
-        };
-        InmarsatAeroParams: {
-            channel?: components["schemas"]["AeroChannel"];
-        };
-        InmarsatStdcParams: Record<string, never>;
         InvertedVParams: {
             /** Format: double */
             apex_angle_deg?: number;
@@ -5949,100 +4434,6 @@ export interface components {
         };
         /** @enum {string} */
         IqOrigin: "radio" | "synthetic" | "derived";
-        IridiumParams: {
-            span?: components["schemas"]["IridiumSpan"];
-        };
-        /** @enum {string} */
-        IridiumSpan: "channel" | "mhz1" | "mhz2_5" | "mhz5" | "mhz10";
-        /** @enum {string} */
-        IsmCoding: "pwm" | "ppm" | "pcm" | "manchester";
-        /** @enum {string} */
-        IsmIntegrity: "crc" | "checksum" | "repeats";
-        /** @enum {string} */
-        IsmKind: "wifi" | "bluetooth" | "ieee802154" | "microwave_oven" | "narrowband" | "wideband" | "continuous";
-        IsmKindLoad: {
-            /** Format: float */
-            airtime: number;
-            /** Format: int32 */
-            bursts: number;
-            centres_mhz?: number[];
-            kind: components["schemas"]["IsmKind"];
-            /** Format: float */
-            mean_us: number;
-            /** Format: float */
-            peak_dbfs: number;
-        };
-        IsmMessage: {
-            alarm?: boolean | null;
-            battery_ok?: boolean | null;
-            /** Format: int32 */
-            bits: number;
-            channel?: string | null;
-            coding: components["schemas"]["IsmCoding"];
-            /** Format: int32 */
-            command?: number | null;
-            contact_open?: boolean | null;
-            /** Format: int32 */
-            humidity_pct?: number | null;
-            id: string;
-            integrity: components["schemas"]["IsmIntegrity"];
-            /** Format: float */
-            light_lux?: number | null;
-            /** Format: int32 */
-            long_us?: number | null;
-            model: string;
-            modulation: components["schemas"]["IsmModulation"];
-            /** Format: float */
-            pressure_kpa?: number | null;
-            /** Format: float */
-            rain_mm?: number | null;
-            raw: string;
-            /** Format: int32 */
-            short_us?: number | null;
-            /** Format: float */
-            snr_db: number;
-            tamper?: boolean | null;
-            /** Format: float */
-            temperature_2_c?: number | null;
-            /** Format: float */
-            temperature_c?: number | null;
-            tristate?: string | null;
-            /** Format: float */
-            uv_index?: number | null;
-            /** Format: float */
-            wind_avg_m_s?: number | null;
-            /** Format: float */
-            wind_dir_deg?: number | null;
-            /** Format: float */
-            wind_max_m_s?: number | null;
-        };
-        /** @enum {string} */
-        IsmModulation: "ook" | "fsk";
-        IsmParams: {
-            unknown?: boolean;
-        };
-        IsmSurveyParams: {
-            /** Format: float */
-            margin_db?: number;
-            span?: components["schemas"]["AirtimeSpan"];
-        };
-        IsmSurveyReport: {
-            /** Format: float */
-            busy: number;
-            /** Format: int32 */
-            dropped?: number;
-            /** Format: float */
-            floor_dbfs?: number | null;
-            /** Format: double */
-            high_hz: number;
-            kinds: components["schemas"]["IsmKindLoad"][];
-            /** Format: double */
-            low_hz: number;
-            /** Format: float */
-            measured: number;
-            /** Format: int32 */
-            window_ms: number;
-        };
         /** @enum {string} */
         IssueScope: "settings" | "radio_id" | "contact" | "group_list" | "channel" | "zone" | "scan_list" | "extension";
         /** @enum {string} */
@@ -6051,7 +4442,7 @@ export interface components {
         ItuRegion: "r1" | "r2" | "r3";
         /** @enum {string} */
         Keeps: "history" | "clips" | "pictures";
-        KindSet: ("transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "same" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "wmbus" | "noise_figure" | "per" | "sid" | "stanag")[];
+        KindSet: string[];
         LaneLevel: {
             /** Format: float */
             peak_db: number;
@@ -6105,146 +4496,6 @@ export interface components {
             message: string;
             target: string;
         };
-        /** @enum {string} */
-        LoraBandwidth: "khz7_8" | "khz10_4" | "khz15_6" | "khz20_8" | "khz31_25" | "khz41_7" | "khz62_5" | "khz125" | "khz250" | "khz500";
-        /** @enum {string} */
-        LoraCodingRate: "4/5" | "4/6" | "4/7" | "4/8";
-        LoraFrame: {
-            /** Format: double */
-            bandwidth_hz: number;
-            coding_rate: components["schemas"]["LoraCodingRate"];
-            decoded?: components["schemas"]["LoraPayload"] | null;
-            /** Format: int32 */
-            fec_corrected: number;
-            /** Format: float */
-            frequency_error_hz: number;
-            implicit_header: boolean;
-            integrity: components["schemas"]["LoraIntegrity"];
-            inverted_iq: boolean;
-            low_data_rate: boolean;
-            payload: string;
-            /** Format: float */
-            snr_db: number;
-            /** Format: int32 */
-            spreading_factor: number;
-            /** Format: int32 */
-            sync_word: number;
-        };
-        LoraImplicitHeader: {
-            coding_rate?: components["schemas"]["LoraCodingRate"];
-            crc?: boolean;
-            /** Format: int32 */
-            length: number;
-        };
-        /** @enum {string} */
-        LoraIntegrity: "crc_ok" | "crc_failed" | "no_crc" | "header_failed";
-        /** @enum {string} */
-        LoraIq: "normal" | "inverted" | "both";
-        LoraKey: {
-            /** @enum {string} */
-            kind: "meshtastic_channel";
-            name: string;
-            psk: string;
-        } | {
-            /** @enum {string} */
-            kind: "meshcore_channel";
-            name: string;
-            secret: string;
-        } | {
-            app_s_key: string;
-            dev_addr: string;
-            /** @enum {string} */
-            kind: "lorawan_session";
-            nwk_s_key: string;
-        } | {
-            app_key: string;
-            /** @enum {string} */
-            kind: "lorawan_app_key";
-        };
-        LoraParams: {
-            bandwidth?: components["schemas"]["LoraBandwidth"];
-            implicit_header?: components["schemas"]["LoraImplicitHeader"] | null;
-            iq?: components["schemas"]["LoraIq"];
-            keys?: components["schemas"]["LoraKey"][];
-            protocol?: components["schemas"]["LoraProtocol"];
-            spreading_factor?: components["schemas"]["LoraSpreadingFactor"];
-        };
-        LoraPayload: (components["schemas"]["LorawanFrame"] & {
-            /** @enum {string} */
-            protocol: "lorawan";
-        }) | (components["schemas"]["MeshtasticPacket"] & {
-            /** @enum {string} */
-            protocol: "meshtastic";
-        }) | (components["schemas"]["MeshcorePacket"] & {
-            /** @enum {string} */
-            protocol: "meshcore";
-        });
-        /** @enum {string} */
-        LoraProtocol: "auto" | "raw" | "lorawan" | "meshtastic" | "meshcore";
-        /** @enum {string} */
-        LoraSpreadingFactor: "all" | "sf7" | "sf8" | "sf9" | "sf10" | "sf11" | "sf12";
-        LorawanFrame: {
-            ack?: boolean | null;
-            adr?: boolean | null;
-            adr_ack_req?: boolean | null;
-            cf_list_hz?: number[];
-            decrypted?: string | null;
-            dev_addr?: string | null;
-            dev_eui?: string | null;
-            /** Format: int32 */
-            dev_nonce?: number | null;
-            /** Format: int32 */
-            f_cnt?: number | null;
-            /** Format: int32 */
-            f_port?: number | null;
-            frm_payload?: string | null;
-            join_eui?: string | null;
-            /** Format: int32 */
-            join_nonce?: number | null;
-            mac_commands?: string[];
-            /** Format: int32 */
-            major: number;
-            message_type: components["schemas"]["LorawanMessageType"];
-            mic: string;
-            mic_ok?: boolean | null;
-            net_id?: string | null;
-            pending_or_class_b?: boolean | null;
-            /** Format: int32 */
-            rx_delay_s?: number | null;
-            /** Format: int32 */
-            rx1_dr_offset?: number | null;
-            /** Format: int32 */
-            rx2_data_rate?: number | null;
-        };
-        /** @enum {string} */
-        LorawanMessageType: "join_request" | "join_accept" | "unconfirmed_up" | "unconfirmed_down" | "confirmed_up" | "confirmed_down" | "rejoin_request" | "proprietary";
-        LrptImage: {
-            apids: number[];
-            complete: boolean;
-            /** Format: int32 */
-            duration_ms: number;
-            /** Format: int32 */
-            frames: number;
-            /** Format: int32 */
-            frames_corrected: number;
-            /** Format: int32 */
-            frames_failed: number;
-            /** Format: int32 */
-            lines: number;
-            mode: components["schemas"]["LrptMode"];
-            /** Format: int32 */
-            packets_lost: number;
-            /** Format: int32 */
-            seq: number;
-            /** Format: int32 */
-            width: number;
-        };
-        /** @enum {string} */
-        LrptMode: "qpsk72" | "oqpsk72" | "oqpsk80";
-        LrptParams: {
-            mode?: components["schemas"]["LrptMode"];
-        };
-        M17Params: Record<string, never>;
         MdnsState: {
             /** @enum {string} */
             state: "off";
@@ -6261,231 +4512,6 @@ export interface components {
         MergeMode: "replace" | "append" | "union";
         /** @enum {string} */
         MergePart: "contacts" | "group_lists" | "channels" | "zones" | "scan_lists" | "radio_ids" | "settings";
-        MeshcoreContent: {
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            name?: string | null;
-            node_type: components["schemas"]["MeshcoreNodeType"];
-            public_key: string;
-            signature_ok: boolean;
-            /** Format: int32 */
-            timestamp: number;
-            /** @enum {string} */
-            type: "advert";
-        } | {
-            channel?: string | null;
-            /** Format: int32 */
-            channel_hash: number;
-            sender?: string | null;
-            text?: string | null;
-            /** Format: int32 */
-            timestamp?: number | null;
-            /** @enum {string} */
-            type: "group_text";
-        } | {
-            channel?: string | null;
-            /** Format: int32 */
-            channel_hash: number;
-            data?: string | null;
-            /** Format: int32 */
-            data_type?: number | null;
-            /** @enum {string} */
-            type: "group_data";
-        } | {
-            destination: string;
-            mac: string;
-            source: string;
-            /** @enum {string} */
-            type: "encrypted";
-        } | {
-            destination: string;
-            public_key: string;
-            /** @enum {string} */
-            type: "anon_request";
-        } | {
-            /** Format: int32 */
-            checksum: number;
-            /** @enum {string} */
-            type: "ack";
-        } | {
-            /** Format: int32 */
-            auth_code: number;
-            /** Format: int32 */
-            flags: number;
-            hops: string[];
-            /** Format: int32 */
-            tag: number;
-            /** @enum {string} */
-            type: "trace";
-        } | {
-            data: string;
-            /** Format: int32 */
-            subtype: number;
-            /** @enum {string} */
-            type: "control";
-        } | {
-            data: string;
-            /** Format: int32 */
-            inner_type: number;
-            /** Format: int32 */
-            remaining: number;
-            /** @enum {string} */
-            type: "multipart";
-        } | {
-            data: string;
-            /** @enum {string} */
-            type: "raw";
-        };
-        /** @enum {string} */
-        MeshcoreNodeType: "none" | "chat" | "repeater" | "room" | "sensor" | "other";
-        MeshcorePacket: {
-            content: components["schemas"]["MeshcoreContent"];
-            path?: string[];
-            payload_type: components["schemas"]["MeshcorePayloadType"];
-            route: components["schemas"]["MeshcoreRoute"];
-            transport_codes?: number[];
-            /** Format: int32 */
-            version: number;
-        };
-        /** @enum {string} */
-        MeshcorePayloadType: "request" | "response" | "text" | "ack" | "advert" | "group_text" | "group_data" | "anon_request" | "path" | "trace" | "multipart" | "control" | "reserved" | "raw_custom";
-        /** @enum {string} */
-        MeshcoreRoute: "transport_flood" | "flood" | "direct" | "transport_direct";
-        MeshtasticContent: {
-            text: string;
-            /** @enum {string} */
-            type: "text";
-        } | {
-            /** Format: int32 */
-            altitude_m?: number | null;
-            /** Format: int32 */
-            ground_speed_kmh?: number | null;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            /** Format: int32 */
-            precision_bits?: number | null;
-            /** Format: int32 */
-            satellites?: number | null;
-            /** Format: int32 */
-            time?: number | null;
-            /** @enum {string} */
-            type: "position";
-        } | {
-            /** Format: int32 */
-            hw_model?: number | null;
-            id: string;
-            licensed: boolean;
-            long_name: string;
-            public_key?: string | null;
-            /** Format: int32 */
-            role?: number | null;
-            short_name: string;
-            /** @enum {string} */
-            type: "node_info";
-        } | {
-            kind: string;
-            metrics: components["schemas"]["MeshtasticMetric"][];
-            /** Format: int32 */
-            time?: number | null;
-            /** @enum {string} */
-            type: "telemetry";
-        } | {
-            error?: string | null;
-            route?: number[];
-            /** @enum {string} */
-            type: "routing";
-        } | {
-            route: number[];
-            route_back: number[];
-            snr_back_db: number[];
-            snr_towards_db: number[];
-            /** @enum {string} */
-            type: "traceroute";
-        } | {
-            neighbors: components["schemas"]["MeshtasticNeighbor"][];
-            /** Format: int32 */
-            node: number;
-            /** @enum {string} */
-            type: "neighbor_info";
-        } | {
-            description: string;
-            /** Format: int32 */
-            expire?: number | null;
-            /** Format: int32 */
-            id: number;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            name: string;
-            /** @enum {string} */
-            type: "waypoint";
-        } | {
-            /** Format: int32 */
-            altitude_m?: number | null;
-            firmware_version: string;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            long_name: string;
-            /** Format: int32 */
-            online_nodes?: number | null;
-            short_name: string;
-            /** @enum {string} */
-            type: "map_report";
-        } | {
-            bytes: string;
-            /** @enum {string} */
-            type: "data";
-        };
-        /** @enum {string} */
-        MeshtasticEncryption: "open" | "channel" | "pki" | "unknown";
-        MeshtasticMetric: {
-            name: string;
-            /** Format: double */
-            value: number;
-        };
-        MeshtasticNeighbor: {
-            /** Format: int32 */
-            node: number;
-            /** Format: float */
-            snr_db: number;
-        };
-        MeshtasticPacket: {
-            channel?: string | null;
-            /** Format: int32 */
-            channel_hash: number;
-            content?: components["schemas"]["MeshtasticContent"] | null;
-            encryption: components["schemas"]["MeshtasticEncryption"];
-            /** Format: int32 */
-            from: number;
-            /** Format: int32 */
-            hop_limit: number;
-            /** Format: int32 */
-            hop_start: number;
-            /** Format: int32 */
-            id: number;
-            /** Format: int32 */
-            next_hop: number;
-            /** Format: int32 */
-            port?: number | null;
-            port_name?: string | null;
-            /** Format: int32 */
-            relay_node: number;
-            /** Format: int32 */
-            reply_id?: number | null;
-            /** Format: int32 */
-            request_id?: number | null;
-            /** Format: int32 */
-            to: number;
-            via_mqtt: boolean;
-            want_ack: boolean;
-        };
         Mission: components["schemas"]["MissionBody"] & {
             controls?: components["schemas"]["MissionControl"][];
             label: string;
@@ -6600,17 +4626,6 @@ export interface components {
         };
         /** @enum {string} */
         Modulation: "none" | "carrier" | "ook" | "am" | "ssb" | "fm" | "fsk2" | "fsk4" | "fsk8" | "psk2" | "psk4" | "ofdm" | "chirp" | "noise_like" | "unknown";
-        MorseParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-            /** Format: float */
-            wpm?: number | null;
-        };
-        MorseText: {
-            text: string;
-            /** Format: float */
-            wpm: number;
-        };
         /** @enum {string} */
         Multi: "one" | "many" | "many_lanes";
         NanoVnaAntenna: {
@@ -6830,10 +4845,6 @@ export interface components {
             /** Format: int64 */
             stop_hz: number;
         };
-        NavGuide: {
-            from?: components["schemas"]["LatLon"] | null;
-            target?: components["schemas"]["NavTarget"] | null;
-        };
         /** @enum {string} */
         NavMode: "auto" | "direct" | "off";
         NavTarget: {
@@ -6851,20 +4862,6 @@ export interface components {
         };
         /** @enum {string} */
         NavTargetKind: "probe" | "estimate";
-        NavtexMessage: {
-            complete: boolean;
-            /** Format: int32 */
-            errors_corrected: number;
-            /** Format: int32 */
-            serial?: number | null;
-            station?: string | null;
-            subject?: string | null;
-            subject_name?: string | null;
-            text: string;
-        };
-        NavtexParams: {
-            invert?: boolean;
-        };
         /** @enum {string} */
         NetworkExportAction: "start" | "stop";
         NetworkExportNode: components["schemas"]["NetworkExportSettings"];
@@ -6904,23 +4901,6 @@ export interface components {
         NetworkSampleFormat: "cf32_le" | "ci16_le" | "cu8";
         /** @enum {string} */
         NetworkTransport: "udp" | "tcp" | "rtl_tcp";
-        NfmParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-            compander?: boolean;
-            /** Format: double */
-            ctcss_hz?: number | null;
-            /** Format: int32 */
-            dcs_code?: number | null;
-            /** Format: double */
-            inversion_hz?: number | null;
-            scrambler_mode?: components["schemas"]["NfmScramblerMode"];
-            tone_mode?: components["schemas"]["NfmToneMode"];
-        };
-        /** @enum {string} */
-        NfmScramblerMode: "off" | "inversion" | "auto";
-        /** @enum {string} */
-        NfmToneMode: "off" | "detect" | "ctcss" | "dcs";
         NodeActed: {
             /** @enum {string} */
             result: "controlled";
@@ -7021,9 +5001,9 @@ export interface components {
             /** @enum {string} */
             kind: "spectrum_monitor";
         } | {
-            data: components["schemas"]["DmrTrunkNode"];
+            data: components["schemas"]["TrunkNode"];
             /** @enum {string} */
-            kind: "dmr_trunk";
+            kind: "trunk";
         } | {
             data: components["schemas"]["EventFilterNode"];
             /** @enum {string} */
@@ -7118,7 +5098,7 @@ export interface components {
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "dmr_trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "triangulation" | "note";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "triangulation" | "note";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -7140,29 +5120,6 @@ export interface components {
             /** Format: float */
             threshold?: number;
         };
-        NoiseFigureParams: {
-            /** Format: float */
-            enr_db?: number;
-        };
-        NoiseFigureReport: {
-            /** Format: float */
-            cold_dbfs?: number | null;
-            /** Format: float */
-            hot_dbfs?: number | null;
-            /** Format: float */
-            level_dbfs: number;
-            /** Format: float */
-            nf_db?: number | null;
-            /** Format: float */
-            settled_s: number;
-            source_on?: boolean | null;
-            /** Format: float */
-            temperature_k?: number | null;
-            /** Format: int32 */
-            window_ms: number;
-            /** Format: float */
-            y_db?: number | null;
-        };
         /** @enum {string} */
         NoiseModel: "measured" | "white";
         /** @enum {string} */
@@ -7182,10 +5139,17 @@ export interface components {
             reason: string;
             to: components["schemas"]["PortRef"];
         };
-        /** @enum {string} */
-        NxdnBandwidth: "narrow" | "wide";
-        NxdnParams: {
-            bandwidth?: components["schemas"]["NxdnBandwidth"];
+        NumberSpec: {
+            /** Format: double */
+            max?: number | null;
+            /** Format: double */
+            min?: number | null;
+            /** @description Unset is allowed and shows this placeholder. */
+            optional?: string | null;
+            presets?: components["schemas"]["ParamOption"][];
+            /** Format: double */
+            step?: number | null;
+            unit?: string | null;
         };
         OccupancyBucket: {
             by_hour: number[];
@@ -7223,11 +5187,6 @@ export interface components {
             /** @enum {string} */
             state: "superseded";
         };
-        /** @enum {string} */
-        OperatorLocationType: "takeoff" | "live_gnss" | "fixed" | "reserved";
-        P25Params: Record<string, never>;
-        /** @enum {string} */
-        PagerPayload: "tone" | "numeric" | "alpha" | "binary";
         PairingOffer: {
             code: string;
             endpoint: components["schemas"]["PhoneEndpoint"];
@@ -7264,16 +5223,6 @@ export interface components {
         ParamChoice: {
             name: string;
             options: components["schemas"]["ParamOption"][];
-        };
-        /** @description The range a numeric decoder setting is accepted in, named by its field in the params struct. */
-        ParamLimit: {
-            /** Format: double */
-            max: number;
-            /** Format: double */
-            min: number;
-            name: string;
-            /** Format: double */
-            step?: number | null;
         };
         ParamOption: {
             label: string;
@@ -7415,6 +5364,7 @@ export interface components {
         };
         PatchCatalog: {
             event_kinds: components["schemas"]["EventKindEntry"][];
+            feeds?: components["schemas"]["FeedEntry"][];
             nodes: components["schemas"]["NodeTypeInfo"][];
             port_types: components["schemas"]["PortTypeInfo"][];
         };
@@ -7477,35 +5427,6 @@ export interface components {
             /** Format: int32 */
             id: number;
             name: string;
-        };
-        /** @enum {string} */
-        PerBaud: "baud1200" | "baud2400" | "baud4800" | "baud9600";
-        PerParams: {
-            baud?: components["schemas"]["PerBaud"];
-            /** Format: int32 */
-            payload_bytes?: number;
-        };
-        PerReport: {
-            /** Format: float */
-            ber?: number | null;
-            /** Format: int64 */
-            bit_errors: number;
-            /** Format: int64 */
-            bits: number;
-            /** Format: int64 */
-            errored: number;
-            /** Format: int64 */
-            expected: number;
-            /** Format: int32 */
-            last_sequence?: number | null;
-            /** Format: int64 */
-            missed: number;
-            /** Format: float */
-            per: number;
-            /** Format: int64 */
-            received: number;
-            /** Format: int32 */
-            restarts?: number;
         };
         Phone: {
             created_at: string;
@@ -7603,28 +5524,6 @@ export interface components {
             /** Format: int64 */
             total_samples: number;
         };
-        /** @enum {string} */
-        PocsagBaud: "auto" | "b512" | "b1200" | "b2400";
-        PocsagMessage: {
-            /** Format: int32 */
-            address: number;
-            /** Format: int32 */
-            baud: number;
-            /** Format: int32 */
-            errors_corrected: number;
-            /** Format: int32 */
-            function: number;
-            payload: components["schemas"]["PocsagPayload"];
-            text: string;
-        };
-        PocsagParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-            baud?: components["schemas"]["PocsagBaud"];
-            invert?: boolean;
-        };
-        /** @enum {string} */
-        PocsagPayload: "tone" | "numeric" | "alpha";
         Pointer: {
             at?: components["schemas"]["Position"] | null;
             dragging?: components["schemas"]["DraggedNode"][];
@@ -7846,6 +5745,12 @@ export interface components {
             spot?: components["schemas"]["Spot"] | null;
             summary: string;
             text?: string | null;
+            track?: components["schemas"]["TrackFix"] | null;
+            /**
+             * @description Whether the payload passed its integrity check, when it carries one. `Some(false)` also
+             *     marks a payload that says nothing about the signal being decoded, such as a tone.
+             */
+            verified?: boolean | null;
             voice?: components["schemas"]["VoiceFacts"] | null;
         };
         PresetDevice: {
@@ -7861,6 +5766,14 @@ export interface components {
             /** Format: int64 */
             id: number;
             name: string;
+        };
+        PresetOption: {
+            label: string;
+            title?: string | null;
+            /** @description Setting key to value, written together when chosen. */
+            values: {
+                [key: string]: unknown;
+            };
         };
         PresetSnapshot: {
             devices?: components["schemas"]["PresetDevice"][];
@@ -7997,24 +5910,6 @@ export interface components {
             stations?: components["schemas"]["PropagationCell"][];
             summary: components["schemas"]["PropagationSummary"];
         };
-        ProtocolMatch: {
-            confirmed?: boolean;
-            name: string;
-            /** Format: float */
-            score: number;
-            type_id?: string | null;
-            why: string;
-        };
-        /** @enum {string} */
-        PskBaud: "psk31" | "psk63" | "psk125" | "psk250";
-        PskParams: {
-            baud?: components["schemas"]["PskBaud"];
-            invert?: boolean;
-        };
-        PskText: {
-            baud: components["schemas"]["PskBaud"];
-            text: string;
-        };
         QueueHealth: {
             /** Format: int64 */
             capacity: number;
@@ -8091,7 +5986,7 @@ export interface components {
             track_id?: number | null;
         };
         RadarFix: {
-            alt_from_adsb?: boolean;
+            alt_from_truth?: boolean;
             /** Format: float */
             alt_m: number;
             /** Format: double */
@@ -8198,14 +6093,9 @@ export interface components {
             /** Format: double */
             lon: number;
         };
-        RadarSites: {
-            geometry?: components["schemas"]["RadarGeometry"] | null;
-            ranges_km?: number[];
-        };
         RadarTrack: {
             /** Format: float */
             accel_mps2: number;
-            adsb?: components["schemas"]["AdsbMatch"] | null;
             aoa?: components["schemas"]["RadarAoa"] | null;
             /** Format: float */
             doppler_hz: number;
@@ -8228,26 +6118,7 @@ export interface components {
             snr_db: number;
             state: components["schemas"]["TrackState"];
             trail: components["schemas"]["RadarTrailPoint"][];
-        };
-        RadarTrackEvent: {
-            /** Format: float */
-            bearing_deg?: number | null;
-            change: components["schemas"]["TrackChange"];
-            /** Format: float */
-            doppler_hz: number;
-            icao?: string | null;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            /** Format: float */
-            range_km: number;
-            /** Format: float */
-            range_rate_mps: number;
-            /** Format: float */
-            snr_db: number;
-            /** Format: int32 */
-            track_id: number;
+            truth?: components["schemas"]["TrackMatch"] | null;
         };
         RadarTrailPoint: {
             /** Format: float */
@@ -8265,25 +6136,8 @@ export interface components {
             /** Format: int64 */
             seq: number;
             tracks: components["schemas"]["RadarTrack"][];
-            truth: components["schemas"]["AdsbTruth"][];
+            truth: components["schemas"]["TrackTruth"][];
         };
-        RadioClockFrame: {
-            datetime: string;
-            dst?: boolean;
-            /** Format: float */
-            dut1_seconds?: number | null;
-            leap_warning?: boolean;
-            standard: components["schemas"]["RadioClockStandard"];
-            symbols: string;
-            /** Format: int32 */
-            utc_offset_minutes?: number | null;
-        };
-        RadioClockParams: {
-            invert?: boolean;
-            standard?: components["schemas"]["RadioClockStandard"];
-        };
-        /** @enum {string} */
-        RadioClockStandard: "dcf77" | "wwvb" | "msf" | "jjy";
         RadioFeatures: {
             dcs_tones: boolean;
             dual_zone_lists: boolean;
@@ -8357,45 +6211,6 @@ export interface components {
         RadioModelsResponse: {
             models: components["schemas"]["RadioModelDescriptor"][];
         };
-        RadiosondeFrame: {
-            /** Format: double */
-            altitude_m?: number | null;
-            /** Format: float */
-            battery_v?: number | null;
-            /** Format: double */
-            climb_ms?: number | null;
-            /** Format: int32 */
-            errors_corrected: number;
-            forecast?: components["schemas"]["SondeForecast"] | null;
-            /** Format: int32 */
-            frame?: number | null;
-            /** Format: double */
-            heading_deg?: number | null;
-            /** Format: float */
-            humidity_pct?: number | null;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            /** Format: float */
-            pressure_hpa?: number | null;
-            /** Format: int32 */
-            satellites?: number | null;
-            serial: string;
-            sonde: components["schemas"]["SondeType"];
-            /** Format: double */
-            speed_ms?: number | null;
-            /** Format: float */
-            temperature_c?: number | null;
-            time?: string | null;
-        };
-        RadiosondeParams: {
-            /** Format: int32 */
-            burst_m?: number | null;
-            /** Format: int32 */
-            ground_m?: number | null;
-            sonde?: components["schemas"]["SondeType"] | null;
-        };
         Range: {
             /** Format: double */
             max: number;
@@ -8403,24 +6218,6 @@ export interface components {
             min: number;
             /** Format: double */
             step?: number | null;
-        };
-        RdsUpdate: {
-            alt_freqs_hz?: number[];
-            /** Format: int64 */
-            block_errors: number;
-            /** Format: int64 */
-            blocks: number;
-            /** Format: int64 */
-            groups: number;
-            music?: boolean | null;
-            pi?: string | null;
-            ps?: string | null;
-            /** Format: int32 */
-            pty?: number | null;
-            pty_name?: string | null;
-            radiotext?: string | null;
-            ta?: boolean | null;
-            tp?: boolean | null;
         };
         Reach: {
             kinds?: components["schemas"]["KindSet"];
@@ -8540,125 +6337,6 @@ export interface components {
         };
         /** @enum {string} */
         ReferenceMode: "raw" | "cma" | "dab_remod";
-        RemoteIdFrame: {
-            address: string;
-            /** Format: int32 */
-            channel?: number | null;
-            /** Format: int32 */
-            counter?: number | null;
-            /** Format: float */
-            level_dbfs: number;
-            messages: components["schemas"]["RemoteIdMessage"][];
-            phy: components["schemas"]["RemoteIdPhy"];
-            ssid?: string | null;
-            transport: components["schemas"]["RemoteIdTransport"];
-            uas_id?: string | null;
-        };
-        /** @enum {string} */
-        RemoteIdLink: "bluetooth" | "bluetooth_band" | "wifi";
-        RemoteIdLocation: {
-            /** Format: float */
-            geodetic_altitude_m?: number | null;
-            /** Format: float */
-            height_m?: number | null;
-            height_reference: components["schemas"]["HeightReference"];
-            /** Format: float */
-            horizontal_accuracy_m?: number | null;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            /** Format: float */
-            pressure_accuracy_m?: number | null;
-            /** Format: float */
-            pressure_altitude_m?: number | null;
-            /** Format: float */
-            seconds_after_hour?: number | null;
-            /** Format: float */
-            speed_accuracy_mps?: number | null;
-            /** Format: float */
-            speed_mps?: number | null;
-            status: components["schemas"]["UaStatus"];
-            /** Format: float */
-            timestamp_accuracy_s?: number | null;
-            /** Format: float */
-            track_deg?: number | null;
-            /** Format: float */
-            vertical_accuracy_m?: number | null;
-            /** Format: float */
-            vertical_speed_mps?: number | null;
-        };
-        RemoteIdMessage: {
-            id_type: components["schemas"]["UasIdType"];
-            /** @enum {string} */
-            type: "basic_id";
-            ua_type: components["schemas"]["UaType"];
-            uas_id: string;
-        } | (components["schemas"]["RemoteIdLocation"] & {
-            /** @enum {string} */
-            type: "location";
-        }) | {
-            auth_type: components["schemas"]["AuthType"];
-            data: string;
-            /** Format: int32 */
-            last_page?: number | null;
-            /** Format: int32 */
-            length?: number | null;
-            /** Format: int32 */
-            page: number;
-            /** Format: int64 */
-            timestamp?: number | null;
-            /** @enum {string} */
-            type: "authentication";
-        } | {
-            /** Format: int32 */
-            description_type: number;
-            text: string;
-            /** @enum {string} */
-            type: "self_id";
-        } | (components["schemas"]["RemoteIdSystem"] & {
-            /** @enum {string} */
-            type: "system";
-        }) | {
-            /** Format: int32 */
-            id_type: number;
-            operator_id: string;
-            /** @enum {string} */
-            type: "operator_id";
-        } | {
-            data: string;
-            /** Format: int32 */
-            message_type: number;
-            /** @enum {string} */
-            type: "unknown";
-        };
-        RemoteIdParams: {
-            link?: components["schemas"]["RemoteIdLink"];
-        };
-        /** @enum {string} */
-        RemoteIdPhy: "le1m" | "le_coded_s8" | "le_coded_s2" | "dsss1m" | "dsss2m" | "cck5m5" | "cck11m" | "ofdm";
-        RemoteIdSystem: {
-            /** Format: float */
-            area_ceiling_m?: number | null;
-            /** Format: int32 */
-            area_count: number;
-            /** Format: float */
-            area_floor_m?: number | null;
-            /** Format: int32 */
-            area_radius_m: number;
-            classification?: components["schemas"]["EuClassification"] | null;
-            /** Format: float */
-            operator_altitude_m?: number | null;
-            /** Format: double */
-            operator_lat?: number | null;
-            operator_location_type: components["schemas"]["OperatorLocationType"];
-            /** Format: double */
-            operator_lon?: number | null;
-            /** Format: int64 */
-            timestamp?: number | null;
-        };
-        /** @enum {string} */
-        RemoteIdTransport: "bluetooth_legacy" | "bluetooth_extended" | "wifi_beacon" | "wifi_beacon_french" | "wifi_beacon_dji" | "wifi_nan";
         RenamePhoneRequest: {
             name: string;
         };
@@ -8751,20 +6429,6 @@ export interface components {
             position?: components["schemas"]["SkyPoint"] | null;
             target?: components["schemas"]["SkyPoint"] | null;
         };
-        RttyParams: {
-            /** Format: double */
-            baud?: number;
-            invert?: boolean;
-            /** Format: double */
-            shift_hz?: number;
-            stop_bits?: components["schemas"]["RttyStopBits"];
-            unshift_on_space?: boolean;
-        };
-        /** @enum {string} */
-        RttyStopBits: "one" | "one_and_half" | "two";
-        RttyText: {
-            text: string;
-        };
         Runs: {
             reason: components["schemas"]["UnboundReason"];
             /** @enum {string} */
@@ -8795,91 +6459,11 @@ export interface components {
             /** @enum {string} */
             runs: "server";
         };
-        SameAlert: {
-            event: string;
-            event_name?: string | null;
-            /** Format: int32 */
-            issued_day: number;
-            /** Format: int32 */
-            issued_hour: number;
-            /** Format: int32 */
-            issued_minute: number;
-            locations: components["schemas"]["SameLocation"][];
-            originator: string;
-            originator_name?: string | null;
-            station: string;
-            /** Format: int32 */
-            valid_minutes: number;
-        };
-        SameBody: (components["schemas"]["SameAlert"] & {
-            /** @enum {string} */
-            header: "alert";
-        }) | {
-            /** @enum {string} */
-            header: "end_of_message";
-        };
-        SameLocation: {
-            /** Format: int32 */
-            county: number;
-            name?: string | null;
-            /** Format: int32 */
-            part: number;
-            /** Format: int32 */
-            state: number;
-        };
-        SameMessage: {
-            body: components["schemas"]["SameBody"];
-            /** Format: int32 */
-            copies: number;
-            raw: string;
-        };
-        SameParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-        };
-        /** @enum {string} */
-        SarsatBeacon: "epirb" | "elt" | "plb" | "ship_security" | "test" | "other";
-        SarsatMessage: {
-            beacon: components["schemas"]["SarsatBeacon"];
-            /** Format: int32 */
-            country: number;
-            /** Format: int32 */
-            errors_corrected: number;
-            hex_id: string;
-            homing?: boolean | null;
-            identity?: string | null;
-            /** Format: double */
-            lat?: number | null;
-            /** Format: double */
-            lon?: number | null;
-            long: boolean;
-            message: string;
-            pdf2_ok?: boolean | null;
-            protocol: components["schemas"]["SarsatProtocol"];
-            self_test: boolean;
-        };
-        SarsatParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-        };
-        /** @enum {string} */
-        SarsatProtocol: "maritime_user" | "radio_call_sign_user" | "aviation_user" | "serial_user" | "national_user" | "test_user" | "orbitography" | "second_generation" | "standard_location" | "ship_security" | "national_location" | "rls_location" | "elt_dt_location" | "standard_test" | "national_test" | "spare";
         SatelliteCatalogResponse: {
             /** Format: int64 */
             fetched?: number;
             satellites: components["schemas"]["CatalogSatellite"][];
             source: string;
-        };
-        SatelliteFix: {
-            catalog?: string | null;
-            /** Format: double */
-            doppler_hz?: number | null;
-            ground?: components["schemas"]["SatelliteGround"] | null;
-            ground_track?: components["schemas"]["LatLon"][];
-            look?: components["schemas"]["SatelliteLook"] | null;
-            name?: string | null;
-            next_pass?: components["schemas"]["SatellitePass"] | null;
-            visible?: boolean;
         };
         SatelliteGround: {
             /** Format: double */
@@ -9081,50 +6665,6 @@ export interface components {
             /** Format: int32 */
             stop_min: number;
         };
-        ScramblerStatus: {
-            /** Format: double */
-            confidence: number;
-            /** Format: double */
-            inversion_hz?: number | null;
-        };
-        /** @description The sea area an Inmarsat EGC call is addressed to: its C3 address field, read as geometry. */
-        SeaArea: {
-            /** Format: int32 */
-            east_deg: number;
-            /** @enum {string} */
-            kind: "rectangle";
-            /** Format: int32 */
-            north_deg: number;
-            south_west: components["schemas"]["LatLon"];
-        } | {
-            center: components["schemas"]["LatLon"];
-            /** @enum {string} */
-            kind: "circle";
-            /** Format: int32 */
-            radius_nm: number;
-        } | {
-            /** @enum {string} */
-            kind: "navarea";
-            /** Format: int32 */
-            number: number;
-        } | {
-            /** @enum {string} */
-            kind: "coastal";
-            letter?: string | null;
-            /** Format: int32 */
-            navarea: number;
-        };
-        SelcallParams: {
-            system?: components["schemas"]["SelcallSystem"];
-        };
-        SelcallSequence: {
-            code: string;
-            system: components["schemas"]["SelcallSystem"];
-            /** Format: int32 */
-            tone_ms: number;
-        };
-        /** @enum {string} */
-        SelcallSystem: "ccir1" | "zvei1";
         SerialDeviceInfo: {
             manufacturer?: string | null;
             path: string;
@@ -9139,9 +6679,9 @@ export interface components {
             devices: components["schemas"]["SerialDeviceInfo"][];
         };
         ServerEvent: {
-            data: components["schemas"]["BeastExportStatus"];
+            data: components["schemas"]["FeedStatus"];
             /** @enum {string} */
-            type: "BeastExportStatus";
+            type: "FeedStatus";
         } | {
             data: components["schemas"]["EventOutputStatus"];
             /** @enum {string} */
@@ -9258,10 +6798,10 @@ export interface components {
         } | {
             data: {
                 node: string;
-                status: components["schemas"]["BroadcastStatus"];
+                status: components["schemas"]["ChannelStatus"];
             };
             /** @enum {string} */
-            type: "ChannelBroadcast";
+            type: "ChannelStatus";
         } | {
             data: {
                 status: components["schemas"]["SatelliteStatus"];
@@ -9383,6 +6923,22 @@ export interface components {
             uptime_secs: number;
             version: string;
         };
+        /**
+         * @description One setting on a decoder's form, keyed by its field in the decoder's settings object. A
+         *     dotted key (`header.length`) names a field of a nested object.
+         */
+        SettingField: {
+            control: components["schemas"]["Control"];
+            /** @description What the control shows and commits first while the setting is unset. */
+            fallback?: unknown;
+            key: string;
+            label: string;
+            /** @description Values that mean the setting is off, so the control renders muted. */
+            quiet?: unknown[];
+            title?: string | null;
+            /** @description Shown only while every one of these holds. */
+            when?: components["schemas"]["Condition"][];
+        };
         SettingsRefused: {
             error: string;
             settings: string[];
@@ -9430,33 +6986,6 @@ export interface components {
             /** @enum {string} */
             shape: "polygon";
         };
-        /** @enum {string} */
-        Sideband: "usb" | "lsb";
-        SidParams: {
-            /** Format: int32 */
-            report_s?: number;
-            /** Format: float */
-            threshold_db?: number;
-        };
-        SidReport: {
-            /** Format: float */
-            floor_dbfs_hz: number;
-            stations: components["schemas"]["SidStationLevel"][];
-            /** Format: int32 */
-            window_ms: number;
-        };
-        SidStationLevel: {
-            /** Format: float */
-            baseline_dbfs?: number | null;
-            call: string;
-            disturbed?: boolean;
-            /** Format: double */
-            frequency_hz: number;
-            /** Format: float */
-            level_dbfs: number;
-            /** Format: float */
-            snr_db: number;
-        };
         SignalMapNode: {
             /**
              * Format: int64
@@ -9468,6 +6997,31 @@ export interface components {
              * @default 0
              */
             offset_hz: number;
+        };
+        /** @description One way a decoder's signal shows on the air. */
+        SignalSignature: {
+            bandwidth_hz: components["schemas"]["HzRange"];
+            burst_hint_ms?: components["schemas"]["HzRange"] | null;
+            burst_ms?: components["schemas"]["HzRange"] | null;
+            deviation_hz?: components["schemas"]["HzRange"] | null;
+            /** @description Where the service is allocated; empty for anywhere. */
+            frequencies?: components["schemas"]["HzRange"][];
+            modulations: components["schemas"]["Modulation"][];
+            name: string;
+            /** Format: float */
+            prior?: number;
+            symbol_rate_hz?: components["schemas"]["HzRange"] | null;
+            symbol_us?: components["schemas"]["HzRange"] | null;
+            why: string;
+        };
+        /**
+         * @description How Signal ID proves a signal is a decoder's: it runs the decoder on the signal and waits for
+         *     an event of a `proof` kind whose payload does not fail its own integrity check.
+         */
+        SignalTrial: {
+            proof: components["schemas"]["EventKind"][];
+            /** @description Settings tried side by side; empty tries the decoder's defaults. */
+            settings?: components["schemas"]["ChannelParams"][];
         };
         SinkFeed: {
             entities: components["schemas"]["Entity"][];
@@ -9502,18 +7056,6 @@ export interface components {
             /** Format: double */
             elevation_deg: number;
         };
-        SondeForecast: {
-            burst: components["schemas"]["LatLon"];
-            /** Format: double */
-            burst_altitude_m: number;
-            burst_seen: boolean;
-            landing: components["schemas"]["LatLon"];
-            /** Format: double */
-            landing_in_s: number;
-            path?: components["schemas"]["LatLon"][];
-        };
-        /** @enum {string} */
-        SondeType: "rs41" | "dfm" | "m10" | "m20" | "imet4";
         /** @enum {string} */
         SourceRule: "dominance" | "mdl";
         /** @enum {string} */
@@ -9619,61 +7161,6 @@ export interface components {
             margin_db: number;
             /** @enum {string} */
             mode: "auto";
-        };
-        SsbParams: {
-            /** Format: double */
-            bandwidth_hz?: number;
-            sideband?: components["schemas"]["Sideband"];
-        };
-        /** @enum {string} */
-        SstvMode: "robot36" | "robot72" | "martin_m1" | "martin_m2" | "scottie_s1" | "scottie_s2" | "scottie_dx" | "pd50" | "pd90" | "pd120" | "pd180" | "sc2180";
-        /** @enum {string} */
-        SstvModulation: "usb" | "lsb" | "fm" | "am";
-        SstvParams: {
-            keep_partial?: boolean;
-            mode?: components["schemas"]["SstvMode"] | null;
-            modulation?: components["schemas"]["SstvModulation"];
-            slant_correction?: boolean;
-        };
-        SstvPicture: {
-            complete: boolean;
-            /** Format: int32 */
-            duration_ms: number;
-            /** Format: int32 */
-            height: number;
-            /** Format: int32 */
-            lines: number;
-            mode: components["schemas"]["SstvMode"];
-            /** Format: int32 */
-            seq: number;
-            /** Format: int32 */
-            width: number;
-        };
-        /** @enum {string} */
-        StanagInterleave: "zero" | "short" | "long";
-        /** @enum {string} */
-        StanagModem: "stanag_4285" | "stanag_4529" | "mil_std_188_110a" | "stanag_4539" | "thirty_nine_tone" | "sixteen_tone" | "ale_2g";
-        StanagParams: {
-            /** Format: int32 */
-            window_s?: number;
-        };
-        StanagRate: {
-            /** Format: int32 */
-            bps: number;
-            interleave: components["schemas"]["StanagInterleave"];
-            voice?: boolean;
-        };
-        StanagReport: {
-            /** Format: float */
-            audio_hz: number;
-            /** Format: float */
-            bandwidth_hz: number;
-            /** Format: float */
-            confidence: number;
-            /** Format: double */
-            frequency_hz?: number | null;
-            modem?: components["schemas"]["StanagModem"] | null;
-            rate?: components["schemas"]["StanagRate"] | null;
         };
         StateScope: {
             /** @enum {string} */
@@ -9813,20 +7300,6 @@ export interface components {
             /** Format: int32 */
             stream: number;
             tuning?: components["schemas"]["Tuning"] | null;
-        };
-        SuperframeStatus: {
-            /** Format: int32 */
-            format: number;
-            /** Format: int32 */
-            payload: number;
-            /** Format: int32 */
-            pilot?: number | null;
-            /** Format: int32 */
-            reference: number;
-            /** Format: int32 */
-            sosf: number;
-            /** Format: int32 */
-            trailer?: number | null;
         };
         SurfaceFit: {
             /** Format: int32 */
@@ -9972,119 +7445,6 @@ export interface components {
         TemplatesResponse: {
             templates: components["schemas"]["TemplateInfo"][];
         };
-        TetraParams: Record<string, never>;
-        TetrapolAddress: {
-            /** Format: int32 */
-            id: number;
-            kind: components["schemas"]["TetrapolAddressKind"];
-        };
-        /** @enum {string} */
-        TetrapolAddressKind: "terminal" | "random" | "group" | "object" | "all_stations";
-        /** @enum {string} */
-        TetrapolBand: "uhf" | "vhf";
-        /** @enum {string} */
-        TetrapolCallType: "open_channel" | "internal" | "broadcast" | "external";
-        TetrapolCell: {
-            /** Format: int32 */
-            bn: number;
-            /** Format: int32 */
-            bs: number;
-            /** Format: int32 */
-            rsw: number;
-        };
-        TetrapolGroupCall: {
-            call_type: components["schemas"]["TetrapolCallType"];
-            /** Format: int32 */
-            channel?: number | null;
-            /** Format: int32 */
-            coverage: number;
-            /** Format: int32 */
-            downlink_scrambling?: number | null;
-            /** Format: int32 */
-            group: number;
-            key: components["schemas"]["TetrapolKey"];
-            /** Format: int32 */
-            uplink_scrambling?: number | null;
-        };
-        TetrapolKey: {
-            /** Format: int32 */
-            index: number;
-            /** Format: int32 */
-            kind: number;
-        };
-        /** @enum {string} */
-        TetrapolLogicalChannel: "broadcast" | "paging" | "signalling" | "traffic" | "unknown";
-        TetrapolMessage: {
-            address?: components["schemas"]["TetrapolAddress"] | null;
-            channel: components["schemas"]["TetrapolLogicalChannel"];
-            data: string;
-            /** Format: int32 */
-            frame?: number | null;
-            payload: components["schemas"]["TetrapolPayload"];
-            /** Format: int32 */
-            rejected: number;
-            /** Format: int32 */
-            scrambling: number;
-        };
-        TetrapolParams: {
-            band?: components["schemas"]["TetrapolBand"];
-            /** Format: int32 */
-            scrambling?: number | null;
-        };
-        TetrapolPayload: (components["schemas"]["TetrapolSystemInfo"] & {
-            /** @enum {string} */
-            message: "system_info";
-        }) | (components["schemas"]["TetrapolGroupCall"] & {
-            /** @enum {string} */
-            message: "group_activation";
-        }) | (components["schemas"]["TetrapolGroupCall"] & {
-            /** @enum {string} */
-            message: "group_paging";
-        }) | {
-            /** Format: int32 */
-            cause: number;
-            /** @enum {string} */
-            message: "group_idle";
-        } | {
-            /** Format: int32 */
-            cause: number;
-            /** @enum {string} */
-            message: "group_end";
-        } | {
-            /** @enum {string} */
-            message: "paging";
-            terminals: components["schemas"]["TetrapolAddress"][];
-        } | {
-            /** @enum {string} */
-            message: "voice";
-            /** Format: float */
-            seconds: number;
-        } | {
-            /** Format: int32 */
-            codop: number;
-            /** @enum {string} */
-            message: "other";
-            name: string;
-        };
-        TetrapolSystemInfo: {
-            cell: components["schemas"]["TetrapolCell"];
-            ciphered: boolean;
-            /** Format: int32 */
-            control_channel?: number | null;
-            /** Format: int32 */
-            country?: number | null;
-            home_only: boolean;
-            /** Format: int32 */
-            location_area?: number | null;
-            /** Format: int32 */
-            mode: number;
-            /** Format: int32 */
-            network?: number | null;
-            /** Format: int32 */
-            superframe?: number | null;
-            /** Format: int32 */
-            uplink_scrambling: number;
-        };
         /** @enum {string} */
         TimeSlot: "one" | "two";
         Tone: {
@@ -10098,13 +7458,6 @@ export interface components {
             inverted: boolean;
             /** @enum {string} */
             kind: "dcs";
-        };
-        ToneSquelchStatus: {
-            /** Format: double */
-            ctcss_hz?: number | null;
-            /** Format: int32 */
-            dcs_code?: number | null;
-            open: boolean;
         };
         /** @enum {string} */
         ToolCategory: "calculator" | "instrument" | "reference";
@@ -10136,8 +7489,6 @@ export interface components {
         ToolsResponse: {
             tools: components["schemas"]["ToolDescriptor"][];
         };
-        /** @enum {string} */
-        TrackChange: "confirmed" | "update" | "lost";
         TrackerParams: {
             /**
              * Format: int32
@@ -10170,30 +7521,50 @@ export interface components {
              */
             max_accel_mps2: number;
         };
-        /** @enum {string} */
-        TrackState: "confirmed" | "coasting";
-        Transmission: {
-            audio?: components["schemas"]["EventAudio"] | null;
-            decoder?: string | null;
-            decoder_confirmed?: boolean;
-            /** Format: int64 */
-            duration_ms: number;
-            /** Format: int64 */
-            end_sample: number;
-            ended_at?: string | null;
-            error?: string | null;
-            /** Format: int64 */
-            id: number;
+        /** @description A moving target as a passive radar checks it: where it is and how it moves. */
+        TrackFix: {
             /** Format: double */
-            sample_rate_hz: number;
-            signal: components["schemas"]["IdentSignal"];
-            /** Format: int64 */
-            start_sample: number;
-            started_at?: string | null;
-            state: components["schemas"]["TransmissionState"];
+            altitude_m?: number | null;
+            /** Format: double */
+            climb_mps?: number | null;
+            /** Format: double */
+            course_deg?: number | null;
+            id: string;
+            label?: string | null;
+            /** Format: double */
+            lat?: number | null;
+            /** Format: double */
+            lon?: number | null;
+            /** Format: double */
+            speed_mps?: number | null;
+        };
+        TrackMatch: {
+            callsign?: string | null;
+            id: string;
         };
         /** @enum {string} */
-        TransmissionState: "started" | "completed" | "continued" | "interrupted" | "problem";
+        TrackState: "confirmed" | "coasting";
+        TrackTruth: {
+            /** Format: float */
+            age_s: number;
+            /** Format: float */
+            altitude_m: number;
+            /** Format: float */
+            bearing_deg: number;
+            callsign?: string | null;
+            /** Format: float */
+            doppler_hz: number;
+            id: string;
+            in_view: boolean;
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lon: number;
+            /** Format: float */
+            range_km: number;
+            /** Format: int32 */
+            track_id?: number | null;
+        };
         Transmitter: {
             alive: boolean;
             description: string;
@@ -10259,6 +7630,12 @@ export interface components {
             logical_channel: number;
             source: components["schemas"]["TrunkChannelSource"];
         };
+        TrunkChannelEntry: {
+            /** Format: int64 */
+            freq_hz: number;
+            /** Format: int32 */
+            lcn: number;
+        };
         /** @enum {string} */
         TrunkChannelSource: "announced" | "manual" | "learned" | "predicted";
         TrunkControl: {
@@ -10268,6 +7645,12 @@ export interface components {
             device_set: number;
             /** Format: int64 */
             freq_hz: number;
+        };
+        TrunkDiscovery: {
+            enabled?: boolean;
+            /** Format: int32 */
+            max_probes?: number;
+            ranges?: components["schemas"]["TrunkSearchRange"][];
         };
         TrunkFollower: {
             /** Format: int32 */
@@ -10280,6 +7663,19 @@ export interface components {
             logical_channel?: number | null;
             /** Format: int32 */
             slot: number;
+        };
+        TrunkNode: {
+            channel_map?: components["schemas"]["TrunkChannelEntry"][];
+            /** Format: int64 */
+            control_hz?: number | null;
+            /**
+             * @description The decoder the system's control and traffic channels run; empty picks the first
+             *     registered decoder that can trunk.
+             */
+            decoder?: string;
+            discovery?: components["schemas"]["TrunkDiscovery"];
+            ignore_crc?: boolean;
+            protocol?: components["schemas"]["TrunkProtocol"];
         };
         TrunkProbe: {
             /** Format: int32 */
@@ -10300,6 +7696,16 @@ export interface components {
             since: string;
             /** Format: int32 */
             slot: number;
+        };
+        /** @enum {string} */
+        TrunkProtocol: "auto" | "capacity_plus" | "hytera_xpt" | "tier_three";
+        TrunkSearchRange: {
+            /** Format: int64 */
+            end_hz: number;
+            /** Format: int64 */
+            start_hz: number;
+            /** Format: int64 */
+            step_hz: number;
         };
         TrunkSystemStatus: {
             /**
@@ -10327,12 +7733,6 @@ export interface components {
         /** @enum {string} */
         Tuning: "auto" | "manual";
         /** @enum {string} */
-        UasIdType: "none" | "serial_number" | "caa_registration" | "utm_assigned" | "specific_session" | "french_identifier" | "reserved";
-        /** @enum {string} */
-        UaStatus: "undeclared" | "ground" | "airborne" | "emergency" | "system_failure" | "reserved";
-        /** @enum {string} */
-        UaType: "none" | "aeroplane" | "rotorcraft" | "gyroplane" | "hybrid_lift" | "ornithopter" | "glider" | "kite" | "free_balloon" | "captive_balloon" | "airship" | "parachute" | "rocket" | "tethered_aircraft" | "ground_obstacle" | "other";
-        /** @enum {string} */
         UlaSide: "both" | "front" | "back";
         /** @enum {string} */
         UnboundReason: "not_wired" | "no_radio" | "radio_absent" | "radio_closed" | "not_placed" | "not_running" | "stopped" | "waiting";
@@ -10354,9 +7754,6 @@ export interface components {
             /** Format: int32 */
             vid: number;
         };
-        Vdl2Params: Record<string, never>;
-        /** @enum {string} */
-        Vendor: "standard" | "etsi" | "motorola" | "hytera" | "harris" | "tait" | "jvc_kenwood" | "emc" | "radio_activity" | "flyde_micro" | "prod_el" | "unknown";
         VirtualLane: {
             /** Format: double */
             center_hz: number;
@@ -10367,35 +7764,6 @@ export interface components {
             /** Format: int32 */
             stream: number;
         };
-        VoiceCall: {
-            audio?: components["schemas"]["EventAudio"] | null;
-            audio_error?: string | null;
-            /** Format: int32 */
-            channel: number;
-            /** Format: int32 */
-            color_code?: number | null;
-            /** Format: int32 */
-            destination?: number | null;
-            /** Format: int32 */
-            device_set: number;
-            /** Format: int64 */
-            duration_ms: number;
-            emergency: boolean;
-            encrypted: boolean;
-            ended_at: string;
-            /** Format: double */
-            freq_hz: number;
-            group_call?: boolean | null;
-            /** Format: int64 */
-            id: number;
-            mode: string;
-            node: string;
-            /** Format: int32 */
-            slot?: number | null;
-            /** Format: int32 */
-            source?: number | null;
-            started_at: string;
-        };
         VoiceFacts: {
             /** Format: int32 */
             destination?: number | null;
@@ -10404,96 +7772,10 @@ export interface components {
             /** Format: int32 */
             source?: number | null;
         };
-        VorParams: {
-            /** Format: double */
-            magnetic_declination_deg?: number;
-            /** Format: int32 */
-            report_ms?: number;
-            station?: string | null;
-            /** Format: double */
-            station_lat?: number | null;
-            /** Format: double */
-            station_lon?: number | null;
-        };
-        VorReading: {
-            /** Format: float */
-            confidence: number;
-            /** Format: double */
-            magnetic_declination_deg: number;
-            /** Format: double */
-            radial_deg: number;
-            /** Format: double */
-            reference_phase_deg: number;
-            /** Format: float */
-            signal_db: number;
-            station?: string | null;
-            /** Format: double */
-            station_lat?: number | null;
-            /** Format: double */
-            station_lon?: number | null;
-            /** Format: double */
-            variable_phase_deg: number;
-        };
         /** @enum {string} */
         WebhookFormat: "json" | "discord";
         /** @enum {string} */
         Weekday: "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
-        /** @enum {string} */
-        WefaxIoc: "ioc576" | "ioc288";
-        /** @enum {string} */
-        WefaxLpm: "lpm60" | "lpm90" | "lpm120" | "lpm240";
-        WefaxParams: {
-            ioc?: components["schemas"]["WefaxIoc"];
-            keep_partial?: boolean;
-            lpm?: components["schemas"]["WefaxLpm"];
-        };
-        WefaxPicture: {
-            complete: boolean;
-            /** Format: int32 */
-            duration_ms: number;
-            ioc: components["schemas"]["WefaxIoc"];
-            /** Format: int32 */
-            lines: number;
-            lpm: components["schemas"]["WefaxLpm"];
-            /** Format: int32 */
-            seq: number;
-            /** Format: int32 */
-            width: number;
-        };
-        WfmParams: {
-            /** Format: float */
-            deemphasis_us?: number;
-            stereo?: boolean;
-        };
-        /** @enum {string} */
-        WifiBand: "ghz2_4" | "ghz5" | "ghz6";
-        WifiChannelLoad: {
-            band: components["schemas"]["WifiBand"];
-            /** Format: float */
-            busy: number;
-            /** Format: double */
-            centre_hz: number;
-            /** Format: float */
-            floor_dbfs?: number | null;
-            /** Format: float */
-            level_dbfs?: number | null;
-            /** Format: int32 */
-            number: number;
-            /** Format: float */
-            peak_dbfs?: number | null;
-        };
-        WifiOccupancyParams: {
-            /** Format: float */
-            margin_db?: number;
-            span?: components["schemas"]["AirtimeSpan"];
-        };
-        WifiOccupancyReport: {
-            channels: components["schemas"]["WifiChannelLoad"][];
-            /** Format: float */
-            measured: number;
-            /** Format: int32 */
-            window_ms: number;
-        };
         /** @enum {string} */
         Winding: "clockwise" | "counter_clockwise";
         WireVerdict: {
@@ -10504,60 +7786,6 @@ export interface components {
             from: components["schemas"]["PortRef"];
             graph: components["schemas"]["PatchGraph"];
         };
-        /** @enum {string} */
-        WmbusFormat: "a" | "b";
-        /** @enum {string} */
-        WmbusFunction: "instantaneous" | "maximum" | "minimum" | "error";
-        WmbusKey: {
-            key: string;
-            meter: string;
-        };
-        WmbusMessage: {
-            /** Format: int32 */
-            access?: number | null;
-            /** Format: int32 */
-            ci?: number | null;
-            /** Format: int32 */
-            control: number;
-            /** Format: int32 */
-            corrected?: number;
-            /** Format: int32 */
-            device_type: number;
-            format: components["schemas"]["WmbusFormat"];
-            frame: string;
-            id: string;
-            manufacturer: string;
-            mode: components["schemas"]["WmbusMode"];
-            records?: components["schemas"]["WmbusRecord"][];
-            security?: components["schemas"]["WmbusSecurity"];
-            /** Format: float */
-            snr_db: number;
-            /** Format: int32 */
-            status?: number | null;
-            /** Format: int32 */
-            version: number;
-            via?: string | null;
-        };
-        /** @enum {string} */
-        WmbusMode: "s" | "t" | "c";
-        WmbusParams: {
-            keys?: components["schemas"]["WmbusKey"][];
-        };
-        /** @enum {string} */
-        WmbusQuantity: "energy" | "volume" | "mass" | "on_time" | "operating_time" | "power" | "volume_flow" | "mass_flow" | "flow_temperature" | "return_temperature" | "temperature_difference" | "external_temperature" | "pressure" | "date" | "date_time" | "heat_cost_units" | "averaging_duration" | "actuality_duration" | "fabrication_number" | "identification" | "humidity" | "error_flags" | "dimensionless" | "battery_days" | "other";
-        WmbusRecord: {
-            function?: components["schemas"]["WmbusFunction"];
-            quantity: components["schemas"]["WmbusQuantity"];
-            /** Format: int32 */
-            storage?: number;
-            /** Format: int32 */
-            tariff?: number;
-            text?: string | null;
-            /** Format: double */
-            value?: number | null;
-        };
-        /** @enum {string} */
-        WmbusSecurity: "none" | "decrypted" | "no_key" | "wrong_key" | "unsupported";
         WorkspaceArray: {
             node: string;
             tune: components["schemas"]["ArrayTune"];
@@ -10676,7 +7904,7 @@ export interface components {
          *     frequency the search confirmed is not an edit to what the operator drew.
          */
         WorkspaceTrunk: {
-            channels?: components["schemas"]["DmrChannelEntry"][];
+            channels?: components["schemas"]["TrunkChannelEntry"][];
             /**
              * Format: int32
              * @description Which site the plan belongs to. Neighbouring sites of one system repeat logical channel
@@ -10692,55 +7920,12 @@ export interface components {
         WrittenSerial: {
             serial: string;
         };
-        WsjtMessage: {
-            /** Format: float */
-            audio_hz: number;
-            /** Format: int32 */
-            hard_errors: number;
-            /** Format: float */
-            snr_db: number;
-            text: string;
-            /** Format: float */
-            time_offset_s: number;
-        };
-        WsjtParams: {
-            /** Format: float */
-            audio_high_hz?: number;
-            /** Format: float */
-            audio_low_hz?: number;
-            /** Format: int32 */
-            max_candidates?: number;
-        };
-        WsprParams: {
-            /** Format: float */
-            audio_high_hz?: number;
-            /** Format: float */
-            audio_low_hz?: number;
-            /** Format: int32 */
-            max_candidates?: number;
-        };
-        WsprSpot: {
-            /** Format: float */
-            audio_hz: number;
-            callsign: string;
-            /** Format: float */
-            drift_hz: number;
-            grid?: string | null;
-            /** Format: int32 */
-            power_dbm: number;
-            /** Format: float */
-            snr_db: number;
-            text: string;
-            /** Format: float */
-            time_offset_s: number;
-        };
         YagiParams: {
             /** Format: int32 */
             directors?: number;
             /** Format: double */
             spacing_wavelengths?: number;
         };
-        YsfParams: Record<string, never>;
         Zone: {
             channels_a?: string[];
             channels_b?: string[];

@@ -11,6 +11,7 @@ reaches it. A bind other machines can reach needs `--token`, or startup is refus
 | `--bind <ADDRESS>` | `127.0.0.1:8080` | Listen address; a non-loopback one needs `--token` |
 | `--db <PATH>` | `sdrmm/sdrmm.db` in the platform data folder | SQLite database |
 | `--recordings-dir <PATH>` | `sdrmm/recordings` in the platform data folder | Recording folder |
+| `--plugins-dir <PATH>` | `sdrmm/plugins` in the platform data folder | [Decoder plugins](../development/plugins.md) |
 | `--token <TOKEN>` | None | Shared access token |
 | `--tls-cert <PATH>`, `--tls-key <PATH>` | None | HTTPS certificate chain and key, PEM; always together |
 | `--tls-self-signed` | Off | HTTPS with a self-signed certificate |

@@ -1,7 +1,7 @@
 use sdrmm_dsp::radar::bistatic::{self, Geodetic};
 use sdrmm_wire::{
-    AdsbTruth, PositionFix, RadarAoa, RadarFix, RadarGeometry, RadarProblem, RadarSite, RadarTrack,
-    RadarUpdate,
+    PositionFix, RadarAoa, RadarFix, RadarGeometry, RadarProblem, RadarSite, RadarTrack,
+    RadarUpdate, TrackTruth,
 };
 
 use super::truth;
@@ -104,7 +104,7 @@ pub(crate) fn true_bearings(update: &mut RadarUpdate, heading_deg: f64) {
     }
 }
 
-fn target_altitude(track: &RadarTrack, truth: &[AdsbTruth], assumed_m: f32) -> (f32, bool) {
+fn target_altitude(track: &RadarTrack, truth: &[TrackTruth], assumed_m: f32) -> (f32, bool) {
     truth
         .iter()
         .find(|sighting| sighting.track_id == Some(track.id))
@@ -127,7 +127,7 @@ fn locate(track: &RadarTrack, sites: truth::Baseline, altitude: (f32, bool)) -> 
         lat: located.point.lat_deg,
         lon: located.point.lon_deg,
         alt_m: altitude.0,
-        alt_from_adsb: altitude.1,
+        alt_from_truth: altitude.1,
         major_m: located.major_m as f32,
         minor_m: located.minor_m as f32,
         orientation_deg: located.orientation_deg as f32,

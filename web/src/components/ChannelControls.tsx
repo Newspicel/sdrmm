@@ -1,11 +1,14 @@
-import type { BroadcastStatus, ChannelDescriptor, ChannelSettings } from "../lib/types";
+import { statusChoices } from "../lib/channelStatus";
+import type { ChannelDescriptor, ChannelSettings, ChannelStatus } from "../lib/types";
 import type { ChannelEdit } from "../lib/useChannelPatch";
 import { BlankerChip } from "./BlankerControl";
 import {
   AUDIO_LIMITS,
   channelFrequencyHz,
   channelHasAudio,
+  paramsWith,
   radioWindowHz,
+  settledParams,
   squelchMarginDb,
 } from "./channelSettings";
 import { inTuningRange, type Range } from "./dial";
@@ -13,7 +16,7 @@ import { FrequencyDial } from "./FrequencyDial";
 import { Chips, NumberChip } from "./face/Chips";
 import { formatMhz } from "./format";
 import { IfFilterChip } from "./IfFilterControl";
-import { ModeChips } from "./ModeChips";
+import { SettingsForm } from "./SettingsForm";
 import { TuneTo } from "./TuneTo";
 import { TuningLock } from "./TuningLock";
 
@@ -83,24 +86,23 @@ export function ChannelControls({
   settings,
   descriptor,
   onEdit,
-  broadcast,
+  status,
 }: {
   settings: ChannelSettings;
   descriptor: ChannelDescriptor | undefined;
   onEdit: (edit: ChannelEdit) => void;
-  broadcast?: BroadcastStatus;
+  status?: ChannelStatus;
 }) {
   const audio = channelHasAudio(descriptor);
+  const params = settledParams(settings.params, descriptor?.defaults?.params);
   return (
     <Chips>
       {audio && <MarginChip settings={settings} onEdit={onEdit} />}
-      <ModeChips
-        params={settings.params}
-        defaults={descriptor?.defaults?.params}
-        broadcast={broadcast}
-        limits={descriptor?.limits ?? []}
-        choices={descriptor?.choices ?? []}
-        onParams={(params) => onEdit({ params })}
+      <SettingsForm
+        form={descriptor?.settings ?? []}
+        settings={params.settings ?? {}}
+        choices={statusChoices(status)}
+        onSettings={(next) => onEdit({ params: paramsWith(params.type, next) })}
       />
       {audio && (
         <BlankerChip

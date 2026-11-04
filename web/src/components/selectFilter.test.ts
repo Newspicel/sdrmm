@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { optionMatches } from "./selectFilter";
 
-const ADSB = { value: "adsb", label: "ADS-B" };
+const ADSB = { value: "plane", label: "ADS-B" };
 const CTCSS = { value: "nfm_ctcss", label: "NFM voice · CTCSS 88.5" };
 const DVBS2 = { value: "dvbs2", label: "DVB-S2" };
 
 describe("optionMatches", () => {
   it("matches the name however the mode is punctuated", () => {
-    expect(optionMatches(ADSB, "adsb")).toBe(true);
+    expect(optionMatches(ADSB, "plane")).toBe(true);
     expect(optionMatches(ADSB, "ADS-B")).toBe(true);
     expect(optionMatches(ADSB, "ads b")).toBe(true);
     expect(optionMatches(DVBS2, "dvb s2")).toBe(true);
@@ -31,7 +31,7 @@ describe("optionMatches", () => {
   });
 
   it("offers nothing that does not match", () => {
-    expect(optionMatches(ADSB, "pocsag")).toBe(false);
+    expect(optionMatches(ADSB, "pager")).toBe(false);
     expect(optionMatches(CTCSS, "dvbt")).toBe(false);
   });
 });

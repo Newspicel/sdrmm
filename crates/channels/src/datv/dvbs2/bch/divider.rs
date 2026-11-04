@@ -1,3 +1,5 @@
+use sdrmm_dsp::word_msb;
+
 const LIMBS: usize = 3;
 pub(super) const MAX_PARITY: usize = 64 * LIMBS;
 
@@ -48,11 +50,11 @@ impl Divider {
     pub(super) fn remainder(&self, word: &[bool]) -> Remainder {
         let (lead, rest) = word.split_at(word.len() % 8);
         let mut state = [0u64; LIMBS];
-        state[0] = u64::from(pack(lead));
+        state[0] = word_msb(lead);
         for chunk in rest.as_chunks::<8>().0 {
             let top = top_byte(&state, self.parity);
             state = and(shl(&state, 8), &self.mask);
-            state[0] |= u64::from(pack(chunk));
+            state[0] |= word_msb(chunk);
             state = xor(state, &self.table[usize::from(top)]);
         }
         state
@@ -70,10 +72,6 @@ pub(super) fn set_bits(remainder: &Remainder) -> impl Iterator<Item = usize> + '
             })
         })
     })
-}
-
-fn pack(bits: &[bool]) -> u8 {
-    bits.iter().fold(0, |byte, &bit| byte << 1 | u8::from(bit))
 }
 
 fn bit(value: &Remainder, index: usize) -> bool {

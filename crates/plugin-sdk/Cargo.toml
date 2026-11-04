@@ -1,0 +1,21 @@
+[package]
+name = "sdrmm-plugin"
+description = "Write sdr-- decoders as WASM plugins"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+sdrmm-wire.workspace = true
+sdrmm-dsp.workspace = true
+sdrmm-modem.workspace = true
+num-complex.workspace = true
+serde.workspace = true
+serde_json.workspace = true

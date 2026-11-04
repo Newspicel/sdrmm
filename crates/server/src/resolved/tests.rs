@@ -155,7 +155,7 @@ fn a_scanner_step_publishes_nothing() {
         .engine
         .create_device_set("virtual:band")
         .expect("radio");
-    let settings = ChannelSettings::default_for("nfm").expect("nfm");
+    let settings = sdrmm_channels::default_settings("nfm").expect("nfm");
     let channel = bench
         .engine
         .add_channel_for(set, 0, settings.clone(), Some("voice"))

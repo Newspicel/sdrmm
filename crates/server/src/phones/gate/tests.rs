@@ -1,6 +1,6 @@
 use std::{net::IpAddr, time::Duration};
 
-use sdrmm_wire::phone::{MAX_PAIR_HOSTS, key_check};
+use sdrmm_wire::{phone::MAX_PAIR_HOSTS, phone::key_check};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::{listener::Cut, *};

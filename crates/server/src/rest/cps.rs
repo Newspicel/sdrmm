@@ -1,9 +1,10 @@
 use sdrmm_cps::{convert::fit, merge::merge, model, models};
-use sdrmm_wire::cps::{
-    CpsCodeplugDetail, CpsCodeplugRequest, CpsConvertRequest, CpsConvertResponse, CpsDevice,
-    CpsDeviceRequest, CpsIdentifyRequest, CpsJob, CpsJobsResponse, CpsLibraryResponse,
-    CpsMergeRequest, CpsPortsResponse, CpsReadRequest, CpsUser, CpsUserRequest, CpsWriteRequest,
-    RadioIdent, RadioModelsResponse,
+use sdrmm_wire::{
+    cps::CpsCodeplugDetail, cps::CpsCodeplugRequest, cps::CpsConvertRequest,
+    cps::CpsConvertResponse, cps::CpsDevice, cps::CpsDeviceRequest, cps::CpsIdentifyRequest,
+    cps::CpsJob, cps::CpsJobsResponse, cps::CpsLibraryResponse, cps::CpsMergeRequest,
+    cps::CpsPortsResponse, cps::CpsReadRequest, cps::CpsUser, cps::CpsUserRequest,
+    cps::CpsWriteRequest, cps::RadioIdent, cps::RadioModelsResponse,
 };
 
 use super::*;

@@ -2,7 +2,9 @@ use std::f64::consts::TAU;
 
 use num_complex::Complex;
 
-use super::demod::{RRC_BETA, SampleFir, rrc_taps};
+use sdrmm_dsp::design_rrc_unit_energy;
+
+use super::demod::{RRC_BETA, SampleFir};
 
 const SHAPING_TAPS: usize = 161;
 const SHAPING_MAX_RATE: f64 = 96_000.0;
@@ -22,7 +24,12 @@ pub fn modulate(
         baseband.resize(end.max(baseband.len()), Complex::new(level, 0.0));
     }
     let shaped = if sample_rate <= SHAPING_MAX_RATE {
-        SampleFir::new(rrc_taps(RRC_BETA, samples_per_symbol, SHAPING_TAPS)).filter(&baseband)
+        SampleFir::new(design_rrc_unit_energy(
+            samples_per_symbol,
+            RRC_BETA,
+            SHAPING_TAPS,
+        ))
+        .filter(&baseband)
     } else {
         baseband
     };

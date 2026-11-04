@@ -1,3 +1,7 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, KindSpec, Modulation, SettingField, SignalSignature};
+mod model;
+pub use model::*;
 mod ambe;
 pub(crate) mod dmr;
 pub(crate) mod dpmr;
@@ -19,13 +23,13 @@ pub use freedv::FreeDvChannel;
 pub use m17::M17Channel;
 pub use nxdn::NxdnChannel;
 pub use p25::P25Channel;
-use sdrmm_dsp::{Decimator, design_lowpass, fec::conv::CONFIDENT};
+use sdrmm_dsp::{Decimator, design_lowpass, fec::conv::CONFIDENT, word_msb};
 use sdrmm_modem::{
     cpm::{CpmDemod, CpmParams, KnownSymbols, Mapping, TIMING_BW_BURST},
     pulse::{self, Norm},
     soft::SoftBit,
 };
-use sdrmm_wire::NxdnBandwidth;
+
 pub use ysf::YsfChannel;
 
 use crate::{ChannelFilter, ChannelOutputs};
@@ -223,6 +227,42 @@ pub(crate) struct ModeSignature {
 
 const IDENT_SHORT_SYNC_TOLERANCE: u32 = 1;
 
+pub(crate) const LAND_MOBILE: &[HzRange] = &[
+    HzRange::mhz(136.0, 174.0),
+    HzRange::mhz(400.0, 470.0),
+    HzRange::mhz(769.0, 870.0),
+];
+
+pub(crate) const AMATEUR_VU: &[HzRange] = &[HzRange::mhz(144.0, 148.0), HzRange::mhz(430.0, 450.0)];
+
+impl ModeSignature {
+    fn signature(&self, frequencies: &[HzRange]) -> SignalSignature {
+        let modulation = if self.params.mapping().m() == 4 {
+            Modulation::Fsk4
+        } else {
+            Modulation::Fsk2
+        };
+        SignalSignature::new(
+            self.name,
+            &[modulation],
+            HzRange::about(self.bandwidth_hz, 0.35),
+            "matches the mode's channel width, symbol rate and deviation",
+        )
+        .symbol_rate(HzRange::about(self.baud, 0.05))
+        .deviation(HzRange::about(self.deviation_hz, 0.3))
+        .on(frequencies)
+    }
+}
+
+/// Signal ID signatures of the modes `type_id` decodes, built from their waveform data.
+pub(crate) fn mode_signatures(type_id: &str, frequencies: &[HzRange]) -> Vec<SignalSignature> {
+    MODE_SIGNATURES
+        .iter()
+        .filter(|mode| mode.type_id == type_id)
+        .map(|mode| mode.signature(frequencies))
+        .collect()
+}
+
 struct C4fm {
     name: &'static str,
     type_id: &'static str,
@@ -402,28 +442,57 @@ pub(crate) fn invert_dibits(bits: &mut [bool]) {
 }
 
 pub(crate) fn bits_to_u32(bits: &[bool], offset: usize, len: usize) -> u32 {
-    bits[offset..offset + len]
-        .iter()
-        .fold(0u32, |acc, &b| acc << 1 | u32::from(b))
+    word_msb(&bits[offset..offset + len]) as u32
 }
 
-pub(crate) fn pack_bytes(bits: &[bool], out: &mut Vec<u8>) {
-    out.clear();
-    for chunk in bits.as_chunks::<8>().0 {
-        out.push(chunk.iter().fold(0u8, |acc, &b| acc << 1 | u8::from(b)));
-    }
+fn p25_signatures() -> Vec<SignalSignature> {
+    mode_signatures("p25", LAND_MOBILE)
+}
+
+pub(crate) fn p25_decoder() -> Native<P25Params> {
+    Native::new::<P25Channel>(|_| p25::occupied_band())
+        .filter(|_| Ok(p25::channel_filter()))
+        .signatures(p25_signatures)
+        .form(p25_form)
+        .kinds(p25_kinds)
+}
+
+pub(crate) fn p25_form() -> Vec<SettingField> {
+    Vec::new()
+}
+
+fn p25_kinds() -> Vec<KindSpec> {
+    vec![]
+}
+
+fn m17_signatures() -> Vec<SignalSignature> {
+    mode_signatures("m17", AMATEUR_VU)
+}
+
+pub(crate) fn m17_decoder() -> Native<M17Params> {
+    Native::new::<M17Channel>(|_| m17::occupied_band())
+        .filter(|_| Ok(m17::channel_filter()))
+        .signatures(m17_signatures)
+        .form(m17_form)
+        .kinds(m17_kinds)
+}
+
+pub(crate) fn m17_form() -> Vec<SettingField> {
+    Vec::new()
+}
+
+fn m17_kinds() -> Vec<KindSpec> {
+    vec![]
 }
 
 #[cfg(test)]
 mod tests {
-    use num_complex::Complex;
-    use sdrmm_wire::ChannelSettings;
-
     use super::INPUT_RATE_HZ;
     use crate::{ChannelCtx, ChannelOutputs, ChannelRx, synth::dv as tx};
+    use num_complex::Complex;
 
     fn channel(type_id: &str) -> Box<dyn ChannelRx> {
-        let settings = ChannelSettings::default_for(type_id).expect("channel settings");
+        let settings = crate::default_settings(type_id).expect("channel settings");
         crate::create(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
@@ -498,7 +567,7 @@ mod tests {
 #[cfg(test)]
 pub(crate) mod testutil {
     use num_complex::Complex;
-    use sdrmm_wire::{DecoderEvent, DvFrame};
+    use sdrmm_wire::DvFrame;
 
     use super::INPUT_RATE_HZ;
     use crate::{AUDIO_RATE, ChannelOutputs, ChannelRx};
@@ -528,9 +597,9 @@ pub(crate) mod testutil {
             chan.process(&iq[pos..end], &mut out);
             audio.extend_from_slice(&out.audio_pcm);
             for event in out.events.drain(..) {
-                match event {
-                    DecoderEvent::Dv(frame) => frames.push(frame),
-                    other => panic!("unexpected {} event", other.kind()),
+                match event.read::<DvFrame>() {
+                    Some(frame) => frames.push(frame),
+                    None => panic!("unexpected {} event", event.kind),
                 }
             }
             pos = end;

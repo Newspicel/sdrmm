@@ -1,13 +1,11 @@
 use num_complex::Complex;
 use sdrmm_dsp::{Ddc, RealDecimator, design_lowpass};
-use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecoderEvent, IdentSignal, LoraBandwidth, LoraIntegrity,
-    LoraIq, LoraSpreadingFactor, Modulation, Sideband, SpectrumMonitorNode,
-};
+use sdrmm_wire::{ChannelDescriptor, DecoderEvent, IdentSignal, SpectrumMonitorNode};
 
+use crate::ident::Catalog;
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, audio_channels,
-    channel_filter, create, descriptor,
+    channel_filter, create,
 };
 
 const MIN_ANALOG_SCORE: f32 = 0.7;
@@ -31,19 +29,24 @@ pub(super) struct Decoder {
     frequency_hz: f64,
 }
 
-pub(super) fn choices(signal: &IdentSignal, settings: &SpectrumMonitorNode) -> Vec<String> {
+pub(super) fn choices(
+    signal: &IdentSignal,
+    settings: &SpectrumMonitorNode,
+    catalog: &Catalog,
+) -> Vec<String> {
+    let analog = analog(signal, catalog);
     let mut choices = Vec::new();
     for candidate in &signal.candidates {
         if let Some(kind) = &candidate.type_id
-            && kind != "ident"
-            && descriptor(kind).is_some_and(|found| found.identifiable)
-            && (!analog_decoder(kind) || analog(signal) == Some(kind.as_str()))
+            && let Some(descriptor) = catalog.descriptor(kind)
+            && descriptor.identifiable
+            && (!descriptor.analog_voice || analog == Some(kind.as_str()))
             && !choices.contains(kind)
         {
             choices.push(kind.clone());
         }
     }
-    if let Some(kind) = analog(signal)
+    if let Some(kind) = analog
         && !choices.iter().any(|choice| choice == kind)
     {
         choices.push(kind.to_owned());
@@ -52,25 +55,22 @@ pub(super) fn choices(signal: &IdentSignal, settings: &SpectrumMonitorNode) -> V
     choices
 }
 
-fn analog_decoder(kind: &str) -> bool {
-    matches!(kind, "am" | "nfm" | "ssb" | "wfm")
+/// The analog voice decoder for `signal`: the best candidate that is one, heard in a
+/// modulation its signatures name.
+fn analog<'a>(signal: &'a IdentSignal, catalog: &Catalog) -> Option<&'a str> {
+    signal.candidates.iter().find_map(|candidate| {
+        let kind = candidate.type_id.as_deref()?;
+        let descriptor = catalog.descriptor(kind)?;
+        (candidate.score >= MIN_ANALOG_SCORE && speaks(descriptor, signal)).then_some(kind)
+    })
 }
 
-fn analog(signal: &IdentSignal) -> Option<&'static str> {
-    let kind = match signal.modulation {
-        Modulation::Am => Some("am"),
-        Modulation::Fm if signal.bandwidth_hz > 50_000.0 => Some("wfm"),
-        Modulation::Fm => Some("nfm"),
-        Modulation::Ssb => Some("ssb"),
-        _ => None,
-    }?;
-    signal
-        .candidates
-        .iter()
-        .any(|candidate| {
-            candidate.type_id.as_deref() == Some(kind) && candidate.score >= MIN_ANALOG_SCORE
-        })
-        .then_some(kind)
+fn speaks(descriptor: &ChannelDescriptor, signal: &IdentSignal) -> bool {
+    descriptor.analog_voice
+        && descriptor
+            .signatures
+            .iter()
+            .any(|signature| signature.modulations.contains(&signal.modulation))
 }
 
 impl Decoder {
@@ -79,39 +79,17 @@ impl Decoder {
         rate: f64,
         signal: &IdentSignal,
         record: bool,
+        catalog: &Catalog,
     ) -> Result<Self, ChannelError> {
-        let mut settings = ChannelSettings::default_for(kind)
+        let mut settings = catalog
+            .descriptor(kind)
+            .and_then(|descriptor| descriptor.defaults.clone())
             .ok_or_else(|| ChannelError::UnknownType(kind.to_owned()))?;
         settings.frequency_hz = signal.frequency_hz;
         settings.squelch = sdrmm_wire::Squelch::Off;
-        let mut offset = signal.center_offset_hz;
-        match &mut settings.params {
-            ChannelParams::Am(p) => {
-                p.bandwidth_hz = (signal.bandwidth_hz * 1.25).clamp(4000.0, 30_000.0)
-            }
-            ChannelParams::Nfm(p) => {
-                p.bandwidth_hz = (signal.bandwidth_hz * 1.25).clamp(7500.0, 30_000.0)
-            }
-            ChannelParams::Ssb(p) => {
-                p.sideband = signal.sideband.unwrap_or(Sideband::Usb);
-                p.bandwidth_hz = signal.bandwidth_hz.clamp(1500.0, 6000.0);
-                offset += match p.sideband {
-                    Sideband::Usb => -p.bandwidth_hz / 2.0,
-                    Sideband::Lsb => p.bandwidth_hz / 2.0,
-                };
-            }
-            ChannelParams::Wfm(p) => p.stereo = false,
-            ChannelParams::Lora(p) => {
-                p.bandwidth = LoraBandwidth::nearest(signal.bandwidth_hz);
-                p.spreading_factor = signal
-                    .symbol_rate_hz
-                    .map_or(LoraSpreadingFactor::All, |rate| {
-                        LoraSpreadingFactor::of_chips(signal.bandwidth_hz / rate)
-                    });
-                p.iq = LoraIq::Both;
-            }
-            _ => {}
-        }
+        let tuned = crate::tune(&settings.params, signal)?;
+        settings.params = tuned.params;
+        let offset = signal.center_offset_hz + tuned.offset_hz;
         let input_rate = crate::input_rate(&settings.params);
         Ok(Self {
             kind: kind.to_owned(),
@@ -138,11 +116,15 @@ impl Decoder {
         self.ddc.set_offset(offset_hz + self.tuning_offset_hz);
     }
 
-    pub(super) fn selected(&self, signal: &IdentSignal) -> bool {
-        self.verified || analog(signal) == Some(self.kind.as_str())
+    pub(super) fn selected(&self, signal: &IdentSignal, catalog: &Catalog) -> bool {
+        self.verified || analog(signal, catalog) == Some(self.kind.as_str())
     }
 
-    pub(super) fn process(&mut self, iq: &[Complex<f32>]) -> (Vec<DecoderEvent>, Option<String>) {
+    pub(super) fn process(
+        &mut self,
+        iq: &[Complex<f32>],
+        catalog: &Catalog,
+    ) -> (Vec<DecoderEvent>, Option<String>) {
         self.ddc.process(iq, &mut self.tuned);
         self.filter.process(&self.tuned, &mut self.filtered);
         self.out.reset();
@@ -151,10 +133,11 @@ impl Decoder {
         if !self.out.images.is_empty() || !self.out.video.is_empty() {
             error = Some("decoded images or video are not supported by event export".to_owned());
         }
+        let descriptor = catalog.descriptor(&self.kind);
         self.out
             .events
-            .retain(|event| valid(event, self.frequency_hz));
-        self.verified |= self.out.events.iter().any(verifies);
+            .retain(|event| valid(event, descriptor, self.frequency_hz, catalog));
+        self.verified |= self.out.events.iter().any(|event| verifies(event, catalog));
         if self.record && !self.out.audio_pcm.is_empty() {
             if self.out.audio_rate != 48_000 {
                 error = Some(format!(
@@ -186,47 +169,51 @@ impl Decoder {
     }
 }
 
-fn verifies(event: &DecoderEvent) -> bool {
-    !matches!(
-        event,
-        DecoderEvent::Morse(_) | DecoderEvent::Rtty(_) | DecoderEvent::Psk(_)
-    )
+fn verifies(event: &DecoderEvent, catalog: &Catalog) -> bool {
+    catalog
+        .events()
+        .entry(&event.kind)
+        .is_none_or(|entry| entry.verifies)
 }
 
-fn valid(event: &DecoderEvent, frequency_hz: f64) -> bool {
-    match event {
-        DecoderEvent::Dsc(m)
-        | DecoderEvent::Vdl2(m)
-        | DecoderEvent::Hfdl(m)
-        | DecoderEvent::InmarsatStdc(m)
-        | DecoderEvent::InmarsatAero(m)
-        | DecoderEvent::Iridium(m) => m.crc_ok,
-        DecoderEvent::Dv(frame) => {
-            frame.crc_verified == Some(true)
-                || matches!(frame.kind, sdrmm_wire::DvFrameKind::Voice)
-                    && frame.crc_verified != Some(false)
-        }
-        DecoderEvent::Ils(reading) => {
-            crate::ident::in_allocation("ils", frequency_hz)
-                && reading.modulation_90 >= 0.05
-                && reading.modulation_150 >= 0.05
-        }
-        DecoderEvent::Lora(frame) => {
-            matches!(frame.integrity, LoraIntegrity::CrcOk | LoraIntegrity::NoCrc)
-        }
-        DecoderEvent::Tone(_) | DecoderEvent::Scrambler(_) => false,
-        _ => true,
+/// `event` stands as a decode: it does not fail its own check, and a reading that measures any
+/// carrier comes from inside its decoder's allocation.
+fn valid(
+    event: &DecoderEvent,
+    descriptor: Option<&ChannelDescriptor>,
+    frequency_hz: f64,
+    catalog: &Catalog,
+) -> bool {
+    let events = catalog.events();
+    if events.present(event).verified == Some(false) {
+        return false;
     }
+    let allocated = events
+        .entry(&event.kind)
+        .is_some_and(|entry| entry.allocated);
+    !allocated
+        || descriptor.is_some_and(|descriptor| {
+            descriptor
+                .signatures
+                .iter()
+                .any(|signature| signature.in_allocation(frequency_hz))
+        })
 }
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{IlsComponent, IlsReading, MorseText, ProtocolMatch};
+    use crate::ils::IlsComponent;
+    use crate::ils::IlsReading;
+    use crate::morse::MorseText;
+    use crate::nfm::ToneSquelchStatus;
+    use sdrmm_wire::{Modulation, ProtocolMatch};
 
     use super::*;
 
     #[test]
     fn weak_voice_candidates_do_not_select_analog_audio() {
+        let catalog = Catalog::registered();
+        let settings = SpectrumMonitorNode::default();
         let mut signal = IdentSignal {
             modulation: Modulation::Fm,
             bandwidth_hz: 7_000.0,
@@ -240,16 +227,18 @@ mod tests {
             }],
             ..Default::default()
         };
-        assert!(choices(&signal, &SpectrumMonitorNode::default()).is_empty());
+        assert!(choices(&signal, &settings, &catalog).is_empty());
         signal.candidates[0].score = 0.95;
-        assert_eq!(choices(&signal, &SpectrumMonitorNode::default()), ["nfm"]);
+        assert_eq!(choices(&signal, &settings, &catalog), ["nfm"]);
         signal.modulation = Modulation::Fsk4;
-        assert!(choices(&signal, &SpectrumMonitorNode::default()).is_empty());
+        assert!(choices(&signal, &settings, &catalog).is_empty());
     }
 
     #[test]
     fn ils_measurements_outside_its_allocation_are_rejected() {
-        let event = DecoderEvent::Ils(IlsReading {
+        let catalog = Catalog::registered();
+        let ils = catalog.descriptor("ils");
+        let event = DecoderEvent::of(&IlsReading {
             component: IlsComponent::Localizer,
             modulation_90: 0.2,
             modulation_150: 0.2,
@@ -257,15 +246,52 @@ mod tests {
             deviation_dots: 0.0,
             signal_db: -20.0,
         });
-        assert!(!valid(&event, 435_125_000.0));
-        assert!(valid(&event, 110_300_000.0));
+        assert!(!valid(&event, ils, 435_125_000.0, &catalog));
+        assert!(valid(&event, ils, 110_300_000.0, &catalog));
+    }
+
+    #[test]
+    fn a_squelch_tone_is_not_a_decode() {
+        let catalog = Catalog::registered();
+        let event = DecoderEvent::of(&ToneSquelchStatus {
+            ctcss_hz: Some(88.5),
+            dcs_code: None,
+            open: true,
+        });
+        assert!(!valid(
+            &event,
+            catalog.descriptor("nfm"),
+            145_500_000.0,
+            &catalog
+        ));
+    }
+
+    #[test]
+    fn a_sideband_signal_tunes_to_its_carrier() {
+        let catalog = Catalog::registered();
+        let settings = catalog
+            .descriptor("ssb")
+            .and_then(|descriptor| descriptor.defaults.clone())
+            .expect("ssb defaults");
+        let signal = IdentSignal {
+            modulation: Modulation::Ssb,
+            sideband: Some(sdrmm_wire::Sideband::Lsb),
+            bandwidth_hz: 2_400.0,
+            ..Default::default()
+        };
+        let tuned = crate::tune(&settings.params, &signal).expect("ssb tunes");
+        assert_eq!(tuned.offset_hz, 1_200.0);
+        let params: crate::ssb::SsbParams = tuned.params.parse().expect("ssb settings");
+        assert_eq!(params.sideband, sdrmm_wire::Sideband::Lsb);
     }
 
     #[test]
     fn unframed_text_does_not_stop_decoder_trials() {
-        assert!(!verifies(&DecoderEvent::Morse(MorseText {
+        let catalog = Catalog::registered();
+        let text = DecoderEvent::of(&MorseText {
             text: "**".to_owned(),
             wpm: 79.0,
-        })));
+        });
+        assert!(!verifies(&text, &catalog));
     }
 }

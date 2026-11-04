@@ -1,6 +1,6 @@
+use crate::datv::DatvCodeRate;
 use num_complex::Complex;
 use sdrmm_dsp::{Soft, fft::Transform};
-use sdrmm_wire::DatvCodeRate;
 
 use super::{
     acquire::{self, Timing},

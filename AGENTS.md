@@ -9,8 +9,14 @@
 ## Coding structure
 - Respect crate boundaries: `dsp` has no I/O and no internal deps; `modem` builds reusable
   modulation algorithms on `dsp`; `channels` pulls no internal crates beyond `dsp`, `modem` and `wire`.
-- Adding a decoder should touch: one module in `channels`, one settings struct in `wire`,
-  optionally one React panel. If it needs more, reconsider the design.
+- A decoder is one module in `channels` (or one WASM plugin): its settings struct, event
+  payloads, presenters and registration live there. Nothing else names it: not `engine`, not
+  `server`, not `wire`, not the frontend. Shared behavior is a capability or facet the decoder
+  declares, never a match on its type id. If adding a decoder needs more, fix the abstraction.
+- The frontend is generated from the backend: settings forms, readouts and event views come from
+  the decoder registry. No per-decoder React code.
+- Code two decoders share moves to `dsp` (primitives) or `modem` (sync, FEC, framing), so plugin
+  authors get it too.
 - One job, one node. Never two nodes, or a node and a device kind, that do the same thing: a radio
   is picked by a Device node and by nothing else. An abstraction over devices is a node wired to
   Device nodes, never a second kind of device that opens radios of its own. 

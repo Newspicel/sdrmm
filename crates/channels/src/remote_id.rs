@@ -1,3 +1,7 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+mod model;
+pub use model::*;
 pub(crate) mod ble;
 pub(crate) mod odid;
 mod tracker;
@@ -5,17 +9,15 @@ pub(crate) mod wifi;
 
 use std::sync::LazyLock;
 
+use crate::ble::BleLink;
 use num_complex::Complex;
 use sdrmm_modem::wifi::{Receiver as Wifi, channel::channel_at};
-use sdrmm_wire::{
-    BleLink, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, EventKind,
-    RemoteIdLink, RemoteIdParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily, EventKind};
 
 use self::tracker::Tracker;
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ble as bluetooth,
-    check_rate,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    ble as bluetooth, check_rate,
 };
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
@@ -26,18 +28,12 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: RemoteIdLink::default().bandwidth_hz(),
     input_rate_hz: RemoteIdLink::default().input_rate_hz(),
     has_audio: false,
-    emits: vec![EventKind::RemoteId],
+    emits: vec![EventKind::named("remote_id")],
     ..ChannelDescriptor::default()
 });
 
 fn params(settings: &ChannelSettings) -> Result<RemoteIdParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::RemoteId(params) => Ok(*params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "remote ID channel got {} params",
-            other.type_id()
-        ))),
-    }
+    crate::settings_of::<RemoteIdParams>(settings)
 }
 
 pub(crate) fn input_rate(params: &RemoteIdParams) -> f64 {
@@ -103,11 +99,10 @@ pub struct RemoteIdChannel {
     tracker: Tracker,
 }
 
-impl ChannelRx for RemoteIdChannel {
+impl NativeChannel for RemoteIdChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
         check_rate(ctx, &DESCRIPTOR, input_rate(&params))?;
@@ -118,7 +113,9 @@ impl ChannelRx for RemoteIdChannel {
             tracker: Tracker::default(),
         })
     }
+}
 
+impl ChannelRx for RemoteIdChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params.link.input_rate_hz() != self.link.input_rate_hz() {
@@ -164,6 +161,26 @@ impl ChannelRx for RemoteIdChannel {
             .rejected()
             .saturating_add(self.tracker.rejected())
     }
+}
+
+pub(crate) fn remote_id_decoder() -> Native<RemoteIdParams> {
+    Native::new::<RemoteIdChannel>(occupied_band)
+        .filter(|p| Ok(channel_filter(p)))
+        .input_rate(input_rate)
+        .home(2_426_000_000.0)
+        .form(remote_id_form)
+        .kinds(remote_id_kinds)
+}
+
+pub(crate) fn remote_id_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("link", "Link", Control::choice::<RemoteIdLink>())
+            .title("Radio link to listen on"),
+    ]
+}
+
+fn remote_id_kinds() -> Vec<KindSpec> {
+    vec![crate::remote_id::remote_id_kind()]
 }
 
 #[cfg(test)]

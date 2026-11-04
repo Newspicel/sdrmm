@@ -59,7 +59,7 @@ export function ChannelPicker({
               type="search"
               name="channel-mode-filter"
               aria-label="Search channel modes"
-              placeholder="nfm, adsb…"
+              placeholder="Name or family"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />

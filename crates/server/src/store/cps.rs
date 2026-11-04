@@ -1,7 +1,8 @@
 use rusqlite::{OptionalExtension, Row, params};
-use sdrmm_wire::cps::{
-    Codeplug, CodeplugCounts, CpsCodeplugDetail, CpsCodeplugInfo, CpsCodeplugRequest, CpsDevice,
-    CpsDeviceRequest, CpsUser, CpsUserRequest, MAX_CPS_NAME_LEN, MAX_CPS_NOTE_LEN,
+use sdrmm_wire::{
+    cps::Codeplug, cps::CodeplugCounts, cps::CpsCodeplugDetail, cps::CpsCodeplugInfo,
+    cps::CpsCodeplugRequest, cps::CpsDevice, cps::CpsDeviceRequest, cps::CpsUser,
+    cps::CpsUserRequest, cps::MAX_CPS_NAME_LEN, cps::MAX_CPS_NOTE_LEN,
 };
 
 use super::{Store, StoreError, now_rfc3339};

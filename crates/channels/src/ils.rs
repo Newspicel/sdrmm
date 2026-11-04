@@ -1,13 +1,17 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::{f64::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    IlsComponent, IlsParams, IlsReading,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
+use crate::vor::{MAX_NAVAID_REPORT_MS, MIN_NAVAID_REPORT_MS};
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate, datalink,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate, datalink,
 };
 
 const RATE: f64 = 48_000.0;
@@ -21,7 +25,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Ils],
+    emits: vec![EventKind::named("ils")],
     ..ChannelDescriptor::default()
 });
 
@@ -40,14 +44,11 @@ pub struct IlsChannel {
     settled: bool,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&IlsParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Ils(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "ILS channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<IlsParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 fn check_params(params: &IlsParams) -> Result<(), ChannelError> {
@@ -62,20 +63,21 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     datalink::channel_filter(RATE, HALF_BANDWIDTH)
 }
 
-impl ChannelRx for IlsChannel {
+impl NativeChannel for IlsChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let params = *params(&settings)?;
+        let params = params(&settings)?;
         check_params(&params)?;
         Ok(Self::build(params))
     }
+}
 
+impl ChannelRx for IlsChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let params = *params(&settings)?;
+        let params = params(&settings)?;
         check_params(&params)?;
         self.params = params;
         Ok(())
@@ -150,7 +152,7 @@ impl IlsChannel {
             IlsComponent::Localizer => ddm / 0.155 * 2.5,
             IlsComponent::Glideslope => ddm / 0.175 * 2.0,
         };
-        out.events.push(DecoderEvent::Ils(IlsReading {
+        out.events.push(DecoderEvent::of(&IlsReading {
             component: self.params.component,
             modulation_90,
             modulation_150,
@@ -170,6 +172,51 @@ impl IlsChannel {
     }
 }
 
+const ILS_BANDS: &[HzRange] = &[HzRange::mhz(108.1, 111.95), HzRange::mhz(329.15, 335.0)];
+
+fn ils_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "ILS",
+            &[Modulation::Am, Modulation::Carrier],
+            HzRange::new(0.0, 4_000.0),
+            "90 and 150 Hz amplitude tones on a localizer or glide-slope frequency",
+        )
+        .on(ILS_BANDS),
+    ]
+}
+
+pub(crate) fn ils_decoder() -> Native<IlsParams> {
+    Native::new::<IlsChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(110_300_000.0)
+        .signatures(ils_signatures)
+        .form(ils_form)
+        .kinds(ils_kinds)
+}
+
+pub(crate) fn ils_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("component", "Component", Control::choice::<IlsComponent>())
+            .title("ILS component"),
+        SettingField::new(
+            "report_ms",
+            "Every",
+            NumberSpec::new(
+                f64::from(MIN_NAVAID_REPORT_MS),
+                f64::from(MAX_NAVAID_REPORT_MS),
+                250.0,
+            )
+            .unit("ms"),
+        )
+        .title("ILS report interval"),
+    ]
+}
+
+fn ils_kinds() -> Vec<KindSpec> {
+    vec![crate::ils::ils_kind()]
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
@@ -178,6 +225,7 @@ mod tests {
     use crate::testutil::{
         THROUGHPUT_ATTEMPTS, fastest_seconds, realtime_budget, run_events, settings,
     };
+    use sdrmm_wire::ChannelParams;
 
     const ANNEX_10_LOCALIZER_COURSE_DEPTH: f32 = 0.20;
     const ANNEX_10_GLIDEPATH_ON_PATH_DEPTH: f32 = 0.40;
@@ -211,15 +259,12 @@ mod tests {
         };
         let mut channel = IlsChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Ils(params)),
+            settings(ChannelParams::of(&params).expect("ils settings")),
         )
         .expect("channel");
         run_events(&mut channel, iq)
             .into_iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Ils(reading) => Some(reading),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<IlsReading>())
             .next_back()
             .expect("ILS reading")
     }
@@ -297,16 +342,13 @@ mod tests {
             .collect();
         let mut channel = IlsChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Ils(IlsParams::default())),
+            settings(ChannelParams::of(&IlsParams::default()).expect("ils settings")),
         )
         .expect("channel");
         let events = run_events(&mut channel, &iq);
         let reading = events
             .iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Ils(reading) => Some(reading),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<IlsReading>())
             .next_back()
             .expect("ILS reading");
         assert!((reading.ddm - 0.16).abs() < 0.01, "{}", reading.ddm);
@@ -318,7 +360,7 @@ mod tests {
         let iq = vec![Complex::new(0.0, 0.0); RATE as usize * 2];
         let mut channel = IlsChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Ils(IlsParams::default())),
+            settings(ChannelParams::of(&IlsParams::default()).expect("ils settings")),
         )
         .expect("channel");
         assert!(run_events(&mut channel, &iq).is_empty());
@@ -336,15 +378,12 @@ mod tests {
             .collect();
         let mut channel = IlsChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Ils(IlsParams::default())),
+            settings(ChannelParams::of(&IlsParams::default()).expect("ils settings")),
         )
         .expect("channel");
         let readings: Vec<_> = run_events(&mut channel, &iq)
             .into_iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Ils(reading) => Some(reading),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<IlsReading>())
             .collect();
         assert_eq!(readings.len(), 3);
         for reading in &readings {
@@ -355,7 +394,7 @@ mod tests {
 
     #[test]
     fn a_report_interval_outside_the_wire_range_is_rejected() {
-        for report_ms in [0, sdrmm_wire::MAX_NAVAID_REPORT_MS + 1] {
+        for report_ms in [0, MAX_NAVAID_REPORT_MS + 1] {
             let params = IlsParams {
                 report_ms,
                 ..IlsParams::default()
@@ -363,18 +402,20 @@ mod tests {
             assert!(
                 IlsChannel::new(
                     ChannelCtx { input_rate: RATE },
-                    settings(ChannelParams::Ils(params)),
+                    settings(ChannelParams::of(&params).expect("ils settings")),
                 )
                 .is_err(),
                 "{report_ms}"
             );
             let mut channel = IlsChannel::new(
                 ChannelCtx { input_rate: RATE },
-                settings(ChannelParams::Ils(IlsParams::default())),
+                settings(ChannelParams::of(&IlsParams::default()).expect("ils settings")),
             )
             .expect("channel");
             assert!(
-                channel.apply(settings(ChannelParams::Ils(params))).is_err(),
+                channel
+                    .apply(settings(ChannelParams::of(&params).expect("ils settings")))
+                    .is_err(),
                 "{report_ms}"
             );
         }
@@ -386,7 +427,7 @@ mod tests {
         let elapsed = fastest_seconds(THROUGHPUT_ATTEMPTS, || {
             let mut channel = IlsChannel::new(
                 ChannelCtx { input_rate: RATE },
-                settings(ChannelParams::Ils(IlsParams::default())),
+                settings(ChannelParams::of(&IlsParams::default()).expect("ils settings")),
             )
             .expect("channel");
             let started = Instant::now();

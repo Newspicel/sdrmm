@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+use sdrmm_wire::{KindSpec, NumberSpec, SettingField};
+mod model;
+pub use model::*;
 mod ftx;
 mod wspr;
 
@@ -16,10 +21,12 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use sdrmm_dsp::{FirC, design_lowpass};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    WsjtMessage, WsjtParams, WsprParams, WsprSpot,
 };
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const INPUT_RATE_HZ: f64 = 12_000.0;
 const FILTER_TAPS: usize = 257;
@@ -32,18 +39,30 @@ const WSPR_POWER_DBM: [i32; 19] = [
     0, 3, 7, 10, 13, 17, 20, 23, 27, 30, 33, 37, 40, 43, 47, 50, 53, 57, 60,
 ];
 
-static FT8_DESCRIPTOR: LazyLock<ChannelDescriptor> =
-    LazyLock::new(|| descriptor("ft8", "FT8", "FT8 weak signal contacts", EventKind::Ft8));
+static FT8_DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
+    descriptor(
+        "ft8",
+        "FT8",
+        "FT8 weak signal contacts",
+        EventKind::named("ft8"),
+    )
+});
 static FT4_DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
     descriptor(
         "ft4",
         "FT4",
         "FT4 fast weak signal contacts",
-        EventKind::Ft4,
+        EventKind::named("ft4"),
     )
 });
-static WSPR_DESCRIPTOR: LazyLock<ChannelDescriptor> =
-    LazyLock::new(|| descriptor("wspr", "WSPR", "WSPR propagation beacons", EventKind::Wspr));
+static WSPR_DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
+    descriptor(
+        "wspr",
+        "WSPR",
+        "WSPR propagation beacons",
+        EventKind::named("wspr"),
+    )
+});
 
 fn descriptor(type_id: &str, name: &str, summary: &str, kind: EventKind) -> ChannelDescriptor {
     ChannelDescriptor {
@@ -67,6 +86,10 @@ enum Mode {
 }
 
 impl Mode {
+    fn kind(self) -> EventKind {
+        EventKind::named(self.type_id())
+    }
+
     fn slot_samples(self) -> usize {
         match self {
             Self::Ft8 => 180_000,
@@ -115,10 +138,19 @@ struct Job {
     samples: Vec<f32>,
 }
 
+/// A decode with the measurements the duplicate check reads, kept beside the event so the DSP
+/// thread never parses an event payload back.
+struct Decoded {
+    text: String,
+    audio_hz: f32,
+    time_offset_s: f32,
+    event: DecoderEvent,
+}
+
 struct Done {
     epoch: u64,
     window_start: u64,
-    events: Vec<DecoderEvent>,
+    events: Vec<Decoded>,
     samples: Vec<f32>,
 }
 
@@ -141,7 +173,7 @@ struct WeakSignal {
 
 impl WeakSignal {
     fn new(mode: Mode, settings: &ChannelSettings) -> Result<Self, ChannelError> {
-        let (low, high, candidates) = configured(mode, settings)?;
+        let (low, high, candidates) = configured(mode, &settings.params)?;
         let (jobs, incoming) = RingBuffer::new(QUEUED_SLOTS);
         let (outgoing, done) = RingBuffer::new(QUEUED_SLOTS);
         thread::Builder::new()
@@ -171,7 +203,7 @@ impl WeakSignal {
     }
 
     fn apply(&mut self, settings: &ChannelSettings) -> Result<(), ChannelError> {
-        let (low, high, candidates) = configured(self.mode, settings)?;
+        let (low, high, candidates) = configured(self.mode, &settings.params)?;
         self.audio_low_hz = low;
         self.audio_high_hz = high;
         self.max_candidates = candidates;
@@ -251,18 +283,14 @@ impl WeakSignal {
         }
     }
 
-    fn keep(&mut self, window_start: u64, event: DecoderEvent, out: &mut ChannelOutputs) {
-        let Some((text, audio_hz, time_offset_s)) = identity(&event) else {
-            return;
-        };
-        let text = text.to_owned();
+    fn keep(&mut self, window_start: u64, decoded: Decoded, out: &mut ChannelOutputs) {
         let start = window_start as i64
-            + ((self.mode.nominal_start_s() + f64::from(time_offset_s)) * INPUT_RATE_HZ).round()
-                as i64;
-        if self.is_duplicate(&text, audio_hz, start) {
+            + ((self.mode.nominal_start_s() + f64::from(decoded.time_offset_s)) * INPUT_RATE_HZ)
+                .round() as i64;
+        if self.is_duplicate(decoded.text, decoded.audio_hz, start) {
             return;
         }
-        out.events.push(event);
+        out.events.push(decoded.event);
     }
 
     #[cfg(test)]
@@ -273,7 +301,7 @@ impl WeakSignal {
         }
     }
 
-    fn is_duplicate(&mut self, text: &str, audio_hz: f32, start_sample: i64) -> bool {
+    fn is_duplicate(&mut self, text: String, audio_hz: f32, start_sample: i64) -> bool {
         let duplicate = self.recent.iter().any(|item| {
             item.text == text
                 && (item.audio_hz - audio_hz).abs() < 3.0
@@ -281,7 +309,7 @@ impl WeakSignal {
         });
         if !duplicate {
             self.recent.push(Recent {
-                text: text.to_owned(),
+                text,
                 audio_hz,
                 start_sample,
             });
@@ -290,33 +318,23 @@ impl WeakSignal {
     }
 }
 
-fn identity(event: &DecoderEvent) -> Option<(&str, f32, f32)> {
-    match event {
-        DecoderEvent::Ft8(message) | DecoderEvent::Ft4(message) => {
-            Some((&message.text, message.audio_hz, message.time_offset_s))
-        }
-        DecoderEvent::Wspr(spot) => Some((&spot.text, spot.audio_hz, spot.time_offset_s)),
-        _ => None,
-    }
-}
-
 enum Worker {
-    Ftx(Box<FtxDecoder>, fn(WsjtMessage) -> DecoderEvent),
+    Ftx(Box<FtxDecoder>, EventKind),
     Wspr(Box<WsprDecoder>),
 }
 
 impl Worker {
     fn new(mode: Mode) -> Self {
         match mode {
-            Mode::Ft8 => Self::Ftx(Box::new(FtxDecoder::new(&ftx::FT8)), DecoderEvent::Ft8),
-            Mode::Ft4 => Self::Ftx(Box::new(FtxDecoder::new(&ftx::FT4)), DecoderEvent::Ft4),
+            Mode::Ft8 => Self::Ftx(Box::new(FtxDecoder::new(&ftx::FT8)), mode.kind()),
+            Mode::Ft4 => Self::Ftx(Box::new(FtxDecoder::new(&ftx::FT4)), mode.kind()),
             Mode::Wspr => Self::Wspr(Box::new(WsprDecoder::new())),
         }
     }
 
-    fn decode(&mut self, job: &Job, nominal_start_s: f64) -> Vec<DecoderEvent> {
+    fn decode(&mut self, job: &Job, nominal_start_s: f64) -> Vec<Decoded> {
         match self {
-            Self::Ftx(decoder, event) => decoder
+            Self::Ftx(decoder, kind) => decoder
                 .decode(
                     &job.samples,
                     job.audio_low_hz,
@@ -325,13 +343,19 @@ impl Worker {
                 )
                 .into_iter()
                 .map(|found| {
-                    event(WsjtMessage {
+                    let message = WsjtMessage {
                         text: found.text,
                         snr_db: found.snr_db,
                         audio_hz: found.frequency_hz,
                         time_offset_s: found.start_s - nominal_start_s as f32,
                         hard_errors: found.hard_errors,
-                    })
+                    };
+                    Decoded {
+                        event: DecoderEvent::tagged(kind.clone(), &message),
+                        text: message.text,
+                        audio_hz: message.audio_hz,
+                        time_offset_s: message.time_offset_s,
+                    }
                 })
                 .collect(),
             Self::Wspr(decoder) => decode_wspr(job, decoder, nominal_start_s),
@@ -389,7 +413,7 @@ fn reported_by_a_transmitter(grid: Option<&str>, power_dbm: i32) -> bool {
         && (locator.len() == 4 || (subsquare(locator[4]) && subsquare(locator[5])))
 }
 
-fn decode_wspr(job: &Job, decoder: &mut WsprDecoder, nominal_start_s: f64) -> Vec<DecoderEvent> {
+fn decode_wspr(job: &Job, decoder: &mut WsprDecoder, nominal_start_s: f64) -> Vec<Decoded> {
     decoder
         .decode(
             &job.samples,
@@ -402,7 +426,7 @@ fn decode_wspr(job: &Job, decoder: &mut WsprDecoder, nominal_start_s: f64) -> Ve
             reported_by_a_transmitter(spot.message.grid.as_deref(), spot.message.power_dbm)
         })
         .map(|spot| {
-            DecoderEvent::Wspr(WsprSpot {
+            let spot = WsprSpot {
                 text: spot.message.text,
                 callsign: spot.message.callsign,
                 grid: spot.message.grid,
@@ -411,24 +435,32 @@ fn decode_wspr(job: &Job, decoder: &mut WsprDecoder, nominal_start_s: f64) -> Ve
                 audio_hz: spot.frequency_hz,
                 time_offset_s: spot.start_s - nominal_start_s as f32,
                 drift_hz: spot.drift_hz,
-            })
+            };
+            Decoded {
+                event: DecoderEvent::of(&spot),
+                text: spot.text,
+                audio_hz: spot.audio_hz,
+                time_offset_s: spot.time_offset_s,
+            }
         })
         .collect()
 }
 
-fn configured(mode: Mode, settings: &ChannelSettings) -> Result<(f32, f32, usize), ChannelError> {
-    let (low, high, candidates) = match (mode, &settings.params) {
-        (Mode::Ft8, ChannelParams::Ft8(p)) | (Mode::Ft4, ChannelParams::Ft4(p)) => wsjt_config(p),
-        (Mode::Wspr, ChannelParams::Wspr(p)) => wspr_config(p),
-        (_, other) => {
-            return Err(ChannelError::InvalidSettings(format!(
-                "weak-signal channel got {} params",
-                other.type_id()
-            )));
+fn configured(mode: Mode, params: &ChannelParams) -> Result<(f32, f32, usize), ChannelError> {
+    if params.type_id() != mode.type_id() {
+        return Err(ChannelError::InvalidSettings(format!(
+            "weak-signal channel got {} params",
+            params.type_id()
+        )));
+    }
+    let search = match mode {
+        Mode::Ft8 | Mode::Ft4 => {
+            wsjt_config(&params.parse().map_err(ChannelError::InvalidSettings)?)
         }
+        Mode::Wspr => wspr_config(&params.parse().map_err(ChannelError::InvalidSettings)?),
     };
-    validate_passband(low, high, candidates)?;
-    Ok((low, high, candidates))
+    validate_passband(search)?;
+    Ok(search)
 }
 
 fn wsjt_config(params: &WsjtParams) -> (f32, f32, usize) {
@@ -447,7 +479,7 @@ fn wspr_config(params: &WsprParams) -> (f32, f32, usize) {
     )
 }
 
-fn validate_passband(low: f32, high: f32, candidates: usize) -> Result<(), ChannelError> {
+fn validate_passband((low, high, candidates): (f32, f32, usize)) -> Result<(), ChannelError> {
     if !(low.is_finite()
         && high.is_finite()
         && (MIN_AUDIO_HZ..high).contains(&low)
@@ -465,38 +497,13 @@ fn validate_passband(low: f32, high: f32, candidates: usize) -> Result<(), Chann
     Ok(())
 }
 
-pub(crate) fn occupied_band(params: &ChannelParams) -> (f64, f64) {
-    match params {
-        ChannelParams::Ft8(p) | ChannelParams::Ft4(p) => {
-            (f64::from(p.audio_low_hz), f64::from(p.audio_high_hz))
-        }
-        ChannelParams::Wspr(p) => (f64::from(p.audio_low_hz), f64::from(p.audio_high_hz)),
-        _ => (f64::from(MIN_AUDIO_HZ), f64::from(MAX_AUDIO_HZ)),
-    }
+fn search_band((low, high, _): (f32, f32, usize)) -> (f64, f64) {
+    (f64::from(low), f64::from(high))
 }
 
-pub(crate) fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelError> {
-    configured(
-        match params {
-            ChannelParams::Ft8(_) => Mode::Ft8,
-            ChannelParams::Ft4(_) => Mode::Ft4,
-            ChannelParams::Wspr(_) => Mode::Wspr,
-            other => {
-                return Err(ChannelError::InvalidSettings(format!(
-                    "weak-signal filter got {} params",
-                    other.type_id()
-                )));
-            }
-        },
-        &ChannelSettings {
-            frequency_hz: 0.0,
-            squelch: sdrmm_wire::Squelch::Off,
-            params: params.clone(),
-            blanker: Default::default(),
-            if_filter: Default::default(),
-        },
-    )?;
-    let (low, high) = occupied_band(params);
+fn search_filter(search: (f32, f32, usize)) -> Result<ChannelFilter, ChannelError> {
+    validate_passband(search)?;
+    let (low, high) = search_band(search);
     let half_width = (high - low) / 2.0 / INPUT_RATE_HZ;
     let center = (high + low) / 2.0 / INPUT_RATE_HZ;
     Ok(ChannelFilter::Sideband(FirC::from_lowpass(
@@ -509,16 +516,17 @@ macro_rules! channel {
     ($name:ident, $mode:expr, $descriptor:ident) => {
         pub struct $name(WeakSignal);
 
-        impl ChannelRx for $name {
+        impl NativeChannel for $name {
             fn descriptor() -> &'static ChannelDescriptor {
                 &$descriptor
             }
-
             fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
                 check_input_rate(ctx, &$descriptor)?;
                 Ok(Self(WeakSignal::new($mode, &settings)?))
             }
+        }
 
+        impl ChannelRx for $name {
             fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
                 self.0.apply(&settings)
             }
@@ -549,6 +557,134 @@ channel!(Ft8Channel, Mode::Ft8, FT8_DESCRIPTOR);
 channel!(Ft4Channel, Mode::Ft4, FT4_DESCRIPTOR);
 channel!(WsprChannel, Mode::Wspr, WSPR_DESCRIPTOR);
 
+const FT8_SPOTS: &[HzRange] = &[
+    HzRange::spot_khz(1_840.0, 2.0),
+    HzRange::spot_khz(3_573.0, 2.0),
+    HzRange::spot_khz(7_074.0, 2.0),
+    HzRange::spot_khz(10_136.0, 2.0),
+    HzRange::spot_khz(14_074.0, 2.0),
+    HzRange::spot_khz(18_100.0, 2.0),
+    HzRange::spot_khz(21_074.0, 2.0),
+    HzRange::spot_khz(24_915.0, 2.0),
+    HzRange::spot_khz(28_074.0, 2.0),
+    HzRange::spot_khz(50_313.0, 2.0),
+];
+
+fn ft8_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "FT8",
+            &[Modulation::Fsk8],
+            HzRange::new(30.0, 90.0),
+            "eight tones at 6.25 baud in a 50 Hz slot",
+        )
+        .symbol_rate(HzRange::about(6.25, 0.15))
+        .on(FT8_SPOTS),
+    ]
+}
+
+pub(crate) fn ft8_decoder() -> Native<WsjtParams> {
+    Native::new::<Ft8Channel>(|params| search_band(wsjt_config(params)))
+        .filter(|params| search_filter(wsjt_config(params)))
+        .home(14_074_000.0)
+        .signatures(ft8_signatures)
+        .form(wsjt_form)
+        .kinds(ft8_kinds)
+}
+
+pub(crate) fn wsjt_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("audio_low_hz", "From", NumberSpec::hz(50.0, 5_450.0, 10.0))
+            .title("Lowest USB audio frequency searched"),
+        SettingField::new("audio_high_hz", "To", NumberSpec::hz(100.0, 5_500.0, 10.0))
+            .title("Highest USB audio frequency searched"),
+        SettingField::new(
+            "max_candidates",
+            "Candidates",
+            NumberSpec::new(1.0, 1_000.0, 1.0),
+        )
+        .title("Maximum synchronized signals tried per decode pass"),
+    ]
+}
+
+fn ft8_kinds() -> Vec<KindSpec> {
+    vec![ft8_kind()]
+}
+
+const FT4_SPOTS: &[HzRange] = &[
+    HzRange::spot_khz(3_575.0, 2.0),
+    HzRange::spot_khz(7_047.5, 2.0),
+    HzRange::spot_khz(10_140.0, 2.0),
+    HzRange::spot_khz(14_080.0, 2.0),
+    HzRange::spot_khz(18_104.0, 2.0),
+    HzRange::spot_khz(21_140.0, 2.0),
+    HzRange::spot_khz(24_919.0, 2.0),
+    HzRange::spot_khz(28_180.0, 2.0),
+];
+
+fn ft4_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "FT4",
+            &[Modulation::Fsk4],
+            HzRange::new(60.0, 130.0),
+            "four tones at 20.8 baud in a 90 Hz slot",
+        )
+        .symbol_rate(HzRange::about(20.83, 0.15))
+        .on(FT4_SPOTS),
+    ]
+}
+
+pub(crate) fn ft4_decoder() -> Native<WsjtParams> {
+    Native::new::<Ft4Channel>(|params| search_band(wsjt_config(params)))
+        .filter(|params| search_filter(wsjt_config(params)))
+        .home(14_080_000.0)
+        .signatures(ft4_signatures)
+        .form(wsjt_form)
+        .kinds(ft4_kinds)
+}
+
+fn ft4_kinds() -> Vec<KindSpec> {
+    vec![ft4_kind()]
+}
+
+const WSPR_SPOTS: &[HzRange] = &[
+    HzRange::spot_khz(1_836.6, 1.0),
+    HzRange::spot_khz(3_568.6, 1.0),
+    HzRange::spot_khz(7_038.6, 1.0),
+    HzRange::spot_khz(10_138.7, 1.0),
+    HzRange::spot_khz(14_095.6, 1.0),
+    HzRange::spot_khz(18_104.6, 1.0),
+    HzRange::spot_khz(21_094.6, 1.0),
+    HzRange::spot_khz(24_924.6, 1.0),
+    HzRange::spot_khz(28_124.6, 1.0),
+];
+
+fn wspr_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "WSPR",
+            &[Modulation::Fsk4, Modulation::Carrier],
+            HzRange::new(0.0, 20.0),
+            "a 6 Hz wide four-tone beacon on a WSPR dial frequency",
+        )
+        .on(WSPR_SPOTS),
+    ]
+}
+
+pub(crate) fn wspr_decoder() -> Native<WsprParams> {
+    Native::new::<WsprChannel>(|params| search_band(wspr_config(params)))
+        .filter(|params| search_filter(wspr_config(params)))
+        .home(14_095_600.0)
+        .signatures(wspr_signatures)
+        .form(wsjt_form)
+        .kinds(wspr_kinds)
+}
+
+fn wspr_kinds() -> Vec<KindSpec> {
+    vec![wspr_kind()]
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
@@ -558,6 +694,14 @@ mod tests {
         synth,
         testutil::{realtime_budget, settings},
     };
+
+    fn wsjt(event: &DecoderEvent, kind: &str) -> Option<WsjtMessage> {
+        if event.kind == kind {
+            event.payload()
+        } else {
+            None
+        }
+    }
 
     macro_rules! decode {
         ($channel:expr, $iq:expr) => {{
@@ -576,15 +720,15 @@ mod tests {
                 ChannelCtx {
                     input_rate: INPUT_RATE_HZ,
                 },
-                settings(ChannelParams::Ft8(WsjtParams::default())),
+                settings(ChannelParams::new("ft8", &WsjtParams::default()).expect("ft8 settings")),
             )
             .unwrap(),
             &synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0)
         );
-        let message = events.iter().find_map(|event| match event {
-            DecoderEvent::Ft8(message) if message.text.contains("W1AW") => Some(message),
-            _ => None,
-        });
+        let message = events
+            .iter()
+            .filter_map(|event| wsjt(event, "ft8"))
+            .find(|message| message.text.contains("W1AW"));
         let message = message.expect("FT8 fixture decode");
         assert!((message.audio_hz - 1_500.0).abs() < 10.0);
         assert!(message.time_offset_s.abs() < 0.2);
@@ -597,15 +741,15 @@ mod tests {
                 ChannelCtx {
                     input_rate: INPUT_RATE_HZ,
                 },
-                settings(ChannelParams::Ft4(WsjtParams::default())),
+                settings(ChannelParams::new("ft4", &WsjtParams::default()).expect("ft4 settings")),
             )
             .unwrap(),
             &synth::weak_signal::ft4_slot("JA1ABC", "PM95", 1_000.0)
         );
-        let message = events.iter().find_map(|event| match event {
-            DecoderEvent::Ft4(message) if message.text.contains("JA1ABC") => Some(message),
-            _ => None,
-        });
+        let message = events
+            .iter()
+            .filter_map(|event| wsjt(event, "ft4"))
+            .find(|message| message.text.contains("JA1ABC"));
         let message = message.expect("FT4 fixture decode");
         assert!((message.audio_hz - 1_000.0).abs() < 20.0);
         assert!(message.time_offset_s.abs() < 0.2);
@@ -618,15 +762,15 @@ mod tests {
                 ChannelCtx {
                     input_rate: INPUT_RATE_HZ,
                 },
-                settings(ChannelParams::Wspr(WsprParams::default())),
+                settings(ChannelParams::of(&WsprParams::default()).expect("wspr settings")),
             )
             .unwrap(),
             &synth::weak_signal::wspr_slot("K1ABC", "FN42", 37, 1_500.0)
         );
-        let spot = events.iter().find_map(|event| match event {
-            DecoderEvent::Wspr(spot) if spot.callsign == "K1ABC" => Some(spot),
-            _ => None,
-        });
+        let spot = events
+            .iter()
+            .filter_map(|event| event.read::<WsprSpot>())
+            .find(|spot| spot.callsign == "K1ABC");
         let spot = spot.expect("WSPR fixture decode");
         assert_eq!(spot.grid.as_deref(), Some("FN42"));
         assert_eq!(spot.power_dbm, 37);
@@ -642,7 +786,7 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Ft8(WsjtParams::default())),
+            settings(ChannelParams::new("ft8", &WsjtParams::default()).expect("ft8 settings")),
         )
         .unwrap();
         let capacity = channel.0.audio.capacity();
@@ -654,12 +798,15 @@ mod tests {
         assert_eq!(channel.0.audio.capacity(), capacity);
         assert_eq!(channel.skipped(), 0);
         let one_hop_late = (hop as f64 / INPUT_RATE_HZ) as f32;
-        assert!(out.events.iter().any(|event| matches!(
-            event,
-            DecoderEvent::Ft8(message)
-                if message.text.contains("W1AW")
-                    && (message.time_offset_s - one_hop_late).abs() < 0.2
-        )));
+        assert!(
+            out.events
+                .iter()
+                .filter_map(|event| wsjt(event, "ft8"))
+                .any(|message| {
+                    message.text.contains("W1AW")
+                        && (message.time_offset_s - one_hop_late).abs() < 0.2
+                })
+        );
     }
 
     #[test]
@@ -671,7 +818,7 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Ft8(WsjtParams::default())),
+            settings(ChannelParams::new("ft8", &WsjtParams::default()).expect("ft8 settings")),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -686,7 +833,7 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Ft8(WsjtParams::default())),
+            settings(ChannelParams::new("ft8", &WsjtParams::default()).expect("ft8 settings")),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -702,10 +849,10 @@ mod tests {
         );
         channel.settle(&mut out);
         assert!(
-            out.events.iter().any(|event| matches!(
-                event,
-                DecoderEvent::Ft8(message) if message.text.contains("W1AW")
-            )),
+            out.events
+                .iter()
+                .filter_map(|event| wsjt(event, "ft8"))
+                .any(|message| message.text.contains("W1AW")),
             "{:?}",
             out.events
         );
@@ -755,7 +902,7 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Ft8(WsjtParams::default())),
+            settings(ChannelParams::new("ft8", &WsjtParams::default()).expect("ft8 settings")),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -765,10 +912,7 @@ mod tests {
         channel.settle(&mut out);
         out.events
             .into_iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Ft8(message) => Some(message.text),
-                _ => None,
-            })
+            .filter_map(|event| wsjt(&event, "ft8").map(|message| message.text))
             .collect()
     }
 
@@ -841,14 +985,14 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Ft8(WsjtParams::default())),
+            settings(ChannelParams::new("ft8", &WsjtParams::default()).expect("ft8 settings")),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
         let mut texts = Vec::new();
         let take = |out: &mut ChannelOutputs, texts: &mut Vec<String>| {
             for event in out.events.drain(..) {
-                let DecoderEvent::Ft8(message) = event else {
+                let Some(message) = wsjt(&event, "ft8") else {
                     panic!("the FT8 channel emitted something else")
                 };
                 texts.push(message.text);

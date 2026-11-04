@@ -50,7 +50,7 @@ mod testutil;
 pub use agc::Agc;
 pub use bits::{
     Descrambler, DifferentialDecoder, HdlcDeframer, NrziDecoder, Scrambler, SyncDetector, bits_be,
-    hamming_distance, manchester_decode, pack_lsb, pack_msb, reverse_byte,
+    hamming_distance, manchester_decode, pack_lsb, pack_msb, pack_msb_into, reverse_byte, word_msb,
 };
 pub use channelizer::{Channelizer, ChannelizerError};
 pub use compander::Compander;
@@ -64,10 +64,10 @@ pub use fec::{
     conv::{CONFIDENT, ERASURE, Soft, Viterbi5, soft},
     conv_soft::SoftViterbi,
     conv7::{ConvCode, Depuncturer, StreamViterbiK7, ViterbiK7, depuncture, puncture},
-    crc4_msb, crc8_msb, crc16_ccitt, crc16_msb, crc16_msb_bits, crc16_x25, crc24_reflected,
-    crc32_ieee, crc32_mpeg, ermes_bch_decode, ermes_bch_encode, golay23_correct, golay23_encode,
-    golay23_ok, hdlc_fcs_ok, hdlc_repair, lfsr_digest8, lfsr_digest8_reflect, lfsr_digest16,
-    mode_s_append_overlaid_parity, mode_s_append_parity, mode_s_bit_overlays,
+    crc_msb_bits, crc4_msb, crc8_msb, crc16_ccitt, crc16_msb, crc16_msb_bits, crc16_x25,
+    crc24_reflected, crc32_ieee, crc32_mpeg, ermes_bch_decode, ermes_bch_encode, golay23_correct,
+    golay23_encode, golay23_ok, hdlc_fcs_ok, hdlc_repair, lfsr_digest8, lfsr_digest8_reflect,
+    lfsr_digest16, mode_s_append_overlaid_parity, mode_s_append_parity, mode_s_bit_overlays,
     mode_s_fix_single_bit, mode_s_overlay, mode_s_syndrome, pocsag_bch_decode, pocsag_bch_encode,
     prbs::{DAB_DISPERSAL, DVB_DISPERSAL, Prbs, PrbsSpec},
     rds_check_block, rds_correct_block, rds_encode_block, rds_syndrome, rs64_decode, rs64_encode,
@@ -76,8 +76,8 @@ pub use fec::{
     syndrome::SyndromeDecoder,
 };
 pub use fir::{
-    design_bandpass, design_gaussian, design_lowpass, design_rds_biphase, design_rds_shaping,
-    design_rrc,
+    design_bandpass, design_gaussian, design_lowpass, design_lowpass_blackman_harris,
+    design_rds_biphase, design_rds_shaping, design_rrc, design_rrc_unit_energy,
 };
 pub use firc::FirC;
 pub use fm::FmDemod;
@@ -86,7 +86,7 @@ pub use iir::{
 };
 pub use interp::{CubicInterpolator, RealInterpolator};
 pub use iq_notch::IqNotch;
-pub use level::{LEVEL_FLOOR_DB, LevelMeter};
+pub use level::{LEVEL_FLOOR_DB, LevelMeter, power_db};
 pub use nco::Nco;
 pub use noise::{AutoNotch, ClickRemover, NoiseBlanker, SpectralDenoiser};
 pub use ofdm::{CyclicPrefix, CyclicPrefixSearch};

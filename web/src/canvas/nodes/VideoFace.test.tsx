@@ -10,13 +10,13 @@ const NODE: PatchNode = placed("screen", catalogBody("video"));
 
 const PICTURE: CapturedImage = {
   id: 4,
-  node: "sstv",
+  node: "picture",
   sinks: ["screen"],
   device_set: 1,
   channel: 2,
   at: "2026-08-16T10:00:00Z",
   freq_hz: 14_230_000,
-  source: "sstv",
+  source: "picture",
   mode: "Martin M1",
   width: 320,
   height: 256,

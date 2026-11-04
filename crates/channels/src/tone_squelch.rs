@@ -1,5 +1,6 @@
+use crate::nfm::CTCSS_TONES_HZ;
+use crate::nfm::DCS_CODES;
 use sdrmm_dsp::{BitSync, DcBlocker, RealDecimator, ToneCorrelator, design_lowpass, golay23_ok};
-use sdrmm_wire::{CTCSS_TONES_HZ, DCS_CODES};
 
 pub(crate) const INPUT_RATE_HZ: f64 = 48_000.0;
 

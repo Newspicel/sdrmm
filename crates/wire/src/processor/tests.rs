@@ -77,9 +77,9 @@ fn the_table_names_every_processor_once() {
     assert_eq!(
         ports,
         [
-            r#"DfNode: array_in, events_out("True bearings", Df), bearing_out("Live bearing to steer a beam")"#,
+            r#"DfNode: array_in, events_out("True bearings", DF), bearing_out("Live bearing to steer a beam")"#,
             r#"BeamformerNode: array_in, steer_in("A direction finder to steer at"), beam_out("The combined lane")"#,
-            r#"PassiveRadarNode: array_in, tx_in("GPS node fixed at the transmitter"), adsb_in("ADS-B decoder used as truth"), events_out("Track events", Radar, RadarSites)"#,
+            r#"PassiveRadarNode: array_in, tx_in("GPS node fixed at the transmitter"), truth_in("Tracks with altitude used as truth"), events_out("Track events", RADAR, RADAR_SITES)"#,
             r#"StitchNode: array_in, wide_out("Every lane joined")"#,
             "SpatialSpectrumNode: array_in",
             "CorrelatorNode: array_in",

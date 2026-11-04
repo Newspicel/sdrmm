@@ -1,4 +1,4 @@
-use sdrmm_wire::{DvFrame, DvFrameKind, DvMode};
+use sdrmm_wire::{DvFrame, DvFrameKind, SiteNaming};
 
 use super::{
     cmce::{self, Cmce, Kind},
@@ -27,7 +27,8 @@ impl Stamp {
             network_id: Some(u32::from(self.mnc)),
             site_id: self.location_area,
             crc_verified: Some(true),
-            ..DvFrame::new(DvMode::Tetra, kind)
+            site_naming: SiteNaming::Cellular,
+            ..DvFrame::new("TETRA", kind)
         }
     }
 }

@@ -1,9 +1,14 @@
+use crate::NativeChannel;
+use crate::ble::BleAddressKind;
+use crate::ble::BleAdvert;
+use crate::ble::BleBeacon;
+use crate::ble::BleLink;
+use crate::ble::BleParams;
+use crate::ble::BlePdu;
+use crate::ble::BlePhy;
 use num_complex::Complex;
 use sdrmm_modem::ble::BlePhy as ModemPhy;
-use sdrmm_wire::{
-    BleAddressKind, BleAdvert, BleBeacon, BleLink, BleParams, BlePdu, BlePhy, ChannelParams,
-    ChannelSettings, DecoderEvent,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{BleChannel, ad::Fields, content, key, pdu::parse};
 use crate::{
@@ -198,7 +203,7 @@ fn decode(link: BleLink, frequency_hz: f64, iq: &[Complex<f32>]) -> Vec<BleAdver
 }
 
 fn run(link: BleLink, frequency_hz: f64, iq: &[Complex<f32>]) -> (Vec<BleAdvert>, u32) {
-    let channel_params = ChannelParams::Ble(BleParams { link });
+    let channel_params = ChannelParams::new("ble", &BleParams { link }).expect("ble settings");
     let ctx = ChannelCtx {
         input_rate: link.input_rate_hz(),
     };
@@ -215,10 +220,11 @@ fn run(link: BleLink, frequency_hz: f64, iq: &[Complex<f32>]) -> (Vec<BleAdvert>
         filter.process(block, &mut filtered);
         out.reset();
         channel.process(&filtered, &mut out);
-        found.extend(out.events.drain(..).filter_map(|event| match event {
-            DecoderEvent::Ble(advert) => Some(advert),
-            _ => None,
-        }));
+        found.extend(
+            out.events
+                .drain(..)
+                .filter_map(|event| event.read::<BleAdvert>()),
+        );
     }
     (found, channel.rejected())
 }

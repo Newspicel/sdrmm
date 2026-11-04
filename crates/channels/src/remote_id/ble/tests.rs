@@ -1,5 +1,8 @@
+use crate::ble::BlePdu;
+use crate::remote_id::RemoteIdMessage;
+use crate::remote_id::UaType;
+use crate::remote_id::UasIdType;
 use sdrmm_modem::ble::crc_ok;
-use sdrmm_wire::{BlePdu, RemoteIdMessage, UaType, UasIdType};
 
 use super::remote_id_payload;
 use crate::{ble::pdu::parse, remote_id::odid};

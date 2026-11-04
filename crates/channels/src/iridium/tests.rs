@@ -1,5 +1,7 @@
+use crate::NativeChannel;
+use crate::iridium::IridiumParams;
 use num_complex::Complex;
-use sdrmm_wire::{ChannelParams, DecoderEvent, IridiumParams};
+use sdrmm_wire::ChannelParams;
 use serde_json::Value;
 
 use super::acars;
@@ -29,7 +31,7 @@ type Snapshot = (String, Value, Option<Value>);
 
 pub(crate) fn fixture() -> crate::fixtures::Fixture {
     crate::fixtures::Fixture::new(
-        ChannelParams::Iridium(IridiumParams::default()),
+        ChannelParams::new("iridium", &IridiumParams::default()).expect("iridium settings"),
         place(
             &[modulate(&canonical(OFF_AIR_RA), 64, CHANNEL_RATE, 0.0, 0.5)],
             4_000,
@@ -235,16 +237,22 @@ fn decodes_a_remodulated_off_air_ring_alert() {
         ChannelCtx {
             input_rate: CHANNEL_RATE,
         },
-        settings(ChannelParams::Iridium(IridiumParams::default())),
+        settings(
+            ChannelParams::new("iridium", &IridiumParams::default()).expect("iridium settings"),
+        ),
     )
     .expect("channel");
     let events = run_events(&mut channel, &iq);
-    assert!(events.iter().any(|event| matches!(
-        event,
-        DecoderEvent::Iridium(message) if message.message_type == "ring-alert"
-            && message.crc_ok
-            && message.frequency_error_hz.is_some_and(|hz| hz.abs() < 200.0)
-    )));
+    assert!(
+        events
+            .iter()
+            .filter_map(|event| crate::datalink::read(event, "iridium"))
+            .any(|message| message.message_type == "ring-alert"
+                && message.crc_ok
+                && message
+                    .frequency_error_hz
+                    .is_some_and(|hz| hz.abs() < 200.0))
+    );
 }
 
 #[test]
@@ -532,7 +540,9 @@ fn a_burst_that_carries_no_frame_is_reported_as_rejected() {
         ChannelCtx {
             input_rate: CHANNEL_RATE,
         },
-        settings(ChannelParams::Iridium(IridiumParams::default())),
+        settings(
+            ChannelParams::new("iridium", &IridiumParams::default()).expect("iridium settings"),
+        ),
     )
     .expect("iridium channel");
 

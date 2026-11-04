@@ -6,10 +6,9 @@ use sdrmm_channels::array_processor::{
 use sdrmm_dsp::manifold::Direction;
 use sdrmm_dsp::scene::{ArrayScene, HeadingTrack, SceneCopy, SceneSignal, SceneSource};
 use sdrmm_wire::{
-    ArrayGeometry, ArrayTuningMode, Attitude, Coherence, DecoderEvent, DfBearing, DfEstimate,
-    DfParams, HeadingSource, NavTarget, PositionFix, ProcessorParams, ProcessorReading, RdsUpdate,
-    TriangulationParams, Winding,
-    geo::{self, Enu, LatLon},
+    ArrayGeometry, ArrayTuningMode, Attitude, Coherence, DfBearing, DfEstimate, DfParams,
+    HeadingSource, NavTarget, PositionFix, ProcessorParams, ProcessorReading, TriangulationParams,
+    Winding, geo, geo::Enu, geo::LatLon,
 };
 
 use super::NodeFusion;
@@ -226,7 +225,7 @@ struct Rig {
     scene: ArrayScene,
     processor: Box<dyn ArrayProcessor>,
     report: Option<ProcessorReading>,
-    events: Vec<DecoderEvent>,
+    bearings: Vec<DfBearing>,
     unix_ns: u64,
 }
 
@@ -273,7 +272,7 @@ impl Rig {
             scene,
             processor,
             report: ProcessorReading::empty("df"),
-            events: vec![DecoderEvent::Rds(RdsUpdate::default()); 2],
+            bearings: vec![sdrmm_channels::df::reserved_bearing(8); 2],
             unix_ns: START_NS,
         }
     }
@@ -298,19 +297,13 @@ impl Rig {
         let mut out = ProcessorOutput::new(OutputSlots {
             report: self.report.as_mut(),
             surface: None,
-            events: &mut self.events,
+            bearings: &mut self.bearings,
             lanes: &mut [],
         });
         self.processor.process(&block, &mut out);
         let tally = out.tally();
         self.unix_ns += (BLOCK_S * 1e9) as u64;
-        self.events[..tally.events]
-            .iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Df(bearing) => Some(bearing.clone()),
-                _ => None,
-            })
-            .collect()
+        self.bearings[..tally.bearings].to_vec()
     }
 }
 

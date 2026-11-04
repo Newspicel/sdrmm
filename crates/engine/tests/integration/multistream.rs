@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use sdrmm_channels::PocsagMessage;
 use std::{
     collections::HashMap,
     sync::{
@@ -11,6 +12,9 @@ use std::{
 
 use crate::common::{assert_tone_dominates, collect_packets, settle_then_collect_second};
 use num_complex::Complex;
+use sdrmm_channels::NfmParams;
+use sdrmm_channels::PocsagBaud;
+use sdrmm_channels::PocsagParams;
 use sdrmm_channels::synth;
 use sdrmm_device::{
     DeviceDriver, DeviceError, DeviceRegistry, RxSink, SdrDevice, check_stream_settings,
@@ -19,9 +23,8 @@ use sdrmm_device_recording::RecordingDriver;
 use sdrmm_device_virtual::{VirtualDriver, stream_marker_offset_hz};
 use sdrmm_engine::{Engine, SpectrumSnapshot};
 use sdrmm_wire::{
-    Capabilities, ChannelParams, ChannelSettings, DcArtifact, DecoderEvent, DeviceBackend,
-    DeviceInfo, DeviceSettings, Duplex, GainValue, NfmParams, PocsagBaud, PocsagParams,
-    ScanSettings, StreamScope, StreamSettings, Tuning,
+    Capabilities, ChannelParams, ChannelSettings, DcArtifact, DeviceBackend, DeviceInfo,
+    DeviceSettings, Duplex, GainValue, ScanSettings, StreamScope, StreamSettings, Tuning,
 };
 use tokio::sync::broadcast;
 
@@ -42,7 +45,7 @@ fn nfm(offset_hz: f64, squelch_db: Option<f32>) -> ChannelSettings {
         squelch: squelch_db.map_or(sdrmm_wire::Squelch::Off, |level_db| {
             sdrmm_wire::Squelch::Manual { level_db }
         }),
-        params: ChannelParams::Nfm(NfmParams::default()),
+        params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     }
@@ -717,10 +720,14 @@ async fn a_decoded_frame_reports_its_lanes_absolute_frequency() {
     let pocsag = |frequency_hz: f64| ChannelSettings {
         frequency_hz,
         squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Pocsag(PocsagParams {
-            baud: PocsagBaud::Auto,
-            ..PocsagParams::default()
-        }),
+        params: ChannelParams::new(
+            "pocsag",
+            &PocsagParams {
+                baud: PocsagBaud::Auto,
+                ..PocsagParams::default()
+            },
+        )
+        .expect("pocsag settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     };
@@ -735,7 +742,7 @@ async fn a_decoded_frame_reports_its_lanes_absolute_frequency() {
     tokio::time::timeout(Duration::from_secs(30), async {
         while freqs.len() < 2 {
             match rx.recv().await {
-                Ok(record) if matches!(record.event, DecoderEvent::Pocsag(_)) => {
+                Ok(record) if record.event.is::<PocsagMessage>() => {
                     freqs.entry(record.channel).or_insert(record.freq_hz);
                 }
                 Ok(_) => {}

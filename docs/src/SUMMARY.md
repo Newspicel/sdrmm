@@ -52,6 +52,7 @@
 
 - [Build and test](development/building.md)
 - [Architecture](development/architecture.md)
+- [Decoder plugins](development/plugins.md)
 - [Phone apps](development/phone-apps.md)
 - [Hardware tests](development/hardware-tests.md)
 - [GPU measurements](development/gpu-performance.md)

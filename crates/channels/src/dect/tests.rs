@@ -1,8 +1,13 @@
+use crate::NativeChannel;
+use crate::dect::DectArc;
+use crate::dect::DectBand;
+use crate::dect::DectCapability;
+use crate::dect::DectCipherState;
+use crate::dect::DectParams;
+use crate::dect::DectSide;
+use crate::dect::DectSides;
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelParams, DecoderEvent, DectArc, DectBand, DectCapability, DectCipherState, DectParams,
-    DectSide, DectSides,
-};
+use sdrmm_wire::{ChannelParams, DecoderEvent};
 
 use super::{
     DESCRIPTOR, DectChannel,
@@ -25,18 +30,15 @@ fn channel(params: DectParams) -> DectChannel {
         ChannelCtx {
             input_rate: INPUT_RATE_HZ,
         },
-        settings(ChannelParams::Dect(params)),
+        settings(ChannelParams::of(&params).expect("dect settings")),
     )
     .expect("dect channel")
 }
 
-fn frames(events: &[DecoderEvent]) -> Vec<sdrmm_wire::DectFrame> {
+fn frames(events: &[DecoderEvent]) -> Vec<crate::dect::DectFrame> {
     events
         .iter()
-        .filter_map(|event| match event {
-            DecoderEvent::Dect(frame) => Some(frame.clone()),
-            _ => None,
-        })
+        .filter_map(|event| event.read::<crate::dect::DectFrame>())
         .collect()
 }
 

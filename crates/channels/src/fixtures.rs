@@ -1,18 +1,84 @@
+use crate::NativeChannel;
+use crate::acars::AcarsParams;
+use crate::adsb::AdsbParams;
+use crate::airtime::AirtimeSpan;
+use crate::airtime::IsmSurveyParams;
+use crate::airtime::WifiOccupancyParams;
+use crate::ais::AisParams;
+use crate::am::AmParams;
+use crate::aprs::AprsMode;
+use crate::aprs::AprsParams;
+use crate::apt::AptParams;
+use crate::apt::AvhrrChannel;
+use crate::atv::AtvParams;
+use crate::ble::BleLink;
+use crate::ble::BleParams;
+use crate::dab::DabParams;
+use crate::dab::DabTransmissionMode;
+use crate::datv::DatvParams;
+use crate::datv::DatvStandard;
+use crate::datv::DvbtParams;
+use crate::dect::DectParams;
+use crate::drm::DrmMode;
+use crate::drm::DrmParams;
+use crate::dsc::DscParams;
+use crate::dv::DpmrParams;
+use crate::dv::DstarParams;
+use crate::dv::FreeDvParams;
+use crate::dv::M17Params;
+use crate::dv::NxdnParams;
+use crate::dv::P25Params;
+use crate::dv::YsfParams;
+use crate::eot::EotArming;
+use crate::eot::EotBattery;
+use crate::eot::EotParams;
+use crate::eot::EotStatus;
+use crate::ermes::ErmesParams;
+use crate::flex::FlexParams;
+use crate::gnss::GnssParams;
+use crate::gsm::GsmParams;
+use crate::ident::IdentParams;
+use crate::ils::IlsParams;
+use crate::inmarsat_aero::InmarsatAeroParams;
+use crate::ism::IsmParams;
+use crate::lora::LoraParams;
+use crate::lrpt::LrptMode;
+use crate::lrpt::LrptParams;
+use crate::morse::MorseParams;
+use crate::navtex::NavtexParams;
+use crate::nfm::NfmParams;
+use crate::nfm::NfmToneMode;
+use crate::noise_figure::NoiseFigureParams;
+use crate::per::PerParams;
+use crate::pocsag::PocsagParams;
+use crate::psk::PskBaud;
+use crate::psk::PskParams;
+use crate::radio_clock::RadioClockParams;
+use crate::radiosonde::RadiosondeParams;
+use crate::radiosonde::SondeType;
+use crate::remote_id::RemoteIdLink;
+use crate::remote_id::RemoteIdParams;
+use crate::rtty::RttyParams;
+use crate::same::SameParams;
+use crate::sarsat::SarsatParams;
+use crate::selcall::SelcallParams;
+use crate::selcall::SelcallSystem;
+use crate::sid::SidParams;
+use crate::ssb::SsbParams;
+use crate::sstv::SstvMode;
+use crate::sstv::SstvParams;
+use crate::stanag::StanagParams;
+use crate::tetra::TetraParams;
+use crate::tetrapol::TetrapolParams;
+use crate::vor::VorParams;
+use crate::weak_signal::WsjtParams;
+use crate::weak_signal::WsprParams;
+use crate::wefax::WefaxIoc;
+use crate::wefax::WefaxLpm;
+use crate::wefax::WefaxParams;
+use crate::wfm::WfmParams;
 use num_complex::Complex;
-use sdrmm_wire::{
-    AcarsParams, AdsbParams, AirtimeSpan, AisParams, AmParams, AprsMode, AprsParams, AptParams,
-    AtvParams, AvhrrChannel, BleLink, BleParams, BroadcastStatus, ChannelParams, ChannelSettings,
-    DabParams, DabTransmissionMode, DatvParams, DatvStandard, DecoderEvent, DectParams, DpmrParams,
-    DrmMode, DrmParams, DscParams, DstarParams, DvbtParams, EotArming, EotBattery, EotParams,
-    EotStatus, ErmesParams, EventKind, FlexParams, FreeDvParams, GnssParams, GsmParams,
-    IdentParams, IlsParams, InmarsatAeroParams, IsmParams, IsmSurveyParams, LoraParams, LrptMode,
-    LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NfmToneMode, NoiseFigureParams,
-    NxdnParams, P25Params, PerParams, PocsagParams, PskBaud, PskParams, RadioClockParams,
-    RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams, SameParams, SarsatParams,
-    SelcallParams, SelcallSystem, SidParams, SondeType, SsbParams, SstvMode, SstvParams,
-    StanagParams, TetraParams, TetrapolParams, VorParams, WefaxIoc, WefaxLpm, WefaxParams,
-    WfmParams, WifiOccupancyParams, WsjtParams, WsprParams, YsfParams,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings, DecoderEvent, EventKind};
 
 use crate::{
     AprsTx, ChannelCtx, ChannelOutputs, ChannelRx, ChannelTx, Ft4Channel, Ft8Channel, TxPayload,
@@ -40,7 +106,6 @@ const NXDN_DESTINATION: u16 = 2_002;
 struct Heard {
     kinds: Vec<EventKind>,
     events: Vec<DecoderEvent>,
-    broadcasts: Vec<BroadcastStatus>,
     audio_samples: usize,
     pictures: usize,
 }
@@ -58,10 +123,6 @@ impl Heard {
         for event in out.events.drain(..) {
             self.kinds.push(event.kind());
             self.events.push(event);
-        }
-        if let Some(broadcast) = out.broadcast.take() {
-            self.kinds.push(EventKind::Broadcast);
-            self.broadcasts.push(broadcast);
         }
         self.audio_samples += out.audio_pcm.len();
         self.pictures += out.video.len() + out.images.len();
@@ -86,11 +147,7 @@ impl Heard {
                 fields
             )
         });
-        let broadcasts = self
-            .broadcasts
-            .iter()
-            .map(|status| serde_json::to_string(status).unwrap_or_default());
-        events.chain(broadcasts).collect::<Vec<_>>().join("\n")
+        events.collect::<Vec<_>>().join("\n")
     }
 
     fn places(&self) -> Vec<(f64, f64)> {
@@ -393,7 +450,7 @@ const PAYLOADS: &[Payload] = &[
             r#""destination":65535"#,
         ],
     ),
-    reads("freedv", &[r#""mode":"freedv""#, r#""opcode":"1600""#]),
+    reads("freedv", &[r#""mode":"FreeDV""#, r#""opcode":"1600""#]),
     reads(
         "tetrapol",
         &[
@@ -767,7 +824,7 @@ fn heard(type_id: &str) -> Option<Heard> {
 }
 
 fn am() -> Fixture {
-    let params = ChannelParams::Am(AmParams::default());
+    let params = ChannelParams::new("am", &AmParams::default()).expect("am settings");
     let rate = Fixture::rate(&params);
     let iq = (0..(rate * 0.5) as usize)
         .map(|index| {
@@ -780,7 +837,7 @@ fn am() -> Fixture {
 }
 
 fn ssb() -> Fixture {
-    let params = ChannelParams::Ssb(SsbParams::default());
+    let params = ChannelParams::new("ssb", &SsbParams::default()).expect("ssb settings");
     let rate = Fixture::rate(&params);
     let iq = (0..(rate * 0.5) as usize)
         .map(|index| {
@@ -792,17 +849,21 @@ fn ssb() -> Fixture {
 }
 
 fn atv() -> Fixture {
-    let params = ChannelParams::Atv(AtvParams::default());
+    let params = ChannelParams::new("atv", &AtvParams::default()).expect("atv settings");
     let rate = Fixture::rate(&params);
     let source = synth::atv::AtvSource::new(&AtvParams::default(), rate);
     Fixture::new(params, synth::atv::bars(&source, 2))
 }
 
 fn nfm() -> Fixture {
-    let params = ChannelParams::Nfm(NfmParams {
-        tone_mode: NfmToneMode::Detect,
-        ..NfmParams::default()
-    });
+    let params = ChannelParams::new(
+        "nfm",
+        &NfmParams {
+            tone_mode: NfmToneMode::Detect,
+            ..NfmParams::default()
+        },
+    )
+    .expect("nfm settings");
     let rate = Fixture::rate(&params);
     let len = (rate * 3.0) as usize;
     let audio = synth::nfm::mix(
@@ -813,7 +874,7 @@ fn nfm() -> Fixture {
 }
 
 fn pocsag() -> Fixture {
-    let params = ChannelParams::Pocsag(PocsagParams::default());
+    let params = ChannelParams::new("pocsag", &PocsagParams::default()).expect("pocsag settings");
     let pages = [synth::pocsag::Page {
         address: 1_234_567,
         function: 3,
@@ -826,7 +887,7 @@ fn pocsag() -> Fixture {
 }
 
 fn flex() -> Fixture {
-    let params = ChannelParams::Flex(FlexParams::default());
+    let params = ChannelParams::new("flex", &FlexParams::default()).expect("flex settings");
     let page = synth::flex::Page {
         address: 1_234_567,
         text: "SDR FIXTURE".to_owned(),
@@ -837,7 +898,7 @@ fn flex() -> Fixture {
 }
 
 fn ermes() -> Fixture {
-    let params = ChannelParams::Ermes(ErmesParams::default());
+    let params = ChannelParams::new("ermes", &ErmesParams::default()).expect("ermes settings");
     let page = synth::ermes::Page {
         local_address: 234_567,
         message_number: 3,
@@ -851,7 +912,7 @@ fn ermes() -> Fixture {
 }
 
 fn eot() -> Fixture {
-    let params = ChannelParams::Eot(EotParams::default());
+    let params = ChannelParams::new("eot", &EotParams::default()).expect("eot settings");
     let rear = synth::eot::Rear {
         unit_address: 24_680,
         status: EotStatus {
@@ -876,14 +937,14 @@ fn eot() -> Fixture {
 }
 
 fn same() -> Fixture {
-    let params = ChannelParams::Same(SameParams::default());
+    let params = ChannelParams::new("same", &SameParams::default()).expect("same settings");
     let rate = Fixture::rate(&params);
     let iq = synth::same::transmission("ZCZC-WXR-TOR-048201+0030-1232200-KEC55/NW-", 2, rate);
     Fixture::new(params, with_tail(iq, rate, 0.5))
 }
 
 fn sarsat() -> Fixture {
-    let params = ChannelParams::Sarsat(SarsatParams::default());
+    let params = ChannelParams::new("sarsat", &SarsatParams::default()).expect("sarsat settings");
     let message = synth::sarsat::epirb_location(synth::sarsat::EpirbFix {
         country: 211,
         mmsi_tail: 406_406,
@@ -896,7 +957,7 @@ fn sarsat() -> Fixture {
 }
 
 fn acars() -> Fixture {
-    let params = ChannelParams::Acars(AcarsParams::default());
+    let params = ChannelParams::new("acars", &AcarsParams::default()).expect("acars settings");
     let block = synth::acars::Block {
         mode: '2',
         registration: ".D-AIBL",
@@ -927,10 +988,14 @@ fn aprs_frame(text: &str) -> Vec<u8> {
 }
 
 fn aprs() -> Option<Fixture> {
-    let params = ChannelParams::Aprs(AprsParams {
-        mode: AprsMode::Afsk1200,
-        ..AprsParams::default()
-    });
+    let params = ChannelParams::new(
+        "aprs",
+        &AprsParams {
+            mode: AprsMode::Afsk1200,
+            ..AprsParams::default()
+        },
+    )
+    .expect("aprs settings");
     let rate = Fixture::rate(&params);
     let mut tx = AprsTx::new(ChannelCtx { input_rate: rate }, settings(params.clone())).ok()?;
     tx.submit(TxPayload::Frame(aprs_frame(APRS_POSITION_REPORT)))
@@ -940,7 +1005,7 @@ fn aprs() -> Option<Fixture> {
 }
 
 fn ais() -> Fixture {
-    let params = ChannelParams::Ais(AisParams::default());
+    let params = ChannelParams::new("ais", &AisParams::default()).expect("ais settings");
     let report = synth::ais::PositionReport {
         mmsi: 244_010_000,
         lat: 52.3702,
@@ -956,7 +1021,7 @@ fn ais() -> Fixture {
 }
 
 fn adsb() -> Fixture {
-    let params = ChannelParams::Adsb(AdsbParams::default());
+    let params = ChannelParams::new("adsb", &AdsbParams::default()).expect("adsb settings");
     let icao = 0x3C_65_AC;
     let frames = vec![
         synth::adsb::squitter(icao, synth::adsb::me_identification("DLH123")),
@@ -968,35 +1033,36 @@ fn adsb() -> Fixture {
 }
 
 fn morse() -> Fixture {
-    let params = ChannelParams::Morse(MorseParams::default());
+    let params = ChannelParams::new("morse", &MorseParams::default()).expect("morse settings");
     let rate = Fixture::rate(&params);
     let iq = synth::morse::transmission("CQ CQ DE SDR K", 20.0, 0.0, rate);
     Fixture::new(params, with_tail(with_lead(iq, rate, 0.5), rate, 3.5))
 }
 
 fn rtty() -> Fixture {
-    let params = ChannelParams::Rtty(RttyParams::default());
+    let params = ChannelParams::new("rtty", &RttyParams::default()).expect("rtty settings");
     let rate = Fixture::rate(&params);
     let iq = synth::rtty::transmission("CQ CQ DE DL1ABC K", 45.45, 170.0, 1.5, rate);
     Fixture::new(params, with_tail(iq, rate, 1.0))
 }
 
 fn navtex() -> Fixture {
-    let params = ChannelParams::Navtex(NavtexParams::default());
+    let params = ChannelParams::new("navtex", &NavtexParams::default()).expect("navtex settings");
     let rate = Fixture::rate(&params);
     let iq = synth::navtex::transmission("ZCZC FA01 SDR FIXTURE NNNN", rate);
     Fixture::new(params, with_tail(iq, rate, 1.0))
 }
 
 fn psk() -> Fixture {
-    let params = ChannelParams::Psk(PskParams::default());
+    let params = ChannelParams::new("psk", &PskParams::default()).expect("psk settings");
     let iq = synth::psk::transmission("CQ CQ DE SDR \n", PskBaud::Psk31.rate());
     let rate = Fixture::rate(&params);
     Fixture::new(params, with_tail(with_lead(iq, rate, 0.5), rate, 1.0))
 }
 
 fn selcall() -> Option<Fixture> {
-    let params = ChannelParams::Selcall(SelcallParams::default());
+    let params =
+        ChannelParams::new("selcall", &SelcallParams::default()).expect("selcall settings");
     let rate = Fixture::rate(&params);
     let iq = synth::selcall::transmission(SelcallSystem::Ccir1, "12234", rate).ok()?;
     Some(Fixture::new(params, with_tail(iq, rate, 0.5)))
@@ -1009,23 +1075,31 @@ fn weak(type_id: &str) -> Heard {
     let mut out = ChannelOutputs::default();
     match type_id {
         "ft8" => {
-            let mut channel =
-                Ft8Channel::new(ctx, settings(ChannelParams::Ft8(WsjtParams::default())))
-                    .expect("builds");
+            let mut channel = Ft8Channel::new(
+                ctx,
+                settings(ChannelParams::new("ft8", &WsjtParams::default()).expect("ft8 settings")),
+            )
+            .expect("builds");
             channel.process(&weak_signal::ft8_slot("W1AW", "FN42", 1_500.0), &mut out);
             channel.settle(&mut out);
         }
         "ft4" => {
-            let mut channel =
-                Ft4Channel::new(ctx, settings(ChannelParams::Ft4(WsjtParams::default())))
-                    .expect("builds");
+            let mut channel = Ft4Channel::new(
+                ctx,
+                settings(ChannelParams::new("ft4", &WsjtParams::default()).expect("ft4 settings")),
+            )
+            .expect("builds");
             channel.process(&weak_signal::ft4_slot("JA1ABC", "PM95", 1_000.0), &mut out);
             channel.settle(&mut out);
         }
         _ => {
-            let mut channel =
-                WsprChannel::new(ctx, settings(ChannelParams::Wspr(WsprParams::default())))
-                    .expect("builds");
+            let mut channel = WsprChannel::new(
+                ctx,
+                settings(
+                    ChannelParams::new("wspr", &WsprParams::default()).expect("wspr settings"),
+                ),
+            )
+            .expect("builds");
             channel.process(
                 &weak_signal::wspr_slot("K1ABC", "FN42", 37, 1_500.0),
                 &mut out,
@@ -1037,7 +1111,7 @@ fn weak(type_id: &str) -> Heard {
 }
 
 fn sstv() -> Fixture {
-    let params = ChannelParams::Sstv(SstvParams::default());
+    let params = ChannelParams::new("sstv", &SstvParams::default()).expect("sstv settings");
     let mode = SstvMode::MartinM1;
     let rate = Fixture::rate(&params);
     let iq = synth::sstv::transmission(mode, &synth::sstv::bars(mode), rate);
@@ -1045,7 +1119,7 @@ fn sstv() -> Fixture {
 }
 
 fn apt() -> Fixture {
-    let params = ChannelParams::Apt(AptParams::default());
+    let params = ChannelParams::new("apt", &AptParams::default()).expect("apt settings");
     let rate = Fixture::rate(&params);
     let iq = synth::apt::transmission(240, AvhrrChannel::Ch2, AvhrrChannel::Ch4, rate);
     Fixture::new(params, with_tail(iq, rate, 10.0))
@@ -1053,14 +1127,14 @@ fn apt() -> Fixture {
 
 fn lrpt() -> Fixture {
     let mode = LrptMode::Oqpsk72;
-    let params = ChannelParams::Lrpt(LrptParams { mode });
+    let params = ChannelParams::new("lrpt", &LrptParams { mode }).expect("lrpt settings");
     let rate = Fixture::rate(&params);
     let iq = synth::lrpt::transmission(mode, 2, rate);
     Fixture::new(params, with_tail(iq, rate, 2.5))
 }
 
 fn wefax() -> Fixture {
-    let params = ChannelParams::Wefax(WefaxParams::default());
+    let params = ChannelParams::new("wefax", &WefaxParams::default()).expect("wefax settings");
     let rate = Fixture::rate(&params);
     let chart = synth::wefax::bars(WefaxIoc::Ioc576, 120);
     let iq = synth::wefax::transmission(WefaxIoc::Ioc576, WefaxLpm::Lpm120, &chart, rate);
@@ -1068,7 +1142,8 @@ fn wefax() -> Fixture {
 }
 
 fn radiosonde() -> Fixture {
-    let params = ChannelParams::Radiosonde(RadiosondeParams::default());
+    let params = ChannelParams::new("radiosonde", &RadiosondeParams::default())
+        .expect("radiosonde settings");
     let rate = Fixture::rate(&params);
     let iq = synth::radiosonde::transmission(SondeType::Rs41, 10, rate);
     Fixture::new(params, with_tail(iq, rate, 0.5))
@@ -1076,13 +1151,13 @@ fn radiosonde() -> Fixture {
 
 fn vor() -> Fixture {
     Fixture::new(
-        ChannelParams::Vor(VorParams::default()),
+        ChannelParams::new("vor", &VorParams::default()).expect("vor settings"),
         synth::vor::transmission(123.0, 2),
     )
 }
 
 fn ils() -> Fixture {
-    let params = ChannelParams::Ils(IlsParams::default());
+    let params = ChannelParams::new("ils", &IlsParams::default()).expect("ils settings");
     let rate = Fixture::rate(&params);
     let iq = (0..(2.0 * rate) as usize)
         .map(|index| {
@@ -1098,7 +1173,8 @@ fn ils() -> Fixture {
 
 fn radio_clock() -> Fixture {
     Fixture::new(
-        ChannelParams::RadioClock(RadioClockParams::default()),
+        ChannelParams::new("radio_clock", &RadioClockParams::default())
+            .expect("radio_clock settings"),
         cf32_le(include_bytes!(
             "../../../fixtures/radio_clock_dcf77_offair_2k.sigmf-data"
         )),
@@ -1108,15 +1184,15 @@ fn radio_clock() -> Fixture {
 fn digital_voice(type_id: &str) -> Fixture {
     let (params, iq) = match type_id {
         "dmr" => (
-            ChannelParams::Dmr(sdrmm_wire::DmrParams::default()),
+            ChannelParams::new("dmr", &crate::dv::DmrParams::default()).expect("dmr settings"),
             dv::dmr::transmission(&dv::dmr::Call::default(), 48_000.0),
         ),
         "p25" => (
-            ChannelParams::P25(P25Params::default()),
+            ChannelParams::new("p25", &P25Params::default()).expect("p25 settings"),
             dv::p25::transmission(0x293, 48_000.0),
         ),
         "nxdn" => (
-            ChannelParams::Nxdn(NxdnParams::default()),
+            ChannelParams::new("nxdn", &NxdnParams::default()).expect("nxdn settings"),
             dv::nxdn::addressed_transmission(
                 &dv::nxdn::Shape::default(),
                 NXDN_RAN,
@@ -1127,19 +1203,19 @@ fn digital_voice(type_id: &str) -> Fixture {
             ),
         ),
         "dstar" => (
-            ChannelParams::Dstar(DstarParams::default()),
+            ChannelParams::new("dstar", &DstarParams::default()).expect("dstar settings"),
             dv::dstar::transmission(&dv::dstar::Call::default(), 48_000.0),
         ),
         "m17" => (
-            ChannelParams::M17(M17Params::default()),
+            ChannelParams::new("m17", &M17Params::default()).expect("m17 settings"),
             dv::m17::transmission("ALL", "DL1ABC", 48_000.0),
         ),
         "dpmr" => (
-            ChannelParams::Dpmr(DpmrParams::default()),
+            ChannelParams::new("dpmr", &DpmrParams::default()).expect("dpmr settings"),
             dv::dpmr::transmission(&dv::dpmr::Call::default(), 48_000.0),
         ),
         _ => (
-            ChannelParams::Ysf(YsfParams::default()),
+            ChannelParams::new("ysf", &YsfParams::default()).expect("ysf settings"),
             dv::ysf::transmission_with_callsigns(
                 &dv::ysf::Fich::default(),
                 &dv::ysf::Call::default(),
@@ -1154,7 +1230,7 @@ fn digital_voice(type_id: &str) -> Fixture {
 
 fn freedv() -> Fixture {
     Fixture::new(
-        ChannelParams::Freedv(FreeDvParams::default()),
+        ChannelParams::new("freedv", &FreeDvParams::default()).expect("freedv settings"),
         cf32_le(include_bytes!(
             "../../../fixtures/freedv_1600_8k.sigmf-data"
         )),
@@ -1162,20 +1238,21 @@ fn freedv() -> Fixture {
 }
 
 fn tetrapol() -> Fixture {
-    let params = ChannelParams::Tetrapol(TetrapolParams::default());
+    let params =
+        ChannelParams::new("tetrapol", &TetrapolParams::default()).expect("tetrapol settings");
     let rate = Fixture::rate(&params);
     Fixture::new(params, synth::tetrapol::control_channel(rate, 1))
 }
 
 fn tetra() -> Fixture {
     Fixture::new(
-        ChannelParams::Tetra(TetraParams::default()),
+        ChannelParams::new("tetra", &TetraParams::default()).expect("tetra settings"),
         synth::tetra::sample(synth::tetra::Cell::default()).modulate(),
     )
 }
 
 fn wfm() -> Fixture {
-    let params = ChannelParams::Wfm(WfmParams::default());
+    let params = ChannelParams::new("wfm", &WfmParams::default()).expect("wfm settings");
     let rate = Fixture::rate(&params);
     let station = synth::rds::Station {
         pi: 0xD3C2,
@@ -1195,7 +1272,7 @@ fn wfm() -> Fixture {
 
 fn lora() -> Fixture {
     Fixture::new(
-        ChannelParams::Lora(LoraParams::default()),
+        ChannelParams::new("lora", &LoraParams::default()).expect("lora settings"),
         cf32_le(include_bytes!(
             "../../../fixtures/lora_rn2483_sf7_250k.sigmf-data"
         )),
@@ -1203,23 +1280,31 @@ fn lora() -> Fixture {
 }
 
 fn remote_id() -> Fixture {
-    let params = ChannelParams::RemoteId(RemoteIdParams {
-        link: RemoteIdLink::Bluetooth,
-    });
+    let params = ChannelParams::new(
+        "remote_id",
+        &RemoteIdParams {
+            link: RemoteIdLink::Bluetooth,
+        },
+    )
+    .expect("remote_id settings");
     let rate = Fixture::rate(&params);
     Fixture::new(params, synth::remote_id::bluetooth_scene(rate)).tuned(BLE_37_HZ)
 }
 
 fn ble() -> Fixture {
-    let params = ChannelParams::Ble(BleParams {
-        link: BleLink::Channel,
-    });
+    let params = ChannelParams::new(
+        "ble",
+        &BleParams {
+            link: BleLink::Channel,
+        },
+    )
+    .expect("ble settings");
     let rate = Fixture::rate(&params);
     Fixture::new(params, synth::ble::scene(rate)).tuned(BLE_38_HZ)
 }
 
 fn ism() -> Fixture {
-    let params = ChannelParams::Ism(IsmParams::default());
+    let params = ChannelParams::new("ism", &IsmParams::default()).expect("ism settings");
     let rate = Fixture::rate(&params);
     let iq = cu8(include_bytes!(
         "../../../fixtures/ism/nexus_th_433m92_250k.sigmf-data"
@@ -1228,7 +1313,7 @@ fn ism() -> Fixture {
 }
 
 fn per() -> Fixture {
-    let params = ChannelParams::Per(PerParams::default());
+    let params = ChannelParams::new("per", &PerParams::default()).expect("per settings");
     let rate = Fixture::rate(&params);
     Fixture::new(
         params,
@@ -1237,13 +1322,14 @@ fn per() -> Fixture {
 }
 
 fn noise_figure() -> Fixture {
-    let params = ChannelParams::NoiseFigure(NoiseFigureParams::default());
+    let params = ChannelParams::new("noise_figure", &NoiseFigureParams::default())
+        .expect("noise_figure settings");
     let rate = Fixture::rate(&params);
     Fixture::new(params, synth::noise_figure::switched(10.0, 1.0, rate))
 }
 
 fn sid() -> Fixture {
-    let params = ChannelParams::Sid(SidParams::default());
+    let params = ChannelParams::new("sid", &SidParams::default()).expect("sid settings");
     let rate = Fixture::rate(&params);
     Fixture::new(
         params,
@@ -1264,24 +1350,28 @@ fn dect() -> Fixture {
         ..synth::dect::Station::default()
     };
     Fixture::new(
-        ChannelParams::Dect(DectParams::default()),
+        ChannelParams::new("dect", &DectParams::default()).expect("dect settings"),
         synth::dect::dummy_bearer(&station, 40),
     )
 }
 
 fn gnss() -> Fixture {
     Fixture::new(
-        ChannelParams::Gnss(GnssParams {
-            prn: GNSS_FIXTURE_PRN,
-            ..GnssParams::default()
-        }),
+        ChannelParams::new(
+            "gnss",
+            &GnssParams {
+                prn: GNSS_FIXTURE_PRN,
+                ..GnssParams::default()
+            },
+        )
+        .expect("gnss settings"),
         synth::gnss::acquisition(GNSS_FIXTURE_PRN, 1_000.0, 317, 1_000),
     )
 }
 
 fn gsm() -> Fixture {
     Fixture::new(
-        ChannelParams::Gsm(GsmParams::default()),
+        ChannelParams::new("gsm", &GsmParams::default()).expect("gsm settings"),
         cf32_le(include_bytes!(
             "../../../fixtures/gsm_dcs1800_arfcn725_541k.sigmf-data"
         )),
@@ -1291,24 +1381,28 @@ fn gsm() -> Fixture {
 
 fn dab() -> Fixture {
     Fixture::new(
-        ChannelParams::Dab(DabParams::default()),
+        ChannelParams::new("dab", &DabParams::default()).expect("dab settings"),
         synth::dab::ensemble_for_mode(DabTransmissionMode::I, 16),
     )
 }
 
 fn datv() -> Fixture {
     Fixture::new(
-        ChannelParams::Datv(DatvParams {
-            standard: DatvStandard::DvbS2,
-            symbol_rate: synth::datv::SYMBOL_RATE,
-            ..DatvParams::default()
-        }),
+        ChannelParams::new(
+            "datv",
+            &DatvParams {
+                standard: DatvStandard::DvbS2,
+                symbol_rate: synth::datv::SYMBOL_RATE,
+                ..DatvParams::default()
+            },
+        )
+        .expect("datv settings"),
         synth::datv::dvbs2_generic(3, &[4]),
     )
 }
 
 fn dvbt() -> Fixture {
-    let params = ChannelParams::Dvbt(DvbtParams::default());
+    let params = ChannelParams::new("dvbt", &DvbtParams::default()).expect("dvbt settings");
     let rate = Fixture::rate(&params);
     let iq = synth::dvbt::waveform(synth::dvbt::defaults(), DVBT_SYMBOLS);
     Fixture::new(params, with_tail(iq, rate, 0.01))
@@ -1316,20 +1410,28 @@ fn dvbt() -> Fixture {
 
 fn drm() -> Fixture {
     Fixture::new(
-        ChannelParams::Drm(DrmParams {
-            mode: DrmMode::Auto,
-            bandwidth_hz: 100_000.0,
-            service: None,
-        }),
+        ChannelParams::new(
+            "drm",
+            &DrmParams {
+                mode: DrmMode::Auto,
+                bandwidth_hz: 100_000.0,
+                service: None,
+            },
+        )
+        .expect("drm settings"),
         synth::drm::signal(synth::drm::defaults(synth::drm::Robustness::B), 6),
     )
 }
 
 fn cw_skimmer() -> Fixture {
-    let params = ChannelParams::CwSkimmer(sdrmm_wire::CwSkimmerParams {
-        bandwidth_hz: 16_000.0,
-        ..sdrmm_wire::CwSkimmerParams::default()
-    });
+    let params = ChannelParams::new(
+        "cw_skimmer",
+        &crate::cw_skimmer::CwSkimmerParams {
+            bandwidth_hz: 16_000.0,
+            ..crate::cw_skimmer::CwSkimmerParams::default()
+        },
+    )
+    .expect("cw_skimmer settings");
     let rate = Fixture::rate(&params);
     let mut iq = synth::morse::hard_keyed(
         "VVV VVV CQ DE DL1AAA K VVV VVV CQ DE DL1AAA K",
@@ -1343,10 +1445,14 @@ fn cw_skimmer() -> Fixture {
 }
 
 fn ident() -> Fixture {
-    let params = ChannelParams::Ident(IdentParams {
-        interval_ms: 500,
-        ..IdentParams::default()
-    });
+    let params = ChannelParams::new(
+        "ident",
+        &IdentParams {
+            interval_ms: 500,
+            ..IdentParams::default()
+        },
+    )
+    .expect("ident settings");
     let rate = Fixture::rate(&params);
     let pages = [synth::pocsag::Page {
         address: 1_234_567,
@@ -1365,14 +1471,14 @@ fn ident() -> Fixture {
 
 fn dsc() -> Fixture {
     Fixture::new(
-        ChannelParams::Dsc(DscParams::default()),
+        ChannelParams::new("dsc", &DscParams::default()).expect("dsc settings"),
         cf32_le(include_bytes!("../../../fixtures/dsc_offair_8k.sigmf-data")),
     )
 }
 
 fn stanag() -> Fixture {
     Fixture::new(
-        ChannelParams::Stanag(StanagParams::default()),
+        ChannelParams::new("stanag", &StanagParams::default()).expect("stanag settings"),
         ci16_le(include_bytes!(
             "../../../fixtures/stanag/stanag_4285_9k6.sigmf-data"
         )),
@@ -1381,7 +1487,8 @@ fn stanag() -> Fixture {
 
 fn inmarsat_aero() -> Fixture {
     Fixture::new(
-        ChannelParams::InmarsatAero(InmarsatAeroParams::default()),
+        ChannelParams::new("inmarsat_aero", &InmarsatAeroParams::default())
+            .expect("inmarsat_aero settings"),
         ci16_le(include_bytes!(
             "../../../fixtures/inmarsat_aero_offair_48k.sigmf-data"
         )),
@@ -1404,15 +1511,20 @@ fn wifi_occupancy() -> Heard {
     let on_s = frame.len() as f64 / rate;
     let mut scene = Scene::new(rate, 0.01);
     scene.every(on_s / 0.3, 1.01, 0.0, 0.1, &frame);
-    let params = ChannelParams::WifiOccupancy(WifiOccupancyParams {
-        span,
-        ..WifiOccupancyParams::default()
-    });
+    let params = ChannelParams::new(
+        "wifi_occupancy",
+        &WifiOccupancyParams {
+            span,
+            ..WifiOccupancyParams::default()
+        },
+    )
+    .expect("wifi_occupancy settings");
     scene_heard(params, WIFI_6_HZ, &scene)
 }
 
 fn ism_survey() -> Heard {
-    let params = ChannelParams::IsmSurvey(IsmSurveyParams::default());
+    let params =
+        ChannelParams::new("ism_survey", &IsmSurveyParams::default()).expect("ism_survey settings");
     let rate = input_rate(&params);
     let frame = synth::ism::wifi_frame(300);
     let mut scene = Scene::new(rate, 0.01);

@@ -1,24 +1,32 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { Button } from "../components/BaseControls";
 import { BTN, TABLE_CELL, TABLE_HEAD } from "../components/controls";
-import { ageClass, formatAge } from "../components/decoderViews";
+import {
+  ageClass,
+  buildTranscript,
+  fieldColumns,
+  fieldNamed,
+  formatAge,
+  isAtBottom,
+} from "../components/decoderViews";
+import { capturedImageUrl } from "../lib/api";
+import { copyText } from "../lib/copyText";
 import { kindHas, kindLabel, useEventKinds } from "../lib/eventKinds";
 import { entityKey, groupsOf, lastSeenMs, type SinkGroup, type SinkView } from "../lib/sinks";
-import type { Entity, EventKindEntry } from "../lib/types";
+import { toastError } from "../lib/toasts";
+import type { CapturedImage, Entity, EventKindEntry } from "../lib/types";
 import { Fields } from "./Fields";
-import { type Panels, renderPanel } from "./panels";
+import { formatValue } from "./values";
 
 const PANE = "flex flex-col gap-2 p-3";
 const EMPTY = "text-sm text-ink-dim";
 
 export function ReadoutView({
   feed,
-  panels,
   sourceName,
   now,
 }: {
   feed: SinkView;
-  panels: Panels;
   sourceName: (source: string) => string;
   now: number;
 }) {
@@ -39,19 +47,22 @@ export function ReadoutView({
               {sourceName(group.source)} · {kindLabel(group.kind, entries)}
             </span>
           )}
-          {renderPanel(panels, group) ?? <GenericGroup group={group} entries={entries} now={now} />}
+          <GroupView group={group} pictures={feed.pictures} entries={entries} now={now} />
         </section>
       ))}
     </>
   );
 }
 
-export function GenericGroup({
+/** The view a kind's capabilities pick: stations, a transcript, pictures, else the latest record. */
+export function GroupView({
   group,
+  pictures,
   entries,
   now,
 }: {
   group: SinkGroup;
+  pictures: readonly CapturedImage[];
   entries: readonly EventKindEntry[];
   now: number;
 }) {
@@ -59,14 +70,18 @@ export function GenericGroup({
     return <EntityTable entities={group.entities} now={now} />;
   }
   if (kindHas(group.kind, "text", entries)) {
-    return <TextPane group={group} />;
+    return <Transcript group={group} />;
+  }
+  const own = pictures.filter((picture) => picture.node === group.source);
+  if (kindHas(group.kind, "picture", entries) && own.length > 0) {
+    return <Pictures pictures={own} />;
   }
   return <LatestRecord group={group} />;
 }
 
 function EntityTable({ entities, now }: { entities: readonly Entity[]; now: number }) {
-  const [open, setOpen] = useState<string | null>(null);
   const rows = entities.toSorted((a, b) => lastSeenMs(b) - lastSeenMs(a));
+  const columns = fieldColumns(rows);
   return (
     <div className={`${PANE} overflow-x-auto`}>
       <table className="w-full border-collapse">
@@ -75,28 +90,31 @@ function EntityTable({ entities, now }: { entities: readonly Entity[]; now: numb
             <th className={TABLE_HEAD} scope="col">
               Name
             </th>
-            <th className={TABLE_HEAD} scope="col">
-              Last
-            </th>
+            {columns.length === 0 ? (
+              <th className={TABLE_HEAD} scope="col">
+                Last
+              </th>
+            ) : (
+              columns.map((column) => (
+                <th key={column} className={TABLE_HEAD} scope="col">
+                  {column}
+                </th>
+              ))
+            )}
             <th className={TABLE_HEAD} scope="col">
               Age
             </th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((entity) => {
-            const key = entityKey(entity.key);
-            const ageMs = Math.max(0, now - lastSeenMs(entity));
-            return (
-              <EntityRow
-                key={key}
-                entity={entity}
-                ageMs={ageMs}
-                open={open === key}
-                onToggle={() => setOpen(open === key ? null : key)}
-              />
-            );
-          })}
+          {rows.map((entity) => (
+            <EntityRow
+              key={entityKey(entity.key)}
+              entity={entity}
+              columns={columns}
+              ageMs={Math.max(0, now - lastSeenMs(entity))}
+            />
+          ))}
         </tbody>
       </table>
     </div>
@@ -105,47 +123,102 @@ function EntityTable({ entities, now }: { entities: readonly Entity[]; now: numb
 
 function EntityRow({
   entity,
+  columns,
   ageMs,
-  open,
-  onToggle,
 }: {
   entity: Entity;
+  columns: readonly string[];
   ageMs: number;
-  open: boolean;
-  onToggle: () => void;
 }) {
+  const fields = entity.view.fields;
   return (
-    <>
-      <tr className={`border-b border-line/40 ${ageClass(ageMs)}`}>
-        <td className={`${TABLE_CELL} font-semibold`}>
-          <Button type="button" className={BTN} aria-expanded={open} onClick={onToggle}>
-            {entity.view.label ?? entity.key.id}
-          </Button>
-        </td>
+    <tr className={`border-b border-line/40 ${ageClass(ageMs)}`} title={entity.view.summary}>
+      <td className={`${TABLE_CELL} font-semibold`}>{entity.view.label ?? entity.key.id}</td>
+      {columns.length === 0 ? (
         <td className={TABLE_CELL}>{entity.view.summary}</td>
-        <td className={`${TABLE_CELL} text-right`}>{formatAge(ageMs)}</td>
-      </tr>
-      {open && (
-        <tr>
-          <td colSpan={3} className="px-2 py-1.5">
-            <Fields fields={entity.view.fields ?? []} />
-          </td>
-        </tr>
+      ) : (
+        columns.map((column) => {
+          const field = fieldNamed(fields, column);
+          return (
+            <td key={column} className={TABLE_CELL}>
+              {field === undefined ? "-" : formatValue(field.value)}
+            </td>
+          );
+        })
       )}
-    </>
+      <td className={`${TABLE_CELL} text-right`}>{formatAge(ageMs)}</td>
+    </tr>
   );
 }
 
-function TextPane({ group }: { group: SinkGroup }) {
-  const text = group.records
-    .toReversed()
-    .map((record) => record.view?.text ?? "")
-    .join("");
+function Transcript({ group }: { group: SinkGroup }) {
+  const text = buildTranscript(group.records);
+  const paneRef = useRef<HTMLPreElement>(null);
+  const stick = useRef(true);
+
+  useLayoutEffect(() => {
+    const el = paneRef.current;
+    if (el !== null && stick.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- new text is what scrolls the pane
+  }, [text]);
+
   return (
     <div className={PANE}>
-      <pre className="max-h-72 min-h-16 overflow-auto whitespace-pre-wrap break-words rounded-control border border-line bg-panel px-2 py-1.5 font-mono text-xs text-ink">
+      <div className="flex items-center gap-3">
+        <Fields fields={group.records[0]?.view?.fields ?? []} />
+        <Button
+          type="button"
+          className={`${BTN} ml-auto`}
+          disabled={text === ""}
+          onClick={() => {
+            copyText(text).catch(toastError);
+          }}
+        >
+          Copy all
+        </Button>
+      </div>
+      <pre
+        ref={paneRef}
+        tabIndex={0}
+        aria-label="Transcript"
+        className="max-h-72 min-h-16 overflow-auto whitespace-pre-wrap break-words rounded-control border border-line bg-panel px-2 py-1.5 font-mono text-xs text-ink"
+        onScroll={(e) => {
+          stick.current = isAtBottom(e.currentTarget);
+        }}
+      >
         {text}
       </pre>
+    </div>
+  );
+}
+
+const PICTURES = 6;
+
+function Pictures({ pictures }: { pictures: readonly CapturedImage[] }) {
+  return (
+    <div className="grid grid-cols-2 gap-1 p-3">
+      {pictures.slice(0, PICTURES).map((picture) => {
+        const title = `${picture.mode} ${picture.width} × ${picture.height}`;
+        if (picture.image == null) {
+          return (
+            <span
+              key={picture.id}
+              className="text-2xs text-warn"
+              title={picture.image_error ?? title}
+            >
+              {picture.mode}
+            </span>
+          );
+        }
+        const url = capturedImageUrl(picture.image.url);
+        return (
+          <a key={picture.id} href={url} target="_blank" rel="noreferrer" title={title}>
+            <img src={url} alt={title} className="w-full rounded-inset object-contain" />
+          </a>
+        );
+      })}
     </div>
   );
 }

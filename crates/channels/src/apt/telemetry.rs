@@ -1,4 +1,4 @@
-use sdrmm_wire::AvhrrChannel;
+use crate::apt::AvhrrChannel;
 
 use super::geometry::{
     CHANNEL_WEDGE, FRAME_LINES, RAMP_WEDGES, WEDGE_LINES, ZERO_WEDGE, wedge_level,

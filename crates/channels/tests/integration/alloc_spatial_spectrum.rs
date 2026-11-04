@@ -108,7 +108,7 @@ mod spatial_spectrum {
             let mut out = ProcessorOutput::new(OutputSlots {
                 report: self.report.as_mut(),
                 surface: self.surface.as_mut(),
-                events: &mut [],
+                bearings: &mut [],
                 lanes: &mut [],
             });
             processor.process(&block, &mut out);

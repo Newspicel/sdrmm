@@ -3,7 +3,6 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use num_complex::Complex;
 use sdrmm_channels::synth::dv;
-use sdrmm_wire::ChannelSettings;
 
 const MAX_SEED_BYTES: usize = 32 * 1024;
 const SEED_SAMPLES: usize = 1_024;
@@ -72,7 +71,7 @@ fn dv_voice(out: &Path) -> Result<()> {
 fn channel_chain(out: &Path) -> Result<()> {
     make(out)?;
     let tone = quantised(&tone(SEED_SAMPLES, SEED_TONE));
-    for descriptor in sdrmm_channels::descriptor_table() {
+    for descriptor in sdrmm_channels::descriptors() {
         let mut seed = descriptor.type_id.clone().into_bytes();
         seed.push(0);
         seed.extend_from_slice(&tone);
@@ -84,8 +83,8 @@ fn channel_chain(out: &Path) -> Result<()> {
 fn channel_settings(out: &Path) -> Result<()> {
     make(out)?;
     let tone = quantised(&tone(SEED_SAMPLES, SEED_TONE));
-    for descriptor in sdrmm_channels::descriptor_table() {
-        let Some(settings) = ChannelSettings::default_for(&descriptor.type_id) else {
+    for descriptor in sdrmm_channels::descriptors() {
+        let Some(settings) = sdrmm_channels::default_settings(&descriptor.type_id) else {
             continue;
         };
         let mut seed = serde_json::to_vec(&settings)

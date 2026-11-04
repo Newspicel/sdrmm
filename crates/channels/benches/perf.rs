@@ -4,6 +4,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use num_complex::Complex;
+use sdrmm_channels::{AdsbParams, NativeChannel};
 use sdrmm_channels::{
     ChannelCtx, ChannelOutputs, ChannelRx, Dvbs2Rate,
     synth::{
@@ -13,7 +14,7 @@ use sdrmm_channels::{
     },
 };
 use sdrmm_modem_test_support::ber::rng::Rng;
-use sdrmm_wire::{AdsbParams, ChannelParams, ChannelSettings, Squelch};
+use sdrmm_wire::{ChannelParams, ChannelSettings, Squelch};
 
 const EB_N0_DB: f64 = 2.0;
 const WORDS: usize = 4;
@@ -78,7 +79,7 @@ fn adsb_decode(c: &mut Criterion) {
     let settings = ChannelSettings {
         frequency_hz: 0.0,
         squelch: Squelch::Off,
-        params: ChannelParams::Adsb(AdsbParams::default()),
+        params: ChannelParams::of(&AdsbParams::default()).expect("adsb settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     };

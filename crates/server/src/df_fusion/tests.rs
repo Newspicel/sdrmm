@@ -2,8 +2,7 @@ use std::time::Instant;
 
 use sdrmm_wire::{
     DfBearing, DfEstimate, NavMode, NavTargetKind, PositionFix, TriangulationParams,
-    fusion::{BearingSource, FusionDecay},
-    geo::{self, Enu, LatLon},
+    fusion::BearingSource, fusion::FusionDecay, geo, geo::Enu, geo::LatLon,
 };
 
 use super::{

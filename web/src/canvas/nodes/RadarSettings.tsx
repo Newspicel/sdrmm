@@ -711,7 +711,7 @@ function TrackGroup({ settings, edit }: GroupProps) {
           onCommit={(jerk) => set({ jerk })}
         />
       </SettingRow>
-      <SettingRow label="Altitude" title="Target height when no ADS-B match">
+      <SettingRow label="Altitude" title="Target height when no truth match">
         <NumberField
           label="Altitude"
           value={settings.assumed_altitude_m}

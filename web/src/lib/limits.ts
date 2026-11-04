@@ -14,7 +14,6 @@ export interface BandLimits {
 export const LIGHT_SPEED_M_S = limits.light_speed_m_s;
 export const BAND_SEED_HZ = limits.band_seed_hz;
 export const SPECTRUM_SIGNAL_MARGIN_DB = limits.spectrum_signal_margin_db;
-export const SONDE_BURST_M = limits.sonde_burst_m;
 export const ARRAY_LIMITS = limits.array;
 export const FUSION_LIMITS = limits.fusion;
 export const RADAR_LIMITS = limits.radar;
@@ -43,7 +42,6 @@ export const AUDIO = limits.audio;
 export const AUDIO_RATE_HZ = limits.audio.rate_hz;
 export const IF_FILTER_LIMITS = limits.if_filter;
 export const SURVEY_LIMITS = limits.survey;
-export const WMBUS_LIMITS = limits.wmbus;
 export const WORKSPACE_STATE_VERSION = limits.workspace_state_version;
 
 export function lowest(bounds: Bounds, step: number): number {

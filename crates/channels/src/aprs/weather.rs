@@ -1,4 +1,4 @@
-use sdrmm_wire::AprsWeather;
+use crate::aprs::AprsWeather;
 
 const MPH_TO_MS: f32 = 0.447_04;
 const KNOT_TO_MS: f32 = 0.514_444;

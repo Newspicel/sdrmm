@@ -3,7 +3,7 @@ import { activityText, idlePort, useActivityStore } from "./activity";
 import type { PortActivity } from "./types";
 
 const port = (counts: Partial<PortActivity>): PortActivity => ({
-  node: "adsb",
+  node: "plane",
   port: "events",
   emitted: 0,
   delivered: 0,
@@ -22,7 +22,7 @@ describe("port activity", () => {
       data: { ports: [port({ emitted: 3, delivered: 2, ignored: 1 })] },
     });
 
-    expect(useActivityStore.getState().ports["adsb\u0000events"]?.delivered).toBe(2);
+    expect(useActivityStore.getState().ports["plane\u0000events"]?.delivered).toBe(2);
   });
 
   it("names only the counts that happened", () => {

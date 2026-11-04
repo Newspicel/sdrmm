@@ -20,7 +20,7 @@ pub(crate) struct Route {
 }
 
 impl Route {
-    fn passes(&self, kind: EventKind, view: &Presentation) -> bool {
+    fn passes(&self, kind: &EventKind, view: &Presentation) -> bool {
         self.filters.iter().all(|filter| filter.admits(kind, view))
     }
 }
@@ -62,7 +62,7 @@ impl Routed {
 
 fn accepts(node: &ResolvedNode, port: &str) -> KindSet {
     match node.input(port).map(|port| &port.spec.payload) {
-        Some(Payload::Events { kinds }) => *kinds,
+        Some(Payload::Events { kinds }) => kinds.clone(),
         _ => KindSet::EMPTY,
     }
 }
@@ -127,7 +127,7 @@ impl EventRoutes {
         &self,
         source: &str,
         sink: &str,
-        kind: EventKind,
+        kind: &EventKind,
         view: &Presentation,
     ) -> bool {
         self.routes_from(source).iter().any(|route| {
@@ -149,7 +149,7 @@ impl EventRoutes {
         let view = record.event.present();
         let judged = stations.judged(&source, record, &view, Instant::now());
         record.view = Some(view);
-        let kind = record.event.kind();
+        let kind = &record.event.kind;
         let mut sinks: Vec<String> = Vec::new();
         let mut ignored = false;
         for route in self.routes_from(&source) {

@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, EventContract, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
@@ -9,12 +14,12 @@ use sdrmm_modem::{
     },
     pulse::{self, Norm},
 };
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    PskBaud, PskParams, PskText,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const INPUT_RATE_HZ: f64 = 8_000.0;
 const FILTER_TAPS: usize = 257;
@@ -31,18 +36,12 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 650.0,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    emits: vec![EventKind::Psk],
+    emits: vec![PskText::KIND],
     ..ChannelDescriptor::default()
 });
 
-fn settings(params: &ChannelParams) -> Result<&PskParams, ChannelError> {
-    match params {
-        ChannelParams::Psk(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "PSK channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<PskParams, ChannelError> {
+    crate::settings_of::<PskParams>(settings)
 }
 
 fn demodulator(baud: f64) -> Result<LinearDemod, ChannelError> {
@@ -61,16 +60,13 @@ fn demodulator(baud: f64) -> Result<LinearDemod, ChannelError> {
     ))
 }
 
-pub(crate) fn occupied_band(params: &ChannelParams) -> (f64, f64) {
-    let baud = settings(params)
-        .map_or(PskBaud::default(), |p| p.baud)
-        .rate();
-    let half = baud * BANDWIDTH_FACTOR;
+pub(crate) fn occupied_band(p: &PskParams) -> (f64, f64) {
+    let half = p.baud.rate() * BANDWIDTH_FACTOR;
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelError> {
-    let half = settings(params)?.baud.rate() * BANDWIDTH_FACTOR;
+pub(crate) fn channel_filter(p: &PskParams) -> Result<ChannelFilter, ChannelError> {
+    let half = p.baud.rate() * BANDWIDTH_FACTOR;
     Ok(ChannelFilter::Symmetric(Decimator::new(
         &design_lowpass(FILTER_TAPS, half / INPUT_RATE_HZ),
         1,
@@ -89,14 +85,13 @@ pub struct PskChannel {
     symbols_seen: u32,
 }
 
-impl ChannelRx for PskChannel {
+impl NativeChannel for PskChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let params = *self::settings(&settings.params)?;
+        let params = params(&settings)?;
         Ok(Self {
             demod: demodulator(params.baud.rate())?,
             differential: DifferentialDetector::new(),
@@ -109,9 +104,11 @@ impl ChannelRx for PskChannel {
             symbols_seen: 0,
         })
     }
+}
 
+impl ChannelRx for PskChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let params = *self::settings(&settings.params)?;
+        let params = params(&settings)?;
         self.demod = demodulator(params.baud.rate())?;
         self.baud = params.baud;
         self.invert = params.invert;
@@ -152,7 +149,7 @@ impl ChannelRx for PskChannel {
             if let Some(text) = self.decoder.feed(bit)
                 && self.lock >= LOCK_MIN
             {
-                out.events.push(DecoderEvent::Psk(PskText {
+                out.events.push(DecoderEvent::of(&PskText {
                     baud: self.baud,
                     text,
                 }));
@@ -364,9 +361,72 @@ pub(crate) const VARICODE: [&str; 128] = [
     "1110110101",
 ];
 
+const PSK_SPOTS: &[HzRange] = &[
+    HzRange::spot_khz(3_580.0, 3.0),
+    HzRange::spot_khz(7_040.0, 3.0),
+    HzRange::spot_khz(7_070.0, 3.0),
+    HzRange::spot_khz(10_142.0, 3.0),
+    HzRange::spot_khz(14_070.0, 3.0),
+    HzRange::spot_khz(18_100.0, 3.0),
+    HzRange::spot_khz(21_070.0, 3.0),
+    HzRange::spot_khz(24_920.0, 3.0),
+    HzRange::spot_khz(28_120.0, 3.0),
+];
+
+fn psk_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "PSK31",
+            &[Modulation::Psk2],
+            HzRange::new(20.0, 120.0),
+            "31.25 baud phase reversals in a 60 Hz slot",
+        )
+        .symbol_rate(HzRange::about(31.25, 0.1))
+        .on(PSK_SPOTS),
+        SignalSignature::new(
+            "PSK63",
+            &[Modulation::Psk2],
+            HzRange::new(50.0, 200.0),
+            "62.5 baud phase reversals in a 120 Hz slot",
+        )
+        .symbol_rate(HzRange::about(62.5, 0.1))
+        .on(PSK_SPOTS),
+        SignalSignature::new(
+            "PSK125",
+            &[Modulation::Psk2],
+            HzRange::new(100.0, 400.0),
+            "125 baud phase reversals in a 250 Hz slot",
+        )
+        .symbol_rate(HzRange::about(125.0, 0.1))
+        .on(PSK_SPOTS),
+    ]
+}
+
+pub(crate) fn psk_decoder() -> Native<PskParams> {
+    Native::new::<PskChannel>(occupied_band)
+        .filter(channel_filter)
+        .home(14_070_000.0)
+        .signatures(psk_signatures)
+        .form(psk_form)
+        .kinds(psk_kinds)
+}
+
+pub(crate) fn psk_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("baud", "Mode", Control::choice::<PskBaud>()).title("PSK symbol rate"),
+        SettingField::invert(),
+    ]
+}
+
+fn psk_kinds() -> Vec<KindSpec> {
+    vec![psk_kind()]
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
     use crate::{synth, testutil::settings};
@@ -403,10 +463,13 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Psk(PskParams {
-                baud,
-                invert: false,
-            })),
+            settings(
+                ChannelParams::of(&PskParams {
+                    baud,
+                    invert: false,
+                })
+                .expect("psk settings"),
+            ),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -415,10 +478,7 @@ mod tests {
         }
         out.events
             .into_iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Psk(text) => Some(text),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<PskText>())
             .collect()
     }
 
@@ -454,11 +514,10 @@ mod tests {
     #[test]
     fn occupied_band_tracks_the_selected_baud() {
         for baud in [PskBaud::Psk31, PskBaud::Psk250] {
-            let params = ChannelParams::Psk(PskParams {
+            let (low, high) = occupied_band(&PskParams {
                 baud,
                 invert: false,
             });
-            let (low, high) = occupied_band(&params);
             assert!(
                 (high - baud.rate() * BANDWIDTH_FACTOR).abs() < 1e-9,
                 "{baud:?}"

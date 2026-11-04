@@ -1,6 +1,6 @@
 use std::f64::consts::TAU;
 
-use sdrmm_wire::StanagModem;
+use crate::stanag::StanagModem;
 
 use super::{
     RATE_HZ,

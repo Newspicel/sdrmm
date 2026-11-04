@@ -1,7 +1,5 @@
 use sdrmm_wire::{
-    FusionGridOwned,
-    fusion::{FUSION_FRAME_CELLS, FUSION_GRID_CELLS},
-    geo::{Enu, LatLon},
+    FusionGridOwned, fusion::FUSION_FRAME_CELLS, fusion::FUSION_GRID_CELLS, geo::Enu, geo::LatLon,
 };
 
 use super::observation::{BANK_WIDTHS_DEG, BANKS, RING, Rings};

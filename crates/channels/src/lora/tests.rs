@@ -1,9 +1,20 @@
+use crate::NativeChannel;
+use crate::lora::LoraBandwidth;
+use crate::lora::LoraCodingRate;
+use crate::lora::LoraFrame;
+use crate::lora::LoraIntegrity;
+use crate::lora::LoraIq;
+use crate::lora::LoraKey;
+use crate::lora::LoraParams;
+use crate::lora::LoraPayload;
+use crate::lora::LoraProtocol;
+use crate::lora::LoraSpreadingFactor;
+use crate::lora::MeshcoreContent;
+use crate::lora::MeshcoreNodeType;
+use crate::lora::MeshtasticContent;
+use crate::lora::MeshtasticEncryption;
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecoderEvent, LoraBandwidth, LoraCodingRate, LoraFrame,
-    LoraIntegrity, LoraIq, LoraKey, LoraParams, LoraPayload, LoraProtocol, LoraSpreadingFactor,
-    MeshcoreContent, MeshcoreNodeType, MeshtasticContent, MeshtasticEncryption,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{LoraChannel, input_rate, lorawan, meshcore, meshtastic};
 use crate::{
@@ -17,7 +28,7 @@ fn frames(params: &LoraParams, iq: &[Complex<f32>]) -> Vec<LoraFrame> {
 }
 
 fn frames_at(params: &LoraParams, carrier_hz: f64, iq: &[Complex<f32>]) -> Vec<LoraFrame> {
-    let channel_params = ChannelParams::Lora(params.clone());
+    let channel_params = ChannelParams::new("lora", &params.clone()).expect("lora settings");
     let ctx = ChannelCtx {
         input_rate: input_rate(params),
     };
@@ -34,10 +45,11 @@ fn frames_at(params: &LoraParams, carrier_hz: f64, iq: &[Complex<f32>]) -> Vec<L
         filter.process(block, &mut filtered);
         out.reset();
         channel.process(&filtered, &mut out);
-        found.extend(out.events.drain(..).filter_map(|event| match event {
-            DecoderEvent::Lora(frame) => Some(frame),
-            _ => None,
-        }));
+        found.extend(
+            out.events
+                .drain(..)
+                .filter_map(|event| event.read::<LoraFrame>()),
+        );
     }
     found
 }
@@ -274,20 +286,27 @@ fn malformed_keys_and_layout_changes_are_refused() {
         input_rate: input_rate(&params),
     };
     assert!(matches!(
-        LoraChannel::new(ctx, settings(ChannelParams::Lora(params))),
+        LoraChannel::new(ctx, settings(ChannelParams::of(&params).expect("settings"))),
         Err(ChannelError::InvalidSettings(_))
     ));
     let default = LoraParams::default();
     let ctx = ChannelCtx {
         input_rate: input_rate(&default),
     };
-    let mut channel =
-        LoraChannel::new(ctx, settings(ChannelParams::Lora(default.clone()))).expect("builds");
+    let mut channel = LoraChannel::new(
+        ctx,
+        settings(ChannelParams::new("lora", &default.clone()).expect("lora settings")),
+    )
+    .expect("builds");
     let wider = LoraParams {
         bandwidth: LoraBandwidth::Khz250,
         ..default.clone()
     };
-    assert!(channel.apply(settings(ChannelParams::Lora(wider))).is_err());
+    assert!(
+        channel
+            .apply(settings(ChannelParams::of(&wider).expect("settings")))
+            .is_err()
+    );
     let keyed = LoraParams {
         protocol: LoraProtocol::Meshtastic,
         keys: vec![LoraKey::MeshtasticChannel {
@@ -296,5 +315,43 @@ fn malformed_keys_and_layout_changes_are_refused() {
         }],
         ..default
     };
-    assert!(channel.apply(settings(ChannelParams::Lora(keyed))).is_ok());
+    assert!(
+        channel
+            .apply(settings(ChannelParams::of(&keyed).expect("settings")))
+            .is_ok()
+    );
+}
+
+#[test]
+fn the_key_form_names_every_field_of_every_key_kind() {
+    let blank = String::new;
+    let keys = [
+        LoraKey::MeshtasticChannel {
+            name: blank(),
+            psk: blank(),
+        },
+        LoraKey::MeshcoreChannel {
+            name: blank(),
+            secret: blank(),
+        },
+        LoraKey::LorawanSession {
+            dev_addr: blank(),
+            nwk_s_key: blank(),
+            app_s_key: blank(),
+        },
+        LoraKey::LorawanAppKey { app_key: blank() },
+    ];
+    let form = super::lora_key_form();
+    for key in keys {
+        let json = serde_json::to_value(&key).expect("key serialises");
+        let kind = serde_json::to_value(key.kind()).expect("kind serialises");
+        assert_eq!(json["kind"], kind);
+        for field in json.as_object().into_iter().flatten().map(|(name, _)| name) {
+            assert!(
+                form.iter().any(|entry| entry.key == *field
+                    && entry.when.iter().all(|when| when.any_of.contains(&kind))),
+                "{kind} {field} has no form field"
+            );
+        }
+    }
 }

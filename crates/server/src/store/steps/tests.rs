@@ -38,22 +38,22 @@ fn filter_kinds(snapshot: &WorkspaceSnapshot) -> Vec<EventKind> {
 }
 
 #[test]
-fn unknown_filter_kinds_are_dropped_with_one_notice() {
-    let mut snapshot = with_filter(json!(["adsb", "teletext", "call", 7]));
+fn malformed_filter_kinds_are_dropped_and_unregistered_ones_kept() {
+    let mut snapshot = with_filter(json!(["probe_station", "teletext", "call", 7, ""]));
     let notices = run(&mut snapshot);
-    assert_eq!(notices, vec![dropped(&["teletext", "7"])]);
+    assert_eq!(notices, vec![dropped(&["7", ""])]);
     assert_eq!(
         snapshot["graph"]["nodes"]
             .as_array()
             .and_then(|nodes| nodes.last())
             .map(|node| node["data"]["kinds"].clone()),
-        Some(json!(["adsb", "call"]))
+        Some(json!(["probe_station", "teletext", "call"]))
     );
 }
 
 #[test]
 fn running_the_steps_twice_equals_once() {
-    let mut once = with_filter(json!(["teletext", "rtty"]));
+    let mut once = with_filter(json!([7, "probe_text"]));
     run(&mut once);
     let mut twice = once.clone();
     assert!(run(&mut twice).is_empty());
@@ -61,10 +61,13 @@ fn running_the_steps_twice_equals_once() {
 }
 
 #[test]
-fn a_parsed_snapshot_reads_without_unknown_kinds() {
-    let json = with_filter(json!(["teletext", "rtty"])).to_string();
+fn a_parsed_snapshot_reads_without_malformed_kinds() {
+    let json = with_filter(json!([7, "probe_text"])).to_string();
     let snapshot = parse_workspace_snapshot(&json).expect("parses");
-    assert_eq!(filter_kinds(&snapshot), vec![EventKind::Rtty]);
+    assert_eq!(
+        filter_kinds(&snapshot),
+        vec![EventKind::named("probe_text")]
+    );
 }
 
 #[test]
@@ -96,17 +99,20 @@ fn a_stored_workspace_is_cleaned_once_at_startup() {
             .lock()
             .execute(
                 "UPDATE workspaces SET snapshot = ?2 WHERE id = ?1",
-                params![id, with_filter(json!(["teletext", "ais"])).to_string()],
+                params![id, with_filter(json!([7, "probe_station"])).to_string()],
             )
             .expect("plant the old filter");
         id
     };
     let store = Store::open(Some(file.path())).expect("reopen");
     let detail = store.workspace(id).expect("opens");
-    assert_eq!(filter_kinds(&detail.snapshot), vec![EventKind::Ais]);
+    assert_eq!(
+        filter_kinds(&detail.snapshot),
+        vec![EventKind::named("probe_station")]
+    );
     let notices: Vec<&WorkspaceNoticeKind> =
         detail.notices.iter().map(|notice| &notice.notice).collect();
-    assert_eq!(notices, vec![&dropped(&["teletext"])]);
+    assert_eq!(notices, vec![&dropped(&["7"])]);
     drop(store);
     let again = Store::open(Some(file.path())).expect("reopen again");
     assert_eq!(again.workspace(id).expect("opens").notices.len(), 1);
@@ -117,10 +123,10 @@ fn an_import_reports_the_kinds_it_dropped() {
     let mut export = json!({
         "version": 1,
         "name": "Old",
-        "snapshot": with_filter(json!(["teletext"])),
+        "snapshot": with_filter(json!([7])),
     });
     let notices = upgrade_import(&mut export);
-    assert_eq!(notices, vec![dropped(&["teletext"])]);
+    assert_eq!(notices, vec![dropped(&["7"])]);
     assert_eq!(
         export["snapshot"]["graph"]["nodes"]
             .as_array()
@@ -184,6 +190,23 @@ fn a_steer_wire_moves_to_the_bearing_port() {
 }
 
 #[test]
+fn a_radar_truth_wire_moves_from_the_adsb_port() {
+    let old = with_wires(
+        json!([
+            decoder("planes", "adsb"),
+            at("radar", "passive_radar", json!({}))
+        ]),
+        json!([wire(("planes", "events"), ("radar", "adsb"))]),
+    );
+    let (snapshot, notices) = twice_equals_once(old);
+    assert!(notices.is_empty());
+    assert_eq!(
+        snapshot["graph"]["edges"],
+        json!([wire(("planes", "events"), ("radar", "truth"))])
+    );
+}
+
+#[test]
 fn wires_the_contracts_refuse_are_dropped_with_their_reason() {
     let old = with_wires(
         json!([
@@ -214,7 +237,7 @@ fn wires_the_contracts_refuse_are_dropped_with_their_reason() {
                 notice_wire(
                     ("text", "events"),
                     ("only", "events"),
-                    "Passive radar takes ADS-B"
+                    "Passive radar takes tracks"
                 ),
             ]
         }]
@@ -223,7 +246,7 @@ fn wires_the_contracts_refuse_are_dropped_with_their_reason() {
         snapshot["graph"]["edges"],
         json!([
             wire(("planes", "events"), ("map", "events")),
-            wire(("only", "events"), ("radar", "adsb")),
+            wire(("only", "events"), ("radar", "truth")),
         ])
     );
     parse_workspace_snapshot(&snapshot.to_string()).expect("the cleaned workspace loads");

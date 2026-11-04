@@ -299,8 +299,8 @@ export function bearingCell(aoa: RadarAoa | null | undefined): BearingCell {
   return { text: `${Math.round(aoa.azimuth_deg)}°`, arrayFrame: true };
 }
 
-export function adsbCell(track: RadarTrack): string {
-  return track.adsb?.callsign ?? track.adsb?.icao ?? "-";
+export function truthCell(track: RadarTrack): string {
+  return track.truth?.callsign ?? track.truth?.id ?? "-";
 }
 
 export function allElements(lanes: number): number[] {

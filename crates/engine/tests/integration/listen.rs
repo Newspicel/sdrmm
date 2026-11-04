@@ -5,12 +5,15 @@ use std::sync::Arc;
 use crate::common::{
     SETTLE_PACKETS, assert_tone_dominates, collect_packets, settle_then_collect_second,
 };
+use sdrmm_channels::AmParams;
+use sdrmm_channels::NfmParams;
+use sdrmm_channels::WfmParams;
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_virtual::{
     AM_CARRIER_OFFSET_HZ, NFM_CARRIER_OFFSET_HZ, VirtualDriver, WFM_CARRIER_OFFSET_HZ,
 };
 use sdrmm_engine::{Engine, audio::OPUS_FRAME_SAMPLES};
-use sdrmm_wire::{AmParams, ChannelParams, ChannelSettings, DeviceSettings, NfmParams, WfmParams};
+use sdrmm_wire::{ChannelParams, ChannelSettings, DeviceSettings};
 
 const TEST_RATE: f64 = 2_400_000.0;
 const CENTER_HZ: f64 = 100_000_000.0;
@@ -50,7 +53,7 @@ fn settings(params: ChannelParams, offset_hz: f64, squelch_db: Option<f32>) -> C
 
 fn nfm(offset_hz: f64, squelch_db: Option<f32>) -> ChannelSettings {
     settings(
-        ChannelParams::Nfm(NfmParams::default()),
+        ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
         offset_hz,
         squelch_db,
     )
@@ -82,7 +85,7 @@ async fn am_channel_demodulates_the_test_carrier() {
             ds,
             0,
             settings(
-                ChannelParams::Am(AmParams::default()),
+                ChannelParams::new("am", &AmParams::default()).expect("am settings"),
                 AM_CARRIER_OFFSET_HZ,
                 None,
             ),
@@ -102,7 +105,7 @@ async fn wfm_channel_demodulates_the_test_carrier_in_stereo() {
             ds,
             0,
             settings(
-                ChannelParams::Wfm(WfmParams::default()),
+                ChannelParams::new("wfm", &WfmParams::default()).expect("wfm settings"),
                 WFM_CARRIER_OFFSET_HZ,
                 None,
             ),
@@ -131,10 +134,14 @@ async fn wfm_stereo_toggle_changes_the_layout_of_the_live_stream() {
     let ds = set_at_test_rate(&engine);
     let wfm = |stereo: bool| {
         settings(
-            ChannelParams::Wfm(WfmParams {
-                deemphasis_us: 50.0,
-                stereo,
-            }),
+            ChannelParams::new(
+                "wfm",
+                &WfmParams {
+                    deemphasis_us: 50.0,
+                    stereo,
+                },
+            )
+            .expect("wfm settings"),
             WFM_CARRIER_OFFSET_HZ,
             None,
         )
@@ -232,7 +239,7 @@ async fn type_change_keeps_the_audio_subscription_alive() {
             ds,
             ch,
             settings(
-                ChannelParams::Am(AmParams::default()),
+                ChannelParams::new("am", &AmParams::default()).expect("am settings"),
                 AM_CARRIER_OFFSET_HZ,
                 None,
             ),

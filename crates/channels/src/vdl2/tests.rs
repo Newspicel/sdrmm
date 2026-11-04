@@ -1,3 +1,4 @@
+use sdrmm_wire::ChannelParams;
 use xng_mode_vdl2::Vdl2ChannelDecoder;
 
 use super::avlc::{AddressType, encode_address};
@@ -25,7 +26,7 @@ impl Noise {
 
 pub(crate) fn fixture() -> crate::fixtures::Fixture {
     crate::fixtures::Fixture::new(
-        ChannelParams::Vdl2(Vdl2Params::default()),
+        ChannelParams::new("vdl2", &Vdl2Params::default()).expect("vdl2 settings"),
         padded(burst_iq(&[aoa_frame(), rr_frame()], RATE, 0.0, 0.5), 800),
     )
 }
@@ -217,13 +218,14 @@ fn decodes_an_avlc_supervisory_frame() {
     let iq = padded(burst_iq(&[rr_frame()], RATE, 0.0, 0.5), 800);
     let mut channel = Vdl2Channel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Vdl2(Vdl2Params::default())),
+        settings(ChannelParams::new("vdl2", &Vdl2Params::default()).expect("vdl2 settings")),
     )
     .expect("channel");
     let events = run_events(&mut channel, &iq);
-    let [DecoderEvent::Vdl2(message)] = &events[..] else {
+    let [event] = &events[..] else {
         panic!("one message expected: {events:?}");
     };
+    let message = crate::datalink::read(event, "vdl2").expect("a VDL2 message");
     assert!(message.crc_ok);
     assert_eq!(message.message_type, "avlc-rr");
     assert_eq!(message.details["type"], "vdl2");
@@ -255,10 +257,11 @@ fn decode_channel(iq: &[Complex<f32>], decoder: Vdl2Decoder) -> Vec<DataLinkMess
     for chunk in iq.chunks(1024) {
         out.reset();
         channel.process(chunk, &mut out);
-        messages.extend(out.events.drain(..).filter_map(|event| match event {
-            DecoderEvent::Vdl2(message) => Some(message),
-            _ => None,
-        }));
+        messages.extend(
+            out.events
+                .drain(..)
+                .filter_map(|event| crate::datalink::read(&event, "vdl2")),
+        );
     }
     messages
 }

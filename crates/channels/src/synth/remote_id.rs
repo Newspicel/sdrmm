@@ -1,6 +1,6 @@
+use crate::remote_id::RemoteIdMessage;
 use num_complex::Complex;
 use sdrmm_modem::{ble::transmit, spread::PnError};
-use sdrmm_wire::RemoteIdMessage;
 
 pub use sdrmm_modem::{
     ble::BlePhy,
@@ -96,10 +96,15 @@ const SCENE_GAP_S: f64 = 0.02;
 
 #[must_use]
 pub fn demo_drone() -> Vec<RemoteIdMessage> {
-    use sdrmm_wire::{
-        EuCategory, EuClassification, HeightReference, OperatorLocationType, RemoteIdLocation,
-        RemoteIdSystem, UaStatus, UaType, UasIdType,
-    };
+    use crate::remote_id::EuCategory;
+    use crate::remote_id::EuClassification;
+    use crate::remote_id::HeightReference;
+    use crate::remote_id::OperatorLocationType;
+    use crate::remote_id::RemoteIdLocation;
+    use crate::remote_id::RemoteIdSystem;
+    use crate::remote_id::UaStatus;
+    use crate::remote_id::UaType;
+    use crate::remote_id::UasIdType;
     vec![
         RemoteIdMessage::BasicId {
             id_type: UasIdType::SerialNumber,
@@ -173,7 +178,7 @@ pub fn bluetooth_scene(rate: f64) -> Vec<Complex<f32>> {
 }
 
 pub fn wifi_scene() -> Result<Vec<Complex<f32>>, PnError> {
-    let rate = sdrmm_wire::RemoteIdLink::Wifi.input_rate_hz();
+    let rate = crate::remote_id::RemoteIdLink::Wifi.input_rate_hz();
     let pack = encode::pack(&demo_drone());
     let mut iq = gap(rate);
     iq.extend(ofdm(

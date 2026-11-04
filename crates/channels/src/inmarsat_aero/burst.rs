@@ -426,15 +426,21 @@ mod tests {
         assert_eq!(block.core.tail.as_deref(), Some("VT-ANB"));
     }
 
-    fn channel(channel: sdrmm_wire::AeroChannel) -> crate::inmarsat_aero::InmarsatAeroChannel {
-        use crate::{ChannelCtx, ChannelRx};
+    fn channel(
+        channel: crate::inmarsat_aero::AeroChannel,
+    ) -> crate::inmarsat_aero::InmarsatAeroChannel {
+        use crate::{ChannelCtx, NativeChannel};
         crate::inmarsat_aero::InmarsatAeroChannel::new(
             ChannelCtx {
                 input_rate: crate::inmarsat_aero::decoder::INPUT_RATE,
             },
-            crate::testutil::settings(sdrmm_wire::ChannelParams::InmarsatAero(
-                sdrmm_wire::InmarsatAeroParams { channel },
-            )),
+            crate::testutil::settings(
+                sdrmm_wire::ChannelParams::new(
+                    "inmarsat_aero",
+                    &crate::inmarsat_aero::InmarsatAeroParams { channel },
+                )
+                .expect("inmarsat_aero settings"),
+            ),
         )
         .expect("aero channel")
     }
@@ -447,23 +453,21 @@ mod tests {
             crate::synth::resample(&iq, CHANNEL_RATE, crate::inmarsat_aero::decoder::INPUT_RATE);
         let mut padded = wide;
         padded.extend(std::iter::repeat_n(Complex::new(0.0, 0.0), 48_000));
-        let bursts =
-            crate::testutil::run_events(&mut channel(sdrmm_wire::AeroChannel::Burst), &padded);
+        let bursts = crate::testutil::run_events(
+            &mut channel(crate::inmarsat_aero::AeroChannel::Burst),
+            &padded,
+        );
         let acars = bursts
             .iter()
-            .find_map(|event| match event {
-                sdrmm_wire::DecoderEvent::InmarsatAero(message)
-                    if message.message_type == "acars" =>
-                {
-                    Some(message)
-                }
-                _ => None,
-            })
+            .filter_map(|event| crate::datalink::read(event, "inmarsat_aero"))
+            .find(|message| message.message_type == "acars")
             .expect("ACARS from the T burst");
         assert!(acars.crc_ok);
         assert_eq!(acars.station.as_deref(), Some("VT-ANB"));
-        let forward =
-            crate::testutil::run_events(&mut channel(sdrmm_wire::AeroChannel::P), &padded);
+        let forward = crate::testutil::run_events(
+            &mut channel(crate::inmarsat_aero::AeroChannel::P),
+            &padded,
+        );
         assert!(
             forward.is_empty(),
             "the P channel must not read bursts: {forward:?}"

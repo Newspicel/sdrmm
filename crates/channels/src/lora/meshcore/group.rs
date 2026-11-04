@@ -1,4 +1,4 @@
-use sdrmm_wire::MeshcoreContent;
+use crate::lora::MeshcoreContent;
 
 use super::keys::{Channel, Keys, LONG_SECRET_LEN};
 use crate::crypto::{self, Aes};

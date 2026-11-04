@@ -29,7 +29,7 @@ fn load(dir: &Path, file: &str) -> Vec<Complex<f32>> {
 fn decode_ours(iq: &[Complex<f32>]) -> Vec<DecoderEvent> {
     let settings = ChannelSettings {
         frequency_hz: CENTER_HZ,
-        ..ChannelSettings::default_for("vdl2").unwrap()
+        ..sdrmm_channels::default_settings("vdl2").unwrap()
     };
     let rate = sdrmm_channels::input_rate(&settings.params);
     let mut ddc = Ddc::new(CAPTURE_RATE, rate, settings.frequency_hz - CENTER_HZ).unwrap();
@@ -66,10 +66,12 @@ fn compare(dir: &Path, file: &str) -> (usize, usize) {
     let iq = load(dir, file);
     let ours: Vec<_> = decode_ours(&iq)
         .into_iter()
-        .map(|event| match event {
-            DecoderEvent::Vdl2(message) => message,
-            other => panic!("unexpected {other:?}"),
-        })
+        .map(
+            |event| match event.payload::<sdrmm_channels::DataLinkMessage>() {
+                Some(message) if event.kind == "vdl2" => message,
+                _ => panic!("unexpected {event:?}"),
+            },
+        )
         .collect();
     let xng = decode_xng(&iq);
     for raw in &xng {

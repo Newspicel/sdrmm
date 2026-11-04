@@ -1,12 +1,9 @@
 use std::f32::consts::{FRAC_1_PI, FRAC_PI_2, PI, TAU};
 
 use num_complex::Complex;
-use sdrmm_dsp::fast_arg;
+use sdrmm_dsp::{design_lowpass_blackman_harris, fast_arg};
 
-use super::{
-    acquisition::CoarseAcquisition,
-    taps::{Fir, lowpass_taps},
-};
+use super::{acquisition::CoarseAcquisition, taps::Fir};
 
 const MAG_ALPHA: f32 = 0.01;
 const LOCK_ALPHA: f32 = 0.01;
@@ -54,9 +51,9 @@ impl CoherentMsk {
             samples_per_bit,
             fs: channel_rate,
             lowpass: Fir::new(
-                lowpass_taps(
-                    LOWPASS_BIT_RATE_FRACTION * bit_rate / channel_rate,
+                design_lowpass_blackman_harris(
                     LOWPASS_TAPS,
+                    LOWPASS_BIT_RATE_FRACTION * bit_rate / channel_rate,
                 ),
                 1,
             ),

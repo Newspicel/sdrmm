@@ -11,9 +11,9 @@ use sdrmm_channels::array_processor::{
     ResetCause, Steer, TuningNeed, no_lane_format,
 };
 use sdrmm_wire::{
-    ArrayGeometry, ArrayOrientation, ArrayTuningMode, Coherence, DecodedRecord, DecoderEvent,
+    ArrayGeometry, ArrayOrientation, ArrayTuningMode, Coherence, DecodedRecord, DfBearing,
     DfParams, DfPeak, NO_CHANNEL, ProcessorGate, ProcessorParams, ProcessorReading,
-    processor::df::{DF_POINTS, MAX_DF_PEAKS},
+    processor::df::DF_POINTS, processor::df::MAX_DF_PEAKS,
 };
 use tokio::sync::broadcast;
 
@@ -140,13 +140,13 @@ impl Talker {
             out.publish_surface();
         }
         if self.talk.event
-            && let Some(DecoderEvent::Df(bearing)) = out.event()
+            && let Some(bearing) = out.bearing()
         {
             bearing.bearing_deg = 42.0;
             bearing.freq_hz = Some(433.92e6);
             bearing.node.clear();
             bearing.node.push_str("talker");
-            out.publish_event();
+            out.publish_bearing();
         }
         if self.talk.lanes
             && let (Some(mut lane), Some(samples)) = (out.lane(0), block.lanes.first())
@@ -393,7 +393,12 @@ fn processor_events_carry_their_origin_node() {
     assert_eq!(record.device_set, 7);
     assert_eq!(record.channel, NO_CHANNEL);
     assert_eq!(record.freq_hz, 433.92e6);
-    assert!(matches!(record.event, DecoderEvent::Df(bearing) if bearing.bearing_deg == 42.0));
+    assert!(
+        record
+            .event
+            .read::<DfBearing>()
+            .is_some_and(|bearing| bearing.bearing_deg == 42.0)
+    );
 }
 
 #[test]

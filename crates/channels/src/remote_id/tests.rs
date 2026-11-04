@@ -1,9 +1,17 @@
+use crate::NativeChannel;
+use crate::remote_id::HeightReference;
+use crate::remote_id::RemoteIdFrame;
+use crate::remote_id::RemoteIdLink;
+use crate::remote_id::RemoteIdLocation;
+use crate::remote_id::RemoteIdMessage;
+use crate::remote_id::RemoteIdParams;
+use crate::remote_id::RemoteIdPhy;
+use crate::remote_id::RemoteIdTransport;
+use crate::remote_id::UaStatus;
+use crate::remote_id::UaType;
+use crate::remote_id::UasIdType;
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecoderEvent, HeightReference, RemoteIdFrame, RemoteIdLink,
-    RemoteIdLocation, RemoteIdMessage, RemoteIdParams, RemoteIdPhy, RemoteIdTransport, UaStatus,
-    UaType, UasIdType,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{RemoteIdChannel, input_rate};
 use crate::{
@@ -32,7 +40,7 @@ pub(crate) fn decode(
 
 fn run(link: RemoteIdLink, frequency_hz: f64, iq: &[Complex<f32>]) -> (Vec<RemoteIdFrame>, u32) {
     let params = RemoteIdParams { link };
-    let channel_params = ChannelParams::RemoteId(params);
+    let channel_params = ChannelParams::new("remote_id", &params).expect("remote_id settings");
     let ctx = ChannelCtx {
         input_rate: input_rate(&params),
     };
@@ -49,10 +57,11 @@ fn run(link: RemoteIdLink, frequency_hz: f64, iq: &[Complex<f32>]) -> (Vec<Remot
         filter.process(block, &mut filtered);
         out.reset();
         channel.process(&filtered, &mut out);
-        found.extend(out.events.drain(..).filter_map(|event| match event {
-            DecoderEvent::RemoteId(frame) => Some(frame),
-            _ => None,
-        }));
+        found.extend(
+            out.events
+                .drain(..)
+                .filter_map(|event| event.read::<RemoteIdFrame>()),
+        );
     }
     (found, channel.rejected())
 }
@@ -155,7 +164,7 @@ fn try_channel(link: RemoteIdLink, frequency_hz: f64) -> Result<RemoteIdChannel,
         ctx,
         ChannelSettings {
             frequency_hz,
-            ..settings(ChannelParams::RemoteId(params))
+            ..settings(ChannelParams::of(&params).expect("settings"))
         },
     )
 }

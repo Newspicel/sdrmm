@@ -1,13 +1,18 @@
 use std::{sync::Arc, time::Duration};
 
 use axum::{Router, http::StatusCode};
+use sdrmm_channels::AdsbMessage;
 use sdrmm_dsp::radar::bistatic::{self, Geodetic};
 use sdrmm_engine::ArrayEvent;
 use sdrmm_wire::{
-    AdsbTruth, ArrayNode, ArrayOrientation, DeviceBackend, DeviceNode, DeviceRef, GpsNode,
-    PassiveRadarNode, PatchEdge, PatchNode, PortRef, Position, PositionSource, RadarAoa, RadarAxes,
-    RadarDetection, RadarHealth, ReferenceHealth, TrackChange, TrackState, WorkspaceSnapshot,
+    ArrayNode, ArrayOrientation, DeviceBackend, DeviceNode, DeviceRef, GpsNode, PassiveRadarNode,
+    PatchEdge, PatchNode, PortRef, Position, PositionSource, RadarAoa, RadarAxes, RadarDetection,
+    RadarHealth, ReferenceHealth, TrackChange, TrackState, TrackTruth, WorkspaceSnapshot,
     patch::stream_port, radar::LIGHT_SPEED_M_S,
+};
+use sdrmm_wire::{
+    EventContract,
+    present::{EventPayload, TrackFix},
 };
 use tokio::sync::broadcast::error::RecvError;
 
@@ -76,7 +81,22 @@ fn cruise_alt_m() -> f64 {
     f64::from(CRUISE_FT) * 0.3048
 }
 
-fn position(icao: &str, at: Geodetic) -> AdsbMessage {
+fn fix(message: &AdsbMessage) -> TrackFix {
+    message
+        .present(&AdsbMessage::KIND)
+        .track
+        .expect("ADS-B carries a track")
+}
+
+fn position(icao: &str, at: Geodetic) -> TrackFix {
+    fix(&position_message(icao, at))
+}
+
+fn velocity(icao: &str, speed_kt: f64, track_deg: f64, climb_fpm: i32) -> TrackFix {
+    fix(&velocity_message(icao, speed_kt, track_deg, climb_fpm))
+}
+
+fn position_message(icao: &str, at: Geodetic) -> AdsbMessage {
     AdsbMessage {
         icao: icao.to_owned(),
         df: 17,
@@ -88,7 +108,7 @@ fn position(icao: &str, at: Geodetic) -> AdsbMessage {
     }
 }
 
-fn velocity(icao: &str, speed_kt: f64, track_deg: f64, climb_fpm: i32) -> AdsbMessage {
+fn velocity_message(icao: &str, speed_kt: f64, track_deg: f64, climb_fpm: i32) -> AdsbMessage {
     AdsbMessage {
         icao: icao.to_owned(),
         df: 17,
@@ -154,7 +174,7 @@ fn event(track_id: u32, change: TrackChange) -> RadarTrackEvent {
         bearing_deg: None,
         lat: None,
         lon: None,
-        icao: None,
+        target: None,
     }
 }
 
@@ -202,7 +222,7 @@ fn truth_maps_an_aircraft_to_delay_and_doppler() {
         "{} Hz against {doppler_hz} Hz",
         seen.doppler_hz
     );
-    assert_eq!(seen.icao, "3c6444");
+    assert_eq!(seen.id, "3C6444");
     assert_eq!(seen.callsign.as_deref(), Some("DLH4AB"));
     assert!(seen.in_view);
     assert!((f64::from(seen.altitude_m) - cruise_alt_m()).abs() < 0.01);
@@ -273,12 +293,12 @@ fn the_aircraft_table_forgets_silence_and_stays_bounded() {
 
 #[test]
 fn truth_pairs_with_the_nearest_track() {
-    let sighting = |icao: &str, range_km: f32, doppler_hz: f32, in_view: bool| AdsbTruth {
-        icao: icao.to_owned(),
+    let sighting = |icao: &str, range_km: f32, doppler_hz: f32, in_view: bool| TrackTruth {
+        id: icao.to_owned(),
         range_km,
         doppler_hz,
         in_view,
-        ..AdsbTruth::default()
+        ..TrackTruth::default()
     };
     let mut truth = vec![
         sighting("near", 20.0, 50.0, true),
@@ -295,10 +315,10 @@ fn truth_pairs_with_the_nearest_track() {
 
     assert_eq!(truth[0].track_id, Some(9));
     assert_eq!(
-        tracks[1].adsb.as_ref().map(|adsb| adsb.icao.as_str()),
+        tracks[1].truth.as_ref().map(|truth| truth.id.as_str()),
         Some("near")
     );
-    assert_eq!(tracks[0].adsb, None, "the farther track stays unpaired");
+    assert_eq!(tracks[0].truth, None, "the farther track stays unpaired");
     assert_eq!(truth[1].track_id, None, "outside the gate");
     assert_eq!(truth[2].track_id, None, "out of view");
 }
@@ -631,7 +651,10 @@ async fn radar_records(
         };
         match tokio::time::timeout_at(until, records.recv()).await {
             Ok(Ok(record)) => {
-                if matches!(&record.event, DecoderEvent::Radar(event) if event.track_id == track_id)
+                if record
+                    .event
+                    .read::<RadarTrackEvent>()
+                    .is_some_and(|event| event.track_id == track_id)
                 {
                     found.push(record);
                 }
@@ -644,11 +667,11 @@ async fn radar_records(
     }
 }
 
-fn radar_event(record: &DecodedRecord) -> &RadarTrackEvent {
-    match &record.event {
-        DecoderEvent::Radar(event) => event,
-        other => panic!("not a radar event: {other:?}"),
-    }
+fn radar_event(record: &DecodedRecord) -> RadarTrackEvent {
+    record
+        .event
+        .read::<RadarTrackEvent>()
+        .unwrap_or_else(|| panic!("not a radar event: {:?}", record.event))
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -704,7 +727,7 @@ async fn true_bearing_adds_the_array_heading() {
 
     let fix = done.tracks[0].fix.expect("a fix");
     let assumed = PassiveRadarParams::default().assumed_altitude_m;
-    assert!(!fix.alt_from_adsb);
+    assert!(!fix.alt_from_truth);
     assert_eq!(fix.alt_m, assumed);
     let at = Geodetic {
         lat_deg: fix.lat,
@@ -773,8 +796,8 @@ async fn adsb_truth_pairs_and_lifts_the_fix_to_its_altitude() {
     bench.sited().await;
     let now = Timestamp::now();
     for message in [
-        position("3c6444", aircraft_at()),
-        velocity("3c6444", 400.0, 270.0, 0),
+        position_message("3c6444", aircraft_at()),
+        velocity_message("3c6444", 400.0, 270.0, 0),
     ] {
         let record = DecodedRecord {
             origin: None,
@@ -782,7 +805,7 @@ async fn adsb_truth_pairs_and_lifts_the_fix_to_its_altitude() {
             channel: 0,
             at: stamp(now),
             freq_hz: 1_090_000_000.0,
-            event: DecoderEvent::Adsb(message),
+            event: DecoderEvent::of(&message),
             sinks: vec![RADAR.to_owned()],
             callsign: None,
             view: None,
@@ -810,12 +833,12 @@ async fn adsb_truth_pairs_and_lifts_the_fix_to_its_altitude() {
 
     let tracked = &done.tracks[0];
     assert_eq!(
-        tracked.adsb.as_ref().map(|adsb| adsb.icao.as_str()),
-        Some("3c6444")
+        tracked.truth.as_ref().map(|truth| truth.id.as_str()),
+        Some("3C6444")
     );
     assert_eq!(done.truth[0].track_id, Some(5));
     let fix = tracked.fix.expect("a fix");
-    assert!(fix.alt_from_adsb);
+    assert!(fix.alt_from_truth);
     assert!((fix.alt_m - done.truth[0].altitude_m).abs() < 1.0);
     let found = Geodetic {
         lat_deg: fix.lat,
@@ -919,7 +942,11 @@ async fn a_track_event_reaches_a_sink_once_with_its_fix() {
     let mut delivered = Vec::new();
     while let Ok(Ok(item)) = tokio::time::timeout(QUIET * 2, routed.recv()).await {
         if let Decoded::Record(record) = item
-            && matches!(&record.record.event, DecoderEvent::Radar(event) if event.track_id == 77)
+            && record
+                .record
+                .event
+                .read::<RadarTrackEvent>()
+                .is_some_and(|event| event.track_id == 77)
         {
             delivered.push(record);
         }

@@ -1,5 +1,5 @@
+use crate::selcall::SelcallSystem;
 use num_complex::Complex;
-use sdrmm_wire::SelcallSystem;
 
 use super::{fm_modulate, silence};
 

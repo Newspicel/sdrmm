@@ -477,3 +477,40 @@ fn xhe_aac_with_four_to_one_sbr_and_pvc_matches_the_reference_decoder() {
         .fold(f64::MAX, f64::min);
     assert!(best < 0.0001, "relative error {best}");
 }
+
+#[test]
+fn a_published_status_is_an_event_and_offers_its_services() {
+    let status = BroadcastStatus {
+        locked: true,
+        services: vec![
+            BroadcastService {
+                id: 0x1234,
+                label: "Radio One".to_owned(),
+                ..BroadcastService::default()
+            },
+            BroadcastService {
+                id: 7,
+                label: " ".to_owned(),
+                ..BroadcastService::default()
+            },
+        ],
+        ..BroadcastStatus::default()
+    };
+    let mut out = ChannelOutputs::default();
+
+    publish_status(&mut out, status.clone(), "service_id");
+
+    assert_eq!(latest_status(&out), Some(status));
+    let face = out.status.expect("a channel status");
+    assert!(face.readouts.iter().any(|field| field.label == "Locked"));
+    let [choice] = face.choices.as_slice() else {
+        panic!("one choice: {:?}", face.choices);
+    };
+    assert_eq!(choice.name, "service_id");
+    let options: Vec<_> = choice
+        .options
+        .iter()
+        .map(|option| (option.value.clone(), option.label.as_str()))
+        .collect();
+    assert_eq!(options, [(0x1234.into(), "Radio One"), (7.into(), "7")]);
+}

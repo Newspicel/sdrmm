@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, PoisonError},
 };
 
-use sdrmm_wire::{DecoderEvent, NodeBody, POSITION_PORT, PositionFix, ServerEvent};
+use sdrmm_wire::{NodeBody, POSITION_PORT, PositionFix, ServerEvent, fusion::DfBearing};
 use tokio::sync::broadcast::{self, error::RecvError};
 
 use crate::{
@@ -123,9 +123,10 @@ async fn run(
 }
 
 fn deliver(state: &AppState, routed: &Routed) {
-    let DecoderEvent::Df(bearing) = &routed.record.event else {
+    let Some(bearing) = routed.record.event.read::<DfBearing>() else {
         return;
     };
+    let bearing = &bearing;
     let table = table(state);
     let now_s = df_fusion::now_s();
     for sink in &routed.record.sinks {

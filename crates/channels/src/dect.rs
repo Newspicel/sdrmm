@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{ANY_MODULATION, HzRange, SignalSignature};
+use sdrmm_wire::{Control, KindSpec, SettingField};
+mod model;
+pub use model::*;
 pub(crate) mod bfield;
 pub(crate) mod burst;
 mod capabilities;
@@ -14,12 +19,13 @@ use burst::{Burst, Detector, INPUT_RATE_HZ, OCCUPIED_BANDWIDTH_HZ};
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
-    DectParams, DectSpan, EventKind,
+    CallGate, ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
 };
 use wideband::Wideband;
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel, check_rate,
+};
 
 const CHANNEL_TAPS: usize = 63;
 
@@ -31,7 +37,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: OCCUPIED_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    emits: vec![EventKind::Dect],
+    emits: vec![EventKind::named("dect")],
     calls: Some(CallGate::Squelch),
     ..ChannelDescriptor::default()
 });
@@ -80,14 +86,11 @@ pub struct DectChannel {
     frequency_hz: f64,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&DectParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Dect(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "dect channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<DectParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn input_rate(params: &DectParams) -> f64 {
@@ -115,13 +118,12 @@ pub(crate) fn channel_filter(params: &DectParams) -> ChannelFilter {
     }
 }
 
-impl ChannelRx for DectChannel {
+impl NativeChannel for DectChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
-        let params = *params(&settings)?;
+        let params = params(&settings)?;
         let rate = input_rate(&params);
         check_rate(ctx, &DESCRIPTOR, rate)?;
         Ok(Self {
@@ -133,9 +135,11 @@ impl ChannelRx for DectChannel {
             frequency_hz: settings.frequency_hz,
         })
     }
+}
 
+impl ChannelRx for DectChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let params = *params(&settings)?;
+        let params = params(&settings)?;
         let rebuilt = params.span != self.params.span
             || params.band != self.params.band
             || settings.frequency_hz != self.frequency_hz;
@@ -169,7 +173,7 @@ impl ChannelRx for DectChannel {
         self.front.process(iq, &mut self.bursts);
         for burst in &self.bursts {
             if let Some(frame) = self.tracker.apply(burst, &mut self.playout) {
-                out.events.push(DecoderEvent::Dect(frame));
+                out.events.push(DecoderEvent::of(&frame));
             }
         }
         self.playout.advance(iq.len(), out);
@@ -178,6 +182,46 @@ impl ChannelRx for DectChannel {
     fn rejected(&self) -> u32 {
         self.tracker.rejected()
     }
+}
+
+const DECT_BANDS: &[HzRange] = &[
+    HzRange::mhz(1_880.0, 1_900.0),
+    HzRange::mhz(1_920.0, 1_930.0),
+];
+
+fn dect_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "DECT",
+            ANY_MODULATION,
+            HzRange::new(100_000.0, 2_000_000.0),
+            "417 µs slots every 10 ms in the DECT band",
+        )
+        .bursts(HzRange::new(0.3, 0.5))
+        .on(DECT_BANDS),
+    ]
+}
+
+pub(crate) fn dect_decoder() -> Native<DectParams> {
+    Native::new::<DectChannel>(occupied_band)
+        .filter(|p| Ok(channel_filter(p)))
+        .input_rate(input_rate)
+        .home(1_897_344_000.0)
+        .signatures(dect_signatures)
+        .form(dect_form)
+        .kinds(dect_kinds)
+}
+
+pub(crate) fn dect_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("band", "Band", Control::choice::<DectBand>()).title("DECT band"),
+        SettingField::new("span", "Span", Control::choice::<DectSpan>()).title("DECT span"),
+        SettingField::new("sides", "Side", Control::choice::<DectSides>()).title("DECT side"),
+    ]
+}
+
+fn dect_kinds() -> Vec<KindSpec> {
+    vec![crate::dect::dect_kind()]
 }
 
 #[cfg(test)]

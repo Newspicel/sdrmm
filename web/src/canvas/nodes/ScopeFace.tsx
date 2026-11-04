@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Fragment, type ReactNode, type RefObject, useCallback, useMemo, useRef } from "react";
 import { Button } from "../../components/BaseControls";
 import { identify, suggestedAt } from "../../components/bandPlan";
-import { channelFrequencyHz, paramBandwidthHz } from "../../components/channelSettings";
+import { channelFrequencyHz, channelWidthHz } from "../../components/channelSettings";
 import { plotButton } from "../../components/controls";
 import { clampWindow } from "../../components/dbRange";
 import { formatHz, formatMhz } from "../../components/format";
@@ -31,7 +31,6 @@ import { channelPicker } from "../palette";
 import { runningSetOf } from "../workspaceDevice";
 import { BAND_RULER_H, BandRuler } from "./BandRuler";
 import { ChannelPicker } from "./ChannelPicker";
-import type { TrunkChannelOwner } from "./dmrTrunk";
 import { FaceBody, NodeShell, useFaceActive, useFaceWheel } from "./NodeShell";
 import { ScopeMenu } from "./ScopeMenu";
 import { ScopeSettings } from "./ScopeSettings";
@@ -48,6 +47,7 @@ import { onPlotSurface, type ScopePreview, useScopeGesture } from "./scopeGestur
 import { bookmarkDraft, channelTypeAt, streamChannels } from "./scopePick";
 import { useScopePicks } from "./scopePicks";
 import type { DensityLayer } from "./scopePlot";
+import type { TrunkChannelOwner } from "./trunk";
 
 const NO_CHANNELS: readonly ChannelInfo[] = [];
 
@@ -160,10 +160,11 @@ function Spectrum({
   const rulerH = bandRuler && plan !== null ? BAND_RULER_H : 0;
   const openMenu = picks.menu;
   const openPicker = picks.picker;
-  const suggestedType = (hz: number): string =>
+  const suggestedType = (hz: number): string | undefined =>
     channelTypeAt(
       plan === null ? null : suggestedAt(identify(plan, hz)),
       channels.find((channel) => channel.id === tuning.tunableChannel),
+      workspace.context.channelTypes[0]?.type_id,
     );
 
   const onDoubleClick = (event: React.MouseEvent<HTMLDivElement>): void => {
@@ -476,6 +477,7 @@ function Markers({
   labelTop: number;
   widthPx: number;
 }) {
+  const { channelTypes } = useWorkspaceContext().context;
   const held = (channel: number): boolean => owners.has(channel) || locked.has(channel);
   const visible = spanHz * viewWidth(view);
   const drawn = channels
@@ -507,7 +509,12 @@ function Markers({
             {members.map(({ channel, hz, at }) => {
               const active = channel.id === selected;
               const owner = owners.get(channel.id);
-              const bandwidth = paramBandwidthHz(channel.settings.params);
+              const params = channel.settings.params;
+              const bandwidth = channelWidthHz(
+                params,
+                channelTypes.find((type) => type.type_id === params.type),
+                channel.band,
+              );
               return (
                 <Fragment key={channel.id}>
                   {bandwidth !== null && visible > 0 && (

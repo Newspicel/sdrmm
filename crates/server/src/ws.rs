@@ -18,8 +18,7 @@ use sdrmm_engine::{AudioPacket, Engine, IqBlock, SpectrumSnapshot, SymbolBlock, 
 use sdrmm_wire::{
     API_PROTOCOL, AudioFrame, ClientCommand, IqFrame, PositionFix, SPECTRUM_SIGNAL_MARGIN_DB,
     ServerEvent, SpectrumFrame, StateScope, StreamKind, SymbolFrame, VideoData, VideoFrame,
-    WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
-    phone::{POSE_BURST, POSE_RATE_HZ},
+    WS_CLOSE_REVOKED, WS_SUBPROTOCOL, phone::POSE_BURST, phone::POSE_RATE_HZ,
 };
 use tokio::sync::{broadcast, watch};
 

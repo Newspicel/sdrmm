@@ -85,14 +85,14 @@ fn audio(from: &str, to: &str) -> PatchEdge {
 }
 
 fn descriptors() -> Vec<ChannelDescriptor> {
-    ["nfm", "dmr", "adsb"]
+    ["probe_voice", "probe_dv", "probe_station"]
         .into_iter()
         .map(|ty| ChannelDescriptor {
             type_id: ty.to_owned(),
             name: ty.to_owned(),
             bandwidth_hz: 12_500.0,
             input_rate_hz: 48_000.0,
-            emits: vec![EventKind::Dv],
+            emits: vec![EventKind::DV],
             calls: Some(CallGate::Frames),
             ..ChannelDescriptor::default()
         })
@@ -146,10 +146,11 @@ fn set(id: u32, key: &str, channels: Vec<ChannelInfo>) -> DeviceSet {
 
 fn live_channel(id: u32, node: Option<&str>, ty: &str, stream: u32) -> ChannelInfo {
     ChannelInfo {
+        band: None,
         id,
         stream,
         node: node.map(str::to_owned),
-        settings: ChannelSettings::default_for(ty).expect("channel type"),
+        settings: ChannelSettings::new(crate::DEFAULT_FREQUENCY_HZ, crate::ChannelParams::bare(ty)),
         out_of_band: None,
         rejected: 0,
         skipped: 0,
@@ -169,15 +170,15 @@ fn live(sets: Vec<DeviceSet>) -> StateSnapshot {
 #[test]
 fn a_direct_wire_feeds_the_sink_with_nothing_in_between() {
     let graph = PatchGraph {
-        nodes: vec![channel("dmr", "dmr"), log("chat")],
-        edges: vec![events("dmr", "chat")],
+        nodes: vec![channel("probe_dv", "probe_dv"), log("chat")],
+        edges: vec![events("probe_dv", "chat")],
     };
     let patch = compiled(&graph);
     assert_eq!(
         sources(patch.feeds("chat", "events")),
-        [("dmr", Vec::new())]
+        [("probe_dv", Vec::new())]
     );
-    let reaches = patch.reaches("dmr", "events");
+    let reaches = patch.reaches("probe_dv", "events");
     assert_eq!(reaches.len(), 1);
     assert_eq!(reaches[0].sink, "chat");
 }
@@ -186,13 +187,13 @@ fn a_direct_wire_feeds_the_sink_with_nothing_in_between() {
 fn a_chain_of_filters_names_the_decoder_behind_it_with_every_filter_in_order() {
     let graph = PatchGraph {
         nodes: vec![
-            channel("dmr", "dmr"),
-            filter("kind", &[EventKind::Call]),
+            channel("probe_dv", "probe_dv"),
+            filter("kind", &[EventKind::CALL]),
             filter("group", &[]),
             log("chat"),
         ],
         edges: vec![
-            events("dmr", "kind"),
+            events("probe_dv", "kind"),
             events("kind", "group"),
             events("group", "chat"),
         ],
@@ -200,13 +201,16 @@ fn a_chain_of_filters_names_the_decoder_behind_it_with_every_filter_in_order() {
     let patch = compiled(&graph);
     assert_eq!(
         sources(patch.feeds("chat", "events")),
-        [("dmr", vec!["kind", "group"])]
+        [("probe_dv", vec!["kind", "group"])]
     );
-    assert_eq!(patch.reaches("dmr", "events")[0].via, ["kind", "group"]);
-    assert_eq!(patch.reaches("dmr", "events")[0].sink, "chat");
+    assert_eq!(
+        patch.reaches("probe_dv", "events")[0].via,
+        ["kind", "group"]
+    );
+    assert_eq!(patch.reaches("probe_dv", "events")[0].sink, "chat");
     assert_eq!(
         sources(patch.feeds("group", "events")),
-        [("dmr", vec!["kind"])]
+        [("probe_dv", vec!["kind"])]
     );
 }
 
@@ -214,25 +218,25 @@ fn a_chain_of_filters_names_the_decoder_behind_it_with_every_filter_in_order() {
 fn one_filter_serves_several_decoders_and_a_decoder_can_arrive_twice() {
     let graph = PatchGraph {
         nodes: vec![
-            channel("dmr", "dmr"),
-            channel("p25", "dmr"),
-            filter("calls", &[EventKind::Call]),
+            channel("probe_dv", "probe_dv"),
+            channel("trunked", "probe_dv"),
+            filter("calls", &[EventKind::CALL]),
             log("chat"),
         ],
         edges: vec![
-            events("dmr", "calls"),
-            events("p25", "calls"),
+            events("probe_dv", "calls"),
+            events("trunked", "calls"),
             events("calls", "chat"),
-            events("dmr", "chat"),
+            events("probe_dv", "chat"),
         ],
     };
     let patch = compiled(&graph);
     assert_eq!(
         sources(patch.feeds("chat", "events")),
         [
-            ("dmr", Vec::new()),
-            ("dmr", vec!["calls"]),
-            ("p25", vec!["calls"])
+            ("probe_dv", Vec::new()),
+            ("probe_dv", vec!["calls"]),
+            ("trunked", vec!["calls"])
         ]
     );
 }
@@ -240,11 +244,15 @@ fn one_filter_serves_several_decoders_and_a_decoder_can_arrive_twice() {
 #[test]
 fn a_filter_with_nothing_downstream_reaches_nothing() {
     let graph = PatchGraph {
-        nodes: vec![channel("dmr", "dmr"), filter("calls", &[]), log("chat")],
-        edges: vec![events("dmr", "calls")],
+        nodes: vec![
+            channel("probe_dv", "probe_dv"),
+            filter("calls", &[]),
+            log("chat"),
+        ],
+        edges: vec![events("probe_dv", "calls")],
     };
     let patch = compiled(&graph);
-    assert!(patch.reaches("dmr", "events").is_empty());
+    assert!(patch.reaches("probe_dv", "events").is_empty());
     assert!(patch.feeds("chat", "events").is_empty());
 }
 
@@ -252,8 +260,8 @@ fn a_filter_with_nothing_downstream_reaches_nothing() {
 fn audio_runs_through_an_fx_chain_channel_side_first() {
     let graph = PatchGraph {
         nodes: vec![
-            channel("a", "nfm"),
-            channel("b", "nfm"),
+            channel("a", "probe_voice"),
+            channel("b", "probe_voice"),
             fx("near"),
             fx("far"),
             node("rec", NodeBody::AudioRecorder(AudioRecorderNode::default())),
@@ -275,7 +283,10 @@ fn audio_runs_through_an_fx_chain_channel_side_first() {
 #[test]
 fn an_fx_chain_deeper_than_the_cap_feeds_nothing() {
     let depth = MAX_PASS_DEPTH + 1;
-    let mut nodes = vec![channel("a", "nfm"), node("speaker", NodeBody::Speaker)];
+    let mut nodes = vec![
+        channel("a", "probe_voice"),
+        node("speaker", NodeBody::Speaker),
+    ];
     let mut edges = vec![audio("a", "fx0")];
     for index in 0..depth {
         nodes.push(fx(&format!("fx{index}")));
@@ -322,17 +333,17 @@ fn a_radio_binds_to_the_first_open_set_it_names_and_claims_it_once() {
 #[test]
 fn a_decoder_binds_only_the_channel_opened_for_it_on_a_wired_lane() {
     let graph = PatchGraph {
-        nodes: vec![radio("dev", "band"), channel("voice", "dmr")],
+        nodes: vec![radio("dev", "band"), channel("voice", "probe_dv")],
         edges: vec![wire(("dev", "iq"), ("voice", "iq"))],
     };
     let state = live(vec![set(
         1,
         "band",
         vec![
-            live_channel(3, None, "dmr", 0),
-            live_channel(4, Some("trunk"), "dmr", 0),
-            live_channel(5, Some("voice"), "nfm", 0),
-            live_channel(6, Some("voice"), "dmr", 0),
+            live_channel(3, None, "probe_dv", 0),
+            live_channel(4, Some("trunk"), "probe_dv", 0),
+            live_channel(5, Some("voice"), "probe_voice", 0),
+            live_channel(6, Some("voice"), "probe_dv", 0),
         ],
     )]);
     let (patch, problems) = bound(&graph, &state);
@@ -359,8 +370,8 @@ fn a_decoder_on_another_lane_or_unwired_stays_unbound() {
     let graph = PatchGraph {
         nodes: vec![
             radio("dev", "band"),
-            channel("voice", "dmr"),
-            channel("loose", "dmr"),
+            channel("voice", "probe_dv"),
+            channel("loose", "probe_dv"),
         ],
         edges: vec![wire(("dev", "iq2"), ("voice", "iq"))],
     };
@@ -368,8 +379,8 @@ fn a_decoder_on_another_lane_or_unwired_stays_unbound() {
         1,
         "band",
         vec![
-            live_channel(5, Some("voice"), "dmr", 0),
-            live_channel(6, Some("loose"), "dmr", 0),
+            live_channel(5, Some("voice"), "probe_dv", 0),
+            live_channel(6, Some("loose"), "probe_dv", 0),
         ],
     )]);
     let (patch, problems) = bound(&graph, &state);
@@ -390,7 +401,7 @@ fn a_decoder_runs_on_whichever_wired_radio_carries_it() {
         nodes: vec![
             radio("a", "one"),
             radio("b", "two"),
-            channel("voice", "dmr"),
+            channel("voice", "probe_dv"),
         ],
         edges: vec![
             wire(("a", "iq"), ("voice", "iq")),
@@ -399,7 +410,11 @@ fn a_decoder_runs_on_whichever_wired_radio_carries_it() {
     };
     let state = live(vec![
         set(1, "one", Vec::new()),
-        set(2, "two", vec![live_channel(9, Some("voice"), "dmr", 0)]),
+        set(
+            2,
+            "two",
+            vec![live_channel(9, Some("voice"), "probe_dv", 0)],
+        ),
     ]);
     let (patch, _) = bound(&graph, &state);
     assert_eq!(
@@ -422,7 +437,7 @@ fn a_decoder_runs_on_whichever_wired_radio_carries_it() {
 fn a_trunk_system_runs_on_its_control_and_follower_channels() {
     let graph = PatchGraph {
         nodes: vec![
-            node("trunk", NodeBody::DmrTrunk(Default::default())),
+            node("trunk", NodeBody::Trunk(Default::default())),
             node("speaker", NodeBody::Speaker),
         ],
         edges: Vec::new(),
@@ -476,7 +491,7 @@ fn a_feed_from_a_bound_decoder_taps_its_channel() {
     let graph = PatchGraph {
         nodes: vec![
             radio("dev", "band"),
-            channel("voice", "nfm"),
+            channel("voice", "probe_voice"),
             fx("clean"),
             node("speaker", NodeBody::Speaker),
         ],
@@ -489,7 +504,7 @@ fn a_feed_from_a_bound_decoder_taps_its_channel() {
     let state = live(vec![set(
         1,
         "band",
-        vec![live_channel(7, Some("voice"), "nfm", 0)],
+        vec![live_channel(7, Some("voice"), "probe_voice", 0)],
     )]);
     let (patch, _) = bound(&graph, &state);
     let feed = &patch.feeds("speaker", "audio")[0];
@@ -509,7 +524,7 @@ fn beam_graph() -> PatchGraph {
             radio("dev", "band"),
             node("arr", NodeBody::Array(crate::array::ArrayNode::default())),
             node("bf", NodeBody::Beamformer(BeamformerNode::default())),
-            channel("voice", "nfm"),
+            channel("voice", "probe_voice"),
         ],
         edges: vec![
             wire(("dev", "iq"), ("arr", "lane")),
@@ -522,7 +537,11 @@ fn beam_graph() -> PatchGraph {
 #[test]
 fn a_decoder_on_a_beam_binds_on_the_virtual_lane_the_engine_opened() {
     let graph = beam_graph();
-    let mut radio_set = set(1, "band", vec![live_channel(8, Some("voice"), "nfm", 5)]);
+    let mut radio_set = set(
+        1,
+        "band",
+        vec![live_channel(8, Some("voice"), "probe_voice", 5)],
+    );
     radio_set.virtual_lanes.push(VirtualLane {
         stream: 5,
         node: "bf".to_owned(),
@@ -560,7 +579,7 @@ fn no_virtual_lane_listed_means_no_tap_yet() {
 #[test]
 fn repeated_ports_follow_the_radio_and_keep_saved_wires() {
     let graph = PatchGraph {
-        nodes: vec![radio("dev", "band"), channel("voice", "nfm")],
+        nodes: vec![radio("dev", "band"), channel("voice", "probe_voice")],
         edges: vec![wire(("dev", "iq3"), ("voice", "iq"))],
     };
     let names = |patch: &ResolvedPatch| -> Vec<String> {
@@ -579,7 +598,7 @@ fn repeated_ports_follow_the_radio_and_keep_saved_wires() {
 #[test]
 fn a_channel_shows_only_the_ports_its_descriptor_offers() {
     let graph = PatchGraph {
-        nodes: vec![channel("voice", "adsb")],
+        nodes: vec![channel("voice", "probe_station")],
         edges: Vec::new(),
     };
     let mut all = descriptors();
@@ -605,7 +624,7 @@ fn a_channel_shows_only_the_ports_its_descriptor_offers() {
 #[test]
 fn a_decoder_retunes_its_radio_lane_unless_either_end_is_locked() {
     let mut graph = PatchGraph {
-        nodes: vec![radio("dev", "band"), channel("voice", "nfm")],
+        nodes: vec![radio("dev", "band"), channel("voice", "probe_voice")],
         edges: vec![wire(("dev", "iq"), ("voice", "iq"))],
     };
     let mut manual = set(1, "band", Vec::new());
@@ -666,13 +685,13 @@ fn compile_refuses_what_validate_refuses() {
 #[test]
 fn the_resolved_patch_serializes_its_tags() {
     let graph = PatchGraph {
-        nodes: vec![radio("dev", "band"), channel("voice", "nfm")],
+        nodes: vec![radio("dev", "band"), channel("voice", "probe_voice")],
         edges: vec![wire(("dev", "iq"), ("voice", "iq"))],
     };
     let state = live(vec![set(
         1,
         "band",
-        vec![live_channel(8, Some("voice"), "nfm", 0)],
+        vec![live_channel(8, Some("voice"), "probe_voice", 0)],
     )]);
     let (patch, _) = bound(&graph, &state);
     let json = serde_json::to_value(&patch).expect("json");
@@ -692,8 +711,8 @@ fn an_unbound_decoder_says_why_from_its_radio() {
                 Some(key) => radio("dev", key),
                 None => node("dev", NodeBody::Device(DeviceNode::default())),
             },
-            channel("voice", "nfm"),
-            channel("loose", "nfm"),
+            channel("voice", "probe_voice"),
+            channel("loose", "probe_voice"),
         ],
         edges: vec![wire(("dev", "iq"), ("voice", "iq"))],
     };
@@ -742,7 +761,7 @@ fn stopped(id: &str, key: &str) -> PatchNode {
 #[test]
 fn a_stopped_radio_frees_its_device_and_says_so() {
     let graph = PatchGraph {
-        nodes: vec![stopped("dev", "band"), channel("voice", "nfm")],
+        nodes: vec![stopped("dev", "band"), channel("voice", "probe_voice")],
         edges: vec![wire(("dev", "iq"), ("voice", "iq"))],
     };
     let state = live(vec![set(1, "band", Vec::new())]);
@@ -786,7 +805,7 @@ fn a_controller_sees_where_its_target_runs_and_a_target_who_sweeps_it() {
     let graph = PatchGraph {
         nodes: vec![
             radio("dev", "band"),
-            channel("voice", "nfm"),
+            channel("voice", "probe_voice"),
             node("scan", NodeBody::Scanner(Default::default())),
         ],
         edges: vec![
@@ -795,7 +814,11 @@ fn a_controller_sees_where_its_target_runs_and_a_target_who_sweeps_it() {
             wire(("scan", "control"), ("voice", "control")),
         ],
     };
-    let mut radio_set = set(1, "band", vec![live_channel(8, Some("voice"), "nfm", 0)]);
+    let mut radio_set = set(
+        1,
+        "band",
+        vec![live_channel(8, Some("voice"), "probe_voice", 0)],
+    );
     let (patch, _) = bound(&graph, &live(vec![radio_set.clone()]));
     let target = &patch.reaches("scan", "control")[0];
     assert_eq!(
@@ -831,7 +854,7 @@ fn a_controller_sees_where_its_target_runs_and_a_target_who_sweeps_it() {
 fn a_decoder_is_held_by_its_lock_or_by_the_node_on_its_control_input() {
     let mut graph = PatchGraph {
         nodes: vec![
-            channel("voice", "nfm"),
+            channel("voice", "probe_voice"),
             channel("free", "am"),
             node("scan", NodeBody::Scanner(Default::default())),
         ],
@@ -924,13 +947,13 @@ mod verdicts;
 #[test]
 fn wires_past_the_cap_are_refused_and_the_rest_still_run() {
     let graph = PatchGraph {
-        nodes: vec![channel("dmr", "dmr"), log("chat")],
-        edges: vec![events("dmr", "chat"); crate::patch::MAX_EDGES + 1],
+        nodes: vec![channel("probe_dv", "probe_dv"), log("chat")],
+        edges: vec![events("probe_dv", "chat"); crate::patch::MAX_EDGES + 1],
     };
     let (patch, refused) = compile_draft(&graph, &ResolveCtx::default());
     assert_eq!(
         sources(patch.feeds("chat", "events")),
-        [("dmr", Vec::new())]
+        [("probe_dv", Vec::new())]
     );
     assert_eq!(refused.len(), crate::patch::MAX_EDGES);
     assert_eq!(

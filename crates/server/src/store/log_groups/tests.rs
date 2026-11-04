@@ -1,10 +1,11 @@
-use sdrmm_wire::{AdsbMessage, DecodedRecord, DecoderEvent, VoiceCall};
+use sdrmm_channels::AdsbMessage;
+use sdrmm_wire::{DecodedRecord, DecoderEvent, VoiceCall};
 
 use super::*;
 use crate::events::Routed;
 
 fn call(freq_hz: f64, duration_ms: u64) -> DecoderEvent {
-    DecoderEvent::Call(VoiceCall {
+    DecoderEvent::of(&VoiceCall {
         id: 1,
         node: "nfm".to_owned(),
         started_at: "2026-10-05T10:00:00Z".to_owned(),
@@ -27,7 +28,7 @@ fn call(freq_hz: f64, duration_ms: u64) -> DecoderEvent {
 }
 
 fn adsb(icao: &str) -> DecoderEvent {
-    DecoderEvent::Adsb(AdsbMessage {
+    DecoderEvent::of(&AdsbMessage {
         icao: icao.to_owned(),
         df: 17,
         raw: "8D3C6444".to_owned(),

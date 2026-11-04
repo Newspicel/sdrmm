@@ -1,7 +1,11 @@
-use sdrmm_wire::{
-    TetrapolAddress, TetrapolAddressKind, TetrapolCallType, TetrapolCell, TetrapolGroupCall,
-    TetrapolKey, TetrapolPayload, TetrapolSystemInfo,
-};
+use crate::tetrapol::TetrapolAddress;
+use crate::tetrapol::TetrapolAddressKind;
+use crate::tetrapol::TetrapolCallType;
+use crate::tetrapol::TetrapolCell;
+use crate::tetrapol::TetrapolGroupCall;
+use crate::tetrapol::TetrapolKey;
+use crate::tetrapol::TetrapolPayload;
+use crate::tetrapol::TetrapolSystemInfo;
 
 const SYSTEM_INFO: u8 = 0x90;
 const GROUP_ACTIVATION: u8 = 0x55;

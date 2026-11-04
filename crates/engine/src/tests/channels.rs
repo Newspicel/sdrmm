@@ -1,3 +1,5 @@
+use sdrmm_channels::AdsbMessage;
+
 use super::*;
 
 #[tokio::test]
@@ -44,7 +46,7 @@ async fn live_position_survives_a_channel_rate_rebuild() {
             ChannelSettings {
                 frequency_hz: ADSB_CENTER_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Adsb(AdsbParams::default()),
+                params: ChannelParams::new("adsb", &AdsbParams::default()).expect("adsb settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -71,11 +73,15 @@ async fn live_position_survives_a_channel_rate_rebuild() {
             ChannelSettings {
                 frequency_hz: ADSB_CENTER_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Adsb(AdsbParams {
-                    crc_fix: false,
-                    ref_lat: Some(0.0),
-                    ref_lon: Some(0.0),
-                }),
+                params: ChannelParams::new(
+                    "adsb",
+                    &AdsbParams {
+                        crc_fix: false,
+                        ref_lat: Some(0.0),
+                        ref_lon: Some(0.0),
+                    },
+                )
+                .expect("adsb settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -105,16 +111,21 @@ async fn live_position_survives_a_channel_rate_rebuild() {
     let record = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let record = decoded.recv().await.expect("decoded stream");
-            if matches!(&record.event, DecoderEvent::Adsb(message) if message.lat.is_some()) {
+            if record
+                .event
+                .read::<AdsbMessage>()
+                .is_some_and(|message| message.lat.is_some())
+            {
                 break record;
             }
         }
     })
     .await
     .expect("post-rebuild local position");
-    let DecoderEvent::Adsb(message) = record.event else {
-        unreachable!()
-    };
+    let message = record
+        .event
+        .read::<AdsbMessage>()
+        .expect("an ADS-B message");
     assert!((message.lat.expect("latitude") - fix.latitude).abs() < 0.01);
     assert!((message.lon.expect("longitude") - fix.longitude).abs() < 0.01);
     engine.remove_device_set(ds).unwrap();
@@ -182,7 +193,8 @@ async fn a_channel_with_no_audio_refuses_a_blanker() {
     let settings = ChannelSettings {
         frequency_hz: TEST_CENTER_HZ,
         squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Pocsag(sdrmm_wire::PocsagParams::default()),
+        params: ChannelParams::new("pocsag", &sdrmm_channels::PocsagParams::default())
+            .expect("pocsag settings"),
         blanker: sdrmm_wire::NoiseBlankerSettings {
             enabled: true,
             threshold: 5.0,

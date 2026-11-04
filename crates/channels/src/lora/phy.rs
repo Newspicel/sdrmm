@@ -11,8 +11,11 @@ mod tests;
 
 use std::ops::RangeInclusive;
 
+use crate::lora::LoraCodingRate;
+use crate::lora::LoraImplicitHeader;
+use crate::lora::LoraIntegrity;
+use crate::lora::LoraIq;
 use num_complex::Complex;
-use sdrmm_wire::{LoraCodingRate, LoraImplicitHeader, LoraIntegrity, LoraIq};
 
 use self::{
     filter::{HALF_TAPS, Prototype},

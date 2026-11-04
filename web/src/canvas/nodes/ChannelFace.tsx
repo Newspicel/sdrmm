@@ -1,5 +1,4 @@
 import { Button } from "../../components/BaseControls";
-import { broadcastTitle } from "../../components/broadcastStatus";
 import { ChannelControls, ChannelDial } from "../../components/ChannelControls";
 import {
   channelFrequencyHz,
@@ -20,13 +19,15 @@ import {
   SKIPPED_HINT,
 } from "../../components/format";
 import { SignalRow } from "../../components/SignalRow";
-import { useBroadcast } from "../../lib/broadcast";
+import { useChannelStatus } from "../../lib/channelStatus";
 import { audioPassing, heardHz, useLevelStore } from "../../lib/levels";
 import { channelQueueSummary, queueLagging, usePipelineHealth } from "../../lib/pipeline";
 import { controllerOf, heldByOf, runsOf, sweptBy } from "../../lib/resolved";
-import type { BandMiss, BroadcastStatus, PatchNode, PatchNodeOf } from "../../lib/types";
+import type { BandMiss, Field, PatchNode, PatchNodeOf } from "../../lib/types";
 import { channelSettingsOf, liveChannelOf, useChannelEdit } from "../../lib/useChannelEdit";
 import type { ChannelEdit } from "../../lib/useChannelPatch";
+import { keyedFields } from "../../sinks/Fields";
+import { formatValue } from "../../sinks/values";
 import { useWorkspaceContext } from "../context";
 import { nodeOf, patchNode } from "../graph";
 import { iqLanesOf } from "../lanes";
@@ -46,7 +47,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
   const levels = useLevelStore((state) => (set === null ? undefined : state.byDeviceSet[set.id]));
   const editChannel = useChannelEdit();
   const live = liveChannelOf(workspace, node.id);
-  const broadcast = useBroadcast(node.id);
+  const channelStatus = useChannelStatus(node.id);
   if (node.kind !== "channel") {
     return null;
   }
@@ -91,7 +92,11 @@ export function ChannelFace({ node }: { node: PatchNode }) {
     driver: scanned ? "scanning" : controller,
     carrier,
   });
-  const widthHz = channelWidthHz(settings?.params, descriptor);
+  const widthHz = channelWidthHz(
+    settings?.params,
+    descriptor,
+    workspace.channels.get(node.id)?.band,
+  );
   const action = live === null ? (unbound?.action ?? null) : null;
 
   return (
@@ -137,7 +142,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
           <ChannelControls
             settings={settings}
             descriptor={descriptor}
-            broadcast={broadcast}
+            status={channelStatus}
             onEdit={onEdit}
           />
         )}
@@ -147,7 +152,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
           <ChannelHealth
             deviceSet={live.deviceSet}
             channel={live.id}
-            broadcast={broadcast}
+            readouts={channelStatus?.readouts ?? []}
             rejected={channel?.rejected ?? 0}
             skipped={channel?.skipped ?? 0}
           />
@@ -205,13 +210,13 @@ function faceStatus({
 function ChannelHealth({
   deviceSet,
   channel,
-  broadcast,
+  readouts,
   rejected,
   skipped,
 }: {
   deviceSet: number;
   channel: number;
-  broadcast: BroadcastStatus | undefined;
+  readouts: readonly Field[];
   rejected: number;
   skipped: number;
 }) {
@@ -221,7 +226,7 @@ function ChannelHealth({
   if (
     !queueLagging(summary) &&
     dropped === 0 &&
-    broadcast === undefined &&
+    readouts.length === 0 &&
     rejected === 0 &&
     skipped === 0
   ) {
@@ -229,7 +234,7 @@ function ChannelHealth({
   }
   return (
     <FaceStats>
-      {broadcast !== undefined && <BroadcastStats status={broadcast} />}
+      <StatusReadouts readouts={readouts} />
       {queueLagging(summary) && (
         <Stat label="Queue" title={summary.detail} tone="warn">
           {summary.oldestMs.toFixed(0)} ms
@@ -254,14 +259,10 @@ function ChannelHealth({
   );
 }
 
-function BroadcastStats({ status }: { status: BroadcastStatus }) {
-  const title = broadcastTitle(status);
-  if (!status.locked) {
-    return <Stat label="No lock" title={title} tone="warn" />;
-  }
-  return (
-    <Stat label="SNR" title={title} tone="ok">
-      {status.snr_db.toFixed(1)} dB
+export function StatusReadouts({ readouts }: { readouts: readonly Field[] }) {
+  return keyedFields(readouts).map(([key, field]) => (
+    <Stat key={key} label={field.label} title={field.label}>
+      {formatValue(field.value)}
     </Stat>
-  );
+  ));
 }

@@ -1,4 +1,3 @@
-import { PANELS } from "../../components/DecoderPanels";
 import { useFeeds } from "../../lib/resolved";
 import { useSinkFeed } from "../../lib/sinks";
 import type { PatchNode } from "../../lib/types";
@@ -22,7 +21,7 @@ export function ReadoutFace({ node }: { node: PatchNode }) {
         {feeds.length === 0 ? (
           <FaceEmpty hint="Wire a decoder's events in" />
         ) : (
-          <ReadoutView feed={feed} panels={PANELS} sourceName={sourceName} now={now} />
+          <ReadoutView feed={feed} sourceName={sourceName} now={now} />
         )}
       </FaceBody>
     </NodeShell>

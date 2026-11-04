@@ -28,23 +28,9 @@ import {
 
 const LOG = "decoder_log:1";
 
-const adsb: DecoderEvent = {
-  kind: "adsb",
-  data: { icao: "3c6444", df: 17, callsign: " DLH123 ", altitude_ft: 35_000, raw: "8d3c6444" },
-};
+const plane: DecoderEvent = { kind: "probe_station", data: {} };
 
-const ais: DecoderEvent = {
-  kind: "ais",
-  data: {
-    mmsi: 211_234_560,
-    msg_type: 1,
-    ais_channel: "A",
-    nmea: "!AIVDM,1,1,,A,x,0*00",
-    name: " NORDLICHT ",
-    lat: 53.551_2,
-    lon: 9.993_7,
-  },
-};
+const ship: DecoderEvent = { kind: "probe_other", data: {} };
 
 const PLANE_VIEW: Presentation = {
   summary: "3C6444 · DLH123 · 35000 ft",
@@ -58,14 +44,14 @@ function entry(over: Partial<DecoderLogEntry> = {}): DecoderLogEntry {
   return {
     id: 1,
     at: "2026-08-09T12:00:00Z",
-    kind: "adsb",
+    kind: "probe_station",
     station: "3C6444",
     summary: "3C6444 · DLH123",
     freq_hz: 1_090_000_000,
     device_set: 0,
     channel: 0,
-    event: adsb,
-    origin: { node: "adsb", transmission: 0 },
+    event: plane,
+    origin: { node: "probe", transmission: 0 },
     ...over,
   };
 }
@@ -73,11 +59,11 @@ function entry(over: Partial<DecoderLogEntry> = {}): DecoderLogEntry {
 function record(over: Partial<DecodedRecord> = {}): DecodedRecord {
   return {
     at: "2026-08-09T12:00:01Z",
-    event: adsb,
+    event: plane,
     freq_hz: 1_090_000_000,
     device_set: 0,
     channel: 0,
-    origin: { node: "adsb", transmission: 0 },
+    origin: { node: "probe", transmission: 0 },
     sinks: [LOG, "export:1"],
     view: PLANE_VIEW,
     ...over,
@@ -129,7 +115,7 @@ describe("collectLive", () => {
   const records = [
     record({ at: "2026-08-09T12:00:01Z" }),
     record({ at: "2026-08-09T12:00:03Z" }),
-    record({ at: "2026-08-09T12:00:02Z", event: ais, view: SHIP_VIEW }),
+    record({ at: "2026-08-09T12:00:02Z", event: ship, view: SHIP_VIEW }),
   ];
 
   it("lists the feed newest first", () => {

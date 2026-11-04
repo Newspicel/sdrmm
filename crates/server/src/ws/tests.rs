@@ -3,7 +3,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_wire::{ChannelParams, ChannelSettings, DeviceBackend, NfmParams};
+use sdrmm_wire::{ChannelParams, ChannelSettings, DeviceBackend};
+
+use sdrmm_channels::NfmParams;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite;
 
@@ -102,7 +104,7 @@ fn nfm_channel(offset_hz: f64) -> ChannelSettings {
     ChannelSettings {
         frequency_hz: 100_000_000.0 + offset_hz,
         squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Nfm(NfmParams::default()),
+        params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     }
@@ -988,13 +990,13 @@ fn aircraft(icao: &str) -> sdrmm_wire::DecodedRecord {
         channel: 2,
         at: "2026-08-09T12:00:00.000000000Z".to_string(),
         freq_hz: 1_090_000_000.0,
-        event: sdrmm_wire::DecoderEvent::Adsb(sdrmm_wire::AdsbMessage {
+        event: sdrmm_wire::DecoderEvent::of(&sdrmm_channels::AdsbMessage {
             icao: icao.to_string(),
             df: 17,
             lat: Some(52.5),
             lon: Some(13.4),
             raw: "8D3C6444".to_string(),
-            ..sdrmm_wire::AdsbMessage::default()
+            ..sdrmm_channels::AdsbMessage::default()
         }),
         view: None,
     }

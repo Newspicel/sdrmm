@@ -1,7 +1,4 @@
-use sdrmm_wire::{
-    NavTargetKind, TriangulationParams,
-    geo::{self, Enu},
-};
+use sdrmm_wire::{NavTargetKind, TriangulationParams, geo, geo::Enu};
 
 use super::*;
 

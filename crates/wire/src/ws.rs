@@ -120,7 +120,7 @@ pub struct PortActivity {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", content = "data")]
 pub enum ServerEvent {
-    BeastExportStatus(crate::event_output::BeastExportStatus),
+    FeedStatus(crate::event_output::FeedStatus),
     EventOutputStatus(crate::event_output::EventOutputStatus),
     PipelineHealth {
         queues: Vec<crate::PipelineQueue>,
@@ -185,9 +185,9 @@ pub enum ServerEvent {
         device_set: u32,
         status: Box<crate::hunt::HuntStatus>,
     },
-    ChannelBroadcast {
+    ChannelStatus {
         node: String,
-        status: Box<crate::decode::BroadcastStatus>,
+        status: Box<crate::channel::ChannelStatus>,
     },
     SatelliteUpdate {
         status: Box<crate::satellite::SatelliteStatus>,

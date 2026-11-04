@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 mod bits;
 mod device;
 mod devices;
@@ -9,10 +14,7 @@ mod unknown;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    ISM_BANDWIDTH_HZ, ISM_SAMPLE_RATE_HZ, IsmIntegrity, IsmMessage, IsmParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use self::{
     bits::Bits,
@@ -22,7 +24,8 @@ use self::{
     unknown::Unknown,
 };
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate, datalink,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate, datalink,
 };
 
 const RATE: f64 = ISM_SAMPLE_RATE_HZ;
@@ -38,18 +41,12 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: ISM_BANDWIDTH_HZ,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Ism],
+    emits: vec![EventKind::named("ism")],
     ..ChannelDescriptor::default()
 });
 
 fn params(settings: &ChannelSettings) -> Result<IsmParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Ism(params) => Ok(*params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "ism channel got {} params",
-            other.type_id()
-        ))),
-    }
+    crate::settings_of::<IsmParams>(settings)
 }
 
 pub(crate) fn occupied_band(_: &IsmParams) -> (f64, f64) {
@@ -173,18 +170,17 @@ impl IsmChannel {
         let mut pending = std::mem::take(&mut self.decoders.pending);
         for message in pending.drain(..) {
             if !self.repeat(&message) {
-                out.events.push(DecoderEvent::Ism(message));
+                out.events.push(DecoderEvent::of(&message));
             }
         }
         self.decoders.pending = pending;
     }
 }
 
-impl ChannelRx for IsmChannel {
+impl NativeChannel for IsmChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         Ok(Self {
@@ -195,7 +191,9 @@ impl ChannelRx for IsmChannel {
             next: 0,
         })
     }
+}
 
+impl ChannelRx for IsmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.decoders.show_unknown = params(&settings)?.unknown;
         Ok(())
@@ -217,6 +215,60 @@ impl ChannelRx for IsmChannel {
     fn rejected(&self) -> u32 {
         self.decoders.rejected
     }
+}
+
+const ISM: &[HzRange] = &[
+    HzRange::mhz(314.5, 315.5),
+    HzRange::mhz(433.05, 434.79),
+    HzRange::mhz(863.0, 870.0),
+    HzRange::mhz(902.0, 928.0),
+];
+
+fn ism_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "ISM remote (OOK)",
+            &[Modulation::Ook],
+            HzRange::new(2_000.0, 160_000.0),
+            "a keyed carrier at remote-control speed",
+        )
+        .symbol_rate(HzRange::new(300.0, 30_000.0))
+        .on(ISM),
+        SignalSignature::new(
+            "ISM telemetry (2-FSK)",
+            &[Modulation::Fsk2],
+            HzRange::new(15_000.0, 160_000.0),
+            "a wide two-level shift, sensor-radio speed",
+        )
+        .symbol_rate(HzRange::new(600.0, 100_000.0))
+        .deviation(HzRange::new(8_000.0, 80_000.0))
+        .on(ISM),
+    ]
+}
+
+fn ism_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("ism"))
+}
+
+pub(crate) fn ism_decoder() -> Native<IsmParams> {
+    Native::new::<IsmChannel>(occupied_band)
+        .filter(|p| Ok(channel_filter(p)))
+        .home(433_920_000.0)
+        .signatures(ism_signatures)
+        .trial(ism_trial)
+        .form(ism_form)
+        .kinds(ism_kinds)
+}
+
+pub(crate) fn ism_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("unknown", "Unknown", Control::Toggle)
+            .title("Also log repeated codes no decoder knows"),
+    ]
+}
+
+fn ism_kinds() -> Vec<KindSpec> {
+    vec![crate::ism::ism_kind()]
 }
 
 #[cfg(test)]

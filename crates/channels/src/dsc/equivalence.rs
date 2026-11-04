@@ -1,5 +1,5 @@
+use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
-use sdrmm_wire::DataLinkMessage;
 
 use super::{DscDecoder, RATE, modulate, to_datalink};
 use crate::{

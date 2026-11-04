@@ -1,5 +1,8 @@
+use crate::NativeChannel;
+use crate::sid::SidParams;
+use crate::sid::SidReport;
 use num_complex::Complex;
-use sdrmm_wire::{ChannelParams, ChannelSettings, DecoderEvent, SidParams, SidReport};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{RATE, SidChannel, stations::STATIONS};
 use crate::{ChannelCtx, ChannelOutputs, ChannelRx, synth::sid::carriers, testutil::settings};
@@ -9,10 +12,16 @@ const CENTRE_HZ: f64 = 30_000.0;
 fn tuned(report_s: u16) -> ChannelSettings {
     ChannelSettings {
         frequency_hz: CENTRE_HZ,
-        ..settings(ChannelParams::Sid(SidParams {
-            report_s,
-            threshold_db: 3.0,
-        }))
+        ..settings(
+            ChannelParams::new(
+                "sid",
+                &SidParams {
+                    report_s,
+                    threshold_db: 3.0,
+                },
+            )
+            .expect("sid settings"),
+        )
     }
 }
 
@@ -30,15 +39,16 @@ fn reports(channel: &mut SidChannel, iq: &[Complex<f32>]) -> Vec<SidReport> {
     for block in iq.chunks(9_973) {
         out.reset();
         channel.process(block, &mut out);
-        found.extend(out.events.drain(..).filter_map(|event| match event {
-            DecoderEvent::Sid(report) => Some(report),
-            _ => None,
-        }));
+        found.extend(
+            out.events
+                .drain(..)
+                .filter_map(|event| event.read::<SidReport>()),
+        );
     }
     found
 }
 
-fn station<'a>(report: &'a SidReport, call: &str) -> &'a sdrmm_wire::SidStationLevel {
+fn station<'a>(report: &'a SidReport, call: &str) -> &'a crate::sid::SidStationLevel {
     report
         .stations
         .iter()
@@ -108,10 +118,16 @@ fn the_lo_artifact_hides_the_station_it_lands_on() {
 fn settings_out_of_range_are_refused() {
     let ctx = ChannelCtx { input_rate: RATE };
     let bad = |report_s, threshold_db| {
-        settings(ChannelParams::Sid(SidParams {
-            report_s,
-            threshold_db,
-        }))
+        settings(
+            ChannelParams::new(
+                "sid",
+                &SidParams {
+                    report_s,
+                    threshold_db,
+                },
+            )
+            .expect("sid settings"),
+        )
     };
     assert!(SidChannel::new(ctx, bad(0, 3.0)).is_err());
     assert!(SidChannel::new(ctx, bad(5, 0.5)).is_err());

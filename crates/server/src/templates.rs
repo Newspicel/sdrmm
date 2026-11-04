@@ -1,18 +1,17 @@
 use std::sync::LazyLock;
 
 use sdrmm_wire::{
-    AUDIO_PORT, AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, BleLink, BleParams,
-    ChannelNode, ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams,
-    EVENTS_PORT, EotParams, ErmesParams, FlexParams, GnssParams, IQ_PORT, IsmParams,
-    IsmSurveyParams, LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NodeBody,
-    NoiseFigureParams, PatchEdge, PatchGraph, PatchNode, PerParams, PocsagParams, PortRef,
-    Position, PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams,
-    RttyParams, SameParams, SarsatParams, SidParams, Squelch, SsbParams, SstvParams, StanagParams,
-    TemplateInfo, TetraParams, VIDEO_PORT, WMBUS_T_C_HZ, WefaxParams, WfmParams,
-    WifiOccupancyParams, WmbusParams, WsjtParams, WsprParams, YsfParams,
+    AUDIO_PORT, ChannelNode, ChannelSettings, DeviceNode, EVENTS_PORT, IQ_PORT, NodeBody,
+    PatchEdge, PatchGraph, PatchNode, PortRef, Position, TemplateInfo, VIDEO_PORT,
 };
+use serde::Deserialize;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// The templates, as data: each names decoders by type id, and one whose decoders are not all
+/// registered is left out.
+const TEMPLATES: &str = include_str!("../data/templates.json");
+
+#[derive(Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 enum Sink {
     Readout,
     Speaker,
@@ -59,47 +58,22 @@ const ORDER: &[Sink] = &[
     Sink::Log,
 ];
 
-const LISTEN: &[Sink] = &[Sink::Speaker];
-const LISTEN_READ: &[Sink] = &[Sink::Speaker, Sink::Readout];
-const LISTEN_LOG: &[Sink] = &[Sink::Speaker, Sink::Log];
-const TRACK_READ: &[Sink] = &[Sink::Map, Sink::Log, Sink::Readout];
-const LOG: &[Sink] = &[Sink::Log];
-const LOG_READ: &[Sink] = &[Sink::Log, Sink::Readout];
-const WATCH: &[Sink] = &[Sink::Video, Sink::Log];
-
+#[derive(Deserialize)]
 struct Channel {
-    freq_hz: f64,
-    params: fn() -> ChannelParams,
-    sinks: &'static [Sink],
-    squelch: Squelch,
+    #[serde(flatten)]
+    settings: ChannelSettings,
+    sinks: Vec<Sink>,
 }
 
-impl Channel {
-    const fn at(freq_hz: f64, params: fn() -> ChannelParams, sinks: &'static [Sink]) -> Self {
-        Self {
-            freq_hz,
-            params,
-            sinks,
-            squelch: Squelch::Off,
-        }
-    }
-
-    const fn squelched(self, margin_db: f32) -> Self {
-        Self {
-            squelch: Squelch::Auto { margin_db },
-            ..self
-        }
-    }
-}
-
+#[derive(Deserialize)]
 struct Entry {
-    id: &'static str,
-    name: &'static str,
-    description: &'static str,
-    explainer: &'static str,
+    id: String,
+    name: String,
+    description: String,
+    explainer: String,
     center_hz: f64,
     sample_rate: f64,
-    channels: &'static [Channel],
+    channels: Vec<Channel>,
 }
 
 const COLUMN: f32 = 520.0;
@@ -141,14 +115,14 @@ fn patch(channels: &[Channel]) -> PatchGraph {
         nodes.push(node(
             &id,
             NodeBody::Channel(ChannelNode {
-                channel_type: (channel.params)().type_id().to_string(),
+                channel_type: channel.settings.params.type_id().to_owned(),
                 tuning_locked: false,
             }),
             COLUMN,
             y,
         ));
         edges.push(wire(("dev", IQ_PORT), (&id, IQ_PORT)));
-        for sink in channel.sinks {
+        for sink in &channel.sinks {
             edges.push(wire((&id, sink.port()), (sink.node(), sink.port())));
         }
     }
@@ -167,735 +141,43 @@ fn patch(channels: &[Channel]) -> PatchGraph {
     PatchGraph { nodes, edges }
 }
 
-fn acars() -> ChannelParams {
-    ChannelParams::Acars(AcarsParams::default())
+fn entries() -> Vec<Entry> {
+    serde_json::from_str(TEMPLATES).unwrap_or_else(|error| {
+        tracing::error!(%error, "templates did not parse");
+        Vec::new()
+    })
 }
 
-fn fm_voice() -> ChannelParams {
-    ChannelParams::Nfm(NfmParams::default())
+fn runnable(entry: &Entry) -> bool {
+    entry
+        .channels
+        .iter()
+        .all(|channel| sdrmm_channels::descriptor(channel.settings.params.type_id()).is_some())
 }
 
-static TEMPLATES: &[Entry] = &[
-    Entry {
-        id: "fm-radio",
-        name: "FM radio",
-        description: "Wideband FM broadcast with RDS station text.",
-        explainer: "The wide humps across the display are FM stations, each about 200 kHz \
-                    across. The channel is tuned to one of them; RDS decodes the station name \
-                    and radio text from a subcarrier you cannot hear. Drag the channel marker \
-                    or edit its offset to move between stations.",
-        center_hz: 98_000_000.0,
-        sample_rate: 2_400_000.0,
-        channels: &[Channel::at(
-            98_000_000.0,
-            || ChannelParams::Wfm(WfmParams::default()),
-            LISTEN_READ,
-        )],
-    },
-    Entry {
-        id: "airband",
-        name: "Airband",
-        description: "AM aircraft voice: tower, approach and ground.",
-        explainer: "Civil aviation voice is AM between 118 and 137 MHz, 25 kHz apart. \
-                    Transmissions are short and sporadic: leave the squelch on and wait. \
-                    The 2.4 MHz window covers roughly 117–119.3 MHz, so tower, ground and \
-                    approach are usually all reachable by moving the channel offset alone. \
-                    121.5 MHz is the emergency frequency and is normally silent.",
-        center_hz: 118_100_000.0,
-        sample_rate: 2_400_000.0,
-        channels: &[Channel::at(
-            118_100_000.0,
-            || ChannelParams::Am(AmParams::default()),
-            LISTEN,
-        )],
-    },
-    Entry {
-        id: "adsb",
-        name: "Aircraft (ADS-B)",
-        description: "1090 MHz aircraft positions on the map.",
-        explainer: "Aircraft broadcast their identity, altitude, speed and position on \
-                    1090 MHz. Reception is line-of-sight, so range depends on antenna height \
-                    far more than on gain.",
-        center_hz: 1_090_000_000.0,
-        sample_rate: 2_400_000.0,
-        channels: &[Channel::at(
-            1_090_000_000.0,
-            || ChannelParams::Adsb(AdsbParams::default()),
-            TRACK_READ,
-        )],
-    },
-    Entry {
-        id: "acars",
-        name: "Aircraft data (ACARS)",
-        description: "Airline datalink text on the VHF ACARS channels.",
-        explainer: "ACARS carries short text between aircraft and their airline: position \
-                    reports, weather, link tests, gate changes and maintenance messages. The \
-                    allocation is regional, so five channels are decoded at once: 131.550 MHz \
-                    is the worldwide primary, 131.725 MHz serves Europe and 131.425 MHz the \
-                    Asia-Pacific region. Traffic is bursty: near a busy airport expect a \
-                    message every few seconds, elsewhere a handful per hour.",
-        center_hz: 131_637_500.0,
-        sample_rate: 1_024_000.0,
-        channels: &[
-            Channel::at(131_425_000.0, acars, LOG),
-            Channel::at(131_525_000.0, acars, LOG),
-            Channel::at(131_550_000.0, acars, LOG),
-            Channel::at(131_725_000.0, acars, LOG),
-            Channel::at(131_850_000.0, acars, LOG),
-        ],
-    },
-    Entry {
-        id: "ais",
-        name: "Ships (AIS)",
-        description: "Marine AIS positions on the map.",
-        explainer: "Ships broadcast position and identity on two VHF channels, 161.975 and \
-                    162.025 MHz. Both channels are decoded at once. Coverage is line-of-sight \
-                    over water, which is usually far better than over land.",
-        center_hz: 162_000_000.0,
-        sample_rate: 2_400_000.0,
-        channels: &[
-            Channel::at(
-                161_975_000.0,
-                || ChannelParams::Ais(AisParams::default()),
-                TRACK_READ,
-            ),
-            Channel::at(
-                162_025_000.0,
-                || {
-                    ChannelParams::Ais(AisParams {
-                        ais_channel: sdrmm_wire::AisChannel::B,
-                    })
-                },
-                TRACK_READ,
-            ),
-        ],
-    },
-    Entry {
-        id: "aprs",
-        name: "APRS",
-        description: "Amateur position and message packets (144.800 MHz).",
-        explainer: "APRS is AX.25 packet radio at 1200 baud AFSK. Each burst is a short \
-                    chirp; stations report position, weather or messages. 144.800 MHz is the \
-                    European calling frequency: North America uses 144.390 MHz.",
-        center_hz: 144_800_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[Channel::at(
-            144_800_000.0,
-            || ChannelParams::Aprs(AprsParams::default()),
-            TRACK_READ,
-        )],
-    },
-    Entry {
-        id: "pagers",
-        name: "Pagers",
-        description: "POCSAG, FLEX and ERMES pager messages.",
-        explainer: "Pager traffic still carries hospital, industrial and emergency dispatch \
-                    messages. The three decoders cover POCSAG at every standard baud rate, \
-                    all four FLEX modes and European ERMES. Frequencies are regional; check \
-                    your national allocation before tuning.",
-        center_hz: 466_075_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[
-            Channel::at(
-                466_075_000.0,
-                || ChannelParams::Pocsag(PocsagParams::default()),
-                LOG,
-            ),
-            Channel::at(
-                466_075_000.0,
-                || ChannelParams::Flex(FlexParams::default()),
-                LOG,
-            ),
-            Channel::at(
-                466_075_000.0,
-                || ChannelParams::Ermes(ErmesParams::default()),
-                LOG,
-            ),
-        ],
-    },
-    Entry {
-        id: "railroad-eot",
-        name: "Railroad EOT",
-        description: "End-of-Train brake pressure, motion and marker light.",
-        explainer: "North American freight trains carry an End-of-Train unit that reports \
-                    rear brake pipe pressure, motion and battery on 457.9375 MHz. The \
-                    locomotive answers and sends emergency commands on 452.9375 MHz; \
-                    retune the channel there to log them.",
-        center_hz: 457_700_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[Channel::at(
-            457_937_500.0,
-            || ChannelParams::Eot(EotParams::default()),
-            LOG_READ,
-        )],
-    },
-    Entry {
-        id: "weather-radio",
-        name: "NOAA Weather Radio",
-        description: "Forecast voice plus the SAME alert headers that drive it.",
-        explainer: "The seven NWR channels between 162.400 and 162.550 MHz carry continuous \
-                    forecast voice. An alert is announced by a SAME header burst sent three \
-                    times before the voice and closed by an end-of-message burst after it. \
-                    The speaker plays the voice; the SAME node logs the event code, the \
-                    counties it covers and how long it stays valid. Retune both channels to \
-                    whichever of the seven your transmitter uses.",
-        center_hz: 162_475_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[
-            Channel::at(162_550_000.0, fm_voice, LISTEN),
-            Channel::at(
-                162_550_000.0,
-                || ChannelParams::Same(SameParams::default()),
-                LOG,
-            ),
-        ],
-    },
-    Entry {
-        id: "distress-beacons",
-        name: "406 MHz beacons",
-        description: "EPIRB, ELT and PLB identity and position.",
-        explainer: "Distress beacons send a half-second burst every 50 seconds between 406.0 \
-                    and 406.1 MHz. The channel covers 406.024 to 406.044 MHz, where most \
-                    beacons sit. Self-test bursts are marked as such.",
-        center_hz: 406_000_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[Channel::at(
-            406_034_000.0,
-            || ChannelParams::Sarsat(SarsatParams::default()),
-            TRACK_READ,
-        )],
-    },
-    Entry {
-        id: "drone-remote-id",
-        name: "Drone Remote ID",
-        description: "Drone ID, position and pilot over Bluetooth.",
-        explainer: "Drones broadcast their serial number, position and pilot location under \
-                    ASTM F3411 and EN 4709-002. Bluetooth 4 adverts arrive on channel 38; \
-                    Bluetooth 5 long range puts its data on the channels around it.",
-        center_hz: 2_426_000_000.0,
-        sample_rate: 20_000_000.0,
-        channels: &[Channel::at(
-            2_426_000_000.0,
-            || {
-                ChannelParams::RemoteId(RemoteIdParams {
-                    link: RemoteIdLink::BluetoothBand,
-                })
-            },
-            TRACK_READ,
-        )],
-    },
-    Entry {
-        id: "drone-remote-id-wifi",
-        name: "Drone Remote ID · Wi-Fi",
-        description: "Drone ID, position and pilot from Wi-Fi beacons.",
-        explainer: "DJI and many other drones send Remote ID in Wi-Fi beacons, usually on \
-                    channel 6. Retune to channel 1, 11 or 149 if nothing shows.",
-        center_hz: 2_437_000_000.0,
-        sample_rate: 20_000_000.0,
-        channels: &[Channel::at(
-            2_437_000_000.0,
-            || {
-                ChannelParams::RemoteId(RemoteIdParams {
-                    link: RemoteIdLink::Wifi,
-                })
-            },
-            TRACK_READ,
-        )],
-    },
-    Entry {
-        id: "ble-devices",
-        name: "BLE devices",
-        description: "Bluetooth LE devices, beacons and trackers.",
-        explainer: "Phones, tags and sensors advertise on channel 38. A 20 MS/s window also \
-                    hears long range adverts on the data channels around it.",
-        center_hz: 2_426_000_000.0,
-        sample_rate: 20_000_000.0,
-        channels: &[Channel::at(
-            2_426_000_000.0,
-            || {
-                ChannelParams::Ble(BleParams {
-                    link: BleLink::Band,
-                })
-            },
-            LOG_READ,
-        )],
-    },
-    Entry {
-        id: "ism-433",
-        name: "433 MHz sensors",
-        description: "Weather stations, thermometers, remotes and door sensors.",
-        explainer: "Decodes OOK and FSK sensors the way rtl_433 does. Tick unknown to also \
-                    log repeated codes no decoder knows.",
-        center_hz: 433_920_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[Channel::at(
-            433_920_000.0,
-            || ChannelParams::Ism(IsmParams::default()),
-            LOG_READ,
-        )],
-    },
-    Entry {
-        id: "wmbus-868",
-        name: "868 MHz meters",
-        description: "Water, heat and energy meters.",
-        explainer: "Reads wireless M-Bus modes T and C. Add a meter's key to open \
-                    encrypted readings.",
-        center_hz: WMBUS_T_C_HZ,
-        sample_rate: 1_024_000.0,
-        channels: &[Channel::at(
-            WMBUS_T_C_HZ,
-            || ChannelParams::Wmbus(WmbusParams::default()),
-            LOG_READ,
-        )],
-    },
-    Entry {
-        id: "ism-survey",
-        name: "2.4 GHz survey",
-        description: "Who uses 2.4 GHz: Wi-Fi, Bluetooth, Zigbee, ovens.",
-        explainer: "Sorts every burst by width, length and channel grid, from energy alone. \
-                    One report per second.",
-        center_hz: 2_442_000_000.0,
-        sample_rate: 20_000_000.0,
-        channels: &[Channel::at(
-            2_442_000_000.0,
-            || ChannelParams::IsmSurvey(IsmSurveyParams::default()),
-            LOG_READ,
-        )],
-    },
-    Entry {
-        id: "wifi-occupancy",
-        name: "Wi-Fi occupancy",
-        description: "How busy each Wi-Fi channel is.",
-        explainer: "Busy time from energy alone, once a second. A 20 MS/s radio sees one \
-                    channel; 80 MS/s sees all of 2.4 GHz.",
-        center_hz: 2_437_000_000.0,
-        sample_rate: 20_000_000.0,
-        channels: &[Channel::at(
-            2_437_000_000.0,
-            || ChannelParams::WifiOccupancy(WifiOccupancyParams::default()),
-            LOG_READ,
-        )],
-    },
-    Entry {
-        id: "noise-figure",
-        name: "Noise figure",
-        description: "Receiver noise figure with a switched noise source.",
-        explainer: "Feed a calibrated noise source into the antenna port, set its ENR and \
-                    switch it on and off. Each switch settles a new Y-factor reading.",
-        center_hz: 100_000_000.0,
-        sample_rate: 1_000_000.0,
-        channels: &[Channel::at(
-            100_000_000.0,
-            || ChannelParams::NoiseFigure(NoiseFigureParams::default()),
-            LOG_READ,
-        )],
-    },
-    Entry {
-        id: "per-tester",
-        name: "PER tester",
-        description: "Packet and bit error rate of PER test frames.",
-        explainer: "Counts numbered 2-FSK test frames and compares each payload with its \
-                    known PRBS9 pattern. The signal generator sends them as PER test frames.",
-        center_hz: 145_000_000.0,
-        sample_rate: 240_000.0,
-        channels: &[Channel::at(
-            145_000_000.0,
-            || ChannelParams::Per(PerParams::default()),
-            LOG_READ,
-        )],
-    },
-    Entry {
-        id: "sid-monitor",
-        name: "SID monitor",
-        description: "Solar flares in VLF transmitter levels.",
-        explainer: "Flares lift or dip daytime VLF signals for minutes to hours. Needs a radio \
-                    that reaches 16 to 46 kHz and a long wire or loop.",
-        center_hz: 30_000.0,
-        sample_rate: 250_000.0,
-        channels: &[Channel::at(
-            30_000.0,
-            || ChannelParams::Sid(SidParams::default()),
-            LOG_READ,
-        )],
-    },
-    Entry {
-        id: "radio-clock",
-        name: "Radio clock",
-        description: "DCF77 civil time and minute-code inspection.",
-        explainer: "DCF77 lowers its 77.5 kHz carrier once per second. The pulse width carries \
-                    the next minute's time and date, with separate parity checks for minute, \
-                    hour and calendar fields. Select WWVB, MSF or JJY in the channel settings \
-                    and retune to the service used in your region.",
-        center_hz: 77_500.0,
-        sample_rate: 250_000.0,
-        channels: &[Channel::at(
-            77_500.0,
-            || ChannelParams::RadioClock(RadioClockParams::default()),
-            LOG,
-        )],
-    },
-    Entry {
-        id: "navtex",
-        name: "NAVTEX",
-        description: "Coastal navigation warnings on 490 and 518 kHz.",
-        explainer: "NAVTEX broadcasts navigational and meteorological warnings to ships as \
-                    100 baud FSK teleprinter text. 518 kHz carries the international English \
-                    service, 490 kHz the national-language one, and both are decoded here. \
-                    Stations transmit on a schedule a few times a day, so leave it running; \
-                    reception is far better after dark.",
-        center_hz: 504_000.0,
-        sample_rate: 250_000.0,
-        channels: &[
-            Channel::at(
-                490_000.0,
-                || ChannelParams::Navtex(NavtexParams::default()),
-                LOG,
-            ),
-            Channel::at(
-                518_000.0,
-                || ChannelParams::Navtex(NavtexParams::default()),
-                LOG,
-            ),
-        ],
-    },
-    Entry {
-        id: "gnss-lab",
-        name: "GNSS lab",
-        description: "Inspect GPS L1 C/A acquisition and NAV subframes.",
-        explainer: "This educational receiver searches one GPS PRN at a time so the code \
-                    phase, Doppler and correlation strength stay visible. After acquisition \
-                    it checks the 50 bit/s navigation-word parity and reports subframe ID, \
-                    time of week and the truncated GPS week from subframe 1. It is not a \
-                    navigation-grade position solution.",
-        center_hz: 1_575_420_000.0,
-        sample_rate: 2_048_000.0,
-        channels: &[Channel::at(
-            1_575_420_000.0,
-            || ChannelParams::Gnss(GnssParams::default()),
-            LOG,
-        )],
-    },
-    Entry {
-        id: "ham-2m",
-        name: "Ham 2 m",
-        description: "The 2 metre amateur band, FM repeater output segment.",
-        explainer: "145.600–145.800 MHz carries FM repeater outputs, 12.5 kHz apart. Point \
-                    the scanner at this range to find the active ones: a repeater is silent \
-                    between overs, so a sweep finds far more than sitting on one channel.",
-        center_hz: 145_700_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[Channel::at(145_700_000.0, fm_voice, LISTEN)],
-    },
-    Entry {
-        id: "marine-vhf",
-        name: "Marine VHF",
-        description: "Marine voice channels around 156–162 MHz.",
-        explainer: "Channel 16 (156.800 MHz) is the international distress and calling \
-                    channel and is monitored everywhere; working traffic moves off it. Marine \
-                    VHF is narrowband FM, 25 kHz apart.",
-        center_hz: 156_800_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[Channel::at(156_800_000.0, fm_voice, LISTEN)],
-    },
-    Entry {
-        id: "pmr446",
-        name: "PMR446 walkie-talkies",
-        description: "The eight classic licence-free FM channels at 446 MHz.",
-        explainer: "PMR446 handsets are sold without a licence across Europe, so this is the \
-                    band with the most everyday traffic: markets, building sites, ski slopes \
-                    and events. Channels 1–8 sit 12.5 kHz apart from 446.00625 MHz and all \
-                    eight are open at once, each with automatic squelch so only a real \
-                    transmission reaches the speaker. The readout shows the CTCSS or DCS code \
-                    a handset sends, which is what its 'privacy code' setting really is. \
-                    Channels 9–16 continue to 446.19375 MHz and are visible on the scope.",
-        center_hz: 446_100_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[
-            Channel::at(446_006_250.0, fm_voice, LISTEN_READ).squelched(8.0),
-            Channel::at(446_018_750.0, fm_voice, LISTEN_READ).squelched(8.0),
-            Channel::at(446_031_250.0, fm_voice, LISTEN_READ).squelched(8.0),
-            Channel::at(446_043_750.0, fm_voice, LISTEN_READ).squelched(8.0),
-            Channel::at(446_056_250.0, fm_voice, LISTEN_READ).squelched(8.0),
-            Channel::at(446_068_750.0, fm_voice, LISTEN_READ).squelched(8.0),
-            Channel::at(446_081_250.0, fm_voice, LISTEN_READ).squelched(8.0),
-            Channel::at(446_093_750.0, fm_voice, LISTEN_READ).squelched(8.0),
-        ],
-    },
-    Entry {
-        id: "digital-voice",
-        name: "Digital voice (70 cm)",
-        description: "DMR, D-STAR, System Fusion and M17 decoded side by side.",
-        explainer: "Amateur repeaters carry four incompatible digital voice systems that all \
-                    look alike on a waterfall. Running one decoder per system on the same \
-                    frequency answers which is in use: whichever locks is the mode, and the \
-                    log names the talkgroup, callsign or reflector it carries while the \
-                    speaker plays the decoded voice. Retune the receiver to a repeater output \
-                    near you: 439 MHz is only the middle of the segment.",
-        center_hz: 439_000_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[
-            Channel::at(
-                439_000_000.0,
-                || ChannelParams::Dmr(DmrParams::default()),
-                LISTEN_LOG,
-            ),
-            Channel::at(
-                439_000_000.0,
-                || ChannelParams::Dstar(DstarParams::default()),
-                LISTEN_LOG,
-            ),
-            Channel::at(
-                439_000_000.0,
-                || ChannelParams::Ysf(YsfParams::default()),
-                LISTEN_LOG,
-            ),
-            Channel::at(
-                439_000_000.0,
-                || ChannelParams::M17(M17Params::default()),
-                LISTEN_LOG,
-            ),
-        ],
-    },
-    Entry {
-        id: "tetra-cell",
-        name: "TETRA cell",
-        description: "Cell identity, calls and short messages of a TETRA carrier.",
-        explainer: "Tune to a TETRA downlink. The log names the network, location area and \
-                    carrier, then each call setup, talker and SDS. Voice is not decoded, and \
-                    air-encrypted cells only show their identity. 392.5 MHz is only an example.",
-        center_hz: 392_500_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[Channel::at(
-            392_500_000.0,
-            || ChannelParams::Tetra(TetraParams::default()),
-            LOG,
-        )],
-    },
-    Entry {
-        id: "dab-check",
-        name: "DAB ensemble check",
-        description: "Confirm a DAB block is on air and measure its lock.",
-        explainer: "A DAB ensemble is one 1.536 MHz wide OFDM block carrying a bundle of \
-                    stations. This template locks to the block's transmission frame and \
-                    reports lock, signal-to-noise and frequency error, which is what an \
-                    antenna or filter change has to improve before anything else matters. It \
-                    does not play DAB audio. 178.352 MHz is block 5C; the channel settings \
-                    list the other blocks.",
-        center_hz: 178_352_000.0,
-        sample_rate: 2_048_000.0,
-        channels: &[Channel::at(
-            178_352_000.0,
-            || ChannelParams::Dab(DabParams::default()),
-            LOG,
-        )],
-    },
-    Entry {
-        id: "hf-digital",
-        name: "HF digital (20 m)",
-        description: "FT8, FT4 and WSPR decoded together on 20 metres.",
-        explainer: "These three modes trade speed for sensitivity and decode signals well \
-                    below the noise floor, which is why 20 m stays busy even when the band \
-                    sounds empty. FT8 (14.074 MHz) and FT4 (14.080 MHz) are contacts on a \
-                    15 and 7.5 second clock; WSPR (14.0956 MHz) is beacons on a two-minute \
-                    one. Decoding depends on the computer clock being right: an error over \
-                    about a second costs you every FT8 slot.",
-        center_hz: 14_084_800.0,
-        sample_rate: 250_000.0,
-        channels: &[
-            Channel::at(
-                14_074_000.0,
-                || ChannelParams::Ft8(WsjtParams::default()),
-                LOG,
-            ),
-            Channel::at(
-                14_080_000.0,
-                || ChannelParams::Ft4(WsjtParams::default()),
-                LOG,
-            ),
-            Channel::at(
-                14_095_600.0,
-                || ChannelParams::Wspr(WsprParams::default()),
-                LOG,
-            ),
-        ],
-    },
-    Entry {
-        id: "hf-keyboard",
-        name: "HF keyboard modes (20 m)",
-        description: "CW, RTTY and PSK31 read as text, with the audio to match.",
-        explainer: "The oldest live modes on the band are still hand-tuned: each decoder is \
-                    only a few hundred hertz wide, so drag its marker onto a trace on the \
-                    scope until the text comes out clean. 14.100 MHz carries the international \
-                    beacon project, whose eighteen stations transmit their callsign in Morse \
-                    in turn, so it is the one frequency here that is busy on a schedule. The \
-                    SSB channel demodulates the same segment so you hear what the decoders \
-                    are reading.",
-        center_hz: 14_085_000.0,
-        sample_rate: 250_000.0,
-        channels: &[
-            Channel::at(
-                14_070_150.0,
-                || ChannelParams::Psk(PskParams::default()),
-                LOG_READ,
-            ),
-            Channel::at(
-                14_083_000.0,
-                || ChannelParams::Rtty(RttyParams::default()),
-                LOG_READ,
-            ),
-            Channel::at(
-                14_100_000.0,
-                || ChannelParams::Morse(MorseParams::default()),
-                LOG_READ,
-            ),
-            Channel::at(
-                14_099_500.0,
-                || ChannelParams::Ssb(SsbParams::default()),
-                LISTEN,
-            ),
-        ],
-    },
-    Entry {
-        id: "hf-sstv",
-        name: "SSTV pictures (20 m)",
-        description: "Slow-scan television on 14.230 MHz, picture and sound.",
-        explainer: "SSTV sends a still picture as audio, one line at a time, in one to two \
-                    minutes. The mode is announced by a VIS header at the start of a \
-                    transmission and detected for you, so a picture starts building as soon \
-                    as one is received. 14.230 MHz is the worldwide calling frequency; the \
-                    SSB channel plays the warble the decoder is turning into the image.",
-        center_hz: 14_230_000.0,
-        sample_rate: 250_000.0,
-        channels: &[
-            Channel::at(
-                14_230_000.0,
-                || ChannelParams::Sstv(SstvParams::default()),
-                WATCH,
-            ),
-            Channel::at(
-                14_230_000.0,
-                || ChannelParams::Ssb(SsbParams::default()),
-                LISTEN,
-            ),
-        ],
-    },
-    Entry {
-        id: "hf-modems",
-        name: "HF data modems",
-        description: "Names STANAG, MIL-STD-188-110 and 2G ALE signals.",
-        explainer: "Put the channel on the USB dial of a data signal. The identifier names \
-                    the modem, its carrier and, for MIL-STD-188-110A, the rate from its \
-                    preamble.",
-        center_hz: 8_500_000.0,
-        sample_rate: 250_000.0,
-        channels: &[
-            Channel::at(
-                8_500_000.0,
-                || ChannelParams::Stanag(StanagParams::default()),
-                LOG_READ,
-            ),
-            Channel::at(
-                8_500_000.0,
-                || ChannelParams::Ssb(SsbParams::default()),
-                LISTEN,
-            ),
-        ],
-    },
-    Entry {
-        id: "weather-sats",
-        name: "Weather satellites (137.9 MHz)",
-        description: "Meteor-M LRPT pictures during a pass.",
-        explainer: "Meteor-M N2-4 sends a digital picture on 137.900 MHz while it passes \
-                    overhead, OQPSK at 72k. It is the last 137 MHz weather satellite: the \
-                    NOAA APT ones left the air in August 2025. Use the Satellite node for \
-                    Doppler.",
-        center_hz: 137_900_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[Channel::at(
-            137_900_000.0,
-            || ChannelParams::Lrpt(LrptParams::default()),
-            WATCH,
-        )],
-    },
-    Entry {
-        id: "hf-wefax",
-        name: "Weather fax (HF)",
-        description: "DWD weather charts from Pinneberg on 7.880 MHz.",
-        explainer: "Radiofax sends weather charts line by line. Start and stop tones begin \
-                    and end a chart; the start tone picks the IOC for you. Channels sit on \
-                    the USB carrier, 1.9 kHz below the published frequency.",
-        center_hz: 7_880_000.0,
-        sample_rate: 250_000.0,
-        channels: &[
-            Channel::at(
-                7_878_100.0,
-                || ChannelParams::Wefax(WefaxParams::default()),
-                WATCH,
-            ),
-            Channel::at(
-                7_878_100.0,
-                || ChannelParams::Ssb(SsbParams::default()),
-                LISTEN,
-            ),
-        ],
-    },
-    Entry {
-        id: "radiosondes",
-        name: "Radiosondes (403 MHz)",
-        description: "Weather balloon position and readings, RS41, DFM, M10, M20, iMet.",
-        explainer: "Weather services launch radiosondes once or twice a day. Each sends its \
-                    position, temperature, humidity and pressure every second. Set the \
-                    channel to your nearest launch site's frequency.",
-        center_hz: 403_000_000.0,
-        sample_rate: 2_048_000.0,
-        channels: &[Channel::at(
-            403_000_000.0,
-            || ChannelParams::Radiosonde(RadiosondeParams::default()),
-            TRACK_READ,
-        )],
-    },
-];
+fn info(entry: Entry) -> TemplateInfo {
+    let freqs = entry.channels.iter().map(|c| c.settings.frequency_hz);
+    let min = freqs.clone().fold(f64::INFINITY, f64::min);
+    let max = freqs.fold(f64::NEG_INFINITY, f64::max);
+    TemplateInfo {
+        patch: Some(patch(&entry.channels)),
+        channels: entry.channels.into_iter().map(|c| c.settings).collect(),
+        min_freq_hz: min.min(entry.center_hz),
+        max_freq_hz: max.max(entry.center_hz),
+        id: entry.id,
+        name: entry.name,
+        description: entry.description,
+        explainer: entry.explainer,
+        center_hz: entry.center_hz,
+        sample_rate: entry.sample_rate,
+        direction: sdrmm_wire::Direction::Rx,
+        supported_devices: Vec::new(),
+    }
+}
 
-#[must_use]
 pub(crate) fn all() -> &'static [TemplateInfo] {
-    static BUILT: LazyLock<Vec<TemplateInfo>> = LazyLock::new(|| {
-        TEMPLATES
-            .iter()
-            .map(|entry| {
-                let channels: Vec<ChannelSettings> = entry
-                    .channels
-                    .iter()
-                    .map(|channel| {
-                        let params = (channel.params)();
-                        ChannelSettings {
-                            frequency_hz: channel.freq_hz,
-                            squelch: channel.squelch,
-                            blanker: Default::default(),
-                            if_filter: Default::default(),
-                            params,
-                        }
-                    })
-                    .collect();
-                let freqs = entry.channels.iter().map(|c| c.freq_hz);
-                let min = freqs.clone().fold(f64::INFINITY, f64::min);
-                let max = freqs.fold(f64::NEG_INFINITY, f64::max);
-                TemplateInfo {
-                    id: entry.id.to_string(),
-                    name: entry.name.to_string(),
-                    description: entry.description.to_string(),
-                    explainer: entry.explainer.to_string(),
-                    center_hz: entry.center_hz,
-                    sample_rate: entry.sample_rate,
-                    channels,
-                    min_freq_hz: min.min(entry.center_hz),
-                    max_freq_hz: max.max(entry.center_hz),
-                    patch: Some(patch(entry.channels)),
-                    direction: sdrmm_wire::Direction::Rx,
-                    supported_devices: Vec::new(),
-                }
-            })
-            .collect()
-    });
+    static BUILT: LazyLock<Vec<TemplateInfo>> =
+        LazyLock::new(|| entries().into_iter().filter(runnable).map(info).collect());
     &BUILT
 }
 
@@ -997,15 +279,34 @@ mod tests {
     }
 
     #[test]
-    fn adsb_template_runs_the_device_at_the_decoder_rate() {
-        let adsb = get("adsb").expect("adsb template");
-        let decoder = sdrmm_engine::channel_types()
-            .into_iter()
-            .find(|d| d.type_id == "adsb")
-            .expect("adsb decoder");
-        assert_eq!(adsb.sample_rate, decoder.input_rate_hz);
-        assert_eq!(adsb.channels.len(), 1);
-        assert_eq!(adsb.channels[0].frequency_hz, adsb.center_hz);
+    fn every_channel_gets_at_least_its_decoder_rate() {
+        for template in all() {
+            for channel in &template.channels {
+                let rate = sdrmm_channels::input_rate(&channel.params);
+                assert!(
+                    template.sample_rate >= rate,
+                    "{}: {} needs {rate} Hz",
+                    template.id,
+                    channel.params.type_id()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_decoder_too_wide_to_decimate_runs_the_device_at_its_rate() {
+        let mut wide = 0;
+        for template in all() {
+            for channel in &template.channels {
+                let rate = sdrmm_channels::input_rate(&channel.params);
+                if rate * 2.0 > template.sample_rate {
+                    wide += 1;
+                    assert_eq!(template.sample_rate, rate, "{}", template.id);
+                    assert_eq!(channel.frequency_hz, template.center_hz, "{}", template.id);
+                }
+            }
+        }
+        assert!(wide > 0, "no template runs a wide decoder");
     }
 
     #[test]
@@ -1042,13 +343,19 @@ mod tests {
 
     #[test]
     fn a_narrow_radio_runs_a_template_at_the_widest_rate_it_has() {
-        let acars = get("acars").expect("acars template");
-        let narrow = sdrmm_wire::DeviceProfile {
-            sample_rates: vec![acars.sample_rate / 4.0, acars.sample_rate / 2.0],
-            ..sdrmm_wire::DeviceProfile::default()
-        };
-        assert_eq!(acars.unmet_by(&narrow), None);
-        assert_eq!(acars.rate_on(&narrow), Some(acars.sample_rate / 2.0));
+        for template in all() {
+            let narrow = sdrmm_wire::DeviceProfile {
+                sample_rates: vec![template.sample_rate / 4.0, template.sample_rate / 2.0],
+                ..sdrmm_wire::DeviceProfile::default()
+            };
+            assert_eq!(template.unmet_by(&narrow), None, "{}", template.id);
+            assert_eq!(
+                template.rate_on(&narrow),
+                Some(template.sample_rate / 2.0),
+                "{}",
+                template.id
+            );
+        }
     }
 
     #[test]
@@ -1092,8 +399,8 @@ mod tests {
 
     #[test]
     fn a_channel_reaches_every_sink_it_asks_for_and_no_other() {
-        for entry in TEMPLATES {
-            let patch = patch(entry.channels);
+        for entry in entries() {
+            let patch = patch(&entry.channels);
             for sink in ORDER {
                 let wanted = entry.channels.iter().any(|c| c.sinks.contains(sink));
                 let drawn = patch.nodes.iter().any(|node| node.id == sink.node());

@@ -1,3 +1,7 @@
+use crate::registry::Native;
+use sdrmm_wire::{KindSpec, NumberSpec, SettingField};
+mod model;
+pub use model::*;
 mod classify;
 mod lags;
 mod preamble;
@@ -7,12 +11,12 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, FirC, Nco, design_lowpass};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    MAX_STANAG_WINDOW_S, MIN_STANAG_WINDOW_S, StanagModem, StanagParams, StanagRate, StanagReport,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 use classify::Verdict;
 use lags::Lags;
 use preamble::{Preamble, PreambleSearch};
@@ -39,24 +43,19 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: PASSBAND_HIGH_HZ - PASSBAND_LOW_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    emits: vec![EventKind::Stanag],
+    emits: vec![EventKind::named("stanag")],
     ..ChannelDescriptor::default()
 });
 
 fn params(settings: &ChannelSettings) -> Result<StanagParams, ChannelError> {
-    let ChannelParams::Stanag(params) = &settings.params else {
-        return Err(ChannelError::InvalidSettings(format!(
-            "STANAG channel got {} params",
-            settings.params.type_id()
-        )));
-    };
+    let params: StanagParams = crate::settings_of(settings)?;
     if !(MIN_STANAG_WINDOW_S..=MAX_STANAG_WINDOW_S).contains(&params.window_s) {
         return Err(ChannelError::InvalidSettings(format!(
             "window must be {MIN_STANAG_WINDOW_S}..={MAX_STANAG_WINDOW_S} s, got {}",
             params.window_s
         )));
     }
-    Ok(*params)
+    Ok(params)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -140,7 +139,7 @@ impl StanagChannel {
         }
         self.misses = self.misses.saturating_add(1);
         if self.misses >= MISSES_TO_LOSE && self.heard.take().is_some() {
-            out.events.push(DecoderEvent::Stanag(StanagReport {
+            out.events.push(DecoderEvent::of(&StanagReport {
                 modem: None,
                 confidence: 0.0,
                 audio_hz: 0.0,
@@ -204,7 +203,7 @@ impl StanagChannel {
         }
         self.heard = Some(now);
         let audio_hz = NOMINAL_CARRIER_HZ + offset_hz;
-        out.events.push(DecoderEvent::Stanag(StanagReport {
+        out.events.push(DecoderEvent::of(&StanagReport {
             modem: Some(verdict.modem),
             confidence: verdict.confidence,
             audio_hz: audio_hz as f32,
@@ -215,11 +214,10 @@ impl StanagChannel {
     }
 }
 
-impl ChannelRx for StanagChannel {
+impl NativeChannel for StanagChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
@@ -243,7 +241,9 @@ impl ChannelRx for StanagChannel {
             rejected: 0,
         })
     }
+}
 
+impl ChannelRx for StanagChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params != self.params {
@@ -288,6 +288,33 @@ impl ChannelRx for StanagChannel {
     fn rejected(&self) -> u32 {
         self.rejected
     }
+}
+
+pub(crate) fn stanag_decoder() -> Native<StanagParams> {
+    Native::new::<StanagChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .form(stanag_form)
+        .kinds(stanag_kinds)
+}
+
+pub(crate) fn stanag_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new(
+            "window_s",
+            "Window",
+            NumberSpec::new(
+                f64::from(MIN_STANAG_WINDOW_S),
+                f64::from(MAX_STANAG_WINDOW_S),
+                1.0,
+            )
+            .unit("s"),
+        )
+        .title("Seconds of signal behind each verdict"),
+    ]
+}
+
+fn stanag_kinds() -> Vec<KindSpec> {
+    vec![crate::stanag::stanag_kind()]
 }
 
 #[cfg(test)]

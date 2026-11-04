@@ -1,4 +1,5 @@
-use sdrmm_wire::{MeshcoreContent, MeshcoreNodeType};
+use crate::lora::MeshcoreContent;
+use crate::lora::MeshcoreNodeType;
 
 use crate::crypto;
 use crate::datalink::hex;

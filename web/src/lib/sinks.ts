@@ -5,8 +5,6 @@ import type {
   CapturedImage,
   ClientCommand,
   DecodedRecord,
-  DecoderEventOf,
-  DecoderKind,
   Entity,
   EntityKey,
   EventKind,
@@ -30,10 +28,6 @@ export interface SinkView {
   propagation: PropagationView | null;
   lost: number;
 }
-
-export type EntityOf<K extends DecoderKind> = Omit<Entity, "event"> & {
-  event: DecoderEventOf<K>;
-};
 
 export interface SinkGroup {
   source: string;

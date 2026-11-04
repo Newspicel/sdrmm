@@ -1,5 +1,8 @@
+mod model;
+use crate::vor::MAX_NAVAID_REPORT_MS;
+use crate::vor::MIN_NAVAID_REPORT_MS;
+pub use model::*;
 use sdrmm_dsp::{Decimator, design_lowpass};
-use sdrmm_wire::{DataLinkMessage, MAX_NAVAID_REPORT_MS, MIN_NAVAID_REPORT_MS};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -129,6 +132,27 @@ pub fn hex(bytes: &[u8]) -> String {
         out.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
     }
     out
+}
+
+/// A decoded message around `details`, as the presentation tests read it.
+#[cfg(test)]
+pub(crate) fn sample(details: Value) -> DataLinkMessage {
+    serde_json::from_value(serde_json::json!({
+        "message_type": "Position report", "station": " .D-AIBC ", "text": " FL370 ",
+        "crc_ok": true, "fec_corrected": 3, "snr_db": 12.25,
+        "frequency_error_hz": -41.5, "lat": 52.5, "lon": 13.4, "details": details,
+    }))
+    .expect("data-link sample")
+}
+
+/// The data-link message `event` carries, when it is of kind `tag`.
+#[cfg(test)]
+pub(crate) fn read(event: &sdrmm_wire::DecoderEvent, tag: &'static str) -> Option<DataLinkMessage> {
+    if event.kind == sdrmm_wire::EventKind::named(tag) {
+        event.payload()
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

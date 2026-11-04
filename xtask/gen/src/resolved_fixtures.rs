@@ -2,8 +2,7 @@ use std::{collections::BTreeMap, path::Path};
 
 use anyhow::{Context, Result, ensure};
 use sdrmm_wire::{
-    PatchGraph, ResolveCtx, StateSnapshot,
-    patch::resolve::{bind, compile_draft},
+    PatchGraph, ResolveCtx, StateSnapshot, patch::resolve::bind, patch::resolve::compile_draft,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -48,8 +47,9 @@ pub(crate) fn contents(root: &Path) -> Result<String> {
 fn resolve(input: &Input) -> Result<Value> {
     let graph: PatchGraph = serde_json::from_value(input.graph.clone()).context("graph")?;
     let live: StateSnapshot = serde_json::from_value(input.live.clone()).context("live")?;
+    let descriptors = sdrmm_channels::descriptors();
     let ctx = ResolveCtx {
-        descriptors: Some(sdrmm_channels::descriptor_table()),
+        descriptors: Some(&descriptors),
         live: Some(&live),
     };
     let (mut patch, _) = compile_draft(&graph, &ctx);

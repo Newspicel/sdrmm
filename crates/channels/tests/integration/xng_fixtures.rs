@@ -3,9 +3,11 @@
 use std::path::Path;
 
 use num_complex::Complex;
+use sdrmm_channels::AisChannel;
+use sdrmm_channels::AisParams;
 use sdrmm_channels::{ChannelCtx, ChannelOutputs, reference_data};
 use sdrmm_dsp::Ddc;
-use sdrmm_wire::{AisChannel, AisParams, ChannelParams, ChannelSettings, DecoderEvent};
+use sdrmm_wire::{ChannelParams, ChannelSettings, DecoderEvent};
 
 const BLOCK: usize = 16_384;
 
@@ -78,17 +80,15 @@ fn decode(iq: &[Complex<f32>], capture: &Capture, settings: &ChannelSettings) ->
 fn tuned(type_id: &str, frequency_hz: f64) -> ChannelSettings {
     ChannelSettings {
         frequency_hz,
-        ..ChannelSettings::default_for(type_id).unwrap()
+        ..sdrmm_channels::default_settings(type_id).unwrap()
     }
 }
 
 fn unique_adsb(events: &[DecoderEvent]) -> usize {
     events
         .iter()
-        .filter_map(|e| match e {
-            DecoderEvent::Adsb(m) => Some(m.raw.as_str()),
-            _ => None,
-        })
+        .filter_map(|e| e.read::<sdrmm_channels::AdsbMessage>())
+        .map(|m| m.raw)
         .collect::<std::collections::BTreeSet<_>>()
         .len()
 }
@@ -149,7 +149,7 @@ fn ais_beats_xng_off_air() {
     .into_iter()
     .map(|(ais_channel, frequency_hz)| {
         let settings = ChannelSettings {
-            params: ChannelParams::Ais(AisParams { ais_channel }),
+            params: ChannelParams::new("ais", &AisParams { ais_channel }).expect("ais settings"),
             ..tuned("ais", frequency_hz)
         };
         decode(&iq, &ais, &settings).len()
@@ -168,8 +168,11 @@ fn navtex_matches_the_uscg_message() {
     let navtex = capture("navtex_62500.cs16", Format::Cs16, 62_500.0, 516_000.0);
     let iq = load(&dir, &navtex);
     let events = decode(&iq, &navtex, &tuned("navtex", 518_000.0));
-    let [DecoderEvent::Navtex(m)] = &events[..] else {
+    let [event] = &events[..] else {
         panic!("one message expected: {events:?}");
+    };
+    let Some(m) = event.read::<sdrmm_channels::NavtexMessage>() else {
+        panic!("a navtex message expected: {event:?}");
     };
     assert!(m.complete && m.text.ends_with("2. CANCEL AT TIME//100400Z SEP 20//"));
 }

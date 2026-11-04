@@ -5,6 +5,7 @@ use crate::common::{
     baseline_path, dmr_entry, dmr_params, find_uw, recovered_symbols, uw_dibits, uw_recent_first,
 };
 use num_complex::Complex;
+use sdrmm_channels::NativeChannel;
 use sdrmm_channels::{
     ChannelCtx, ChannelOutputs, ChannelRx, DmrChannel, channel_filter, synth::dv as tg,
 };
@@ -16,7 +17,7 @@ use sdrmm_modem_test_support::ber::{
     rng::Rng,
     sweep::{self, Link},
 };
-use sdrmm_wire::{ChannelSettings, DecoderEvent, DvFrameKind};
+use sdrmm_wire::{ChannelSettings, DvFrame, DvFrameKind};
 
 const SPS: usize = 10;
 
@@ -522,7 +523,7 @@ fn synthetic_call_decodes_through_an_impaired_channel() {
         out.reset();
         chan.process(&filtered, &mut out);
         for event in out.events.drain(..) {
-            let DecoderEvent::Dv(frame) = event else {
+            let Some(frame) = event.read::<DvFrame>() else {
                 panic!("unexpected event kind");
             };
             frames.push(frame);

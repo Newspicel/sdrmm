@@ -241,6 +241,7 @@ export function OptionalNumberChip({
   min,
   max,
   step,
+  quiet = value === null,
   onCommit,
 }: {
   label: string;
@@ -252,6 +253,7 @@ export function OptionalNumberChip({
   min?: number;
   max?: number;
   step?: number;
+  quiet?: boolean;
   onCommit: (value: number | null) => void;
 }) {
   return (
@@ -260,7 +262,7 @@ export function OptionalNumberChip({
       value={value === null ? placeholder : (shown ?? String(value))}
       unit={value === null || shown !== undefined ? undefined : unit}
       title={title}
-      quiet={value === null}
+      quiet={quiet}
       width="w-52"
     >
       {() => (

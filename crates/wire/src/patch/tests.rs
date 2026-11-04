@@ -2,6 +2,7 @@ use super::*;
 use crate::{
     CallGate, DeviceBackend, EventKind,
     channel::ChannelSettings,
+    decode::test_kinds,
     filter::{EventFilterNode, MAX_FILTER_IDS},
     network::NetworkExportNode,
 };
@@ -55,29 +56,29 @@ fn refused(from: (&str, &str), to: (&str, &str), refusal: Refusal) -> PatchError
 fn descriptors() -> Vec<ChannelDescriptor> {
     vec![
         ChannelDescriptor {
-            type_id: "nfm".to_owned(),
-            name: "NFM".to_owned(),
+            type_id: "probe_voice".to_owned(),
+            name: "Voice".to_owned(),
             bandwidth_hz: 12_500.0,
             input_rate_hz: 48_000.0,
-            emits: vec![EventKind::Tone, EventKind::Scrambler],
+            emits: vec![test_kinds::TEXT],
             calls: Some(CallGate::Squelch),
             ..ChannelDescriptor::default()
         },
         ChannelDescriptor {
-            type_id: "adsb".to_owned(),
-            name: "ADS-B".to_owned(),
+            type_id: "probe_station".to_owned(),
+            name: "Station".to_owned(),
             bandwidth_hz: 2_000_000.0,
             input_rate_hz: 2_000_000.0,
             has_audio: false,
-            emits: vec![EventKind::Adsb],
+            emits: vec![test_kinds::STATION],
             ..ChannelDescriptor::default()
         },
         ChannelDescriptor {
-            type_id: "dmr".to_owned(),
-            name: "DMR".to_owned(),
+            type_id: "probe_dv".to_owned(),
+            name: "DV".to_owned(),
             bandwidth_hz: 12_500.0,
             input_rate_hz: 48_000.0,
-            emits: vec![EventKind::Dv],
+            emits: vec![EventKind::DV],
             calls: Some(CallGate::Frames),
             ..ChannelDescriptor::default()
         },
@@ -93,7 +94,7 @@ fn a_channel_offers_events_when_it_emits_or_gates_calls() {
             .map(|port| port.payload.kinds())
     };
     let analog = ChannelDescriptor {
-        type_id: "am".to_owned(),
+        type_id: "probe_am".to_owned(),
         calls: Some(CallGate::Squelch),
         ..ChannelDescriptor::default()
     };
@@ -102,18 +103,17 @@ fn a_channel_offers_events_when_it_emits_or_gates_calls() {
         has_audio: true,
         ..ChannelDescriptor::default()
     };
-    let only = |kinds: &[EventKind]| kinds.iter().copied().collect::<crate::KindSet>();
-    let nfm = &descriptors()[0];
+    let only = |kinds: &[EventKind]| kinds.iter().cloned().collect::<crate::KindSet>();
+    let voice = &descriptors()[0];
     assert_eq!(
-        events(nfm),
-        Some(only(&[
-            EventKind::Tone,
-            EventKind::Scrambler,
-            EventKind::Call
-        ]))
+        events(voice),
+        Some(only(&[test_kinds::TEXT, EventKind::CALL]))
     );
-    assert_eq!(events(&descriptors()[1]), Some(only(&[EventKind::Adsb])));
-    assert_eq!(events(&analog), Some(only(&[EventKind::Call])));
+    assert_eq!(
+        events(&descriptors()[1]),
+        Some(only(&[test_kinds::STATION]))
+    );
+    assert_eq!(events(&analog), Some(only(&[EventKind::CALL])));
     assert_eq!(events(&silent), None);
 }
 
@@ -136,7 +136,7 @@ fn an_event_filter_passes_events_through_and_bounds_its_lists() {
         nodes: vec![node(
             "filter",
             NodeBody::EventFilter(EventFilterNode {
-                kinds: vec![crate::EventKind::Call],
+                kinds: vec![crate::EventKind::CALL],
                 ..EventFilterNode::default()
             }),
         )],
@@ -159,7 +159,7 @@ fn an_event_filter_passes_events_through_and_bounds_its_lists() {
 fn a_channel_can_reach_an_event_output_through_a_filter() {
     let graph = PatchGraph {
         nodes: vec![
-            channel("dmr", "dmr"),
+            channel("probe_dv", "probe_dv"),
             node("filter", NodeBody::EventFilter(EventFilterNode::default())),
             node(
                 "output",
@@ -172,7 +172,7 @@ fn a_channel_can_reach_an_event_output_through_a_filter() {
             ),
         ],
         edges: vec![
-            edge(("dmr", "events"), ("filter", "events")),
+            edge(("probe_dv", "events"), ("filter", "events")),
             edge(("filter", "events"), ("output", "events")),
         ],
     };
@@ -184,7 +184,7 @@ fn workspace() -> PatchGraph {
         nodes: vec![
             node("dev", NodeBody::Device(DeviceNode::default())),
             node("scope", NodeBody::Scope),
-            channel("ch", "nfm"),
+            channel("ch", "probe_voice"),
             node("spk", NodeBody::Speaker),
         ],
         edges: vec![
@@ -214,7 +214,7 @@ fn topology_ignores_where_a_face_sits_and_what_it_is_called() {
 
     let mut retyped = graph.clone();
     retyped.nodes[1].body = NodeBody::Channel(ChannelNode {
-        channel_type: "am".to_owned(),
+        channel_type: "probe_am".to_owned(),
         tuning_locked: false,
     });
     assert!(!graph.same_topology(&retyped));
@@ -226,10 +226,10 @@ fn topology_ignores_where_a_face_sits_and_what_it_is_called() {
 
 #[test]
 fn node_body_is_adjacently_tagged_and_flattened_onto_the_node() {
-    let json = serde_json::to_value(channel("ch", "nfm")).unwrap();
+    let json = serde_json::to_value(channel("ch", "probe_voice")).unwrap();
     assert_eq!(json["id"], "ch");
     assert_eq!(json["kind"], "channel");
-    assert_eq!(json["data"]["channel_type"], "nfm");
+    assert_eq!(json["data"]["channel_type"], "probe_voice");
     assert!(json.get("size").is_none());
     assert!(json.get("label").is_none());
 
@@ -269,7 +269,7 @@ fn a_device_node_saved_before_the_frequency_lock_existed_still_loads_unlocked() 
 
 #[test]
 fn a_channel_node_saved_before_the_frequency_lock_existed_still_loads_unlocked() {
-    let stored = r#"{"id":"ch","kind":"channel","data":{"channel_type":"nfm"},"position":{"x":0.0,"y":0.0}}"#;
+    let stored = r#"{"id":"ch","kind":"channel","data":{"channel_type":"probe_voice"},"position":{"x":0.0,"y":0.0}}"#;
     let back: PatchNode = serde_json::from_str(stored).expect("an older channel node parses");
     let NodeBody::Channel(channel) = back.body else {
         panic!("the node is still a channel");
@@ -315,9 +315,9 @@ fn a_dmr_trunk_system_takes_its_own_radio_before_a_control_frequency() {
                 node("radio", NodeBody::Device(DeviceNode::default())),
                 node(
                     "system",
-                    NodeBody::DmrTrunk(DmrTrunkNode {
+                    NodeBody::Trunk(TrunkNode {
                         control_hz,
-                        ..DmrTrunkNode::default()
+                        ..TrunkNode::default()
                     }),
                 ),
             ],
@@ -337,17 +337,17 @@ fn a_dmr_trunk_system_takes_its_own_radio_before_a_control_frequency() {
 
 #[test]
 fn a_dmr_trunk_system_refuses_a_channel_search_it_cannot_run() {
-    let searching = |ranges: Vec<DmrSearchRange>| {
+    let searching = |ranges: Vec<TrunkSearchRange>| {
         PatchGraph {
             nodes: vec![node(
                 "system",
-                NodeBody::DmrTrunk(DmrTrunkNode {
-                    discovery: DmrDiscovery {
+                NodeBody::Trunk(TrunkNode {
+                    discovery: TrunkDiscovery {
                         enabled: true,
                         ranges,
                         max_probes: 4,
                     },
-                    ..DmrTrunkNode::default()
+                    ..TrunkNode::default()
                 }),
             )],
             edges: Vec::new(),
@@ -355,14 +355,14 @@ fn a_dmr_trunk_system_refuses_a_channel_search_it_cannot_run() {
         .validate()
     };
 
-    searching(vec![DmrSearchRange {
+    searching(vec![TrunkSearchRange {
         start_hz: 451_000_000,
         end_hz: 451_500_000,
         step_hz: 12_500,
     }])
     .expect("a range the search can hold");
     assert_eq!(
-        searching(vec![DmrSearchRange {
+        searching(vec![TrunkSearchRange {
             start_hz: 450_000_000,
             end_hz: 460_000_000,
             step_hz: 12_500,
@@ -371,7 +371,7 @@ fn a_dmr_trunk_system_refuses_a_channel_search_it_cannot_run() {
         "a range wider than the search can hold was accepted"
     );
     assert_eq!(
-        searching(vec![DmrSearchRange {
+        searching(vec![TrunkSearchRange {
             start_hz: 451_500_000,
             end_hz: 451_000_000,
             step_hz: 12_500,
@@ -379,7 +379,7 @@ fn a_dmr_trunk_system_refuses_a_channel_search_it_cannot_run() {
         Err(PatchError::NodeSettings("system".to_owned()))
     );
     assert_eq!(
-        searching(vec![DmrSearchRange {
+        searching(vec![TrunkSearchRange {
             start_hz: 451_000_000,
             end_hz: 451_100_000,
             step_hz: 500,
@@ -390,13 +390,13 @@ fn a_dmr_trunk_system_refuses_a_channel_search_it_cannot_run() {
 
 #[test]
 fn a_dmr_trunk_system_refuses_a_channel_plan_it_cannot_use() {
-    let planned = |channel_map: Vec<DmrChannelEntry>| {
+    let planned = |channel_map: Vec<TrunkChannelEntry>| {
         PatchGraph {
             nodes: vec![node(
                 "system",
-                NodeBody::DmrTrunk(DmrTrunkNode {
+                NodeBody::Trunk(TrunkNode {
                     channel_map,
-                    ..DmrTrunkNode::default()
+                    ..TrunkNode::default()
                 }),
             )],
             edges: Vec::new(),
@@ -404,21 +404,21 @@ fn a_dmr_trunk_system_refuses_a_channel_plan_it_cannot_use() {
         .validate()
     };
 
-    planned(vec![DmrChannelEntry {
+    planned(vec![TrunkChannelEntry {
         lcn: 17,
         freq_hz: 451_012_500,
     }])
     .expect("a channel anyone could tune");
     assert_eq!(
-        planned(vec![DmrChannelEntry {
+        planned(vec![TrunkChannelEntry {
             lcn: 17,
             freq_hz: 0,
         }]),
         Err(PatchError::NodeSettings("system".to_owned()))
     );
     assert_eq!(
-        planned(vec![DmrChannelEntry {
-            lcn: MAX_DMR_LOGICAL_CHANNEL + 1,
+        planned(vec![TrunkChannelEntry {
+            lcn: MAX_TRUNK_LOGICAL_CHANNEL + 1,
             freq_hz: 451_012_500,
         }]),
         Err(PatchError::NodeSettings("system".to_owned()))
@@ -438,7 +438,7 @@ fn an_event_output_accepts_decoder_and_completed_call_events() {
     );
     let calls = PatchGraph {
         nodes: vec![
-            node("system", NodeBody::DmrTrunk(DmrTrunkNode::default())),
+            node("system", NodeBody::Trunk(TrunkNode::default())),
             output.clone(),
         ],
         edges: vec![edge(("system", "events"), ("output", "events"))],
@@ -446,7 +446,7 @@ fn an_event_output_accepts_decoder_and_completed_call_events() {
     calls.validate().expect("completed calls");
 
     let decoded = PatchGraph {
-        nodes: vec![channel("carrier", "dmr"), output],
+        nodes: vec![channel("carrier", "probe_dv"), output],
         edges: vec![edge(("carrier", "events"), ("output", "events"))],
     };
     decoded.validate().expect("decoded events");
@@ -484,7 +484,7 @@ fn a_network_sink_takes_a_radio_or_a_channel_but_not_both() {
     let graph = |edges: Vec<PatchEdge>| PatchGraph {
         nodes: vec![
             node("dev", NodeBody::Device(DeviceNode::default())),
-            channel("ch", "nfm"),
+            channel("ch", "probe_voice"),
             node("net", NodeBody::NetworkExport(NetworkExportNode::default())),
         ],
         edges,
@@ -514,8 +514,8 @@ fn a_network_sink_takes_a_radio_or_a_channel_but_not_both() {
 fn a_baseband_recorder_takes_every_channel_wired_into_it() {
     let graph = PatchGraph {
         nodes: vec![
-            channel("a", "nfm"),
-            channel("b", "nfm"),
+            channel("a", "probe_voice"),
+            channel("b", "probe_voice"),
             node(
                 "files",
                 NodeBody::BasebandRecorder(BasebandRecorderNode::default()),
@@ -560,7 +560,7 @@ fn a_dmr_trunk_system_takes_a_radio_and_hands_out_events() {
     let graph = PatchGraph {
         nodes: vec![
             node("radio", NodeBody::Device(DeviceNode::default())),
-            node("system", NodeBody::DmrTrunk(DmrTrunkNode::default())),
+            node("system", NodeBody::Trunk(TrunkNode::default())),
             node("log", NodeBody::DecoderLog(Default::default())),
         ],
         edges: vec![
@@ -572,8 +572,8 @@ fn a_dmr_trunk_system_takes_a_radio_and_hands_out_events() {
 
     let carrier = PatchGraph {
         nodes: vec![
-            channel("carrier", "dmr"),
-            node("system", NodeBody::DmrTrunk(DmrTrunkNode::default())),
+            channel("carrier", "probe_dv"),
+            node("system", NodeBody::Trunk(TrunkNode::default())),
         ],
         edges: vec![edge(("carrier", "events"), ("system", "events"))],
     };
@@ -590,7 +590,7 @@ fn a_dmr_trunk_system_takes_a_radio_and_hands_out_events() {
 #[test]
 fn a_conditional_port_is_refused_on_a_type_that_lacks_it() {
     let mut graph = workspace();
-    graph.nodes[2] = channel("ch", "adsb");
+    graph.nodes[2] = channel("ch", "probe_station");
     let err = graph.validate_against(&descriptors()).unwrap_err();
     assert_eq!(
         err,
@@ -727,7 +727,7 @@ fn wire_allowed(from: &NodeTypeInfo, out: &PortSpec, to: &NodeTypeInfo, input: &
     let body = |info: &NodeTypeInfo| {
         let mut body = info.default_body.clone();
         if let NodeBody::Channel(channel) = &mut body {
-            channel.channel_type = "adsb".to_owned();
+            channel.channel_type = "probe_station".to_owned();
         }
         body
     };
@@ -756,7 +756,7 @@ fn every_node_the_palette_offers_round_trips_and_validates_on_its_own() {
 
         let mut node = node("solo", back);
         if let NodeBody::Channel(channel) = &mut node.body {
-            channel.channel_type = "nfm".to_owned();
+            channel.channel_type = "probe_voice".to_owned();
         }
         let graph = PatchGraph {
             nodes: vec![node],
@@ -912,7 +912,7 @@ fn a_scanner_owns_the_one_decoder_its_wire_runs_into() {
     );
 
     let mut two_decoders = driven.clone();
-    two_decoders.nodes.push(channel("ch2", "am"));
+    two_decoders.nodes.push(channel("ch2", "probe_am"));
     two_decoders
         .edges
         .push(edge(("scan", "control"), ("ch2", "control")));
@@ -1073,7 +1073,7 @@ fn a_channel_takes_every_radio_that_may_carry_it() {
 #[test]
 fn a_decoder_feed_names_the_radio_stream_it_taps() {
     let mut graph = workspace();
-    graph.nodes.push(channel("ch2", "adsb"));
+    graph.nodes.push(channel("ch2", "probe_station"));
     graph.edges.push(edge(("dev", "iq3"), ("ch2", "iq")));
     let patch = resolve::compile(&graph, &ResolveCtx::default()).expect("a stream-3 wire is valid");
     let taps = |id: &str| -> Vec<(String, String)> {
@@ -1619,15 +1619,11 @@ fn a_phone_source_needs_a_valid_id() {
 }
 
 #[test]
-fn default_params_come_from_the_type_id() {
-    let params = ChannelParams::default_for("ssb").expect("ssb is a channel type");
-    assert_eq!(params.type_id(), "ssb");
+fn new_settings_take_the_stated_frequency_and_params() {
     assert_eq!(
-        ChannelSettings::default_for("ssb").expect("ssb is a channel type"),
-        serde_json::from_str(r#"{"params":{"type":"ssb","settings":{}}}"#).unwrap()
+        ChannelSettings::new(crate::DEFAULT_FREQUENCY_HZ, ChannelParams::bare("probe")),
+        serde_json::from_str(r#"{"params":{"type":"probe","settings":{}}}"#).unwrap()
     );
-    assert_eq!(ChannelParams::default_for("telefax"), None);
-    assert_eq!(ChannelSettings::default_for("telefax"), None);
 }
 
 fn pinned(id: &str, backend: DeviceBackend, key: Option<&str>) -> PatchNode {
@@ -1915,7 +1911,7 @@ fn spectrum_monitor_takes_a_lane_and_hands_out_events() {
 fn a_spectrum_monitor_carries_the_kinds_of_the_protocols_it_decodes() {
     let mut types = descriptors();
     for descriptor in &mut types {
-        descriptor.identifiable = descriptor.type_id != "adsb";
+        descriptor.identifiable = descriptor.type_id != "probe_station";
     }
     let kinds = |monitor: crate::SpectrumMonitorNode| {
         NodeBody::SpectrumMonitor(monitor)
@@ -1924,26 +1920,21 @@ fn a_spectrum_monitor_carries_the_kinds_of_the_protocols_it_decodes() {
             .find(|port| port.port_type == PortType::Events)
             .map(|port| port.payload.kinds())
     };
-    let only = |kinds: &[EventKind]| kinds.iter().copied().collect::<crate::KindSet>();
+    let only = |kinds: &[EventKind]| kinds.iter().cloned().collect::<crate::KindSet>();
     assert_eq!(
         kinds(crate::SpectrumMonitorNode::default()),
         Some(only(&[
-            EventKind::Transmission,
-            EventKind::Tone,
-            EventKind::Scrambler,
-            EventKind::Dv,
+            EventKind::TRANSMISSION,
+            test_kinds::TEXT,
+            EventKind::DV,
         ]))
     );
     assert_eq!(
         kinds(crate::SpectrumMonitorNode {
-            disabled_protocols: vec!["dmr".to_owned()],
+            disabled_protocols: vec!["probe_dv".to_owned()],
             ..crate::SpectrumMonitorNode::default()
         }),
-        Some(only(&[
-            EventKind::Transmission,
-            EventKind::Tone,
-            EventKind::Scrambler,
-        ]))
+        Some(only(&[EventKind::TRANSMISSION, test_kinds::TEXT,]))
     );
 }
 
@@ -1971,7 +1962,7 @@ fn a_satellite_drives_many_decoders_but_a_decoder_answers_to_one_controller() {
         node(
             id,
             NodeBody::Channel(ChannelNode {
-                channel_type: "nfm".to_owned(),
+                channel_type: "probe_voice".to_owned(),
                 tuning_locked: false,
             }),
         )

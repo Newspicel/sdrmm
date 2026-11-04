@@ -1,4 +1,4 @@
-use sdrmm_dsp::{Prbs, PrbsSpec, crc16_msb_bits};
+use sdrmm_dsp::{Prbs, PrbsSpec, crc16_msb_bits, word_msb};
 
 pub(crate) const SYNC: u64 = 0x1ACF_FC1D;
 pub(crate) const SYNC_BITS: u32 = 32;
@@ -32,8 +32,7 @@ fn crc(bits: &[bool]) -> u16 {
 }
 
 fn word(bits: &[bool]) -> u32 {
-    bits.iter()
-        .fold(0u32, |word, &bit| (word << 1) | u32::from(bit))
+    word_msb(bits) as u32
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

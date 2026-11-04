@@ -1,10 +1,14 @@
+use crate::NativeChannel;
 use std::{collections::BTreeMap, f64::consts::TAU};
 
+use crate::dect::DectBand;
+use crate::dect::DectCapability;
+use crate::dect::DectFrame;
+use crate::dect::DectParams;
+use crate::dect::DectSide;
+use crate::dect::DectSpan;
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecoderEvent, DectBand, DectCapability, DectFrame, DectParams,
-    DectSide, DectSpan,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use crate::{
     AUDIO_RATE, ChannelCtx, ChannelOutputs, ChannelRx,
@@ -25,7 +29,7 @@ fn build(params: DectParams, frequency_hz: f64) -> DectChannel {
         },
         ChannelSettings {
             frequency_hz,
-            ..settings(ChannelParams::Dect(params))
+            ..settings(ChannelParams::of(&params).expect("dect settings"))
         },
     )
     .expect("dect channel")
@@ -39,10 +43,11 @@ fn run(chan: &mut DectChannel, iq: &[Complex<f32>]) -> (Vec<DectFrame>, Vec<f32>
         out.reset();
         chan.process(chunk, &mut out);
         audio.extend_from_slice(&out.audio_pcm);
-        frames.extend(out.events.drain(..).filter_map(|event| match event {
-            DecoderEvent::Dect(frame) => Some(frame),
-            _ => None,
-        }));
+        frames.extend(
+            out.events
+                .drain(..)
+                .filter_map(|event| event.read::<DectFrame>()),
+        );
     }
     (frames, audio)
 }

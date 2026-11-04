@@ -110,7 +110,7 @@ function plan(allocations: BandAllocation[]): BandPlan {
 
 describe("scanPresets", () => {
   const dab = allocation({
-    id: "dab",
+    id: "ensemble",
     name: "VHF Band III: DAB",
     start_hz: 174e6,
     stop_hz: 230e6,
@@ -240,7 +240,7 @@ describe("formatDb", () => {
 });
 
 const TEMPLATE: TemplateInfo = {
-  id: "adsb",
+  id: "plane",
   name: "Aircraft",
   description: "",
   explainer: "",

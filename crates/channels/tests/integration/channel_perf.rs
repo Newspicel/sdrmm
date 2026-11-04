@@ -8,10 +8,21 @@ use sdrmm_modem_test_support::ber::perf::{
 };
 use sdrmm_test_support::{assert_no_alloc, measure_throughput};
 
-use sdrmm_wire::{
-    AirtimeSpan, BleLink, BleParams, ChannelParams, ChannelSettings, IsmSurveyParams, RemoteIdLink,
-    RemoteIdParams, WifiOccupancyParams,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
+
+use sdrmm_channels::AirtimeSpan;
+
+use sdrmm_channels::BleLink;
+
+use sdrmm_channels::BleParams;
+
+use sdrmm_channels::IsmSurveyParams;
+
+use sdrmm_channels::RemoteIdLink;
+
+use sdrmm_channels::RemoteIdParams;
+
+use sdrmm_channels::WifiOccupancyParams;
 
 const BLOCK: usize = 2_048;
 const SURVEY_SECONDS: f64 = 0.1;
@@ -45,7 +56,7 @@ fn drive(rx: &mut dyn ChannelRx, iq: &[Complex<f32>], outputs: &mut ChannelOutpu
 fn survey() -> Vec<Row> {
     let mut rows = Vec::new();
     for descriptor in sdrmm_channels::descriptors() {
-        let settings = ChannelSettings::default_for(&descriptor.type_id)
+        let settings = sdrmm_channels::default_settings(&descriptor.type_id)
             .expect("every registered channel has defaults");
         let rate = descriptor.input_rate_hz;
         let ctx = ChannelCtx { input_rate: rate };
@@ -176,7 +187,7 @@ fn write_perf_baseline() {
 
 #[test]
 fn the_cw_skimmer_allocates_nothing_while_it_searches_an_empty_band() {
-    let settings = ChannelSettings::default_for("cw_skimmer").expect("settings");
+    let settings = sdrmm_channels::default_settings("cw_skimmer").expect("settings");
     let descriptor = sdrmm_channels::descriptors()
         .into_iter()
         .find(|descriptor| descriptor.type_id == "cw_skimmer")
@@ -195,7 +206,7 @@ fn the_cw_skimmer_allocates_nothing_while_it_searches_an_empty_band() {
 
 #[test]
 fn the_stanag_identifier_allocates_nothing_while_it_analyses_windows() {
-    let settings = ChannelSettings::default_for("stanag").expect("settings");
+    let settings = sdrmm_channels::default_settings("stanag").expect("settings");
     let rate = sdrmm_channels::input_rate(&settings.params);
     let mut rx =
         sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
@@ -211,7 +222,7 @@ fn the_stanag_identifier_allocates_nothing_while_it_analyses_windows() {
 #[test]
 fn analog_channels_allocate_nothing_after_warmup_and_exceed_realtime() {
     for type_id in ["am", "nfm", "wfm", "ssb"] {
-        let settings = ChannelSettings::default_for(type_id).expect("settings");
+        let settings = sdrmm_channels::default_settings(type_id).expect("settings");
         let descriptor = sdrmm_channels::descriptors()
             .into_iter()
             .find(|descriptor| descriptor.type_id == type_id)
@@ -235,7 +246,7 @@ fn analog_channels_allocate_nothing_after_warmup_and_exceed_realtime() {
 
 #[test]
 fn lora_allocates_nothing_while_every_spreading_factor_searches() {
-    let settings = ChannelSettings::default_for("lora").expect("settings");
+    let settings = sdrmm_channels::default_settings("lora").expect("settings");
     let rate = sdrmm_channels::input_rate(&settings.params);
     let mut rx =
         sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
@@ -264,7 +275,7 @@ fn gsm_allocates_nothing_while_it_tracks_a_quiet_cell() {
     let iq = cell.modulate();
     let settings = ChannelSettings {
         frequency_hz: 1_847_800_000.0,
-        ..ChannelSettings::default_for("gsm").expect("settings")
+        ..sdrmm_channels::default_settings("gsm").expect("settings")
     };
     let mut rx = sdrmm_channels::create(
         ChannelCtx {
@@ -288,8 +299,9 @@ fn gsm_allocates_nothing_while_it_tracks_a_quiet_cell() {
 
 fn remote_id_settings(link: RemoteIdLink) -> ChannelSettings {
     ChannelSettings {
-        params: ChannelParams::RemoteId(RemoteIdParams { link }),
-        ..ChannelSettings::default_for("remote_id").expect("settings")
+        params: ChannelParams::new("remote_id", &RemoteIdParams { link })
+            .expect("remote_id settings"),
+        ..sdrmm_channels::default_settings("remote_id").expect("settings")
     }
 }
 
@@ -391,8 +403,8 @@ fn remote_id_allocates_nothing_while_every_link_searches() {
 fn ble_allocates_nothing_once_every_device_is_known() {
     for link in [BleLink::Channel, BleLink::Band] {
         let settings = ChannelSettings {
-            params: ChannelParams::Ble(BleParams { link }),
-            ..ChannelSettings::default_for("ble").expect("settings")
+            params: ChannelParams::new("ble", &BleParams { link }).expect("ble settings"),
+            ..sdrmm_channels::default_settings("ble").expect("settings")
         };
         let rate = link.input_rate_hz();
         let mut rx =
@@ -407,18 +419,26 @@ fn ble_allocates_nothing_once_every_device_is_known() {
 
 fn airtime_settings(type_id: &str, span: AirtimeSpan) -> ChannelSettings {
     let params = match type_id {
-        "wifi_occupancy" => ChannelParams::WifiOccupancy(WifiOccupancyParams {
-            span,
-            ..WifiOccupancyParams::default()
-        }),
-        _ => ChannelParams::IsmSurvey(IsmSurveyParams {
-            span,
-            ..IsmSurveyParams::default()
-        }),
+        "wifi_occupancy" => ChannelParams::new(
+            "wifi_occupancy",
+            &WifiOccupancyParams {
+                span,
+                ..WifiOccupancyParams::default()
+            },
+        )
+        .expect("wifi_occupancy settings"),
+        _ => ChannelParams::new(
+            "ism_survey",
+            &IsmSurveyParams {
+                span,
+                ..IsmSurveyParams::default()
+            },
+        )
+        .expect("ism_survey settings"),
     };
     ChannelSettings {
         params,
-        ..ChannelSettings::default_for(type_id).expect("settings")
+        ..sdrmm_channels::default_settings(type_id).expect("settings")
     }
 }
 
@@ -454,7 +474,7 @@ fn airtime_decoders_allocate_nothing_and_keep_up_at_every_span() {
 #[test]
 fn measurement_channels_allocate_nothing_between_reports() {
     for type_id in ["noise_figure", "per", "sid"] {
-        let settings = ChannelSettings::default_for(type_id).expect("settings");
+        let settings = sdrmm_channels::default_settings(type_id).expect("settings");
         let rate = sdrmm_channels::input_rate(&settings.params);
         let mut rx =
             sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
@@ -470,7 +490,7 @@ fn measurement_channels_allocate_nothing_between_reports() {
 
 #[test]
 fn ism_sensors_allocate_nothing_while_listening_to_noise() {
-    let settings = ChannelSettings::default_for("ism").expect("settings");
+    let settings = sdrmm_channels::default_settings("ism").expect("settings");
     let rate = sdrmm_channels::input_rate(&settings.params);
     let mut rx =
         sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
@@ -483,7 +503,7 @@ fn ism_sensors_allocate_nothing_while_listening_to_noise() {
 
 #[test]
 fn wmbus_allocates_nothing_while_listening_to_noise() {
-    let settings = ChannelSettings::default_for("wmbus").expect("settings");
+    let settings = sdrmm_channels::default_settings("wmbus").expect("settings");
     let rate = sdrmm_channels::input_rate(&settings.params);
     let mut rx =
         sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
@@ -497,7 +517,7 @@ fn wmbus_allocates_nothing_while_listening_to_noise() {
 #[test]
 fn tetra_allocates_nothing_while_it_follows_an_idle_cell() {
     use sdrmm_channels::synth::tetra::{Cell, Downlink};
-    let settings = ChannelSettings::default_for("tetra").expect("settings");
+    let settings = sdrmm_channels::default_settings("tetra").expect("settings");
     let rate = sdrmm_channels::input_rate(&settings.params);
     let mut rx =
         sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");

@@ -5,16 +5,14 @@ use sdrmm_dsp::radar::{
     assign::Assignment,
     bistatic::{self, Geodetic},
 };
+use sdrmm_wire::present::TrackFix;
 use sdrmm_wire::{
-    AdsbMatch, AdsbMessage, AdsbTruth, RadarAxes, RadarTrack,
-    radar::{LIGHT_SPEED_M_S, MAX_RADAR_TRACKS, MAX_RADAR_TRUTH},
+    RadarAxes, RadarTrack, TrackMatch, TrackTruth, radar::LIGHT_SPEED_M_S, radar::MAX_RADAR_TRACKS,
+    radar::MAX_RADAR_TRUTH,
 };
 
 pub(crate) const MAX_AIRCRAFT: usize = 512;
 const HISTORY: usize = 6;
-const FEET_TO_M: f64 = 0.3048;
-const KNOTS_TO_MPS: f64 = 0.514_444;
-const FEET_PER_MINUTE_TO_MPS: f64 = 0.005_08;
 const FORGET_AFTER_S: f64 = 60.0;
 const STALE_AFTER_S: f64 = 30.0;
 const EXTRAPOLATE_WITHIN_S: f64 = 10.0;
@@ -57,7 +55,7 @@ impl Frame {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Aircraft {
-    pub(crate) icao: String,
+    pub(crate) id: String,
     pub(crate) callsign: Option<String>,
     pub(crate) position: Option<(Geodetic, Timestamp)>,
     pub(crate) velocity: Option<(Vec3, Timestamp)>,
@@ -84,9 +82,9 @@ fn median(values: &mut [f64]) -> Option<f64> {
 }
 
 impl Aircraft {
-    fn new(icao: &str, at: Timestamp) -> Self {
+    fn new(id: &str, at: Timestamp) -> Self {
         Self {
-            icao: icao.to_owned(),
+            id: id.to_owned(),
             callsign: None,
             position: None,
             velocity: None,
@@ -95,10 +93,10 @@ impl Aircraft {
         }
     }
 
-    fn merge(&mut self, at: Timestamp, message: &AdsbMessage) {
+    fn merge(&mut self, at: Timestamp, message: &TrackFix) {
         self.seen = self.seen.max(at);
         if let Some(callsign) = message
-            .callsign
+            .label
             .as_deref()
             .map(str::trim)
             .filter(|callsign| !callsign.is_empty())
@@ -106,23 +104,19 @@ impl Aircraft {
             self.callsign = Some(callsign.to_owned());
         }
         self.place(at, message);
-        if let (Some(speed_kt), Some(track_deg)) = (message.ground_speed_kt, message.track_deg) {
-            let speed = speed_kt * KNOTS_TO_MPS;
-            let (sin, cos) = track_deg.to_radians().sin_cos();
-            let climb = message
-                .vertical_rate_fpm
-                .map_or(0.0, |rate| f64::from(rate) * FEET_PER_MINUTE_TO_MPS);
+        if let (Some(speed), Some(course_deg)) = (message.speed_mps, message.course_deg) {
+            let (sin, cos) = course_deg.to_radians().sin_cos();
+            let climb = message.climb_mps.unwrap_or(0.0);
             self.velocity = Some(([speed * sin, speed * cos, climb], at));
         }
     }
 
-    fn place(&mut self, at: Timestamp, message: &AdsbMessage) {
+    fn place(&mut self, at: Timestamp, message: &TrackFix) {
         let (Some(lat_deg), Some(lon_deg)) = (message.lat, message.lon) else {
             return;
         };
         let altitude = message
-            .altitude_ft
-            .map(|feet| f64::from(feet) * FEET_TO_M)
+            .altitude_m
             .or_else(|| self.position.map(|(point, _)| point.alt_m));
         let Some(alt_m) = altitude else {
             return;
@@ -166,7 +160,7 @@ impl Aircraft {
         median(&mut rates)
     }
 
-    fn sighting(&self, now: Timestamp, frame: &Frame) -> Option<AdsbTruth> {
+    fn sighting(&self, now: Timestamp, frame: &Frame) -> Option<TrackTruth> {
         let (point, at) = self.position?;
         let age_s = seconds_between(now, at);
         if age_s.abs() > STALE_AFTER_S {
@@ -194,8 +188,8 @@ impl Aircraft {
             None => self.history_rate(frame)?,
         };
         let doppler_hz = -rate_mps / frame.wavelength_m;
-        Some(AdsbTruth {
-            icao: self.icao.clone(),
+        Some(TrackTruth {
+            id: self.id.clone(),
             callsign: self.callsign.clone(),
             range_km: (range_m / 1_000.0) as f32,
             doppler_hz: doppler_hz as f32,
@@ -217,16 +211,16 @@ pub(crate) struct AircraftTable {
 }
 
 impl AircraftTable {
-    pub(crate) fn observe(&mut self, at: Timestamp, message: &AdsbMessage) {
-        if message.icao.is_empty() {
+    pub(crate) fn observe(&mut self, at: Timestamp, message: &TrackFix) {
+        if message.id.is_empty() {
             return;
         }
-        if !self.aircraft.contains_key(&message.icao) && self.aircraft.len() >= MAX_AIRCRAFT {
+        if !self.aircraft.contains_key(&message.id) && self.aircraft.len() >= MAX_AIRCRAFT {
             self.evict_oldest();
         }
         self.aircraft
-            .entry(message.icao.clone())
-            .or_insert_with(|| Aircraft::new(&message.icao, at))
+            .entry(message.id.clone())
+            .or_insert_with(|| Aircraft::new(&message.id, at))
             .merge(at, message);
     }
 
@@ -235,7 +229,7 @@ impl AircraftTable {
             .aircraft
             .values()
             .min_by_key(|aircraft| aircraft.seen)
-            .map(|aircraft| aircraft.icao.clone());
+            .map(|aircraft| aircraft.id.clone());
         if let Some(oldest) = oldest {
             self.aircraft.remove(&oldest);
         }
@@ -251,8 +245,8 @@ impl AircraftTable {
     }
 
     #[cfg(test)]
-    pub(crate) fn knows(&self, icao: &str) -> bool {
-        self.aircraft.contains_key(icao)
+    pub(crate) fn knows(&self, id: &str) -> bool {
+        self.aircraft.contains_key(id)
     }
 
     pub(crate) fn truth(
@@ -260,7 +254,7 @@ impl AircraftTable {
         now: Timestamp,
         sites: Baseline,
         axes: &RadarAxes,
-        out: &mut Vec<AdsbTruth>,
+        out: &mut Vec<TrackTruth>,
     ) {
         out.clear();
         let Some(frame) = Frame::new(sites, axes) else {
@@ -280,7 +274,7 @@ pub(crate) fn solver() -> Assignment {
     Assignment::new(MAX_RADAR_TRUTH, MAX_RADAR_TRACKS)
 }
 
-fn association_cost(truth: &AdsbTruth, track: &RadarTrack, axes: &RadarAxes) -> Option<f64> {
+fn association_cost(truth: &TrackTruth, track: &RadarTrack, axes: &RadarAxes) -> Option<f64> {
     let range_cell_m = 2.0 * f64::from(axes.range_step_m);
     let doppler_cell_hz = 2.0 * f64::from(axes.doppler_step_hz);
     if range_cell_m <= 0.0 || doppler_cell_hz <= 0.0 {
@@ -294,7 +288,7 @@ fn association_cost(truth: &AdsbTruth, track: &RadarTrack, axes: &RadarAxes) -> 
 
 pub(crate) fn associate(
     solver: &mut Assignment,
-    truth: &mut [AdsbTruth],
+    truth: &mut [TrackTruth],
     tracks: &mut [RadarTrack],
     axes: &RadarAxes,
 ) {
@@ -302,7 +296,7 @@ pub(crate) fn associate(
         sighting.track_id = None;
     }
     for track in tracks.iter_mut() {
-        track.adsb = None;
+        track.truth = None;
     }
     let rows: Vec<usize> = truth
         .iter()
@@ -331,8 +325,8 @@ pub(crate) fn associate(
             continue;
         };
         sighting.track_id = Some(track.id);
-        track.adsb = Some(AdsbMatch {
-            icao: sighting.icao.clone(),
+        track.truth = Some(TrackMatch {
+            id: sighting.id.clone(),
             callsign: sighting.callsign.clone(),
         });
     }

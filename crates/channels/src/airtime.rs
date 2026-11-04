@@ -1,7 +1,9 @@
+mod model;
+pub use model::*;
 use std::ops::Range;
 
 use sdrmm_dsp::fastmath::fast_db_to_power;
-use sdrmm_wire::{AIRTIME_REPORT_MS, AirtimeSpan};
+use sdrmm_wire::{Control, NumberSpec, SettingField};
 
 use crate::{ChannelError, ChannelFilter};
 
@@ -61,18 +63,36 @@ pub(crate) fn channel_filter() -> ChannelFilter {
 }
 
 pub(crate) fn check_margin(margin_db: f32) -> Result<(), ChannelError> {
-    if margin_db.is_finite()
-        && (sdrmm_wire::MIN_AIRTIME_MARGIN_DB..=sdrmm_wire::MAX_AIRTIME_MARGIN_DB)
-            .contains(&margin_db)
+    if margin_db.is_finite() && (MIN_AIRTIME_MARGIN_DB..=MAX_AIRTIME_MARGIN_DB).contains(&margin_db)
     {
         Ok(())
     } else {
         Err(ChannelError::InvalidSettings(format!(
             "margin must be {}..={} dB, got {margin_db}",
-            sdrmm_wire::MIN_AIRTIME_MARGIN_DB,
-            sdrmm_wire::MAX_AIRTIME_MARGIN_DB
+            MIN_AIRTIME_MARGIN_DB, MAX_AIRTIME_MARGIN_DB
         )))
     }
+}
+
+/// The span and margin both airtime surveys offer; only the default margin differs.
+pub(crate) fn airtime_form(default_margin_db: f32) -> Vec<SettingField> {
+    vec![
+        SettingField::new("span", "Span", Control::choice::<AirtimeSpan>())
+            .title("Width of the window measured, in MHz")
+            .fallback(AirtimeSpan::Mhz20),
+        SettingField::new(
+            "margin_db",
+            "Margin",
+            NumberSpec::new(
+                f64::from(MIN_AIRTIME_MARGIN_DB),
+                f64::from(MAX_AIRTIME_MARGIN_DB),
+                0.5,
+            )
+            .unit("dB"),
+        )
+        .title("How far over the noise floor counts as busy")
+        .fallback(default_margin_db),
+    ]
 }
 
 #[cfg(test)]

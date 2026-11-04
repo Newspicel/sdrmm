@@ -4,6 +4,7 @@ use std::{
 };
 
 use num_complex::Complex;
+use sdrmm_channels::NfmParams;
 use sdrmm_channels::array_processor::{
     ArrayBlock, CalView, CorrectionView, LaneFormat, OutputSlots, ProcessorOutput, create_processor,
 };
@@ -11,10 +12,9 @@ use sdrmm_device::DeviceRegistry;
 use sdrmm_device_virtual::VirtualDriver;
 use sdrmm_wire::{
     ArrayGeometry, ArrayNode, ArrayOrientation, ArrayRecordingRequest, ArrayTuneRequest,
-    ArrayTuningMode, Attitude, ChannelParams, ChannelSettings, Coherence, DecoderEvent,
-    DeviceBackend, DeviceSettings, DfParams, DfReading, GainValue, HeldLane, NfmParams,
-    PositionFix, ProcessorGate, ProcessorParams, ProcessorReading, RdsUpdate, StreamSettings,
-    VirtualLane, Winding, array::ArrayElement,
+    ArrayTuningMode, Attitude, ChannelParams, ChannelSettings, Coherence, DeviceBackend,
+    DeviceSettings, DfParams, DfReading, GainValue, HeldLane, PositionFix, ProcessorGate,
+    ProcessorParams, ProcessorReading, StreamSettings, VirtualLane, Winding, array::ArrayElement,
 };
 
 use super::{pose::PoseTrack, tuning::restore, *};
@@ -128,7 +128,7 @@ fn nfm_at(frequency_hz: f64) -> ChannelSettings {
     ChannelSettings {
         frequency_hz,
         squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Nfm(NfmParams::default()),
+        params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     }
@@ -536,7 +536,7 @@ fn df_yaw_gate_fires_on_derived_rates() {
         ring.push(sample);
     }
     let mut report = ProcessorReading::empty("df");
-    let mut events = vec![DecoderEvent::Rds(RdsUpdate::default()); 2];
+    let mut bearings = vec![sdrmm_channels::df::reserved_bearing(8); 2];
     let mut readings: Vec<DfReading> = Vec::new();
     let mut seed = 7;
     for index in 0..200i64 {
@@ -562,7 +562,7 @@ fn df_yaw_gate_fires_on_derived_rates() {
         let mut out = ProcessorOutput::new(OutputSlots {
             report: report.as_mut(),
             surface: None,
-            events: &mut events,
+            bearings: &mut bearings,
             lanes: &mut [],
         });
         df.process(&block, &mut out);

@@ -13,7 +13,7 @@ function node(id: string, body: Partial<PatchNode> & Pick<PatchNode, "kind">): P
 const graph: PatchGraph = {
   nodes: [
     node("dev", { kind: "device", data: {} }),
-    node("high", { kind: "channel", data: { channel_type: "nfm" } }),
+    node("high", { kind: "channel", data: { channel_type: "voice" } }),
   ],
   edges: [{ from: { node: "dev", port: "iq3" }, to: { node: "high", port: "iq" } }],
 };

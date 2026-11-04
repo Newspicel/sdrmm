@@ -6,7 +6,11 @@ mod synth;
 #[cfg(test)]
 mod tests;
 
-use sdrmm_wire::{LoraKey, LorawanFrame, LorawanMessageType};
+use crate::lora::LoraKey;
+
+use crate::lora::LorawanFrame;
+
+use crate::lora::LorawanMessageType;
 
 use crate::crypto::{self, Aes};
 use crate::datalink::hex;

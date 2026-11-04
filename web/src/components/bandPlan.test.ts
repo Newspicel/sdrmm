@@ -46,15 +46,15 @@ const MARINE = block(156_000_000, 161_962_500, {
   aliases: ["marine vhf", "channel 16"],
 });
 const AIS = block(161_962_500, 162_037_500, {
-  name: "AIS",
+  name: "Ship",
   service: "maritime",
-  aliases: ["ais", "ship tracking"],
+  aliases: ["ship", "ship tracking"],
 });
 const TWO_M = block(144_000_000, 146_000_000, {
   name: "2 m amateur",
   service: "amateur",
   aliases: ["2 m", "70 cm"],
-  suggested: { type: "nfm", settings: {} },
+  suggested: { type: "voice", settings: {} },
 });
 
 const ALLOCATION: BandLane = {
@@ -71,8 +71,8 @@ const AMATEUR: BandLane = {
     block(144_794_000, 144_990_000, {
       name: "2 m: APRS",
       service: "amateur",
-      aliases: ["aprs"],
-      suggested: { type: "aprs", settings: {} },
+      aliases: ["packet"],
+      suggested: { type: "packet", settings: {} },
     }),
     block(145_206_000, 145_594_000, {
       name: "2 m: FM simplex",
@@ -154,7 +154,7 @@ describe("spansIn", () => {
 
   it("places a band that sits wholly inside the window", () => {
     const spans = spansIn(PLAN, ALLOCATION, 161_900_000, 200_000);
-    const ais = spans.find((span) => span.allocation.name === "AIS");
+    const ais = spans.find((span) => span.allocation.name === "Ship");
     expect(ais?.left).toBeCloseTo(0.3125, 10);
     expect(ais?.width).toBeCloseTo(0.375, 10);
     expect(ais?.startsInside).toBe(true);
@@ -187,7 +187,7 @@ describe("identify", () => {
   });
 
   it("treats a block as half-open, so a boundary belongs to the band above it", () => {
-    expect(identify(PLAN, 161_962_500)[0]?.allocation.name).toBe("AIS");
+    expect(identify(PLAN, 161_962_500)[0]?.allocation.name).toBe("Ship");
     expect(identify(PLAN, 161_962_499)[0]?.allocation.name).toBe("Marine VHF");
   });
 
@@ -198,11 +198,11 @@ describe("identify", () => {
 
 describe("suggestedAt", () => {
   it("takes the most specific lane's mode, which is the whole point of the overlay", () => {
-    expect(suggestedAt(identify(PLAN, 144_800_000))?.type).toBe("aprs");
+    expect(suggestedAt(identify(PLAN, 144_800_000))?.type).toBe("packet");
   });
 
   it("falls back through lanes that suggest nothing", () => {
-    expect(suggestedAt(identify(PLAN, 145_500_000))?.type).toBe("nfm");
+    expect(suggestedAt(identify(PLAN, 145_500_000))?.type).toBe("voice");
   });
 
   it("has nothing to suggest where nothing is allocated", () => {

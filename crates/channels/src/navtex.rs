@@ -1,18 +1,21 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+use sdrmm_wire::{KindSpec, SettingField};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{BitSync, Decimator, FmDemod, RealDecimator, design_lowpass};
 #[cfg(any(test, feature = "synth"))]
 use sdrmm_modem::cpm::{CpmParams, Mapping};
+use sdrmm_modem::ita2::{self, ShiftDecoder};
 use sdrmm_modem::pulse::{self, Norm};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    NavtexMessage, NavtexParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate,
-    rtty::{FIGS_CODE, FIGURES, LETTERS, LTRS_CODE},
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
 };
 
 const BAUD: f64 = 100.0;
@@ -99,7 +102,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 600.0,
     input_rate_hz: 8_000.0,
     has_audio: false,
-    emits: vec![EventKind::Navtex],
+    emits: vec![EventKind::named("navtex")],
     ..ChannelDescriptor::default()
 });
 
@@ -113,14 +116,8 @@ pub struct NavtexChannel {
     filtered: Vec<f32>,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&NavtexParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Navtex(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "navtex channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<NavtexParams, ChannelError> {
+    crate::settings_of::<NavtexParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -156,27 +153,28 @@ fn polarity(p: &NavtexParams) -> f32 {
     if p.invert { -1.0 } else { 1.0 }
 }
 
-impl ChannelRx for NavtexChannel {
+impl NativeChannel for NavtexChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
         Ok(Self {
             demod: FmDemod::new(ctx.input_rate, SHIFT_HZ / 2.0),
             post: post_filter(ctx.input_rate),
-            polarity: polarity(p),
+            polarity: polarity(&p),
             sync: BitSync::new(ctx.input_rate, BAUD),
             decoder: Decoder::new(),
             demod_buf: Vec::new(),
             filtered: Vec::new(),
         })
     }
+}
 
+impl ChannelRx for NavtexChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let wanted = polarity(params(&settings)?);
+        let wanted = polarity(&params(&settings)?);
         if wanted != self.polarity {
             self.polarity = wanted;
             self.reset();
@@ -229,7 +227,7 @@ const PHASING_PERIOD: usize = 2 * CHAR_BITS;
 struct Decoder {
     bits: [f32; HISTORY],
     state: State,
-    figs: bool,
+    ita2: ShiftDecoder,
     error_run: u32,
     since_char: usize,
     body: String,
@@ -247,7 +245,7 @@ impl Decoder {
             state: State::Phasing {
                 since_hit: usize::MAX,
             },
-            figs: false,
+            ita2: ShiftDecoder::new(&ita2::FIGURES_US),
             error_run: 0,
             since_char: 0,
             body: String::new(),
@@ -335,7 +333,7 @@ impl Decoder {
                     self.state = State::Phasing {
                         since_hit: usize::MAX,
                     };
-                    self.figs = false;
+                    self.ita2.unshift();
                 }
             }
         }
@@ -345,26 +343,13 @@ impl Decoder {
         if matches!(code, ALPHA | BETA | REP | CHAR32) {
             return;
         }
-        let Some(ita2) = ita2_for(code) else {
+        let Some(teleprinter) = ita2_for(code) else {
             self.characters_lost = self.characters_lost.saturating_add(1);
             return;
         };
         self.since_char = 0;
-        match ita2 {
-            FIGS_CODE => {
-                self.figs = true;
-                return;
-            }
-            LTRS_CODE => {
-                self.figs = false;
-                return;
-            }
-            _ => {}
-        }
-        let ch = if self.figs {
-            FIGURES[ita2 as usize]
-        } else {
-            LETTERS[ita2 as usize]
+        let Some(ch) = self.ita2.decode(teleprinter) else {
+            return;
         };
         match ch {
             '\0' => {}
@@ -421,7 +406,7 @@ impl Decoder {
             return;
         }
         let (header, text) = split_header(&body);
-        out.events.push(DecoderEvent::Navtex(NavtexMessage {
+        out.events.push(DecoderEvent::of(&NavtexMessage {
             station: header.map(|h| h.0),
             subject: header.map(|h| h.1),
             subject_name: header
@@ -462,9 +447,47 @@ fn split_header(body: &str) -> (Option<(char, char, u8)>, &str) {
     (Some((station, subject, serial)), chars.as_str())
 }
 
+const NAVTEX_CHANNELS: &[HzRange] = &[
+    HzRange::spot_khz(490.0, 1.0),
+    HzRange::spot_khz(518.0, 1.0),
+    HzRange::spot_khz(4_209.5, 1.0),
+];
+
+fn navtex_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "NAVTEX (SITOR-B)",
+            &[Modulation::Fsk2],
+            HzRange::new(100.0, 2_500.0),
+            "100 baud at a 170 Hz shift",
+        )
+        .symbol_rate(HzRange::about(100.0, 0.08))
+        .deviation(HzRange::new(50.0, 200.0))
+        .on(NAVTEX_CHANNELS),
+    ]
+}
+
+pub(crate) fn navtex_decoder() -> Native<NavtexParams> {
+    Native::new::<NavtexChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(518_000.0)
+        .signatures(navtex_signatures)
+        .form(navtex_form)
+        .kinds(navtex_kinds)
+}
+
+pub(crate) fn navtex_form() -> Vec<SettingField> {
+    vec![SettingField::invert()]
+}
+
+fn navtex_kinds() -> Vec<KindSpec> {
+    vec![crate::navtex::navtex_kind()]
+}
+
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::NfmParams;
+    use crate::nfm::NfmParams;
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
     use crate::{
@@ -478,7 +501,7 @@ mod tests {
     fn channel(p: NavtexParams) -> NavtexChannel {
         NavtexChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Navtex(p)),
+            settings(ChannelParams::of(&p).expect("settings")),
         )
         .unwrap()
     }
@@ -500,10 +523,10 @@ mod tests {
             chan.process(&iq[pos..end], &mut out);
             assert!(out.audio_pcm.is_empty(), "navtex must not produce audio");
             for ev in &out.events {
-                match ev {
-                    DecoderEvent::Navtex(m) => messages.push(m.clone()),
-                    other => panic!("unexpected event {other:?}"),
-                }
+                messages.push(
+                    ev.read::<NavtexMessage>()
+                        .unwrap_or_else(|| panic!("unexpected event {ev:?}")),
+                )
             }
             pos = end;
         }
@@ -529,12 +552,21 @@ mod tests {
             (0x71, 'O'), (0x72, 'B'), (0x74, 'T'), (0x78, '\r'),
         ];
         for (code, letter) in STANDARD {
-            let ita2 = ita2_for(code).unwrap_or_else(|| panic!("{code:#04x} is not in the table"));
-            assert_eq!(LETTERS[ita2 as usize], letter, "letters row at {code:#04x}");
-            assert_eq!(ccir_for(ita2), Some(code), "reverse lookup for {letter}");
+            let teleprinter =
+                ita2_for(code).unwrap_or_else(|| panic!("{code:#04x} is not in the table"));
+            assert_eq!(
+                ita2::LETTERS[usize::from(teleprinter)],
+                letter,
+                "letters row at {code:#04x}"
+            );
+            assert_eq!(
+                ccir_for(teleprinter),
+                Some(code),
+                "reverse lookup for {letter}"
+            );
         }
-        assert_eq!(ita2_for(0x5A), Some(LTRS_CODE));
-        assert_eq!(ita2_for(0x36), Some(FIGS_CODE));
+        assert_eq!(ita2_for(0x5A), Some(ita2::LTRS));
+        assert_eq!(ita2_for(0x36), Some(ita2::FIGS));
 
         let alphabet: Vec<u8> = (0..=127u8).filter(|&c| ita2_for(c).is_some()).collect();
         let control = [ALPHA, BETA, REP, CHAR32];
@@ -747,11 +779,13 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(NavtexParams::default());
-        let err = chan.apply(settings(ChannelParams::Nfm(NfmParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = NavtexChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Nfm(NfmParams::default())),
+            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -762,7 +796,9 @@ mod tests {
             ChannelCtx {
                 input_rate: 48_000.0,
             },
-            settings(ChannelParams::Navtex(NavtexParams::default())),
+            settings(
+                ChannelParams::new("navtex", &NavtexParams::default()).expect("navtex settings"),
+            ),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

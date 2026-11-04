@@ -1,5 +1,7 @@
+use crate::wmbus::WMBUS_SAMPLE_RATE_HZ;
+use crate::wmbus::WmbusFormat;
+use crate::wmbus::WmbusMode;
 use num_complex::Complex;
-use sdrmm_wire::{WMBUS_SAMPLE_RATE_HZ, WmbusFormat, WmbusMode};
 
 use super::{
     coding::{manchester, nrz, three_of_six},

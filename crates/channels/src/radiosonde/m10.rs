@@ -1,4 +1,5 @@
-use sdrmm_wire::{RadiosondeFrame, SondeType};
+use crate::radiosonde::RadiosondeFrame;
+use crate::radiosonde::SondeType;
 
 use super::fields::{
     Geodetic, Motion, civil_time, current_gps_week, empty_frame, finite_f32, gps_time, plausible,

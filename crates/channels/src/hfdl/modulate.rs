@@ -2,6 +2,7 @@ use std::f64::consts::{PI, TAU};
 
 use num_complex::Complex;
 use sdrmm_dsp::SoftViterbi;
+use sdrmm_modem::constellation::tables::gray_inverse;
 
 use super::{
     demod::SYMBOL_RATE,
@@ -9,10 +10,6 @@ use super::{
 };
 
 const PREKEY_SYMBOLS: usize = 448;
-
-fn gray_inv(g: u32) -> u32 {
-    g ^ (g >> 1) ^ (g >> 2)
-}
 
 fn bpsk(bit: u8) -> f64 {
     if bit == 1 { PI } else { 0.0 }
@@ -52,7 +49,7 @@ pub fn burst_symbols(payload: &[u8], setting: &Setting) -> Vec<f64> {
     for _ in 0..setting.data_segments() {
         for _ in 0..SEGMENT_SYMBOLS {
             let label = labels.next().unwrap_or_default();
-            let mut phase = TAU * f64::from(gray_inv(label)) / f64::from(1u32 << bits);
+            let mut phase = TAU * f64::from(gray_inverse(label)) / f64::from(1u32 << bits);
             if fec::scramble_flip(data_index) {
                 phase += PI;
             }

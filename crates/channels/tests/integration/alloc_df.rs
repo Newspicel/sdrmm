@@ -10,8 +10,8 @@ mod df {
     use sdrmm_test_support::assert_no_alloc;
     use sdrmm_wire::processor::df::MAX_DF_PEAKS;
     use sdrmm_wire::{
-        ArrayGeometry, ArrayTuningMode, Coherence, DecoderEvent, DfAlgorithm, DfParams,
-        ProcessorParams, ProcessorReading, RdsUpdate, Winding,
+        ArrayGeometry, ArrayTuningMode, Coherence, DfAlgorithm, DfParams, ProcessorParams,
+        ProcessorReading, Winding,
     };
 
     const RATE: f64 = 2_400_000.0;
@@ -88,7 +88,7 @@ mod df {
 
     struct Host {
         report: Option<ProcessorReading>,
-        events: Vec<DecoderEvent>,
+        bearings_slots: Vec<sdrmm_wire::fusion::DfBearing>,
         pose: Pose,
         reports: u32,
         bearings: u32,
@@ -118,15 +118,15 @@ mod df {
             let mut out = ProcessorOutput::new(OutputSlots {
                 report: self.report.as_mut(),
                 surface: None,
-                events: &mut self.events,
+                bearings: &mut self.bearings_slots,
                 lanes: &mut [],
             });
             processor.process(&block, &mut out);
             let tally = out.tally();
             self.reports += u32::from(tally.report);
-            self.bearings += tally.events as u32;
-            if let Some(DecoderEvent::Df(bearing)) = self.events.first()
-                && tally.events > 0
+            self.bearings += tally.bearings as u32;
+            if let Some(bearing) = self.bearings_slots.first()
+                && tally.bearings > 0
             {
                 self.others = self.others.max(bearing.others.len());
             }
@@ -156,7 +156,9 @@ mod df {
             .collect();
         let mut host = Host {
             report: ProcessorReading::empty("df"),
-            events: vec![DecoderEvent::Rds(RdsUpdate::default()); 2],
+            bearings_slots: (0..2)
+                .map(|_| sdrmm_channels::df::reserved_bearing(8))
+                .collect(),
             pose: Pose {
                 heading_deg: Some(30.0),
                 heading_sigma_deg: 1.0,

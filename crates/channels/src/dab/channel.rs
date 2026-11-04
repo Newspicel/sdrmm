@@ -1,11 +1,16 @@
 use std::{f64::consts::TAU, sync::LazyLock};
 
+use crate::broadcast_media::BroadcastService;
+use crate::broadcast_media::BroadcastServiceKind;
+use crate::broadcast_media::BroadcastSystem;
+use crate::broadcast_media::{BroadcastStatus, publish_status};
+use crate::dab::DabMode;
+use crate::dab::DabParams;
+use crate::dab::DabTransmissionMode;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, Soft, design_lowpass};
 use sdrmm_wire::{
-    BroadcastService, BroadcastServiceKind, BroadcastStatus, BroadcastSystem, ChannelDescriptor,
-    ChannelParams, ChannelSettings, DabMode, DabParams, DabTransmissionMode, DecoderFamily,
-    EventKind,
+    ChannelDescriptor, ChannelSettings, ClickProfile, DecoderFamily, EventContract, EventKind,
 };
 
 use super::{
@@ -20,7 +25,7 @@ use super::{
     sync::{self, MIN_COHERENCE, SEARCH, Tracker},
 };
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
     broadcast_audio::LayerTwoAudio,
     broadcast_media::{BroadcastMedia, Kind as MediaKind},
     check_input_rate,
@@ -41,18 +46,16 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    emits: vec![EventKind::BroadcastData, EventKind::Broadcast],
+    emits: vec![EventKind::BROADCAST_DATA, BroadcastStatus::KIND],
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
 fn params(settings: &ChannelSettings) -> Result<DabParams, ChannelError> {
-    match settings.params {
-        ChannelParams::Dab(p) => Ok(p),
-        ref other => Err(ChannelError::InvalidSettings(format!(
-            "dab channel got {} params",
-            other.type_id()
-        ))),
-    }
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub fn occupied_band() -> (f64, f64) {
@@ -554,56 +557,59 @@ impl DabChannel {
             };
             format!("{} {rates} {}ch", format.codec(), format.channels())
         });
-        out.broadcast = Some(BroadcastStatus {
-            dynamic_label: self.media.dynamic_label.clone(),
-            data_groups_ok: self.media.data_groups,
-            data_groups_bad: self.media.data_errors,
-            data_error: self.media.data_error.clone(),
-            system: self.system(),
-            locked: self.locked,
-            snr_db: self.snr_db,
-            frequency_error_hz: self.frequency_error_hz,
-            audio_frames_ok: self.audio.frames_ok.saturating_add(self.media.audio_frames),
-            audio_frames_bad: self
-                .audio
-                .frames_bad
-                .saturating_add(self.media.audio_errors)
-                .saturating_add(self.pacer.dropped_frames),
-            audio_error: self
-                .audio
-                .error
-                .map(str::to_owned)
-                .or_else(|| self.media.audio_error.clone())
-                .or_else(|| {
-                    (self.pacer.dropped_frames > 0).then(|| "Audio buffer overflow".to_owned())
-                }),
-            symbol_rate: self
-                .transmission
-                .map(|_| INPUT_RATE_HZ / self.mode.useful as f64),
-            transmission_mode: self.transmission,
-            ensemble_id: self.ensemble.id.map(u32::from),
-            ensemble_label: self.ensemble.label.clone(),
-            service_id: selected.map(|service| service.id),
-            label: selected.and_then(|service| service.label.clone()),
-            bitrate_kbps: self
-                .selection
-                .as_ref()
-                .map(|selection| u32::from(selection.subchannel.bitrate_kbps)),
-            bit_error_rate: None,
-            text,
-            frames_ok: self.fic.blocks_ok,
-            frames_bad: self.fic.blocks_bad,
-            services: self.services(),
-            ..BroadcastStatus::default()
-        });
+        publish_status(
+            out,
+            BroadcastStatus {
+                dynamic_label: self.media.dynamic_label.clone(),
+                data_groups_ok: self.media.data_groups,
+                data_groups_bad: self.media.data_errors,
+                data_error: self.media.data_error.clone(),
+                system: self.system(),
+                locked: self.locked,
+                snr_db: self.snr_db,
+                frequency_error_hz: self.frequency_error_hz,
+                audio_frames_ok: self.audio.frames_ok.saturating_add(self.media.audio_frames),
+                audio_frames_bad: self
+                    .audio
+                    .frames_bad
+                    .saturating_add(self.media.audio_errors)
+                    .saturating_add(self.pacer.dropped_frames),
+                audio_error: self
+                    .audio
+                    .error
+                    .map(str::to_owned)
+                    .or_else(|| self.media.audio_error.clone())
+                    .or_else(|| {
+                        (self.pacer.dropped_frames > 0).then(|| "Audio buffer overflow".to_owned())
+                    }),
+                symbol_rate: self
+                    .transmission
+                    .map(|_| INPUT_RATE_HZ / self.mode.useful as f64),
+                transmission_mode: self.transmission,
+                ensemble_id: self.ensemble.id.map(u32::from),
+                ensemble_label: self.ensemble.label.clone(),
+                service_id: selected.map(|service| service.id),
+                label: selected.and_then(|service| service.label.clone()),
+                bitrate_kbps: self
+                    .selection
+                    .as_ref()
+                    .map(|selection| u32::from(selection.subchannel.bitrate_kbps)),
+                bit_error_rate: None,
+                text,
+                frames_ok: self.fic.blocks_ok,
+                frames_bad: self.fic.blocks_bad,
+                services: self.services(),
+                ..BroadcastStatus::default()
+            },
+            "service_id",
+        );
     }
 }
 
-impl ChannelRx for DabChannel {
+impl NativeChannel for DabChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
@@ -649,7 +655,9 @@ impl ChannelRx for DabChannel {
             rejected: 0,
         })
     }
+}
 
+impl ChannelRx for DabChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let wanted = params(&settings)?;
         if wanted.transmission_mode != self.params.transmission_mode {
@@ -705,22 +713,33 @@ impl ChannelRx for DabChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sdrmm_wire::DecoderEvent;
+    use sdrmm_wire::ChannelParams;
+    use sdrmm_wire::{BroadcastData, DecoderEvent};
+
+    use crate::broadcast_media::latest_status;
 
     use crate::{dab::ofdm::FRAME, synth, testutil::realtime_budget};
 
-    fn settings(service_id: Option<u32>) -> ChannelSettings {
+    fn dab_params(service_id: Option<u32>) -> DabParams {
+        DabParams {
+            mode: DabMode::Auto,
+            service_id,
+            ..DabParams::default()
+        }
+    }
+
+    fn settings_of(params: DabParams) -> ChannelSettings {
         ChannelSettings {
             frequency_hz: 0.0,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Dab(DabParams {
-                mode: DabMode::Auto,
-                service_id,
-                ..DabParams::default()
-            }),
+            params: ChannelParams::of(&params).expect("dab settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         }
+    }
+
+    fn settings(service_id: Option<u32>) -> ChannelSettings {
+        settings_of(dab_params(service_id))
     }
 
     fn channel(service_id: Option<u32>) -> DabChannel {
@@ -734,10 +753,10 @@ mod tests {
     }
 
     fn automatic(service_id: Option<u32>) -> DabChannel {
-        let mut settings = settings(service_id);
-        if let ChannelParams::Dab(params) = &mut settings.params {
-            params.transmission_mode = DabTransmissionMode::Auto;
-        }
+        let settings = settings_of(DabParams {
+            transmission_mode: DabTransmissionMode::Auto,
+            ..dab_params(service_id)
+        });
         DabChannel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
@@ -772,8 +791,8 @@ mod tests {
         cifs / Mode::new(transmission).cifs
     }
 
-    fn status(out: &ChannelOutputs) -> &BroadcastStatus {
-        out.broadcast.as_ref().expect("a broadcast status")
+    fn status(out: &ChannelOutputs) -> BroadcastStatus {
+        latest_status(out).expect("a broadcast status")
     }
 
     #[test]
@@ -829,22 +848,34 @@ mod tests {
             channel.media.audio_error
         );
         assert_eq!(channel.media.dynamic_label.as_deref(), Some("SDRmm live"));
-        assert!(out.events.iter().any(|event| matches!(event, DecoderEvent::BroadcastData(data) if data.name == "slide.png" && data.bytes == include_bytes!("../../../../fixtures/broadcast_audio/slideshow.png"))), "{:?}", channel.media.data_error);
+        assert!(
+            out.events
+                .iter()
+                .filter_map(DecoderEvent::read::<BroadcastData>)
+                .any(|data| data.name == "slide.png"
+                    && data.bytes
+                        == include_bytes!("../../../../fixtures/broadcast_audio/slideshow.png")),
+            "{:?}",
+            channel.media.data_error
+        );
         assert!(out.audio_pcm.iter().any(|sample| sample.abs() > 0.01));
     }
 
     #[test]
     fn all_transmission_modes_decode_fic_and_msc_independently_of_input_blocks() {
-        use sdrmm_wire::DabTransmissionMode::{I, Ii, Iii, Iv};
+        use crate::dab::{
+            DabTransmissionMode::I, DabTransmissionMode::Ii, DabTransmissionMode::Iii,
+            DabTransmissionMode::Iv,
+        };
         for mode in [I, Ii, Iii, Iv] {
             let iq = synth::dab::ensemble_for_mode(mode, 40);
             let mut reference = None;
             for block_size in [997, 16384, iq.len()] {
                 let mut channel = channel(Some(synth::dab::MUSIC_SERVICE));
-                let mut settings = settings(Some(synth::dab::MUSIC_SERVICE));
-                if let ChannelParams::Dab(params) = &mut settings.params {
-                    params.transmission_mode = mode;
-                }
+                let settings = settings_of(DabParams {
+                    transmission_mode: mode,
+                    ..dab_params(Some(synth::dab::MUSIC_SERVICE))
+                });
                 channel.apply(settings).expect("mode change");
                 let mut out = ChannelOutputs::default();
                 for block in iq.chunks(block_size) {
@@ -879,17 +910,17 @@ mod tests {
         let mut out = ChannelOutputs::default();
         channel.process(&synth::dab::ensemble(6), &mut out);
         assert!(status(&out).locked);
-        let mut settings = settings(None);
-        if let ChannelParams::Dab(params) = &mut settings.params {
-            params.transmission_mode = sdrmm_wire::DabTransmissionMode::Iii;
-        }
+        let settings = settings_of(DabParams {
+            transmission_mode: crate::dab::DabTransmissionMode::Iii,
+            ..dab_params(None)
+        });
         channel.apply(settings).expect("mode change");
         assert!(channel.ensemble.services.is_empty());
         assert_eq!(channel.fic.blocks_ok, 0);
         assert!(channel.selection.is_none());
         out.reset();
         channel.process(
-            &synth::dab::ensemble_for_mode(sdrmm_wire::DabTransmissionMode::Iii, 11),
+            &synth::dab::ensemble_for_mode(crate::dab::DabTransmissionMode::Iii, 11),
             &mut out,
         );
         assert!(status(&out).locked);
@@ -897,7 +928,9 @@ mod tests {
     }
 
     fn frozen() -> [(DabTransmissionMode, Vec<Complex<f32>>); 3] {
-        use sdrmm_wire::DabTransmissionMode::{Ii, Iii, Iv};
+        use crate::dab::{
+            DabTransmissionMode::Ii, DabTransmissionMode::Iii, DabTransmissionMode::Iv,
+        };
         [
             (
                 Ii,
@@ -942,16 +975,16 @@ mod tests {
     fn frozen_independent_waveforms_decode_the_expected_ensemble() {
         for (mode, iq) in frozen() {
             let mut channel = channel(None);
-            let mut settings = settings(None);
-            if let ChannelParams::Dab(params) = &mut settings.params {
-                params.transmission_mode = mode;
-            }
+            let settings = settings_of(DabParams {
+                transmission_mode: mode,
+                ..dab_params(None)
+            });
             channel.apply(settings).expect("mode change");
             let mut out = ChannelOutputs::default();
             for block in iq.chunks(1009) {
                 channel.process(block, &mut out);
             }
-            assert_reference_ensemble(mode, status(&out));
+            assert_reference_ensemble(mode, &status(&out));
         }
     }
 
@@ -964,7 +997,7 @@ mod tests {
                 &crate::testutil::frequency_shift(&iq, offset_hz, INPUT_RATE_HZ),
             );
             let status = status(&out);
-            assert_reference_ensemble(mode, status);
+            assert_reference_ensemble(mode, &status);
             assert_eq!(status.transmission_mode, Some(mode));
             assert!(
                 (f64::from(status.frequency_error_hz) - offset_hz).abs() < 2.0,
@@ -998,10 +1031,10 @@ mod tests {
     #[test]
     fn classic_dab_generation_selects_layer_two_and_produces_audio() {
         let mut channel = channel(None);
-        let mut settings = settings(None);
-        if let ChannelParams::Dab(params) = &mut settings.params {
-            params.mode = DabMode::Dab;
-        }
+        let settings = settings_of(DabParams {
+            mode: DabMode::Dab,
+            ..dab_params(None)
+        });
         channel.apply(settings).expect("classic generation");
         let mut out = ChannelOutputs::default();
         for block in synth::dab::ensemble(18).chunks(16384) {
@@ -1084,16 +1117,13 @@ mod tests {
     #[test]
     fn packet_mode_mot_crosses_fec_and_the_msc() {
         let mut channel = channel(Some(synth::dab::DATA_SERVICE));
-        let iq = synth::dab::ensemble_with_data(sdrmm_wire::DabTransmissionMode::I, 24);
+        let iq = synth::dab::ensemble_with_data(crate::dab::DabTransmissionMode::I, 24);
         let mut out = ChannelOutputs::default();
         for block in iq.chunks(16384) {
             channel.process(block, &mut out);
         }
         let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while !out
-            .events
-            .iter()
-            .any(|e| matches!(e, DecoderEvent::BroadcastData(_)))
+        while !out.events.iter().any(DecoderEvent::is::<BroadcastData>)
             && std::time::Instant::now() < until
         {
             channel.media.drain(&mut out);
@@ -1102,10 +1132,7 @@ mod tests {
         let object = out
             .events
             .iter()
-            .find_map(|e| match e {
-                DecoderEvent::BroadcastData(object) => Some(object),
-                _ => None,
-            })
+            .find_map(DecoderEvent::read::<BroadcastData>)
             .expect("MOT object");
         assert_eq!(
             object.bytes,
@@ -1134,7 +1161,7 @@ mod tests {
         for block in iq.chunks(4_096) {
             out.reset();
             channel.process(block, &mut out);
-            assert!(!out.broadcast.as_ref().is_some_and(|status| status.locked));
+            assert!(!latest_status(&out).is_some_and(|status| status.locked));
         }
     }
 
@@ -1234,7 +1261,10 @@ mod tests {
 
     #[test]
     fn every_mode_is_detected_and_decoded_through_a_large_tuner_offset() {
-        use sdrmm_wire::DabTransmissionMode::{I, Ii, Iii, Iv};
+        use crate::dab::{
+            DabTransmissionMode::I, DabTransmissionMode::Ii, DabTransmissionMode::Iii,
+            DabTransmissionMode::Iv,
+        };
         for (transmission, offset_hz) in [
             (I, -31_234.5),
             (Ii, 29_876.0),
@@ -1261,7 +1291,10 @@ mod tests {
 
     #[test]
     fn every_mode_survives_clock_drift_echoes_doppler_and_noise() {
-        use sdrmm_wire::DabTransmissionMode::{I, Ii, Iii, Iv};
+        use crate::dab::{
+            DabTransmissionMode::I, DabTransmissionMode::Ii, DabTransmissionMode::Iii,
+            DabTransmissionMode::Iv,
+        };
         for (transmission, offset_hz, ppm, doppler_hz) in [
             (I, 12_345.0, 100.0, 20.0),
             (Ii, -25_432.0, -100.0, 120.0),
@@ -1309,7 +1342,7 @@ mod tests {
 
     #[test]
     fn short_null_symbols_keep_frame_sync_at_low_snr() {
-        use sdrmm_wire::DabTransmissionMode::{Ii, Iii};
+        use crate::dab::{DabTransmissionMode::Ii, DabTransmissionMode::Iii};
         for transmission in [Ii, Iii] {
             let mode = Mode::new(transmission);
             let frames = 40;
@@ -1332,7 +1365,7 @@ mod tests {
 
     #[test]
     fn automatic_mode_follows_a_retune_to_another_mode() {
-        use sdrmm_wire::DabTransmissionMode::{Ii, Iii};
+        use crate::dab::{DabTransmissionMode::Ii, DabTransmissionMode::Iii};
         let mut channel = automatic(None);
         let out = run(&mut channel, &synth::dab::ensemble_for_mode(Ii, 8));
         assert_eq!(status(&out).transmission_mode, Some(Ii));

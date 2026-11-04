@@ -11,12 +11,12 @@ use sdrmm_dsp::beamform::{
 use sdrmm_dsp::covariance::SampleCovariance;
 use sdrmm_dsp::linalg::{CMat, Qr};
 use sdrmm_dsp::manifold::{GridSpec, Manifold, SteeringGrid};
-use sdrmm_wire::array::{MAX_ARRAY_LANES, MIN_ARRAY_LANES};
 use sdrmm_wire::processor::beamformer::MAX_BEAM_NULLS;
 use sdrmm_wire::{
     Adaptation, BEAM_PORT, BeamMode, BeamformerParams, NoiseModel, ProcessorParams, STEER_PORT,
     SteerSource,
 };
+use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use crate::ChannelError;
 use crate::array_processor::{

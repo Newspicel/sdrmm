@@ -68,7 +68,7 @@ pub(super) fn row(output_node: &str, facts: &EventFacts) -> String {
         .unwrap_or_default();
     let fields = [
         field(&facts.at),
-        field(facts.kind),
+        field(&facts.kind),
         field(output_node),
         facts.device_set.to_string(),
         facts.channel.to_string(),

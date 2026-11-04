@@ -549,14 +549,14 @@ fn prune(sink: &mut Sink, node: &str, resolved: &Resolved) {
                 let judged = entities::key_of(record, view)
                     .and_then(|key| entities.get(&key))
                     .map_or(view, |entity| &entity.view);
-                routes.admits(source, node, record.event.kind(), judged)
+                routes.admits(source, node, &record.event.kind, judged)
             }
             _ => false,
         }
     });
     let removed = sink
         .entities
-        .retain(|entity| routes.admits(&entity.key.source, node, entity.key.kind, &entity.view));
+        .retain(|entity| routes.admits(&entity.key.source, node, &entity.key.kind, &entity.view));
     sink.pending.removed.extend(removed);
     if !sink.keeps_clips {
         sink.records.iter_mut().for_each(strip_clip);

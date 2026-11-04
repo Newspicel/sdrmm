@@ -3,13 +3,14 @@
 use std::path::PathBuf;
 
 use num_complex::Complex;
+use sdrmm_channels::DmrParams;
 use sdrmm_channels::{channel_filter, synth::dv as tg};
 use sdrmm_modem::{
     cpm::{CpmDemod, CpmParams, Mapping},
     pulse::{self, Norm},
 };
 use sdrmm_modem_test_support::ber::rng::Rng;
-use sdrmm_wire::{ChannelParams, DmrParams};
+use sdrmm_wire::ChannelParams;
 
 pub const RATE: f64 = 48_000.0;
 pub const BAUD: f64 = 4_800.0;
@@ -25,7 +26,7 @@ pub const STEADY_PREAMBLE: usize = 88;
 pub const STEADY_TAIL: usize = 40;
 
 pub fn dmr_params() -> ChannelParams {
-    ChannelParams::Dmr(DmrParams::default())
+    ChannelParams::new("dmr", &DmrParams::default()).expect("dmr settings")
 }
 
 pub fn dmr_entry() -> CpmParams {

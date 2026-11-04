@@ -1,3 +1,7 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
+mod model;
+pub use model::*;
 mod count;
 pub(crate) mod frame;
 
@@ -5,12 +9,12 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{BitSync, Decimator, FmDemod, RealDecimator, SyncDetector, design_lowpass};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    MAX_PER_PAYLOAD_BYTES, MIN_PER_PAYLOAD_BYTES, PerBaud, PerParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 use count::Count;
 
 const RATE: f64 = 96_000.0;
@@ -26,7 +30,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2.0 * half_band_hz(PerBaud::Baud9600),
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Per],
+    emits: vec![EventKind::named("per")],
     ..ChannelDescriptor::default()
 });
 
@@ -40,20 +44,14 @@ fn half_band_hz(baud: PerBaud) -> f64 {
 }
 
 fn params(settings: &ChannelSettings) -> Result<PerParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Per(params)
-            if (MIN_PER_PAYLOAD_BYTES..=MAX_PER_PAYLOAD_BYTES).contains(&params.payload_bytes) =>
-        {
-            Ok(*params)
-        }
-        ChannelParams::Per(params) => Err(ChannelError::InvalidSettings(format!(
+    let params: PerParams = crate::settings_of(settings)?;
+    if (MIN_PER_PAYLOAD_BYTES..=MAX_PER_PAYLOAD_BYTES).contains(&params.payload_bytes) {
+        Ok(params)
+    } else {
+        Err(ChannelError::InvalidSettings(format!(
             "payload must be {MIN_PER_PAYLOAD_BYTES}..={MAX_PER_PAYLOAD_BYTES} bytes, got {}",
             params.payload_bytes
-        ))),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "PER channel got {} params",
-            other.type_id()
-        ))),
+        )))
     }
 }
 
@@ -164,11 +162,10 @@ impl PerChannel {
     }
 }
 
-impl ChannelRx for PerChannel {
+impl NativeChannel for PerChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
@@ -182,7 +179,9 @@ impl ChannelRx for PerChannel {
             reported: None,
         })
     }
+}
 
+impl ChannelRx for PerChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params != self.params {
@@ -218,13 +217,42 @@ impl ChannelRx for PerChannel {
         let frames = self.count.frames();
         if self.samples / REPORT_SAMPLES > before && self.reported != Some(frames) && frames > 0 {
             self.reported = Some(frames);
-            out.events.push(DecoderEvent::Per(self.count.report()));
+            out.events.push(DecoderEvent::of(&self.count.report()));
         }
     }
 
     fn rejected(&self) -> u32 {
         u32::try_from(self.count.errored()).unwrap_or(u32::MAX)
     }
+}
+
+pub(crate) fn per_decoder() -> Native<PerParams> {
+    Native::new::<PerChannel>(occupied_band)
+        .filter(|p| Ok(channel_filter(p)))
+        .form(per_form)
+        .kinds(per_kinds)
+}
+
+pub(crate) fn per_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("baud", "Baud", Control::choice::<PerBaud>())
+            .title("2-FSK symbol rate of the test frames"),
+        SettingField::new(
+            "payload_bytes",
+            "Payload",
+            NumberSpec::new(
+                f64::from(MIN_PER_PAYLOAD_BYTES),
+                f64::from(MAX_PER_PAYLOAD_BYTES),
+                1.0,
+            )
+            .unit("B"),
+        )
+        .title("PRBS9 payload length of each frame"),
+    ]
+}
+
+fn per_kinds() -> Vec<KindSpec> {
+    vec![per_kind()]
 }
 
 #[cfg(test)]

@@ -69,10 +69,11 @@ impl Worker {
     fn deliver(&mut self, outputs: Vec<MonitorOutput>) {
         for mut output in outputs {
             output.transmission += self.id_base;
-            if let sdrmm_wire::DecoderEvent::Transmission(event) = &mut output.event {
+            if let Some(mut event) = output.event.read::<sdrmm_wire::Transmission>() {
                 event.id = output.transmission;
                 event.started_at = self.sample_time(event.start_sample);
                 event.ended_at = self.sample_time(event.end_sample);
+                output.event = sdrmm_wire::DecoderEvent::of(&event);
             }
             (self.output)(output);
         }
@@ -144,7 +145,7 @@ impl Worker {
             transmission: self.id_base,
             frequency_hz: meta.center_hz,
             audio: Vec::new(),
-            event: sdrmm_wire::DecoderEvent::Transmission(sdrmm_wire::Transmission {
+            event: sdrmm_wire::DecoderEvent::of(&sdrmm_wire::Transmission {
                 id: self.id_base,
                 state: TransmissionState::Problem,
                 signal: sdrmm_wire::IdentSignal::default(),
@@ -267,7 +268,7 @@ mod tests {
     use std::sync::Mutex;
 
     use sdrmm_test_support::assert_no_alloc;
-    use sdrmm_wire::{DecoderEvent, TransmissionState};
+    use sdrmm_wire::{Transmission, TransmissionState};
 
     use super::*;
 
@@ -306,9 +307,12 @@ mod tests {
         assert!(!alive.load(Ordering::Acquire));
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 1);
-        assert!(
-            matches!(&seen[0].event, DecoderEvent::Transmission(t) if t.state == TransmissionState::Interrupted && t.started_at.is_some() && t.ended_at.is_some() && t.start_sample == 0 && t.end_sample == 4800)
-        );
+        assert!(seen[0].event.read::<Transmission>().is_some_and(|t| t.state
+            == TransmissionState::Interrupted
+            && t.started_at.is_some()
+            && t.ended_at.is_some()
+            && t.start_sample == 0
+            && t.end_sample == 4800));
     }
 
     #[test]
@@ -350,10 +354,7 @@ mod tests {
         let seen = seen.lock().unwrap();
         let transmissions: Vec<_> = seen
             .iter()
-            .filter_map(|out| match &out.event {
-                DecoderEvent::Transmission(t) => Some(t),
-                _ => None,
-            })
+            .filter_map(|out| out.event.read::<Transmission>())
             .collect();
         assert_eq!(transmissions.len(), 2);
         assert!(
@@ -387,6 +388,13 @@ mod tests {
         .unwrap();
         tap.dropped.store(8192, Ordering::Relaxed);
         drop(tap);
-        assert!(seen.lock().unwrap().iter().any(|out| matches!(&out.event, DecoderEvent::Transmission(t) if t.state == TransmissionState::Problem && t.error.as_deref().is_some_and(|error| error.contains("8192")))));
+        assert!(seen.lock().unwrap().iter().any(|out| {
+            out.event.read::<Transmission>().is_some_and(|t| {
+                t.state == TransmissionState::Problem
+                    && t.error
+                        .as_deref()
+                        .is_some_and(|error| error.contains("8192"))
+            })
+        }));
     }
 }

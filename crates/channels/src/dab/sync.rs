@@ -1,7 +1,7 @@
 use std::{f64::consts::TAU, ops::RangeInclusive};
 
+use crate::dab::DabTransmissionMode;
 use num_complex::Complex;
-use sdrmm_wire::DabTransmissionMode;
 
 use super::mode::{Mode, TRANSMISSION_MODES};
 

@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+use sdrmm_wire::{KindSpec, SettingField};
+mod model;
+pub use model::*;
 mod demod;
 pub(crate) mod message;
 
@@ -5,16 +10,18 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, SyncDetector, design_lowpass};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    MAX_SARSAT_BANDWIDTH_HZ, MIN_SARSAT_BANDWIDTH_HZ, SarsatParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
+#[cfg(any(test, feature = "synth"))]
 pub(crate) use demod::{BIT_RATE, PHASE_DEVIATION, PREAMBLE_S};
 use demod::{Demod, RATE, Search};
 use message::{Bits, LONG_BITS, PDF1_BITS, SHORT_BITS};
 
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const BIT_SYNC_BITS: usize = 15;
 pub(crate) const FRAME_SYNC: u32 = 0b0_0010_1111;
 pub(crate) const SELF_TEST_SYNC: u32 = 0b0_1101_0000;
@@ -31,10 +38,10 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "406 MHz beacon".to_owned(),
     summary: "COSPAS-SARSAT EPIRB, ELT and PLB bursts".to_owned(),
     family: DecoderFamily::Utility,
-    bandwidth_hz: sdrmm_wire::SARSAT_BANDWIDTH_HZ,
+    bandwidth_hz: SARSAT_BANDWIDTH_HZ,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Sarsat],
+    emits: vec![EventKind::named("sarsat")],
     ..ChannelDescriptor::default()
 });
 
@@ -134,14 +141,8 @@ pub struct SarsatChannel {
     rejected: u32,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&SarsatParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Sarsat(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "sarsat channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<SarsatParams, ChannelError> {
+    crate::settings_of::<SarsatParams>(settings)
 }
 
 fn check_params(params: &SarsatParams) -> Result<(), ChannelError> {
@@ -227,7 +228,7 @@ impl SarsatChannel {
             return;
         }
         match message::decode(word, weak, locked.self_test) {
-            Some(decoded) => out.events.push(DecoderEvent::Sarsat(decoded)),
+            Some(decoded) => out.events.push(DecoderEvent::of(&decoded)),
             None => self.rejected = self.rejected.saturating_add(1),
         }
         self.stop();
@@ -284,15 +285,14 @@ impl SarsatChannel {
     }
 }
 
-impl ChannelRx for SarsatChannel {
+impl NativeChannel for SarsatChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
-        check_params(params)?;
+        check_params(&params)?;
         message::prepare();
         Ok(Self {
             search: Search::new(params.bandwidth_hz),
@@ -307,10 +307,12 @@ impl ChannelRx for SarsatChannel {
             rejected: 0,
         })
     }
+}
 
+impl ChannelRx for SarsatChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
-        check_params(params)?;
+        check_params(&params)?;
         self.search.set_bandwidth(params.bandwidth_hz);
         Ok(())
     }
@@ -338,6 +340,44 @@ impl ChannelRx for SarsatChannel {
     fn rejected(&self) -> u32 {
         self.rejected
     }
+}
+
+const SARSAT_BAND: &[HzRange] = &[HzRange::mhz(406.0, 406.1)];
+
+fn sarsat_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "406 MHz distress beacon",
+            &[Modulation::Psk2, Modulation::Carrier, Modulation::Unknown],
+            HzRange::new(500.0, 6_000.0),
+            "half-second phase keyed bursts in the 406 MHz distress band",
+        )
+        .symbol_rate(HzRange::new(380.0, 840.0))
+        .bursts(HzRange::new(400.0, 560.0))
+        .on(SARSAT_BAND),
+    ]
+}
+
+fn sarsat_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("sarsat"))
+}
+
+pub(crate) fn sarsat_decoder() -> Native<SarsatParams> {
+    Native::new::<SarsatChannel>(occupied_band)
+        .filter(channel_filter)
+        .home(406_034_000.0)
+        .signatures(sarsat_signatures)
+        .trial(sarsat_trial)
+        .form(sarsat_form)
+        .kinds(sarsat_kinds)
+}
+
+pub(crate) fn sarsat_form() -> Vec<SettingField> {
+    vec![SettingField::bandwidth(&[10_000.0, 20_000.0])]
+}
+
+fn sarsat_kinds() -> Vec<KindSpec> {
+    vec![crate::sarsat::sarsat_kind()]
 }
 
 #[cfg(test)]

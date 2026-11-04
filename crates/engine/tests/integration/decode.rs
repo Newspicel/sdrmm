@@ -1,28 +1,138 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use sdrmm_channels::AcarsMessage;
+use sdrmm_channels::AdsbMessage;
+use sdrmm_channels::AisMessage;
+use sdrmm_channels::AprsPacket;
+use sdrmm_channels::AptImage;
+use sdrmm_channels::BleAdvert;
+use sdrmm_channels::CwSkimmerSpot;
+use sdrmm_channels::DectFrame;
+use sdrmm_channels::EotMessage;
+use sdrmm_channels::ErmesMessage;
+use sdrmm_channels::FlexMessage;
+use sdrmm_channels::GnssFrame;
+use sdrmm_channels::IsmSurveyReport;
+use sdrmm_channels::LoraFrame;
+use sdrmm_channels::LrptImage;
+use sdrmm_channels::MorseText;
+use sdrmm_channels::NavtexMessage;
+use sdrmm_channels::NoiseFigureReport;
+use sdrmm_channels::PerReport;
+use sdrmm_channels::PocsagMessage;
+use sdrmm_channels::PskText;
+use sdrmm_channels::RadiosondeFrame;
+use sdrmm_channels::RemoteIdFrame;
+use sdrmm_channels::RttyText;
+use sdrmm_channels::SameMessage;
+use sdrmm_channels::SarsatMessage;
+use sdrmm_channels::SelcallSequence;
+use sdrmm_channels::SidReport;
+use sdrmm_channels::StanagReport;
+use sdrmm_channels::TetrapolMessage;
+use sdrmm_channels::ToneSquelchStatus;
+use sdrmm_channels::VorReading;
+use sdrmm_channels::WefaxPicture;
+use sdrmm_channels::WmbusMessage;
+use sdrmm_channels::WsjtMessage;
+use sdrmm_channels::WsprSpot;
+use sdrmm_wire::BroadcastData;
+use sdrmm_wire::DvFrame;
+use sdrmm_wire::IdentReport;
 use std::{path::Path, sync::Arc, time::Duration};
 
 use num_complex::Complex;
+use sdrmm_channels::AcarsParams;
+use sdrmm_channels::AdsbParams;
+use sdrmm_channels::AisChannel;
+use sdrmm_channels::AisParams;
+use sdrmm_channels::AprsMode;
+use sdrmm_channels::AprsParams;
+use sdrmm_channels::AptParams;
+use sdrmm_channels::AvhrrChannel;
+use sdrmm_channels::BleBeacon;
+use sdrmm_channels::BleParams;
+use sdrmm_channels::BroadcastStatus;
+use sdrmm_channels::BroadcastSystem;
+use sdrmm_channels::CwSkimmerParams;
+use sdrmm_channels::DatvParams;
+use sdrmm_channels::DatvStandard;
+use sdrmm_channels::DectBand;
+use sdrmm_channels::DectCapability;
+use sdrmm_channels::DectCipherState;
+use sdrmm_channels::DectParams;
+use sdrmm_channels::DectSpan;
+use sdrmm_channels::DmrParams;
+use sdrmm_channels::DrmMode;
+use sdrmm_channels::DrmParams;
+use sdrmm_channels::EotArming;
+use sdrmm_channels::EotBattery;
+use sdrmm_channels::EotParams;
+use sdrmm_channels::EotReport;
+use sdrmm_channels::EotStatus;
+use sdrmm_channels::ErmesParams;
+use sdrmm_channels::FlexParams;
+use sdrmm_channels::FreeDvParams;
+use sdrmm_channels::GnssParams;
+use sdrmm_channels::IdentParams;
+use sdrmm_channels::IsmKind;
+use sdrmm_channels::IsmSurveyParams;
+use sdrmm_channels::LoraBandwidth;
+use sdrmm_channels::LoraParams;
+use sdrmm_channels::LrptMode;
+use sdrmm_channels::LrptParams;
+use sdrmm_channels::MorseParams;
+use sdrmm_channels::NavtexParams;
+use sdrmm_channels::NfmParams;
+use sdrmm_channels::NfmToneMode;
+use sdrmm_channels::NoiseFigureParams;
+use sdrmm_channels::PerParams;
+use sdrmm_channels::PocsagBaud;
+use sdrmm_channels::PocsagParams;
+use sdrmm_channels::PskBaud;
+use sdrmm_channels::PskParams;
+use sdrmm_channels::RadiosondeParams;
+use sdrmm_channels::RdsUpdate;
+use sdrmm_channels::RemoteIdLink;
+use sdrmm_channels::RemoteIdMessage;
+use sdrmm_channels::RemoteIdParams;
+use sdrmm_channels::RemoteIdTransport;
+use sdrmm_channels::RttyParams;
+use sdrmm_channels::SameBody;
+use sdrmm_channels::SameParams;
+use sdrmm_channels::SarsatParams;
+use sdrmm_channels::SelcallParams;
+use sdrmm_channels::SelcallSystem;
+use sdrmm_channels::SidParams;
+use sdrmm_channels::SondeType;
+use sdrmm_channels::StanagModem;
+use sdrmm_channels::StanagParams;
+use sdrmm_channels::TetraParams;
+use sdrmm_channels::TetrapolParams;
+use sdrmm_channels::TetrapolPayload;
+use sdrmm_channels::UaType;
+use sdrmm_channels::UasIdType;
+use sdrmm_channels::VorParams;
+use sdrmm_channels::WMBUS_T_C_HZ;
+use sdrmm_channels::WefaxIoc;
+use sdrmm_channels::WefaxLpm;
+use sdrmm_channels::WefaxParams;
+use sdrmm_channels::WfmParams;
+use sdrmm_channels::WmbusFormat;
+use sdrmm_channels::WmbusMode;
+use sdrmm_channels::WmbusParams;
+use sdrmm_channels::WsjtParams;
+use sdrmm_channels::WsprParams;
+use sdrmm_channels::YsfParams;
 use sdrmm_channels::{AprsTx, ChannelCtx, ChannelTx, MicE, MicEBit, TxPayload, synth};
+use sdrmm_channels::{DabMode, DabParams, DabTransmissionMode};
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_recording::RecordingDriver;
 use sdrmm_engine::Engine;
 use sdrmm_recorder::SigmfWriter;
 use sdrmm_wire::{
-    AcarsParams, AdsbParams, AisChannel, AisParams, AprsMode, AprsParams, AptParams, AvhrrChannel,
-    BleBeacon, BleParams, BroadcastStatus, BroadcastSystem, ChannelParams, ChannelSettings,
-    CwSkimmerParams, DabParams, DatvParams, DatvStandard, DecodedRecord, DecoderEvent, DectBand,
-    DectCapability, DectCipherState, DectParams, DectSpan, DmrParams, DrmMode, DrmParams,
-    DvFrameKind, DvMode, EotArming, EotBattery, EotParams, EotReport, EotStatus, ErmesParams,
-    FlexParams, FreeDvParams, GnssParams, IdentParams, IsmKind, IsmSurveyParams, LoraBandwidth,
-    LoraParams, LrptMode, LrptParams, Modulation, MorseParams, NavtexParams, NfmParams,
-    NfmToneMode, NoiseFigureParams, PerParams, PipelineStage, PocsagBaud, PocsagParams, PskBaud,
-    PskParams, RadiosondeParams, RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams,
-    RemoteIdTransport, RttyParams, SameBody, SameParams, SarsatParams, SelcallParams,
-    SelcallSystem, ServerEvent, SidParams, SondeType, StanagModem, StanagParams, SymbolPlane,
-    TetraParams, TetrapolParams, TetrapolPayload, UaType, UasIdType, VorParams, WMBUS_T_C_HZ,
-    WefaxIoc, WefaxLpm, WefaxParams, WfmParams, WmbusFormat, WmbusMode, WmbusParams, WsjtParams,
-    WsprParams, YsfParams,
+    ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent, DvFrameKind, Modulation,
+    PipelineStage, ServerEvent, SymbolPlane,
 };
 use tempfile::TempDir;
 
@@ -45,10 +155,14 @@ fn aprs_burst(frame: Vec<u8>) -> Vec<Complex<f32>> {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Aprs(AprsParams {
-                mode: AprsMode::Afsk1200,
-                ..AprsParams::default()
-            }),
+            params: ChannelParams::new(
+                "aprs",
+                &AprsParams {
+                    mode: AprsMode::Afsk1200,
+                    ..AprsParams::default()
+                },
+            )
+            .expect("aprs settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
@@ -107,12 +221,11 @@ async fn broadcast_first(
     let found = tokio::time::timeout(DECODE_TIMEOUT, async {
         loop {
             match rx.recv().await {
-                Ok(DecodedRecord {
-                    device_set,
-                    channel,
-                    event: DecoderEvent::Broadcast(status),
-                    ..
-                }) if device_set == ds && channel == ch && want(&status) => return status,
+                Ok(record) if record.device_set == ds && record.channel == ch => {
+                    if let Some(status) = record.event.read::<BroadcastStatus>().filter(&want) {
+                        return status;
+                    }
+                }
                 Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     panic!("decoded stream closed")
@@ -195,20 +308,25 @@ async fn pocsag_page_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Pocsag(PocsagParams {
-                baud: PocsagBaud::Auto,
-                ..PocsagParams::default()
-            }),
+            params: ChannelParams::new(
+                "pocsag",
+                &PocsagParams {
+                    baud: PocsagBaud::Auto,
+                    ..PocsagParams::default()
+                },
+            )
+            .expect("pocsag settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Pocsag(_)),
+        |event| event.is::<PocsagMessage>(),
     )
     .await;
 
-    let DecoderEvent::Pocsag(page) = record.event else {
-        unreachable!("filtered above")
-    };
+    let page = record
+        .event
+        .read::<PocsagMessage>()
+        .expect("filtered above");
     assert_eq!(page.address, 1_234_567);
     assert_eq!(page.function, 3);
     assert_eq!(page.baud, 1_200);
@@ -233,16 +351,14 @@ async fn flex_page_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Flex(FlexParams::default()),
+            params: ChannelParams::new("flex", &FlexParams::default()).expect("flex settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Flex(_)),
+        |event| event.is::<FlexMessage>(),
     )
     .await;
-    let DecoderEvent::Flex(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record.event.read::<FlexMessage>().expect("filtered above");
     assert_eq!(message.address, 345_678);
     assert_eq!(message.text, "FLEX ENGINE E2E");
     assert_eq!((message.cycle, message.frame), (4, 72));
@@ -269,16 +385,14 @@ async fn ermes_page_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Ermes(ErmesParams::default()),
+            params: ChannelParams::new("ermes", &ErmesParams::default()).expect("ermes settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Ermes(_)),
+        |event| event.is::<ErmesMessage>(),
     )
     .await;
-    let DecoderEvent::Ermes(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record.event.read::<ErmesMessage>().expect("filtered above");
     assert_eq!(message.local_address, 456_789);
     assert_eq!(message.text, "ERMES ENGINE E2E");
     assert!(message.urgent);
@@ -318,16 +432,14 @@ async fn eot_telemetry_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Eot(EotParams::default()),
+            params: ChannelParams::new("eot", &EotParams::default()).expect("eot settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Eot(_)),
+        |event| event.is::<EotMessage>(),
     )
     .await;
-    let DecoderEvent::Eot(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record.event.read::<EotMessage>().expect("filtered above");
     assert_eq!(message.unit_address, 31_337);
     assert_eq!(message.report, EotReport::Rear(status));
 }
@@ -352,16 +464,18 @@ async fn a_406_beacon_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Sarsat(SarsatParams::default()),
+            params: ChannelParams::new("sarsat", &SarsatParams::default())
+                .expect("sarsat settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Sarsat(_)),
+        |event| event.is::<SarsatMessage>(),
     )
     .await;
-    let DecoderEvent::Sarsat(beacon) = record.event else {
-        unreachable!("filtered above")
-    };
+    let beacon = record
+        .event
+        .read::<SarsatMessage>()
+        .expect("filtered above");
     assert_eq!(beacon.identity.as_deref(), Some("MMSI 257987654"));
     assert_eq!(beacon.pdf2_ok, Some(true));
     let (lat, lon) = beacon.position().expect("located");
@@ -382,22 +496,22 @@ async fn a_tetrapol_control_channel_survives_the_ddc_and_reaches_the_decoded_str
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Tetrapol(TetrapolParams::default()),
+            params: ChannelParams::new("tetrapol", &TetrapolParams::default())
+                .expect("tetrapol settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
         |event| {
-            matches!(
-                event,
-                DecoderEvent::Tetrapol(message)
-                    if matches!(message.payload, TetrapolPayload::SystemInfo(_))
-            )
+            event
+                .read::<TetrapolMessage>()
+                .is_some_and(|message| matches!(message.payload, TetrapolPayload::SystemInfo(_)))
         },
     )
     .await;
-    let DecoderEvent::Tetrapol(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record
+        .event
+        .read::<TetrapolMessage>()
+        .expect("filtered above");
     assert_eq!(message.scrambling, 70);
     assert_eq!(message.station().as_deref(), Some("28.2.7"));
 }
@@ -417,16 +531,14 @@ async fn a_same_alert_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Same(SameParams::default()),
+            params: ChannelParams::new("same", &SameParams::default()).expect("same settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Same(_)),
+        |event| event.is::<SameMessage>(),
     )
     .await;
-    let DecoderEvent::Same(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record.event.read::<SameMessage>().expect("filtered above");
     assert_eq!(message.raw, header);
     let SameBody::Alert(alert) = message.body else {
         panic!("expected an alert")
@@ -462,20 +574,22 @@ async fn aprs_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Aprs(AprsParams {
-                mode: AprsMode::Afsk1200,
-                ..AprsParams::default()
-            }),
+            params: ChannelParams::new(
+                "aprs",
+                &AprsParams {
+                    mode: AprsMode::Afsk1200,
+                    ..AprsParams::default()
+                },
+            )
+            .expect("aprs settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Aprs(_)),
+        |event| event.is::<AprsPacket>(),
     )
     .await;
 
-    let DecoderEvent::Aprs(packet) = record.event else {
-        unreachable!("filtered above")
-    };
+    let packet = record.event.read::<AprsPacket>().expect("filtered above");
     assert_eq!(packet.source, "DL1ABC-9");
     assert_eq!(packet.destination, "APRS");
     assert_eq!(packet.path, ["WIDE1-1"]);
@@ -509,19 +623,21 @@ async fn ais_position_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Ais(AisParams {
-                ais_channel: AisChannel::B,
-            }),
+            params: ChannelParams::new(
+                "ais",
+                &AisParams {
+                    ais_channel: AisChannel::B,
+                },
+            )
+            .expect("ais settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Ais(_)),
+        |event| event.is::<AisMessage>(),
     )
     .await;
 
-    let DecoderEvent::Ais(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record.event.read::<AisMessage>().expect("filtered above");
     assert_eq!(message.mmsi, 211_234_560);
     assert_eq!(message.msg_type, 1);
     assert_eq!(message.ais_channel, 'B');
@@ -570,17 +686,19 @@ async fn a_mic_e_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Aprs(AprsParams::default()),
+            params: ChannelParams::new("aprs", &AprsParams::default()).expect("aprs settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Aprs(p) if p.mic_e_message.is_some()),
+        |event| {
+            event
+                .read::<AprsPacket>()
+                .is_some_and(|p| p.mic_e_message.is_some())
+        },
     )
     .await;
 
-    let DecoderEvent::Aprs(packet) = record.event else {
-        unreachable!("filtered above")
-    };
+    let packet = record.event.read::<AprsPacket>().expect("filtered above");
     assert_eq!(packet.source, "DL1ABC-7");
     assert_eq!(packet.mic_e_message.as_deref(), Some("Off Duty"));
     assert_eq!(packet.speed_kt, Some(42.0));
@@ -612,21 +730,30 @@ async fn a_ctcss_tone_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Nfm(NfmParams {
-                tone_mode: NfmToneMode::Ctcss,
-                ctcss_hz: Some(88.5),
-                ..NfmParams::default()
-            }),
+            params: ChannelParams::new(
+                "nfm",
+                &NfmParams {
+                    tone_mode: NfmToneMode::Ctcss,
+                    ctcss_hz: Some(88.5),
+                    ..NfmParams::default()
+                },
+            )
+            .expect("nfm settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Tone(t) if t.ctcss_hz.is_some()),
+        |event| {
+            event
+                .read::<ToneSquelchStatus>()
+                .is_some_and(|t| t.ctcss_hz.is_some())
+        },
     )
     .await;
 
-    let DecoderEvent::Tone(status) = record.event else {
-        unreachable!("filtered above")
-    };
+    let status = record
+        .event
+        .read::<ToneSquelchStatus>()
+        .expect("filtered above");
     assert_eq!(status.ctcss_hz, Some(88.5));
     assert_eq!(status.dcs_code, None);
     assert!(status.open, "the tone the channel was set to must open it");
@@ -647,18 +774,23 @@ async fn selcall_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Selcall(SelcallParams {
-                system: SelcallSystem::Ccir1,
-            }),
+            params: ChannelParams::new(
+                "selcall",
+                &SelcallParams {
+                    system: SelcallSystem::Ccir1,
+                },
+            )
+            .expect("selcall settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Selcall(_)),
+        |event| event.is::<SelcallSequence>(),
     )
     .await;
-    let DecoderEvent::Selcall(call) = record.event else {
-        unreachable!("filtered above")
-    };
+    let call = record
+        .event
+        .read::<SelcallSequence>()
+        .expect("filtered above");
     assert_eq!(call.code, "12234");
     assert_eq!(call.system, SelcallSystem::Ccir1);
 }
@@ -678,19 +810,25 @@ async fn a_meshtastic_text_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Lora(LoraParams {
-                bandwidth: LoraBandwidth::Khz250,
-                ..LoraParams::default()
-            }),
+            params: ChannelParams::new(
+                "lora",
+                &LoraParams {
+                    bandwidth: LoraBandwidth::Khz250,
+                    ..LoraParams::default()
+                },
+            )
+            .expect("lora settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Lora(frame) if frame.decoded.is_some()),
+        |event| {
+            event
+                .read::<LoraFrame>()
+                .is_some_and(|frame| frame.decoded.is_some())
+        },
     )
     .await;
-    let DecoderEvent::Lora(frame) = record.event else {
-        unreachable!("filtered above")
-    };
+    let frame = record.event.read::<LoraFrame>().expect("filtered above");
     assert_eq!(frame.spreading_factor, 11);
     assert_eq!(frame.station().as_deref(), Some("!5d12a7c3"));
     assert!(
@@ -723,22 +861,19 @@ async fn freedv_recording_survives_the_virtual_device_and_acquires_sync() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Freedv(FreeDvParams::default()),
+            params: ChannelParams::new("freedv", &FreeDvParams::default())
+                .expect("freedv settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
         |event| {
-            matches!(
-                event,
-                DecoderEvent::Dv(frame)
-                    if frame.mode == DvMode::FreeDv && frame.kind == DvFrameKind::Header
-            )
+            event
+                .read::<DvFrame>()
+                .is_some_and(|frame| frame.mode == "FreeDV" && frame.kind == DvFrameKind::Header)
         },
     )
     .await;
-    let DecoderEvent::Dv(frame) = record.event else {
-        unreachable!("filtered above")
-    };
+    let frame = record.event.read::<DvFrame>().expect("filtered above");
     assert_eq!(frame.opcode.as_deref(), Some("1600"));
 }
 
@@ -765,16 +900,15 @@ async fn a_recorded_stanag_4285_signal_is_named_through_the_engine() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Stanag(StanagParams::default()),
+            params: ChannelParams::new("stanag", &StanagParams::default())
+                .expect("stanag settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Stanag(_)),
+        |event| event.is::<StanagReport>(),
     )
     .await;
-    let DecoderEvent::Stanag(report) = record.event else {
-        unreachable!("filtered above")
-    };
+    let report = record.event.read::<StanagReport>().expect("filtered above");
     assert_eq!(report.modem, Some(StanagModem::Stanag4285));
     let carrier_hz = report.frequency_hz.unwrap() - CENTER_HZ;
     assert!((carrier_hz - 1_800.0).abs() < 50.0, "{report:?}");
@@ -807,17 +941,15 @@ async fn adsb_squitter_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Adsb(AdsbParams::default()),
+            params: ChannelParams::new("adsb", &AdsbParams::default()).expect("adsb settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Adsb(a) if a.lat.is_some()),
+        |event| event.read::<AdsbMessage>().is_some_and(|a| a.lat.is_some()),
     )
     .await;
 
-    let DecoderEvent::Adsb(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record.event.read::<AdsbMessage>().expect("filtered above");
     assert_eq!(message.icao, "3C6444");
     assert_eq!(message.df, 17);
     assert_eq!(message.altitude_ft, Some(38_000));
@@ -838,20 +970,26 @@ async fn gps_ca_acquisition_survives_virtual_device_playback() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Gnss(GnssParams {
-                prn: 7,
-                doppler_hz: 2_000,
-                threshold: 2.5,
-            }),
+            params: ChannelParams::new(
+                "gnss",
+                &GnssParams {
+                    prn: 7,
+                    doppler_hz: 2_000,
+                    threshold: 2.5,
+                },
+            )
+            .expect("gnss settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Gnss(frame) if frame.prn == 7),
+        |event| {
+            event
+                .read::<GnssFrame>()
+                .is_some_and(|frame| frame.prn == 7)
+        },
     )
     .await;
-    let DecoderEvent::Gnss(frame) = record.event else {
-        unreachable!("filtered above")
-    };
+    let frame = record.event.read::<GnssFrame>().expect("filtered above");
     assert_eq!(frame.doppler_hz, 1_000.0);
     assert!((frame.code_phase_chips - 158.34).abs() < 0.6);
     assert!(frame.cn0_db_hz > 40.0);
@@ -869,16 +1007,14 @@ async fn vor_radial_survives_virtual_device_playback() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Vor(VorParams::default()),
+            params: ChannelParams::new("vor", &VorParams::default()).expect("vor settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Vor(_)),
+        |event| event.is::<VorReading>(),
     )
     .await;
-    let DecoderEvent::Vor(reading) = record.event else {
-        unreachable!("filtered above")
-    };
+    let reading = record.event.read::<VorReading>().expect("filtered above");
     let error = (reading.radial_deg - 123.0 + 180.0).rem_euclid(360.0) - 180.0;
     assert!(error.abs() < 0.5, "radial {}", reading.radial_deg);
     assert!(reading.confidence > 0.8);
@@ -906,17 +1042,15 @@ async fn a_mode_s_identity_reply_survives_the_ddc_and_reaches_the_decoded_stream
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Adsb(AdsbParams::default()),
+            params: ChannelParams::new("adsb", &AdsbParams::default()).expect("adsb settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Adsb(a) if a.df == 5),
+        |event| event.read::<AdsbMessage>().is_some_and(|a| a.df == 5),
     )
     .await;
 
-    let DecoderEvent::Adsb(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record.event.read::<AdsbMessage>().expect("filtered above");
     assert_eq!(message.icao, "40621D");
     assert_eq!(message.squawk.as_deref(), Some("7421"));
     assert_eq!(message.type_code, None);
@@ -945,17 +1079,19 @@ async fn rtty_text_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Rtty(params),
+            params: ChannelParams::new("rtty", &params).expect("rtty settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Rtty(t) if t.text.contains("CQ CQ DE DL1ABC")),
+        |event| {
+            event
+                .read::<RttyText>()
+                .is_some_and(|t| t.text.contains("CQ CQ DE DL1ABC"))
+        },
     )
     .await;
 
-    let DecoderEvent::Rtty(text) = record.event else {
-        unreachable!("filtered above")
-    };
+    let text = record.event.read::<RttyText>().expect("filtered above");
     assert_eq!(text.text, "CQ CQ DE DL1ABC K\n");
 }
 
@@ -978,25 +1114,32 @@ async fn psk_text_survives_the_ddc_and_reaches_the_decoded_stream() {
             ChannelSettings {
                 frequency_hz: CENTER_HZ + offset_hz,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Psk(PskParams {
-                    baud,
-                    invert: false,
-                }),
+                params: ChannelParams::new(
+                    "psk",
+                    &PskParams {
+                        baud,
+                        invert: false,
+                    },
+                )
+                .expect("psk settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
-            |event| match event {
-                DecoderEvent::Psk(text) => text.text.contains(want),
-                _ => false,
+            |event| {
+                event
+                    .read::<PskText>()
+                    .is_some_and(|text| text.text.contains(want))
             },
         )
         .await;
-        let DecoderEvent::Psk(text) = record.event else {
-            unreachable!("filtered above")
-        };
+        let text = record.event.read::<PskText>().expect("filtered above");
         assert_eq!(text.baud, baud);
         assert!(text.text.contains(want), "decoded {:?}", text.text);
     }
+}
+
+fn wsjt(event: &DecoderEvent) -> Option<WsjtMessage> {
+    event.payload::<WsjtMessage>()
 }
 
 #[tokio::test]
@@ -1014,16 +1157,16 @@ async fn ft8_message_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Ft8(WsjtParams::default()),
+            params: ChannelParams::new("ft8", &WsjtParams::default()).expect("ft8 settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Ft8(message) if message.text.contains("W1AW")),
+        |event| {
+            event.kind == "ft8" && wsjt(event).is_some_and(|message| message.text.contains("W1AW"))
+        },
     )
     .await;
-    let DecoderEvent::Ft8(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = wsjt(&record.event).expect("filtered above");
     assert!(message.text.contains("CQ W1AW FN42"), "{}", message.text);
     assert!((message.audio_hz - 1_500.0).abs() < 10.0);
 }
@@ -1043,16 +1186,17 @@ async fn ft4_message_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Ft4(WsjtParams::default()),
+            params: ChannelParams::new("ft4", &WsjtParams::default()).expect("ft4 settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Ft4(message) if message.text.contains("JA1ABC")),
+        |event| {
+            event.kind == "ft4"
+                && wsjt(event).is_some_and(|message| message.text.contains("JA1ABC"))
+        },
     )
     .await;
-    let DecoderEvent::Ft4(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = wsjt(&record.event).expect("filtered above");
     assert!(message.text.contains("CQ JA1ABC PM95"), "{}", message.text);
     assert!((message.audio_hz - 1_000.0).abs() < 20.0);
 }
@@ -1070,16 +1214,18 @@ async fn wspr_spot_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Wspr(WsprParams::default()),
+            params: ChannelParams::new("wspr", &WsprParams::default()).expect("wspr settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Wspr(spot) if spot.callsign == "K1ABC"),
+        |event| {
+            event
+                .read::<WsprSpot>()
+                .is_some_and(|spot| spot.callsign == "K1ABC")
+        },
     )
     .await;
-    let DecoderEvent::Wspr(spot) = record.event else {
-        unreachable!("filtered above")
-    };
+    let spot = record.event.read::<WsprSpot>().expect("filtered above");
     assert_eq!(spot.grid.as_deref(), Some("FN42"));
     assert_eq!(spot.power_dbm, 37);
 }
@@ -1100,17 +1246,19 @@ async fn morse_text_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Morse(MorseParams::default()),
+            params: ChannelParams::new("morse", &MorseParams::default()).expect("morse settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Morse(m) if m.text.contains("DL1ABC")),
+        |event| {
+            event
+                .read::<MorseText>()
+                .is_some_and(|m| m.text.contains("DL1ABC"))
+        },
     )
     .await;
 
-    let DecoderEvent::Morse(text) = record.event else {
-        unreachable!("filtered above")
-    };
+    let text = record.event.read::<MorseText>().expect("filtered above");
     assert!(
         (10.0..40.0).contains(&text.wpm),
         "speed estimate {} wpm is not plausible for 20 wpm sending",
@@ -1132,24 +1280,30 @@ async fn cw_skimmer_spot_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::CwSkimmer(CwSkimmerParams {
-                bandwidth_hz: 16_000.0,
-                threshold_db: 8.0,
-                max_signals: 8,
-                wpm: None,
-            }),
+            params: ChannelParams::new(
+                "cw_skimmer",
+                &CwSkimmerParams {
+                    bandwidth_hz: 16_000.0,
+                    threshold_db: 8.0,
+                    max_signals: 8,
+                    wpm: None,
+                },
+            )
+            .expect("cw_skimmer settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
         |event| {
-            matches!(event, DecoderEvent::CwSkimmer(spot)
-                if spot.text.contains("ENGINE") && (spot.offset_hz - 3_500.0).abs() < 80.0)
+            event.read::<CwSkimmerSpot>().is_some_and(|spot| {
+                spot.text.contains("ENGINE") && (spot.offset_hz - 3_500.0).abs() < 80.0
+            })
         },
     )
     .await;
-    let DecoderEvent::CwSkimmer(spot) = record.event else {
-        unreachable!("filtered above")
-    };
+    let spot = record
+        .event
+        .read::<CwSkimmerSpot>()
+        .expect("filtered above");
     assert!((15.0..25.0).contains(&spot.wpm), "{}", spot.wpm);
 }
 
@@ -1172,17 +1326,19 @@ async fn navtex_broadcast_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Navtex(NavtexParams::default()),
+            params: ChannelParams::new("navtex", &NavtexParams::default())
+                .expect("navtex settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Navtex(m) if m.complete),
+        |event| event.read::<NavtexMessage>().is_some_and(|m| m.complete),
     )
     .await;
 
-    let DecoderEvent::Navtex(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record
+        .event
+        .read::<NavtexMessage>()
+        .expect("filtered above");
     assert_eq!(message.station, Some('D'));
     assert_eq!(
         message.subject_name.as_deref(),
@@ -1219,17 +1375,15 @@ async fn acars_block_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Acars(AcarsParams::default()),
+            params: ChannelParams::new("acars", &AcarsParams::default()).expect("acars settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Acars(_)),
+        |event| event.is::<AcarsMessage>(),
     )
     .await;
 
-    let DecoderEvent::Acars(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record.event.read::<AcarsMessage>().expect("filtered above");
     assert_eq!(message.registration, "D-AIBC");
     assert_eq!(message.label, "H1");
     assert!(message.downlink);
@@ -1254,21 +1408,21 @@ async fn ysf_callsigns_survive_a_recorded_virtual_device() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Ysf(YsfParams::default()),
+            params: ChannelParams::new("ysf", &YsfParams::default()).expect("ysf settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
         |event| {
-            matches!(event, DecoderEvent::Dv(frame) if frame.mode == DvMode::Ysf
-                && frame.kind == DvFrameKind::Header
-                && frame.source_call.as_deref() == Some("DL1ABC"))
+            event.read::<DvFrame>().is_some_and(|frame| {
+                frame.mode == "YSF"
+                    && frame.kind == DvFrameKind::Header
+                    && frame.source_call.as_deref() == Some("DL1ABC")
+            })
         },
     )
     .await;
 
-    let DecoderEvent::Dv(frame) = record.event else {
-        unreachable!("filtered above")
-    };
+    let frame = record.event.read::<DvFrame>().expect("filtered above");
     assert_eq!(frame.kind, DvFrameKind::Header);
     assert_eq!(frame.destination_call.as_deref(), Some("ALL"));
     assert_eq!(frame.source_call.as_deref(), Some("DL1ABC"));
@@ -1295,20 +1449,19 @@ async fn a_tetra_group_call_survives_the_ddc() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Tetra(TetraParams::default()),
+            params: ChannelParams::new("tetra", &TetraParams::default()).expect("tetra settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
         |event| {
-            matches!(event, DecoderEvent::Dv(frame) if frame.mode == DvMode::Tetra
-                && frame.kind == DvFrameKind::Header)
+            event
+                .read::<DvFrame>()
+                .is_some_and(|frame| frame.mode == "TETRA" && frame.kind == DvFrameKind::Header)
         },
     )
     .await;
 
-    let DecoderEvent::Dv(frame) = record.event else {
-        unreachable!("filtered above")
-    };
+    let frame = record.event.read::<DvFrame>().expect("filtered above");
     assert_eq!(frame.opcode.as_deref(), Some("D-SETUP"));
     assert_eq!(frame.destination, Some(synth::tetra::GROUP));
     assert_eq!(frame.source, Some(synth::tetra::CALLER));
@@ -1337,20 +1490,26 @@ async fn ident_names_an_unknown_transmission_end_to_end() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Ident(IdentParams {
-                interval_ms: 500,
-                ..IdentParams::default()
-            }),
+            params: ChannelParams::new(
+                "ident",
+                &IdentParams {
+                    interval_ms: 500,
+                    ..IdentParams::default()
+                },
+            )
+            .expect("ident settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Ident(r) if r.best().is_some_and(|m| m.confirmed)),
+        |event| {
+            event
+                .read::<IdentReport>()
+                .is_some_and(|r| r.best().is_some_and(|m| m.confirmed))
+        },
     )
     .await;
 
-    let DecoderEvent::Ident(report) = record.event else {
-        unreachable!("filtered above")
-    };
+    let report = record.event.read::<IdentReport>().expect("filtered above");
     let signal = report.loudest().expect("filtered above");
     assert_eq!(signal.modulation, Modulation::Fsk4);
     let best = signal.best().expect("filtered above");
@@ -1376,10 +1535,10 @@ async fn ident_names_an_unknown_transmission_end_to_end() {
 #[tokio::test]
 async fn a_dab_ensemble_locks_through_a_virtual_device() {
     for mode in [
-        sdrmm_wire::DabTransmissionMode::I,
-        sdrmm_wire::DabTransmissionMode::Ii,
-        sdrmm_wire::DabTransmissionMode::Iii,
-        sdrmm_wire::DabTransmissionMode::Iv,
+        DabTransmissionMode::I,
+        DabTransmissionMode::Ii,
+        DabTransmissionMode::Iii,
+        DabTransmissionMode::Iv,
     ] {
         const DEVICE_RATE: f64 = 2_400_000.0;
         let dir = TempDir::new().unwrap();
@@ -1396,10 +1555,14 @@ async fn a_dab_ensemble_locks_through_a_virtual_device() {
             ChannelSettings {
                 frequency_hz: CENTER_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Dab(DabParams {
-                    transmission_mode: mode,
-                    ..DabParams::default()
-                }),
+                params: ChannelParams::new(
+                    "dab",
+                    &DabParams {
+                        transmission_mode: mode,
+                        ..DabParams::default()
+                    },
+                )
+                .expect("dab settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -1428,12 +1591,16 @@ async fn a_dvb_s_transport_stream_names_its_program() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Datv(DatvParams {
-                standard: DatvStandard::DvbS,
-                symbol_rate: synth::datv::SYMBOL_RATE,
-                code_rate: synth::datv::CODE_RATE,
-                ..DatvParams::default()
-            }),
+            params: ChannelParams::new(
+                "datv",
+                &DatvParams {
+                    standard: DatvStandard::DvbS,
+                    symbol_rate: synth::datv::SYMBOL_RATE,
+                    code_rate: synth::datv::CODE_RATE,
+                    ..DatvParams::default()
+                },
+            )
+            .expect("datv settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
@@ -1473,11 +1640,15 @@ async fn datv_qpsk_lock_is_reported() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Datv(DatvParams {
-                standard: DatvStandard::DvbS2,
-                symbol_rate: 250_000.0,
-                ..DatvParams::default()
-            }),
+            params: ChannelParams::new(
+                "datv",
+                &DatvParams {
+                    standard: DatvStandard::DvbS2,
+                    symbol_rate: 250_000.0,
+                    ..DatvParams::default()
+                },
+            )
+            .expect("datv settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
@@ -1503,11 +1674,15 @@ async fn drm30_lock_is_reported() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Drm(DrmParams {
-                mode: DrmMode::Drm30,
-                bandwidth_hz: 10_000.0,
-                ..DrmParams::default()
-            }),
+            params: ChannelParams::new(
+                "drm",
+                &DrmParams {
+                    mode: DrmMode::Drm30,
+                    bandwidth_hz: 10_000.0,
+                    ..DrmParams::default()
+                },
+            )
+            .expect("drm settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
@@ -1544,17 +1719,15 @@ async fn adsb_decodes_at_an_rtl_sdr_rate_the_ddc_could_not_have_resampled() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Adsb(AdsbParams::default()),
+            params: ChannelParams::new("adsb", &AdsbParams::default()).expect("adsb settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Adsb(a) if a.lat.is_some()),
+        |event| event.read::<AdsbMessage>().is_some_and(|a| a.lat.is_some()),
     )
     .await;
 
-    let DecoderEvent::Adsb(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record.event.read::<AdsbMessage>().expect("filtered above");
     assert_eq!(message.icao, "3C6444");
     assert_eq!(message.altitude_ft, Some(38_000));
 }
@@ -1579,16 +1752,18 @@ async fn adsb_decodes_from_a_wideband_radio_through_the_resampler() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Adsb(AdsbParams::default()),
+            params: ChannelParams::new("adsb", &AdsbParams::default()).expect("adsb settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Adsb(a) if a.callsign.is_some()),
+        |event| {
+            event
+                .read::<AdsbMessage>()
+                .is_some_and(|a| a.callsign.is_some())
+        },
     )
     .await;
-    let DecoderEvent::Adsb(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record.event.read::<AdsbMessage>().expect("filtered above");
     assert_eq!(message.icao, "3C6444");
     assert_eq!(message.callsign.as_deref(), Some("DLH123"));
 }
@@ -1620,20 +1795,22 @@ async fn rds_station_survives_the_ddc_and_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Wfm(WfmParams {
-                deemphasis_us: 50.0,
-                stereo: false,
-            }),
+            params: ChannelParams::new(
+                "wfm",
+                &WfmParams {
+                    deemphasis_us: 50.0,
+                    stereo: false,
+                },
+            )
+            .expect("wfm settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Rds(u) if u.ps.is_some()),
+        |event| event.read::<RdsUpdate>().is_some_and(|u| u.ps.is_some()),
     )
     .await;
 
-    let DecoderEvent::Rds(update) = record.event else {
-        unreachable!("filtered above")
-    };
+    let update = record.event.read::<RdsUpdate>().expect("filtered above");
     assert_eq!(update.pi.as_deref(), Some("D3C2"));
     assert_eq!(update.ps.as_deref(), Some("SDR-M4"));
     assert_eq!(update.pty, Some(10));
@@ -1645,7 +1822,7 @@ async fn next_rds(rx: &mut tokio::sync::broadcast::Receiver<DecodedRecord>) -> R
     tokio::time::timeout(DECODE_TIMEOUT, async {
         loop {
             if let Ok(record) = rx.recv().await
-                && let DecoderEvent::Rds(update) = record.event
+                && let Some(update) = record.event.read::<RdsUpdate>()
             {
                 return update;
             }
@@ -1679,10 +1856,14 @@ async fn retuning_resets_the_decoder_through_the_engine_path() {
     let settings = |offset_hz: f64| ChannelSettings {
         frequency_hz: CENTER_HZ + offset_hz,
         squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Wfm(WfmParams {
-            deemphasis_us: 50.0,
-            stereo: false,
-        }),
+        params: ChannelParams::new(
+            "wfm",
+            &WfmParams {
+                deemphasis_us: 50.0,
+                stereo: false,
+            },
+        )
+        .expect("wfm settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     };
@@ -1725,7 +1906,7 @@ async fn a_dmr_call_reaches_the_symbol_stream_with_its_measurement() {
             ChannelSettings {
                 frequency_hz: CENTER_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Dmr(DmrParams::default()),
+                params: ChannelParams::new("dmr", &DmrParams::default()).expect("dmr settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -1783,7 +1964,7 @@ async fn an_analog_channel_never_pretends_to_have_symbols() {
             ChannelSettings {
                 frequency_hz: CENTER_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Nfm(NfmParams::default()),
+                params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -1818,17 +1999,19 @@ async fn a_dect_base_station_survives_the_ddc_and_reports_its_identity_and_secur
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Dect(DectParams::default()),
+            params: ChannelParams::new("dect", &DectParams::default()).expect("dect settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Dect(f) if f.identity.is_some()),
+        |event| {
+            event
+                .read::<DectFrame>()
+                .is_some_and(|f| f.identity.is_some())
+        },
     )
     .await;
 
-    let DecoderEvent::Dect(frame) = record.event else {
-        unreachable!("filtered above")
-    };
+    let frame = record.event.read::<DectFrame>().expect("filtered above");
     let identity = frame.identity.unwrap();
     assert_eq!(identity.rfpi, "01234D5E6D");
     assert_eq!(identity.emc, Some(0x1234));
@@ -1854,7 +2037,7 @@ async fn damaged_dect_bursts_surface_as_rejected_channel_state() {
             ChannelSettings {
                 frequency_hz: CENTER_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Dect(DectParams::default()),
+                params: ChannelParams::new("dect", &DectParams::default()).expect("dect settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -1947,20 +2130,26 @@ async fn a_twenty_megasample_capture_carries_a_call_on_one_of_ten_dect_carriers(
         ChannelSettings {
             frequency_hz: band.center_hz(),
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Dect(DectParams {
-                span: DectSpan::Band,
-                ..DectParams::default()
-            }),
+            params: ChannelParams::new(
+                "dect",
+                &DectParams {
+                    span: DectSpan::Band,
+                    ..DectParams::default()
+                },
+            )
+            .expect("dect settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Dect(f) if f.voice.is_some_and(|voice| voice.playing)),
+        |event| {
+            event
+                .read::<DectFrame>()
+                .is_some_and(|f| f.voice.is_some_and(|voice| voice.playing))
+        },
     )
     .await;
 
-    let DecoderEvent::Dect(frame) = record.event else {
-        unreachable!("filtered above")
-    };
+    let frame = record.event.read::<DectFrame>().expect("filtered above");
     assert_eq!(frame.carrier, Some(6));
     assert_eq!(frame.voice.map(|voice| voice.x_crc_errors), Some(0));
 }
@@ -1984,17 +2173,19 @@ async fn a_dect_capabilities_broadcast_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Dect(DectParams::default()),
+            params: ChannelParams::new("dect", &DectParams::default()).expect("dect settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Dect(f) if !f.capabilities.is_empty()),
+        |event| {
+            event
+                .read::<DectFrame>()
+                .is_some_and(|f| !f.capabilities.is_empty())
+        },
     )
     .await;
 
-    let DecoderEvent::Dect(frame) = record.event else {
-        unreachable!("filtered above")
-    };
+    let frame = record.event.read::<DectFrame>().expect("filtered above");
     assert!(frame.has(DectCapability::StandardAuthentication));
     assert!(frame.has(DectCapability::StandardCiphering));
     assert_eq!(frame.security.authentication_supported, Some(true));
@@ -2016,36 +2207,52 @@ async fn broadcast_audio_reaches_stereo_opus_through_virtual_devices() {
             BroadcastSystem::DabPlus => (
                 synth::dab::ensemble(30),
                 2048000.0,
-                ChannelParams::Dab(DabParams {
-                    mode: sdrmm_wire::DabMode::DabPlus,
-                    ..DabParams::default()
-                }),
+                ChannelParams::new(
+                    "dab",
+                    &DabParams {
+                        mode: DabMode::DabPlus,
+                        ..DabParams::default()
+                    },
+                )
+                .expect("dab settings"),
             ),
             BroadcastSystem::Dab => (
                 synth::dab::ensemble(30),
                 2048000.0,
-                ChannelParams::Dab(DabParams {
-                    mode: sdrmm_wire::DabMode::Dab,
-                    ..DabParams::default()
-                }),
+                ChannelParams::new(
+                    "dab",
+                    &DabParams {
+                        mode: DabMode::Dab,
+                        ..DabParams::default()
+                    },
+                )
+                .expect("dab settings"),
             ),
             BroadcastSystem::DvbS => (
                 synth::datv::dvbs(4),
                 2000000.0,
-                ChannelParams::Datv(DatvParams {
-                    symbol_rate: synth::datv::SYMBOL_RATE,
-                    code_rate: synth::datv::CODE_RATE,
-                    ..DatvParams::default()
-                }),
+                ChannelParams::new(
+                    "datv",
+                    &DatvParams {
+                        symbol_rate: synth::datv::SYMBOL_RATE,
+                        code_rate: synth::datv::CODE_RATE,
+                        ..DatvParams::default()
+                    },
+                )
+                .expect("datv settings"),
             ),
             BroadcastSystem::DvbS2 => (
                 synth::datv::dvbs2(4),
                 2000000.0,
-                ChannelParams::Datv(DatvParams {
-                    standard: DatvStandard::DvbS2,
-                    symbol_rate: synth::datv::SYMBOL_RATE,
-                    ..DatvParams::default()
-                }),
+                ChannelParams::new(
+                    "datv",
+                    &DatvParams {
+                        standard: DatvStandard::DvbS2,
+                        symbol_rate: synth::datv::SYMBOL_RATE,
+                        ..DatvParams::default()
+                    },
+                )
+                .expect("datv settings"),
             ),
             _ => unreachable!(),
         };
@@ -2133,16 +2340,17 @@ async fn dab_pad_slideshow_crosses_the_virtual_receiver_and_decoded_event_stream
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Dab(DabParams::default()),
+            params: ChannelParams::new("dab", &DabParams::default()).expect("dab settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::BroadcastData(_)),
+        |event| event.is::<BroadcastData>(),
     )
     .await;
-    let DecoderEvent::BroadcastData(data) = record.event else {
-        unreachable!()
-    };
+    let data = record
+        .event
+        .read::<BroadcastData>()
+        .expect("a BroadcastData event");
     assert_eq!(data.name, "slide.png");
     assert_eq!(data.media_type, "image/png");
     assert_eq!(
@@ -2173,16 +2381,18 @@ async fn an_aprs_weather_report_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Aprs(AprsParams::default()),
+            params: ChannelParams::new("aprs", &AprsParams::default()).expect("aprs settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Aprs(p) if p.weather.is_some()),
+        |event| {
+            event
+                .read::<AprsPacket>()
+                .is_some_and(|p| p.weather.is_some())
+        },
     )
     .await;
-    let DecoderEvent::Aprs(packet) = record.event else {
-        unreachable!("filtered above")
-    };
+    let packet = record.event.read::<AprsPacket>().expect("filtered above");
     let weather = packet.weather.unwrap();
     assert_eq!(weather.wind_dir_deg, Some(220));
     assert_eq!(weather.humidity_pct, Some(50));
@@ -2203,20 +2413,33 @@ async fn an_rs41_radiosonde_survives_the_ddc_and_reports_its_position() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Radiosonde(RadiosondeParams::default()),
+            params: ChannelParams::new("radiosonde", &RadiosondeParams::default())
+                .expect("radiosonde settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Radiosonde(f) if f.lat.is_some()),
+        |event| {
+            event
+                .read::<RadiosondeFrame>()
+                .is_some_and(|f| f.lat.is_some())
+        },
     )
     .await;
-    let DecoderEvent::Radiosonde(frame) = record.event.clone() else {
-        unreachable!("filtered above")
-    };
+    let frame = record
+        .event
+        .read::<RadiosondeFrame>()
+        .expect("filtered above");
     let truth = synth::radiosonde::flight(SondeType::Rs41);
     assert_eq!(frame.sonde, SondeType::Rs41);
     assert_eq!(frame.serial, truth.serial);
-    assert!(DecoderEvent::Radiosonde(frame).present().place.is_some());
+    assert!(
+        sdrmm_wire::present::EventPayload::present(
+            &frame,
+            &<RadiosondeFrame as sdrmm_wire::EventContract>::KIND
+        )
+        .place
+        .is_some()
+    );
 }
 
 #[tokio::test]
@@ -2236,16 +2459,14 @@ async fn a_noaa_apt_pass_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Apt(AptParams::default()),
+            params: ChannelParams::new("apt", &AptParams::default()).expect("apt settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Apt(_)),
+        |event| event.is::<AptImage>(),
     )
     .await;
-    let DecoderEvent::Apt(image) = record.event else {
-        unreachable!("filtered above")
-    };
+    let image = record.event.read::<AptImage>().expect("filtered above");
     assert!(image.lines >= 150, "{} lines", image.lines);
     assert_eq!(image.channel_a, Some(AvhrrChannel::Ch2));
     assert_eq!(image.channel_b, Some(AvhrrChannel::Ch4));
@@ -2268,19 +2489,21 @@ async fn a_wefax_chart_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Wefax(WefaxParams {
-                lpm: WefaxLpm::Lpm240,
-                ..WefaxParams::default()
-            }),
+            params: ChannelParams::new(
+                "wefax",
+                &WefaxParams {
+                    lpm: WefaxLpm::Lpm240,
+                    ..WefaxParams::default()
+                },
+            )
+            .expect("wefax settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Wefax(_)),
+        |event| event.is::<WefaxPicture>(),
     )
     .await;
-    let DecoderEvent::Wefax(picture) = record.event else {
-        unreachable!("filtered above")
-    };
+    let picture = record.event.read::<WefaxPicture>().expect("filtered above");
     assert!(picture.complete);
     assert_eq!(picture.lines, 60);
     assert_eq!(picture.width, 1_810);
@@ -2304,16 +2527,14 @@ async fn a_meteor_lrpt_pass_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Lrpt(LrptParams::default()),
+            params: ChannelParams::new("lrpt", &LrptParams::default()).expect("lrpt settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Lrpt(_)),
+        |event| event.is::<LrptImage>(),
     )
     .await;
-    let DecoderEvent::Lrpt(image) = record.event else {
-        unreachable!("filtered above")
-    };
+    let image = record.event.read::<LrptImage>().expect("filtered above");
     assert_eq!(image.width, 1_568);
     assert_eq!(image.lines, 32);
     assert_eq!(image.frames_failed, 0);
@@ -2364,16 +2585,18 @@ async fn a_long_range_remote_id_pack_survives_the_ddc() {
         ChannelSettings {
             frequency_hz: channel_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::RemoteId(RemoteIdParams::default()),
+            params: ChannelParams::new("remote_id", &RemoteIdParams::default())
+                .expect("remote_id settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::RemoteId(_)),
+        |event| event.is::<RemoteIdFrame>(),
     )
     .await;
-    let DecoderEvent::RemoteId(frame) = record.event else {
-        unreachable!("filtered above")
-    };
+    let frame = record
+        .event
+        .read::<RemoteIdFrame>()
+        .expect("filtered above");
     assert_eq!(frame.transport, RemoteIdTransport::BluetoothExtended);
     assert_eq!(frame.channel, Some(8));
     assert_eq!(frame.messages, drone_pack());
@@ -2403,18 +2626,23 @@ async fn a_remote_id_wifi_beacon_reaches_the_decoded_stream() {
         ChannelSettings {
             frequency_hz: channel_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::RemoteId(RemoteIdParams {
-                link: RemoteIdLink::Wifi,
-            }),
+            params: ChannelParams::new(
+                "remote_id",
+                &RemoteIdParams {
+                    link: RemoteIdLink::Wifi,
+                },
+            )
+            .expect("remote_id settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::RemoteId(_)),
+        |event| event.is::<RemoteIdFrame>(),
     )
     .await;
-    let DecoderEvent::RemoteId(frame) = record.event else {
-        unreachable!("filtered above")
-    };
+    let frame = record
+        .event
+        .read::<RemoteIdFrame>()
+        .expect("filtered above");
     assert_eq!(frame.transport, RemoteIdTransport::WifiBeacon);
     assert_eq!(frame.channel, Some(6));
     assert_eq!(frame.uas_id.as_deref(), Some("1581F5FJD239C00DW22E"));
@@ -2436,22 +2664,18 @@ async fn a_ble_beacon_survives_the_ddc() {
         ChannelSettings {
             frequency_hz: channel_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Ble(BleParams::default()),
+            params: ChannelParams::new("ble", &BleParams::default()).expect("ble settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
         |event| {
-            matches!(
-                event,
-                DecoderEvent::Ble(advert)
-                    if matches!(advert.beacon, Some(BleBeacon::Ibeacon { .. }))
-            )
+            event
+                .read::<BleAdvert>()
+                .is_some_and(|advert| matches!(advert.beacon, Some(BleBeacon::Ibeacon { .. })))
         },
     )
     .await;
-    let DecoderEvent::Ble(advert) = record.event else {
-        unreachable!("filtered above")
-    };
+    let advert = record.event.read::<BleAdvert>().expect("filtered above");
     assert_eq!(advert.channel, Some(38));
     assert!(matches!(
         advert.beacon,
@@ -2481,16 +2705,18 @@ async fn the_2_4_ghz_survey_reports_each_second() {
         ChannelSettings {
             frequency_hz: channel_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::IsmSurvey(IsmSurveyParams::default()),
+            params: ChannelParams::new("ism_survey", &IsmSurveyParams::default())
+                .expect("ism_survey settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::IsmSurvey(_)),
+        |event| event.is::<IsmSurveyReport>(),
     )
     .await;
-    let DecoderEvent::IsmSurvey(report) = record.event else {
-        unreachable!("filtered above")
-    };
+    let report = record
+        .event
+        .read::<IsmSurveyReport>()
+        .expect("filtered above");
     let kinds: Vec<IsmKind> = report.kinds.iter().map(|load| load.kind).collect();
     for kind in [
         IsmKind::Wifi,
@@ -2523,16 +2749,14 @@ async fn a_wmbus_meter_beside_the_centre_survives_the_ddc() {
         ChannelSettings {
             frequency_hz: WMBUS_T_C_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Wmbus(WmbusParams::default()),
+            params: ChannelParams::new("wmbus", &WmbusParams::default()).expect("wmbus settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Wmbus(_)),
+        |event| event.is::<WmbusMessage>(),
     )
     .await;
-    let DecoderEvent::Wmbus(message) = record.event else {
-        unreachable!("filtered above")
-    };
+    let message = record.event.read::<WmbusMessage>().expect("filtered above");
     assert_eq!(message.station(), "SEN 33225544");
     assert_eq!(message.summary(), "Water SEN 33225544 · Volume 123.529 m³");
 }
@@ -2553,16 +2777,18 @@ async fn per_frames_survive_the_ddc_and_are_counted() {
         ChannelSettings {
             frequency_hz: CENTER_HZ + offset_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Per(params),
+            params: ChannelParams::new("per", &params).expect("per settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Per(report) if report.restarts > 0),
+        |event| {
+            event
+                .read::<PerReport>()
+                .is_some_and(|report| report.restarts > 0)
+        },
     )
     .await;
-    let DecoderEvent::Per(report) = record.event else {
-        unreachable!("filtered above")
-    };
+    let report = record.event.read::<PerReport>().expect("filtered above");
     assert!(report.received > 50, "{report:?}");
     assert_eq!(report.missed, 0, "{report:?}");
     assert_eq!(report.errored, 0, "{report:?}");
@@ -2585,16 +2811,22 @@ async fn a_switched_noise_source_reads_a_noise_figure_end_to_end() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::NoiseFigure(NoiseFigureParams::default()),
+            params: ChannelParams::new("noise_figure", &NoiseFigureParams::default())
+                .expect("noise_figure settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::NoiseFigure(report) if report.nf_db.is_some()),
+        |event| {
+            event
+                .read::<NoiseFigureReport>()
+                .is_some_and(|report| report.nf_db.is_some())
+        },
     )
     .await;
-    let DecoderEvent::NoiseFigure(report) = record.event else {
-        unreachable!("filtered above")
-    };
+    let report = record
+        .event
+        .read::<NoiseFigureReport>()
+        .expect("filtered above");
     assert!(
         report.y_db.is_some_and(|y| (y - 10.0).abs() < 0.3),
         "{report:?}"
@@ -2614,19 +2846,21 @@ async fn vlf_stations_reach_the_sid_monitor() {
         ChannelSettings {
             frequency_hz: centre_hz,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Sid(SidParams {
-                report_s: 1,
-                ..SidParams::default()
-            }),
+            params: ChannelParams::new(
+                "sid",
+                &SidParams {
+                    report_s: 1,
+                    ..SidParams::default()
+                },
+            )
+            .expect("sid settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Sid(_)),
+        |event| event.is::<SidReport>(),
     )
     .await;
-    let DecoderEvent::Sid(report) = record.event else {
-        unreachable!("filtered above")
-    };
+    let report = record.event.read::<SidReport>().expect("filtered above");
     let dho = report
         .stations
         .iter()

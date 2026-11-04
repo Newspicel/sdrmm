@@ -50,7 +50,7 @@ async fn a_plain_dmr_channel_wired_to_a_log_records_calls_with_clips() {
         },
     });
     let workspace = put_active_workspace(&app, &snapshot).await;
-    let mut settings = sdrmm_wire::ChannelSettings::default_for("dmr").expect("dmr is built in");
+    let mut settings = sdrmm_channels::default_settings("dmr").expect("dmr is built in");
     settings.frequency_hz = 145_000_000.0;
     let (status, _) = request(
         app.clone(),
@@ -74,8 +74,11 @@ async fn a_plain_dmr_channel_wired_to_a_log_records_calls_with_clips() {
             assert_eq!(status, StatusCode::OK);
             let listed: sdrmm_wire::DecoderLogResponse =
                 serde_json::from_slice(&body).expect("json");
-            if let Some(sdrmm_wire::DecoderEvent::Call(call)) =
-                listed.entries.into_iter().next().map(|entry| entry.event)
+            if let Some(call) = listed
+                .entries
+                .into_iter()
+                .next()
+                .and_then(|entry| entry.event.read::<sdrmm_wire::VoiceCall>())
             {
                 return call;
             }

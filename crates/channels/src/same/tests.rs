@@ -1,4 +1,8 @@
-use sdrmm_wire::{ChannelParams, DecoderEvent, SameBody, SameLocation, SameMessage, SameParams};
+use crate::same::SameBody;
+use crate::same::SameLocation;
+use crate::same::SameMessage;
+use crate::same::SameParams;
+use sdrmm_wire::ChannelParams;
 
 use super::*;
 use crate::{synth, testutil::settings};
@@ -6,7 +10,7 @@ use crate::{synth, testutil::settings};
 const TORNADO: &str = "ZCZC-WXR-TOR-048201-048157+0030-1232200-KEC55/NW-";
 
 fn channel() -> SameChannel {
-    let params = ChannelParams::Same(SameParams::default());
+    let params = ChannelParams::new("same", &SameParams::default()).expect("same settings");
     SameChannel::new(ChannelCtx { input_rate: RATE }, settings(params)).expect("opens")
 }
 
@@ -19,10 +23,7 @@ fn messages(iq: &[Complex<f32>]) -> (Vec<SameMessage>, u32) {
     let decoded = out
         .events
         .iter()
-        .filter_map(|event| match event {
-            DecoderEvent::Same(message) => Some(message.clone()),
-            _ => None,
-        })
+        .filter_map(|event| event.read::<SameMessage>())
         .collect();
     (decoded, channel.rejected())
 }
@@ -127,7 +128,7 @@ fn a_bandwidth_outside_the_channel_is_refused() {
     assert!(
         SameChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Same(params))
+            settings(ChannelParams::of(&params).expect("settings"))
         )
         .is_err()
     );
@@ -143,6 +144,8 @@ fn the_occupied_band_is_the_bandwidth_around_the_carrier() {
 
 #[test]
 fn other_params_are_refused() {
-    let settings = settings(ChannelParams::Nfm(sdrmm_wire::NfmParams::default()));
+    let settings = settings(
+        ChannelParams::new("nfm", &crate::nfm::NfmParams::default()).expect("nfm settings"),
+    );
     assert!(SameChannel::new(ChannelCtx { input_rate: RATE }, settings).is_err());
 }

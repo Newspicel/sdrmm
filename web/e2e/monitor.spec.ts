@@ -142,13 +142,14 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
             .get(`/api/decoderlog?sink=${nodeIds.log}&kind=transmission`)
             .then((response) => response.json());
           for (const row of result.entries) {
+            const transmission = row.event.data as { state?: string };
             if (row.event.kind === "transmission") {
-              expect(row.event.data.state).not.toBe("started");
+              expect(transmission.state).not.toBe("started");
             }
-            if (row.event.kind === "transmission" && row.event.data.audio) {
+            if (row.event.kind === "transmission" && row.view?.clip != null) {
               expect(row.node).toBe(nodeIds.monitor);
               expect(row.origin?.node).toBe(nodeIds.monitor);
-              audioUrl = row.event.data.audio.url;
+              audioUrl = row.view.clip.url;
               audioSummary = row.summary;
               audioFrequency = row.freq_hz;
             }

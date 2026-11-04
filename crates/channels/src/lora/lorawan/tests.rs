@@ -1,4 +1,5 @@
-use sdrmm_wire::{LoraKey, LorawanMessageType};
+use crate::lora::LoraKey;
+use crate::lora::LorawanMessageType;
 
 use super::{Keys, decode, join_request, mac, uplink};
 use crate::crypto::{self, Aes};

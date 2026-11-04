@@ -41,7 +41,7 @@ macro_rules! processors {
                     $crate::patch::Face::fit(400),
                     [
                         array_in,
-                        events_out("True bearings", Df),
+                        events_out("True bearings", DF),
                         bearing_out("Live bearing to steer a beam")
                     ]
                 ),
@@ -72,8 +72,8 @@ macro_rules! processors {
                     [
                         array_in,
                         tx_in("GPS node fixed at the transmitter"),
-                        adsb_in("ADS-B decoder used as truth"),
-                        events_out("Track events", Radar, RadarSites)
+                        truth_in("Tracks with altitude used as truth"),
+                        events_out("Track events", RADAR, RADAR_SITES)
                     ]
                 ),
                 (

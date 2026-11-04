@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 mod weather;
 
 use std::{f64::consts::TAU, sync::LazyLock};
@@ -7,14 +12,11 @@ use sdrmm_dsp::{
     BitSync, DcBlocker, Decimator, Descrambler, FmDemod, HdlcDeframer, NrziDecoder, RealDecimator,
     Scrambler, ToneCorrelator, crc16_x25, design_bandpass, design_lowpass, hdlc_repair,
 };
-use sdrmm_wire::{
-    AprsMode, AprsPacket, AprsParams, ChannelDescriptor, ChannelParams, ChannelSettings,
-    DecoderEvent, DecoderFamily, EventKind,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx, TxPayload,
-    check_input_rate,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx, NativeChannel,
+    TxPayload, check_input_rate,
     tx::{Burst, TxQueue},
 };
 
@@ -50,7 +52,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: 48_000.0,
     has_audio: false,
-    emits: vec![EventKind::Aprs],
+    emits: vec![EventKind::named("aprs")],
     ..ChannelDescriptor::default()
 });
 
@@ -211,14 +213,8 @@ impl Slicer {
     }
 }
 
-fn params(settings: &ChannelSettings) -> Result<&AprsParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Aprs(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "aprs channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<AprsParams, ChannelError> {
+    crate::settings_of::<AprsParams>(settings)
 }
 
 fn check_params(p: &AprsParams) -> Result<(), ChannelError> {
@@ -247,15 +243,14 @@ pub(crate) fn channel_filter(p: &AprsParams) -> Result<ChannelFilter, ChannelErr
     )))
 }
 
-impl ChannelRx for AprsChannel {
+impl NativeChannel for AprsChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
-        check_params(p)?;
+        check_params(&p)?;
         Ok(Self {
             mode: p.mode,
             demod: FmDemod::new(ctx.input_rate, DEVIATION_HZ),
@@ -266,10 +261,12 @@ impl ChannelRx for AprsChannel {
             clock: 0,
         })
     }
+}
 
+impl ChannelRx for AprsChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
-        check_params(p)?;
+        check_params(&p)?;
         if p.mode != self.mode {
             self.mode = p.mode;
             self.slicer = Slicer::new(p.mode, DESCRIPTOR.input_rate_hz);
@@ -295,7 +292,7 @@ impl ChannelRx for AprsChannel {
                 continue;
             }
             self.recent.push((clock, repaired));
-            out.events.push(DecoderEvent::Aprs(packet));
+            out.events.push(DecoderEvent::of(&packet));
         }
     }
 }
@@ -1198,7 +1195,7 @@ impl ChannelTx for AprsTx {
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
-        check_params(p)?;
+        check_params(&p)?;
         Ok(Self {
             rate: ctx.input_rate,
             mode: p.mode,
@@ -1216,7 +1213,7 @@ impl ChannelTx for AprsTx {
 
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
-        check_params(p)?;
+        check_params(&p)?;
         if p.mode != self.mode {
             self.mode = p.mode;
             self.pending.clear();
@@ -1322,9 +1319,52 @@ fn push_stuffed(bits: &mut Vec<bool>, bit: bool, ones: &mut u8) {
     }
 }
 
+const APRS_CHANNELS: &[HzRange] = &[HzRange::mhz(144.3, 145.2)];
+
+fn aprs_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "APRS / AX.25 (AFSK over FM)",
+            &[Modulation::Fm, Modulation::Fsk2],
+            HzRange::new(6_000.0, 20_000.0),
+            "audio tones inside an FM channel, at packet speed",
+        )
+        .symbol_rate(HzRange::new(1_000.0, 2_400.0))
+        .deviation(HzRange::new(1_500.0, 5_000.0))
+        .on(APRS_CHANNELS),
+    ]
+}
+
+fn aprs_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("aprs"))
+}
+
+pub(crate) fn aprs_decoder() -> Native<AprsParams> {
+    Native::new::<AprsChannel>(occupied_band)
+        .filter(channel_filter)
+        .home(144_800_000.0)
+        .tx::<AprsTx>()
+        .signatures(aprs_signatures)
+        .trial(aprs_trial)
+        .form(aprs_form)
+        .kinds(aprs_kinds)
+}
+
+pub(crate) fn aprs_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("mode", "Mode", Control::choice::<AprsMode>()).title("APRS mode"),
+        SettingField::bandwidth(&[12_500.0, 25_000.0]),
+    ]
+}
+
+fn aprs_kinds() -> Vec<KindSpec> {
+    vec![crate::aprs::aprs_kind()]
+}
+
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::NfmParams;
+    use crate::nfm::NfmParams;
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
     use crate::{synth::burst, testutil::settings};
@@ -1332,10 +1372,16 @@ mod tests {
     const RATE: f64 = 48_000.0;
 
     fn mode_settings(mode: AprsMode) -> ChannelSettings {
-        settings(ChannelParams::Aprs(AprsParams {
-            mode,
-            ..AprsParams::default()
-        }))
+        settings(
+            ChannelParams::new(
+                "aprs",
+                &AprsParams {
+                    mode,
+                    ..AprsParams::default()
+                },
+            )
+            .expect("aprs settings"),
+        )
     }
 
     fn channel(mode: AprsMode) -> AprsChannel {
@@ -1394,9 +1440,9 @@ mod tests {
     fn packets(out: &ChannelOutputs) -> Vec<AprsPacket> {
         out.events
             .iter()
-            .map(|e| match e {
-                DecoderEvent::Aprs(p) => p.clone(),
-                other => panic!("unexpected event {other:?}"),
+            .map(|e| {
+                e.read::<AprsPacket>()
+                    .unwrap_or_else(|| panic!("unexpected event {e:?}"))
             })
             .collect()
     }
@@ -1930,10 +1976,16 @@ mod tests {
     #[test]
     fn apply_switches_the_physical_layer() {
         let mut chan = channel(AprsMode::Afsk1200);
-        chan.apply(settings(ChannelParams::Aprs(AprsParams {
-            mode: AprsMode::G3ruh9600,
-            ..AprsParams::default()
-        })))
+        chan.apply(settings(
+            ChannelParams::new(
+                "aprs",
+                &AprsParams {
+                    mode: AprsMode::G3ruh9600,
+                    ..AprsParams::default()
+                },
+            )
+            .expect("aprs settings"),
+        ))
         .unwrap();
         let mut out = ChannelOutputs::default();
         chan.process(&keyed(AprsMode::G3ruh9600, &position_frame()), &mut out);
@@ -2058,10 +2110,16 @@ mod tests {
         for bad in [0.0, -1.0, 48_000.0, f64::NAN] {
             let built = AprsChannel::new(
                 ChannelCtx { input_rate: RATE },
-                settings(ChannelParams::Aprs(AprsParams {
-                    mode: AprsMode::Afsk1200,
-                    bandwidth_hz: bad,
-                })),
+                settings(
+                    ChannelParams::new(
+                        "aprs",
+                        &AprsParams {
+                            mode: AprsMode::Afsk1200,
+                            bandwidth_hz: bad,
+                        },
+                    )
+                    .expect("aprs settings"),
+                ),
             );
             assert!(
                 matches!(built, Err(ChannelError::InvalidSettings(_))),
@@ -2073,11 +2131,13 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(AprsMode::Afsk1200);
-        let err = chan.apply(settings(ChannelParams::Nfm(NfmParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = AprsChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Nfm(NfmParams::default())),
+            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -2088,7 +2148,7 @@ mod tests {
             ChannelCtx {
                 input_rate: 240_000.0,
             },
-            settings(ChannelParams::Aprs(AprsParams::default())),
+            settings(ChannelParams::new("aprs", &AprsParams::default()).expect("aprs settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -2229,7 +2289,7 @@ mod tests {
     fn tx_rejects_mismatched_params_and_input_rate() {
         let built = AprsTx::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Nfm(NfmParams::default())),
+            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
         let built = AprsTx::new(

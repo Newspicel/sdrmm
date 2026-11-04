@@ -1,10 +1,10 @@
-import type { EventOutputTarget } from "../../lib/types";
+import type { EventOutputTarget, FeedEntry } from "../../lib/types";
 
 export const OUTPUT_SERVICES = [
   { value: "recordings", label: "Recordings" },
   { value: "desktop", label: "Notification" },
   { value: "csv", label: "CSV file" },
-  { value: "beast", label: "ADS-B Beast TCP" },
+  { value: "feed", label: "Feed" },
   { value: "webhook", label: "Webhook" },
   { value: "matrix", label: "Matrix" },
   { value: "mqtt", label: "MQTT" },
@@ -13,10 +13,28 @@ export const OUTPUT_SERVICES = [
   { value: "tunnel", label: "Network interface" },
 ] as const;
 
-export function outputServices(notify: boolean, current: EventOutputTarget["service"]) {
+export function outputServices(
+  notify: boolean,
+  current: EventOutputTarget["service"],
+  feeds: readonly FeedEntry[] = [],
+) {
   return OUTPUT_SERVICES.filter(
-    (option) => option.value !== "desktop" || notify || current === "desktop",
+    (option) =>
+      option.value === current ||
+      ((option.value !== "desktop" || notify) && (option.value !== "feed" || feeds.length > 0)),
   );
+}
+
+type FeedTarget = Extract<EventOutputTarget, { service: "feed" }>;
+
+/** A closed feed server in `feed`'s format on its usual address. */
+export function feedTarget(feed: FeedEntry | undefined): FeedTarget {
+  return {
+    service: "feed",
+    format: feed?.format ?? "",
+    address: feed?.default_address ?? "",
+    enabled: false,
+  };
 }
 
 export const WEBHOOK_FORMATS = [
@@ -24,15 +42,18 @@ export const WEBHOOK_FORMATS = [
   { value: "discord", label: "Discord" },
 ] as const;
 
-export function newOutputTarget(service: EventOutputTarget["service"]): EventOutputTarget {
+export function newOutputTarget(
+  service: EventOutputTarget["service"],
+  feeds: readonly FeedEntry[] = [],
+): EventOutputTarget {
   switch (service) {
     case "recordings":
     case "desktop":
       return { service };
     case "csv":
       return { service, file: "events" };
-    case "beast":
-      return { service, address: "127.0.0.1:30005", enabled: false };
+    case "feed":
+      return feedTarget(feeds[0]);
     case "tunnel":
       return { service, interface: "", address: "10.23.0.1", prefix: 24 };
     case "webhook":
@@ -55,8 +76,10 @@ export function eventOutputConfigured(target: EventOutputTarget): boolean {
       return true;
     case "csv":
       return target.file.trim() !== "";
-    case "beast":
-      return target.enabled === true && target.address.trim() !== "";
+    case "feed":
+      return (
+        target.enabled === true && target.address.trim() !== "" && (target.format ?? "") !== ""
+      );
     case "tunnel":
       return target.interface.trim() !== "";
     case "webhook":

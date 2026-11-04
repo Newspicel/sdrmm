@@ -6,7 +6,7 @@ use crate::{
     array::{ArrayTune, WorkspaceArray},
     channel::ChannelSettings,
     device::DeviceSettings,
-    patch::DmrChannelEntry,
+    patch::TrunkChannelEntry,
 };
 
 pub const WORKSPACE_STATE_VERSION: u32 = 2;
@@ -62,7 +62,7 @@ pub struct WorkspaceTrunk {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color_code: Option<u8>,
     #[serde(default)]
-    pub channels: Vec<DmrChannelEntry>,
+    pub channels: Vec<TrunkChannelEntry>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -263,7 +263,7 @@ fn lift_channels_to_the_top(document: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::channel::{ChannelParams, NfmParams};
+    use crate::channel::ChannelParams;
 
     fn channel(node: &str, frequency_hz: f64) -> WorkspaceChannel {
         WorkspaceChannel {
@@ -271,7 +271,7 @@ mod tests {
             settings: ChannelSettings {
                 frequency_hz,
                 squelch: crate::Squelch::Off,
-                params: ChannelParams::Nfm(NfmParams::default()),
+                params: ChannelParams::bare("probe"),
                 blanker: crate::audio::NoiseBlankerSettings::default(),
                 if_filter: Default::default(),
             },
@@ -294,7 +294,7 @@ mod tests {
             color_code,
             channels: channels
                 .iter()
-                .map(|(lcn, freq_hz)| DmrChannelEntry {
+                .map(|(lcn, freq_hz)| TrunkChannelEntry {
                     lcn: *lcn,
                     freq_hz: *freq_hz,
                 })

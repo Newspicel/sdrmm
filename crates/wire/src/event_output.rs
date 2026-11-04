@@ -30,7 +30,11 @@ pub enum EventOutputTarget {
     Csv {
         file: String,
     },
-    Beast {
+    /// A TCP listener streaming events encoded in a format a decoder registered.
+    #[serde(alias = "beast")]
+    Feed {
+        #[serde(default = "first_feed_format")]
+        format: String,
         address: String,
         #[serde(default)]
         enabled: bool,
@@ -83,8 +87,11 @@ impl std::fmt::Debug for EventOutputTarget {
             Self::Recordings => formatter.write_str("Recordings"),
             Self::Desktop => formatter.write_str("Desktop"),
             Self::Csv { file } => formatter.debug_struct("Csv").field("file", file).finish(),
-            Self::Beast { address, .. } => formatter
-                .debug_struct("Beast")
+            Self::Feed {
+                format, address, ..
+            } => formatter
+                .debug_struct("Feed")
+                .field("format", format)
                 .field("address", address)
                 .finish(),
             Self::Tunnel {
@@ -149,6 +156,15 @@ impl std::fmt::Debug for EventOutputTarget {
     }
 }
 
+/// Workspaces saved before feeds took a format carried only the first one there was.
+fn first_feed_format() -> String {
+    crate::decode::catalog()
+        .feeds()
+        .first()
+        .map(|feed| feed.format.clone())
+        .unwrap_or_default()
+}
+
 impl Default for EventOutputTarget {
     fn default() -> Self {
         Self::Webhook {
@@ -162,8 +178,8 @@ impl EventOutputTarget {
     #[must_use]
     pub fn accepts(&self) -> KindSet {
         match self {
-            Self::Beast { .. } => KindSet::EMPTY.with(EventKind::Adsb),
-            Self::Tunnel { .. } => KindSet::EMPTY.with(EventKind::BroadcastData),
+            Self::Feed { format, .. } => crate::decode::catalog().feed_kinds(format),
+            Self::Tunnel { .. } => KindSet::EMPTY.with(EventKind::BROADCAST_DATA),
             Self::Recordings => KindSet::with_cap(Capability::Clip),
             Self::Desktop
             | Self::Csv { .. }
@@ -193,7 +209,9 @@ impl EventOutputTarget {
         match self {
             Self::Recordings | Self::Desktop => true,
             Self::Csv { file } => !file.trim().is_empty(),
-            Self::Beast { address, enabled } => *enabled && !address.is_empty(),
+            Self::Feed {
+                address, enabled, ..
+            } => *enabled && !address.is_empty(),
             Self::Tunnel { interface, .. } => !interface.is_empty(),
             Self::Webhook { url, .. } => !url.trim().is_empty(),
             Self::Matrix {
@@ -227,12 +245,15 @@ impl EventOutputTarget {
         match self {
             Self::Recordings | Self::Desktop => true,
             Self::Csv { file } => file.is_empty() || valid_csv_file(file),
-            Self::Beast { address, .. } => {
-                address.is_empty()
-                    || (address.len() <= crate::MAX_NETWORK_ADDRESS_LEN
-                        && address
-                            .parse::<std::net::SocketAddr>()
-                            .is_ok_and(|address| address.port() != 0))
+            Self::Feed {
+                format, address, ..
+            } => {
+                !format.is_empty()
+                    && (address.is_empty()
+                        || (address.len() <= crate::MAX_NETWORK_ADDRESS_LEN
+                            && address
+                                .parse::<std::net::SocketAddr>()
+                                .is_ok_and(|address| address.port() != 0)))
             }
             Self::Tunnel {
                 interface,
@@ -376,8 +397,9 @@ pub struct EventOutputNode {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct BeastExportStatus {
+pub struct FeedStatus {
     pub node: String,
+    pub format: String,
     pub address: String,
     pub listening: bool,
     pub clients: u32,
@@ -396,6 +418,7 @@ pub struct EventOutputStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::decode::test_kinds;
 
     fn matrix(homeserver_url: &str, room_id: &str, access_token: &str) -> EventOutputTarget {
         EventOutputTarget::Matrix {
@@ -421,13 +444,18 @@ mod tests {
         }
     }
 
+    fn feed(address: &str, enabled: bool) -> EventOutputTarget {
+        EventOutputTarget::Feed {
+            format: test_kinds::FEED.to_owned(),
+            address: address.to_owned(),
+            enabled,
+        }
+    }
+
     #[test]
-    fn beast_requires_an_explicit_listener_and_enable() {
+    fn a_feed_requires_an_explicit_listener_and_enable() {
         for address in ["127.0.0.1:30005", "0.0.0.0:30005", "[::1]:30005"] {
-            let target = EventOutputTarget::Beast {
-                address: address.to_owned(),
-                enabled: true,
-            };
+            let target = feed(address, true);
             assert!(target.valid() && target.configured());
             assert_eq!(
                 serde_json::from_str::<EventOutputTarget>(&serde_json::to_string(&target).unwrap())
@@ -436,21 +464,28 @@ mod tests {
             );
         }
         for address in ["127.0.0.1:0", "localhost", "::1:30005", "host:30005"] {
-            assert!(
-                !EventOutputTarget::Beast {
-                    address: address.to_owned(),
-                    enabled: true
-                }
-                .valid()
-            );
+            assert!(!feed(address, true).valid());
         }
+        assert!(!feed("127.0.0.1:30005", false).configured());
         assert!(
-            !EventOutputTarget::Beast {
+            !EventOutputTarget::Feed {
+                format: String::new(),
                 address: "127.0.0.1:30005".to_owned(),
-                enabled: false
+                enabled: true,
             }
-            .configured()
+            .valid()
         );
+    }
+
+    #[test]
+    fn an_old_beast_entry_loads_as_the_first_feed() {
+        test_kinds::install();
+        let old: EventOutputTarget = serde_json::from_str(
+            r#"{"service":"beast","address":"127.0.0.1:30005","enabled":true}"#,
+        )
+        .expect("old beast entry");
+        assert_eq!(old, feed("127.0.0.1:30005", true));
+        assert_eq!(old.accepts(), KindSet::EMPTY.with(test_kinds::STATION));
     }
 
     #[test]

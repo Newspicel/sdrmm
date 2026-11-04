@@ -1,5 +1,5 @@
-use sdrmm_wire::frame::{RangeDopplerOwned, SurfaceFrame};
-use sdrmm_wire::radar::{SURFACE_DB_MAX, SURFACE_DB_MIN};
+use sdrmm_wire::{frame::RangeDopplerOwned, frame::SurfaceFrame};
+use sdrmm_wire::{radar::SURFACE_DB_MAX, radar::SURFACE_DB_MIN};
 
 use super::plan::RadarPlan;
 use super::report::RadarPod;

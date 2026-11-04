@@ -5,8 +5,8 @@ use std::{
 };
 
 use sdrmm_wire::{
-    PositionFix, PositionSource,
-    phone::{PHONE_NOT_PAIRED, PHONE_OFFLINE, PHONE_SILENT, POSE_SILENT_AFTER_MS},
+    PositionFix, PositionSource, phone::PHONE_NOT_PAIRED, phone::PHONE_OFFLINE,
+    phone::PHONE_SILENT, phone::POSE_SILENT_AFTER_MS,
 };
 use tokio::time::Instant;
 

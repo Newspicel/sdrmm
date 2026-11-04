@@ -1,5 +1,5 @@
+use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
-use sdrmm_wire::DataLinkMessage;
 
 use super::equivalence::{CALLS, offset_transmission, run_ours, run_xng};
 use crate::datalink::hex;

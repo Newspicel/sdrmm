@@ -1,4 +1,9 @@
-use sdrmm_wire::{BleAddress, BleAddressKind, BleAdi, BleAuxPointer, BlePdu, BlePhy};
+use crate::ble::BleAddress;
+use crate::ble::BleAddressKind;
+use crate::ble::BleAdi;
+use crate::ble::BleAuxPointer;
+use crate::ble::BlePdu;
+use crate::ble::BlePhy;
 
 pub(crate) const ADDRESS_BYTES: usize = 6;
 const PRIMARY_CHANNELS: std::ops::RangeInclusive<u8> = 37..=39;

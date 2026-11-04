@@ -12,7 +12,7 @@ function row(over: Partial<LogRow> = {}): LogRow {
     callsign: null,
     summary: "2620001 → TG 9",
     freqHz: 439_000_000,
-    source: "dmr",
+    source: "digital",
     live: true,
     fields: [
       { label: "Talkgroup", value: { type: "text", value: "9" } },

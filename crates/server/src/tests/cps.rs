@@ -5,9 +5,10 @@ use std::{
 };
 
 use sdrmm_cps::{CpsError, SerialBackend, SerialLink};
-use sdrmm_wire::cps::{
-    CpsCodeplugDetail, CpsConvertResponse, CpsJob, CpsJobState, CpsLibraryResponse,
-    CpsPortsResponse, IssueScope, RadioIdent, RadioModelsResponse,
+use sdrmm_wire::{
+    cps::CpsCodeplugDetail, cps::CpsConvertResponse, cps::CpsJob, cps::CpsJobState,
+    cps::CpsLibraryResponse, cps::CpsPortsResponse, cps::IssueScope, cps::RadioIdent,
+    cps::RadioModelsResponse,
 };
 
 use super::*;

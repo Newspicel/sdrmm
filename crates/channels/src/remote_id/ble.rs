@@ -1,5 +1,9 @@
+use crate::ble::BlePhy;
+use crate::remote_id::RemoteIdFrame;
+use crate::remote_id::RemoteIdPhy;
+use crate::remote_id::RemoteIdTransport;
 use sdrmm_modem::ble::{Packet, Sink, channel_index};
-use sdrmm_wire::{BlePhy, DecoderEvent, RemoteIdFrame, RemoteIdPhy, RemoteIdTransport};
+use sdrmm_wire::DecoderEvent;
 
 use super::{
     odid::{APP_CODE, SERVICE_UUID},
@@ -59,7 +63,7 @@ pub(crate) struct Events<'a> {
 impl Sink for Events<'_> {
     fn packet(&mut self, packet: Packet<'_>) {
         if let Some(frame) = frame(&packet, self.tracker) {
-            self.events.push(DecoderEvent::RemoteId(frame));
+            self.events.push(DecoderEvent::of(&frame));
         }
     }
 }

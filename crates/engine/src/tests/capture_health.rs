@@ -126,13 +126,16 @@ fn enabled(name: &str) -> bool {
 fn channel_settings(index: usize) -> ChannelSettings {
     let params = if enabled("SDRMM_CAPTURE_MIXED") {
         match index % 4 {
-            0 => ChannelParams::Nfm(NfmParams::default()),
-            1 => ChannelParams::Wfm(sdrmm_wire::WfmParams::default()),
-            2 => ChannelParams::Am(sdrmm_wire::AmParams::default()),
-            _ => ChannelParams::Ssb(SsbParams::default()),
+            0 => ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+            1 => ChannelParams::new("wfm", &sdrmm_channels::WfmParams::default())
+                .expect("wfm settings"),
+            2 => {
+                ChannelParams::new("am", &sdrmm_channels::AmParams::default()).expect("am settings")
+            }
+            _ => ChannelParams::new("ssb", &SsbParams::default()).expect("ssb settings"),
         }
     } else {
-        ChannelParams::Nfm(NfmParams::default())
+        ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")
     };
     let spread = number("SDRMM_CAPTURE_SPREAD_HZ", 0.0);
     let count = number("SDRMM_CAPTURE_CHANNELS", 4usize);

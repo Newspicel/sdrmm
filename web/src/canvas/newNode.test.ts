@@ -30,18 +30,15 @@ describe("newNodeBody", () => {
   });
 
   it("starts a channel of the picked type", () => {
-    expect(newNodeBody(CATALOG, "channel", { channelType: "dmr" })).toEqual({
+    expect(newNodeBody(CATALOG, "channel", { channelType: "probe" })).toEqual({
       kind: "channel",
-      data: { channel_type: "dmr" },
+      data: { channel_type: "probe" },
     });
-    expect(newNodeBody(CATALOG, "channel")).toEqual({
-      kind: "channel",
-      data: { channel_type: "nfm" },
-    });
+    expect(newNodeBody(CATALOG, "channel")).toBeNull();
   });
 
   it.each(KINDS)("gives %s a body of its own kind", (kind) => {
-    const body = newNodeBody(CATALOG, kind);
+    const body = newNodeBody(CATALOG, kind, { channelType: "probe" });
     expect(body?.kind).toBe(kind);
     if (carriesSettings(CATALOG, kind)) {
       expect((body as { data?: unknown }).data).toBeDefined();

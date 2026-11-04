@@ -1,14 +1,18 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+use sdrmm_wire::{KindSpec, SettingField};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
+use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DataLinkMessage, DecoderEvent,
-    DecoderFamily, DscParams, EventKind,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
     datalink::{self, Quality},
 };
 
@@ -16,6 +20,62 @@ mod demod;
 mod frame;
 mod message;
 mod symbol;
+
+const DSC_HF: &[HzRange] = &[
+    HzRange::spot_khz(2_187.5, 1.0),
+    HzRange::spot_khz(4_207.5, 1.0),
+    HzRange::spot_khz(6_312.0, 1.0),
+    HzRange::spot_khz(8_414.5, 1.0),
+    HzRange::spot_khz(12_577.0, 1.0),
+    HzRange::spot_khz(16_804.5, 1.0),
+];
+
+const DSC_VHF: &[HzRange] = &[HzRange::spot_khz(156_525.0, 12.5)];
+
+fn dsc_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "DSC (HF)",
+            &[Modulation::Fsk2],
+            HzRange::new(100.0, 1_000.0),
+            "100 baud at a 170 Hz shift on a distress and calling frequency",
+        )
+        .symbol_rate(HzRange::about(100.0, 0.08))
+        .deviation(HzRange::new(50.0, 200.0))
+        .on(DSC_HF),
+        SignalSignature::new(
+            "DSC (VHF channel 70)",
+            &[Modulation::Fm, Modulation::Fsk2],
+            HzRange::new(6_000.0, 20_000.0),
+            "1200 baud audio tones inside an FM channel on marine channel 70",
+        )
+        .symbol_rate(HzRange::about(1_200.0, 0.06))
+        .deviation(HzRange::new(1_500.0, 5_000.0))
+        .on(DSC_VHF),
+    ]
+}
+
+fn dsc_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("dsc"))
+}
+
+pub(crate) fn dsc_decoder() -> Native<DscParams> {
+    Native::new::<DscChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(2_187_500.0)
+        .signatures(dsc_signatures)
+        .trial(dsc_trial)
+        .form(dsc_form)
+        .kinds(dsc_kinds)
+}
+
+pub(crate) fn dsc_form() -> Vec<SettingField> {
+    Vec::new()
+}
+
+fn dsc_kinds() -> Vec<KindSpec> {
+    vec![crate::datalink::dsc_kind()]
+}
 
 #[cfg(test)]
 mod equivalence;
@@ -44,7 +104,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Dsc],
+    emits: vec![EventKind::named("dsc")],
     ..ChannelDescriptor::default()
 });
 
@@ -207,14 +267,8 @@ pub struct DscChannel {
     messages: Vec<DscMessage>,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&DscParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Dsc(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "dsc channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<DscParams, ChannelError> {
+    crate::settings_of::<DscParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -225,11 +279,10 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     datalink::channel_filter(RATE, HALF_BANDWIDTH)
 }
 
-impl ChannelRx for DscChannel {
+impl NativeChannel for DscChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         params(&settings)?;
@@ -238,7 +291,9 @@ impl ChannelRx for DscChannel {
             messages: Vec::new(),
         })
     }
+}
 
+impl ChannelRx for DscChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings).map(|_| ())
     }
@@ -246,9 +301,9 @@ impl ChannelRx for DscChannel {
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.decoder.process(iq, &mut self.messages);
         out.events.extend(
-            self.messages
-                .drain(..)
-                .map(|message| DecoderEvent::Dsc(to_datalink(&message))),
+            self.messages.drain(..).map(|message| {
+                DecoderEvent::tagged(EventKind::named("dsc"), &to_datalink(&message))
+            }),
         );
     }
 }
@@ -257,6 +312,7 @@ impl ChannelRx for DscChannel {
 mod tests {
     use super::*;
     use crate::testutil::{cf32_le, run_events, settings};
+    use sdrmm_wire::ChannelParams;
 
     const DISTRESS: &[i32] = &[
         112, 112, 25, 58, 5, 99, 70, 107, 4, 52, 60, 13, 7, 12, 52, 109, 127, 52, 127, 127,
@@ -290,16 +346,13 @@ mod tests {
         let iq = modulate::call_iq(&symbols, RATE, 0.0, 0.8);
         let mut channel = DscChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Dsc(DscParams::default())),
+            settings(ChannelParams::new("dsc", &DscParams::default()).expect("dsc settings")),
         )
         .expect("channel");
         let events = run_events(&mut channel, &iq);
         let message = events
             .iter()
-            .find_map(|event| match event {
-                DecoderEvent::Dsc(message) => Some(message),
-                _ => None,
-            })
+            .find_map(|event| crate::datalink::read(event, "dsc"))
             .expect("DSC message");
         assert!(message.crc_ok);
         assert_eq!(message.message_type, "distress_alert");

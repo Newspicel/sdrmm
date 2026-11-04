@@ -1,4 +1,5 @@
-use sdrmm_wire::{MeshcorePayloadType, MeshcoreRoute};
+use crate::lora::MeshcorePayloadType;
+use crate::lora::MeshcoreRoute;
 
 use crate::datalink::hex;
 

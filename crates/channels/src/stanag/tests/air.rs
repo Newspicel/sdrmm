@@ -1,5 +1,7 @@
+use crate::stanag::StanagInterleave;
+use crate::stanag::StanagModem;
+use crate::stanag::StanagRate;
 use num_complex::Complex;
-use sdrmm_wire::{StanagInterleave, StanagModem, StanagRate};
 
 use super::{identify, run};
 use crate::ChannelRx;
@@ -311,7 +313,7 @@ fn audio(dir: &std::path::Path, stem: &str) -> Vec<Complex<f32>> {
 }
 
 fn expected(
-    reports: &[sdrmm_wire::StanagReport],
+    reports: &[crate::stanag::StanagReport],
     modem: Option<StanagModem>,
     rate: Option<StanagRate>,
     also: &[StanagModem],
@@ -335,7 +337,7 @@ fn names_the_sigidwiki_library() {
     let Some(dir) = crate::reference_data::stanag_sigid_dir() else {
         return;
     };
-    let window = usize::from(sdrmm_wire::STANAG_WINDOW_S) * 9_600;
+    let window = usize::from(crate::stanag::STANAG_WINDOW_S) * 9_600;
     let mut misses = Vec::new();
     for &(stem, modem, rate, also) in LIBRARY {
         let iq = audio(&dir, stem);

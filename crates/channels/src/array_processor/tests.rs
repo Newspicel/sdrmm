@@ -169,20 +169,20 @@ fn output_slots_report_an_empty_pool() {
     let mut out = ProcessorOutput::new(OutputSlots {
         report: None,
         surface: None,
-        events: &mut events,
+        bearings: &mut events,
         lanes: &mut [],
     });
     assert!(out.report().is_none());
     out.publish_report();
     assert!(out.surface().is_none());
-    assert!(out.event().is_none());
-    out.publish_event();
+    assert!(out.bearing().is_none());
+    out.publish_bearing();
     let tally = out.tally();
     assert!(!tally.report && !tally.surface);
-    assert_eq!(tally.events, 0);
+    assert_eq!(tally.bearings, 0);
     assert_eq!(tally.dropped_reports, 1);
     assert_eq!(tally.dropped_surfaces, 1);
-    assert_eq!(tally.dropped_events, 1);
+    assert_eq!(tally.dropped_bearings, 1);
 }
 
 #[test]
@@ -211,8 +211,8 @@ fn output_slots_hand_out_one_report_and_bounded_events() {
         out.publish_report();
         assert!(out.report().is_none());
         for _ in 0..3 {
-            if out.event().is_some() {
-                out.publish_event();
+            if out.bearing().is_some() {
+                out.publish_bearing();
             }
         }
         out.steer(Steer {
@@ -222,8 +222,8 @@ fn output_slots_hand_out_one_report_and_bounded_events() {
     });
     assert!(tally.report);
     assert_eq!(tally.dropped_reports, 1);
-    assert_eq!(tally.events, 2);
-    assert_eq!(tally.dropped_events, 1);
+    assert_eq!(tally.bearings, 2);
+    assert_eq!(tally.dropped_bearings, 1);
     assert_eq!(tally.steer.map(|steer| steer.relative_deg), Some(42.0));
 }
 

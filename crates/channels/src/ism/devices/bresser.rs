@@ -1,5 +1,6 @@
+use crate::ism::IsmIntegrity;
+use crate::ism::IsmMessage;
 use sdrmm_dsp::lfsr_digest16;
-use sdrmm_wire::{IsmIntegrity, IsmMessage};
 
 use crate::ism::{
     bits::{Bits, add_bytes},

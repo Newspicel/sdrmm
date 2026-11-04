@@ -1,4 +1,4 @@
-use sdrmm_wire::TetrapolBand;
+use crate::tetrapol::TetrapolBand;
 
 use super::coding::{Block, Decoded, Decoder, FRAME_BITS, Limits, SCRAMBLING_CODES};
 

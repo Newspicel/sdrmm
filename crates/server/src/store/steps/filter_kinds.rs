@@ -1,9 +1,11 @@
-use sdrmm_wire::{EventKind, NodeKind, WorkspaceNoticeKind};
+use sdrmm_wire::{NodeKind, WorkspaceNoticeKind};
 use serde_json::Value;
 
 use super::graph_nodes;
 use crate::store::node_kind;
 
+/// Drops filter entries that name no kind at all. A kind no decoder registers right now stays:
+/// the plugin that offers it may load later.
 pub(super) fn drop_unknown_filter_kinds(snapshot: &mut Value) -> Vec<WorkspaceNoticeKind> {
     graph_nodes(snapshot)
         .filter(|node| node_kind(node) == Some(NodeKind::EventFilter.as_str()))
@@ -16,7 +18,7 @@ fn drop_unknown(node: &mut Value) -> Option<WorkspaceNoticeKind> {
     let kinds = node.get_mut("data")?.get_mut("kinds")?.as_array_mut()?;
     let mut dropped = Vec::new();
     kinds.retain(|kind| {
-        let known = kind.as_str().and_then(EventKind::parse).is_some();
+        let known = kind.as_str().is_some_and(|tag| !tag.is_empty());
         if !known {
             dropped.push(
                 kind.as_str()

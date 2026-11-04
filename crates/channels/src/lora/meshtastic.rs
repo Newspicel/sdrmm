@@ -7,7 +7,11 @@ mod telemetry;
 #[cfg(test)]
 mod tests;
 
-use sdrmm_wire::{LoraKey, MeshtasticEncryption, MeshtasticPacket};
+use crate::lora::LoraKey;
+
+use crate::lora::MeshtasticEncryption;
+
+use crate::lora::MeshtasticPacket;
 
 use self::content::Data;
 use crate::crypto::{self, Aes};

@@ -149,6 +149,44 @@ pub fn design_rrc(sps: f64, alpha: f64, span: usize) -> Vec<f32> {
     h.into_iter().map(|v| v as f32).collect()
 }
 
+/// Root-raised-cosine with an exact tap count, scaled to unit energy rather than unity DC gain,
+/// so a matched filter's output SNR does not depend on how many taps it has.
+#[must_use]
+pub fn design_rrc_unit_energy(sps: f64, alpha: f64, taps: usize) -> Vec<f32> {
+    let center = (taps as f64 - 1.0) / 2.0;
+    let h: Vec<f64> = (0..taps)
+        .map(|k| rrc_pulse((k as f64 - center) / sps, alpha))
+        .collect();
+    let energy = h.iter().map(|v| v * v).sum::<f64>().sqrt();
+    h.into_iter().map(|v| (v / energy) as f32).collect()
+}
+
+/// Windowed-sinc lowpass with an exact tap count under a symmetric four-term Blackman-Harris
+/// window. Its stopband sits near -92 dB, far below [`design_lowpass`]'s Blackman.
+#[must_use]
+pub fn design_lowpass_blackman_harris(taps: usize, cutoff: f64) -> Vec<f32> {
+    let center = (taps as f64 - 1.0) / 2.0;
+    let h: Vec<f64> = (0..taps)
+        .map(|k| {
+            let t = k as f64 - center;
+            let sinc = if t.abs() < 1e-12 {
+                2.0 * cutoff
+            } else {
+                (2.0 * PI * cutoff * t).sin() / (PI * t)
+            };
+            sinc * blackman_harris_symmetric(k, taps)
+        })
+        .collect();
+    let sum: f64 = h.iter().sum();
+    h.into_iter().map(|v| (v / sum) as f32).collect()
+}
+
+fn blackman_harris_symmetric(k: usize, n: usize) -> f64 {
+    const A: [f64; 4] = [0.35875, 0.48829, 0.14128, 0.01168];
+    let x = 2.0 * PI * k as f64 / (n as f64 - 1.0);
+    A[0] - A[1] * x.cos() + A[2] * (2.0 * x).cos() - A[3] * (3.0 * x).cos()
+}
+
 #[must_use]
 pub fn design_rds_shaping(sps: f64, span: usize) -> Vec<f32> {
     normalized(&rds_taps(sps, span, false))
@@ -295,6 +333,36 @@ mod tests {
             let gain = tone_gain(&h, f);
             assert!(gain < 0.01, "stopband gain {gain} at f={f}");
         }
+    }
+
+    #[test]
+    fn unit_energy_rrc_has_unit_energy_and_the_shape_of_the_unity_gain_one() {
+        let h = design_rrc_unit_energy(8.0, 0.35, 81);
+        let energy: f64 = h.iter().map(|&v| f64::from(v).powi(2)).sum();
+        assert!((energy - 1.0).abs() < 1e-6, "energy {energy}");
+        let reference = design_rrc(8.0, 0.35, 5);
+        assert_eq!(reference.len(), h.len());
+        let scale = h[40] / reference[40];
+        for (a, b) in h.iter().zip(&reference) {
+            assert!((a - b * scale).abs() < 1e-6, "{a} vs {b}");
+        }
+    }
+
+    #[test]
+    fn unit_energy_rrc_handles_the_quarter_symbol_singularity() {
+        let h = design_rrc_unit_energy(4.0, 1.0, 33);
+        assert!(h.iter().all(|v| v.is_finite()));
+        assert!(h.iter().zip(h.iter().rev()).all(|(a, b)| a == b));
+    }
+
+    #[test]
+    fn blackman_harris_lowpass_is_unit_gain_symmetric_and_deep_in_the_stopband() {
+        let h = design_lowpass_blackman_harris(121, 0.1);
+        let dc: f64 = h.iter().map(|&v| f64::from(v)).sum();
+        assert!((dc - 1.0).abs() < 1e-5, "dc {dc}");
+        assert!(h.iter().zip(h.iter().rev()).all(|(a, b)| a == b));
+        assert!(response_db(&h, 0.02) > -0.1);
+        assert!(response_db(&h, 0.2) < -90.0, "{}", response_db(&h, 0.2));
     }
 
     #[test]

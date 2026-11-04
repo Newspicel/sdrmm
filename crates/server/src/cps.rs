@@ -10,8 +10,9 @@ use sdrmm_cps::{
     CpsError, Image, Progress, RadioModel, SerialBackend, SystemSerial, Transfer, TransferControl,
     image::changed_blocks, model,
 };
-use sdrmm_wire::cps::{
-    Codeplug, CpsCodeplugRequest, CpsJob, CpsJobKind, CpsJobState, CpsPort, CpsUser, RadioIdent,
+use sdrmm_wire::{
+    cps::Codeplug, cps::CpsCodeplugRequest, cps::CpsJob, cps::CpsJobKind, cps::CpsJobState,
+    cps::CpsPort, cps::CpsUser, cps::RadioIdent,
 };
 
 use crate::store::{Store, StoreError};

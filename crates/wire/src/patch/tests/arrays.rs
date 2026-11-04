@@ -60,7 +60,11 @@ fn refusal_against(graph: &PatchGraph, descriptors: &[ChannelDescriptor]) -> Opt
 
 fn decoders() -> Vec<ChannelDescriptor> {
     let mut all = descriptors();
-    for (type_id, kind) in [("ais", EventKind::Ais), ("rtty", EventKind::Rtty)] {
+    crate::decode::test_kinds::install();
+    for (type_id, kind) in [
+        ("probe_track", crate::decode::test_kinds::TRACK),
+        ("probe_text", crate::decode::test_kinds::TEXT),
+    ] {
         all.push(ChannelDescriptor {
             type_id: type_id.to_owned(),
             emits: vec![kind],
@@ -312,7 +316,7 @@ fn steer_takes_only_a_live_bearing() {
     );
 
     for source in [
-        channel("src", "adsb"),
+        channel("src", "probe_station"),
         node("src", body("hunt")),
         node("src", body("df")),
     ] {
@@ -331,25 +335,25 @@ fn steer_takes_only_a_live_bearing() {
 }
 
 #[test]
-fn adsb_accepts_only_what_carries_adsb() {
+fn radar_truth_accepts_only_tracks() {
     for source in [
-        channel("src", "adsb"),
+        channel("src", "probe_track"),
         node("src", NodeBody::EventFilter(EventFilterNode::default())),
     ] {
         let truth = graph(
             vec![source, node("radar", body("passive_radar"))],
-            vec![edge(("src", "events"), ("radar", "adsb"))],
+            vec![edge(("src", "events"), ("radar", "truth"))],
         );
         assert_eq!(refusal(&truth), None);
     }
-    for source in [channel("src", "ais"), node("src", body("df"))] {
+    for source in [channel("src", "probe_station"), node("src", body("df"))] {
         let wrong = graph(
             vec![source, node("radar", body("passive_radar"))],
-            vec![edge(("src", "events"), ("radar", "adsb"))],
+            vec![edge(("src", "events"), ("radar", "truth"))],
         );
         assert_eq!(
             refusal(&wrong).as_deref(),
-            Some("Passive radar takes ADS-B")
+            Some("Passive radar takes tracks")
         );
     }
     let filtered = |decoder: &str| {
@@ -361,24 +365,24 @@ fn adsb_accepts_only_what_carries_adsb() {
             ],
             vec![
                 edge(("src", "events"), ("only", "events")),
-                edge(("only", "events"), ("radar", "adsb")),
+                edge(("only", "events"), ("radar", "truth")),
             ],
         )
     };
-    assert_eq!(refusal(&filtered("adsb")), None);
+    assert_eq!(refusal(&filtered("probe_track")), None);
     assert_eq!(
-        refusal(&filtered("rtty")).as_deref(),
-        Some("Passive radar takes ADS-B")
+        refusal(&filtered("probe_text")).as_deref(),
+        Some("Passive radar takes tracks")
     );
     let two_decoders = graph(
         vec![
-            channel("a", "adsb"),
-            channel("b", "adsb"),
+            channel("a", "probe_track"),
+            channel("b", "probe_track"),
             node("radar", body("passive_radar")),
         ],
         vec![
-            edge(("a", "events"), ("radar", "adsb")),
-            edge(("b", "events"), ("radar", "adsb")),
+            edge(("a", "events"), ("radar", "truth")),
+            edge(("b", "events"), ("radar", "truth")),
         ],
     );
     assert!(two_decoders.validate().is_ok());
@@ -397,7 +401,10 @@ fn triangulation_accepts_only_bearing_sources() {
         );
         assert!(bearings.validate().is_ok());
     }
-    for source in [channel("src", "adsb"), node("src", body("passive_radar"))] {
+    for source in [
+        channel("src", "probe_station"),
+        node("src", body("passive_radar")),
+    ] {
         let wrong = graph(
             vec![source, node("tri", body("triangulation"))],
             vec![edge(("src", "events"), ("tri", "events"))],
@@ -558,7 +565,7 @@ fn processor_ports_follow_the_contract() {
         [
             row("array", PortType::Array, In, One),
             row("tx", PortType::Position, In, One),
-            row("adsb", PortType::Events, In, Many),
+            row("truth", PortType::Events, In, Many),
             row("events", PortType::Events, Out, Many),
         ]
     );
@@ -656,13 +663,13 @@ fn a_processor_body_is_tagged_by_its_type_id() {
 fn a_wiring_refusal_reads_as_its_reason() {
     let error = refused(
         ("a", "events"),
-        ("b", "adsb"),
+        ("b", "truth"),
         Refusal::Takes {
             node: "Passive radar".to_owned(),
-            what: "ADS-B".to_owned(),
+            what: "tracks".to_owned(),
         },
     );
-    assert_eq!(error.to_string(), "Passive radar takes ADS-B");
+    assert_eq!(error.to_string(), "Passive radar takes tracks");
 }
 
 #[test]

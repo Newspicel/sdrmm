@@ -27,7 +27,7 @@ fn args() -> Result<Args, Box<dyn Error>> {
     if !(6..=9).contains(&args.len()) {
         return Err(USAGE.into());
     }
-    let mut settings = ChannelSettings::default_for(&args[5]).ok_or("unknown channel type")?;
+    let mut settings = sdrmm_channels::default_settings(&args[5]).ok_or("unknown channel type")?;
     if let Some(json) = args.get(6).filter(|json| !json.is_empty()) {
         let tagged = serde_json::json!({ "type": args[5], "settings": serde_json::from_str::<serde_json::Value>(json)? });
         settings.params = serde_json::from_value::<ChannelParams>(tagged)?;

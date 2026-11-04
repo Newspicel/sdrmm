@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::{Bptc128, Bptc196, CyclicCode, crc16_msb, rs129_parity};
+use sdrmm_dsp::{Bptc128, Bptc196, CyclicCode, crc16_msb, pack_msb, rs129_parity};
 
 use super::{bits, dibits, filler};
 use crate::dv::dmr::{
@@ -283,7 +283,7 @@ pub(crate) fn csbk_with_fid(
 pub(crate) fn csbk_bits(color_code: u8, head: &[bool], rate: f64) -> Vec<Complex<f32>> {
     let mut payload = head.to_vec();
     payload.resize(80, false);
-    let crc = !crc16_msb(0x1021, 0, &pack(&payload)) ^ 0xA5A5;
+    let crc = !crc16_msb(0x1021, 0, &pack_msb(&payload)) ^ 0xA5A5;
     payload.extend(bits(u64::from(crc), 16));
 
     let call = Call {
@@ -531,7 +531,7 @@ fn write(bits: &mut [bool], at: usize, width: usize, value: u64) {
 }
 
 fn with_crc(mut payload: Vec<bool>, mask: u16) -> Vec<bool> {
-    let crc = !crc16_msb(0x1021, 0, &pack(&payload)) ^ mask;
+    let crc = !crc16_msb(0x1021, 0, &pack_msb(&payload)) ^ mask;
     payload.extend(bits(u64::from(crc), 16));
     payload
 }
@@ -576,7 +576,7 @@ impl Noise {
 
 fn lc_with_parity(call: &Call, mask: [u8; 3]) -> Vec<bool> {
     let lc = call.link_control();
-    let parity = rs129_parity(&pack(&lc));
+    let parity = rs129_parity(&pack_msb(&lc));
     let mut out = lc;
     for (byte, m) in parity.into_iter().zip(mask) {
         out.extend(bits(u64::from(byte ^ m), 8));
@@ -586,7 +586,7 @@ fn lc_with_parity(call: &Call, mask: [u8; 3]) -> Vec<bool> {
 
 fn embedded_block(call: &Call) -> [bool; Bptc128::DATA_BITS] {
     let lc = call.link_control();
-    let checksum = pack(&lc).iter().map(|&b| u32::from(b)).sum::<u32>() % 31;
+    let checksum = pack_msb(&lc).iter().map(|&b| u32::from(b)).sum::<u32>() % 31;
     let mut out = [false; Bptc128::DATA_BITS];
     let (mut read, mut check_bit) = (0, 0);
     for (i, slot) in out.iter_mut().enumerate() {
@@ -632,12 +632,4 @@ fn voice_burst(call: &Call, embedded: Option<(u8, Vec<bool>)>, vocoder: &[bool; 
     }
     burst.extend(&vocoder[108..]);
     burst
-}
-
-fn pack(bits: &[bool]) -> Vec<u8> {
-    bits.as_chunks::<8>()
-        .0
-        .iter()
-        .map(|chunk| chunk.iter().fold(0u8, |acc, &b| acc << 1 | u8::from(b)))
-        .collect()
 }

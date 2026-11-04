@@ -1,7 +1,12 @@
-use sdrmm_wire::{
-    DectBand, DectCapability, DectCipherState, DectFrame, DectIdentity, DectSecurity, DectSide,
-    DectUpdate, DectVoice,
-};
+use crate::dect::DectBand;
+use crate::dect::DectCapability;
+use crate::dect::DectCipherState;
+use crate::dect::DectFrame;
+use crate::dect::DectIdentity;
+use crate::dect::DectSecurity;
+use crate::dect::DectSide;
+use crate::dect::DectUpdate;
+use crate::dect::DectVoice;
 
 use crate::dect::{
     burst::FRAME_SAMPLES,

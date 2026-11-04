@@ -1,6 +1,44 @@
+use crate::registry::Native;
+use sdrmm_wire::{ANY_MODULATION, HzRange, SignalSignature};
+use sdrmm_wire::{Control, KindSpec, SettingField};
+mod model;
+pub use model::*;
 mod burst;
 mod decode;
 mod demod;
+const IRIDIUM_BAND: &[HzRange] = &[HzRange::mhz(1_616.0, 1_626.5)];
+
+fn iridium_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "Iridium",
+            ANY_MODULATION,
+            HzRange::new(25_000.0, 50_000.0),
+            "8.3 ms bursts in a 41.67 kHz satellite channel",
+        )
+        .bursts(HzRange::new(6.0, 10.0))
+        .on(IRIDIUM_BAND),
+    ]
+}
+
+pub(crate) fn iridium_decoder() -> Native<IridiumParams> {
+    Native::new::<IridiumChannel>(occupied_band)
+        .filter(|p| Ok(channel_filter(p)))
+        .input_rate(input_rate)
+        .home(1_621_500_000.0)
+        .signatures(iridium_signatures)
+        .form(iridium_form)
+        .kinds(iridium_kinds)
+}
+
+pub(crate) fn iridium_form() -> Vec<SettingField> {
+    vec![SettingField::new("span", "Span", Control::choice::<IridiumSpan>()).title("Iridium span")]
+}
+
+fn iridium_kinds() -> Vec<KindSpec> {
+    vec![crate::datalink::iridium_kind()]
+}
+
 #[cfg(test)]
 mod encode;
 mod frame;
@@ -30,11 +68,9 @@ mod wideband;
 use std::sync::LazyLock;
 
 use crate::acars::block as acars;
+use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DataLinkMessage, DecoderEvent,
-    DecoderFamily, EventKind, IridiumParams, IridiumSpan,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -42,7 +78,9 @@ use self::ira::IridiumFrame;
 use self::receiver::ChannelDecoder;
 use self::wideband::{USABLE_FRACTION, WidebandDecoder};
 use crate::datalink::{self, Quality};
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel, check_rate,
+};
 
 const CHANNEL_RATE: f64 = 250_000.0;
 const HALF_BANDWIDTH: f64 = 25_000.0;
@@ -55,7 +93,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: CHANNEL_RATE,
     has_audio: false,
-    emits: vec![EventKind::Iridium],
+    emits: vec![EventKind::named("iridium")],
     ..ChannelDescriptor::default()
 });
 
@@ -100,14 +138,8 @@ pub struct IridiumChannel {
     frames: Vec<IridiumFrame>,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&IridiumParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Iridium(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "Iridium channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<IridiumParams, ChannelError> {
+    crate::settings_of::<IridiumParams>(settings)
 }
 
 pub(crate) fn input_rate(params: &IridiumParams) -> f64 {
@@ -166,21 +198,22 @@ fn message(frame: &IridiumFrame) -> DataLinkMessage {
     }
 }
 
-impl ChannelRx for IridiumChannel {
+impl NativeChannel for IridiumChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
-        check_rate(ctx, &DESCRIPTOR, input_rate(params))?;
+        check_rate(ctx, &DESCRIPTOR, input_rate(&params))?;
         Ok(Self {
             span: params.span,
             decoder: Decoder::new(params.span)?,
             frames: Vec::new(),
         })
     }
+}
 
+impl ChannelRx for IridiumChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         if params(&settings)?.span == self.span {
             Ok(())
@@ -197,7 +230,7 @@ impl ChannelRx for IridiumChannel {
         out.events.extend(
             self.frames
                 .iter()
-                .map(|frame| DecoderEvent::Iridium(message(frame))),
+                .map(|frame| DecoderEvent::tagged(EventKind::named("iridium"), &message(frame))),
         );
     }
 

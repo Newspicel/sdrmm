@@ -1,5 +1,9 @@
+use crate::NativeChannel;
+use crate::per::PerBaud;
+use crate::per::PerParams;
+use crate::per::PerReport;
 use num_complex::Complex;
-use sdrmm_wire::{ChannelParams, ChannelSettings, DecoderEvent, PerBaud, PerParams, PerReport};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{PerChannel, RATE, channel_filter};
 use crate::{
@@ -9,7 +13,7 @@ use crate::{
 };
 
 fn tuned(params: PerParams) -> ChannelSettings {
-    settings(ChannelParams::Per(params))
+    settings(ChannelParams::of(&params).expect("per settings"))
 }
 
 fn channel(params: PerParams) -> PerChannel {
@@ -27,10 +31,11 @@ fn run(channel: &mut PerChannel, params: &PerParams, iq: &[Complex<f32>]) -> Vec
         filter.process(block, &mut filtered);
         out.reset();
         channel.process(&filtered, &mut out);
-        found.extend(out.events.drain(..).filter_map(|event| match event {
-            DecoderEvent::Per(report) => Some(report),
-            _ => None,
-        }));
+        found.extend(
+            out.events
+                .drain(..)
+                .filter_map(|event| event.read::<PerReport>()),
+        );
     }
     found
 }

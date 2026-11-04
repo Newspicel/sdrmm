@@ -1,5 +1,5 @@
+use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
-use sdrmm_wire::DataLinkMessage;
 
 use super::{
     RATE, equivalence::frame_payload, equivalence::run_ours, equivalence::run_xng, frame,

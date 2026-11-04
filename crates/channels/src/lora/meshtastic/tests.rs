@@ -1,4 +1,7 @@
-use sdrmm_wire::{LoraKey, MeshtasticContent, MeshtasticEncryption, MeshtasticPacket};
+use crate::lora::LoraKey;
+use crate::lora::MeshtasticContent;
+use crate::lora::MeshtasticEncryption;
+use crate::lora::MeshtasticPacket;
 
 use super::proto::{Value, Writer, each_field, repeated_fixed32, repeated_varint};
 use super::synth::packet;

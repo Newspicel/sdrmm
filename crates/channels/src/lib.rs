@@ -13,6 +13,7 @@ pub mod beamformer;
 mod ble;
 mod broadcast_audio;
 mod broadcast_media;
+mod builtin;
 pub mod correlator;
 mod crypto;
 mod cw_skimmer;
@@ -57,6 +58,7 @@ mod psk;
 mod radio_clock;
 mod radiosonde;
 mod rds;
+pub mod registry;
 mod remote_id;
 mod rtty;
 mod same;
@@ -101,7 +103,7 @@ pub use am::{AmChannel, AmTx};
 pub use aprs::{AprsChannel, AprsTx, MicE, MicEBit};
 pub use apt::AptChannel;
 pub use atv::AtvChannel;
-pub use audio_chain::{AudioChain, ClickProfile};
+pub use audio_chain::{AudioChain, ClickProfile, click_profile};
 pub use ble::BleChannel;
 #[cfg(feature = "fuzzing")]
 pub use broadcast_audio::decode_layer_two;
@@ -152,10 +154,7 @@ pub use rtty::RttyChannel;
 pub use same::SameChannel;
 pub use sarsat::SarsatChannel;
 use sdrmm_dsp::{Decimator, FirC};
-use sdrmm_wire::{
-    BroadcastStatus, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, PositionFix,
-    Sideband,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, ChannelStatus, DecoderEvent, PositionFix};
 pub use selcall::SelcallChannel;
 pub use sid::SidChannel;
 pub use ssb::{SsbChannel, SsbTx};
@@ -172,15 +171,155 @@ pub use wfm::WfmChannel;
 pub use wifi::WifiOccupancyChannel;
 pub use wmbus::WmbusChannel;
 
+pub use acars::{AcarsMessage, AcarsParams};
+pub use adsb::{AdsbMessage, AdsbParams};
+pub use airtime::{
+    AIRTIME_REPORT_MS, AirtimeSpan, IsmKind, IsmKindLoad, IsmSurveyParams, IsmSurveyReport,
+    MAX_AIRTIME_MARGIN_DB, MIN_AIRTIME_MARGIN_DB, SURVEY_CENTRES, WifiBand, WifiChannelLoad,
+    WifiOccupancyParams, WifiOccupancyReport,
+};
+pub use ais::{AisChannel, AisMessage, AisParams};
+pub use am::AmParams;
+pub use aprs::{AprsMode, AprsPacket, AprsParams, AprsWeather};
+pub use apt::{AptImage, AptParams, AvhrrChannel};
+pub use atv::{AtvColor, AtvModulation, AtvParams, AtvStandard};
+pub use ble::{
+    BLUETOOTH_BAND_RATE_HZ, BLUETOOTH_CHANNEL_WIDTH_HZ, BLUETOOTH_RATE_HZ, BleAddress,
+    BleAddressKind, BleAdi, BleAdvert, BleAuxPointer, BleBeacon, BleFlags, BleLink,
+    BleManufacturer, BleParams, BlePdu, BlePhy, BleService,
+};
+pub use broadcast_media::{
+    BroadcastService, BroadcastServiceKind, BroadcastStatus, BroadcastSystem,
+};
+pub use cw_skimmer::{CwSkimmerParams, CwSkimmerSpot};
+pub use dab::{DabMode, DabParams, DabTransmissionMode};
+pub use datalink::DataLinkMessage;
+pub use datv::{
+    DatvCodeRate, DatvParams, DatvRollOff, DatvStandard, DvbtBandwidth, DvbtParams, DvbtStandard,
+    MAX_DATV_SYMBOL_RATE, MAX_SUPERFRAME_CODE, MIN_DATV_SYMBOL_RATE, SuperframeStatus,
+};
+pub use dect::{
+    DECT_CARRIER_SPACING_HZ, DectArc, DectBand, DectCapability, DectCipherState, DectFrame,
+    DectIdentity, DectParams, DectSecurity, DectSide, DectSides, DectSpan, DectUpdate, DectVoice,
+};
+pub use drm::{DrmMode, DrmParams};
+pub use dsc::DscParams;
+pub use dv::{
+    DmrParams, DmrSlots, DpmrParams, DstarParams, FreeDvMode, FreeDvParams, M17Params,
+    NxdnBandwidth, NxdnParams, P25Params, YsfParams,
+};
+pub use eot::{
+    EotArming, EotBattery, EotMessage, EotParams, EotReport, EotStatus, HotCommand, HotRequest,
+};
+pub use ermes::{ErmesMessage, ErmesParams};
+pub use flex::{FlexMessage, FlexParams, PagerPayload};
+pub use gnss::{GnssFrame, GnssParams};
+pub use gsm::{
+    GSM_CHANNEL_SPACING_HZ, GSM_SYMBOL_RATE_HZ, GsmAssignment, GsmBand, GsmCcch, GsmCell,
+    GsmChannelType, GsmDedicated, GsmFrame, GsmHopping, GsmIdentity, GsmIdentityKind,
+    GsmLapdmFrame, GsmLogicalChannel, GsmMessage, GsmParams, GsmProtocol, GsmSi, cipher_label,
+};
+pub use hfdl::HfdlParams;
+pub use ident::{
+    IdentParams, MAX_IDENT_BANDWIDTH_HZ, MAX_IDENT_INTERVAL_MS, MAX_IDENT_THRESHOLD_DB,
+    MIN_IDENT_BANDWIDTH_HZ, MIN_IDENT_INTERVAL_MS, MIN_IDENT_THRESHOLD_DB,
+};
+pub use ils::{IlsComponent, IlsParams, IlsReading};
+pub use inmarsat_aero::{AeroChannel, InmarsatAeroParams};
+pub use inmarsat_stdc::{InmarsatStdcParams, SeaArea, navarea_limits, roman};
+pub use iridium::{IridiumParams, IridiumSpan};
+pub use ism::{
+    ISM_BANDWIDTH_HZ, ISM_SAMPLE_RATE_HZ, IsmCoding, IsmIntegrity, IsmMessage, IsmModulation,
+    IsmParams, UNKNOWN_MODEL,
+};
+pub use lora::{
+    LoraBandwidth, LoraCodingRate, LoraFrame, LoraImplicitHeader, LoraIntegrity, LoraIq, LoraKey,
+    LoraKeyField, LoraParams, LoraPayload, LoraProtocol, LoraSpreadingFactor, LorawanFrame,
+    LorawanMessageType, MAX_LORA_KEY_NAME_LEN, MAX_LORA_KEY_TEXT_LEN, MAX_LORA_KEYS,
+    MeshcoreContent, MeshcoreNodeType, MeshcorePacket, MeshcorePayloadType, MeshcoreRoute,
+    MeshtasticContent, MeshtasticEncryption, MeshtasticMetric, MeshtasticNeighbor,
+    MeshtasticPacket,
+};
+pub use lrpt::{LrptImage, LrptMode, LrptParams};
+pub use morse::{MorseParams, MorseText};
+pub use navtex::{NavtexMessage, NavtexParams};
+pub use nfm::{
+    CTCSS_TONES_HZ, DCS_CODES, NfmParams, NfmScramblerMode, NfmToneMode, ScramblerStatus,
+    ToneSquelchStatus,
+};
+pub use noise_figure::{
+    MAX_ENR_DB, MEASUREMENT_REPORT_MS, MIN_ENR_DB, NoiseFigureParams, NoiseFigureReport,
+};
+pub use per::{MAX_PER_PAYLOAD_BYTES, MIN_PER_PAYLOAD_BYTES, PerBaud, PerParams, PerReport};
+pub use pocsag::{PocsagBaud, PocsagMessage, PocsagParams, PocsagPayload};
+pub use psk::{PskBaud, PskParams, PskText};
+pub use radio_clock::{RadioClockFrame, RadioClockParams, RadioClockStandard};
+pub use radiosonde::{
+    DEFAULT_SONDE_BURST_M, RadiosondeFrame, RadiosondeParams, SondeForecast, SondeType,
+};
+pub use rds::RdsUpdate;
+pub use registry::{
+    ChannelLayout, Decoder, Native, Registry, Trunking, Tuned, audio_channels, channel_filter,
+    check, create, create_tx, default_settings, descriptor, descriptors, input_rate,
+    install_plugins, layout, normalize, occupied_band, registry, trunking, tune,
+};
+pub use remote_id::{
+    AuthType, EuCategory, EuClassification, HeightReference, OperatorLocationType, RemoteIdFrame,
+    RemoteIdLink, RemoteIdLocation, RemoteIdMessage, RemoteIdParams, RemoteIdPhy, RemoteIdSystem,
+    RemoteIdTransport, UaStatus, UaType, UasIdType, WIDE_RATE_HZ, WIFI_CHANNEL_WIDTH_HZ,
+};
+pub use rtty::{RTTY_BAUDS, RTTY_SHIFTS_HZ, RttyParams, RttyStopBits, RttyText};
+pub use same::{
+    MAX_SAME_BANDWIDTH_HZ, MAX_SAME_LOCATIONS, MIN_SAME_BANDWIDTH_HZ, SAME_BANDWIDTH_HZ, SAME_BAUD,
+    SAME_BURSTS, SAME_MARK_HZ, SAME_SPACE_HZ, SameAlert, SameBody, SameLocation, SameMessage,
+    SameParams,
+};
+pub use sarsat::{
+    MAX_SARSAT_BANDWIDTH_HZ, MIN_SARSAT_BANDWIDTH_HZ, SARSAT_BANDWIDTH_HZ, SarsatBeacon,
+    SarsatMessage, SarsatParams, SarsatProtocol,
+};
+pub use selcall::{SelcallParams, SelcallSequence, SelcallSystem};
+pub use sid::{
+    MAX_SID_REPORT_S, MAX_SID_THRESHOLD_DB, MIN_SID_REPORT_S, MIN_SID_THRESHOLD_DB, SidParams,
+    SidReport, SidStationLevel,
+};
+pub use ssb::SsbParams;
+pub use sstv::{SstvMode, SstvModulation, SstvParams, SstvPicture};
+pub use stanag::{
+    MAX_STANAG_WINDOW_S, MIN_STANAG_WINDOW_S, STANAG_WINDOW_S, StanagInterleave, StanagModem,
+    StanagParams, StanagRate, StanagReport,
+};
+pub use tetra::TetraParams;
+pub use tetrapol::{
+    MAX_TETRAPOL_SCRAMBLING, TETRAPOL_BANDWIDTH_HZ, TetrapolAddress, TetrapolAddressKind,
+    TetrapolBand, TetrapolCallType, TetrapolCell, TetrapolGroupCall, TetrapolKey,
+    TetrapolLogicalChannel, TetrapolMessage, TetrapolParams, TetrapolPayload, TetrapolSystemInfo,
+};
+pub use vdl2::Vdl2Params;
+pub use vor::{MAX_NAVAID_REPORT_MS, MIN_NAVAID_REPORT_MS, VorParams, VorReading};
+pub use weak_signal::{WsjtMessage, WsjtParams, WsprParams, WsprSpot};
+pub use wefax::{WefaxIoc, WefaxLpm, WefaxParams, WefaxPicture};
+pub use wfm::{DEEMPHASIS_US, WfmParams};
+pub use wmbus::{
+    KEY_DIGITS, MAX_WMBUS_KEYS, METER_DIGITS, WMBUS_BANDWIDTH_HZ, WMBUS_S_HZ, WMBUS_SAMPLE_RATE_HZ,
+    WMBUS_T_C_HZ, WmbusFormat, WmbusFunction, WmbusKey, WmbusMessage, WmbusMode, WmbusParams,
+    WmbusQuantity, WmbusRecord, WmbusSecurity, control_label, device_label,
+};
+
 pub const AUDIO_RATE: u32 = sdrmm_wire::audio::AUDIO_RATE_HZ;
 
-#[must_use]
-pub fn audio_channels(params: &ChannelParams) -> u8 {
-    match params {
-        ChannelParams::Wfm(p) if p.stereo => 2,
-        ChannelParams::Dab(_) | ChannelParams::Datv(_) | ChannelParams::Dvbt(_) => 2,
-        _ => 1,
-    }
+/// A channel's settings as its decoder's struct, refusing another decoder's.
+pub(crate) fn settings_of<P: sdrmm_wire::DecoderSettings>(
+    settings: &ChannelSettings,
+) -> Result<P, ChannelError> {
+    settings
+        .params
+        .decode()
+        .map_err(ChannelError::InvalidSettings)
+}
+
+pub(crate) const fn default_true() -> bool {
+    true
 }
 
 pub(crate) fn voice_leveller() -> sdrmm_dsp::Agc {
@@ -190,85 +329,6 @@ pub(crate) fn voice_leveller() -> sdrmm_dsp::Agc {
 pub(crate) fn clamp_full_scale(pcm: &mut [f32]) {
     for s in pcm {
         *s = s.clamp(-1.0, 1.0);
-    }
-}
-
-#[must_use]
-pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
-    match params {
-        ChannelParams::Nfm(p) => (-p.bandwidth_hz / 2.0, p.bandwidth_hz / 2.0),
-        ChannelParams::Selcall(_) => selcall::occupied_band(),
-        ChannelParams::Am(p) => (-p.bandwidth_hz / 2.0, p.bandwidth_hz / 2.0),
-        ChannelParams::Ssb(p) => match p.sideband {
-            Sideband::Usb => (ssb::PASSBAND_LOW_HZ, p.bandwidth_hz),
-            Sideband::Lsb => (-p.bandwidth_hz, -ssb::PASSBAND_LOW_HZ),
-        },
-        ChannelParams::Wfm(_) => {
-            let half = WfmChannel::descriptor().bandwidth_hz / 2.0;
-            (-half, half)
-        }
-        ChannelParams::Pocsag(p) => pocsag::occupied_band(p),
-        ChannelParams::Flex(p) => flex::occupied_band(p),
-        ChannelParams::Ermes(p) => ermes::occupied_band(p),
-        ChannelParams::Eot(p) => eot::occupied_band(p),
-        ChannelParams::Sarsat(p) => sarsat::occupied_band(p),
-        ChannelParams::Tetrapol(_) => tetrapol::occupied_band(),
-        ChannelParams::Adsb(_) => adsb::occupied_band(),
-        ChannelParams::Ais(p) => ais::occupied_band(p),
-        ChannelParams::Aprs(p) => aprs::occupied_band(p),
-        ChannelParams::Rtty(p) => rtty::occupied_band(p),
-        ChannelParams::Morse(p) => morse::occupied_band(p),
-        ChannelParams::CwSkimmer(p) => cw_skimmer::occupied_band(p),
-        ChannelParams::Navtex(_) => navtex::occupied_band(),
-        ChannelParams::Acars(p) => acars::occupied_band(p),
-        ChannelParams::Atv(p) => atv::occupied_band(p),
-        ChannelParams::Sstv(p) => sstv::occupied_band(p),
-        ChannelParams::Dab(_) => dab::occupied_band(),
-        ChannelParams::Datv(p) => datv::occupied_band(p),
-        ChannelParams::Dvbt(p) => datv::dvbt::occupied_band(p),
-        ChannelParams::Drm(p) => drm::occupied_band(p),
-        ChannelParams::Dmr(_) => dv::dmr::occupied_band(),
-        ChannelParams::Dstar(_) => dv::dstar::occupied_band(),
-        ChannelParams::Ysf(_) => dv::ysf::occupied_band(),
-        ChannelParams::Nxdn(p) => dv::nxdn::occupied_band(p),
-        ChannelParams::P25(_) => dv::p25::occupied_band(),
-        ChannelParams::Dpmr(_) => dv::dpmr::occupied_band(),
-        ChannelParams::M17(_) => dv::m17::occupied_band(),
-        ChannelParams::Tetra(_) => tetra::occupied_band(),
-        ChannelParams::Ft8(_) | ChannelParams::Ft4(_) | ChannelParams::Wspr(_) => {
-            weak_signal::occupied_band(params)
-        }
-        ChannelParams::Psk(_) => psk::occupied_band(params),
-        ChannelParams::Freedv(p) => dv::freedv::occupied_band(p),
-        ChannelParams::Ident(p) => ident::occupied_band(p),
-        ChannelParams::RadioClock(_) => radio_clock::occupied_band(),
-        ChannelParams::Gnss(_) => gnss::occupied_band(),
-        ChannelParams::Vor(_) => vor::occupied_band(),
-        ChannelParams::Ils(_) => ils::occupied_band(),
-        ChannelParams::Dsc(_) => dsc::occupied_band(),
-        ChannelParams::InmarsatStdc(_) => inmarsat_stdc::occupied_band(),
-        ChannelParams::InmarsatAero(_) => inmarsat_aero::occupied_band(),
-        ChannelParams::Vdl2(_) => vdl2::occupied_band(),
-        ChannelParams::Hfdl(_) => hfdl::occupied_band(),
-        ChannelParams::Iridium(p) => iridium::occupied_band(p),
-        ChannelParams::Dect(p) => dect::occupied_band(p),
-        ChannelParams::Gsm(_) => gsm::occupied_band(),
-        ChannelParams::Apt(p) => apt::occupied_band(p),
-        ChannelParams::Lrpt(p) => lrpt::occupied_band(p),
-        ChannelParams::Wefax(p) => wefax::occupied_band(p),
-        ChannelParams::Same(p) => same::occupied_band(p),
-        ChannelParams::Radiosonde(p) => radiosonde::occupied_band(p),
-        ChannelParams::Lora(p) => lora::occupied_band(p),
-        ChannelParams::RemoteId(p) => remote_id::occupied_band(p),
-        ChannelParams::Ble(p) => ble::occupied_band(p.link),
-        ChannelParams::WifiOccupancy(p) => wifi::occupied_band(p),
-        ChannelParams::IsmSurvey(p) => ism_survey::occupied_band(p),
-        ChannelParams::Ism(p) => ism::occupied_band(p),
-        ChannelParams::Wmbus(_) => wmbus::occupied_band(),
-        ChannelParams::NoiseFigure(_) => noise_figure::occupied_band(),
-        ChannelParams::Per(p) => per::occupied_band(p),
-        ChannelParams::Sid(_) => sid::occupied_band(),
-        ChannelParams::Stanag(_) => stanag::occupied_band(),
     }
 }
 
@@ -296,78 +356,6 @@ impl ChannelFilter {
                 out.extend_from_slice(input);
             }
         }
-    }
-}
-
-pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelError> {
-    match params {
-        ChannelParams::Nfm(p) => nfm::channel_filter(p),
-        ChannelParams::Selcall(_) => Ok(selcall::channel_filter()),
-        ChannelParams::Am(p) => am::channel_filter(p),
-        ChannelParams::Ssb(p) => Ok(ChannelFilter::Sideband(ssb::sideband_filter(p)?)),
-        ChannelParams::Wfm(_) => Ok(wfm::channel_filter()),
-        ChannelParams::Pocsag(p) => pocsag::channel_filter(p),
-        ChannelParams::Flex(p) => flex::channel_filter(p),
-        ChannelParams::Ermes(p) => ermes::channel_filter(p),
-        ChannelParams::Eot(p) => eot::channel_filter(p),
-        ChannelParams::Sarsat(p) => sarsat::channel_filter(p),
-        ChannelParams::Tetrapol(_) => Ok(tetrapol::channel_filter()),
-        ChannelParams::Adsb(_) => Ok(adsb::channel_filter()),
-        ChannelParams::Ais(p) => ais::channel_filter(p),
-        ChannelParams::Aprs(p) => aprs::channel_filter(p),
-        ChannelParams::Rtty(p) => rtty::channel_filter(p),
-        ChannelParams::Morse(p) => morse::channel_filter(p),
-        ChannelParams::CwSkimmer(p) => cw_skimmer::channel_filter(p),
-        ChannelParams::Navtex(_) => Ok(navtex::channel_filter()),
-        ChannelParams::Acars(p) => acars::channel_filter(p),
-        ChannelParams::Atv(p) => atv::channel_filter(p),
-        ChannelParams::Sstv(p) => sstv::channel_filter(p),
-        ChannelParams::Dab(_) => Ok(dab::channel_filter()),
-        ChannelParams::Datv(p) => datv::channel_filter(p),
-        ChannelParams::Dvbt(p) => Ok(datv::dvbt::channel_filter(p)),
-        ChannelParams::Drm(p) => drm::channel_filter(p),
-        ChannelParams::Dmr(_) => Ok(dv::dmr::channel_filter()),
-        ChannelParams::Dstar(_) => Ok(dv::dstar::channel_filter()),
-        ChannelParams::Ysf(_) => Ok(dv::ysf::channel_filter()),
-        ChannelParams::Nxdn(p) => Ok(dv::nxdn::channel_filter(p)),
-        ChannelParams::P25(_) => Ok(dv::p25::channel_filter()),
-        ChannelParams::Dpmr(_) => Ok(dv::dpmr::channel_filter()),
-        ChannelParams::M17(_) => Ok(dv::m17::channel_filter()),
-        ChannelParams::Tetra(_) => Ok(tetra::channel_filter()),
-        ChannelParams::Ft8(_) | ChannelParams::Ft4(_) | ChannelParams::Wspr(_) => {
-            weak_signal::channel_filter(params)
-        }
-        ChannelParams::Psk(_) => psk::channel_filter(params),
-        ChannelParams::Freedv(p) => dv::freedv::channel_filter(p),
-        ChannelParams::Ident(p) => ident::channel_filter(p),
-        ChannelParams::RadioClock(_) => Ok(radio_clock::channel_filter()),
-        ChannelParams::Gnss(_) => Ok(gnss::channel_filter()),
-        ChannelParams::Vor(_) => Ok(vor::channel_filter()),
-        ChannelParams::Ils(_) => Ok(ils::channel_filter()),
-        ChannelParams::Dsc(_) => Ok(dsc::channel_filter()),
-        ChannelParams::InmarsatStdc(_) => Ok(inmarsat_stdc::channel_filter()),
-        ChannelParams::InmarsatAero(_) => Ok(inmarsat_aero::channel_filter()),
-        ChannelParams::Vdl2(_) => Ok(vdl2::channel_filter()),
-        ChannelParams::Hfdl(_) => Ok(hfdl::channel_filter()),
-        ChannelParams::Iridium(p) => Ok(iridium::channel_filter(p)),
-        ChannelParams::Dect(p) => Ok(dect::channel_filter(p)),
-        ChannelParams::Gsm(_) => Ok(gsm::channel_filter()),
-        ChannelParams::Apt(p) => apt::channel_filter(p),
-        ChannelParams::Lrpt(p) => lrpt::channel_filter(p),
-        ChannelParams::Wefax(p) => wefax::channel_filter(p),
-        ChannelParams::Same(p) => same::channel_filter(p),
-        ChannelParams::Radiosonde(p) => radiosonde::channel_filter(p),
-        ChannelParams::Lora(p) => Ok(lora::channel_filter(p)),
-        ChannelParams::RemoteId(p) => Ok(remote_id::channel_filter(p)),
-        ChannelParams::Ble(p) => Ok(ble::channel_filter(p.link)),
-        ChannelParams::WifiOccupancy(p) => Ok(wifi::channel_filter(p)),
-        ChannelParams::IsmSurvey(p) => Ok(ism_survey::channel_filter(p)),
-        ChannelParams::Ism(p) => Ok(ism::channel_filter(p)),
-        ChannelParams::Wmbus(_) => Ok(wmbus::channel_filter()),
-        ChannelParams::NoiseFigure(_) => Ok(noise_figure::channel_filter()),
-        ChannelParams::Per(p) => Ok(per::channel_filter(p)),
-        ChannelParams::Sid(_) => Ok(sid::channel_filter()),
-        ChannelParams::Stanag(_) => Ok(stanag::channel_filter()),
     }
 }
 
@@ -417,7 +405,7 @@ pub struct ChannelOutputs {
     pub video: Vec<VideoPicture>,
     pub images: Vec<DecodedImage>,
     pub symbols: SymbolTap,
-    pub broadcast: Option<BroadcastStatus>,
+    pub status: Option<ChannelStatus>,
 }
 
 impl ChannelOutputs {
@@ -428,19 +416,19 @@ impl ChannelOutputs {
         self.video.clear();
         self.images.clear();
         self.symbols.clear();
-        self.broadcast = None;
+        self.status = None;
     }
 }
 
+/// A decoder compiled into this crate: its static descriptor and how to open it.
+pub trait NativeChannel: ChannelRx + Sized {
+    fn descriptor() -> &'static ChannelDescriptor;
+
+    fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError>;
+}
+
+/// A running decoder channel, built in or loaded as a plugin.
 pub trait ChannelRx: Send {
-    fn descriptor() -> &'static ChannelDescriptor
-    where
-        Self: Sized;
-
-    fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError>
-    where
-        Self: Sized;
-
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError>;
 
     fn retuned(&mut self) {}
@@ -489,455 +477,6 @@ pub trait ChannelTx: Send {
     fn generate(&mut self, out: &mut [Complex<f32>]) -> usize;
 }
 
-type CreateRx = fn(ChannelCtx, ChannelSettings) -> Result<Box<dyn ChannelRx>, ChannelError>;
-type CreateTx = fn(ChannelCtx, ChannelSettings) -> Result<Box<dyn ChannelTx>, ChannelError>;
-
-struct Registration {
-    descriptor: fn() -> &'static ChannelDescriptor,
-    create: CreateRx,
-    create_tx: Option<CreateTx>,
-}
-
-fn boxed<C: ChannelRx + 'static>(
-    ctx: ChannelCtx,
-    settings: ChannelSettings,
-) -> Result<Box<dyn ChannelRx>, ChannelError> {
-    Ok(Box::new(C::new(ctx, settings)?))
-}
-
-fn boxed_tx<C: ChannelTx + 'static>(
-    ctx: ChannelCtx,
-    settings: ChannelSettings,
-) -> Result<Box<dyn ChannelTx>, ChannelError> {
-    Ok(Box::new(C::new(ctx, settings)?))
-}
-
-const REGISTRY: &[Registration] = &[
-    Registration {
-        descriptor: NfmChannel::descriptor,
-        create: boxed::<NfmChannel>,
-        create_tx: Some(boxed_tx::<NfmTx>),
-    },
-    Registration {
-        descriptor: SelcallChannel::descriptor,
-        create: boxed::<SelcallChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: AmChannel::descriptor,
-        create: boxed::<AmChannel>,
-        create_tx: Some(boxed_tx::<AmTx>),
-    },
-    Registration {
-        descriptor: SsbChannel::descriptor,
-        create: boxed::<SsbChannel>,
-        create_tx: Some(boxed_tx::<SsbTx>),
-    },
-    Registration {
-        descriptor: WfmChannel::descriptor,
-        create: boxed::<WfmChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: PocsagChannel::descriptor,
-        create: boxed::<PocsagChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: FlexChannel::descriptor,
-        create: boxed::<FlexChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: ErmesChannel::descriptor,
-        create: boxed::<ErmesChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: EotChannel::descriptor,
-        create: boxed::<EotChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: SarsatChannel::descriptor,
-        create: boxed::<SarsatChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: TetrapolChannel::descriptor,
-        create: boxed::<TetrapolChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: AdsbChannel::descriptor,
-        create: boxed::<AdsbChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: AisChannelRx::descriptor,
-        create: boxed::<AisChannelRx>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: AprsChannel::descriptor,
-        create: boxed::<AprsChannel>,
-        create_tx: Some(boxed_tx::<AprsTx>),
-    },
-    Registration {
-        descriptor: RttyChannel::descriptor,
-        create: boxed::<RttyChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: MorseChannel::descriptor,
-        create: boxed::<MorseChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: CwSkimmerChannel::descriptor,
-        create: boxed::<CwSkimmerChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: NavtexChannel::descriptor,
-        create: boxed::<NavtexChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: AcarsChannel::descriptor,
-        create: boxed::<AcarsChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: AtvChannel::descriptor,
-        create: boxed::<AtvChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: SstvChannel::descriptor,
-        create: boxed::<SstvChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: DabChannel::descriptor,
-        create: boxed::<DabChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: DvbtChannel::descriptor,
-        create: boxed::<DvbtChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: DatvChannel::descriptor,
-        create: boxed::<DatvChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: DrmChannel::descriptor,
-        create: boxed::<DrmChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: DmrChannel::descriptor,
-        create: boxed::<DmrChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: DstarChannel::descriptor,
-        create: boxed::<DstarChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: YsfChannel::descriptor,
-        create: boxed::<YsfChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: NxdnChannel::descriptor,
-        create: boxed::<NxdnChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: P25Channel::descriptor,
-        create: boxed::<P25Channel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: DpmrChannel::descriptor,
-        create: boxed::<DpmrChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: M17Channel::descriptor,
-        create: boxed::<M17Channel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: TetraChannel::descriptor,
-        create: boxed::<TetraChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: FreeDvChannel::descriptor,
-        create: boxed::<FreeDvChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: Ft8Channel::descriptor,
-        create: boxed::<Ft8Channel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: Ft4Channel::descriptor,
-        create: boxed::<Ft4Channel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: PskChannel::descriptor,
-        create: boxed::<PskChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: WsprChannel::descriptor,
-        create: boxed::<WsprChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: IdentChannel::descriptor,
-        create: boxed::<IdentChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: RadioClockChannel::descriptor,
-        create: boxed::<RadioClockChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: GnssChannel::descriptor,
-        create: boxed::<GnssChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: VorChannel::descriptor,
-        create: boxed::<VorChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: IlsChannel::descriptor,
-        create: boxed::<IlsChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: DscChannel::descriptor,
-        create: boxed::<DscChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: InmarsatStdcChannel::descriptor,
-        create: boxed::<InmarsatStdcChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: InmarsatAeroChannel::descriptor,
-        create: boxed::<InmarsatAeroChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: Vdl2Channel::descriptor,
-        create: boxed::<Vdl2Channel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: HfdlChannel::descriptor,
-        create: boxed::<HfdlChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: IridiumChannel::descriptor,
-        create: boxed::<IridiumChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: DectChannel::descriptor,
-        create: boxed::<DectChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: GsmChannel::descriptor,
-        create: boxed::<GsmChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: AptChannel::descriptor,
-        create: boxed::<AptChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: LrptChannel::descriptor,
-        create: boxed::<LrptChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: WefaxChannel::descriptor,
-        create: boxed::<WefaxChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: SameChannel::descriptor,
-        create: boxed::<SameChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: RadiosondeChannel::descriptor,
-        create: boxed::<RadiosondeChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: LoraChannel::descriptor,
-        create: boxed::<LoraChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: RemoteIdChannel::descriptor,
-        create: boxed::<RemoteIdChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: BleChannel::descriptor,
-        create: boxed::<BleChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: WifiOccupancyChannel::descriptor,
-        create: boxed::<WifiOccupancyChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: IsmSurveyChannel::descriptor,
-        create: boxed::<IsmSurveyChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: IsmChannel::descriptor,
-        create: boxed::<IsmChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: WmbusChannel::descriptor,
-        create: boxed::<WmbusChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: NoiseFigureChannel::descriptor,
-        create: boxed::<NoiseFigureChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: PerChannel::descriptor,
-        create: boxed::<PerChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: SidChannel::descriptor,
-        create: boxed::<SidChannel>,
-        create_tx: None,
-    },
-    Registration {
-        descriptor: StanagChannel::descriptor,
-        create: boxed::<StanagChannel>,
-        create_tx: None,
-    },
-];
-
-static DESCRIPTORS: std::sync::LazyLock<Vec<ChannelDescriptor>> = std::sync::LazyLock::new(|| {
-    REGISTRY
-        .iter()
-        .map(|r| {
-            let mut descriptor = (r.descriptor)().clone();
-            descriptor.can_transmit = r.create_tx.is_some();
-            descriptor.defaults = ChannelSettings::default_for(&descriptor.type_id);
-            descriptor.limits = sdrmm_wire::param_limits(&descriptor.type_id);
-            descriptor.choices = descriptor
-                .defaults
-                .as_ref()
-                .map(|settings| settings.params.choices())
-                .unwrap_or_default();
-            descriptor.identifiable = ident::identifiable(&descriptor.type_id);
-            descriptor.ports = sdrmm_wire::patch::channel_ports(&descriptor);
-            descriptor
-        })
-        .collect()
-});
-
-#[must_use]
-pub fn descriptors() -> Vec<ChannelDescriptor> {
-    DESCRIPTORS.clone()
-}
-
-#[must_use]
-pub fn descriptor_table() -> &'static [ChannelDescriptor] {
-    &DESCRIPTORS
-}
-
-#[must_use]
-pub fn descriptor(type_id: &str) -> Option<&'static ChannelDescriptor> {
-    DESCRIPTORS
-        .iter()
-        .find(|descriptor| descriptor.type_id == type_id)
-}
-
-pub fn create(
-    ctx: ChannelCtx,
-    settings: &ChannelSettings,
-) -> Result<Box<dyn ChannelRx>, ChannelError> {
-    settings
-        .check_limits()
-        .map_err(ChannelError::InvalidSettings)?;
-    (find(settings)?.create)(ctx, settings.clone())
-}
-
-pub fn create_tx(
-    ctx: ChannelCtx,
-    settings: &ChannelSettings,
-) -> Result<Box<dyn ChannelTx>, ChannelError> {
-    let create = find(settings)?
-        .create_tx
-        .ok_or_else(|| ChannelError::NoTransmitter(settings.params.type_id().to_owned()))?;
-    create(ctx, settings.clone())
-}
-
-pub(crate) fn descriptor_of(type_id: &str) -> Option<&'static ChannelDescriptor> {
-    REGISTRY
-        .iter()
-        .map(|r| (r.descriptor)())
-        .find(|d| d.type_id == type_id)
-}
-
-fn find(settings: &ChannelSettings) -> Result<&'static Registration, ChannelError> {
-    let type_id = settings.params.type_id();
-    REGISTRY
-        .iter()
-        .find(|r| (r.descriptor)().type_id == type_id)
-        .ok_or_else(|| ChannelError::UnknownType(type_id.to_owned()))
-}
-
-#[must_use]
-pub fn input_rate(params: &ChannelParams) -> f64 {
-    match params {
-        ChannelParams::Datv(p) => datv::input_rate_hz(p),
-        ChannelParams::Dvbt(p) => p.sample_rate_hz(),
-        ChannelParams::Iridium(p) => iridium::input_rate(p),
-        ChannelParams::Dect(p) => dect::input_rate(p),
-        ChannelParams::Lora(p) => lora::input_rate(p),
-        ChannelParams::RemoteId(p) => remote_id::input_rate(p),
-        ChannelParams::Ble(p) => p.link.input_rate_hz(),
-        ChannelParams::WifiOccupancy(p) => wifi::input_rate(p),
-        ChannelParams::IsmSurvey(p) => ism_survey::input_rate(p),
-        other => descriptor_of(other.type_id()).map_or(0.0, |d| d.input_rate_hz),
-    }
-}
-
 pub(crate) fn check_input_rate(
     ctx: ChannelCtx,
     descriptor: &ChannelDescriptor,
@@ -964,10 +503,21 @@ pub(crate) fn check_rate(
 mod tests {
     use std::collections::HashSet;
 
-    use sdrmm_wire::{
-        AmParams, AtvColor, AtvParams, CallGate, ChannelParams, DatvParams, EventKind, NfmParams,
-        SsbParams, WfmParams,
-    };
+    use sdrmm_wire::{CallGate, ChannelParams, EventKind, Sideband};
+
+    use crate::am::AmParams;
+
+    use crate::atv::AtvColor;
+
+    use crate::atv::AtvParams;
+
+    use crate::datv::DatvParams;
+
+    use crate::nfm::NfmParams;
+
+    use crate::ssb::SsbParams;
+
+    use crate::wfm::WfmParams;
 
     use super::*;
     use crate::testutil::settings;
@@ -979,15 +529,19 @@ mod tests {
 
     #[test]
     fn a_datv_input_rate_follows_its_symbol_rate() {
-        let narrow = ChannelParams::Datv(DatvParams::default());
-        let wide = ChannelParams::Datv(DatvParams {
-            symbol_rate: 2_330_000.0,
-            ..DatvParams::default()
-        });
+        let narrow = ChannelParams::new("datv", &DatvParams::default()).expect("datv settings");
+        let wide = ChannelParams::new(
+            "datv",
+            &DatvParams {
+                symbol_rate: 2_330_000.0,
+                ..DatvParams::default()
+            },
+        )
+        .expect("datv settings");
         assert_eq!(input_rate(&narrow), 2_000_000.0);
         assert_eq!(input_rate(&wide), 4_000_000.0);
         assert_eq!(
-            input_rate(&ChannelParams::Nfm(NfmParams::default())),
+            input_rate(&ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
             NfmChannel::descriptor().input_rate_hz
         );
     }
@@ -996,7 +550,7 @@ mod tests {
     fn descriptor_lookup_matches_catalogue() {
         let catalogue = descriptors();
         for expected in &catalogue {
-            assert_eq!(descriptor(&expected.type_id), Some(expected));
+            assert_eq!(descriptor(&expected.type_id).as_ref(), Some(expected));
         }
         assert!(descriptor("unknown").is_none());
     }
@@ -1008,6 +562,14 @@ mod tests {
             assert!(identifiable(kind), "{kind}");
         }
         assert!(!identifiable("ident"));
+        for descriptor in descriptors() {
+            assert_eq!(
+                descriptor.identifiable,
+                !descriptor.signatures.is_empty(),
+                "{}",
+                descriptor.type_id
+            );
+        }
     }
 
     #[test]
@@ -1023,11 +585,6 @@ mod tests {
         let all = descriptors();
         let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
         assert_eq!(ids.len(), all.len());
-        assert_eq!(
-            ids,
-            sdrmm_wire::CHANNEL_TYPE_IDS.iter().copied().collect(),
-            "a decoder named in the wire table must be registered here, and the other way round"
-        );
         for d in &all {
             let (bandwidth, rate) = match d.type_id.as_str() {
                 "nfm" => (12_500.0, 48_000.0),
@@ -1135,21 +692,59 @@ mod tests {
         }
     }
 
+    fn may_be_unset(field: &sdrmm_wire::SettingField) -> bool {
+        use sdrmm_wire::Control;
+        field.fallback.is_some()
+            || !field.when.is_empty()
+            || match &field.control {
+                Control::Number(spec) => spec.optional.is_some(),
+                Control::Text { optional, .. } => *optional,
+                Control::Choice { options } => options.iter().any(|option| option.value.is_null()),
+                Control::Live { .. } | Control::List { .. } | Control::Preset { .. } => true,
+                Control::Toggle => false,
+            }
+    }
+
     #[test]
-    fn descriptors_serve_the_choices_of_their_settings() {
+    fn every_form_field_names_a_setting_its_defaults_carry() {
         for descriptor in descriptors() {
-            let expected = descriptor
-                .defaults
-                .as_ref()
-                .map(|settings| settings.params.choices())
-                .unwrap_or_default();
-            assert_eq!(descriptor.choices, expected, "{}", descriptor.type_id);
+            let Some(defaults) = &descriptor.defaults else {
+                panic!("{} has no defaults", descriptor.type_id);
+            };
+            let settings = &defaults.params.settings;
+            for field in descriptor
+                .settings
+                .iter()
+                .filter(|field| !may_be_unset(field))
+            {
+                assert!(
+                    sdrmm_wire::channel::lookup(settings, &field.key).is_some(),
+                    "{} form names {} which its settings lack",
+                    descriptor.type_id,
+                    field.key
+                );
+            }
+            assert!(
+                defaults.check_limits(&descriptor.settings).is_ok(),
+                "{} defaults break their own form",
+                descriptor.type_id
+            );
         }
-        let pocsag = descriptor("pocsag")
-            .map(|d| d.choices.clone())
-            .unwrap_or_default();
-        assert_eq!(pocsag[0].name, "baud");
-        assert_eq!(pocsag[0].options.len(), 4);
+    }
+
+    #[test]
+    fn every_emitted_kind_is_in_the_catalog() {
+        registry::init();
+        let catalog = sdrmm_wire::catalog();
+        for descriptor in descriptors() {
+            for kind in &descriptor.emits {
+                assert!(
+                    catalog.entry(kind).is_some(),
+                    "{} emits unknown {kind}",
+                    descriptor.type_id
+                );
+            }
+        }
     }
 
     #[test]
@@ -1165,12 +760,12 @@ mod tests {
             assert_eq!(d.calls, expected, "{}", d.type_id);
             assert_eq!(
                 d.calls == Some(CallGate::Frames),
-                d.emits.contains(&EventKind::Dv),
+                d.emits.contains(&EventKind::DV),
                 "{} gates calls by frames exactly when it emits digital voice",
                 d.type_id
             );
             assert!(
-                !d.emits.contains(&EventKind::Call),
+                !d.emits.contains(&EventKind::CALL),
                 "{} declares calls, which only the call tracker makes",
                 d.type_id
             );
@@ -1204,7 +799,8 @@ mod tests {
                 "{} emitted a partial sample frame",
                 d.type_id
             );
-            if d.calls == Some(CallGate::Frames) || d.emits.contains(&EventKind::Broadcast) {
+            if d.calls == Some(CallGate::Frames) || d.emits.contains(&EventKind::named("broadcast"))
+            {
                 continue;
             }
             if d.type_id == "atv" && audio.is_empty() {
@@ -1222,7 +818,7 @@ mod tests {
 
     fn home_settings(type_id: &str) -> ChannelSettings {
         ChannelSettings {
-            frequency_hz: sdrmm_wire::home_frequency_hz(type_id).unwrap_or_default(),
+            frequency_hz: default_settings(type_id).map_or(0.0, |defaults| defaults.frequency_hz),
             ..settings(default_params(type_id))
         }
     }
@@ -1278,50 +874,83 @@ mod tests {
         let ctx = ChannelCtx {
             input_rate: 96_000.0,
         };
-        let err = create(ctx, &settings(ChannelParams::Nfm(NfmParams::default())));
+        let err = create(
+            ctx,
+            &settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+        );
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     }
 
     #[test]
     fn occupied_band_tracks_params_and_sideband() {
         assert_eq!(
-            occupied_band(&ChannelParams::Nfm(NfmParams {
-                bandwidth_hz: 25_000.0,
-                ..NfmParams::default()
-            })),
+            occupied_band(
+                &ChannelParams::new(
+                    "nfm",
+                    &NfmParams {
+                        bandwidth_hz: 25_000.0,
+                        ..NfmParams::default()
+                    }
+                )
+                .expect("nfm settings")
+            ),
             (-12_500.0, 12_500.0)
         );
         assert_eq!(
-            occupied_band(&ChannelParams::Am(AmParams {
-                bandwidth_hz: 8_000.0,
-                ..AmParams::default()
-            })),
+            occupied_band(
+                &ChannelParams::new(
+                    "am",
+                    &AmParams {
+                        bandwidth_hz: 8_000.0,
+                        ..AmParams::default()
+                    }
+                )
+                .expect("am settings")
+            ),
             (-4_000.0, 4_000.0)
         );
         assert_eq!(
-            occupied_band(&ChannelParams::Ssb(SsbParams {
-                sideband: Sideband::Usb,
-                bandwidth_hz: 10_000.0,
-            })),
+            occupied_band(
+                &ChannelParams::new(
+                    "ssb",
+                    &SsbParams {
+                        sideband: Sideband::Usb,
+                        bandwidth_hz: 10_000.0,
+                    }
+                )
+                .expect("ssb settings")
+            ),
             (100.0, 10_000.0)
         );
         assert_eq!(
-            occupied_band(&ChannelParams::Ssb(SsbParams {
-                sideband: Sideband::Lsb,
-                bandwidth_hz: 10_000.0,
-            })),
+            occupied_band(
+                &ChannelParams::new(
+                    "ssb",
+                    &SsbParams {
+                        sideband: Sideband::Lsb,
+                        bandwidth_hz: 10_000.0,
+                    }
+                )
+                .expect("ssb settings")
+            ),
             (-10_000.0, -100.0)
         );
         assert_eq!(
-            occupied_band(&ChannelParams::Wfm(WfmParams::default())),
+            occupied_band(&ChannelParams::new("wfm", &WfmParams::default()).expect("wfm settings")),
             (-100_000.0, 100_000.0)
         );
         assert_eq!(
-            occupied_band(&ChannelParams::Atv(AtvParams {
-                color: AtvColor::Pal,
-                sound_subcarrier_hz: Some(5_500_000.0),
-                ..AtvParams::default()
-            })),
+            occupied_band(
+                &ChannelParams::new(
+                    "atv",
+                    &AtvParams {
+                        color: AtvColor::Pal,
+                        sound_subcarrier_hz: Some(5_500_000.0),
+                        ..AtvParams::default()
+                    }
+                )
+                .expect("atv settings")
+            ),
             (-5_033_618.75, 5_565_000.0)
         );
     }
@@ -1336,14 +965,20 @@ mod tests {
 
     #[test]
     fn channel_filter_passes_in_channel_and_rejects_adjacent() {
-        let mut f = channel_filter(&ChannelParams::Nfm(NfmParams::default())).unwrap();
+        let mut f = channel_filter(
+            &ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+        )
+        .unwrap();
         let pass = filter_rms(&mut f, 1_000.0 / 48_000.0);
         assert!((0.9..1.05).contains(&pass), "in-channel rms {pass}");
-        let mut f = channel_filter(&ChannelParams::Nfm(NfmParams::default())).unwrap();
+        let mut f = channel_filter(
+            &ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+        )
+        .unwrap();
         let reject = filter_rms(&mut f, 15_000.0 / 48_000.0);
         assert!(reject < 0.01, "adjacent leak rms {reject}");
 
-        let ssb = ChannelParams::Ssb(SsbParams::default());
+        let ssb = ChannelParams::new("ssb", &SsbParams::default()).expect("ssb settings");
         let mut f = channel_filter(&ssb).unwrap();
         let pass = filter_rms(&mut f, 1_000.0 / 48_000.0);
         assert!((0.9..1.05).contains(&pass), "usb rms {pass}");
@@ -1355,18 +990,30 @@ mod tests {
     #[test]
     fn channel_filter_rejects_out_of_range_bandwidth() {
         for params in [
-            ChannelParams::Nfm(NfmParams {
-                bandwidth_hz: f64::NAN,
-                ..NfmParams::default()
-            }),
-            ChannelParams::Am(AmParams {
-                bandwidth_hz: 0.0,
-                ..AmParams::default()
-            }),
-            ChannelParams::Ssb(SsbParams {
-                sideband: Sideband::Usb,
-                bandwidth_hz: 50.0,
-            }),
+            ChannelParams::new(
+                "nfm",
+                &NfmParams {
+                    bandwidth_hz: f64::NAN,
+                    ..NfmParams::default()
+                },
+            )
+            .expect("nfm settings"),
+            ChannelParams::new(
+                "am",
+                &AmParams {
+                    bandwidth_hz: 0.0,
+                    ..AmParams::default()
+                },
+            )
+            .expect("am settings"),
+            ChannelParams::new(
+                "ssb",
+                &SsbParams {
+                    sideband: Sideband::Usb,
+                    bandwidth_hz: 50.0,
+                },
+            )
+            .expect("ssb settings"),
         ] {
             assert!(
                 matches!(

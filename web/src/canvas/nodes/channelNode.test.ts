@@ -24,15 +24,15 @@ describe("unboundOf", () => {
 
 describe("lockedChannels", () => {
   const resolved = resolvedPatch([
-    { ...resolvedNodeOf("nfm", "channel"), held: { by: "hand" } },
-    { ...resolvedNodeOf("am", "channel"), held: { by: "wire", node: "scan" } },
+    { ...resolvedNodeOf("voice", "channel"), held: { by: "hand" } },
+    { ...resolvedNodeOf("talk", "channel"), held: { by: "wire", node: "scan" } },
     { ...resolvedNodeOf("scan", "scanner"), label: "Scanner" },
-    resolvedNodeOf("wfm", "channel"),
+    resolvedNodeOf("broad", "channel"),
   ]);
   const faces = new Map<number, string>([
-    [1, "nfm"],
-    [2, "am"],
-    [3, "wfm"],
+    [1, "voice"],
+    [2, "talk"],
+    [3, "broad"],
     [4, "gone"],
   ]);
 

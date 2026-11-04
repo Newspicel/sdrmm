@@ -2,9 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use sdrmm_wire::{
     DecodedRecord, LatLon, PropagationCell, PropagationNode, PropagationPath, PropagationSummary,
-    PropagationView,
-    geo::distance_m,
-    present::{Spot, grid_lat_lon, square_of},
+    PropagationView, geo::distance_m, geo::grid_lat_lon, geo::square_of, present::Spot,
 };
 
 pub(crate) const EARTH_RADIUS_KM: f64 = 6_371.0;

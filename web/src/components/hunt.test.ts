@@ -74,7 +74,7 @@ describe("liveHunt", () => {
 const CHANNEL: ChannelInfo = {
   id: 9,
   stream: 0,
-  settings: { frequency_hz: 433_920_000, params: { type: "nfm", settings: {} } as never },
+  settings: { frequency_hz: 433_920_000, params: { type: "voice", settings: {} } },
 };
 
 describe("huntRefusal", () => {

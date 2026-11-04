@@ -1,4 +1,4 @@
-use sdrmm_wire::DabTransmissionMode;
+use crate::dab::DabTransmissionMode;
 
 pub const TRANSMISSION_MODES: [DabTransmissionMode; 4] = [
     DabTransmissionMode::I,

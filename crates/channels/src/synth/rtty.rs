@@ -1,41 +1,14 @@
 use num_complex::Complex;
-use sdrmm_modem::cpm::CpmMod;
+use sdrmm_modem::{cpm::CpmMod, ita2};
 
-use crate::rtty::{FIGS_CODE, FIGURES, LETTERS, LTRS_CODE, SPACE_CODE, cell_params};
+use crate::rtty::cell_params;
 
 const LEAD_IN_BITS: usize = 8;
 const LEAD_OUT_BITS: usize = 4;
 
-fn code_for(ch: char) -> Option<(u8, Option<bool>)> {
-    let find = |row: &[char; 32]| row.iter().position(|&c| c == ch && c != '\0');
-    match (find(&LETTERS), find(&FIGURES)) {
-        (Some(code), Some(_)) => Some((code as u8, None)),
-        (Some(code), None) => Some((code as u8, Some(false))),
-        (None, Some(code)) => Some((code as u8, Some(true))),
-        (None, None) => None,
-    }
-}
-
 #[must_use]
 pub fn ita2_codes(text: &str, unshift_on_space: bool) -> Vec<u8> {
-    let mut codes = Vec::new();
-    let mut figs = false;
-    for ch in text.chars() {
-        let Some((code, row)) = code_for(ch.to_ascii_uppercase()) else {
-            continue;
-        };
-        if let Some(row) = row
-            && row != figs
-        {
-            codes.push(if row { FIGS_CODE } else { LTRS_CODE });
-            figs = row;
-        }
-        codes.push(code);
-        if code == SPACE_CODE && unshift_on_space {
-            figs = false;
-        }
-    }
-    codes
+    ita2::encode(text, &ita2::FIGURES_US, unshift_on_space)
 }
 
 #[must_use]
@@ -113,7 +86,10 @@ mod tests {
             .iter()
             .map(|frame| (0..5).map(|i| u8::from(frame[2 + 2 * i]) << i).sum::<u8>())
             .collect();
-        assert_eq!(codes, [0x03, FIGS_CODE, 0x17, SPACE_CODE, FIGS_CODE, 0x13]);
+        assert_eq!(
+            codes,
+            [0x03, ita2::FIGS, 0x17, ita2::SPACE, ita2::FIGS, 0x13]
+        );
     }
 
     #[test]

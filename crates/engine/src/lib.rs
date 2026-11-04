@@ -19,7 +19,7 @@ pub use sdrmm_device_virtual::synthetic_devices_offered;
 use sdrmm_recorder::{data_path, meta_path};
 use sdrmm_wire::{
     AudioRecordingStatus, AudioRoute, BandMiss, Capabilities, ChannelInfo, ChannelSettings,
-    DecodedRecord, DecoderEvent, DeviceBackend, DeviceFault, DeviceInfo, DeviceSet,
+    ChannelStatus, DecodedRecord, DeviceBackend, DeviceFault, DeviceInfo, DeviceSet,
     DeviceSetStatus, DeviceSettings, EventOrigin, HeldLane, NetworkExportSettings,
     NetworkExportStatus, PositionFix, RecordingStatus, ServerEvent, SettingsRefused, StateScope,
     StateSnapshot, StreamScope, TrunkSystemStatus, VirtualLane,
@@ -85,7 +85,8 @@ use crate::{
     network_export::{NetworkExportShared, NetworkExportTap},
     recording::RecordingShared,
     runtime::{
-        CaptureRuntime, ChannelSinks, DecodedSink, DeviceRuntime, DspCommand, RawDecoded, RawImage,
+        CaptureRuntime, ChannelSinks, Decoded, DecodedSink, DeviceRuntime, DspCommand, RawDecoded,
+        RawImage,
     },
     scanner::ScannerState,
     sinks::ChannelBasebandRecording,
@@ -778,6 +779,12 @@ impl DeviceSetState {
                 .channels
                 .iter()
                 .map(|channel| ChannelInfo {
+                    band: sdrmm_channels::layout(&channel.settings.params)
+                        .ok()
+                        .map(|layout| sdrmm_wire::ChannelBand {
+                            low_hz: layout.band.0,
+                            high_hz: layout.band.1,
+                        }),
                     out_of_band: self.band_miss(channel),
                     rejected: self.rejected(channel.id),
                     skipped: self.skipped(channel.id),
@@ -1178,7 +1185,13 @@ impl Engine {
     }
 
     fn route_raw(&self, raw: RawDecoded) {
-        self.tell_face(raw.node.as_deref(), &raw.event);
+        let event = match raw.out {
+            Decoded::Event(event) => event,
+            Decoded::Status(status) => {
+                self.tell_face(raw.node.as_deref(), status);
+                return;
+            }
+        };
         let trunked = self.trunked(raw.node.as_deref());
         let record = DecodedRecord {
             origin: raw.node.map(|node| EventOrigin {
@@ -1192,7 +1205,7 @@ impl Engine {
             channel: raw.channel,
             at: format!("{:.9}", jiff::Timestamp::now()),
             freq_hz: raw.freq_hz,
-            event: raw.event,
+            event,
         };
         if trunked {
             let _ = self
@@ -1202,11 +1215,11 @@ impl Engine {
         let _ = self.decoded_tx_out.send(record);
     }
 
-    fn tell_face(&self, node: Option<&str>, event: &DecoderEvent) {
-        if let (Some(node), DecoderEvent::Broadcast(status)) = (node, event) {
-            self.emit(ServerEvent::ChannelBroadcast {
+    fn tell_face(&self, node: Option<&str>, status: ChannelStatus) {
+        if let Some(node) = node {
+            self.emit(ServerEvent::ChannelStatus {
                 node: node.to_owned(),
-                status: Box::new(status.clone()),
+                status: Box::new(status),
             });
         }
     }

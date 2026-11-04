@@ -37,15 +37,25 @@ pub fn crc16_ccitt(data: &[u8]) -> u16 {
 
 #[must_use]
 pub fn crc16_msb_bits(poly: u16, init: u16, bits: &[bool]) -> u16 {
-    let mut crc = init;
-    for &bit in bits {
-        let msb = crc & 0x8000 != 0;
-        crc <<= 1;
-        if msb != bit {
-            crc ^= poly;
+    crc_msb_bits(poly.into(), 16, init.into(), bits.iter().copied()) as u16
+}
+
+/// Bit-serial MSB-first CRC of any width from 1 to 32 bits, for codes whose protected field is
+/// not a whole number of bytes. No final inversion: callers apply their own.
+#[must_use]
+pub fn crc_msb_bits(poly: u32, width: u32, init: u32, bits: impl IntoIterator<Item = bool>) -> u32 {
+    let width = width.clamp(1, 32);
+    let mask = u32::MAX >> (32 - width);
+    let top = 1u32 << (width - 1);
+    bits.into_iter().fold(init & mask, |crc, bit| {
+        let feedback = (crc & top != 0) != bit;
+        let shifted = (crc << 1) & mask;
+        if feedback {
+            shifted ^ (poly & mask)
+        } else {
+            shifted
         }
-    }
-    crc
+    })
 }
 
 #[must_use]
@@ -808,6 +818,32 @@ mod tests {
         assert_eq!(crc8_msb(0x07, 0x00, check), 0xF4);
         assert_eq!(crc8_msb(0x31, 0xFF, check), 0xF7);
         assert_eq!(crc8_msb(0x1D, 0xFD, check), 0x7E);
+    }
+
+    #[test]
+    fn a_bit_serial_crc_matches_the_published_catalogue_check_values() {
+        let bits: Vec<bool> = b"123456789"
+            .iter()
+            .flat_map(|&byte| (0..8).rev().map(move |shift| byte >> shift & 1 == 1))
+            .collect();
+        let crc = |poly, width, init| crc_msb_bits(poly, width, init, bits.iter().copied());
+        assert_eq!(crc(0x07, 8, 0), 0xF4);
+        assert_eq!(crc(0x1021, 16, 0xFFFF), 0x29B1);
+        assert_eq!(crc(0x80F, 12, 0), 0xF5B);
+        assert_eq!(crc(0x04C1_1DB7, 32, u32::MAX), 0x0376_E6E7);
+        assert_eq!(crc16_msb_bits(0x1021, 0xFFFF, &bits), 0x29B1);
+    }
+
+    #[test]
+    fn a_bit_serial_crc_agrees_with_the_byte_wise_one() {
+        let data = [0xDE, 0xAD, 0xBE, 0xEF, 0x01];
+        let bits = data
+            .iter()
+            .flat_map(|&byte| (0..8).rev().map(move |shift| byte >> shift & 1 == 1));
+        assert_eq!(
+            crc_msb_bits(0x07, 8, 0x5A, bits),
+            u32::from(crc8_msb(0x07, 0x5A, &data))
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
+use sdrmm_channels::AdsbMessage;
 use sdrmm_wire::{
-    AdsbMessage, ChannelNode, DecoderEvent, EventAudio, EventFilterNode, EventOrigin, FilterMode,
-    NodeBody, PatchEdge, PatchGraph, PatchNode, PortRef, Position, StateSnapshot, VoiceCall,
+    ChannelNode, DecoderEvent, EventAudio, EventFilterNode, EventOrigin, FilterMode, NodeBody,
+    PatchEdge, PatchGraph, PatchNode, PortRef, Position, StateSnapshot, VoiceCall,
 };
 use tokio::sync::broadcast::error::TryRecvError;
 
@@ -61,7 +62,7 @@ fn from(source: &str, event: DecoderEvent) -> DecodedRecord {
 }
 
 fn aircraft(icao: &str, callsign: &str) -> DecoderEvent {
-    DecoderEvent::Adsb(AdsbMessage {
+    DecoderEvent::of(&AdsbMessage {
         icao: icao.to_owned(),
         df: 17,
         callsign: Some(callsign.to_owned()),
@@ -72,7 +73,7 @@ fn aircraft(icao: &str, callsign: &str) -> DecoderEvent {
 }
 
 fn call(node: &str) -> DecoderEvent {
-    DecoderEvent::Call(VoiceCall {
+    DecoderEvent::of(&VoiceCall {
         id: 7,
         node: node.to_owned(),
         started_at: "2026-09-21T10:00:00Z".to_owned(),
@@ -246,9 +247,10 @@ fn a_clip_stays_only_in_a_sink_that_keeps_clips() {
 
     let clip = |sink: &str| {
         let record = bench.feed(sink).records.remove(0);
-        let DecoderEvent::Call(call) = record.event else {
-            panic!("the call reached {sink}");
-        };
+        let call = record
+            .event
+            .read::<sdrmm_wire::VoiceCall>()
+            .unwrap_or_else(|| panic!("the call reached {sink}"));
         (
             call.audio.is_some(),
             record.view.and_then(|view| view.clip).is_some(),
@@ -323,7 +325,7 @@ fn a_gps_wired_into_a_map_becomes_a_track() {
 }
 
 fn satellite_fix() -> DecoderEvent {
-    DecoderEvent::Satellite(sdrmm_wire::SatelliteFix {
+    DecoderEvent::of(&sdrmm_wire::SatelliteFix {
         name: Some("ISS (ZARYA)".to_owned()),
         catalog: Some("25544".to_owned()),
         ground: Some(sdrmm_wire::SatelliteGround {
@@ -389,7 +391,7 @@ fn a_lost_satellite_leaves_the_map() {
     assert_eq!(bench.feed("map").entities.len(), 1);
 
     let lost = sdrmm_wire::SatelliteFix::of(&sdrmm_wire::SatelliteStatus::default());
-    bench.send(from("sat", DecoderEvent::Satellite(lost)));
+    bench.send(from("sat", DecoderEvent::of(&lost)));
 
     assert!(bench.feed("map").entities.is_empty());
 }
@@ -417,7 +419,7 @@ fn broadcast_status_reaches_a_filtered_readout_only_through_its_wire() {
             node(
                 "status-only",
                 NodeBody::EventFilter(EventFilterNode {
-                    kinds: vec![sdrmm_wire::EventKind::Broadcast],
+                    kinds: vec![sdrmm_wire::EventKind::named("broadcast")],
                     ..EventFilterNode::default()
                 }),
             ),
@@ -447,7 +449,7 @@ fn broadcast_status_reaches_a_filtered_readout_only_through_its_wire() {
         .iter()
         .map(|record| record.event.kind())
         .collect();
-    assert_eq!(kinds, [sdrmm_wire::EventKind::Broadcast]);
+    assert_eq!(kinds, [sdrmm_wire::EventKind::named("broadcast")]);
     assert!(bench.feed("loose").records.is_empty());
 }
 
@@ -478,13 +480,16 @@ fn a_propagation_node_turns_wired_spots_into_cells_from_its_receiver() {
     bench.hub.position("gps", Some(&fix));
     let mut record = from(
         "ft8",
-        DecoderEvent::Ft8(sdrmm_wire::WsjtMessage {
-            text: "CQ W1AW FN42".to_owned(),
-            snr_db: -12.0,
-            audio_hz: 1_500.0,
-            time_offset_s: 0.0,
-            hard_errors: 0,
-        }),
+        DecoderEvent::tagged(
+            sdrmm_wire::EventKind::named("ft8"),
+            &sdrmm_channels::WsjtMessage {
+                text: "CQ W1AW FN42".to_owned(),
+                snr_db: -12.0,
+                audio_hz: 1_500.0,
+                time_offset_s: 0.0,
+                hard_errors: 0,
+            },
+        ),
     );
     record.at = jiff::Timestamp::now().to_string();
 
@@ -563,7 +568,7 @@ fn a_record_its_station_let_through_survives_a_rewire() {
     };
     let bench = Bench::over(graph);
     let mut stations = crate::events::Stations::default();
-    let ident = DecoderEvent::Adsb(AdsbMessage {
+    let ident = DecoderEvent::of(&AdsbMessage {
         icao: "3c6444".to_owned(),
         df: 17,
         callsign: Some("DLH123".to_owned()),

@@ -61,6 +61,11 @@ fn data_of(raw: u32) -> u32 {
     reverse21(to_pocsag(raw) >> 11)
 }
 
+#[cfg(any(test, feature = "synth"))]
+pub(crate) fn encode_word(data: u32) -> u32 {
+    from_pocsag(sdrmm_dsp::pocsag_bch_encode(reverse21(data & 0x1F_FFFF)))
+}
+
 pub fn decode_word(raw: u32) -> Option<(u32, u32)> {
     let (corrected, errors) = pocsag_bch_decode(to_pocsag(raw))?;
     Some((reverse21(corrected >> 11), errors))

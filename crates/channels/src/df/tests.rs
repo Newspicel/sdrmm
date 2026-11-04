@@ -5,7 +5,7 @@ use sdrmm_dsp::scene::{ArrayScene, SceneSignal, SceneSource};
 use sdrmm_dsp::special::wrap_deg;
 use sdrmm_wire::{
     ArrayElement, ArrayGeometry, ArrayTuningMode, BearingSource, CalPhase, CalSourceKind,
-    Coherence, DecoderEvent, DfBearing, DfPeak, DfReading, ProcessorReading, RdsUpdate, Winding,
+    Coherence, DfBearing, DfPeak, DfReading, ProcessorReading, Winding,
 };
 
 use super::*;
@@ -141,7 +141,7 @@ struct Rig {
     pose: Pose,
     cal: CalView,
     report: Option<ProcessorReading>,
-    events: Vec<DecoderEvent>,
+    events: Vec<DfBearing>,
     unix_ns: u64,
     seen: Seen,
 }
@@ -157,7 +157,7 @@ impl Rig {
             pose: located(0.0),
             cal: CalView::default(),
             report: ProcessorReading::empty("df"),
-            events: vec![DecoderEvent::Rds(RdsUpdate::default()); 2],
+            events: (0..2).map(|_| crate::df::reserved_bearing(8)).collect(),
             unix_ns: 1_790_000_000_000_000_000,
             seen: Seen::default(),
         }
@@ -185,7 +185,7 @@ impl Rig {
         let mut out = ProcessorOutput::new(OutputSlots {
             report: self.report.as_mut(),
             surface: None,
-            events: &mut self.events,
+            bearings: &mut self.events,
             lanes: &mut [],
         });
         self.processor.process(&block, &mut out);
@@ -195,11 +195,9 @@ impl Rig {
         {
             self.seen.readings.push(reading.clone());
         }
-        for event in &self.events[..tally.events] {
-            if let DecoderEvent::Df(bearing) = event {
-                self.seen.events.push(bearing.clone());
-            }
-        }
+        self.seen
+            .events
+            .extend(self.events[..tally.bearings].iter().cloned());
         self.seen.steers.extend(tally.steer);
         self.unix_ns += NANOS_PER_BLOCK;
     }
@@ -728,7 +726,7 @@ fn df_is_built_through_the_registry_and_counts_lane_mismatch() {
     let mut out = ProcessorOutput::new(OutputSlots {
         report: report.as_mut(),
         surface: None,
-        events: &mut [],
+        bearings: &mut [],
         lanes: &mut [],
     });
     processor.process(&block, &mut out);

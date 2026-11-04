@@ -267,11 +267,25 @@ pub fn reverse_byte(b: u8) -> u8 {
 
 #[must_use]
 pub fn pack_msb(bits: &[bool]) -> Vec<u8> {
-    let mut out = vec![0u8; bits.len().div_ceil(8)];
+    let mut out = Vec::new();
+    pack_msb_into(bits, &mut out);
+    out
+}
+
+/// [`pack_msb`] into a buffer the caller keeps, so a decoder packing every frame does not
+/// allocate once the buffer has grown.
+pub fn pack_msb_into(bits: &[bool], out: &mut Vec<u8>) {
+    out.clear();
+    out.resize(bits.len().div_ceil(8), 0);
     for (i, &bit) in bits.iter().enumerate() {
         out[i / 8] |= u8::from(bit) << (7 - i % 8);
     }
-    out
+}
+
+/// Bits read most significant first into one integer. Past 64 bits the oldest shift out.
+#[must_use]
+pub fn word_msb(bits: &[bool]) -> u64 {
+    bits.iter().fold(0, |word, &bit| word << 1 | u64::from(bit))
 }
 
 #[must_use]
@@ -309,6 +323,23 @@ pub fn manchester_decode(first: bool, second: bool) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_word_reads_its_first_bit_as_the_most_significant() {
+        assert_eq!(word_msb(&[]), 0);
+        assert_eq!(word_msb(&[true, false, true, true]), 0b1011);
+        let long: Vec<bool> = (0..70).map(|i| i >= 6).collect();
+        assert_eq!(word_msb(&long), u64::MAX);
+    }
+
+    #[test]
+    fn packing_into_a_kept_buffer_matches_a_fresh_one_and_pads_the_last_byte() {
+        let bits: Vec<bool> = (0..13).map(|i| i % 3 == 0).collect();
+        let mut out = vec![0xFF; 7];
+        pack_msb_into(&bits, &mut out);
+        assert_eq!(out, pack_msb(&bits));
+        assert_eq!(out, [0b1001_0010, 0b0100_1000]);
+    }
 
     const FLAG: [bool; 8] = [false, true, true, true, true, true, true, false];
 

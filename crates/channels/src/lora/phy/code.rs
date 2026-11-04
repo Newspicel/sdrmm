@@ -1,4 +1,6 @@
-use sdrmm_wire::LoraCodingRate;
+use sdrmm_dsp::crc16_msb;
+
+use crate::lora::LoraCodingRate;
 
 pub(crate) const HEADER_NIBBLES: usize = 5;
 pub(crate) const HEADER_SYMBOLS: usize = 8;
@@ -79,21 +81,6 @@ impl Header {
     }
 }
 
-fn crc16_ccitt(bytes: &[u8]) -> u16 {
-    let mut crc = 0u16;
-    for &byte in bytes {
-        crc ^= u16::from(byte) << 8;
-        for _ in 0..8 {
-            crc = if crc & 0x8000 != 0 {
-                (crc << 1) ^ 0x1021
-            } else {
-                crc << 1
-            };
-        }
-    }
-    crc
-}
-
 #[must_use]
 pub(crate) fn payload_crc(payload: &[u8]) -> u16 {
     let (body, tail) = payload.split_at(payload.len().saturating_sub(2));
@@ -103,23 +90,7 @@ pub(crate) fn payload_crc(payload: &[u8]) -> u16 {
     } else {
         0
     };
-    crc16_ccitt(body) ^ last ^ before
-}
-
-#[must_use]
-pub(crate) fn gray(value: u16) -> u16 {
-    value ^ (value >> 1)
-}
-
-#[must_use]
-pub(crate) fn gray_inverse(value: u16) -> u16 {
-    let mut out = value;
-    let mut shift = value >> 1;
-    while shift != 0 {
-        out ^= shift;
-        shift >>= 1;
-    }
-    out
+    crc16_msb(0x1021, 0, body) ^ last ^ before
 }
 
 #[must_use]
@@ -205,9 +176,11 @@ pub(crate) fn received_crc(nibbles: &[u8], length: usize) -> Option<u16> {
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) mod encode {
+    use sdrmm_modem::constellation::tables::gray_inverse;
+
     use super::{
         CRC_NIBBLES, HEADER_PARITY_BITS, Header, Shape, WHITENING, codeword_bit, codeword_len,
-        diagonal, gray_inverse, hamming_encode, payload_crc,
+        diagonal, hamming_encode, payload_crc,
     };
 
     #[must_use]
@@ -239,11 +212,8 @@ pub(crate) mod encode {
                     let set = codeword_bit(codeword, columns, symbol);
                     acc | (u16::from(set) << (rows - 1 - j))
                 });
-                let shifted = if reduced {
-                    gray_inverse(value) << 2
-                } else {
-                    gray_inverse(value)
-                };
+                let symbol = gray_inverse(u32::from(value)) as u16;
+                let shifted = if reduced { symbol << 2 } else { symbol };
                 (shifted + 1) & ((1u16 << sf) - 1)
             })
             .collect()
@@ -325,14 +295,6 @@ mod tests {
                 damaged[index] ^= 1 << flip;
                 assert_ne!(Header::parse(&damaged), Some(header), "{index} {flip}");
             }
-        }
-    }
-
-    #[test]
-    fn gray_and_its_inverse_undo_each_other() {
-        for value in 0..4096u16 {
-            assert_eq!(gray(gray_inverse(value)), value);
-            assert_eq!(gray_inverse(gray(value)), value);
         }
     }
 

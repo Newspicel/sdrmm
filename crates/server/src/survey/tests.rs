@@ -7,8 +7,8 @@ use axum::http::StatusCode;
 use sdrmm_engine::SpectrumSnapshot;
 use sdrmm_wire::{
     ApiError, DeviceBackend, DeviceRef, GpsNode, NodeBody, PatchEdge, PatchNode, PortRef, Position,
-    PositionFix, PositionSource, SignalMapNode, WorkspaceSnapshot,
-    survey::{MAX_SURVEY_CELLS, SurveyCell, SurveyGrid, SurveyStop, cell_key},
+    PositionFix, PositionSource, SignalMapNode, WorkspaceSnapshot, survey::MAX_SURVEY_CELLS,
+    survey::SurveyCell, survey::SurveyGrid, survey::SurveyStop, survey::cell_key,
 };
 
 use super::{

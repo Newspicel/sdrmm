@@ -24,7 +24,7 @@ describe("templateSize", () => {
       templateSize(
         template({
           channels: [
-            { frequency_hz: 100e6, params: { type: "nfm", settings: {} } },
+            { frequency_hz: 100e6, params: { type: "voice", settings: {} } },
           ] as TemplateInfo["channels"],
         }),
       ),

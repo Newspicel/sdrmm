@@ -1,8 +1,14 @@
 use std::collections::HashMap;
 
-use sdrmm_wire::{
-    DEFAULT_SONDE_BURST_M, LatLon, RadiosondeFrame, RadiosondeParams, SondeForecast, geo::offset_m,
-};
+use sdrmm_wire::{LatLon, geo::offset_m};
+
+use crate::radiosonde::DEFAULT_SONDE_BURST_M;
+
+use crate::radiosonde::RadiosondeFrame;
+
+use crate::radiosonde::RadiosondeParams;
+
+use crate::radiosonde::SondeForecast;
 
 const LAYER_M: f64 = 250.0;
 const LAYERS: usize = 200;
@@ -265,7 +271,8 @@ impl<'a> Run<'a> {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{SondeType, geo::distance_m};
+    use crate::radiosonde::SondeType;
+    use sdrmm_wire::geo::distance_m;
 
     use super::*;
     use crate::radiosonde::fields::empty_frame;

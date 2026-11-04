@@ -1,9 +1,11 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::pocsag_bch_encode;
 
-use crate::flex::{SYNC_CODES, SYNC_MARKER, codeword::WORDS};
+use crate::flex::{
+    SYNC_CODES, SYNC_MARKER,
+    codeword::{WORDS, encode_word},
+};
 
 const CAPCODE_OFFSET: u32 = 0x8000;
 const WORD_BITS: usize = 21;
@@ -65,19 +67,6 @@ impl Mode {
     fn levels(self) -> usize {
         usize::from(SYNC_CODES[self.sync_code()].1.levels)
     }
-}
-
-fn reverse31(word: u32) -> u32 {
-    word.reverse_bits() >> 1
-}
-
-fn reverse21(word: u32) -> u32 {
-    word.reverse_bits() >> 11
-}
-
-fn encode_word(data: u32) -> u32 {
-    let pocsag = pocsag_bch_encode(reverse21(data & 0x1F_FFFF));
-    reverse31(pocsag >> 1) | (pocsag & 1) << 31
 }
 
 fn checksum(mut data: u32) -> u32 {

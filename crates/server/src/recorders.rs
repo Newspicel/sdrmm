@@ -706,7 +706,7 @@ mod tests {
         registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
         let engine = Engine::with_registry(registry, Some(dir.path().to_path_buf()));
         let ds = engine.create_device_set("virtual:band").expect("radio");
-        let settings = sdrmm_wire::ChannelSettings::default_for("nfm").expect("nfm");
+        let settings = sdrmm_channels::default_settings("nfm").expect("nfm");
         let ch = engine
             .add_channel_for(ds, 0, settings, Some("ch"))
             .expect("channel");

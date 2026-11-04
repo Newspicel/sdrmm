@@ -1,3 +1,7 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+mod model;
+pub use model::*;
 mod envelope;
 pub(crate) mod geometry;
 mod picture;
@@ -12,16 +16,13 @@ use geometry::LINE_SECONDS;
 use num_complex::Complex;
 use picture::Picture;
 use sdrmm_dsp::{Decimator, design_lowpass};
-use sdrmm_wire::{
-    AptImage, AptParams, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily, EventKind,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use sync::{Acquisition, LineClock, SyncDetector};
 use track::Track;
 
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
-    check_input_rate,
+    NativeChannel, check_input_rate,
 };
 
 pub(crate) const INPUT_RATE_HZ: f64 = 60_000.0;
@@ -41,7 +42,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
     has_video: true,
-    emits: vec![EventKind::Apt],
+    emits: vec![EventKind::named("apt")],
     ..ChannelDescriptor::default()
 });
 
@@ -58,14 +59,8 @@ pub(crate) fn channel_filter(p: &AptParams) -> Result<ChannelFilter, ChannelErro
     )))
 }
 
-fn params(settings: &ChannelSettings) -> Result<&AptParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Apt(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "apt channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<AptParams, ChannelError> {
+    crate::settings_of::<AptParams>(settings)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,7 +171,7 @@ impl AptChannel {
         self.seq = self.seq.wrapping_add(1);
         let duration_ms = (lines as f64 * self.clock.len / self.rate * 1_000.0) as u32;
         let picture = self.picture.snapshot(lines);
-        out.events.push(DecoderEvent::Apt(AptImage {
+        out.events.push(DecoderEvent::of(&AptImage {
             seq: self.seq,
             lines: picture.height,
             complete,
@@ -203,11 +198,10 @@ impl AptChannel {
     }
 }
 
-impl ChannelRx for AptChannel {
+impl NativeChannel for AptChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
@@ -227,7 +221,9 @@ impl ChannelRx for AptChannel {
             seq: 0,
         })
     }
+}
 
+impl ChannelRx for AptChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.keep_partial = params(&settings)?.keep_partial;
         Ok(())
@@ -249,6 +245,25 @@ impl ChannelRx for AptChannel {
             self.advance(out);
         }
     }
+}
+
+pub(crate) fn apt_decoder() -> Native<AptParams> {
+    Native::new::<AptChannel>(occupied_band)
+        .filter(channel_filter)
+        .home(137_100_000.0)
+        .form(apt_form)
+        .kinds(apt_kinds)
+}
+
+pub(crate) fn apt_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("keep_partial", "Partial", Control::Toggle)
+            .title("Keep unfinished passes"),
+    ]
+}
+
+fn apt_kinds() -> Vec<KindSpec> {
+    vec![crate::apt::apt_kind()]
 }
 
 #[cfg(test)]

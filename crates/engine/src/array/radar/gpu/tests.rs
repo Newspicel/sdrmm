@@ -25,8 +25,8 @@ mod on_gpu {
         CafBackend, CpiJob, CpuCaf, CubeOut, RadarCtx, RadarPlan as StagePlan, plan,
     };
     use sdrmm_wire::{
-        GpuUse,
-        radar::{ClutterMethod, ClutterParams, Illuminator, PassiveRadarParams, ReferenceCleaning},
+        GpuUse, radar::ClutterMethod, radar::ClutterParams, radar::Illuminator,
+        radar::PassiveRadarParams, radar::ReferenceCleaning,
     };
 
     use super::super::{super::worker::Shared, GpuBackend, Offer, decide};

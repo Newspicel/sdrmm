@@ -11,7 +11,7 @@ mod surface;
 mod tests;
 
 use sdrmm_wire::StreamKind;
-use sdrmm_wire::array::{MAX_ARRAY_LANES, MIN_ARRAY_LANES};
+use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use crate::array_processor::{
     Execution, ProcessorDescriptor, ProcessorNeeds, Registration, TuningNeed, never_in_place,

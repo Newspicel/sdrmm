@@ -1,4 +1,5 @@
-use sdrmm_wire::{DectArc, DectIdentity};
+use crate::dect::DectArc;
+use crate::dect::DectIdentity;
 
 pub(crate) const RFPI_BITS: usize = 40;
 

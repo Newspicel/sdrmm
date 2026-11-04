@@ -98,7 +98,7 @@ impl Downlink {
             }),
             ControlSlot::Block(slot) => {
                 let data = match slot.channel {
-                    sdrmm_wire::GsmLogicalChannel::Bcch => self.broadcast(frame_number),
+                    crate::gsm::GsmLogicalChannel::Bcch => self.broadcast(frame_number),
                     _ => EMPTY_PAGING,
                 };
                 normal_burst(&interleave(&data)[usize::from(slot.index)], self.bsic & 7)

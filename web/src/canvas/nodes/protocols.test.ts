@@ -19,10 +19,10 @@ function type(
 }
 
 const TYPES = [
-  type("nfm", "NFM", "analog_voice"),
-  type("wfm", "WFM (broadcast)", "analog_voice"),
-  type("dmr", "DMR", "digital_voice"),
-  type("adsb", "ADS-B (1090ES)", "aviation"),
+  type("voice", "Voice", "analog_voice"),
+  type("broad", "Broad (wide)", "analog_voice"),
+  type("digital", "Digital", "digital_voice"),
+  type("plane", "ADS-B (1090ES)", "aviation"),
   type("ident", "Signal identifier", "utility", false),
 ];
 
@@ -35,35 +35,35 @@ describe("protocol groups", () => {
       "digital_voice",
       "aviation",
     ]);
-    expect(GROUPS[0]?.protocols.map((protocol) => protocol.label)).toEqual(["NFM", "WFM"]);
+    expect(GROUPS[0]?.protocols.map((protocol) => protocol.label)).toEqual(["Voice", "Broad"]);
     expect(GROUPS[2]?.protocols[0]?.name).toBe("ADS-B (1090ES)");
   });
 
   it("starts with everything enabled", () => {
     const choice = { disabled: [], unidentified: true };
-    expect(enabledKinds(GROUPS, choice.disabled)).toEqual(["nfm", "wfm", "dmr", "adsb"]);
+    expect(enabledKinds(GROUPS, choice.disabled)).toEqual(["voice", "broad", "digital", "plane"]);
     expect(activePreset(GROUPS, choice)?.id).toBe("all");
     expect(choiceSummary(GROUPS, choice)).toBe("All protocols");
   });
 
   it("offers one preset per family that keeps only that family", () => {
     const analog = protocolPresets(GROUPS).find((preset) => preset.id === "analog_voice");
-    expect(analog?.choice).toEqual({ disabled: ["dmr", "adsb"], unidentified: false });
-    expect(choiceSummary(GROUPS, { disabled: ["adsb", "dmr"], unidentified: false })).toBe(
+    expect(analog?.choice).toEqual({ disabled: ["digital", "plane"], unidentified: false });
+    expect(choiceSummary(GROUPS, { disabled: ["plane", "digital"], unidentified: false })).toBe(
       "Analog voice",
     );
   });
 
   it("counts a custom choice", () => {
-    const disabled = setEnabled([], ["dmr"], false);
-    expect(disabled).toEqual(["dmr"]);
+    const disabled = setEnabled([], ["digital"], false);
+    expect(disabled).toEqual(["digital"]);
     expect(activePreset(GROUPS, { disabled, unidentified: true })).toBeUndefined();
     expect(choiceSummary(GROUPS, { disabled, unidentified: true })).toBe("3 of 4");
-    expect(setEnabled(disabled, ["dmr"], true)).toEqual([]);
+    expect(setEnabled(disabled, ["digital"], true)).toEqual([]);
   });
 
   it("names an empty choice", () => {
-    const disabled = ["nfm", "wfm", "dmr", "adsb"];
+    const disabled = ["voice", "broad", "digital", "plane"];
     expect(choiceSummary(GROUPS, { disabled, unidentified: false })).toBe("Nothing");
     expect(choiceSummary(GROUPS, { disabled, unidentified: true })).toBe("Unidentified only");
   });

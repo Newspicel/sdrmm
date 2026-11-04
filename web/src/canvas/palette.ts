@@ -97,7 +97,7 @@ function channelItems(channelTypes: readonly ChannelDescriptor[]): PaletteItem[]
 
 export function channelPicker(
   channelTypes: readonly ChannelDescriptor[],
-  suggested: string,
+  suggested: string | undefined,
 ): PaletteGroup[] {
   const groups = decoderGroups(channelTypes);
   const type = channelTypes.find((entry) => entry.type_id === suggested);

@@ -9,9 +9,10 @@ use axum::{
     routing::any,
 };
 use reqwest::StatusCode;
+use sdrmm_channels::RttyText;
 use sdrmm_wire::{
     ChannelNode, DecoderEvent, EventAudio, EventOutputNode, PatchEdge, PatchGraph, PatchNode,
-    PortRef, Position, RackLayout, RttyText, UpdateWorkspaceRequest, VoiceCall, WorkspaceSnapshot,
+    PortRef, Position, RackLayout, UpdateWorkspaceRequest, VoiceCall, WorkspaceSnapshot,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -90,7 +91,7 @@ fn call_record() -> DecodedRecord {
         sinks: Vec::new(),
         callsign: None,
         freq_hz: 451_125_000.0,
-        event: DecoderEvent::Call(call()),
+        event: DecoderEvent::of(&call()),
         ..decoded()
     }
 }
@@ -114,7 +115,7 @@ fn call_text(call: VoiceCall) -> OutputMessage {
     message(
         "chat",
         &DecodedRecord {
-            event: DecoderEvent::Call(call),
+            event: DecoderEvent::of(&call),
             ..call_record()
         },
     )
@@ -122,7 +123,7 @@ fn call_text(call: VoiceCall) -> OutputMessage {
 
 fn stem_of(call: VoiceCall) -> String {
     let record = DecodedRecord {
-        event: DecoderEvent::Call(call),
+        event: DecoderEvent::of(&call),
         ..call_record()
     };
     clip_stem(&record, &view_of(&record))
@@ -137,7 +138,7 @@ fn decoded() -> DecodedRecord {
         channel: 2,
         at: "2026-08-15T10:00:02Z".to_owned(),
         freq_hz: 14_080_000.0,
-        event: DecoderEvent::Rtty(RttyText {
+        event: DecoderEvent::of(&RttyText {
             text: "CQ TEST".to_owned(),
         }),
         view: None,
@@ -363,7 +364,7 @@ fn a_completed_call_travels_the_events_wire_like_any_other_decode() {
     let routing = routing_for();
     let record = DecodedRecord {
         origin: None,
-        event: DecoderEvent::Call(call()),
+        event: DecoderEvent::of(&call()),
         ..decoded()
     };
 
@@ -418,11 +419,11 @@ fn recordings_take_the_clip_the_event_brings() {
         audio: Some(audio),
         ..analog_call()
     };
-    let wired = from_voice(DecoderEvent::Call(clipped.clone()));
+    let wired = from_voice(DecoderEvent::of(&clipped.clone()));
     let delivered = decoded_deliveries(&routing, &wired, 1, &calls);
     assert_eq!(delivered.len(), 1);
     assert!(delivered[0].message.audio.is_some());
-    let silent = from_voice(DecoderEvent::Call(VoiceCall {
+    let silent = from_voice(DecoderEvent::of(&VoiceCall {
         audio: None,
         encrypted: true,
         ..call()
@@ -452,7 +453,7 @@ async fn a_saved_call_lands_in_the_audio_library() {
     );
     let calls = Calls::default();
     let (audio, _) = calls.store_clip(&[1, 2, 3]);
-    let record = from_voice(DecoderEvent::Call(VoiceCall {
+    let record = from_voice(DecoderEvent::of(&VoiceCall {
         audio: Some(audio),
         ..analog_call()
     }));
@@ -483,7 +484,7 @@ async fn a_saved_call_lands_in_the_audio_library() {
 #[tokio::test]
 async fn a_call_whose_audio_was_lost_says_why_it_saved_nothing() {
     let engine = Engine::with_registry(sdrmm_device::DeviceRegistry::new(), None);
-    let record = from_voice(DecoderEvent::Call(VoiceCall {
+    let record = from_voice(DecoderEvent::of(&VoiceCall {
         audio: None,
         audio_error: Some("audio stream lost 3 block(s)".to_owned()),
         ..analog_call()
@@ -761,7 +762,7 @@ async fn matrix_sends_one_text_event_without_audio() {
 #[test]
 fn oversized_decoder_summaries_are_bounded_and_surface_truncation() {
     let mut record = decoded();
-    record.event = DecoderEvent::Rtty(RttyText {
+    record.event = DecoderEvent::of(&RttyText {
         text: "x".repeat(MAX_MESSAGE_CHARS * 2),
     });
 
@@ -1293,7 +1294,7 @@ fn spectrum_monitor_audio_is_attached_to_event_deliveries() {
             node: "monitor".to_owned(),
             transmission: 7,
         }),
-        event: DecoderEvent::Transmission(sdrmm_wire::Transmission {
+        event: DecoderEvent::of(&sdrmm_wire::Transmission {
             id: 7,
             state: sdrmm_wire::TransmissionState::Completed,
             signal: Default::default(),
@@ -1339,7 +1340,8 @@ fn beast_listener_requires_an_event_wire_and_explicit_enable() {
     let active = store.active_workspace().unwrap().unwrap();
     let beast = |enabled| {
         NodeBody::EventOutput(EventOutputNode {
-            target: EventOutputTarget::Beast {
+            target: EventOutputTarget::Feed {
+                format: "beast".to_owned(),
                 address: "127.0.0.1:30005".to_owned(),
                 enabled,
             },
@@ -1423,7 +1425,7 @@ fn an_influx_point_carries_tags_event_fields_and_the_receive_time() {
 #[test]
 fn an_influx_point_escapes_names_and_strings() {
     let record = DecodedRecord {
-        event: DecoderEvent::Rtty(RttyText {
+        event: DecoderEvent::of(&RttyText {
             text: "say \"hi\"\\\nnow".to_owned(),
         }),
         ..decoded()
@@ -1585,7 +1587,7 @@ async fn an_unreachable_postgres_surfaces_the_failure() {
 #[test]
 fn a_csv_row_quotes_text_and_defuses_formulas() {
     let record = DecodedRecord {
-        event: DecoderEvent::Rtty(RttyText {
+        event: DecoderEvent::of(&RttyText {
             text: "=HYPERLINK(\"x\"), hi".to_owned(),
         }),
         ..decoded()

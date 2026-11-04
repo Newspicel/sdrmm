@@ -194,7 +194,7 @@ pub struct ChannelNode {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum DmrTrunkProtocol {
+pub enum TrunkProtocol {
     #[default]
     Auto,
     CapacityPlus,
@@ -202,28 +202,28 @@ pub enum DmrTrunkProtocol {
     TierThree,
 }
 
-pub const MAX_DMR_SEARCH_RANGES: usize = 8;
-pub const MAX_DMR_SEARCH_CANDIDATES: usize = 512;
-pub const MIN_DMR_SEARCH_STEP_HZ: u64 = 1_250;
-pub const MAX_DMR_CHANNEL_MAP: usize = 512;
-pub const MAX_DMR_PROBES: u8 = 8;
-pub const DEFAULT_DMR_PROBES: u8 = 4;
-pub const MAX_DMR_LOGICAL_CHANNEL: u16 = 4095;
+pub const MAX_TRUNK_SEARCH_RANGES: usize = 8;
+pub const MAX_TRUNK_SEARCH_CANDIDATES: usize = 512;
+pub const MIN_TRUNK_SEARCH_STEP_HZ: u64 = 1_250;
+pub const MAX_TRUNK_CHANNEL_MAP: usize = 512;
+pub const MAX_TRUNK_PROBES: u8 = 8;
+pub const DEFAULT_TRUNK_PROBES: u8 = 4;
+pub const MAX_TRUNK_LOGICAL_CHANNEL: u16 = 4095;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct DmrSearchRange {
+pub struct TrunkSearchRange {
     pub start_hz: u64,
     pub end_hz: u64,
     pub step_hz: u64,
 }
 
-impl DmrSearchRange {
+impl TrunkSearchRange {
     #[must_use]
     pub fn valid(&self) -> bool {
-        self.step_hz >= MIN_DMR_SEARCH_STEP_HZ
+        self.step_hz >= MIN_TRUNK_SEARCH_STEP_HZ
             && self.start_hz > 0
             && self.end_hz >= self.start_hz
-            && self.candidates() <= MAX_DMR_SEARCH_CANDIDATES
+            && self.candidates() <= MAX_TRUNK_SEARCH_CANDIDATES
     }
 
     #[must_use]
@@ -240,68 +240,72 @@ impl DmrSearchRange {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct DmrChannelEntry {
+pub struct TrunkChannelEntry {
     pub lcn: u16,
     pub freq_hz: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct DmrDiscovery {
+pub struct TrunkDiscovery {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub ranges: Vec<DmrSearchRange>,
+    pub ranges: Vec<TrunkSearchRange>,
     #[serde(default)]
     pub max_probes: u8,
 }
 
-impl DmrDiscovery {
+impl TrunkDiscovery {
     #[must_use]
     pub fn valid(&self) -> bool {
-        self.ranges.len() <= MAX_DMR_SEARCH_RANGES
-            && self.ranges.iter().all(DmrSearchRange::valid)
-            && self.candidates() <= MAX_DMR_SEARCH_CANDIDATES
-            && self.max_probes <= MAX_DMR_PROBES
+        self.ranges.len() <= MAX_TRUNK_SEARCH_RANGES
+            && self.ranges.iter().all(TrunkSearchRange::valid)
+            && self.candidates() <= MAX_TRUNK_SEARCH_CANDIDATES
+            && self.max_probes <= MAX_TRUNK_PROBES
     }
 
     #[must_use]
     pub fn candidates(&self) -> usize {
-        self.ranges.iter().map(DmrSearchRange::candidates).sum()
+        self.ranges.iter().map(TrunkSearchRange::candidates).sum()
     }
 
     #[must_use]
     pub fn probes(&self) -> u8 {
         if self.max_probes == 0 {
-            DEFAULT_DMR_PROBES
+            DEFAULT_TRUNK_PROBES
         } else {
-            self.max_probes.min(MAX_DMR_PROBES)
+            self.max_probes.min(MAX_TRUNK_PROBES)
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct DmrTrunkNode {
+pub struct TrunkNode {
+    /// The decoder the system's control and traffic channels run; empty picks the first
+    /// registered decoder that can trunk.
     #[serde(default)]
-    pub protocol: DmrTrunkProtocol,
+    pub decoder: String,
     #[serde(default)]
-    pub discovery: DmrDiscovery,
+    pub protocol: TrunkProtocol,
+    #[serde(default)]
+    pub discovery: TrunkDiscovery,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub channel_map: Vec<DmrChannelEntry>,
+    pub channel_map: Vec<TrunkChannelEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control_hz: Option<u64>,
     #[serde(default)]
     pub ignore_crc: bool,
 }
 
-impl DmrTrunkNode {
+impl TrunkNode {
     #[must_use]
     pub fn valid(&self) -> bool {
         self.discovery.valid()
-            && self.channel_map.len() <= MAX_DMR_CHANNEL_MAP
+            && self.channel_map.len() <= MAX_TRUNK_CHANNEL_MAP
             && self
                 .channel_map
                 .iter()
-                .all(|entry| entry.lcn <= MAX_DMR_LOGICAL_CHANNEL && entry.freq_hz > 0)
+                .all(|entry| entry.lcn <= MAX_TRUNK_LOGICAL_CHANNEL && entry.freq_hz > 0)
             && self.control_hz.is_none_or(|hz| hz > 0)
     }
 }
@@ -357,11 +361,12 @@ impl Default for SignalMapNode {
     }
 }
 
-impl Default for DmrTrunkNode {
+impl Default for TrunkNode {
     fn default() -> Self {
         Self {
-            protocol: DmrTrunkProtocol::Auto,
-            discovery: DmrDiscovery::default(),
+            decoder: String::new(),
+            protocol: TrunkProtocol::Auto,
+            discovery: TrunkDiscovery::default(),
             channel_map: Vec::new(),
             control_hz: None,
             ignore_crc: false,

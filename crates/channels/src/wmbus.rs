@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 pub(crate) mod coding;
 pub(crate) mod link;
 mod phy;
@@ -7,17 +12,15 @@ mod transport;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    WMBUS_BANDWIDTH_HZ, WMBUS_SAMPLE_RATE_HZ, WmbusMessage, WmbusParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use self::{
     phy::{Burst, Family, Lane},
     transport::Keys,
 };
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate, datalink,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate, datalink,
 };
 
 const RATE: f64 = WMBUS_SAMPLE_RATE_HZ;
@@ -30,21 +33,14 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: WMBUS_BANDWIDTH_HZ,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Wmbus],
+    emits: vec![EventKind::named("wmbus")],
     ..ChannelDescriptor::default()
 });
 
 fn params(settings: &ChannelSettings) -> Result<WmbusParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Wmbus(params) => {
-            params.validate().map_err(ChannelError::InvalidSettings)?;
-            Ok(params.clone())
-        }
-        other => Err(ChannelError::InvalidSettings(format!(
-            "wmbus channel got {} params",
-            other.type_id()
-        ))),
-    }
+    let params: WmbusParams = crate::settings_of(settings)?;
+    params.validate().map_err(ChannelError::InvalidSettings)?;
+    Ok(params)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -64,7 +60,7 @@ struct Decoder {
 impl Decoder {
     fn burst(&mut self, burst: &Burst<'_>, out: &mut ChannelOutputs) {
         match self.message(burst) {
-            Some(message) => out.events.push(DecoderEvent::Wmbus(message)),
+            Some(message) => out.events.push(DecoderEvent::of(&message)),
             None => self.rejected = self.rejected.saturating_add(1),
         }
     }
@@ -101,11 +97,10 @@ pub struct WmbusChannel {
     decoder: Decoder,
 }
 
-impl ChannelRx for WmbusChannel {
+impl NativeChannel for WmbusChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
@@ -118,7 +113,9 @@ impl ChannelRx for WmbusChannel {
             },
         })
     }
+}
 
+impl ChannelRx for WmbusChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.decoder.keys = Keys::new(&params(&settings)?.keys);
         Ok(())
@@ -141,6 +138,71 @@ impl ChannelRx for WmbusChannel {
     fn rejected(&self) -> u32 {
         self.decoder.rejected
     }
+}
+
+const WMBUS_T_C: &[HzRange] = &[HzRange::mhz(868.85, 869.05)];
+
+const WMBUS_S: &[HzRange] = &[HzRange::mhz(868.2, 868.4)];
+
+fn wmbus_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "Wireless M-Bus T/C",
+            &[Modulation::Fsk2],
+            HzRange::new(120_000.0, 300_000.0),
+            "100 kchip/s 2-FSK on the 868.95 MHz meter channel",
+        )
+        .symbol_rate(HzRange::new(90_000.0, 110_000.0))
+        .deviation(HzRange::new(30_000.0, 90_000.0))
+        .on(WMBUS_T_C),
+        SignalSignature::new(
+            "Wireless M-Bus S",
+            &[Modulation::Fsk2],
+            HzRange::new(80_000.0, 250_000.0),
+            "32.768 kchip/s Manchester 2-FSK on the 868.3 MHz meter channel",
+        )
+        .symbol_rate(HzRange::new(30_000.0, 35_500.0))
+        .deviation(HzRange::new(30_000.0, 90_000.0))
+        .on(WMBUS_S),
+    ]
+}
+
+fn wmbus_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("wmbus"))
+}
+
+pub(crate) fn wmbus_decoder() -> Native<WmbusParams> {
+    Native::new::<WmbusChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(crate::wmbus::WMBUS_T_C_HZ)
+        .signatures(wmbus_signatures)
+        .trial(wmbus_trial)
+        .form(wmbus_form)
+        .kinds(wmbus_kinds)
+}
+
+pub(crate) fn wmbus_form() -> Vec<SettingField> {
+    let key = vec![
+        SettingField::new(
+            "meter",
+            "Meter ID",
+            Control::bounded_text("Meter ID", METER_DIGITS, false),
+        ),
+        SettingField::new(
+            "key",
+            "AES key",
+            Control::bounded_text("AES key", KEY_DIGITS, true),
+        ),
+    ];
+    vec![
+        SettingField::new("keys", "Keys", Control::list(key, "none"))
+            .title("AES keys per meter ID; frames from other meters stay locked")
+            .quiet(Vec::<WmbusKey>::new()),
+    ]
+}
+
+fn wmbus_kinds() -> Vec<KindSpec> {
+    vec![crate::wmbus::wmbus_kind()]
 }
 
 #[cfg(test)]

@@ -1,9 +1,32 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+mod model;
+pub use model::*;
 mod demod;
 mod frame;
 pub(crate) mod image;
 pub(crate) mod jpeg;
 pub(crate) mod link;
 mod packet;
+pub(crate) fn lrpt_decoder() -> Native<LrptParams> {
+    Native::new::<LrptChannel>(occupied_band)
+        .filter(channel_filter)
+        .home(137_900_000.0)
+        .form(lrpt_form)
+        .kinds(lrpt_kinds)
+}
+
+pub(crate) fn lrpt_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("mode", "Mode", Control::choice::<LrptMode>())
+            .title("Meteor-M downlink mode"),
+    ]
+}
+
+fn lrpt_kinds() -> Vec<KindSpec> {
+    vec![crate::lrpt::lrpt_kind()]
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -15,14 +38,11 @@ use image::{IDLE_APID, Imagery, Placement};
 use num_complex::Complex;
 use packet::Depacketizer;
 use sdrmm_dsp::{Decimator, design_lowpass};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    LrptImage, LrptMode, LrptParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
-    check_input_rate,
+    NativeChannel, check_input_rate,
 };
 use link::PacketHeader;
 
@@ -42,7 +62,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
     has_video: true,
-    emits: vec![EventKind::Lrpt],
+    emits: vec![EventKind::named("lrpt")],
     ..ChannelDescriptor::default()
 });
 
@@ -59,14 +79,8 @@ pub(crate) fn channel_filter(p: &LrptParams) -> Result<ChannelFilter, ChannelErr
     )))
 }
 
-fn params(settings: &ChannelSettings) -> Result<&LrptParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Lrpt(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "lrpt channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<LrptParams, ChannelError> {
+    crate::settings_of::<LrptParams>(settings)
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -145,7 +159,7 @@ impl Picture {
         let lines = self.imagery.lines();
         let elapsed = self.last_frame.saturating_sub(self.started);
         let picture = self.imagery.snapshot();
-        out.events.push(DecoderEvent::Lrpt(LrptImage {
+        out.events.push(DecoderEvent::of(&LrptImage {
             seq: self.seq,
             mode,
             width: picture.width,
@@ -226,11 +240,10 @@ impl LrptChannel {
     }
 }
 
-impl ChannelRx for LrptChannel {
+impl NativeChannel for LrptChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let mode = params(&settings)?.mode;
@@ -245,7 +258,9 @@ impl ChannelRx for LrptChannel {
             closing: false,
         })
     }
+}
 
+impl ChannelRx for LrptChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let mode = params(&settings)?.mode;
         if mode != self.mode {

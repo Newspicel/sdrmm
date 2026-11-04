@@ -1,17 +1,24 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 use std::sync::LazyLock;
 
+use crate::dv::FreeDvParams;
 use num_complex::Complex;
 use sdrmm_dsp::{FirC, design_lowpass, golay23_correct};
 use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
-    DvFrame, DvFrameKind, DvMode, EventKind, FreeDvMode, FreeDvParams, Sideband,
+    CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, DecoderEvent, DecoderFamily,
+    DvFrame, DvFrameKind, EventKind, Sideband,
 };
 
 use super::{
     fdmdv::{self, Demodulator, Frame},
     vocoder::Codec2Decoder,
 };
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const INPUT_RATE_HZ: f64 = 8_000.0;
 const LOW_EDGE_HZ: f64 = 800.0;
@@ -29,8 +36,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HIGH_EDGE_HZ - LOW_EDGE_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    emits: vec![EventKind::Dv],
+    emits: vec![EventKind::DV],
     calls: Some(CallGate::Frames),
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
@@ -44,14 +52,15 @@ pub struct FreeDvChannel {
     rejected: u32,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&FreeDvParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Freedv(params) if params.mode == FreeDvMode::Mode1600 => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "freedv channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn dv_frame(kind: DvFrameKind) -> DvFrame {
+    DvFrame::new("FreeDV", kind)
+}
+
+fn params(settings: &ChannelSettings) -> Result<FreeDvParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn occupied_band(params: &FreeDvParams) -> (f64, f64) {
@@ -71,11 +80,10 @@ pub(crate) fn channel_filter(params: &FreeDvParams) -> Result<ChannelFilter, Cha
     )))
 }
 
-impl ChannelRx for FreeDvChannel {
+impl NativeChannel for FreeDvChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
@@ -89,7 +97,9 @@ impl ChannelRx for FreeDvChannel {
             rejected: 0,
         })
     }
+}
 
+impl ChannelRx for FreeDvChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let sideband = params(&settings)?.sideband;
         if sideband != self.sideband {
@@ -132,15 +142,13 @@ impl FreeDvChannel {
     fn demod_frame(&mut self, frame: &Frame, out: &mut ChannelOutputs) {
         let sync = frame.sync;
         if sync && !self.synced {
-            let mut header = DvFrame::new(DvMode::FreeDv, DvFrameKind::Header);
+            let mut header = dv_frame(DvFrameKind::Header);
             header.opcode = Some("1600".to_owned());
-            out.events.push(DecoderEvent::Dv(header));
+            out.events.push(DecoderEvent::of(&header));
         } else if !sync && self.synced {
             self.rejected = self.rejected.saturating_add(1);
-            out.events.push(DecoderEvent::Dv(DvFrame::new(
-                DvMode::FreeDv,
-                DvFrameKind::Terminator,
-            )));
+            out.events
+                .push(DecoderEvent::of(&dv_frame(DvFrameKind::Terminator)));
         }
         self.synced = sync;
 
@@ -189,12 +197,57 @@ impl FreeDvChannel {
     }
 }
 
+const FREEDV_SPOTS: &[HzRange] = &[
+    HzRange::spot_khz(7_177.0, 3.0),
+    HzRange::spot_khz(14_236.0, 3.0),
+    HzRange::spot_khz(21_313.0, 3.0),
+    HzRange::spot_khz(28_330.0, 3.0),
+];
+
+fn freedv_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "FreeDV",
+            &[
+                Modulation::Psk4,
+                Modulation::Psk2,
+                Modulation::Ofdm,
+                Modulation::Unknown,
+                Modulation::NoiseLike,
+            ],
+            HzRange::new(900.0, 2_400.0),
+            "a digital voice waveform inside an SSB channel",
+        )
+        .on(FREEDV_SPOTS),
+    ]
+}
+
+pub(crate) fn freedv_decoder() -> Native<FreeDvParams> {
+    Native::new::<FreeDvChannel>(occupied_band)
+        .filter(channel_filter)
+        .signatures(freedv_signatures)
+        .form(freedv_form)
+        .kinds(freedv_kinds)
+}
+
+pub(crate) fn freedv_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("sideband", "Side", Control::choice::<Sideband>())
+            .title("FreeDV sideband"),
+    ]
+}
+
+fn freedv_kinds() -> Vec<KindSpec> {
+    vec![]
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
 
     use super::*;
     use crate::testutil::{realtime_budget, settings};
+    use sdrmm_wire::ChannelParams;
 
     #[test]
     fn free_dv_uses_the_selected_sideband() {
@@ -229,7 +282,9 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Freedv(FreeDvParams::default())),
+            settings(
+                ChannelParams::new("freedv", &FreeDvParams::default()).expect("freedv settings"),
+            ),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -249,7 +304,7 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Freedv(params)),
+            settings(ChannelParams::of(&params).expect("freedv settings")),
         )
         .expect("freedv channel");
         let mut filter = channel_filter(&params).expect("freedv filter");
@@ -305,7 +360,7 @@ mod tests {
                 ChannelCtx {
                     input_rate: INPUT_RATE_HZ,
                 },
-                settings(ChannelParams::Freedv(params)),
+                settings(ChannelParams::of(&params).expect("freedv settings")),
             )
             .unwrap();
             let mut filter = channel_filter(&params).unwrap();
@@ -326,11 +381,11 @@ mod tests {
                 "three seconds of FreeDV must decode faster than real time"
             );
             assert!(
-                frames.iter().any(|event| matches!(
-                    event,
-                    DecoderEvent::Dv(frame)
-                        if frame.mode == DvMode::FreeDv && frame.kind == DvFrameKind::Header
-                )),
+                frames.iter().any(
+                    |event| event.read::<DvFrame>().is_some_and(
+                        |frame| frame.mode == "FreeDV" && frame.kind == DvFrameKind::Header
+                    )
+                ),
                 "FreeDV modem never acquired {sideband:?} sync: {frames:?}"
             );
             assert!(
@@ -347,7 +402,7 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Freedv(params)),
+            settings(ChannelParams::of(&params).expect("freedv settings")),
         )
         .unwrap();
         let mut filter = channel_filter(&params).unwrap();

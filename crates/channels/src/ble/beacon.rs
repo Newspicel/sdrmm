@@ -1,4 +1,4 @@
-use sdrmm_wire::BleBeacon;
+use crate::ble::BleBeacon;
 
 use super::ad::hex;
 

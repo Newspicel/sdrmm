@@ -1,3 +1,5 @@
+mod model;
+pub use model::*;
 use std::{
     collections::VecDeque,
     sync::{
@@ -10,7 +12,9 @@ use std::{
 
 use ffmpeg_the_third::codec::Id;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
-use sdrmm_wire::DecoderEvent;
+use sdrmm_wire::{
+    ChannelStatus, DecoderEvent, EventContract, ParamChoice, ParamOption, present::EventPayload,
+};
 
 use crate::{
     AUDIO_RATE, ChannelError, ChannelOutputs, VideoPicture,
@@ -33,6 +37,41 @@ const CHUNK_BYTES: usize = 8192;
 const INPUT_SLOTS: usize = 256;
 const OUTPUT_SLOTS: usize = 32;
 const OUTPUT_BYTES: usize = 64 * 1024 * 1024;
+
+/// A broadcast decoder's status as both its `broadcast` event and its node face: the readouts,
+/// and the services it found offered for the `service_key` setting.
+pub(crate) fn publish_status(out: &mut ChannelOutputs, status: BroadcastStatus, service_key: &str) {
+    out.events.push(DecoderEvent::of(&status));
+    out.status = Some(ChannelStatus {
+        readouts: status.present(&BroadcastStatus::KIND).fields,
+        choices: vec![ParamChoice {
+            name: service_key.to_owned(),
+            options: status.services.iter().map(service_option).collect(),
+        }],
+    });
+}
+
+/// The newest status a broadcast decoder published into `out`.
+#[cfg(test)]
+pub(crate) fn latest_status(out: &ChannelOutputs) -> Option<BroadcastStatus> {
+    out.events
+        .iter()
+        .rev()
+        .find_map(DecoderEvent::read::<BroadcastStatus>)
+}
+
+fn service_option(service: &BroadcastService) -> ParamOption {
+    let label = service.label.trim();
+    ParamOption {
+        value: service.id.into(),
+        label: if label.is_empty() {
+            service.id.to_string()
+        } else {
+            label.to_owned()
+        },
+        title: None,
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -578,7 +617,7 @@ impl BroadcastMedia {
                     PadEvent::Object(mut object) => {
                         object.service_id = self.service_id;
                         self.data_groups = self.data_groups.saturating_add(1);
-                        out.events.push(DecoderEvent::BroadcastData(object));
+                        out.events.push(DecoderEvent::of(&object));
                     }
                     PadEvent::Error(error) => {
                         self.data_errors = self.data_errors.saturating_add(1);
@@ -602,4 +641,16 @@ impl BroadcastMedia {
             }
         }
     }
+}
+
+/// The service a broadcast decoder plays, picked from the services its status lists.
+pub(crate) fn service_field(key: &str, max: f64) -> sdrmm_wire::SettingField {
+    sdrmm_wire::SettingField::new(
+        key,
+        "Service",
+        sdrmm_wire::Control::live(sdrmm_wire::NumberSpec::new(0.0, max, 1.0).optional("Auto")),
+    )
+    .title(
+        "Select a discovered audio, video or data service; Auto chooses the first playable service",
+    )
 }

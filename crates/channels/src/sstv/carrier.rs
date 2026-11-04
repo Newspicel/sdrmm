@@ -1,6 +1,6 @@
+use crate::sstv::SstvModulation;
 use num_complex::Complex;
 use sdrmm_dsp::{FirC, FmDemod, design_lowpass};
-use sdrmm_wire::SstvModulation;
 
 pub(crate) const TONE_LOW_HZ: f64 = 1_000.0;
 pub(crate) const TONE_HIGH_HZ: f64 = 2_600.0;

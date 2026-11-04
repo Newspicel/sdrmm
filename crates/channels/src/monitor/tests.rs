@@ -1,5 +1,9 @@
 use super::*;
+use crate::ils::IlsReading;
+use crate::lora::{LoraFrame, LoraIntegrity};
+use crate::pocsag::PocsagMessage;
 use crate::synth;
+use sdrmm_wire::{DvFrame, EventContract};
 
 const RATE: f64 = 1_024_000.0;
 const CENTER: f64 = 145_000_000.0;
@@ -27,13 +31,10 @@ fn monitor() -> SpectrumMonitor {
     SpectrumMonitor::new(RATE, CENTER, keeping()).unwrap()
 }
 
-fn transmissions(output: &[MonitorOutput]) -> Vec<&Transmission> {
+fn transmissions(output: &[MonitorOutput]) -> Vec<Transmission> {
     output
         .iter()
-        .filter_map(|out| match &out.event {
-            DecoderEvent::Transmission(t) => Some(t),
-            _ => None,
-        })
+        .filter_map(|out| out.event.read::<Transmission>())
         .collect()
 }
 
@@ -157,7 +158,14 @@ fn concurrent_am_and_fm_outside_identifier_span_have_separate_audio_events() {
     assert!(transmissions(&output).is_empty());
     output.extend(run(&mut monitor, &noise(0.5, 43), iq.len() as u64));
     assert_eq!(transmissions(&output).len(), 2);
-    let completed: Vec<_> = output.iter().filter(|out| matches!(&out.event, DecoderEvent::Transmission(t) if t.state == TransmissionState::Completed)).collect();
+    let completed: Vec<_> = output
+        .iter()
+        .filter(|out| {
+            out.event
+                .read::<Transmission>()
+                .is_some_and(|t| t.state == TransmissionState::Completed)
+        })
+        .collect();
     for offset in [-250_000.0, 250_000.0] {
         let found = completed
             .iter()
@@ -210,7 +218,14 @@ fn buffered_pager_decodes_the_first_message_and_retains_its_origin() {
     let mut monitor = monitor();
     let mut output = run(&mut monitor, &iq, 0);
     output.extend(run(&mut monitor, &noise(0.5, 45), iq.len() as u64));
-    let decoded = output.iter().find(|out| matches!(&out.event, DecoderEvent::Pocsag(page) if page.text.contains("MONITOR FIRST FRAME"))).unwrap_or_else(|| panic!("pager not decoded: {:?}", transmissions(&output)));
+    let decoded = output
+        .iter()
+        .find(|out| {
+            out.event
+                .read::<PocsagMessage>()
+                .is_some_and(|page| page.text.contains("MONITOR FIRST FRAME"))
+        })
+        .unwrap_or_else(|| panic!("pager not decoded: {:?}", transmissions(&output)));
     assert!(decoded.transmission > 0);
     assert!((decoded.frequency_hz - CENTER - 300_000.0).abs() < 3000.0);
     assert!(
@@ -242,7 +257,7 @@ fn a_disabled_protocol_is_neither_decoded_nor_reported() {
     assert!(
         output
             .iter()
-            .all(|out| !matches!(out.event, DecoderEvent::Pocsag(_))),
+            .all(|out| out.event.kind != PocsagMessage::KIND),
         "{:?}",
         transmissions(&output)
     );
@@ -291,9 +306,10 @@ fn simplex_dmr_at_435_125_mhz_is_confirmed() {
     output.extend(run(&mut monitor, &iq, lead.len() as u64));
     output.extend(monitor.finish(TransmissionState::Completed, None));
     assert!(
-        output.iter().any(|out| matches!(&out.event,
-            DecoderEvent::Dv(frame) if frame.mode == sdrmm_wire::DvMode::Dmr
-                && frame.crc_verified == Some(true))),
+        output.iter().any(|out| out
+            .event
+            .read::<DvFrame>()
+            .is_some_and(|frame| frame.mode == "DMR" && frame.crc_verified == Some(true))),
         "{:?}",
         transmissions(&output)
     );
@@ -302,11 +318,7 @@ fn simplex_dmr_at_435_125_mhz_is_confirmed() {
             .iter()
             .any(|t| t.decoder.as_deref() == Some("dmr") && t.decoder_confirmed)
     );
-    assert!(
-        !output
-            .iter()
-            .any(|out| matches!(out.event, DecoderEvent::Ils(_)))
-    );
+    assert!(!output.iter().any(|out| out.event.kind == IlsReading::KIND));
 }
 
 #[test]
@@ -543,9 +555,11 @@ fn a_faint_lora_train_is_heard_as_chirps_and_decoded() {
     let mut output = run(&mut monitor, &iq, 0);
     output.extend(monitor.finish(TransmissionState::Completed, None));
     assert!(
-        output.iter().any(|out| matches!(&out.event,
-            DecoderEvent::Lora(frame) if frame.integrity == sdrmm_wire::LoraIntegrity::CrcOk
-                && frame.spreading_factor == 7)),
+        output
+            .iter()
+            .any(|out| out.event.read::<LoraFrame>().is_some_and(|frame| {
+                frame.integrity == LoraIntegrity::CrcOk && frame.spreading_factor == 7
+            })),
         "{:?}",
         transmissions(&output)
     );

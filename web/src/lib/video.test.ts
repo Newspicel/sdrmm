@@ -88,7 +88,7 @@ describe("VideoHub", () => {
   it("asks for the port once for every watcher and lets go after the last", () => {
     const { fake, hub } = bench();
     const first = hub.subscribe(input("atv"), () => {});
-    const second = hub.subscribe(input("sstv"), () => {});
+    const second = hub.subscribe(input("picture"), () => {});
     expect(subscribes(fake.sent)).toHaveLength(1);
     first();
     waitOutGrace();
@@ -114,9 +114,9 @@ describe("VideoHub", () => {
     const one: number[] = [];
     const two: number[] = [];
     hub.subscribe(input("atv"), (frame) => one.push(frame.width));
-    hub.subscribe(input("sstv"), (frame) => two.push(frame.width));
+    hub.subscribe(input("picture"), (frame) => two.push(frame.width));
     fake.started(0x8000, "atv");
-    fake.started(0x8001, "sstv");
+    fake.started(0x8001, "picture");
     fake.push(0x8000, 104);
     fake.push(0x8001, 164);
     fake.push(0x9999, 8);
@@ -180,9 +180,9 @@ describe("VideoHub pending frames", () => {
 
   it("counts the frames it throws away so a face can show them", () => {
     const { fake, hub } = bench();
-    const remove = registerMediaLatency("sstv", () => 5_000);
-    const scope = input("sstv");
-    fake.started(1, "sstv");
+    const remove = registerMediaLatency("picture", () => 5_000);
+    const scope = input("picture");
+    fake.started(1, "picture");
     hub.subscribe(scope, () => {});
     expect(hub.droppedFrames(scope)).toBe(0);
 

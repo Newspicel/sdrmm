@@ -1,11 +1,14 @@
+use crate::registry::Native;
+use sdrmm_wire::{KindSpec, SettingField};
 use std::sync::LazyLock;
 
+use crate::dv::DpmrParams;
 use num_complex::Complex;
-use sdrmm_dsp::ParityCode;
+use sdrmm_dsp::{ParityCode, crc8_msb};
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
-    DpmrParams, DvFrame, DvFrameKind, DvMode, EventKind,
+    CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, CodeStyle, DecoderEvent,
+    DecoderFamily, DvFrame, DvFrameKind, EventKind,
 };
 
 use super::{
@@ -13,7 +16,10 @@ use super::{
     tap_c4fm,
     vocoder::{AMBE_3600_INTERLEAVE, MbeDecoder, half_rate_code_vectors},
 };
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 pub(crate) const BAUD: f64 = 2_400.0;
 pub(crate) const DEVIATION_HZ: f64 = 1_050.0;
@@ -55,8 +61,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    emits: vec![EventKind::Dv],
+    emits: vec![EventKind::DV],
     calls: Some(CallGate::Frames),
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
@@ -66,14 +73,18 @@ pub struct DpmrChannel {
     decoder: Decoder,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&DpmrParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Dpmr(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "dpmr channel got {} params",
-            other.type_id()
-        ))),
+fn dv_frame(kind: DvFrameKind) -> DvFrame {
+    DvFrame {
+        code_style: CodeStyle::Ran,
+        ..DvFrame::new("dPMR", kind)
     }
+}
+
+fn params(settings: &ChannelSettings) -> Result<DpmrParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -84,11 +95,10 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     super::channel_filter(BANDWIDTH_HZ)
 }
 
-impl ChannelRx for DpmrChannel {
+impl NativeChannel for DpmrChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         params(&settings)?;
@@ -98,7 +108,9 @@ impl ChannelRx for DpmrChannel {
             decoder: Decoder::new(),
         })
     }
+}
 
+impl ChannelRx for DpmrChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings)?;
         Ok(())
@@ -180,7 +192,7 @@ impl Decoder {
                         Some((frame, voice_call)) => {
                             self.in_call = true;
                             self.voice_call = voice_call;
-                            out.events.push(DecoderEvent::Dv(frame));
+                            out.events.push(DecoderEvent::of(&frame));
                         }
                         None => self.rejected = self.rejected.saturating_add(1),
                     },
@@ -216,10 +228,8 @@ impl Decoder {
             self.window.anchor(fs3, SHORT_SYNC_BITS);
             self.in_call = false;
             self.voice_call = false;
-            out.events.push(DecoderEvent::Dv(DvFrame::new(
-                DvMode::Dpmr,
-                DvFrameKind::Terminator,
-            )));
+            out.events
+                .push(DecoderEvent::of(&dv_frame(DvFrameKind::Terminator)));
         }
     }
 
@@ -248,14 +258,11 @@ impl Decoder {
     }
 
     fn header_frame(&self, hi: &[bool], packet: bool) -> (DvFrame, bool) {
-        let mut frame = DvFrame::new(
-            DvMode::Dpmr,
-            if packet {
-                DvFrameKind::Data
-            } else {
-                DvFrameKind::Header
-            },
-        );
+        let mut frame = dv_frame(if packet {
+            DvFrameKind::Data
+        } else {
+            DvFrameKind::Header
+        });
         frame.color_code =
             channel_code_number(bits_to_u32(&self.bits, HI_CODED_BITS, CC_SYMBOLS * 2));
         frame.destination = Some(bits_to_u32(hi, 4, 24));
@@ -337,18 +344,27 @@ fn header_info(coded: &[bool]) -> Option<Vec<bool>> {
 }
 
 fn crc8(data: &[u8]) -> u8 {
-    let mut crc = 0u8;
-    for &byte in data {
-        crc ^= byte;
-        for _ in 0..8 {
-            crc = if crc & 0x80 != 0 {
-                crc << 1 ^ 0x07
-            } else {
-                crc << 1
-            };
-        }
-    }
-    crc
+    crc8_msb(0x07, 0, data)
+}
+
+fn dpmr_signatures() -> Vec<sdrmm_wire::SignalSignature> {
+    super::mode_signatures("dpmr", super::LAND_MOBILE)
+}
+
+pub(crate) fn dpmr_decoder() -> Native<DpmrParams> {
+    Native::new::<DpmrChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .signatures(dpmr_signatures)
+        .form(dpmr_form)
+        .kinds(dpmr_kinds)
+}
+
+pub(crate) fn dpmr_form() -> Vec<SettingField> {
+    Vec::new()
+}
+
+fn dpmr_kinds() -> Vec<KindSpec> {
+    vec![]
 }
 
 #[cfg(test)]
@@ -362,13 +378,14 @@ mod tests {
         synth::dv::dpmr as tx,
         testutil::settings,
     };
+    use sdrmm_wire::ChannelParams;
 
     fn channel() -> DpmrChannel {
         DpmrChannel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Dpmr(DpmrParams::default())),
+            settings(ChannelParams::new("dpmr", &DpmrParams::default()).expect("dpmr settings")),
         )
         .expect("dpmr channel")
     }
@@ -397,7 +414,7 @@ mod tests {
         let frames = decode(&mut channel(), &iq);
 
         let header = frames.first().expect("a decoded frame");
-        assert_eq!(header.mode, DvMode::Dpmr);
+        assert_eq!(header.mode, "dPMR");
         assert_eq!(header.kind, DvFrameKind::Header);
         assert_eq!(header.color_code, Some(u16::from(call.channel_code)));
         assert_eq!(header.destination, Some(call.called));

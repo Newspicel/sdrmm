@@ -8,7 +8,7 @@ mod payload;
 #[cfg(test)]
 mod tests;
 
-use sdrmm_wire::MeshcorePacket;
+use crate::lora::MeshcorePacket;
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use encode::{advert, group_text};

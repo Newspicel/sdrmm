@@ -95,8 +95,8 @@ const CATALOG: PatchCatalog = {
 
 const TYPES: ChannelDescriptor[] = [
   {
-    type_id: "nfm",
-    name: "NFM",
+    type_id: "voice",
+    name: "Voice",
     summary: "Narrowband FM voice",
     family: "analog_voice",
     bandwidth_hz: 12_500,
@@ -104,14 +104,14 @@ const TYPES: ChannelDescriptor[] = [
     has_audio: true,
   },
   {
-    type_id: "adsb",
+    type_id: "plane",
     name: "ADS-B (1090ES)",
     summary: "Aircraft positions",
     family: "aviation",
     bandwidth_hz: 2_000_000,
     input_rate_hz: 2_400_000,
     has_audio: false,
-    emits: ["adsb"],
+    emits: ["plane"],
   },
 ];
 
@@ -127,8 +127,8 @@ describe("paletteGroups", () => {
     ]);
     expect(groups[1]?.items).toEqual([
       {
-        id: "channel:nfm",
-        name: "NFM",
+        id: "channel:voice",
+        name: "Voice",
         summary: "Narrowband FM voice",
         kind: "channel",
         type: TYPES[0],
@@ -168,9 +168,9 @@ describe("sectionGroups", () => {
 
 describe("channelPicker", () => {
   it("pins the suggested mode above the full list", () => {
-    const groups = channelPicker(TYPES, "adsb");
+    const groups = channelPicker(TYPES, "plane");
     expect(groups.map((group) => group.title)).toEqual(["Suggested", "Analog voice", "Aviation"]);
-    expect(groups[0]?.items.map((item) => item.id)).toEqual(["suggested:adsb"]);
+    expect(groups[0]?.items.map((item) => item.id)).toEqual(["suggested:plane"]);
   });
 
   it("offers every type on a server that does not describe the suggested one", () => {
@@ -181,7 +181,7 @@ describe("channelPicker", () => {
   });
 
   it("has only the suggestion to show when the server describes one type", () => {
-    expect(channelPicker([TYPES[0]!], "nfm").map((group) => group.id)).toEqual([
+    expect(channelPicker([TYPES[0]!], "voice").map((group) => group.id)).toEqual([
       "suggested",
       "family:analog_voice",
     ]);
@@ -190,16 +190,16 @@ describe("channelPicker", () => {
 
 describe("firstPaletteItem", () => {
   it("takes the suggestion when one is pinned", () => {
-    expect(firstPaletteItem(channelPicker(TYPES, "adsb"))?.id).toBe("suggested:adsb");
+    expect(firstPaletteItem(channelPicker(TYPES, "plane"))?.id).toBe("suggested:plane");
   });
 
   it("takes the top of the narrowed list when a search has moved past it", () => {
-    const groups = filterPalette(channelPicker(TYPES, "adsb"), "nfm");
-    expect(firstPaletteItem(groups)?.type?.type_id).toBe("nfm");
+    const groups = filterPalette(channelPicker(TYPES, "plane"), "voice");
+    expect(firstPaletteItem(groups)?.type?.type_id).toBe("voice");
   });
 
   it("has nothing to take from a list that matches nothing", () => {
-    expect(firstPaletteItem(filterPalette(channelPicker(TYPES, "nfm"), "atv"))).toBeUndefined();
+    expect(firstPaletteItem(filterPalette(channelPicker(TYPES, "voice"), "atv"))).toBeUndefined();
   });
 });
 
@@ -211,14 +211,14 @@ describe("filterPalette", () => {
   });
 
   it("matches the type id an operator already knows, not just the display name", () => {
-    const hits = filterPalette(groups, "adsb");
+    const hits = filterPalette(groups, "plane");
     expect(hits).toHaveLength(1);
     expect(hits[0]?.items.map((item) => item.name)).toEqual(["ADS-B (1090ES)"]);
   });
 
   it("matches what a node does, not only its name", () => {
     const hits = filterPalette(groups, "aircraft");
-    expect(hits.flatMap((group) => group.items).map((item) => item.id)).toEqual(["channel:adsb"]);
+    expect(hits.flatMap((group) => group.items).map((item) => item.id)).toEqual(["channel:plane"]);
   });
 
   it("matches names case-insensitively and drops emptied sections", () => {

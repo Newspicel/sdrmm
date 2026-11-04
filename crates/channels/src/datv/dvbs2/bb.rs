@@ -1,4 +1,4 @@
-use sdrmm_dsp::{DVB_DISPERSAL, Prbs};
+use sdrmm_dsp::{DVB_DISPERSAL, Prbs, crc8_msb, pack_msb};
 
 use crate::datv::dvbs::{PACKET, SYNC};
 
@@ -57,18 +57,7 @@ impl StreamKind {
 
 #[must_use]
 pub fn crc8(data: &[u8]) -> u8 {
-    let mut crc = 0u8;
-    for &byte in data {
-        crc ^= byte;
-        for _ in 0..8 {
-            crc = if crc & 0x80 != 0 {
-                crc << 1 ^ CRC_POLY
-            } else {
-                crc << 1
-            };
-        }
-    }
-    crc
+    crc8_msb(CRC_POLY, 0, data)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,17 +130,6 @@ impl BaseBandHeader {
 
 pub fn scramble(bits: &mut [bool]) {
     Prbs::new(DVB_DISPERSAL).apply_bits(bits);
-}
-
-#[must_use]
-pub fn pack(bits: &[bool]) -> Vec<u8> {
-    bits.chunks(8)
-        .map(|chunk| {
-            chunk.iter().enumerate().fold(0u8, |byte, (index, &bit)| {
-                byte | u8::from(bit) << (7 - index)
-            })
-        })
-        .collect()
 }
 
 #[cfg(any(test, feature = "synth"))]
@@ -277,7 +255,7 @@ impl BaseBandFrame {
         }
         let mut frame = bits[..self.length].to_vec();
         scramble(&mut frame);
-        let bytes = pack(&frame);
+        let bytes = pack_msb(&frame);
         let header = BaseBandHeader::parse(&bytes)?;
         let end = HEADER_BYTES + usize::from(header.data_field_bits).div_ceil(8);
         if end > bytes.len() {
@@ -403,7 +381,7 @@ mod tests {
         let packets = transport(2, 11);
         let mut carry = SYNC;
         let bits = frame.build(&packets, &mut carry).expect("a frame");
-        assert_ne!(pack(&bits)[6], SYNC);
+        assert_ne!(pack_msb(&bits)[6], SYNC);
         assert_eq!(
             frame.read(&bits).expect("a readable frame").transport(),
             packets

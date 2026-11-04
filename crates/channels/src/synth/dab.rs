@@ -1,8 +1,8 @@
 #![allow(clippy::expect_used)]
 
+use crate::dab::DabTransmissionMode;
 use num_complex::Complex;
 use sdrmm_dsp::fft::Transform;
-use sdrmm_wire::DabTransmissionMode;
 
 use crate::dab::{
     fic::{FIB_BYTES, FicEncoder, append_fib_crc},

@@ -2,10 +2,10 @@
 
 use std::f64::consts::TAU;
 
+use crate::radiosonde::SondeType;
 use jiff::Timestamp;
 use num_complex::Complex;
 use sdrmm_dsp::design_gaussian;
-use sdrmm_wire::SondeType;
 
 use super::{fm_modulate, resample};
 use crate::radiosonde::{

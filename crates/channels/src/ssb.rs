@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{ClickProfile, Control, KindSpec, NumberSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::{
     f64::consts::{PI, TAU},
     sync::LazyLock,
@@ -8,13 +13,11 @@ use sdrmm_dsp::{Agc, FirC, RealDecimator, design_bandpass, design_lowpass};
 use sdrmm_modem::analog::{
     Sideband as EngineSideband, SsbDemod, SsbDetector, SsbMethod, SsbParams as SsbWaveform,
 };
-use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, Sideband, SsbParams,
-};
+use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily, Sideband};
 
 use crate::{
-    AUDIO_RATE, ChannelCtx, ChannelError, ChannelOutputs, ChannelRx, ChannelTx, TxPayload,
-    check_input_rate, clamp_full_scale,
+    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx,
+    NativeChannel, TxPayload, check_input_rate, clamp_full_scale,
     tx::{Burst, TxQueue},
     voice_leveller,
 };
@@ -31,6 +34,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: 48_000.0,
     has_audio: true,
     calls: Some(CallGate::Squelch),
+    click: ClickProfile::Detector,
+    levels_audio: true,
+    analog_voice: true,
     ..ChannelDescriptor::default()
 });
 
@@ -39,14 +45,8 @@ pub struct SsbChannel {
     leveller: Agc,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&SsbParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Ssb(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "ssb channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<SsbParams, ChannelError> {
+    crate::settings_of::<SsbParams>(settings)
 }
 
 pub(crate) fn waveform(p: &SsbParams) -> Result<SsbWaveform, ChannelError> {
@@ -85,23 +85,24 @@ fn demodulator(p: &SsbParams) -> Result<SsbDemod, ChannelError> {
     Ok(SsbDemod::new(&waveform(p)?, SsbDetector::Filter, false))
 }
 
-impl ChannelRx for SsbChannel {
+impl NativeChannel for SsbChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
         Ok(Self {
-            demod: demodulator(p)?,
+            demod: demodulator(&p)?,
             leveller: voice_leveller(),
         })
     }
+}
 
+impl ChannelRx for SsbChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
-        self.demod = demodulator(p)?;
+        self.demod = demodulator(&p)?;
         Ok(())
     }
 
@@ -171,7 +172,7 @@ impl ChannelTx for SsbTx {
         Ok(Self {
             queue: TxQueue::new(DESCRIPTOR.type_id.as_str(), f64::from(AUDIO_RATE)),
             sideband: p.sideband,
-            audio_bp: audio_bandpass(p)?,
+            audio_bp: audio_bandpass(&p)?,
             hilbert: RealDecimator::new(&hilbert_taps(), 1),
             delay: RealDecimator::new(&delay_taps(), 1),
             shaped: Vec::new(),
@@ -183,7 +184,7 @@ impl ChannelTx for SsbTx {
 
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
-        self.audio_bp = audio_bandpass(p)?;
+        self.audio_bp = audio_bandpass(&p)?;
         self.sideband = p.sideband;
         Ok(())
     }
@@ -224,11 +225,60 @@ impl ChannelTx for SsbTx {
     }
 }
 
+fn channel_filter(p: &SsbParams) -> Result<ChannelFilter, ChannelError> {
+    Ok(ChannelFilter::Sideband(sideband_filter(p)?))
+}
+
+fn ssb_signatures() -> Vec<SignalSignature> {
+    vec![SignalSignature::new(
+        "SSB voice",
+        &[Modulation::Ssb],
+        HzRange::new(1_500.0, 4_000.0),
+        "one sideband, no carrier",
+    )]
+}
+
+/// Takes the heard sideband and width, and tunes to the suppressed carrier at the band edge.
+fn ssb_tune(signal: &sdrmm_wire::IdentSignal, p: &mut SsbParams) -> f64 {
+    p.sideband = signal.sideband.unwrap_or(Sideband::Usb);
+    p.bandwidth_hz = signal.bandwidth_hz.clamp(1500.0, 6000.0);
+    match p.sideband {
+        Sideband::Usb => -p.bandwidth_hz / 2.0,
+        Sideband::Lsb => p.bandwidth_hz / 2.0,
+    }
+}
+
+pub(crate) fn ssb_decoder() -> Native<SsbParams> {
+    Native::new::<SsbChannel>(|p: &SsbParams| match p.sideband {
+        Sideband::Usb => (PASSBAND_LOW_HZ, p.bandwidth_hz),
+        Sideband::Lsb => (-p.bandwidth_hz, -PASSBAND_LOW_HZ),
+    })
+    .filter(channel_filter)
+    .tx::<SsbTx>()
+    .signatures(ssb_signatures)
+    .tune(ssb_tune)
+    .form(ssb_form)
+    .kinds(ssb_kinds)
+}
+
+pub(crate) fn ssb_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("sideband", "Side", Control::choice::<Sideband>()).title("Sideband"),
+        SettingField::new("bandwidth_hz", "BW", NumberSpec::hz(200.0, 10_000.0, 100.0))
+            .title("SSB bandwidth"),
+    ]
+}
+
+fn ssb_kinds() -> Vec<KindSpec> {
+    vec![]
+}
+
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::NfmParams;
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
+    use crate::nfm::NfmParams;
     use crate::{
         synth::{burst, tone_audio},
         testutil::{complex_tone, component, dominant_tone, rms, run_ragged, settings, tone_power},
@@ -249,10 +299,13 @@ mod tests {
     }
 
     fn voice_settings(sideband: Sideband) -> ChannelSettings {
-        settings(ChannelParams::Ssb(SsbParams {
-            sideband,
-            bandwidth_hz: 2_700.0,
-        }))
+        settings(
+            ChannelParams::of(&SsbParams {
+                sideband,
+                bandwidth_hz: 2_700.0,
+            })
+            .expect("ssb settings"),
+        )
     }
 
     fn channel(sideband: Sideband) -> SsbChannel {
@@ -338,10 +391,13 @@ mod tests {
     #[test]
     fn apply_narrower_bandwidth_keeps_demodulating() {
         let mut chan = channel(Sideband::Usb);
-        chan.apply(settings(ChannelParams::Ssb(SsbParams {
-            sideband: Sideband::Usb,
-            bandwidth_hz: 2_000.0,
-        })))
+        chan.apply(settings(
+            ChannelParams::of(&SsbParams {
+                sideband: Sideband::Usb,
+                bandwidth_hz: 2_000.0,
+            })
+            .expect("ssb settings"),
+        ))
         .unwrap();
         let audio = run_ragged(&mut chan, &complex_tone(1_000.0 / RATE, 48_000));
         let (freq, ratio) = dominant_tone(&audio[2_000..14_000], RATE);
@@ -352,7 +408,9 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(Sideband::Usb);
-        let err = chan.apply(settings(ChannelParams::Nfm(NfmParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     }
 
@@ -443,14 +501,20 @@ mod tests {
 
     #[test]
     fn tx_rejects_mismatched_params_and_out_of_range_bandwidth() {
-        let built = SsbTx::new(ctx(), settings(ChannelParams::Nfm(NfmParams::default())));
+        let built = SsbTx::new(
+            ctx(),
+            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+        );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
         let built = SsbTx::new(
             ctx(),
-            settings(ChannelParams::Ssb(SsbParams {
-                sideband: Sideband::Usb,
-                bandwidth_hz: 50.0,
-            })),
+            settings(
+                ChannelParams::of(&SsbParams {
+                    sideband: Sideband::Usb,
+                    bandwidth_hz: 50.0,
+                })
+                .expect("ssb settings"),
+            ),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
         let built = SsbTx::new(

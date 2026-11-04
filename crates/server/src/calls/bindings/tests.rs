@@ -269,7 +269,7 @@ fn a_trunk_binds_each_follower_its_wire_asks_calls_of() {
     };
     let graph = sdrmm_wire::PatchGraph {
         nodes: vec![
-            at("trunk", NodeBody::DmrTrunk(Default::default())),
+            at("trunk", NodeBody::Trunk(Default::default())),
             at("log", NodeBody::DecoderLog(Default::default())),
         ],
         edges: vec![PatchEdge {

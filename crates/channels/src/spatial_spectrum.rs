@@ -4,12 +4,12 @@ use sdrmm_dsp::doa::{bartlett, capon, music};
 use sdrmm_dsp::linalg::{CMat, Cholesky, Eigen, HermitianEigen};
 use sdrmm_dsp::manifold::{GridSpec, LIGHT_SPEED_M_S, Manifold, ManifoldError, SteeringGrid};
 use sdrmm_dsp::special::norm_deg;
-use sdrmm_wire::array::{MAX_ARRAY_LANES, MIN_ARRAY_LANES};
 use sdrmm_wire::processor::spatial::MAX_SPATIAL_PEAKS;
 use sdrmm_wire::{
     ProcessorParams, ProcessorReading, SpatialMethod, SpatialPeak, SpatialReading,
     SpatialSpectrumOwned, SpatialSpectrumParams, StreamKind, SurfaceFrame,
 };
+use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use crate::ChannelError;
 use crate::array_processor::{

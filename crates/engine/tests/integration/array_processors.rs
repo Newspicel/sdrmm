@@ -16,15 +16,13 @@ use crate::common::{
     },
     assert_tone_dominates, settle_then_collect_second,
 };
+use sdrmm_channels::NfmParams;
 use sdrmm_device_virtual::{BenchWorld, Emitter, Scene, Waveform, default_devices, default_scene};
 use sdrmm_engine::{ArraySpec, Engine};
 use sdrmm_wire::{
     ArrayCal, ArrayCalSource, ArrayOrientation, ArrayTuneRequest, Attitude, ChannelParams,
-    ChannelSettings, NfmParams, PositionFix, ProcessorGate, ProcessorParams, ProcessorReading,
-    processor::{
-        beamformer::BeamformerParams,
-        df::{DfParams, DfReading},
-    },
+    ChannelSettings, PositionFix, ProcessorGate, ProcessorParams, ProcessorReading,
+    processor::beamformer::BeamformerParams, processor::df::DfParams, processor::df::DfReading,
     radar::PassiveRadarParams,
 };
 
@@ -180,7 +178,7 @@ fn a_time_only_processor_runs_before_phase_is_solved() {
 #[test]
 fn a_spread_processor_is_gated_on_a_together_array() {
     use crate::common::array::calibrated;
-    use sdrmm_wire::processor::{ProbeParams, stitch::StitchParams};
+    use sdrmm_wire::{processor::ProbeParams, processor::stitch::StitchParams};
 
     let bench = Bench::new();
     let ds = bench.open(KRAKEN);
@@ -246,7 +244,7 @@ async fn a_channel_on_a_lane_port_hears_the_processor_output() {
             ChannelSettings {
                 frequency_hz: lane.center_hz + VOICE_OFFSET_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Nfm(NfmParams::default()),
+                params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },

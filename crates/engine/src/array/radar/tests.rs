@@ -18,9 +18,9 @@ use sdrmm_channels::{
 };
 use sdrmm_test_support::assert_no_alloc;
 use sdrmm_wire::{
-    ArrayGeometry, ArrayOrientation, ArrayTuningMode, Coherence, DecoderEvent, GpuUse,
+    ArrayGeometry, ArrayOrientation, ArrayTuningMode, Coherence, DfBearing, GpuUse,
     ProcessorParams, ProcessorReading, RadarUpdate, RangeDopplerOwned, SurfaceFrame, Winding,
-    radar::{CfarParams, PassiveRadarParams, ReferenceCleaning, TrackChange},
+    radar::CfarParams, radar::PassiveRadarParams, radar::ReferenceCleaning, radar::TrackChange,
 };
 
 use super::{
@@ -161,7 +161,7 @@ fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
 struct Collector {
     report: Option<ProcessorReading>,
     surface: Option<SurfaceFrame>,
-    events: Vec<DecoderEvent>,
+    bearings: Vec<DfBearing>,
     lanes: Vec<LaneBuffer>,
     updates: Vec<RadarUpdate>,
     surfaces: Vec<RangeDopplerOwned>,
@@ -172,7 +172,7 @@ impl Collector {
         Self {
             report: ProcessorReading::empty("passive_radar"),
             surface: Some(SurfaceFrame::RangeDoppler(RangeDopplerOwned::default())),
-            events: Vec::new(),
+            bearings: Vec::new(),
             lanes: Vec::new(),
             updates: Vec::new(),
             surfaces: Vec::new(),
@@ -184,7 +184,7 @@ impl Collector {
             let mut out = ProcessorOutput::new(OutputSlots {
                 report: self.report.as_mut(),
                 surface: self.surface.as_mut(),
-                events: &mut self.events,
+                bearings: &mut self.bearings,
                 lanes: &mut self.lanes,
             });
             runner.poll(&mut out);

@@ -1,7 +1,7 @@
+use crate::tetrapol::TetrapolBand;
 use num_complex::Complex;
 use sdrmm_dsp::crc16_x25;
 use sdrmm_modem::cpm::CpmMod;
-use sdrmm_wire::TetrapolBand;
 
 use crate::tetrapol::{
     BAUD,

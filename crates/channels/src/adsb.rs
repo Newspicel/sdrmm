@@ -1,3 +1,9 @@
+use crate::registry::Native;
+use sdrmm_wire::{ANY_MODULATION, HzRange, SignalSignature};
+use sdrmm_wire::{Control, KindSpec, SettingField};
+mod beast;
+mod model;
+pub use model::*;
 mod screen;
 
 use std::sync::LazyLock;
@@ -5,15 +11,18 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{bits_be, mode_s_bit_overlays, mode_s_fix_single_bit, mode_s_overlay};
 use sdrmm_modem::{
+    constellation::tables::gray_inverse,
     ppm::{PpmDemod, SlotDetector, magnitudes},
     soft::argmax,
 };
 use sdrmm_wire::{
-    AdsbMessage, AdsbParams, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily, EventKind, PositionFix,
+    ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind, PositionFix,
 };
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 use screen::{Phases, PreambleScreen};
 
 pub(crate) const INPUT_RATE_HZ: f64 = 2_400_000.0;
@@ -77,7 +86,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    emits: vec![EventKind::Adsb],
+    emits: vec![EventKind::named("adsb")],
     needs_position: true,
     ..ChannelDescriptor::default()
 });
@@ -132,14 +141,8 @@ struct Sliced {
     confidence: f32,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&AdsbParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Adsb(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "adsb channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<AdsbParams, ChannelError> {
+    crate::settings_of::<AdsbParams>(settings)
 }
 
 fn check_params(p: &AdsbParams) -> Result<(), ChannelError> {
@@ -252,15 +255,6 @@ fn hex_upper(bytes: &[u8]) -> String {
     out
 }
 
-fn gray_decode(gray: u32) -> u32 {
-    let mut b = gray;
-    b ^= b >> 8;
-    b ^= b >> 4;
-    b ^= b >> 2;
-    b ^= b >> 1;
-    b
-}
-
 fn barometric_altitude(ac12: u32) -> Option<i32> {
     if ac12 == 0 {
         return None;
@@ -277,8 +271,8 @@ fn gillham_altitude(ac12: u32) -> Option<i32> {
     let (c1, a1, c2, a2, c4, a4) = (bit(0), bit(1), bit(2), bit(3), bit(4), bit(5));
     let (b1, b2, d2, b4, d4) = (bit(6), bit(8), bit(9), bit(10), bit(11));
     let five_hundreds =
-        gray_decode(d2 << 7 | d4 << 6 | a1 << 5 | a2 << 4 | a4 << 3 | b1 << 2 | b2 << 1 | b4);
-    let mut hundreds = gray_decode(c1 << 2 | c2 << 1 | c4);
+        gray_inverse(d2 << 7 | d4 << 6 | a1 << 5 | a2 << 4 | a4 << 3 | b1 << 2 | b2 << 1 | b4);
+    let mut hundreds = gray_inverse(c1 << 2 | c2 << 1 | c4);
     if hundreds & 5 == 5 {
         hundreds ^= 2;
     }
@@ -773,20 +767,19 @@ impl AdsbChannel {
             .copied()
             .fold(0.0_f32, f32::max);
         message.signal_level = Some((peak.clamp(0.0, 1.0) * 255.0).round() as u8);
-        out.events.push(DecoderEvent::Adsb(message));
+        out.events.push(DecoderEvent::of(&message));
         Some(consumed)
     }
 }
 
-impl ChannelRx for AdsbChannel {
+impl NativeChannel for AdsbChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
-        check_params(p)?;
+        check_params(&p)?;
         let receivers = phase_tables(ctx.input_rate);
         let frame_span = receivers.iter().map(|r| r.grid().span()).max().unwrap_or(0);
         let screen = PreambleScreen::new(&receivers);
@@ -807,10 +800,12 @@ impl ChannelRx for AdsbChannel {
             long_flips: mode_s_bit_overlays(LONG_BYTES),
         })
     }
+}
 
+impl ChannelRx for AdsbChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
-        check_params(p)?;
+        check_params(&p)?;
         self.crc_fix = p.crc_fix;
         self.configured_reference = p.ref_lat.zip(p.ref_lon);
         Ok(())
@@ -844,11 +839,48 @@ impl ChannelRx for AdsbChannel {
     }
 }
 
+const ADSB: &[HzRange] = &[HzRange::mhz(1_089.0, 1_091.0)];
+
+fn adsb_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "ADS-B / Mode S",
+            ANY_MODULATION,
+            HzRange::new(100_000.0, 4_000_000.0),
+            "120 µs pulse bursts on the 1090 MHz transponder downlink",
+        )
+        .bursts(HzRange::new(0.05, 0.15))
+        .on(ADSB),
+    ]
+}
+
+pub(crate) fn adsb_decoder() -> Native<AdsbParams> {
+    Native::new::<AdsbChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(1_090_000_000.0)
+        .signatures(adsb_signatures)
+        .form(adsb_form)
+        .kinds(adsb_kinds)
+        .feeds(beast::feeds)
+}
+
+pub(crate) fn adsb_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("crc_fix", "CRC fix", Control::Toggle)
+            .title("Repair single-bit errors the checksum can pin down"),
+    ]
+}
+
+fn adsb_kinds() -> Vec<KindSpec> {
+    vec![crate::adsb::adsb_kind()]
+}
+
 #[cfg(test)]
 mod tests {
+    use sdrmm_wire::ChannelParams;
     use std::f64::consts::{PI, TAU};
 
-    use sdrmm_wire::NfmParams;
+    use crate::nfm::NfmParams;
 
     use super::*;
     use crate::{
@@ -870,7 +902,7 @@ mod tests {
     const GAP_US: f64 = 30.0;
 
     fn adsb_params(p: AdsbParams) -> ChannelSettings {
-        settings(ChannelParams::Adsb(p))
+        settings(ChannelParams::of(&p).expect("settings"))
     }
 
     fn channel(p: AdsbParams) -> AdsbChannel {
@@ -896,7 +928,7 @@ mod tests {
             chan.process(&iq[pos..end], &mut out);
             assert!(out.audio_pcm.is_empty(), "adsb must not produce audio");
             for event in &out.events {
-                let DecoderEvent::Adsb(m) = event else {
+                let Some(m) = event.read::<AdsbMessage>() else {
                     panic!("adsb channel emitted {}", event.kind())
                 };
                 messages.push(m.clone());
@@ -1733,13 +1765,15 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(AdsbParams::default());
-        let err = chan.apply(settings(ChannelParams::Nfm(NfmParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = AdsbChannel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Nfm(NfmParams::default())),
+            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

@@ -5,10 +5,13 @@ use std::{
 };
 
 use num_complex::Complex;
+use sdrmm_channels::AdsbParams;
+use sdrmm_channels::NfmParams;
+use sdrmm_channels::SsbParams;
 use sdrmm_device::{DeviceDriver, DeviceRegistry, RxSink, SdrDevice, lock, single_rx_sink};
 use sdrmm_wire::{
-    AdsbParams, ChannelParams, ChannelSettings, DcArtifact, DecoderEvent, DeviceBackend, Duplex,
-    MAX_PRE_ROLL_S, NfmParams, PreRollStatus, ScanState, Sideband, SsbParams, StreamScope, Tuning,
+    ChannelParams, ChannelSettings, DcArtifact, DeviceBackend, Duplex, MAX_PRE_ROLL_S,
+    PreRollStatus, ScanState, Sideband, StreamScope, Tuning,
 };
 
 use super::*;
@@ -1211,6 +1214,7 @@ const ADSB_CENTER_HZ: f64 = 1_090_000_000.0;
 
 fn parked(id: u32, offset_hz: f64) -> ChannelInfo {
     ChannelInfo {
+        band: None,
         id,
         stream: 0,
         node: None,
@@ -1247,7 +1251,7 @@ fn nfm_settings(offset_hz: f64) -> ChannelSettings {
     ChannelSettings {
         frequency_hz: TEST_CENTER_HZ + offset_hz,
         squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Nfm(NfmParams::default()),
+        params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     }

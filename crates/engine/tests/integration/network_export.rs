@@ -26,7 +26,11 @@ fn a_stalled_tcp_reader_reports_failure_while_radio_audio_stays_continuous() {
             sdrmm_wire::ChannelSettings {
                 frequency_hz: 100_000_000.0 + sdrmm_device_virtual::NFM_CARRIER_OFFSET_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: sdrmm_wire::ChannelParams::Nfm(sdrmm_wire::NfmParams::default()),
+                params: sdrmm_wire::ChannelParams::new(
+                    "nfm",
+                    &sdrmm_channels::NfmParams::default(),
+                )
+                .expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },

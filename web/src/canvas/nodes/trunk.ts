@@ -1,0 +1,301 @@
+import { formatHz } from "../../components/format";
+import type {
+  ChannelDescriptor,
+  DvTrunkProtocol,
+  TrunkChannel,
+  TrunkChannelEntry,
+  TrunkChannelSource,
+  TrunkProtocol,
+  TrunkSearchRange,
+  TrunkSystemStatus,
+} from "../../lib/types";
+
+export const MAX_SEARCH_RANGES = 8;
+export const MAX_SEARCH_CANDIDATES = 512;
+export const MIN_SEARCH_STEP_HZ = 1_250;
+export const MAX_CHANNEL_MAP = 512;
+export const MAX_LOGICAL_CHANNEL = 4095;
+
+export const TRUNK_PROTOCOLS: readonly { value: TrunkProtocol; label: string }[] = [
+  { value: "auto", label: "Auto-detect" },
+  { value: "capacity_plus", label: "Capacity Plus" },
+  { value: "hytera_xpt", label: "Hytera XPT" },
+  { value: "tier_three", label: "Tier III / Capacity Max" },
+];
+
+/** The decoders a trunk system can run on, in registry order. */
+export function trunkDecoders(
+  types: readonly ChannelDescriptor[],
+): { value: string; label: string }[] {
+  return types
+    .filter((type) => type.trunks === true)
+    .map((type) => ({ value: type.type_id, label: type.name }));
+}
+
+export function trunkProtocolLabel(
+  protocol: TrunkProtocol,
+  detected: DvTrunkProtocol | null = null,
+): string {
+  switch (protocol === "auto" ? detected : protocol) {
+    case "capacity_plus":
+      return "Capacity Plus";
+    case "hytera_xpt":
+      return "Hytera XPT";
+    case "tier_three":
+      return "Tier III";
+    default:
+      return "Listening for signalling";
+  }
+}
+
+export function planLabel(
+  protocol: TrunkProtocol,
+  detected: DvTrunkProtocol | null = null,
+): string {
+  return followsTierThree(protocol, detected) ? "Channel plan" : "Repeater outputs";
+}
+
+export function followsTierThree(
+  protocol: TrunkProtocol,
+  detected: DvTrunkProtocol | null = null,
+): boolean {
+  return protocol === "tier_three" || (protocol === "auto" && detected === "tier_three");
+}
+
+function megahertz(value: number): string {
+  return (value / 1e6).toFixed(4).replace(/\.?0+$/, "");
+}
+
+function lines(text: string): string[] {
+  return text.split(/[\n;,]/);
+}
+
+export function parseSearchRanges(text: string): TrunkSearchRange[] {
+  const ranges: TrunkSearchRange[] = [];
+  for (const line of lines(text)) {
+    const match = /^\s*([\d.]+)\s*[-–]\s*([\d.]+)\s*\/\s*([\d.]+)\s*$/.exec(line);
+    if (match === null) {
+      continue;
+    }
+    const range = {
+      start_hz: Math.round(Number(match[1]) * 1e6),
+      end_hz: Math.round(Number(match[2]) * 1e6),
+      step_hz: Math.round(Number(match[3]) * 1e3),
+    };
+    if (searchRangeValid(range)) {
+      ranges.push(range);
+    }
+    if (ranges.length >= MAX_SEARCH_RANGES) {
+      break;
+    }
+  }
+  return ranges;
+}
+
+export function searchRangeValid(range: TrunkSearchRange): boolean {
+  return (
+    Number.isFinite(range.start_hz) &&
+    Number.isFinite(range.end_hz) &&
+    range.start_hz > 0 &&
+    range.end_hz >= range.start_hz &&
+    range.step_hz >= MIN_SEARCH_STEP_HZ &&
+    searchCandidates([range]) <= MAX_SEARCH_CANDIDATES
+  );
+}
+
+export function searchCandidates(ranges: readonly TrunkSearchRange[]): number {
+  return ranges.reduce(
+    (total, range) =>
+      total +
+      (range.step_hz > 0 ? Math.floor((range.end_hz - range.start_hz) / range.step_hz) + 1 : 0),
+    0,
+  );
+}
+
+export function formatSearchRanges(ranges: readonly TrunkSearchRange[] | undefined): string {
+  return (ranges ?? [])
+    .map(
+      (range) => `${megahertz(range.start_hz)}-${megahertz(range.end_hz)} / ${range.step_hz / 1e3}`,
+    )
+    .join("; ");
+}
+
+export function channelEntry(lcn: number | null, mhz: number | null): TrunkChannelEntry | null {
+  if (lcn === null || mhz === null || !Number.isInteger(lcn)) {
+    return null;
+  }
+  const freq_hz = Math.round(mhz * 1e6);
+  if (lcn < 0 || lcn > MAX_LOGICAL_CHANNEL || !Number.isFinite(freq_hz) || freq_hz <= 0) {
+    return null;
+  }
+  return { lcn, freq_hz };
+}
+
+export function withChannel(
+  entries: readonly TrunkChannelEntry[] | undefined,
+  entry: TrunkChannelEntry,
+): TrunkChannelEntry[] {
+  const kept = withoutChannel(entries, entry.lcn);
+  if (kept.length >= MAX_CHANNEL_MAP) {
+    return kept;
+  }
+  return [...kept, entry].toSorted((a, b) => a.lcn - b.lcn);
+}
+
+export function parseControlHz(text: string): number | undefined {
+  const value = Number(text.trim());
+  if (!Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return Math.round(value * 1e6);
+}
+
+export function controlChannelStalled(
+  onIq: boolean,
+  controlHz: number | null | undefined,
+  carriers: number | undefined,
+): boolean {
+  return onIq && controlHz != null && carriers === 0;
+}
+
+export function awaitingControlChannel(
+  onIq: boolean,
+  controlHz: number | null | undefined,
+): boolean {
+  return onIq && controlHz == null;
+}
+
+export function trunkChannelSourceLabel(source: TrunkChannelSource): string {
+  switch (source) {
+    case "announced":
+      return "announced";
+    case "manual":
+      return "entered";
+    case "learned":
+      return "found";
+    case "predicted":
+      return "guessed";
+  }
+}
+
+export function trunkChannelSourceHint(source: TrunkChannelSource): string {
+  switch (source) {
+    case "announced":
+      return "The system broadcast this frequency itself.";
+    case "manual":
+      return "You entered this frequency.";
+    case "learned":
+      return "A call answered a grant here, so the frequency is confirmed.";
+    case "predicted":
+      return "Worked out from the channel spacing of the channels already known. Never followed until a call confirms it.";
+  }
+}
+
+export function trunkChannelSourceTone(source: TrunkChannelSource): string {
+  return source === "predicted" ? "text-ink-faint" : "text-ink-dim";
+}
+
+export function usable(source: TrunkChannelSource): boolean {
+  return source !== "predicted";
+}
+
+export function channelPlanRows(
+  map: readonly TrunkChannel[],
+  entries: readonly TrunkChannelEntry[] | undefined,
+): TrunkChannel[] {
+  const known = new Map(map.map((channel) => [channel.logical_channel, channel]));
+  for (const entry of entries ?? []) {
+    if (!known.has(entry.lcn)) {
+      known.set(entry.lcn, {
+        logical_channel: entry.lcn,
+        freq_hz: entry.freq_hz,
+        source: "manual",
+        confidence: 100,
+      });
+    }
+  }
+  return [...known.values()].toSorted((a, b) => a.logical_channel - b.logical_channel);
+}
+
+export function withoutChannel(
+  entries: readonly TrunkChannelEntry[] | undefined,
+  lcn: number,
+): TrunkChannelEntry[] {
+  return (entries ?? []).filter((entry) => entry.lcn !== lcn);
+}
+
+export function planSummary(rows: readonly TrunkChannel[]): string {
+  if (rows.length === 0) {
+    return "No logical channels placed yet.";
+  }
+  const counted = rows.reduce<Record<string, number>>((totals, row) => {
+    totals[row.source] = (totals[row.source] ?? 0) + 1;
+    return totals;
+  }, {});
+  const parts = (["announced", "manual", "learned", "predicted"] as const)
+    .filter((source) => counted[source] !== undefined)
+    .map((source) => `${counted[source]} ${trunkChannelSourceLabel(source)}`);
+  return `${rows.length} logical channel${rows.length === 1 ? "" : "s"}: ${parts.join(", ")}.`;
+}
+
+export function adoptable(
+  map: readonly TrunkChannel[],
+  entries: readonly TrunkChannelEntry[] | undefined,
+): TrunkChannelEntry[] {
+  const known = new Set((entries ?? []).map((entry) => entry.lcn));
+  return map
+    .filter((channel) => channel.source === "learned" && !known.has(channel.logical_channel))
+    .map((channel) => ({ lcn: channel.logical_channel, freq_hz: channel.freq_hz }));
+}
+
+export function otherControlLabel(freqs: readonly number[]): string {
+  return freqs.map((hz) => formatHz(hz)).join(", ");
+}
+
+export function searchSummary(
+  ranges: readonly TrunkSearchRange[] | undefined,
+  candidates: number,
+  searching: number,
+  probes: number,
+): string {
+  const named = searchCandidates(ranges ?? []);
+  const covering = named > 0 ? named : candidates;
+  const where = named > 0 ? "the band you named" : "everything the radio can hear";
+  if (covering === 0) {
+    return "Covering everything the radio can hear, once the site identifies itself.";
+  }
+  if (searching === 0) {
+    return `Covering ${where}: ${covering} frequencies.`;
+  }
+  return `Hunting ${searching} logical channel${searching === 1 ? "" : "s"} across ${covering} frequencies with ${probes} receiver${probes === 1 ? "" : "s"}.`;
+}
+
+export type TrunkChannelRole = "control" | "call" | "search";
+
+export interface TrunkChannelOwner {
+  node: string;
+  role: TrunkChannelRole;
+}
+
+export function trunkChannelRoles(
+  trunks: readonly TrunkSystemStatus[],
+  deviceSet: number,
+): Map<number, TrunkChannelOwner> {
+  const owners = new Map<number, TrunkChannelOwner>();
+  for (const system of trunks) {
+    if (system.control != null && system.control.device_set === deviceSet) {
+      owners.set(system.control.channel, { node: system.node, role: "control" });
+    }
+    for (const follower of system.followers) {
+      if (follower.device_set === deviceSet) {
+        owners.set(follower.channel, { node: system.node, role: "call" });
+      }
+    }
+    for (const probe of system.probes ?? []) {
+      if (probe.device_set === deviceSet) {
+        owners.set(probe.channel, { node: system.node, role: "search" });
+      }
+    }
+  }
+  return owners;
+}

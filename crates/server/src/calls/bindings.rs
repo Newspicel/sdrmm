@@ -29,7 +29,7 @@ pub(crate) fn bindings(
     let mut bound = Bindings::new();
     let mut problems = Vec::new();
     for node in &patch.nodes {
-        if !patch.delivers(&node.id, EVENTS_PORT, EventKind::Call) {
+        if !patch.delivers(&node.id, EVENTS_PORT, &EventKind::CALL) {
             continue;
         }
         let keep_audio = patch.keeps(&node.id, EVENTS_PORT, Keeps::Clips);

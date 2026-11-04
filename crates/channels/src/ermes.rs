@@ -1,17 +1,23 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+use sdrmm_wire::{KindSpec, SettingField};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
+use crate::flex::PagerPayload;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, SyncDetector, design_lowpass, ermes_bch_decode};
 use sdrmm_modem::{
     cpm::{CpmDemod, CpmParams, Mapping, TIMING_BW_CONTINUOUS},
     pulse::{self, Norm},
 };
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, ErmesMessage,
-    ErmesParams, EventKind, PagerPayload,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const RATE: f64 = 48_000.0;
 const BAUD: f64 = 3_125.0;
@@ -31,7 +37,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Ermes],
+    emits: vec![EventKind::named("ermes")],
     ..ChannelDescriptor::default()
 });
 
@@ -70,14 +76,8 @@ fn mapping() -> Mapping {
     Mapping::new(vec![-3.0, -1.0, 3.0, 1.0])
 }
 
-fn params(settings: &ChannelSettings) -> Result<&ErmesParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Ermes(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "ermes channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<ErmesParams, ChannelError> {
+    crate::settings_of::<ErmesParams>(settings)
 }
 
 fn check_params(params: &ErmesParams) -> Result<(), ChannelError> {
@@ -253,7 +253,7 @@ impl ErmesChannel {
             PagerPayload::Alpha => decode_alpha(&self.message[2..]),
             PagerPayload::Binary => decode_binary(&self.message[2..]),
         };
-        out.events.push(DecoderEvent::Ermes(ErmesMessage {
+        out.events.push(DecoderEvent::of(&ErmesMessage {
             local_address,
             message_number,
             payload,
@@ -316,15 +316,14 @@ fn decode_binary(words: &[u32]) -> String {
         .join(" ")
 }
 
-impl ChannelRx for ErmesChannel {
+impl NativeChannel for ErmesChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let configured = params(&settings)?;
-        check_params(configured)?;
+        check_params(&configured)?;
         let mapping = mapping();
         let sps = RATE / BAUD;
         let params = CpmParams::from_deviation(
@@ -347,10 +346,12 @@ impl ChannelRx for ErmesChannel {
             rejected: 0,
         })
     }
+}
 
+impl ChannelRx for ErmesChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
-        check_params(params)?;
+        check_params(&params)?;
         self.invert = params.invert;
         Ok(())
     }
@@ -377,10 +378,51 @@ impl ChannelRx for ErmesChannel {
     }
 }
 
+const ERMES_BAND: &[HzRange] = &[HzRange::mhz(169.4, 169.8)];
+
+fn ermes_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "ERMES",
+            &[Modulation::Fsk4],
+            HzRange::new(12_500.0, 30_000.0),
+            "four-level keying at 3125 baud in the ERMES band",
+        )
+        .symbol_rate(HzRange::about(3_125.0, 0.05))
+        .deviation(HzRange::new(3_500.0, 6_500.0))
+        .on(ERMES_BAND),
+    ]
+}
+
+fn ermes_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("ermes"))
+}
+
+pub(crate) fn ermes_decoder() -> Native<ErmesParams> {
+    Native::new::<ErmesChannel>(occupied_band)
+        .filter(channel_filter)
+        .signatures(ermes_signatures)
+        .trial(ermes_trial)
+        .form(ermes_form)
+        .kinds(ermes_kinds)
+}
+
+pub(crate) fn ermes_form() -> Vec<SettingField> {
+    vec![
+        SettingField::bandwidth(&[12_500.0, 25_000.0]),
+        SettingField::invert(),
+    ]
+}
+
+fn ermes_kinds() -> Vec<KindSpec> {
+    vec![crate::ermes::ermes_kind()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{synth, testutil::settings};
+    use sdrmm_wire::ChannelParams;
 
     #[test]
     fn decodes_recorded_ermes_iq_in_ragged_blocks() {
@@ -394,7 +436,7 @@ mod tests {
         let iq = synth::ermes::transmission(&page, RATE);
         let mut exact = ErmesChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Ermes(ErmesParams::default())),
+            settings(ChannelParams::new("ermes", &ErmesParams::default()).expect("ermes settings")),
         )
         .unwrap();
         let mut exact_out = ChannelOutputs::default();
@@ -410,7 +452,7 @@ mod tests {
         );
         let mut channel = ErmesChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Ermes(ErmesParams::default())),
+            settings(ChannelParams::new("ermes", &ErmesParams::default()).expect("ermes settings")),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -420,10 +462,7 @@ mod tests {
         let messages = out
             .events
             .iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Ermes(message) => Some(message),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<ErmesMessage>())
             .collect::<Vec<_>>();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].local_address, 234_567);
@@ -446,10 +485,16 @@ mod tests {
     fn pages(invert: bool, iq: &[Complex<f32>]) -> Vec<ErmesMessage> {
         let mut channel = ErmesChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Ermes(ErmesParams {
-                invert,
-                ..ErmesParams::default()
-            })),
+            settings(
+                ChannelParams::new(
+                    "ermes",
+                    &ErmesParams {
+                        invert,
+                        ..ErmesParams::default()
+                    },
+                )
+                .expect("ermes settings"),
+            ),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -458,10 +503,7 @@ mod tests {
         }
         out.events
             .into_iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Ermes(message) => Some(message),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<ErmesMessage>())
             .collect()
     }
 
@@ -495,7 +537,7 @@ mod tests {
         }
         let mut channel = ErmesChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Ermes(ErmesParams::default())),
+            settings(ChannelParams::new("ermes", &ErmesParams::default()).expect("ermes settings")),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -503,9 +545,7 @@ mod tests {
             channel.bit(bit, &mut out);
         }
         assert!(
-            !out.events
-                .iter()
-                .any(|event| matches!(event, DecoderEvent::Ermes(_))),
+            !out.events.iter().any(|event| event.is::<ErmesMessage>()),
             "{:?}",
             out.events
         );

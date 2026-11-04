@@ -1,7 +1,9 @@
-use sdrmm_wire::{
-    DecoderEvent, TetrapolAddressKind, TetrapolCallType, TetrapolLogicalChannel, TetrapolMessage,
-    TetrapolPayload,
-};
+use crate::tetrapol::TetrapolAddressKind;
+use crate::tetrapol::TetrapolCallType;
+use crate::tetrapol::TetrapolLogicalChannel;
+use crate::tetrapol::TetrapolMessage;
+use crate::tetrapol::TetrapolPayload;
+use sdrmm_wire::ChannelParams;
 
 use super::{
     coding::{Block, DataBlock, Decoder, FRAME_BITS, encode_data, encode_voice, frame_bits},
@@ -33,7 +35,7 @@ fn sample_block() -> DataBlock {
 fn channel(params: TetrapolParams) -> TetrapolChannel {
     TetrapolChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Tetrapol(params)),
+        settings(ChannelParams::of(&params).expect("tetrapol settings")),
     )
     .unwrap()
 }
@@ -51,10 +53,7 @@ fn run(params: TetrapolParams, iq: &[Complex<f32>]) -> (Vec<TetrapolMessage>, u3
     let messages = out
         .events
         .into_iter()
-        .filter_map(|event| match event {
-            DecoderEvent::Tetrapol(message) => Some(message),
-            _ => None,
-        })
+        .filter_map(|event| event.read::<TetrapolMessage>())
         .collect();
     (messages, channel.rejected())
 }
@@ -280,10 +279,16 @@ fn noise_alone_stays_silent() {
 fn an_out_of_range_scrambling_code_is_refused() {
     let result = TetrapolChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Tetrapol(TetrapolParams {
-            scrambling: Some(200),
-            ..TetrapolParams::default()
-        })),
+        settings(
+            ChannelParams::new(
+                "tetrapol",
+                &TetrapolParams {
+                    scrambling: Some(200),
+                    ..TetrapolParams::default()
+                },
+            )
+            .expect("tetrapol settings"),
+        ),
     );
     assert!(result.is_err());
 }

@@ -1,7 +1,11 @@
-use sdrmm_wire::{
-    HeightReference, OperatorLocationType, RemoteIdLocation, RemoteIdMessage, RemoteIdSystem,
-    UaStatus, UaType, UasIdType,
-};
+use crate::remote_id::HeightReference;
+use crate::remote_id::OperatorLocationType;
+use crate::remote_id::RemoteIdLocation;
+use crate::remote_id::RemoteIdMessage;
+use crate::remote_id::RemoteIdSystem;
+use crate::remote_id::UaStatus;
+use crate::remote_id::UaType;
+use crate::remote_id::UasIdType;
 
 pub(crate) const OUI: [u8; 3] = [0x6A, 0x5C, 0x35];
 pub(crate) const TYPE: u8 = 0x01;
@@ -141,7 +145,8 @@ fn text(value: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{RemoteIdMessage, UasIdType};
+    use crate::remote_id::RemoteIdMessage;
+    use crate::remote_id::UasIdType;
 
     use super::messages;
 

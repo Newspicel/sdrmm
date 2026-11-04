@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, EventContract, KindSpec, NumberSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::{
     f64::consts::{FRAC_1_SQRT_2, TAU},
     sync::LazyLock,
@@ -8,14 +13,11 @@ use sdrmm_dsp::{
     Biquad, Compander, Decimator, Deemphasis, RealDecimator, design_lowpass, one_pole_coeff,
 };
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
-use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
-    EventKind, NfmParams, NfmScramblerMode, NfmToneMode, ScramblerStatus, ToneSquelchStatus,
-};
+use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
 use crate::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx,
-    TxPayload, check_input_rate, clamp_full_scale,
+    NativeChannel, TxPayload, check_input_rate, clamp_full_scale,
     tone_squelch::{AUDIO_CORNER_HZ, ToneSquelch, is_standard_ctcss, is_standard_dcs},
     tx::{Burst, TxQueue},
     voice_inversion::{
@@ -42,8 +44,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: 48_000.0,
     has_audio: true,
-    emits: vec![EventKind::Tone, EventKind::Scrambler],
+    emits: vec![ToneSquelchStatus::KIND, ScramblerStatus::KIND],
     calls: Some(CallGate::Squelch),
+    analog_voice: true,
     ..ChannelDescriptor::default()
 });
 
@@ -216,7 +219,7 @@ impl Scrambler {
         };
         if status.inversion_hz != self.reported.inversion_hz {
             self.reported = status;
-            out.events.push(DecoderEvent::Scrambler(status));
+            out.events.push(DecoderEvent::of(&status));
         }
     }
 }
@@ -274,21 +277,15 @@ impl Tone {
             open,
         };
         if status != self.reported {
-            self.reported = status.clone();
-            out.events.push(DecoderEvent::Tone(status));
+            out.events.push(DecoderEvent::of(&status));
+            self.reported = status;
         }
         open
     }
 }
 
-fn params(settings: &ChannelSettings) -> Result<&NfmParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Nfm(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "nfm channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<NfmParams, ChannelError> {
+    crate::settings_of::<NfmParams>(settings)
 }
 
 fn check_bandwidth(p: &NfmParams) -> Result<(), ChannelError> {
@@ -376,14 +373,13 @@ fn expander() -> Compander {
     )
 }
 
-impl ChannelRx for NfmChannel {
+impl NativeChannel for NfmChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = params(&settings)?;
+        let p = &params(&settings)?;
         check_params(p)?;
         Ok(Self {
             demod: discriminator(ctx.input_rate, p),
@@ -396,9 +392,11 @@ impl ChannelRx for NfmChannel {
             expander: p.compander.then(expander),
         })
     }
+}
 
+impl ChannelRx for NfmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let p = params(&settings)?;
+        let p = &params(&settings)?;
         check_params(p)?;
         self.demod = discriminator(DESCRIPTOR.input_rate_hz, p);
         match (&mut self.tone, p.tone_mode) {
@@ -503,7 +501,7 @@ impl ChannelTx for NfmTx {
 
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = params(&settings)?;
+        let p = &params(&settings)?;
         check_bandwidth(p)?;
         check_scrambler(p)?;
         Ok(Self {
@@ -521,7 +519,7 @@ impl ChannelTx for NfmTx {
     }
 
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let p = params(&settings)?;
+        let p = &params(&settings)?;
         check_bandwidth(p)?;
         check_scrambler(p)?;
         self.deviation_hz = deviation_hz(p);
@@ -570,12 +568,112 @@ impl ChannelTx for NfmTx {
     }
 }
 
+const PMR446: &[HzRange] = &[HzRange::mhz(446.0, 446.2)];
+
+const MARINE_VHF: &[HzRange] = &[HzRange::mhz(156.0, 162.05)];
+
+fn nfm_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "FM voice (narrowband)",
+            &[Modulation::Fm],
+            HzRange::new(6_000.0, 25_000.0),
+            "channel-width FM with no symbol structure",
+        )
+        .deviation(HzRange::new(1_000.0, 5_000.0)),
+        SignalSignature::new(
+            "PMR446 voice (FM)",
+            &[Modulation::Fm],
+            HzRange::new(6_000.0, 14_000.0),
+            "narrowband FM on a licence-free PMR446 channel",
+        )
+        .deviation(HzRange::new(1_000.0, 3_500.0))
+        .on(PMR446),
+        SignalSignature::new(
+            "Marine VHF voice (FM)",
+            &[Modulation::Fm],
+            HzRange::new(8_000.0, 25_000.0),
+            "narrowband FM in the maritime VHF band",
+        )
+        .deviation(HzRange::new(2_000.0, 5_500.0))
+        .on(MARINE_VHF),
+    ]
+}
+
+/// Opens the filter a quarter past the heard width.
+fn nfm_tune(signal: &sdrmm_wire::IdentSignal, p: &mut NfmParams) -> f64 {
+    p.bandwidth_hz = (signal.bandwidth_hz * 1.25).clamp(7500.0, 30_000.0);
+    0.0
+}
+
+pub(crate) fn nfm_decoder() -> Native<NfmParams> {
+    Native::new::<NfmChannel>(|p: &NfmParams| (-p.bandwidth_hz / 2.0, p.bandwidth_hz / 2.0))
+        .filter(channel_filter)
+        .tx::<NfmTx>()
+        .signatures(nfm_signatures)
+        .tune(nfm_tune)
+        .form(nfm_form)
+        .kinds(nfm_kinds)
+}
+
+const CTCSS_DEFAULT_HZ: f64 = 88.5;
+const DCS_DEFAULT_CODE: u16 = 23;
+const INVERSION_DEFAULT_HZ: f64 = 3_300.0;
+const BANDWIDTHS_HZ: [f64; 2] = [12_500.0, 25_000.0];
+
+pub(crate) fn nfm_form() -> Vec<SettingField> {
+    vec![
+        SettingField::bandwidth(&BANDWIDTHS_HZ),
+        SettingField::new("tone_mode", "Tone", Control::choice::<NfmToneMode>())
+            .title("Tone squelch")
+            .quiet(NfmToneMode::Off),
+        SettingField::new(
+            "ctcss_hz",
+            "CTCSS",
+            Control::values(&CTCSS_TONES_HZ, |hz| format!("{hz:.1} Hz")),
+        )
+        .title("CTCSS tone")
+        .fallback(CTCSS_DEFAULT_HZ)
+        .when("tone_mode", [NfmToneMode::Ctcss]),
+        SettingField::new(
+            "dcs_code",
+            "DCS",
+            Control::values(&DCS_CODES, |code| format!("{code:03}")),
+        )
+        .title("DCS code")
+        .fallback(DCS_DEFAULT_CODE)
+        .when("tone_mode", [NfmToneMode::Dcs]),
+        SettingField::new(
+            "scrambler_mode",
+            "Scrambler",
+            Control::choice::<NfmScramblerMode>(),
+        )
+        .title("Voice scrambler")
+        .quiet(NfmScramblerMode::Off),
+        SettingField::new(
+            "inversion_hz",
+            "Carrier",
+            NumberSpec::hz(1_500.0, 4_500.0, 50.0),
+        )
+        .title("Inversion carrier")
+        .fallback(INVERSION_DEFAULT_HZ)
+        .when("scrambler_mode", [NfmScramblerMode::Inversion]),
+        SettingField::new("compander", "Compander", Control::Toggle)
+            .title("Expand audio that was sent with 2:1 compression"),
+    ]
+}
+
+fn nfm_kinds() -> Vec<KindSpec> {
+    vec![tone_kind(), scrambler_kind()]
+}
+
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::AmParams;
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
     use crate::{
+        am::AmParams,
         synth::{
             burst, fm_modulate,
             nfm::{ctcss_audio, dcs_audio, mix, speech_audio},
@@ -593,7 +691,7 @@ mod tests {
     fn channel() -> NfmChannel {
         NfmChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Nfm(NfmParams::default())),
+            settings(ChannelParams::of(&NfmParams::default()).expect("nfm settings")),
         )
         .unwrap()
     }
@@ -613,10 +711,13 @@ mod tests {
     #[test]
     fn apply_wide_bandwidth_rescales_deviation() {
         let mut chan = channel();
-        chan.apply(settings(ChannelParams::Nfm(NfmParams {
-            bandwidth_hz: 25_000.0,
-            ..NfmParams::default()
-        })))
+        chan.apply(settings(
+            ChannelParams::of(&NfmParams {
+                bandwidth_hz: 25_000.0,
+                ..NfmParams::default()
+            })
+            .expect("nfm settings"),
+        ))
         .unwrap();
         let audio = run_ragged(&mut chan, &fm_iq(RATE, 1_000.0, 5_000.0, 48_000));
         let window = &audio[2_000..14_000];
@@ -642,10 +743,13 @@ mod tests {
         for bad in [0.0, -1.0, 48_000.0, f64::NAN] {
             let built = NfmChannel::new(
                 ChannelCtx { input_rate: RATE },
-                settings(ChannelParams::Nfm(NfmParams {
-                    bandwidth_hz: bad,
-                    ..NfmParams::default()
-                })),
+                settings(
+                    ChannelParams::of(&NfmParams {
+                        bandwidth_hz: bad,
+                        ..NfmParams::default()
+                    })
+                    .expect("nfm settings"),
+                ),
             );
             assert!(
                 matches!(built, Err(ChannelError::InvalidSettings(_))),
@@ -657,11 +761,13 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel();
-        let err = chan.apply(settings(ChannelParams::Am(AmParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("am", &AmParams::default()).expect("am settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = NfmChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Am(AmParams::default())),
+            settings(ChannelParams::new("am", &AmParams::default()).expect("am settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -672,7 +778,7 @@ mod tests {
             ChannelCtx {
                 input_rate: 240_000.0,
             },
-            settings(ChannelParams::Nfm(NfmParams::default())),
+            settings(ChannelParams::of(&NfmParams::default()).expect("nfm settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -770,7 +876,11 @@ mod tests {
     }
 
     fn tone_channel(p: NfmParams) -> NfmChannel {
-        NfmChannel::new(ctx(), settings(ChannelParams::Nfm(p))).unwrap()
+        NfmChannel::new(
+            ctx(),
+            settings(ChannelParams::of(&p).expect("nfm settings")),
+        )
+        .unwrap()
     }
 
     fn signalling_iq(subaudible: &[f32]) -> Vec<Complex<f32>> {
@@ -790,10 +900,10 @@ mod tests {
             out.reset();
             chan.process(&iq[pos..end], &mut out);
             for event in &out.events {
-                let DecoderEvent::Tone(status) = event else {
-                    panic!("nfm emitted {}", event.kind())
+                let Some(status) = event.read::<ToneSquelchStatus>() else {
+                    panic!("nfm emitted {}", event.kind)
                 };
-                statuses.push(status.clone());
+                statuses.push(status);
             }
             audio.extend_from_slice(&out.audio_pcm);
             pos = end;
@@ -988,8 +1098,10 @@ mod tests {
             assert!(tone_channel(tone_params(mode, ctcss_hz, None)).needs_gated_input());
         }
         let mut chan = tone_channel(tone_params(NfmToneMode::Detect, None, None));
-        chan.apply(settings(ChannelParams::Nfm(NfmParams::default())))
-            .unwrap();
+        chan.apply(settings(
+            ChannelParams::of(&NfmParams::default()).expect("nfm settings"),
+        ))
+        .unwrap();
         assert!(!chan.needs_gated_input());
     }
 
@@ -1003,14 +1115,17 @@ mod tests {
             tone_params(NfmToneMode::Dcs, None, Some(24)),
             tone_params(NfmToneMode::Dcs, None, Some(999)),
         ] {
-            let built = NfmChannel::new(ctx(), settings(ChannelParams::Nfm(p.clone())));
+            let built = NfmChannel::new(
+                ctx(),
+                settings(ChannelParams::of(&p.clone()).expect("nfm settings")),
+            );
             assert!(
                 matches!(built, Err(ChannelError::InvalidSettings(_))),
                 "{p:?} must be refused"
             );
             let mut chan = channel();
             assert!(matches!(
-                chan.apply(settings(ChannelParams::Nfm(p))),
+                chan.apply(settings(ChannelParams::of(&p).expect("nfm settings"))),
                 Err(ChannelError::InvalidSettings(_))
             ));
         }
@@ -1045,10 +1160,10 @@ mod tests {
             out.reset();
             chan.process(&iq[pos..end], &mut out);
             for event in &out.events {
-                let DecoderEvent::Scrambler(status) = event else {
-                    panic!("nfm emitted {}", event.kind())
+                let Some(status) = event.read::<ScramblerStatus>() else {
+                    panic!("nfm emitted {}", event.kind)
                 };
-                statuses.push(*status);
+                statuses.push(status);
             }
             audio.extend_from_slice(&out.audio_pcm);
             pos = end;
@@ -1119,12 +1234,18 @@ mod tests {
             scrambler_params(NfmScramblerMode::Inversion, Some(9_000.0)),
             scrambler_params(NfmScramblerMode::Inversion, Some(f64::NAN)),
         ] {
-            let built = NfmChannel::new(ctx(), settings(ChannelParams::Nfm(p.clone())));
+            let built = NfmChannel::new(
+                ctx(),
+                settings(ChannelParams::of(&p.clone()).expect("nfm settings")),
+            );
             assert!(
                 matches!(built, Err(ChannelError::InvalidSettings(_))),
                 "{p:?} must be refused"
             );
-            let built = NfmTx::new(ctx(), settings(ChannelParams::Nfm(p.clone())));
+            let built = NfmTx::new(
+                ctx(),
+                settings(ChannelParams::of(&p.clone()).expect("nfm settings")),
+            );
             assert!(
                 matches!(built, Err(ChannelError::InvalidSettings(_))),
                 "{p:?} must be refused by the transmitter"
@@ -1134,8 +1255,11 @@ mod tests {
 
     #[test]
     fn tx_scrambles_what_the_matching_receiver_takes_apart() {
-        let params =
-            ChannelParams::Nfm(scrambler_params(NfmScramblerMode::Inversion, Some(3_300.0)));
+        let params = ChannelParams::of(&scrambler_params(
+            NfmScramblerMode::Inversion,
+            Some(3_300.0),
+        ))
+        .expect("nfm settings");
         let mut tx = NfmTx::new(ctx(), settings(params.clone())).unwrap();
         tx.submit(TxPayload::Audio(tone_audio(1_000.0, 1.0, RATE, 24_000)))
             .unwrap();
@@ -1164,14 +1288,22 @@ mod tests {
     }
 
     fn heard_over_the_air(tx: NfmParams, rx: NfmParams, amplitude: f32) -> f32 {
-        let mut transmitter = NfmTx::new(ctx(), settings(ChannelParams::Nfm(tx))).unwrap();
+        let mut transmitter = NfmTx::new(
+            ctx(),
+            settings(ChannelParams::of(&tx).expect("nfm settings")),
+        )
+        .unwrap();
         transmitter
             .submit(TxPayload::Audio(tone_audio(
                 1_000.0, amplitude, RATE, 96_000,
             )))
             .unwrap();
         let iq = burst(&mut transmitter);
-        let mut receiver = NfmChannel::new(ctx(), settings(ChannelParams::Nfm(rx))).unwrap();
+        let mut receiver = NfmChannel::new(
+            ctx(),
+            settings(ChannelParams::of(&rx).expect("nfm settings")),
+        )
+        .unwrap();
         level_db(&run_ragged(&mut receiver, &iq))
     }
 
@@ -1223,7 +1355,11 @@ mod tests {
     fn a_compandered_link_lifts_a_quiet_voice_out_of_the_channel_noise() {
         let tone_to_noise = |compander: bool| {
             let params = compander_params(compander);
-            let mut tx = NfmTx::new(ctx(), settings(ChannelParams::Nfm(params.clone()))).unwrap();
+            let mut tx = NfmTx::new(
+                ctx(),
+                settings(ChannelParams::of(&params.clone()).expect("nfm settings")),
+            )
+            .unwrap();
             tx.submit(TxPayload::Audio(tone_audio(1_000.0, QUIET, RATE, 96_000)))
                 .unwrap();
             let mut iq = burst(&mut tx);
@@ -1231,7 +1367,11 @@ mod tests {
             for (slot, hiss) in iq.iter_mut().zip(&noise) {
                 *slot += hiss;
             }
-            let mut rx = NfmChannel::new(ctx(), settings(ChannelParams::Nfm(params))).unwrap();
+            let mut rx = NfmChannel::new(
+                ctx(),
+                settings(ChannelParams::of(&params).expect("nfm settings")),
+            )
+            .unwrap();
             let audio = run_ragged(&mut rx, &iq);
             dominant_tone(&audio[audio.len() / 2..], RATE).1
         };
@@ -1247,9 +1387,11 @@ mod tests {
     fn a_subaudible_tone_does_not_hold_the_expander_up() {
         let voice = tone_audio(1_000.0, SOFT, RATE, TONE_LEN);
         let level = |audio: &[f32]| {
-            let mut chan =
-                NfmChannel::new(ctx(), settings(ChannelParams::Nfm(compander_params(true))))
-                    .unwrap();
+            let mut chan = NfmChannel::new(
+                ctx(),
+                settings(ChannelParams::of(&compander_params(true)).expect("nfm settings")),
+            )
+            .unwrap();
             voice_level_db(&run_ragged(
                 &mut chan,
                 &fm_modulate(audio, DEVIATION_HZ, RATE),
@@ -1267,10 +1409,15 @@ mod tests {
     fn switching_the_compander_off_leaves_the_audio_as_it_was() {
         let iq = fm_iq(RATE, 1_000.0, DEVIATION_HZ, 48_000);
         let plain = run_ragged(&mut channel(), &iq);
-        let mut chan =
-            NfmChannel::new(ctx(), settings(ChannelParams::Nfm(compander_params(true)))).unwrap();
-        chan.apply(settings(ChannelParams::Nfm(compander_params(false))))
-            .unwrap();
+        let mut chan = NfmChannel::new(
+            ctx(),
+            settings(ChannelParams::of(&compander_params(true)).expect("nfm settings")),
+        )
+        .unwrap();
+        chan.apply(settings(
+            ChannelParams::of(&compander_params(false)).expect("nfm settings"),
+        ))
+        .unwrap();
         assert_eq!(run_ragged(&mut chan, &iq), plain);
     }
 
@@ -1283,16 +1430,21 @@ mod tests {
     }
 
     fn transmitter() -> NfmTx {
-        NfmTx::new(ctx(), settings(ChannelParams::Nfm(NfmParams::default()))).unwrap()
+        NfmTx::new(
+            ctx(),
+            settings(ChannelParams::of(&NfmParams::default()).expect("nfm settings")),
+        )
+        .unwrap()
     }
 
     #[test]
     fn tx_round_trips_a_tone_through_the_demodulator() {
         for bandwidth_hz in [12_500.0, 25_000.0] {
-            let params = ChannelParams::Nfm(NfmParams {
+            let params = ChannelParams::of(&NfmParams {
                 bandwidth_hz,
                 ..NfmParams::default()
-            });
+            })
+            .expect("nfm settings");
             let mut tx = NfmTx::new(ctx(), settings(params.clone())).unwrap();
             tx.submit(TxPayload::Audio(tone_audio(1_000.0, 1.0, RATE, 24_000)))
                 .unwrap();
@@ -1322,10 +1474,13 @@ mod tests {
 
     #[test]
     fn tx_apply_rescales_deviation() {
-        let wide = settings(ChannelParams::Nfm(NfmParams {
-            bandwidth_hz: 25_000.0,
-            ..NfmParams::default()
-        }));
+        let wide = settings(
+            ChannelParams::of(&NfmParams {
+                bandwidth_hz: 25_000.0,
+                ..NfmParams::default()
+            })
+            .expect("nfm settings"),
+        );
         let mut tx = transmitter();
         tx.apply(wide.clone()).unwrap();
         tx.submit(TxPayload::Audio(tone_audio(1_000.0, 1.0, RATE, 24_000)))
@@ -1396,13 +1551,16 @@ mod tests {
 
     #[test]
     fn tx_rejects_mismatched_params_and_input_rate() {
-        let built = NfmTx::new(ctx(), settings(ChannelParams::Am(AmParams::default())));
+        let built = NfmTx::new(
+            ctx(),
+            settings(ChannelParams::new("am", &AmParams::default()).expect("am settings")),
+        );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
         let built = NfmTx::new(
             ChannelCtx {
                 input_rate: 240_000.0,
             },
-            settings(ChannelParams::Nfm(NfmParams::default())),
+            settings(ChannelParams::of(&NfmParams::default()).expect("nfm settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

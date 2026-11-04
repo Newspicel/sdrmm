@@ -18,11 +18,11 @@ const COLORS = {
 } satisfies HueColors;
 
 const NOW = Date.parse("2026-09-21T10:00:00Z");
-const ANY: DecoderEvent = { kind: "rtty", data: { text: "" } };
+const ANY: DecoderEvent = { kind: "probe", data: {} };
 
 function placed(id: string, view: Partial<Presentation>, hue: Hue, symbol: Entity["symbol"]) {
   return {
-    ...sinkEntity("source", "adsb", id, ANY, { summary: id, ...view }, hue),
+    ...sinkEntity("source", "probe", id, ANY, { summary: id, ...view }, hue),
     symbol,
   };
 }

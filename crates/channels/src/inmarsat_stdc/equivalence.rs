@@ -1,5 +1,5 @@
+use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
-use sdrmm_wire::DataLinkMessage;
 
 use super::{RATE, StdcDecoder, frame, packet, tests::offair_channel_iq, to_datalink};
 use crate::{

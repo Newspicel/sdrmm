@@ -1,7 +1,12 @@
 use std::sync::LazyLock;
 
+use crate::eot::EotArming;
+use crate::eot::EotBattery;
+use crate::eot::EotReport;
+use crate::eot::EotStatus;
+use crate::eot::HotCommand;
+use crate::eot::HotRequest;
 use sdrmm_dsp::SyndromeDecoder;
-use sdrmm_wire::{EotArming, EotBattery, EotReport, EotStatus, HotCommand, HotRequest};
 
 pub(crate) const REAR_SYNC: u64 = 0x5_5555_5712;
 pub(crate) const REAR_SYNC_BITS: u32 = 35;

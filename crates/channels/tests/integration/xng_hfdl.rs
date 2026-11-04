@@ -30,7 +30,7 @@ fn load(dir: &Path) -> Vec<Complex<f32>> {
 fn ours(iq: &[Complex<f32>]) -> Vec<DecoderEvent> {
     let settings = ChannelSettings {
         frequency_hz: CHANNEL_HZ,
-        ..ChannelSettings::default_for("hfdl").unwrap()
+        ..sdrmm_channels::default_settings("hfdl").unwrap()
     };
     let rate = sdrmm_channels::input_rate(&settings.params);
     let mut ddc = Ddc::new(RATE, rate, CHANNEL_HZ - CENTER_HZ).unwrap();
@@ -68,7 +68,11 @@ fn hfdl_beats_xng_off_air() {
     let reference = xng(&iq);
     let valid = events
         .iter()
-        .filter(|e| matches!(e, DecoderEvent::Hfdl(m) if m.crc_ok))
+        .filter(|e| {
+            e.kind == "hfdl"
+                && e.payload::<sdrmm_channels::DataLinkMessage>()
+                    .is_some_and(|m| m.crc_ok)
+        })
         .count();
     eprintln!(
         "hfdl_offair: ours {} ({valid} crc ok), xng {reference}",

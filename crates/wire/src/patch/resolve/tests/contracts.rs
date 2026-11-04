@@ -1,10 +1,12 @@
 use super::*;
 use crate::{
     EventOutputNode, EventOutputTarget, KindSet, WebhookFormat,
-    patch::{DmrTrunkNode, Keeps, ScannerNode},
+    decode::test_kinds,
+    patch::{Keeps, ScannerNode, TrunkNode},
 };
 
 fn decoders() -> Vec<ChannelDescriptor> {
+    test_kinds::install();
     let decoder = |ty: &str, emits: &[EventKind], calls: Option<CallGate>| ChannelDescriptor {
         type_id: ty.to_owned(),
         emits: emits.to_vec(),
@@ -12,16 +14,12 @@ fn decoders() -> Vec<ChannelDescriptor> {
         ..ChannelDescriptor::default()
     };
     vec![
-        decoder(
-            "nfm",
-            &[EventKind::Tone, EventKind::Scrambler],
-            Some(CallGate::Squelch),
-        ),
-        decoder("dmr", &[EventKind::Dv], Some(CallGate::Frames)),
-        decoder("adsb", &[EventKind::Adsb], None),
-        decoder("rtty", &[EventKind::Rtty], None),
+        decoder("probe_voice", &[test_kinds::TEXT], Some(CallGate::Squelch)),
+        decoder("probe_dv", &[EventKind::DV], Some(CallGate::Frames)),
+        decoder("probe_station", &[test_kinds::STATION], None),
+        decoder("probe_text", &[test_kinds::TEXT], None),
         ChannelDescriptor {
-            type_id: "atv".to_owned(),
+            type_id: "probe_video".to_owned(),
             has_audio: false,
             has_video: true,
             ..ChannelDescriptor::default()
@@ -49,7 +47,7 @@ fn reasons(graph: &PatchGraph) -> Vec<(PatchEdge, String)> {
 }
 
 fn kinds(list: &[EventKind]) -> KindSet {
-    list.iter().copied().collect()
+    list.iter().cloned().collect()
 }
 
 fn map(id: &str) -> PatchNode {
@@ -63,8 +61,8 @@ fn output(id: &str, target: EventOutputTarget) -> PatchNode {
 #[test]
 fn dv_reaches_a_map_and_the_map_ignores_its_calls() {
     let graph = PatchGraph {
-        nodes: vec![channel("dmr", "dmr"), map("map")],
-        edges: vec![events("dmr", "map")],
+        nodes: vec![channel("probe_dv", "probe_dv"), map("map")],
+        edges: vec![events("probe_dv", "map")],
     };
     let (patch, refused) = draft(&graph);
     assert!(refused.is_empty());
@@ -72,26 +70,29 @@ fn dv_reaches_a_map_and_the_map_ignores_its_calls() {
         .node("map")
         .and_then(|found| found.input("events"))
         .expect("events input");
-    assert_eq!(input.ignored, kinds(&[EventKind::Call]));
+    assert_eq!(input.ignored, kinds(&[EventKind::CALL]));
     assert_eq!(
         input.feeds[0].payload.kinds(),
-        kinds(&[EventKind::Dv, EventKind::Call])
+        kinds(&[EventKind::DV, EventKind::CALL])
     );
     assert_eq!(
-        patch.reaches("dmr", "events")[0].kinds,
-        kinds(&[EventKind::Dv])
+        patch.reaches("probe_dv", "events")[0].kinds,
+        kinds(&[EventKind::DV])
     );
 }
 
 #[test]
-fn nfm_into_a_map_is_refused() {
+fn voice_into_a_map_is_refused() {
     let graph = PatchGraph {
-        nodes: vec![channel("nfm", "nfm"), map("map")],
-        edges: vec![events("nfm", "map")],
+        nodes: vec![channel("probe_voice", "probe_voice"), map("map")],
+        edges: vec![events("probe_voice", "map")],
     };
     assert_eq!(
         reasons(&graph),
-        [(events("nfm", "map"), "Map takes positions".to_owned())]
+        [(
+            events("probe_voice", "map"),
+            "Map takes positions".to_owned()
+        )]
     );
     assert!(
         draft(&graph).0.edges.is_empty(),
@@ -114,7 +115,7 @@ fn a_satellite_reaches_a_map_but_not_a_decoder_log() {
     assert_eq!(refused[0].0, events("sat", "log"));
     assert_eq!(
         draft(&graph).0.reaches("sat", "events")[0].kinds,
-        kinds(&[EventKind::Satellite])
+        kinds(&[EventKind::SATELLITE])
     );
 }
 
@@ -134,7 +135,7 @@ fn a_radio_and_a_generator_share_a_decoder_but_a_beam_stands_alone() {
                     ..DeviceNode::default()
                 }),
             ),
-            channel("voice", "nfm"),
+            channel("voice", "probe_voice"),
         ],
         edges: vec![
             wire(("dev", "iq"), ("voice", "iq")),
@@ -163,7 +164,7 @@ fn a_filter_wired_first_is_refused_on_the_wire_that_breaks_it() {
                 NodeBody::Triangulation(crate::patch::TriangulationNode::default()),
             ),
             filter("only", &[]),
-            channel("text", "rtty"),
+            channel("text", "probe_text"),
         ],
         edges: vec![events("only", "tri"), events("text", "only")],
     };
@@ -183,9 +184,9 @@ fn a_filter_wired_first_is_refused_on_the_wire_that_breaks_it() {
 fn a_filter_carries_only_the_kinds_it_lets_through() {
     let graph = PatchGraph {
         nodes: vec![
-            channel("planes", "adsb"),
-            channel("voice", "dmr"),
-            filter("only", &[EventKind::Adsb]),
+            channel("planes", "probe_station"),
+            channel("voice", "probe_dv"),
+            filter("only", &[test_kinds::STATION]),
             log("log"),
         ],
         edges: vec![
@@ -200,7 +201,7 @@ fn a_filter_carries_only_the_kinds_it_lets_through() {
         .node("only")
         .and_then(|found| found.output("events"))
         .expect("filter output");
-    assert_eq!(out.spec.payload.kinds(), kinds(&[EventKind::Adsb]));
+    assert_eq!(out.spec.payload.kinds(), kinds(&[test_kinds::STATION]));
     let carried: Vec<(&str, KindSet)> = patch
         .feeds("log", "events")
         .iter()
@@ -209,7 +210,7 @@ fn a_filter_carries_only_the_kinds_it_lets_through() {
     assert_eq!(
         carried,
         [
-            ("planes", kinds(&[EventKind::Adsb])),
+            ("planes", kinds(&[test_kinds::STATION])),
             ("voice", KindSet::EMPTY)
         ]
     );
@@ -218,7 +219,8 @@ fn a_filter_carries_only_the_kinds_it_lets_through() {
 
 #[test]
 fn an_event_output_takes_what_its_target_sends() {
-    let beast = EventOutputTarget::Beast {
+    let feed = EventOutputTarget::Feed {
+        format: test_kinds::FEED.to_owned(),
         address: "127.0.0.1:30005".to_owned(),
         enabled: true,
     };
@@ -230,15 +232,18 @@ fn an_event_output_takes_what_its_target_sends() {
         nodes: vec![channel("src", decoder), output("out", target)],
         edges: vec![events("src", "out")],
     };
-    assert!(reasons(&graph(beast.clone(), "adsb")).is_empty());
+    assert!(reasons(&graph(feed.clone(), "probe_station")).is_empty());
     assert_eq!(
-        reasons(&graph(beast, "nfm")),
-        [(events("src", "out"), "Event output takes ADS-B".to_owned())]
+        reasons(&graph(feed, "probe_voice")),
+        [(
+            events("src", "out"),
+            "Event output takes Probe station".to_owned()
+        )]
     );
-    assert!(reasons(&graph(webhook, "nfm")).is_empty());
-    assert!(reasons(&graph(EventOutputTarget::Recordings, "dmr")).is_empty());
+    assert!(reasons(&graph(webhook, "probe_voice")).is_empty());
+    assert!(reasons(&graph(EventOutputTarget::Recordings, "probe_dv")).is_empty());
     assert_eq!(
-        reasons(&graph(EventOutputTarget::Recordings, "adsb")),
+        reasons(&graph(EventOutputTarget::Recordings, "probe_station")),
         [(
             events("src", "out"),
             "Event output takes calls and transmissions".to_owned()
@@ -264,7 +269,7 @@ fn only_an_event_output_that_sends_audio_keeps_clips() {
     assert!(!keeps(EventOutputTarget::Desktop));
     let graph = PatchGraph {
         nodes: vec![
-            channel("voice", "dmr"),
+            channel("voice", "probe_dv"),
             output("out", EventOutputTarget::Recordings),
         ],
         edges: vec![events("voice", "out"), audio("voice", "out")],
@@ -282,8 +287,12 @@ fn only_an_event_output_that_sends_audio_keeps_clips() {
 #[test]
 fn compile_returns_the_first_refusal_and_draft_lists_every_one() {
     let graph = PatchGraph {
-        nodes: vec![channel("nfm", "nfm"), channel("text", "rtty"), map("map")],
-        edges: vec![events("nfm", "map"), events("text", "map")],
+        nodes: vec![
+            channel("probe_voice", "probe_voice"),
+            channel("text", "probe_text"),
+            map("map"),
+        ],
+        edges: vec![events("probe_voice", "map"), events("text", "map")],
     };
     assert_eq!(reasons(&graph).len(), 2);
     let all = decoders();
@@ -317,9 +326,9 @@ fn only(kinds: &[EventKind]) -> NodeBody {
 fn outputs_know_what_their_sinks_keep() {
     let graph = PatchGraph {
         nodes: vec![
-            channel("voice", "dmr"),
-            channel("pager", "adsb"),
-            channel("tv", "atv"),
+            channel("voice", "probe_dv"),
+            channel("pager", "probe_station"),
+            channel("tv", "probe_video"),
             log("log"),
             node("vid", NodeBody::Video),
             output(
@@ -353,8 +362,8 @@ fn outputs_know_what_their_sinks_keep() {
 fn a_filter_that_drops_calls_keeps_no_clips() {
     let graph = PatchGraph {
         nodes: vec![
-            channel("voice", "dmr"),
-            node("keep", only(&[EventKind::Dv])),
+            channel("voice", "probe_dv"),
+            node("keep", only(&[EventKind::DV])),
             log("log"),
         ],
         edges: vec![events("voice", "keep"), events("keep", "log")],
@@ -369,7 +378,7 @@ fn trunks_hand_out_audio_monitors_hand_out_clips_and_scanners_watch_a_lane() {
     let graph = PatchGraph {
         nodes: vec![
             radio("dev", "band"),
-            node("trunk", NodeBody::DmrTrunk(DmrTrunkNode::default())),
+            node("trunk", NodeBody::Trunk(TrunkNode::default())),
             node("monitor", NodeBody::SpectrumMonitor(Default::default())),
             node("scan", NodeBody::Scanner(ScannerNode::default())),
             node("spk", NodeBody::Speaker),

@@ -1,4 +1,4 @@
-use sdrmm_wire::DatvCodeRate;
+use crate::datv::DatvCodeRate;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Parameters {

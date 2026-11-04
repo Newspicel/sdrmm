@@ -106,7 +106,7 @@ const fn way(direction: PortDirection) -> &'static str {
 fn carries(port: &PortSpec) -> String {
     match &port.payload {
         Payload::Iq { origins } => listed(origins.iter().map(snake)),
-        Payload::Events { kinds } => kinds_of(*kinds),
+        Payload::Events { kinds } => kinds_of(kinds.clone()),
         Payload::Control { verbs } => listed(verbs.iter().map(snake)),
         Payload::Baseband
         | Payload::Audio

@@ -1,4 +1,10 @@
-use sdrmm_wire::{GsmAssignment, GsmCcch, GsmCell, GsmChannelType, GsmHopping, GsmIdentity, GsmSi};
+use crate::gsm::GsmAssignment;
+use crate::gsm::GsmCcch;
+use crate::gsm::GsmCell;
+use crate::gsm::GsmChannelType;
+use crate::gsm::GsmHopping;
+use crate::gsm::GsmIdentity;
+use crate::gsm::GsmSi;
 
 use super::{
     coding::BLOCK_BYTES,
@@ -263,7 +269,7 @@ fn ccch(conf: u8) -> Option<GsmCcch> {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::GsmIdentityKind;
+    use crate::gsm::GsmIdentityKind;
 
     use super::*;
 

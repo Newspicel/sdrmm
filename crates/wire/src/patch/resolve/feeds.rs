@@ -15,9 +15,9 @@ pub(super) fn resolve_port(net: &Net<'_>, node: &str, spec: PortSpec) -> Resolve
             let feeds = feeds_into(net, node, &spec);
             let offered = feeds
                 .iter()
-                .fold(KindSet::EMPTY, |all, feed| all.union(feed.payload.kinds()));
+                .fold(KindSet::EMPTY, |all, feed| all.union(&feed.payload.kinds()));
             ResolvedPort {
-                ignored: offered.without(spec.payload.kinds()),
+                ignored: offered.without(&spec.payload.kinds()),
                 spec,
                 feeds,
                 reaches: Vec::new(),
@@ -57,7 +57,7 @@ fn delivers_kept(reach: &Reach, keeps: Keeps) -> bool {
     match keeps {
         Keeps::Clips => !reach
             .kinds
-            .intersection(KindSet::with_cap(Capability::Clip))
+            .intersection(&KindSet::with_cap(Capability::Clip))
             .is_empty(),
         Keeps::History | Keeps::Pictures => true,
     }
@@ -123,7 +123,7 @@ fn through(net: &Net<'_>, pass: &str, payload: Payload) -> Payload {
         payload,
     ) {
         (Some(filter), Payload::Events { kinds }) => Payload::Events {
-            kinds: filter.narrow(kinds),
+            kinds: filter.narrow(&kinds),
         },
         (_, payload) => payload,
     }
@@ -137,7 +137,7 @@ fn passed_on(net: &Net<'_>, node: &str, spec: PortSpec) -> PortSpec {
         .iter()
         .filter_map(|name| net.spec(&reference(node, name), PortDirection::In))
         .flat_map(|input| feeds_into(net, node, input))
-        .fold(KindSet::EMPTY, |all, feed| all.union(feed.payload.kinds()));
+        .fold(KindSet::EMPTY, |all, feed| all.union(&feed.payload.kinds()));
     let payload = through(net, node, Payload::Events { kinds: offered });
     PortSpec { payload, ..spec }
 }
@@ -227,7 +227,7 @@ fn forward(
                 port: edge.to.port.clone(),
                 stream: input.and_then(|input| input.stream),
                 via: via.clone(),
-                kinds: kinds.intersection(accepted),
+                kinds: kinds.intersection(&accepted),
                 target_runs: None,
             });
             continue;
@@ -235,10 +235,24 @@ fn forward(
         if via.len() >= MAX_PASS_DEPTH || via.iter().any(|seen| seen == target) {
             continue;
         }
-        let narrowed = through(net, target, Payload::Events { kinds }).kinds();
+        let narrowed = through(
+            net,
+            target,
+            Payload::Events {
+                kinds: kinds.clone(),
+            },
+        )
+        .kinds();
         via.push(target.to_owned());
         for output in pass_ports(net, target, port_type, PortDirection::Out) {
-            forward(net, (target, &output), port_type, narrowed, via, reaches);
+            forward(
+                net,
+                (target, &output),
+                port_type,
+                narrowed.clone(),
+                via,
+                reaches,
+            );
         }
         via.pop();
     }

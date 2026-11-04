@@ -1,4 +1,6 @@
-use sdrmm_channels::ChannelError;
+use std::{ops::Deref, sync::Arc};
+
+use sdrmm_channels::{ChannelError, Decoder};
 use sdrmm_device::{DeviceError, check_stream_settings};
 use sdrmm_wire::{
     BandMiss, Capabilities, ChannelDescriptor, ChannelInfo, ChannelParams, ChannelSettings,
@@ -7,11 +9,24 @@ use sdrmm_wire::{
 
 use crate::{DEFAULT_CENTER_HZ, EngineError, center_of, sample_rate_of};
 
-pub(crate) fn descriptor_for(
-    params: &ChannelParams,
-) -> Result<&'static ChannelDescriptor, EngineError> {
+/// A registered decoder read as its descriptor. Looking one up clones two `Arc`s and no
+/// descriptor, so planning can ask per channel on every pass.
+pub(crate) struct Described(Arc<dyn Decoder>);
+
+impl Deref for Described {
+    type Target = ChannelDescriptor;
+
+    fn deref(&self) -> &ChannelDescriptor {
+        self.0.descriptor()
+    }
+}
+
+pub(crate) fn descriptor_for(params: &ChannelParams) -> Result<Described, EngineError> {
     let type_id = params.type_id();
-    sdrmm_channels::descriptor(type_id)
+    sdrmm_channels::registry()
+        .find(type_id)
+        .cloned()
+        .map(Described)
         .ok_or_else(|| ChannelError::UnknownType(type_id.to_owned()).into())
 }
 
@@ -27,7 +42,7 @@ pub(crate) fn validate_channel(
         .into());
     }
     settings
-        .check_limits()
+        .check_limits(&descriptor.settings)
         .map_err(|reason| EngineError::from(ChannelError::InvalidSettings(reason)))?;
     if let Err(reason) = settings.blanker.validate() {
         return Err(ChannelError::InvalidSettings(reason).into());
@@ -123,19 +138,38 @@ fn channel_half_width_hz(params: &ChannelParams) -> f64 {
 }
 
 /// Whether the centre, where a zero-IF front end lands its DC term, sits inside no channel.
+#[cfg(test)]
 pub(crate) fn centre_clears_channels(
     settings: &DeviceSettings,
     capabilities: &Capabilities,
     channels: &[ChannelInfo],
 ) -> bool {
-    channels.iter().all(|channel| {
-        let center_hz = settings
-            .for_stream(channel.stream, &capabilities.per_stream)
-            .center_hz
-            .unwrap_or(DEFAULT_CENTER_HZ);
-        (center_hz - channel.settings.frequency_hz).abs()
-            > channel_half_width_hz(&channel.settings.params)
-    })
+    centre_clears(settings, capabilities, channels, &half_widths(channels))
+}
+
+fn half_widths(channels: &[ChannelInfo]) -> Vec<f64> {
+    channels
+        .iter()
+        .map(|channel| channel_half_width_hz(&channel.settings.params))
+        .collect()
+}
+
+fn centre_clears(
+    settings: &DeviceSettings,
+    capabilities: &Capabilities,
+    channels: &[ChannelInfo],
+    half_widths: &[f64],
+) -> bool {
+    channels
+        .iter()
+        .zip(half_widths)
+        .all(|(channel, half_width)| {
+            let center_hz = settings
+                .for_stream(channel.stream, &capabilities.per_stream)
+                .center_hz
+                .unwrap_or(DEFAULT_CENTER_HZ);
+            (center_hz - channel.settings.frequency_hz).abs() > *half_width
+        })
 }
 
 /// Whether the front end removes its DC term: the operator's choice, starting on for hardware
@@ -266,15 +300,20 @@ fn with_center(
 fn artifact_is_clear(
     capabilities: &Capabilities,
     settings: &DeviceSettings,
-    stream: u32,
-    center_hz: f64,
+    (stream, center_hz): (u32, f64),
     channels: &[ChannelInfo],
+    half_widths: &[f64],
 ) -> bool {
     let probe = with_center(settings, capabilities, stream, center_hz);
-    centre_clears_channels(&probe, capabilities, channels)
+    centre_clears(&probe, capabilities, channels, half_widths)
 }
 
-fn candidate_centers(spans: &[Span], channels: &[ChannelInfo], current_hz: f64) -> Vec<f64> {
+fn candidate_centers(
+    spans: &[Span],
+    channels: &[ChannelInfo],
+    half_widths: &[f64],
+    current_hz: f64,
+) -> Vec<f64> {
     let mut candidates = vec![current_hz];
     for anchor in spans {
         let held = spans.iter().filter(|span| holds(**span, anchor.0));
@@ -285,8 +324,8 @@ fn candidate_centers(spans: &[Span], channels: &[ChannelInfo], current_hz: f64) 
             continue;
         }
         candidates.push(f64::midpoint(low, high));
-        for (channel, span) in channels.iter().zip(spans) {
-            let clear_of = channel_half_width_hz(&channel.settings.params) + 1.0;
+        for ((channel, span), half_width) in channels.iter().zip(spans).zip(half_widths) {
+            let clear_of = half_width + 1.0;
             let frequency_hz = channel.settings.frequency_hz;
             candidates.extend(
                 [
@@ -342,8 +381,15 @@ pub(crate) fn best_center_in(
     if spans.is_empty() {
         return None;
     }
+    let half_widths = half_widths(channels);
     let rank = |center_hz: f64| {
-        let clear = artifact_is_clear(capabilities, settings, stream, center_hz, channels);
+        let clear = artifact_is_clear(
+            capabilities,
+            settings,
+            (stream, center_hz),
+            channels,
+            &half_widths,
+        );
         let stays = (center_hz - current_hz).abs() <= SPAN_EPSILON_HZ;
         let margin = narrowest_margin_hz(&spans, center_hz);
         let room = if clear {
@@ -359,7 +405,7 @@ pub(crate) fn best_center_in(
             margin,
         )
     };
-    candidate_centers(&spans, channels, current_hz)
+    candidate_centers(&spans, channels, &half_widths, current_hz)
         .into_iter()
         .chain(
             capabilities

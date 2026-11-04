@@ -7,10 +7,11 @@ use sdrmm_channels::passive_radar::{
     CpiJob, CpiStage, CpuCaf, FrontStage, InLanes, JobSink, RadarCtx, RadarPod, fill_surface,
     fill_update, plan,
 };
-use sdrmm_wire::frame::{RangeDopplerOwned, SurfaceFrame};
-use sdrmm_wire::radar::{
-    CfarParams, ClutterMethod, ClutterParams, Illuminator, LIGHT_SPEED_M_S, PassiveRadarParams,
-    RadarUpdate, ReferenceCleaning,
+use sdrmm_wire::{frame::RangeDopplerOwned, frame::SurfaceFrame};
+use sdrmm_wire::{
+    radar::CfarParams, radar::ClutterMethod, radar::ClutterParams, radar::Illuminator,
+    radar::LIGHT_SPEED_M_S, radar::PassiveRadarParams, radar::RadarUpdate,
+    radar::ReferenceCleaning,
 };
 
 #[cfg(test)]

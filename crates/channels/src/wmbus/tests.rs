@@ -1,5 +1,11 @@
+use crate::wmbus::WmbusFormat;
+use crate::wmbus::WmbusKey;
+use crate::wmbus::WmbusMessage;
+use crate::wmbus::WmbusMode;
+use crate::wmbus::WmbusQuantity;
+use crate::wmbus::WmbusSecurity;
 use num_complex::Complex;
-use sdrmm_wire::{WmbusFormat, WmbusKey, WmbusMessage, WmbusMode, WmbusQuantity, WmbusSecurity};
+use sdrmm_wire::ChannelParams;
 
 use super::*;
 use crate::synth::{self, wmbus::WATER_METER};
@@ -37,8 +43,8 @@ fn cf32(bytes: &[u8]) -> Vec<Complex<f32>> {
 
 fn receiver(params: WmbusParams) -> WmbusChannel {
     let settings = ChannelSettings {
-        params: ChannelParams::Wmbus(params),
-        ..ChannelSettings::default_for("wmbus").unwrap()
+        params: ChannelParams::new("wmbus", &params).expect("wmbus settings"),
+        ..crate::default_settings("wmbus").unwrap()
     };
     WmbusChannel::new(ChannelCtx { input_rate: RATE }, settings).unwrap()
 }
@@ -50,10 +56,7 @@ fn feed(rx: &mut WmbusChannel, iq: &[Complex<f32>]) -> Vec<WmbusMessage> {
     }
     out.events
         .into_iter()
-        .filter_map(|event| match event {
-            DecoderEvent::Wmbus(message) => Some(message),
-            _ => None,
-        })
+        .filter_map(|event| event.read::<WmbusMessage>())
         .collect()
 }
 
@@ -190,7 +193,7 @@ fn a_techem_allocator_decodes_off_air() {
 
 pub(crate) fn fixture() -> crate::fixtures::Fixture {
     crate::fixtures::Fixture::new(
-        ChannelParams::Wmbus(WmbusParams::default()),
+        ChannelParams::new("wmbus", &WmbusParams::default()).expect("wmbus settings"),
         synthetic(WmbusMode::T, WmbusFormat::A, &WATER_METER),
     )
 }
@@ -279,8 +282,8 @@ fn a_key_added_later_opens_the_meter() {
         }],
     };
     rx.apply(ChannelSettings {
-        params: ChannelParams::Wmbus(keys),
-        ..ChannelSettings::default_for("wmbus").unwrap()
+        params: ChannelParams::new("wmbus", &keys).expect("wmbus settings"),
+        ..crate::default_settings("wmbus").unwrap()
     })
     .unwrap();
     let opened = feed(&mut rx, &iq);
@@ -295,13 +298,17 @@ fn a_key_added_later_opens_the_meter() {
 #[test]
 fn a_malformed_key_is_refused() {
     let settings = ChannelSettings {
-        params: ChannelParams::Wmbus(WmbusParams {
-            keys: vec![WmbusKey {
-                meter: "76348799".to_owned(),
-                key: "28F6".to_owned(),
-            }],
-        }),
-        ..ChannelSettings::default_for("wmbus").unwrap()
+        params: ChannelParams::new(
+            "wmbus",
+            &WmbusParams {
+                keys: vec![WmbusKey {
+                    meter: "76348799".to_owned(),
+                    key: "28F6".to_owned(),
+                }],
+            },
+        )
+        .expect("wmbus settings"),
+        ..crate::default_settings("wmbus").unwrap()
     };
     assert!(WmbusChannel::new(ChannelCtx { input_rate: RATE }, settings).is_err());
 }

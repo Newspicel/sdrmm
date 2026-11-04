@@ -1,4 +1,5 @@
-use sdrmm_wire::{RadiosondeFrame, SondeType};
+use crate::radiosonde::RadiosondeFrame;
+use crate::radiosonde::SondeType;
 
 use super::{
     fields::{

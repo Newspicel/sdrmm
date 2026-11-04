@@ -1,7 +1,8 @@
+use sdrmm_channels::NfmParams;
 use sdrmm_device::{DeviceRegistry, RxSink, SdrDevice};
 use sdrmm_wire::{
     Agc, ChannelParams, ChannelSettings, Coherence, DcArtifact, DeviceBackend, DeviceInfo, Duplex,
-    GainKind, GainStage, HeldLane, NfmParams, NoiseSource, Range, StreamSettings,
+    GainKind, GainStage, HeldLane, NoiseSource, Range, StreamSettings,
 };
 
 use super::*;
@@ -157,7 +158,7 @@ fn far_decoder() -> ChannelSettings {
     ChannelSettings {
         frequency_hz: CENTER_HZ + 5e6,
         squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Nfm(NfmParams::default()),
+        params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     }

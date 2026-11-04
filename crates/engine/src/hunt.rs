@@ -588,7 +588,7 @@ fn bearing_record(ds: u32, channel: u32, freq_hz: f64, bearing: DfBearing) -> De
         channel,
         at: format!("{:.9}", jiff::Timestamp::now()),
         freq_hz,
-        event: DecoderEvent::Df(bearing),
+        event: DecoderEvent::of(&bearing),
         sinks: Vec::new(),
         callsign: None,
         view: None,
@@ -764,16 +764,21 @@ mod tests {
     #[test]
     fn a_decoder_is_measured_over_the_band_it_occupies() {
         let channel = sdrmm_wire::ChannelInfo {
+            band: None,
             id: 3,
             stream: 1,
             node: None,
             settings: sdrmm_wire::ChannelSettings {
                 frequency_hz: 433_920_000.0,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: sdrmm_wire::ChannelParams::Nfm(sdrmm_wire::NfmParams {
-                    bandwidth_hz: 25_000.0,
-                    ..sdrmm_wire::NfmParams::default()
-                }),
+                params: sdrmm_wire::ChannelParams::new(
+                    "nfm",
+                    &sdrmm_channels::NfmParams {
+                        bandwidth_hz: 25_000.0,
+                        ..sdrmm_channels::NfmParams::default()
+                    },
+                )
+                .expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },

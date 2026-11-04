@@ -525,15 +525,15 @@ pub struct RadarFix {
     pub lon: f64,
     pub alt_m: f32,
     #[serde(default)]
-    pub alt_from_adsb: bool,
+    pub alt_from_truth: bool,
     pub major_m: f32,
     pub minor_m: f32,
     pub orientation_deg: f32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct AdsbMatch {
-    pub icao: String,
+pub struct TrackMatch {
+    pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub callsign: Option<String>,
 }
@@ -556,13 +556,13 @@ pub struct RadarTrack {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fix: Option<RadarFix>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub adsb: Option<AdsbMatch>,
+    pub truth: Option<TrackMatch>,
     pub trail: Vec<RadarTrailPoint>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct AdsbTruth {
-    pub icao: String,
+pub struct TrackTruth {
+    pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub callsign: Option<String>,
     pub range_km: f32,
@@ -713,7 +713,7 @@ pub struct RadarUpdate {
     pub axes: RadarAxes,
     pub detections: Vec<RadarDetection>,
     pub tracks: Vec<RadarTrack>,
-    pub truth: Vec<AdsbTruth>,
+    pub truth: Vec<TrackTruth>,
     pub health: RadarHealth,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geometry: Option<RadarGeometry>,
@@ -776,14 +776,14 @@ pub struct RadarTrackEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lon: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icao: Option<String>,
+    pub target: Option<String>,
 }
 
 impl EventPayload for RadarTrackEvent {
-    fn present(&self, _kind: EventKind) -> Presentation {
+    fn present(&self, _kind: &EventKind) -> Presentation {
         Presentation {
             entity: Some(format!("T{}", self.track_id)),
-            label: self.icao.clone(),
+            label: self.target.clone(),
             place: lat_lon(self.lat, self.lon).map(Place::at),
             gone: self.change == TrackChange::Lost,
             fields: self.fields(),
@@ -812,7 +812,7 @@ impl RadarTrackEvent {
             ("SNR", number(Some(self.snr_db), Unit::Db, 1)),
             ("Bearing", number(self.bearing_deg, Unit::Degrees, 1)),
             ("Position", position(self.lat, self.lon)),
-            ("ICAO", text(self.icao.as_deref())),
+            ("Target", text(self.target.as_deref())),
         ])
     }
 }
@@ -854,7 +854,7 @@ pub fn bistatic_ring(receiver: LatLon, illuminator: LatLon, range_km: f32) -> Op
 }
 
 impl EventPayload for RadarSites {
-    fn present(&self, _kind: EventKind) -> Presentation {
+    fn present(&self, _kind: &EventKind) -> Presentation {
         let Some(geometry) = &self.geometry else {
             return Presentation {
                 entity: Some(RADAR_SITES_ENTITY.to_owned()),

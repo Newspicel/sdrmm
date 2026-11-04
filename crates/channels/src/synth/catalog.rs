@@ -1,15 +1,29 @@
 use num_complex::Complex;
 use sdrmm_modem::synth::{Catalog, Signal};
 
+use crate::am::AmParams;
+use crate::apt::AvhrrChannel;
+use crate::atv::AtvModulation;
+use crate::atv::AtvParams;
+use crate::atv::AtvStandard;
+use crate::dab::DabTransmissionMode;
+use crate::eot::EotArming;
+use crate::eot::EotBattery;
+use crate::eot::EotStatus;
+use crate::lrpt::LrptMode;
+use crate::per::PerParams;
+use crate::psk::PskBaud;
+use crate::radiosonde::SondeType;
+use crate::selcall::SelcallSystem;
+use crate::ssb::SsbParams;
+use crate::sstv::SstvMode;
+use crate::wefax::WefaxIoc;
+use crate::wefax::WefaxLpm;
 use crate::{
     AmTx, AprsTx, ChannelCtx, ChannelTx, SsbTx, TxPayload,
     synth::{self, dv, weak_signal},
 };
-use sdrmm_wire::{
-    AmParams, AtvModulation, AtvParams, AtvStandard, AvhrrChannel, ChannelParams, ChannelSettings,
-    DabTransmissionMode, EotArming, EotBattery, EotStatus, LrptMode, PerParams, PskBaud,
-    SelcallSystem, Sideband, SondeType, Squelch, SsbParams, SstvMode, WefaxIoc, WefaxLpm,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings, Sideband, Squelch};
 
 const NARROW: f64 = 240_000.0;
 const AUDIO: f64 = 48_000.0;
@@ -497,6 +511,9 @@ fn modulated_voice(
 }
 
 fn am_voice() -> Vec<Complex<f32>> {
+    let Ok(params) = ChannelParams::of(&AmParams::default()) else {
+        return Vec::new();
+    };
     let rate = AmTx::descriptor().input_rate_hz;
     let iq = modulated_voice(
         rate,
@@ -505,12 +522,18 @@ fn am_voice() -> Vec<Complex<f32>> {
                 .ok()
                 .map(|tx| Box::new(tx) as Box<dyn ChannelTx>)
         },
-        ChannelParams::Am(AmParams::default()),
+        params,
     );
     synth::resample(&iq, rate, NARROW)
 }
 
 fn ssb_voice() -> Vec<Complex<f32>> {
+    let Ok(params) = ChannelParams::of(&SsbParams {
+        sideband: Sideband::Usb,
+        ..SsbParams::default()
+    }) else {
+        return Vec::new();
+    };
     let rate = SsbTx::descriptor().input_rate_hz;
     let iq = modulated_voice(
         rate,
@@ -519,10 +542,7 @@ fn ssb_voice() -> Vec<Complex<f32>> {
                 .ok()
                 .map(|tx| Box::new(tx) as Box<dyn ChannelTx>)
         },
-        ChannelParams::Ssb(SsbParams {
-            sideband: Sideband::Usb,
-            ..SsbParams::default()
-        }),
+        params,
     );
     synth::resample(&iq, rate, AUDIO)
 }
@@ -654,13 +674,13 @@ fn aprs_weather() -> Vec<Complex<f32>> {
 
 fn aprs_packet(text: &str) -> Vec<Complex<f32>> {
     let rate = AprsTx::descriptor().input_rate_hz;
-    let Ok(mut tx) = AprsTx::new(
-        ChannelCtx { input_rate: rate },
-        voice_settings(ChannelParams::Aprs(sdrmm_wire::AprsParams {
-            mode: sdrmm_wire::AprsMode::Afsk1200,
-            ..sdrmm_wire::AprsParams::default()
-        })),
-    ) else {
+    let Ok(params) = ChannelParams::of(&crate::aprs::AprsParams {
+        mode: crate::aprs::AprsMode::Afsk1200,
+        ..crate::aprs::AprsParams::default()
+    }) else {
+        return Vec::new();
+    };
+    let Ok(mut tx) = AprsTx::new(ChannelCtx { input_rate: rate }, voice_settings(params)) else {
         return Vec::new();
     };
     if tx.submit(TxPayload::Frame(aprs_frame(text))).is_err() {

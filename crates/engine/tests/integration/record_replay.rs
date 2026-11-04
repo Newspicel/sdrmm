@@ -7,12 +7,13 @@ use std::{
 };
 
 use crate::common::{assert_tone_dominates, settle_then_collect_second};
+use sdrmm_channels::NfmParams;
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_recording::RecordingDriver;
 use sdrmm_device_virtual::{NFM_CARRIER_OFFSET_HZ, VirtualDriver};
 use sdrmm_engine::{Engine, FinalizedRecording};
 use sdrmm_recorder::{BYTES_PER_SAMPLE, SigmfReader};
-use sdrmm_wire::{ChannelParams, ChannelSettings, DeviceSettings, GainKind, GainValue, NfmParams};
+use sdrmm_wire::{ChannelParams, ChannelSettings, DeviceSettings, GainKind, GainValue};
 use tempfile::TempDir;
 
 const TEST_RATE: f64 = 2_400_000.0;
@@ -88,7 +89,7 @@ async fn recorded_siggen_replays_and_demodulates() {
             ChannelSettings {
                 frequency_hz: 100_000_000.0 + NFM_CARRIER_OFFSET_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Nfm(NfmParams::default()),
+                params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },

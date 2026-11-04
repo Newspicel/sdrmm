@@ -1,4 +1,4 @@
-use sdrmm_wire::PerReport;
+use crate::per::PerReport;
 
 use super::frame::Checked;
 

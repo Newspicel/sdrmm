@@ -4,6 +4,7 @@ import type { ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { type Workspace, WorkspaceProvider } from "../canvas/context";
 import type {
+  ChannelDescriptor,
   ChannelInfo,
   DeviceSet,
   NodeProblem,
@@ -22,6 +23,7 @@ export interface FaceHarness {
   channels?: ReadonlyMap<string, ChannelInfo>;
   owners?: ReadonlyMap<string, string>;
   catalog?: PatchCatalog;
+  channelTypes?: readonly ChannelDescriptor[];
   resolved?: ResolvedPatch | null;
   problems?: readonly NodeProblem[];
   selected?: string | null;
@@ -40,7 +42,7 @@ export function stubWorkspace(harness: FaceHarness): Workspace {
     settings: {},
     context: {
       catalog: harness.catalog ?? CATALOG,
-      channelTypes: [],
+      channelTypes: harness.channelTypes ?? [],
       resolved,
       bound: devices,
     },

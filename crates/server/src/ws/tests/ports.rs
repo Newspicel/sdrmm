@@ -1,7 +1,6 @@
 use sdrmm_wire::{
     AudioRoute, ChannelAddr, NodeKind, PatchEdge, PatchGraph, PatchNode, ResolvedPatch, Runs, Tap,
-    UpdateWorkspaceRequest, WorkspaceSnapshot,
-    patch::resolve::{ResolveCtx, compile},
+    UpdateWorkspaceRequest, WorkspaceSnapshot, patch::resolve::ResolveCtx, patch::resolve::compile,
 };
 
 use super::*;
@@ -90,10 +89,7 @@ fn the_fx_chain_comes_from_via() {
 #[test]
 fn a_trunk_feed_gives_one_stream_per_follower() {
     let mut patch = compiled(
-        vec![
-            of("trunk", NodeKind::DmrTrunk),
-            of("spk", NodeKind::Speaker),
-        ],
+        vec![of("trunk", NodeKind::Trunk), of("spk", NodeKind::Speaker)],
         vec![wire(("trunk", "audio"), ("spk", "audio"))],
     );
     tap_all(

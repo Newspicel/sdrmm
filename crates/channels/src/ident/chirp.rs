@@ -1,8 +1,10 @@
 use std::f64::consts::PI;
 
+use crate::lora::LoraBandwidth;
+use crate::lora::LoraSpreadingFactor;
 use num_complex::Complex;
 use sdrmm_dsp::fft::Transform;
-use sdrmm_wire::{LoraBandwidth, LoraSpreadingFactor, Modulation};
+use sdrmm_wire::Modulation;
 
 use super::{classify::Verdict, detect::Band, features::Zoom};
 
@@ -205,7 +207,13 @@ mod tests {
             "../../../../fixtures/lora_rn2483_sf7_250k.sigmf-data"
         ));
         let band = band(118_000.0);
-        let signal = crate::ident::identify(&iq, 250_000.0, &band, 868_100_000.0);
+        let signal = crate::ident::identify(
+            &iq,
+            250_000.0,
+            &band,
+            868_100_000.0,
+            &crate::ident::Catalog::registered(),
+        );
         assert_eq!(signal.modulation, Modulation::Chirp);
         assert_eq!(signal.bandwidth_hz, 125_000.0);
         assert_eq!(signal.symbol_rate_hz, Some(125_000.0 / 128.0));

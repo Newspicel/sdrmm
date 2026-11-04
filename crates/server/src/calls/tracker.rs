@@ -222,9 +222,10 @@ impl Tracker {
     }
 
     pub(super) fn record(&mut self, record: &DecodedRecord) {
-        let DecoderEvent::Dv(frame) = &record.event else {
+        let Some(frame) = record.event.read::<DvFrame>() else {
             return;
         };
+        let frame = &frame;
         let Some(origin) = &record.origin else {
             return;
         };
@@ -260,7 +261,7 @@ impl Tracker {
         let taps = &self.taps;
         let call = self.active.entry(key).or_insert_with(|| {
             ActiveCall::new(
-                frame.mode.type_id().to_owned(),
+                frame.mode.clone(),
                 record.freq_hz,
                 Some(frame.clone()),
                 record.at.parse().unwrap_or_else(|_| jiff::Timestamp::now()),
@@ -427,7 +428,7 @@ impl Tracker {
             channel: key.channel,
             at: call.ended_at.clone(),
             freq_hz: call.freq_hz,
-            event: DecoderEvent::Call(call),
+            event: DecoderEvent::of(&call),
             view: None,
         });
     }

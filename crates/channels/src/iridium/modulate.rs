@@ -1,8 +1,8 @@
 use num_complex::Complex;
+use sdrmm_dsp::design_rrc_unit_energy;
 
 use super::demod::SYMBOL_RATE;
 use super::frame::symbol_reverse;
-use super::receiver::rrc_taps;
 
 pub fn bits_to_symbols(bits: &[u8]) -> Vec<u8> {
     const INV_MAP: [u8; 4] = [0, 3, 1, 2];
@@ -35,7 +35,7 @@ pub fn modulate(
         let at = ((pre_syms + k) as f64 * sps) as usize;
         impulses[at] = Complex::from_polar(1.0, f32::from(q) * std::f32::consts::FRAC_PI_2);
     }
-    let taps = rrc_taps(sps, ((8.0 * sps) as usize) | 1, 0.4);
+    let taps = design_rrc_unit_energy(sps, 0.4, ((8.0 * sps) as usize) | 1);
     (0..total)
         .map(|n| {
             let shaped: Complex<f32> = taps

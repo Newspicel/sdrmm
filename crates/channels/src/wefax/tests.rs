@@ -1,5 +1,10 @@
+use crate::nfm::NfmParams;
+use crate::wefax::WefaxIoc;
+use crate::wefax::WefaxLpm;
+use crate::wefax::WefaxParams;
+use crate::wefax::WefaxPicture;
 use num_complex::Complex;
-use sdrmm_wire::{ChannelParams, NfmParams, WefaxIoc, WefaxLpm, WefaxParams, WefaxPicture};
+use sdrmm_wire::ChannelParams;
 
 use super::*;
 use crate::{
@@ -24,7 +29,7 @@ const SHORT: Plan = Plan {
 fn channel(p: WefaxParams) -> WefaxChannel {
     WefaxChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Wefax(p)),
+        settings(ChannelParams::of(&p).expect("settings")),
     )
     .expect("builds")
 }
@@ -60,10 +65,11 @@ fn run(chan: &mut WefaxChannel, iq: &[Complex<f32>], lens: &[usize]) -> Received
         received.progress += out.video.len();
         received.images.append(&mut out.images);
         for event in &out.events {
-            match event {
-                DecoderEvent::Wefax(picture) => received.events.push(*picture),
-                other => panic!("unexpected event {other:?}"),
-            }
+            received.events.push(
+                event
+                    .read::<WefaxPicture>()
+                    .unwrap_or_else(|| panic!("unexpected event {event:?}")),
+            )
         }
         at = end;
     }
@@ -360,8 +366,10 @@ fn changing_the_line_rate_abandons_the_picture() {
     let mut out = ChannelOutputs::default();
     chan.process(&iq[..split], &mut out);
     assert!(chan.picture.active);
-    chan.apply(settings(ChannelParams::Wefax(WefaxParams::default())))
-        .expect("applies");
+    chan.apply(settings(
+        ChannelParams::new("wefax", &WefaxParams::default()).expect("wefax settings"),
+    ))
+    .expect("applies");
     assert!(!chan.picture.active);
 }
 
@@ -383,11 +391,13 @@ fn a_second_transmission_follows_the_first() {
 #[test]
 fn mismatched_params_variant_is_rejected() {
     let mut chan = channel(WefaxParams::default());
-    let err = chan.apply(settings(ChannelParams::Nfm(NfmParams::default())));
+    let err = chan.apply(settings(
+        ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+    ));
     assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     let built = WefaxChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Nfm(NfmParams::default())),
+        settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
     );
     assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
 }
@@ -398,7 +408,7 @@ fn wrong_input_rate_is_rejected() {
         ChannelCtx {
             input_rate: 48_000.0,
         },
-        settings(ChannelParams::Wefax(WefaxParams::default())),
+        settings(ChannelParams::new("wefax", &WefaxParams::default()).expect("wefax settings")),
     );
     assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
 }

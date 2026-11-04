@@ -235,10 +235,10 @@ async fn dab_transmission_modes_round_trip_over_http() {
     )
     .await;
     for (name, expected) in [
-        ("i", sdrmm_wire::DabTransmissionMode::I),
-        ("ii", sdrmm_wire::DabTransmissionMode::Ii),
-        ("iii", sdrmm_wire::DabTransmissionMode::Iii),
-        ("iv", sdrmm_wire::DabTransmissionMode::Iv),
+        ("i", sdrmm_channels::DabTransmissionMode::I),
+        ("ii", sdrmm_channels::DabTransmissionMode::Ii),
+        ("iii", sdrmm_channels::DabTransmissionMode::Iii),
+        ("iv", sdrmm_channels::DabTransmissionMode::Iv),
     ] {
         let body = serde_json::json!({"settings": {"params": {"type": "dab", "settings": {"transmission_mode": name, "service_id": 49569}}}}).to_string();
         let (status, _) = request(
@@ -250,11 +250,11 @@ async fn dab_transmission_modes_round_trip_over_http() {
         .await;
         assert_eq!(status, StatusCode::NO_CONTENT);
         let snapshot = get_state(&app).await;
-        let sdrmm_wire::ChannelParams::Dab(params) =
-            snapshot.device_sets[0].channels[0].settings.params
-        else {
-            panic!("DAB params");
-        };
+        let params: sdrmm_channels::DabParams = snapshot.device_sets[0].channels[0]
+            .settings
+            .params
+            .parse()
+            .expect("DAB params");
         assert_eq!(params.transmission_mode, expected);
         assert_eq!(params.service_id, Some(49569));
     }
@@ -352,11 +352,11 @@ async fn satellite_superframes_and_stream_selection_round_trip_over_http() {
         .await;
         assert_eq!(status, StatusCode::NO_CONTENT);
         let snapshot = get_state(&app).await;
-        let sdrmm_wire::ChannelParams::Datv(params) =
-            snapshot.device_sets[0].channels[0].settings.params
-        else {
-            panic!("DATV params");
-        };
+        let params: sdrmm_channels::DatvParams = snapshot.device_sets[0].channels[0]
+            .settings
+            .params
+            .parse()
+            .expect("DATV params");
         assert_eq!(params.superframes, enabled);
         assert_eq!(params.input_stream, Some(7));
         assert_eq!(params.program, Some(42));

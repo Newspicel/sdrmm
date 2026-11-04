@@ -1,5 +1,7 @@
+use crate::same;
+use crate::same::SAME_BURSTS;
+use crate::same::SameMessage;
 use sdrmm_dsp::SyncDetector;
-use sdrmm_wire::{SAME_BURSTS, SameMessage, same};
 
 use super::RATE;
 

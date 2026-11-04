@@ -1,7 +1,9 @@
 use num_complex::Complex;
 use sdrmm_dsp::fast_arg;
 
-use super::taps::{Fir, lowpass_taps};
+use sdrmm_dsp::design_lowpass_blackman_harris;
+
+use super::taps::Fir;
 
 const FREQ_ALPHA: f32 = 0.0004;
 const TIMING_GAIN: f64 = 0.1;
@@ -27,9 +29,9 @@ impl MskDemod {
         Self {
             samples_per_bit: channel_rate / bit_rate,
             lowpass: Fir::new(
-                lowpass_taps(
-                    LOWPASS_BIT_RATE_FRACTION * bit_rate / channel_rate,
+                design_lowpass_blackman_harris(
                     LOWPASS_TAPS,
+                    LOWPASS_BIT_RATE_FRACTION * bit_rate / channel_rate,
                 ),
                 1,
             ),

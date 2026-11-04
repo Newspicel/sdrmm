@@ -10,7 +10,7 @@ use sdrmm_channels::{
     if_stage::IfStage,
 };
 use sdrmm_dsp::{LevelMeter, NoiseBlanker, Squelch};
-use sdrmm_wire::{ChannelSettings, DecoderEvent, PositionFix};
+use sdrmm_wire::{ChannelSettings, ChannelStatus, DecoderEvent, PositionFix};
 use tokio::sync::broadcast;
 
 use super::{downconvert::Downconverter, dsp_block_len};
@@ -35,7 +35,13 @@ pub(crate) struct RawDecoded {
     pub(crate) device_set: u32,
     pub(crate) channel: u32,
     pub(crate) freq_hz: f64,
-    pub(crate) event: DecoderEvent,
+    pub(crate) out: Decoded,
+}
+
+/// What a channel hands the decoded pump: an event for the logs, or a status for its face.
+pub(crate) enum Decoded {
+    Event(DecoderEvent),
+    Status(ChannelStatus),
 }
 
 pub(crate) struct RawImage {
@@ -91,12 +97,20 @@ impl DecodedSink {
     }
 
     pub(crate) fn publish(&self, freq_hz: f64, event: DecoderEvent) {
+        self.send(freq_hz, Decoded::Event(event));
+    }
+
+    pub(crate) fn publish_status(&self, freq_hz: f64, status: ChannelStatus) {
+        self.send(freq_hz, Decoded::Status(status));
+    }
+
+    fn send(&self, freq_hz: f64, out: Decoded) {
         let record = RawDecoded {
             node: self.node.clone(),
             device_set: self.device_set,
             channel: self.channel,
             freq_hz,
-            event,
+            out,
         };
         if self.tx.try_send(record).is_err() {
             self.dropped.fetch_add(1, Ordering::Relaxed);
@@ -631,10 +645,15 @@ impl ChannelHost {
 pub(crate) mod tests {
     use std::f64::consts::TAU;
 
-    use sdrmm_wire::{
-        AmParams, ChannelParams, IfFilter, IfNotch, NfmParams, NoiseBlankerSettings, Sideband,
-        SsbParams, WfmParams,
-    };
+    use sdrmm_wire::{ChannelParams, IfFilter, IfNotch, NoiseBlankerSettings, Sideband};
+
+    use sdrmm_channels::AmParams;
+
+    use sdrmm_channels::NfmParams;
+
+    use sdrmm_channels::SsbParams;
+
+    use sdrmm_channels::WfmParams;
 
     use super::{super::DSP_BLOCK, *};
     use crate::audio::PcmPayload;
@@ -647,7 +666,7 @@ pub(crate) mod tests {
         ChannelSettings {
             frequency_hz: CENTER,
             squelch,
-            params: ChannelParams::Nfm(NfmParams::default()),
+            params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         }
@@ -1007,10 +1026,14 @@ pub(crate) mod tests {
         let settings = ChannelSettings {
             frequency_hz: CENTER,
             squelch: sdrmm_wire::Squelch::Manual { level_db: -50.0 },
-            params: ChannelParams::Ssb(SsbParams {
-                sideband: Sideband::Usb,
-                bandwidth_hz: 2_700.0,
-            }),
+            params: ChannelParams::new(
+                "ssb",
+                &SsbParams {
+                    sideband: Sideband::Usb,
+                    bandwidth_hz: 2_700.0,
+                },
+            )
+            .expect("ssb settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         };
@@ -1038,7 +1061,7 @@ pub(crate) mod tests {
         ChannelSettings {
             frequency_hz: CENTER,
             squelch,
-            params: ChannelParams::Am(AmParams::default()),
+            params: ChannelParams::new("am", &AmParams::default()).expect("am settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         }
@@ -1177,10 +1200,14 @@ pub(crate) mod tests {
         let wfm = |stereo: bool| ChannelSettings {
             frequency_hz: CENTER,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Wfm(WfmParams {
-                deemphasis_us: 50.0,
-                stereo,
-            }),
+            params: ChannelParams::new(
+                "wfm",
+                &WfmParams {
+                    deemphasis_us: 50.0,
+                    stereo,
+                },
+            )
+            .expect("wfm settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         };
@@ -1235,7 +1262,8 @@ pub(crate) mod tests {
             previous.process_at(&input, (index * BLOCK) as u64, CENTER);
         }
         assert_eq!(previous.baseband_pos, (5 * BLOCK) as u64);
-        settings.params = ChannelParams::Am(Default::default());
+        settings.params =
+            ChannelParams::of(&sdrmm_channels::AmParams::default()).expect("am settings");
         let mut next = ChannelHost::build(
             RATE,
             CENTER,
@@ -1268,7 +1296,7 @@ pub(crate) mod tests {
         for rate in [240_000.0, 8_000_000.0, 20_000_000.0] {
             for kind in ["am", "nfm", "wfm", "ssb"] {
                 let settings =
-                    ChannelSettings::default_for(kind).expect("registered analog channel");
+                    sdrmm_channels::default_settings(kind).expect("registered analog channel");
                 let (pcm_tx, _pcm_rx) = broadcast::channel(128);
                 let media = sinks(pcm_tx, Arc::new(AtomicU64::new(0)));
                 let _iq_rx = media.iq_tx.subscribe();
@@ -1297,7 +1325,8 @@ pub(crate) mod tests {
         let settings = ChannelSettings {
             frequency_hz: CENTER + 250_000.0,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Wfm(sdrmm_wire::WfmParams::default()),
+            params: ChannelParams::new("wfm", &sdrmm_channels::WfmParams::default())
+                .expect("wfm settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         };

@@ -1,4 +1,4 @@
-use sdrmm_wire::WmbusFormat;
+use crate::wmbus::WmbusFormat;
 
 use super::coding::crc_holds;
 

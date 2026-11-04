@@ -411,7 +411,7 @@ fn initial_runs(body: &NodeBody) -> Runs {
         Role::Processor => Runs::Engine,
         Role::Pass(_) | Role::Plain => match body {
             NodeBody::Array(_) => Runs::Engine,
-            NodeBody::Channel(_) | NodeBody::DmrTrunk(_) => Runs::Unbound {
+            NodeBody::Channel(_) | NodeBody::Trunk(_) => Runs::Unbound {
                 reason: UnboundReason::NotWired,
             },
             _ => Runs::Server,
@@ -458,7 +458,7 @@ impl ResolvedPatch {
     }
 
     #[must_use]
-    pub fn delivers(&self, node: &str, port: &str, kind: EventKind) -> bool {
+    pub fn delivers(&self, node: &str, port: &str, kind: &EventKind) -> bool {
         self.reaches(node, port)
             .iter()
             .any(|reach| reach.kinds.contains(kind))

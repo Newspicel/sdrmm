@@ -1,5 +1,5 @@
+use crate::lora::LoraImplicitHeader;
 use num_complex::Complex;
-use sdrmm_wire::LoraImplicitHeader;
 
 use super::{
     Frame,

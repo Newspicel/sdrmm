@@ -118,6 +118,51 @@ pub fn wrap_360(deg: f64) -> f64 {
     if wrapped >= 360.0 { 0.0 } else { wrapped + 0.0 }
 }
 
+pub fn grid_lat_lon(grid: &str) -> Option<LatLon> {
+    let text = grid.trim().to_ascii_uppercase();
+    let bytes = text.as_bytes();
+    if !matches!(bytes.len(), 4 | 6 | 8) {
+        return None;
+    }
+    let mut lon = 0.0;
+    let mut lat = 0.0;
+    let mut lon_size = 360.0;
+    let mut lat_size = 180.0;
+    for (pair, &[east, north]) in bytes.as_chunks::<2>().0.iter().enumerate() {
+        let (base, count) = if pair % 2 == 0 {
+            (b'A', if pair == 0 { 18 } else { 24 })
+        } else {
+            (b'0', 10)
+        };
+        let east = east.checked_sub(base).filter(|step| *step < count)?;
+        let north = north.checked_sub(base).filter(|step| *step < count)?;
+        lon_size /= f64::from(count);
+        lat_size /= f64::from(count);
+        lon += f64::from(east) * lon_size;
+        lat += f64::from(north) * lat_size;
+    }
+    Some(LatLon {
+        lat: lat + lat_size / 2.0 - 90.0,
+        lon: lon + lon_size / 2.0 - 180.0,
+    })
+}
+
+#[must_use]
+pub fn square_of(at: LatLon) -> String {
+    let lon = (at.lon + 180.0).clamp(0.0, 359.999_999);
+    let lat = (at.lat + 90.0).clamp(0.0, 179.999_999);
+    let letter = |step: f64| char::from(b'A' + step as u8);
+    let digit = |step: f64| char::from(b'0' + step as u8);
+    [
+        letter((lon / 20.0).floor()),
+        letter((lat / 10.0).floor()),
+        digit(((lon % 20.0) / 2.0).floor()),
+        digit((lat % 10.0).floor()),
+    ]
+    .into_iter()
+    .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

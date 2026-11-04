@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Instant};
 use sdrmm_channels::passive_radar::{
     CafBackend, CpiJob, CpuCaf, CubeOut, RadarCtx, RadarPlan, plan,
 };
-use sdrmm_wire::radar::{Illuminator, PassiveRadarParams, ReferenceCleaning};
+use sdrmm_wire::{radar::Illuminator, radar::PassiveRadarParams, radar::ReferenceCleaning};
 
 use super::{super::caf::GpuCaf, samples};
 

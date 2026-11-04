@@ -9,6 +9,13 @@ pub fn gray(i: u32) -> u32 {
     i ^ (i >> 1)
 }
 
+#[must_use]
+pub fn gray_inverse(g: u32) -> u32 {
+    [16, 8, 4, 2, 1]
+        .iter()
+        .fold(g, |b, &shift| b ^ (b >> shift))
+}
+
 fn check_order(family: &'static str, m: u32, ok: bool) -> Result<(), ConstellationError> {
     if ok && m >= 2 && m.is_power_of_two() && m <= 1024 {
         return Ok(());
@@ -419,6 +426,18 @@ mod tests {
             }
         }
         f64::from(sum) / f64::from(edges)
+    }
+
+    #[test]
+    fn gray_inverse_undoes_gray_across_the_whole_word() {
+        for value in (0..4096u32).chain([0xDEAD_BEEF, u32::MAX, 1 << 31]) {
+            assert_eq!(gray_inverse(gray(value)), value, "at {value:#x}");
+            assert_eq!(gray(gray_inverse(value)), value, "at {value:#x}");
+        }
+        assert_eq!(
+            (0..8).map(gray_inverse).collect::<Vec<_>>(),
+            [0, 1, 3, 2, 7, 6, 4, 5]
+        );
     }
 
     #[test]

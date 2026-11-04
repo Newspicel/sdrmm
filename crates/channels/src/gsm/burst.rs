@@ -1,4 +1,4 @@
-use sdrmm_wire::GSM_SYMBOL_RATE_HZ;
+use crate::gsm::GSM_SYMBOL_RATE_HZ;
 
 pub(crate) const SPS: usize = 2;
 pub(crate) const INPUT_RATE_HZ: f64 = GSM_SYMBOL_RATE_HZ * SPS as f64;

@@ -1,70 +1,18 @@
 use super::{
     ClipName, EventPayload, Field, FieldValue, Place, Presentation, Unit, VoiceFacts, count,
-    fields, flag, joined, lat_lon, measure::modulation_label, number, only_if, percent, position,
-    text, text_of, trimmed,
+    fields, flag, joined, lat_lon, number, only_if, percent, position, text, text_of, trimmed,
 };
 use crate::{
     decode::{
-        DvFrame, DvFrameKind, DvMode, DvTrunkProtocol, EventKind, ScramblerStatus,
-        ToneSquelchStatus,
+        CodeStyle, DvFrame, DvFrameKind, DvTrunkProtocol, EventKind, SiteNaming, modulation_label,
     },
     monitor::Transmission,
     rest::VoiceCall,
     units::hertz,
 };
 
-impl EventPayload for ToneSquelchStatus {
-    fn present(&self, _kind: EventKind) -> Presentation {
-        let mut parts = Vec::new();
-        if let Some(hz) = self.ctcss_hz {
-            parts.push(format!("CTCSS {hz:.1} Hz"));
-        }
-        if let Some(code) = self.dcs_code {
-            parts.push(format!("DCS {code:03}"));
-        }
-        if parts.is_empty() {
-            parts.push("no tone".to_owned());
-        }
-        let squelch = if self.open { "open" } else { "muted" };
-        parts.push(squelch.to_owned());
-        Presentation {
-            fields: fields(&[
-                ("CTCSS", number(self.ctcss_hz, Unit::Hz, 1)),
-                (
-                    "DCS",
-                    self.dcs_code.and_then(|code| text_of(format!("{code:03}"))),
-                ),
-                ("Audio", text_of(squelch)),
-            ]),
-            ..Presentation::of(joined(parts))
-        }
-    }
-}
-
-impl EventPayload for ScramblerStatus {
-    fn present(&self, _kind: EventKind) -> Presentation {
-        let found = self.inversion_hz.is_some();
-        Presentation {
-            fields: fields(&[
-                ("Inversion", number(self.inversion_hz, Unit::Hz, 0)),
-                (
-                    "Confidence",
-                    percent(self.confidence as f32).filter(|_| found),
-                ),
-            ]),
-            ..Presentation::of(match self.inversion_hz {
-                Some(hz) => format!(
-                    "inversion {hz:.0} Hz · {:.0}% confidence",
-                    self.confidence * 100.0
-                ),
-                None => "no inversion".to_owned(),
-            })
-        }
-    }
-}
-
 impl EventPayload for DvFrame {
-    fn present(&self, _kind: EventKind) -> Presentation {
+    fn present(&self, _kind: &EventKind) -> Presentation {
         Presentation {
             entity: trimmed(self.source_call.as_deref())
                 .or_else(|| self.source.map(|id| id.to_string())),
@@ -77,14 +25,21 @@ impl EventPayload for DvFrame {
             }),
             callsign: trimmed(self.source_call.as_deref()),
             fields: dv_fields(self),
+            verified: Some(dv_verified(self)),
             ..Presentation::of(dv_summary(self))
         }
     }
 }
 
+/// A frame whose check passed, or voice whose frame carries no check.
+fn dv_verified(f: &DvFrame) -> bool {
+    f.crc_verified == Some(true)
+        || matches!(f.kind, DvFrameKind::Voice) && f.crc_verified != Some(false)
+}
+
 fn dv_fields(f: &DvFrame) -> Vec<Field> {
     let mut shown = fields(&[
-        ("Mode", text_of(f.mode.label())),
+        ("Mode", text(Some(&f.mode))),
         ("Frame", text_of(dv_frame_kind(f.kind))),
         ("Network", text(Some(&dv_network(f)))),
         ("Vendor", dv_vendor(f)),
@@ -133,7 +88,7 @@ fn dv_fields(f: &DvFrame) -> Vec<Field> {
 }
 
 fn dv_site_fields(f: &DvFrame) -> Vec<Field> {
-    let (network, system, site) = if f.mode == DvMode::Tetra {
+    let (network, system, site) = if f.site_naming == SiteNaming::Cellular {
         ("MNC", "MCC", "Location area")
     } else {
         ("Network ID", "System ID", "Site ID")
@@ -179,10 +134,10 @@ fn dv_network(f: &DvFrame) -> String {
 }
 
 fn color_code(f: &DvFrame) -> Option<String> {
-    f.color_code.map(|cc| match f.mode {
-        DvMode::P25 => format!("NAC {cc:03X}"),
-        DvMode::Nxdn | DvMode::Dpmr => format!("RAN {cc}"),
-        _ => format!("CC {cc}"),
+    f.color_code.map(|cc| match f.code_style {
+        CodeStyle::Nac => format!("NAC {cc:03X}"),
+        CodeStyle::Ran => format!("RAN {cc}"),
+        CodeStyle::ColorCode => format!("CC {cc}"),
     })
 }
 
@@ -235,7 +190,7 @@ fn slot_activity(f: &DvFrame) -> String {
 }
 
 fn dv_summary(f: &DvFrame) -> String {
-    let mut parts = vec![f.mode.label().to_owned()];
+    let mut parts = vec![f.mode.clone()];
     if let Some(slot) = f.slot {
         parts.push(format!("TS{slot}"));
     }
@@ -258,7 +213,7 @@ fn dv_summary(f: &DvFrame) -> String {
 }
 
 impl EventPayload for VoiceCall {
-    fn present(&self, _kind: EventKind) -> Presentation {
+    fn present(&self, _kind: &EventKind) -> Presentation {
         Presentation {
             entity: self.source.map(|id| id.to_string()),
             voice: Some(VoiceFacts {
@@ -336,7 +291,7 @@ fn call_summary(c: &VoiceCall) -> String {
 }
 
 impl EventPayload for Transmission {
-    fn present(&self, _kind: EventKind) -> Presentation {
+    fn present(&self, _kind: &EventKind) -> Presentation {
         Presentation {
             duration_ms: Some(self.duration_ms),
             clip: self.audio.clone(),
@@ -395,7 +350,7 @@ mod tests {
     fn dv(json: serde_json::Value) -> Presentation {
         serde_json::from_value::<DvFrame>(json)
             .unwrap()
-            .present(EventKind::Dv)
+            .present(&EventKind::DV)
     }
 
     #[test]
@@ -441,7 +396,7 @@ mod tests {
     #[test]
     fn a_tetra_cell_is_named_by_country_network_and_area() {
         let view = dv(serde_json::json!({
-            "mode": "tetra", "kind": "control", "errors_corrected": 0, "system_id": 250,
+            "mode": "TETRA", "site_naming": "cellular", "kind": "control", "errors_corrected": 0, "system_id": 250,
             "network_id": 13, "site_id": 1052, "color_code": 44,
         }));
         assert_eq!(view.field("MCC"), text_of(250).as_ref());
@@ -484,11 +439,11 @@ mod tests {
         let view = serde_json::from_value::<VoiceCall>(serde_json::json!({
             "id": 1, "node": "n", "started_at": "2026-01-01T00:00:00Z",
             "ended_at": "2026-01-01T00:00:04Z", "duration_ms": 4200, "device_set": 0,
-            "channel": 0, "freq_hz": 438e6, "mode": "dmr", "slot": 1, "destination": 9,
+            "channel": 0, "freq_hz": 438e6, "mode": "DMR", "slot": 1, "destination": 9,
             "group_call": false, "source": 2621, "encrypted": false, "emergency": true,
         }))
         .unwrap()
-        .present(EventKind::Call);
+        .present(&EventKind::CALL);
         assert_eq!(view.field("Mode"), text_of("DMR").as_ref());
         assert_eq!(view.field("Destination"), text_of("radio 9").as_ref());
         assert_eq!(
@@ -505,7 +460,8 @@ mod tests {
 
     #[test]
     fn a_transmission_lists_its_signal_and_decoder() {
-        let mut view = crate::decode::fixtures::fixture(EventKind::Transmission).present();
+        let mut heard = crate::decode::test_kinds::transmission();
+        let mut view = heard.present(&EventKind::TRANSMISSION);
         assert_eq!(view.field("State"), text_of("completed").as_ref());
         assert_eq!(
             view.field("Frequency"),
@@ -517,48 +473,9 @@ mod tests {
             number(Some(1.0), Unit::Seconds, 2).as_ref()
         );
         assert_eq!(view.field("Decoder"), None);
-        let crate::DecoderEvent::Transmission(mut heard) =
-            crate::decode::fixtures::fixture(EventKind::Transmission)
-        else {
-            panic!("transmission fixture");
-        };
-        heard.decoder = Some("pocsag".to_owned());
+        heard.decoder = Some("probe".to_owned());
         heard.decoder_confirmed = true;
-        view = heard.present(EventKind::Transmission);
-        assert_eq!(
-            view.field("Decoder"),
-            text_of("POCSAG (confirmed)").as_ref()
-        );
-    }
-
-    #[test]
-    fn tone_and_scrambler_show_what_was_heard() {
-        let tone = ToneSquelchStatus {
-            ctcss_hz: Some(88.5),
-            dcs_code: None,
-            open: true,
-        }
-        .present(EventKind::Tone);
-        assert_eq!(tone.labels(), ["CTCSS", "Audio"]);
-        assert_eq!(tone.field("Audio"), text_of("open").as_ref());
-        let dcs = ToneSquelchStatus {
-            ctcss_hz: None,
-            dcs_code: Some(23),
-            open: false,
-        }
-        .present(EventKind::Tone);
-        assert_eq!(dcs.field("DCS"), text_of("023").as_ref());
-        let none = ScramblerStatus {
-            inversion_hz: None,
-            confidence: 0.2,
-        }
-        .present(EventKind::Scrambler);
-        assert!(none.fields.is_empty());
-        let found = ScramblerStatus {
-            inversion_hz: Some(3_300.0),
-            confidence: 0.9,
-        }
-        .present(EventKind::Scrambler);
-        assert_eq!(found.labels(), ["Inversion", "Confidence"]);
+        view = heard.present(&EventKind::TRANSMISSION);
+        assert_eq!(view.field("Decoder"), text_of("PROBE (confirmed)").as_ref());
     }
 }

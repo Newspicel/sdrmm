@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use sdrmm_wire::{ChannelParams, ChannelSettings, DeviceSettings, NfmParams, Tuning};
+use sdrmm_wire::{ChannelParams, ChannelSettings, DeviceSettings, Tuning};
+
+use sdrmm_channels::NfmParams;
 
 use super::*;
 
@@ -32,7 +34,7 @@ fn a_failed_move_keeps_the_original_decoder() {
     }
     let settings = ChannelSettings {
         frequency_hz: 100e6,
-        ..ChannelSettings::default_for("nfm").unwrap()
+        ..sdrmm_channels::default_settings("nfm").unwrap()
     };
     let channel = app
         .engine
@@ -48,10 +50,14 @@ fn a_failed_move_keeps_the_original_decoder() {
                 node: "voice".to_owned(),
                 settings: ChannelSettings {
                     frequency_hz: 400e6,
-                    params: ChannelParams::Nfm(NfmParams {
-                        bandwidth_hz: -1.0,
-                        ..Default::default()
-                    }),
+                    params: ChannelParams::new(
+                        "nfm",
+                        &NfmParams {
+                            bandwidth_hz: -1.0,
+                            ..Default::default()
+                        },
+                    )
+                    .expect("nfm settings"),
                     ..settings.clone()
                 },
                 lanes: vec![
@@ -87,7 +93,7 @@ fn an_exporting_decoder_is_pinned_until_the_export_stops() {
     let set = app.engine.create_device_set("virtual:band").unwrap();
     let id = app
         .engine
-        .add_channel(set, 0, ChannelSettings::default_for("nfm").unwrap())
+        .add_channel(set, 0, sdrmm_channels::default_settings("nfm").unwrap())
         .unwrap();
     let snapshot = app.engine.snapshot();
     let set = snapshot

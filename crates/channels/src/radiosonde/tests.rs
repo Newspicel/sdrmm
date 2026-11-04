@@ -1,7 +1,9 @@
+use crate::nfm::NfmParams;
+use crate::radiosonde::RadiosondeFrame;
+use crate::radiosonde::RadiosondeParams;
+use crate::radiosonde::SondeType;
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelParams, DecoderEvent, NfmParams, RadiosondeFrame, RadiosondeParams, SondeType,
-};
+use sdrmm_wire::ChannelParams;
 
 use super::{
     dfm::{self, DfmFrames},
@@ -35,10 +37,16 @@ const BOTH: Accept = Accept {
 fn channel(sonde: Option<SondeType>) -> RadiosondeChannel {
     RadiosondeChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Radiosonde(RadiosondeParams {
-            sonde,
-            ..RadiosondeParams::default()
-        })),
+        settings(
+            ChannelParams::new(
+                "radiosonde",
+                &RadiosondeParams {
+                    sonde,
+                    ..RadiosondeParams::default()
+                },
+            )
+            .expect("radiosonde settings"),
+        ),
     )
     .expect("builds")
 }
@@ -59,10 +67,11 @@ fn run(
         out.reset();
         chan.process(&iq[at..end], &mut out);
         for event in out.events.drain(..) {
-            match event {
-                DecoderEvent::Radiosonde(frame) => frames.push(frame),
-                other => panic!("unexpected event {other:?}"),
-            }
+            frames.push(
+                event
+                    .read::<RadiosondeFrame>()
+                    .unwrap_or_else(|| panic!("unexpected event {event:?}")),
+            )
         }
         at = end;
     }
@@ -509,20 +518,25 @@ fn pure_noise_emits_and_rejects_nothing() {
 fn wrong_params_and_rate_are_rejected() {
     let wrong = RadiosondeChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Nfm(NfmParams::default())),
+        settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
     );
     assert!(matches!(wrong, Err(ChannelError::InvalidSettings(_))));
     let rate = RadiosondeChannel::new(
         ChannelCtx {
             input_rate: 96_000.0,
         },
-        settings(ChannelParams::Radiosonde(RadiosondeParams::default())),
+        settings(
+            ChannelParams::new("radiosonde", &RadiosondeParams::default())
+                .expect("radiosonde settings"),
+        ),
     );
     assert!(rate.is_err());
     let mut chan = channel(None);
     assert!(
-        chan.apply(settings(ChannelParams::Nfm(NfmParams::default())))
-            .is_err()
+        chan.apply(settings(
+            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")
+        ))
+        .is_err()
     );
 }
 

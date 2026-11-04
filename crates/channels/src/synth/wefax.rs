@@ -1,7 +1,8 @@
 use std::f64::consts::TAU;
 
+use crate::wefax::WefaxIoc;
+use crate::wefax::WefaxLpm;
 use num_complex::Complex;
-use sdrmm_wire::{WefaxIoc, WefaxLpm};
 
 use crate::wefax::{BLACK_HZ, PULSE_FRACTION, STOP_TONE_HZ, WHITE_HZ, level_to_hz};
 

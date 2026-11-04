@@ -1,37 +1,28 @@
 import { describe, expect, it } from "vitest";
 import wire from "../generated/limits.json" with { type: "json" };
-import type {
-  AudioProcessing,
-  ChannelDescriptor,
-  ChannelSettings,
-  ParamChoice,
-} from "../lib/types";
+import type { AudioProcessing, ChannelDescriptor, ChannelSettings } from "../lib/types";
 import {
   AUDIO_DEFAULTS,
   AUDIO_LIMITS,
   audioChainActive,
   channelHasAudio,
   channelWidthHz,
-  choiceOptions,
-  choicesOf,
   clampOffsetHz,
   IF_LIMITS,
   ifEdgeHz,
   ifFilterSummary,
-  limitOf,
   mergeAudio,
   mergeChannelSettings,
   nudgedSquelch,
   offsetForFrequencyHz,
   offsetLimitHz,
+  paramsWith,
   radioWindowHz,
   reachesHz,
-  scaledLimit,
   squelchAt,
   squelchLevelDb,
   squelchMarginDb,
   squelchMode,
-  unsetAs,
   withIfEdge,
   withIfNotchAdded,
   withIfNotchRemoved,
@@ -43,13 +34,13 @@ import {
 const base: ChannelSettings = {
   frequency_hz: 145_025_000,
   squelch: { mode: "manual", level_db: -70 },
-  params: { type: "ssb", settings: { sideband: "lsb", bandwidth_hz: 2_400 } },
+  params: paramsWith("probe", { sideband: "lsb", bandwidth_hz: 2_400 }),
 };
 
 function descriptor(over: Partial<ChannelDescriptor>): ChannelDescriptor {
   return {
-    type_id: "nfm",
-    name: "NFM",
+    type_id: "probe",
+    name: "Probe",
     bandwidth_hz: 12_500,
     input_rate_hz: 48_000,
     ...over,
@@ -94,123 +85,60 @@ describe("mergeChannelSettings", () => {
 
   it("swaps params wholesale without touching placement", () => {
     const next = mergeChannelSettings(base, {
-      params: { type: "nfm", settings: { bandwidth_hz: 25_000 } },
+      params: paramsWith("other", { bandwidth_hz: 25_000 }),
     });
     expect(next.frequency_hz).toBe(145_025_000);
     expect(next.squelch).toEqual({ mode: "manual", level_db: -70 });
-    expect(next.params).toEqual({ type: "nfm", settings: { bandwidth_hz: 25_000 } });
+    expect(next.params).toEqual(paramsWith("other", { bandwidth_hz: 25_000 }));
   });
 
   it("fills server defaults for absent optional fields", () => {
     const sparse: ChannelSettings = {
       frequency_hz: 145_000_000,
-      params: { type: "nfm", settings: {} },
+      params: paramsWith("probe", {}),
     };
     const next = mergeChannelSettings(sparse, {});
     expect(next.frequency_hz).toBe(145_000_000);
     expect(next.squelch).toEqual({ mode: "off" });
   });
 
-  it("carries a decoder's edited params into the patch body", () => {
-    const rtty: ChannelSettings = {
+  it("carries a decoder's edited params and an explicit null into the patch body", () => {
+    const probe: ChannelSettings = {
       frequency_hz: 14_070_000,
-      params: { type: "rtty", settings: { baud: 45.45, shift_hz: 170 } },
+      params: paramsWith("probe", { baud: 45.45, shift_hz: 170 }),
     };
-    const next = mergeChannelSettings(rtty, {
-      params: {
-        type: "rtty",
-        settings: { baud: 45.45, shift_hz: 850, stop_bits: "two", invert: true },
-      },
-    });
-    expect(next).toEqual({
+    const edited = paramsWith("probe", { baud: 45.45, shift_hz: 850, speed: null, invert: true });
+    expect(mergeChannelSettings(probe, { params: edited })).toEqual({
       frequency_hz: 14_070_000,
       squelch: { mode: "off" },
       blanker: {},
       if_filter: {},
-      params: {
-        type: "rtty",
-        settings: { baud: 45.45, shift_hz: 850, stop_bits: "two", invert: true },
-      },
+      params: edited,
     });
   });
 
-  it("keeps the DAB transmission mode and service when tuning", () => {
-    for (const transmission_mode of ["auto", "i", "ii", "iii", "iv"] as const) {
-      const dab: ChannelSettings = {
-        frequency_hz: 220_352_000,
-        params: {
-          type: "dab",
-          settings: { transmission_mode, mode: "dab_plus", service_id: 49569 },
-        },
-      };
-      const next = mergeChannelSettings(dab, { frequency_hz: 225_648_000 });
-      expect(next.params).toEqual(dab.params);
-      expect(next.frequency_hz).toBe(225_648_000);
-    }
-  });
-
-  it("keeps an explicit null (auto) inside params", () => {
-    const next = mergeChannelSettings(base, {
-      params: { type: "morse", settings: { bandwidth_hz: 400, wpm: null } },
-    });
-    expect(next.params).toEqual({ type: "morse", settings: { bandwidth_hz: 400, wpm: null } });
-  });
-
-  it("widens a pager bandwidth or inversion edit over the settings beside it", () => {
-    for (const type of ["flex", "ermes"] as const) {
-      const pager: ChannelSettings = {
-        frequency_hz: 169_650_000,
-        params: { type, settings: { bandwidth_hz: 12_500, invert: false } },
-      };
-      const wider = mergeChannelSettings(pager, {
-        params: { type, settings: { bandwidth_hz: 25_000, invert: false } },
-      });
-      expect(wider.params).toEqual({
-        type,
-        settings: { bandwidth_hz: 25_000, invert: false },
-      });
-      const inverted = mergeChannelSettings(wider, {
-        params: { type, settings: { bandwidth_hz: 25_000, invert: true } },
-      });
-      expect(inverted.params).toEqual({
-        type,
-        settings: { bandwidth_hz: 25_000, invert: true },
-      });
-    }
-  });
-
-  it("carries every CW skimmer setting, and an auto speed, into the patch body", () => {
-    const skimmer: ChannelSettings = {
-      frequency_hz: 14_030_000,
-      params: {
-        type: "cw_skimmer",
-        settings: { bandwidth_hz: 24_000, threshold_db: 10, max_signals: 32, wpm: 20 },
-      },
+  it("keeps the decoder's settings when tuning", () => {
+    const probe: ChannelSettings = {
+      frequency_hz: 220_352_000,
+      params: paramsWith("probe", { mode: "plus", service_id: 49569 }),
     };
-    const next = mergeChannelSettings(skimmer, {
-      params: {
-        type: "cw_skimmer",
-        settings: { bandwidth_hz: 16_000, threshold_db: 8, max_signals: 8, wpm: null },
-      },
-    });
-    expect(next.params).toEqual({
-      type: "cw_skimmer",
-      settings: { bandwidth_hz: 16_000, threshold_db: 8, max_signals: 8, wpm: null },
-    });
+    const next = mergeChannelSettings(probe, { frequency_hz: 225_648_000 });
+    expect(next.params).toEqual(probe.params);
+    expect(next.frequency_hz).toBe(225_648_000);
   });
 });
 
 describe("channelHasAudio", () => {
   it("suppresses audio controls for a data decoder", () => {
     expect(
-      channelHasAudio(descriptor({ type_id: "adsb", has_audio: false, emits: ["adsb"] })),
+      channelHasAudio(descriptor({ type_id: "data", has_audio: false, emits: ["data"] })),
     ).toBe(false);
   });
 
   it("keeps audio for a decoder that also demodulates sound", () => {
     expect(
       channelHasAudio(
-        descriptor({ type_id: "wfm", has_audio: true, emits: ["rds"], calls: "squelch" }),
+        descriptor({ type_id: "voice", has_audio: true, emits: ["text"], calls: "squelch" }),
       ),
     ).toBe(true);
   });
@@ -241,22 +169,32 @@ describe("offsetLimitHz", () => {
 });
 
 describe("channelWidthHz", () => {
+  it("takes the band the running decoder reports first", () => {
+    expect(
+      channelWidthHz(
+        paramsWith("probe", { bandwidth_hz: 8_000 }),
+        descriptor({ bandwidth_hz: 10_000 }),
+        { low_hz: 100, high_hz: 2_800 },
+      ),
+    ).toBe(2_700);
+  });
+
   it("prefers the decoder's own bandwidth setting", () => {
     expect(
       channelWidthHz(
-        { type: "am", settings: { bandwidth_hz: 8_000 } },
+        paramsWith("probe", { bandwidth_hz: 8_000 }),
         descriptor({ bandwidth_hz: 10_000 }),
       ),
     ).toBe(8_000);
   });
 
-  it("reads a LoRa bandwidth step", () => {
+  it("ignores a bandwidth setting that is not a number", () => {
     expect(
       channelWidthHz(
-        { type: "lora", settings: { bandwidth: "khz250" } },
-        descriptor({ bandwidth_hz: 125_000 }),
+        paramsWith("probe", { bandwidth_hz: "wide" }),
+        descriptor({ bandwidth_hz: 10_000 }),
       ),
-    ).toBe(250_000);
+    ).toBe(10_000);
   });
 
   it("falls back to the channel type width", () => {
@@ -436,66 +374,6 @@ describe("nudgedSquelch", () => {
       mode: "auto",
       margin_db: 40,
     });
-  });
-});
-
-describe("limitOf", () => {
-  const limits = [
-    { name: "wpm", min: 5, max: 60, step: 1 },
-    { name: "threshold", min: 1.5, max: 100 },
-  ];
-
-  it("hands a number field the range its decoder published", () => {
-    expect(limitOf(limits, "wpm")).toEqual({ min: 5, max: 60, step: 1 });
-    expect(limitOf(limits, "threshold")).toEqual({ min: 1.5, max: 100, step: undefined });
-  });
-
-  it("leaves a field unconstrained when nothing was published", () => {
-    expect(limitOf(limits, "baud")).toEqual({});
-    expect(limitOf(undefined, "wpm")).toEqual({});
-  });
-
-  it("scales a limit into the unit a field is shown in", () => {
-    expect(scaledLimit({ min: 500_000, max: 9_000_000, step: 500_000 }, 1e-6)).toEqual({
-      min: 0.5,
-      max: 9,
-      step: 0.5,
-    });
-    expect(scaledLimit({}, 1e-6)).toEqual({ min: undefined, max: undefined, step: undefined });
-  });
-});
-
-describe("choices", () => {
-  const choices: ParamChoice[] = [
-    {
-      name: "baud",
-      options: [
-        { value: "auto", label: "Auto" },
-        { value: "b512", label: "512", title: "Slow pagers" },
-      ],
-    },
-    {
-      name: "sonde",
-      options: [
-        { value: null, label: "Auto" },
-        { value: "dfm", label: "DFM" },
-      ],
-    },
-  ];
-
-  it("reads a setting's options by name and keeps titles", () => {
-    expect(choicesOf(choices, { baud: "auto" as const }, "baud")).toEqual([
-      { value: "auto", label: "Auto" },
-      { value: "b512", label: "512", title: "Slow pagers" },
-    ]);
-    expect(choiceOptions(choices, "missing")).toEqual([]);
-  });
-
-  it("names the unset option for optional settings", () => {
-    expect(unsetAs(choiceOptions<string | null>(choices, "sonde"), "auto")).toEqual([
-      { value: "auto", label: "Auto" },
-      { value: "dfm", label: "DFM" },
-    ]);
   });
 });
 

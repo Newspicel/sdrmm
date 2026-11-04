@@ -19,8 +19,8 @@ use sdrmm_channels::passive_radar::{
 use sdrmm_dsp::manifold::{Geometry, Winding};
 use sdrmm_engine::{ArrayEvent, Engine};
 use sdrmm_wire::{
-    ArrayGain, ArrayTune, ProcessorParams, ProcessorReading,
-    radar::{GpuUse, Illuminator, PassiveRadarParams, RadarUpdate, ReferenceCleaning},
+    ArrayGain, ArrayTune, ProcessorParams, ProcessorReading, radar::GpuUse, radar::Illuminator,
+    radar::PassiveRadarParams, radar::RadarUpdate, radar::ReferenceCleaning,
 };
 use tokio::sync::broadcast::{self, error::TryRecvError};
 

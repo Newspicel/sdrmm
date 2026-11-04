@@ -6,7 +6,7 @@ use crate::{
     present::{Presentation, VoiceFacts},
 };
 
-pub const MAX_FILTER_KINDS: usize = EventKind::ALL.len();
+pub const MAX_FILTER_KINDS: usize = 256;
 pub const MAX_FILTER_IDS: usize = 256;
 pub const MAX_FILTER_DURATION_MS: u32 = 600_000;
 pub const MAX_FILTER_TEXT_LEN: usize = 128;
@@ -74,13 +74,13 @@ impl EventFilterNode {
     }
 
     #[must_use]
-    pub fn narrow(&self, offered: KindSet) -> KindSet {
-        let listed: KindSet = self.kinds.iter().copied().collect();
+    pub fn narrow(&self, offered: &KindSet) -> KindSet {
+        let listed: KindSet = self.kinds.iter().cloned().collect();
         match self.mode {
-            FilterMode::Keep if listed.is_empty() => offered,
-            FilterMode::Keep => offered.intersection(listed),
-            FilterMode::Drop if self.judges_only_kinds() => offered.without(listed),
-            FilterMode::Drop => offered,
+            FilterMode::Keep if listed.is_empty() => offered.clone(),
+            FilterMode::Keep => offered.intersection(&listed),
+            FilterMode::Drop if self.judges_only_kinds() => offered.without(&listed),
+            FilterMode::Drop => offered.clone(),
         }
     }
 
@@ -97,11 +97,11 @@ impl EventFilterNode {
 
     #[must_use]
     pub fn passes(&self, event: &DecoderEvent) -> bool {
-        self.admits(event.kind(), &event.present())
+        self.admits(&event.kind, &event.present())
     }
 
     #[must_use]
-    pub fn admits(&self, kind: EventKind, view: &Presentation) -> bool {
+    pub fn admits(&self, kind: &EventKind, view: &Presentation) -> bool {
         let mut judged = false;
         for verdict in self.verdicts(kind, view) {
             match verdict {
@@ -116,7 +116,7 @@ impl EventFilterNode {
         }
     }
 
-    fn verdicts(&self, kind: EventKind, view: &Presentation) -> [Verdict; 9] {
+    fn verdicts(&self, kind: &EventKind, view: &Presentation) -> [Verdict; 9] {
         let voice = view.voice.as_ref();
         [
             self.kind_verdict(kind),
@@ -131,11 +131,11 @@ impl EventFilterNode {
         ]
     }
 
-    fn kind_verdict(&self, kind: EventKind) -> Verdict {
+    fn kind_verdict(&self, kind: &EventKind) -> Verdict {
         if self.kinds.is_empty() {
             return Verdict::Unjudged;
         }
-        Verdict::of(self.kinds.contains(&kind))
+        Verdict::of(self.kinds.contains(kind))
     }
 
     fn station_verdict(&self, view: &Presentation) -> Verdict {
@@ -159,7 +159,7 @@ impl EventFilterNode {
         }
     }
 
-    fn position_verdict(&self, kind: EventKind, view: &Presentation) -> Verdict {
+    fn position_verdict(&self, kind: &EventKind, view: &Presentation) -> Verdict {
         let Some(want) = self.has_position else {
             return Verdict::Unjudged;
         };
@@ -211,9 +211,14 @@ fn flag_verdict(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AdsbMessage, DvFrame, DvFrameKind, DvMode, RttyText, rest::VoiceCall};
+    use crate::{
+        DvFrame, DvFrameKind, LatLon,
+        decode::test_kinds::{self, ProbeStation, ProbeText},
+        rest::VoiceCall,
+    };
 
     fn call() -> VoiceCall {
+        test_kinds::install();
         VoiceCall {
             id: 1,
             node: "dmr".to_owned(),
@@ -236,48 +241,49 @@ mod tests {
         }
     }
 
-    fn adsb(icao: &str, callsign: Option<&str>, position: bool) -> DecoderEvent {
-        DecoderEvent::Adsb(AdsbMessage {
-            icao: icao.to_owned(),
-            df: 17,
-            callsign: callsign.map(str::to_owned),
-            lat: position.then_some(50.4),
-            lon: position.then_some(6.6),
-            ..AdsbMessage::default()
-        })
+    fn station(id: &str, name: Option<&str>, position: bool) -> DecoderEvent {
+        test_kinds::install();
+        let at = position.then_some(LatLon {
+            lat: 50.4,
+            lon: 6.6,
+        });
+        ProbeStation::event(id, name, at)
     }
 
-    fn rtty() -> DecoderEvent {
-        DecoderEvent::Rtty(RttyText {
-            text: "CQ TEST".to_owned(),
-        })
+    fn text() -> DecoderEvent {
+        test_kinds::install();
+        ProbeText::event("CQ TEST")
     }
 
     fn voice_frame() -> DecoderEvent {
-        DecoderEvent::Dv(DvFrame {
+        DecoderEvent::of(&DvFrame {
             source: Some(2_621_001),
             destination: Some(505),
             encrypted: Some(false),
-            ..DvFrame::new(DvMode::Dmr, DvFrameKind::Voice)
+            ..DvFrame::new("DMR", DvFrameKind::Voice)
         })
+    }
+
+    fn of_call(call: &VoiceCall) -> DecoderEvent {
+        DecoderEvent::of(call)
     }
 
     #[test]
     fn an_empty_filter_passes_everything() {
         let filter = EventFilterNode::default();
-        assert!(filter.passes(&rtty()));
-        assert!(filter.passes(&DecoderEvent::Call(call())));
-        assert!(filter.passes(&adsb("3C6444", None, true)));
+        assert!(filter.passes(&text()));
+        assert!(filter.passes(&of_call(&call())));
+        assert!(filter.passes(&station("3C6444", None, true)));
     }
 
     #[test]
     fn naming_kinds_admits_only_those_kinds() {
         let filter = EventFilterNode {
-            kinds: vec![EventKind::Call],
+            kinds: vec![EventKind::CALL],
             ..EventFilterNode::default()
         };
-        assert!(filter.passes(&DecoderEvent::Call(call())));
-        assert!(!filter.passes(&rtty()));
+        assert!(filter.passes(&of_call(&call())));
+        assert!(!filter.passes(&text()));
         assert!(!filter.passes(&voice_frame()));
     }
 
@@ -287,14 +293,14 @@ mod tests {
             stations: vec!["3C6444".to_owned()],
             ..EventFilterNode::default()
         };
-        assert!(filter.passes(&adsb("3C6444", None, true)));
-        assert!(!filter.passes(&adsb("4CA2D4", None, true)));
+        assert!(filter.passes(&station("3C6444", None, true)));
+        assert!(!filter.passes(&station("4CA2D4", None, true)));
         assert!(
-            !filter.passes(&rtty()),
+            !filter.passes(&text()),
             "an event with no station cannot be one of the named ones"
         );
         assert!(
-            !filter.passes(&DecoderEvent::Call(call())),
+            !filter.passes(&of_call(&call())),
             "a call names its radio, which is not in the list"
         );
     }
@@ -305,7 +311,7 @@ mod tests {
             stations: vec!["3c6444".to_owned()],
             ..EventFilterNode::default()
         };
-        assert!(filter.passes(&adsb("3C6444", None, true)));
+        assert!(filter.passes(&station("3C6444", None, true)));
     }
 
     #[test]
@@ -314,8 +320,8 @@ mod tests {
             contains: Some("baw".to_owned()),
             ..EventFilterNode::default()
         };
-        assert!(filter.passes(&adsb("3C6444", Some("BAW890"), true)));
-        assert!(!filter.passes(&adsb("3C6444", Some("RYR9AB"), true)));
+        assert!(filter.passes(&station("3C6444", Some("BAW890"), true)));
+        assert!(!filter.passes(&station("3C6444", Some("RYR9AB"), true)));
     }
 
     #[test]
@@ -324,9 +330,9 @@ mod tests {
             has_position: Some(false),
             ..EventFilterNode::default()
         };
-        assert!(without.passes(&adsb("3C6444", None, false)));
-        assert!(!without.passes(&adsb("3C6444", None, true)));
-        assert!(without.passes(&rtty()));
+        assert!(without.passes(&station("3C6444", None, false)));
+        assert!(!without.passes(&station("3C6444", None, true)));
+        assert!(without.passes(&text()));
     }
 
     #[test]
@@ -335,9 +341,9 @@ mod tests {
             talkgroups: vec![505],
             ..EventFilterNode::default()
         };
-        assert!(filter.passes(&DecoderEvent::Call(call())));
+        assert!(filter.passes(&of_call(&call())));
         assert!(filter.passes(&voice_frame()));
-        assert!(!filter.passes(&DecoderEvent::Call(VoiceCall {
+        assert!(!filter.passes(&of_call(&VoiceCall {
             destination: Some(77),
             ..call()
         })));
@@ -349,8 +355,8 @@ mod tests {
             radios: vec![2_621_001],
             ..EventFilterNode::default()
         };
-        assert!(filter.passes(&DecoderEvent::Call(call())));
-        assert!(!filter.passes(&DecoderEvent::Call(VoiceCall {
+        assert!(filter.passes(&of_call(&call())));
+        assert!(!filter.passes(&of_call(&VoiceCall {
             source: Some(9),
             ..call()
         })));
@@ -362,8 +368,8 @@ mod tests {
             encrypted: Some(false),
             ..EventFilterNode::default()
         };
-        assert!(clear.passes(&DecoderEvent::Call(call())));
-        assert!(!clear.passes(&DecoderEvent::Call(VoiceCall {
+        assert!(clear.passes(&of_call(&call())));
+        assert!(!clear.passes(&of_call(&VoiceCall {
             encrypted: true,
             ..call()
         })));
@@ -372,8 +378,8 @@ mod tests {
             emergency: Some(true),
             ..EventFilterNode::default()
         };
-        assert!(!urgent.passes(&DecoderEvent::Call(call())));
-        assert!(urgent.passes(&DecoderEvent::Call(VoiceCall {
+        assert!(!urgent.passes(&of_call(&call())));
+        assert!(urgent.passes(&of_call(&VoiceCall {
             emergency: true,
             ..call()
         })));
@@ -385,8 +391,8 @@ mod tests {
             min_duration_ms: 1_500,
             ..EventFilterNode::default()
         };
-        assert!(filter.passes(&DecoderEvent::Call(call())));
-        assert!(!filter.passes(&DecoderEvent::Call(VoiceCall {
+        assert!(filter.passes(&of_call(&call())));
+        assert!(!filter.passes(&of_call(&VoiceCall {
             duration_ms: 400,
             ..call()
         })));
@@ -407,7 +413,7 @@ mod tests {
             ..EventFilterNode::default()
         };
         assert!(
-            filter.passes(&adsb("3C6444", None, true)),
+            filter.passes(&station("3C6444", None, true)),
             "a voice predicate must not silently drop unrelated kinds"
         );
     }
@@ -415,13 +421,13 @@ mod tests {
     #[test]
     fn every_predicate_has_to_agree() {
         let filter = EventFilterNode {
-            kinds: vec![EventKind::Call],
+            kinds: vec![EventKind::CALL],
             talkgroups: vec![505],
             min_duration_ms: 1_000,
             ..EventFilterNode::default()
         };
-        assert!(filter.passes(&DecoderEvent::Call(call())));
-        assert!(!filter.passes(&DecoderEvent::Call(VoiceCall {
+        assert!(filter.passes(&of_call(&call())));
+        assert!(!filter.passes(&of_call(&VoiceCall {
             duration_ms: 100,
             ..call()
         })));
@@ -433,9 +439,9 @@ mod tests {
             has_position: Some(true),
             ..EventFilterNode::default()
         };
-        assert!(fixed.passes(&adsb("3C6444", None, true)));
-        assert!(!fixed.passes(&adsb("3C6444", None, false)));
-        assert!(fixed.passes(&rtty()), "a teleprinter has no fix to judge");
+        assert!(fixed.passes(&station("3C6444", None, true)));
+        assert!(!fixed.passes(&station("3C6444", None, false)));
+        assert!(fixed.passes(&text()), "a teleprinter has no fix to judge");
     }
 
     #[test]
@@ -445,23 +451,23 @@ mod tests {
             contains: Some("test".to_owned()),
             ..EventFilterNode::default()
         };
-        assert!(!filter.passes(&rtty()));
-        assert!(filter.passes(&adsb("3C6444", Some("DLH123"), true)));
+        assert!(!filter.passes(&text()));
+        assert!(filter.passes(&station("3C6444", Some("DLH123"), true)));
     }
 
     #[test]
     fn drop_mode_needs_every_rule_to_match_before_it_drops() {
         let filter = EventFilterNode {
             mode: FilterMode::Drop,
-            kinds: vec![EventKind::Rtty],
+            kinds: vec![test_kinds::TEXT],
             contains: Some("nothing here".to_owned()),
             ..EventFilterNode::default()
         };
         assert!(
-            filter.passes(&rtty()),
+            filter.passes(&text()),
             "the text rule missed, so nothing is dropped"
         );
-        assert!(filter.passes(&adsb("3C6444", None, true)));
+        assert!(filter.passes(&station("3C6444", None, true)));
     }
 
     #[test]
@@ -471,13 +477,13 @@ mod tests {
             talkgroups: vec![505],
             ..EventFilterNode::default()
         };
-        assert!(!filter.passes(&DecoderEvent::Call(call())));
-        assert!(filter.passes(&DecoderEvent::Call(VoiceCall {
+        assert!(!filter.passes(&of_call(&call())));
+        assert!(filter.passes(&of_call(&VoiceCall {
             destination: Some(77),
             ..call()
         })));
         assert!(
-            filter.passes(&adsb("3C6444", None, true)),
+            filter.passes(&station("3C6444", None, true)),
             "an aircraft has no talkgroup"
         );
     }
@@ -488,8 +494,8 @@ mod tests {
             mode: FilterMode::Drop,
             ..EventFilterNode::default()
         };
-        assert!(filter.passes(&rtty()));
-        assert!(filter.passes(&DecoderEvent::Call(call())));
+        assert!(filter.passes(&text()));
+        assert!(filter.passes(&of_call(&call())));
     }
 
     #[test]
@@ -501,23 +507,28 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_kind_is_refused_by_name() {
-        let error = serde_json::from_str::<EventFilterNode>(r#"{"kinds":["teletext"]}"#)
-            .expect_err("unknown kind");
-        assert!(error.to_string().contains("teletext"), "{error}");
+    fn a_kind_no_decoder_offers_survives_by_name() {
+        let filter: EventFilterNode =
+            serde_json::from_str(r#"{"kinds":["teletext"]}"#).expect("kind kept");
+        assert_eq!(filter.kinds, [EventKind::named("teletext")]);
+        assert_eq!(
+            serde_json::to_value(&filter).expect("json")["kinds"],
+            serde_json::json!(["teletext"])
+        );
     }
 
     #[test]
-    fn a_position_rule_judges_radiosondes_too() {
+    fn a_position_rule_judges_a_station_that_lost_its_fix() {
         let fixed = EventFilterNode {
             has_position: Some(true),
             ..EventFilterNode::default()
         };
         let lost: DecoderEvent = serde_json::from_value(serde_json::json!({
-            "kind": "radiosonde",
-            "data": { "sonde": "rs41", "serial": "S1", "errors_corrected": 0 },
+            "kind": "probe_station",
+            "data": { "id": "S1" },
         }))
-        .expect("radiosonde");
+        .expect("station");
+        test_kinds::install();
         assert!(!fixed.passes(&lost));
     }
 
@@ -533,7 +544,7 @@ mod tests {
         );
         assert!(
             !EventFilterNode {
-                kinds: vec![EventKind::Call; MAX_FILTER_KINDS + 1],
+                kinds: vec![EventKind::CALL; MAX_FILTER_KINDS + 1],
                 ..EventFilterNode::default()
             }
             .valid()
@@ -556,10 +567,12 @@ mod tests {
 
     #[test]
     fn every_kind_can_be_ticked_at_once() {
-        assert_eq!(MAX_FILTER_KINDS, EventKind::ALL.len());
+        test_kinds::install();
+        let every = KindSet::all();
+        assert!(every.len() <= MAX_FILTER_KINDS);
         assert!(
             EventFilterNode {
-                kinds: EventKind::ALL.to_vec(),
+                kinds: every.iter().cloned().collect(),
                 ..EventFilterNode::default()
             }
             .valid()
@@ -590,29 +603,29 @@ mod tests {
 
     #[test]
     fn a_filter_narrows_the_kinds_it_can_pass() {
-        let offered: KindSet = [EventKind::Adsb, EventKind::Rtty, EventKind::Call]
+        let offered: KindSet = [test_kinds::STATION, test_kinds::TEXT, EventKind::CALL]
             .into_iter()
             .collect();
-        let only = |kinds: &[EventKind]| kinds.iter().copied().collect::<KindSet>();
-        assert_eq!(EventFilterNode::default().narrow(offered), offered);
+        let only = |kinds: &[EventKind]| kinds.iter().cloned().collect::<KindSet>();
+        assert_eq!(EventFilterNode::default().narrow(&offered), offered);
         let keep = EventFilterNode {
-            kinds: vec![EventKind::Adsb, EventKind::Ais],
+            kinds: vec![test_kinds::STATION, EventKind::named("probe_absent")],
             ..EventFilterNode::default()
         };
-        assert_eq!(keep.narrow(offered), only(&[EventKind::Adsb]));
+        assert_eq!(keep.narrow(&offered), only(&[test_kinds::STATION]));
         let drop = EventFilterNode {
             mode: FilterMode::Drop,
-            kinds: vec![EventKind::Rtty],
+            kinds: vec![test_kinds::TEXT],
             ..EventFilterNode::default()
         };
         assert_eq!(
-            drop.narrow(offered),
-            only(&[EventKind::Adsb, EventKind::Call])
+            drop.narrow(&offered),
+            only(&[test_kinds::STATION, EventKind::CALL])
         );
         let judged = EventFilterNode {
             stations: vec!["DL1ABC".to_owned()],
             ..drop
         };
-        assert_eq!(judged.narrow(offered), offered);
+        assert_eq!(judged.narrow(&offered), offered);
     }
 }

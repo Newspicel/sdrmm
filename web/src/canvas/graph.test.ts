@@ -52,8 +52,8 @@ const CATALOG: PatchCatalog = {
 
 const TYPES: ChannelDescriptor[] = [
   {
-    type_id: "nfm",
-    name: "NFM",
+    type_id: "voice",
+    name: "Voice",
     bandwidth_hz: 12_500,
     input_rate_hz: 48_000,
     has_audio: true,
@@ -62,12 +62,12 @@ const TYPES: ChannelDescriptor[] = [
     ports: channelPortsNamed("iq", "control", "baseband", "audio", "events"),
   },
   {
-    type_id: "adsb",
+    type_id: "plane",
     name: "ADS-B",
     bandwidth_hz: 2_000_000,
     input_rate_hz: 2_400_000,
     has_audio: false,
-    emits: ["adsb"],
+    emits: ["plane"],
     needs_position: true,
     ports: channelPortsNamed("iq", "control", "position", "baseband", "events"),
   },
@@ -93,12 +93,12 @@ function workspace(): PatchGraph {
     nodes: [
       node("dev", { kind: "device", data: {} }),
       node("scope", { kind: "scope" }),
-      node("nfm", { kind: "channel", data: { channel_type: "nfm" } }),
+      node("voice", { kind: "channel", data: { channel_type: "voice" } }),
       node("spk", { kind: "speaker" }),
     ],
     edges: [
       { from: { node: "dev", port: "iq" }, to: { node: "scope", port: "iq" } },
-      { from: { node: "dev", port: "iq" }, to: { node: "nfm", port: "iq" } },
+      { from: { node: "dev", port: "iq" }, to: { node: "voice", port: "iq" } },
     ],
   };
 }
@@ -195,7 +195,7 @@ describe("ports", () => {
   it("draws an unresolved channel with the ports the server serves for its type", () => {
     const graph = workspace();
     const nfm = graph.nodes[2];
-    const adsb = node("adsb", { kind: "channel", data: { channel_type: "adsb" } });
+    const adsb = node("plane", { kind: "channel", data: { channel_type: "plane" } });
     const atv = node("atv", { kind: "channel", data: { channel_type: "atv" } });
     expect(nfm && nodePorts(context, nfm).map((p) => p.name)).toEqual([
       "iq",
@@ -330,7 +330,7 @@ describe("node ids", () => {
 
 describe("editing", () => {
   it("removing a node takes its wires with it", () => {
-    const graph = removeNode(workspace(), "nfm");
+    const graph = removeNode(workspace(), "voice");
     expect(graph.nodes.map((n) => n.id)).toEqual(["dev", "scope", "spk"]);
     expect(graph.edges?.map(edgeKey)).toEqual(["dev.iq->scope.iq"]);
   });
@@ -350,7 +350,7 @@ describe("editing", () => {
       sameGraph(
         workspace(),
         addEdge(workspace(), {
-          from: { node: "nfm", port: "audio" },
+          from: { node: "voice", port: "audio" },
           to: { node: "spk", port: "audio" },
         }),
       ),
@@ -362,14 +362,14 @@ describe("the rack", () => {
   it("pins into the first free cell and unpins", () => {
     let rack = pin({ slots: [] }, "scope");
     expect(rack.slots).toEqual([{ node: "scope", x: 0, y: 0, w: 6, h: 4 }]);
-    rack = pin(rack, "nfm");
-    expect(rack.slots?.[1]).toEqual({ node: "nfm", x: 6, y: 0, w: 6, h: 4 });
+    rack = pin(rack, "voice");
+    expect(rack.slots?.[1]).toEqual({ node: "voice", x: 6, y: 0, w: 6, h: 4 });
     rack = pin(rack, "spk");
     expect(rack.slots?.[2]).toEqual({ node: "spk", x: 0, y: 4, w: 6, h: 4 });
 
-    expect(isPinned(rack, "nfm")).toBe(true);
-    rack = unpin(rack, "nfm");
-    expect(isPinned(rack, "nfm")).toBe(false);
+    expect(isPinned(rack, "voice")).toBe(true);
+    rack = unpin(rack, "voice");
+    expect(isPinned(rack, "voice")).toBe(false);
     expect(pin(rack, "scope")).toBe(rack);
   });
 
@@ -477,12 +477,14 @@ describe("the rack", () => {
   });
 
   it("drops slots whose node is gone and re-places ones the grid no longer holds", () => {
-    const rack = pin({ slots: [] }, "nfm");
-    expect(pruneRack(rack, removeNode(workspace(), "nfm")).slots).toEqual([]);
+    const rack = pin({ slots: [] }, "voice");
+    expect(pruneRack(rack, removeNode(workspace(), "voice")).slots).toEqual([]);
     expect(pruneRack(rack, workspace())).toBe(rack);
 
-    const stale = { slots: [{ node: "nfm", x: 12, y: 12, w: 12, h: 8 }] };
-    expect(pruneRack(stale, workspace()).slots).toEqual([{ node: "nfm", x: 0, y: 0, w: 6, h: 4 }]);
+    const stale = { slots: [{ node: "voice", x: 12, y: 12, w: 12, h: 8 }] };
+    expect(pruneRack(stale, workspace()).slots).toEqual([
+      { node: "voice", x: 0, y: 0, w: 6, h: 4 },
+    ]);
   });
 });
 

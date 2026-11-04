@@ -35,7 +35,7 @@ impl Engine {
         };
         loop {
             let built = descriptor_for(&settings.params)
-                .and_then(|d| validate_channel(d, &settings))
+                .and_then(|d| validate_channel(&d, &settings))
                 .and_then(|()| {
                     ChannelHost::build(
                         built_rate,
@@ -124,7 +124,7 @@ impl Engine {
         validate_streams(caps, settings)?;
         for channel in channels {
             let descriptor = descriptor_for(&channel.params)?;
-            validate_channel(descriptor, channel)?;
+            validate_channel(&descriptor, channel)?;
         }
         Ok(())
     }
@@ -166,7 +166,7 @@ impl Engine {
         let mut media = Some(created);
 
         let staged = loop {
-            let built = validate_channel(descriptor, &settings).and_then(|()| {
+            let built = validate_channel(&descriptor, &settings).and_then(|()| {
                 ChannelHost::build(
                     device_rate,
                     center_hz,
@@ -198,6 +198,7 @@ impl Engine {
                 continue;
             }
             state.channels.push(ChannelInfo {
+                band: None,
                 id,
                 stream,
                 node: node.map(str::to_owned),
@@ -277,7 +278,7 @@ impl Engine {
         let mut orphaned: Vec<ChannelAudioRecording> = Vec::new();
         let mut orphaned_baseband = BasebandSinks::default();
         let staged = loop {
-            if let Err(e) = validate_channel(descriptor, &settings) {
+            if let Err(e) = validate_channel(&descriptor, &settings) {
                 break Err(e);
             }
             let host = if need_host {

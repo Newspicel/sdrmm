@@ -1,18 +1,20 @@
 use std::{ops::Range, sync::LazyLock};
 
+use crate::airtime::AIRTIME_REPORT_MS;
+use crate::airtime::WifiBand;
+use crate::airtime::WifiChannelLoad;
+use crate::airtime::WifiOccupancyParams;
+use crate::airtime::WifiOccupancyReport;
 use num_complex::Complex;
 use sdrmm_dsp::{
     airtime::{PowerFrames, QuietFloor, band_degrees},
     fastmath::fast_power_db,
 };
 use sdrmm_modem::wifi::channel::{self as plan, Channel, WifiBand as PlanBand};
-use sdrmm_wire::{
-    AIRTIME_REPORT_MS, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily, EventKind, WifiBand, WifiChannelLoad, WifiOccupancyParams, WifiOccupancyReport,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
     airtime::{
         self, FLOOR_RISE_DB, REPORT_FRAMES, WARMUP_FRAMES, bins_between, fft_len, gated, threshold,
         usable_half_hz,
@@ -28,21 +30,14 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2.0 * usable_half_hz(WifiOccupancyParams::default().span),
     input_rate_hz: WifiOccupancyParams::default().span.sample_rate_hz(),
     has_audio: false,
-    emits: vec![EventKind::WifiOccupancy],
+    emits: vec![EventKind::named("wifi_occupancy")],
     ..ChannelDescriptor::default()
 });
 
 fn params(settings: &ChannelSettings) -> Result<WifiOccupancyParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::WifiOccupancy(params) => {
-            airtime::check_margin(params.margin_db)?;
-            Ok(*params)
-        }
-        other => Err(ChannelError::InvalidSettings(format!(
-            "Wi-Fi occupancy channel got {} params",
-            other.type_id()
-        ))),
-    }
+    let params: WifiOccupancyParams = crate::settings_of(settings)?;
+    airtime::check_margin(params.margin_db)?;
+    Ok(params)
 }
 
 pub(crate) fn input_rate(params: &WifiOccupancyParams) -> f64 {
@@ -151,11 +146,10 @@ impl WifiOccupancyChannel {
     }
 }
 
-impl ChannelRx for WifiOccupancyChannel {
+impl NativeChannel for WifiOccupancyChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
         check_rate(ctx, &DESCRIPTOR, input_rate(&params))?;
@@ -168,7 +162,9 @@ impl ChannelRx for WifiOccupancyChannel {
             measured: 0,
         })
     }
+}
 
+impl ChannelRx for WifiOccupancyChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params.span != self.params.span {
@@ -214,12 +210,11 @@ impl ChannelRx for WifiOccupancyChannel {
                     .for_each(|lane| lane.settle(params.margin_db));
             }
             if *frame % REPORT_FRAMES == 0 {
-                out.events
-                    .push(DecoderEvent::WifiOccupancy(WifiOccupancyReport {
-                        window_ms: AIRTIME_REPORT_MS,
-                        measured: (*measured as f64 / REPORT_FRAMES as f64) as f32,
-                        channels: lanes.iter_mut().map(Lane::load).collect(),
-                    }));
+                out.events.push(DecoderEvent::of(&WifiOccupancyReport {
+                    window_ms: AIRTIME_REPORT_MS,
+                    measured: (*measured as f64 / REPORT_FRAMES as f64) as f32,
+                    channels: lanes.iter_mut().map(Lane::load).collect(),
+                }));
                 lanes
                     .iter_mut()
                     .for_each(|lane| lane.settle(params.margin_db));

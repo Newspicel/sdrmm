@@ -1,8 +1,8 @@
 use jiff::{SignedDuration, Timestamp};
 use sdrmm_wire::{
     API_PROTOCOL, OfferState, PairRequest, PairResponse, PairUri, PairingOffer, PairingOfferStatus,
-    PhoneEndpoint, PhoneToken,
-    phone::{PAIR_OFFER_TTL_SECS, hex, key_check, valid_phone_name},
+    PhoneEndpoint, PhoneToken, phone::PAIR_OFFER_TTL_SECS, phone::hex, phone::key_check,
+    phone::valid_phone_name,
 };
 
 use super::{Phones, token};

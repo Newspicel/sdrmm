@@ -1,9 +1,11 @@
+use crate::ism::IsmCoding;
+use crate::ism::IsmIntegrity;
+use crate::ism::IsmMessage;
+use crate::ism::IsmModulation;
+use crate::ism::IsmParams;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
-use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecoderEvent, IsmCoding, IsmIntegrity, IsmMessage,
-    IsmModulation, IsmParams,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::*;
 use crate::synth;
@@ -40,8 +42,8 @@ fn cu8(bytes: &[u8], decimation: usize) -> Vec<Complex<f32>> {
 
 fn receiver(unknown: bool) -> IsmChannel {
     let settings = ChannelSettings {
-        params: ChannelParams::Ism(IsmParams { unknown }),
-        ..ChannelSettings::default_for("ism").unwrap()
+        params: ChannelParams::new("ism", &IsmParams { unknown }).expect("ism settings"),
+        ..crate::default_settings("ism").unwrap()
     };
     IsmChannel::new(ChannelCtx { input_rate: RATE }, settings).unwrap()
 }
@@ -53,10 +55,7 @@ fn feed(rx: &mut IsmChannel, iq: &[Complex<f32>]) -> Vec<IsmMessage> {
     }
     out.events
         .into_iter()
-        .filter_map(|event| match event {
-            DecoderEvent::Ism(message) => Some(message),
-            _ => None,
-        })
+        .filter_map(|event| event.read::<IsmMessage>())
         .collect()
 }
 
@@ -248,7 +247,7 @@ fn remotes_and_door_sensors_report_their_codes() {
 fn an_unknown_remote_is_shown_only_when_asked() {
     let iq = cu8(fixture!("ev1527_remote_433m92_250k"), 1);
     let unknown = only(fixture!("ev1527_remote_433m92_250k"));
-    assert_eq!(unknown.model, sdrmm_wire::UNKNOWN_MODEL);
+    assert_eq!(unknown.model, crate::ism::UNKNOWN_MODEL);
     assert_eq!((unknown.bits, unknown.coding), (25, IsmCoding::Pwm));
     assert!(unknown.short_us.is_some_and(|us| (330..410).contains(&us)));
     let mut quiet = receiver(false);
@@ -298,8 +297,8 @@ fn repeats_within_two_seconds_are_reported_once() {
 
 #[test]
 fn foreign_params_are_refused() {
-    let mut settings = ChannelSettings::default_for("ism").unwrap();
-    settings.params = ChannelSettings::default_for("eot").unwrap().params;
+    let mut settings = crate::default_settings("ism").unwrap();
+    settings.params = crate::default_settings("eot").unwrap().params;
     assert!(IsmChannel::new(ChannelCtx { input_rate: RATE }, settings.clone()).is_err());
     let mut rx = receiver(true);
     assert!(rx.apply(settings).is_err());

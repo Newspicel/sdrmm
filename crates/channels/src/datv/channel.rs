@@ -1,5 +1,16 @@
 use std::sync::LazyLock;
 
+use crate::broadcast_media::BroadcastService;
+use crate::broadcast_media::BroadcastServiceKind;
+use crate::broadcast_media::BroadcastSystem;
+use crate::broadcast_media::{BroadcastStatus, publish_status};
+use crate::datv::DatvParams;
+use crate::datv::DatvRollOff;
+use crate::datv::DatvStandard;
+use crate::datv::MAX_DATV_SYMBOL_RATE;
+use crate::datv::MAX_SUPERFRAME_CODE;
+use crate::datv::MIN_DATV_SYMBOL_RATE;
+use crate::datv::SuperframeStatus;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, FracResampler, design_lowpass, flat_bandwidth_hz};
 use sdrmm_modem::{
@@ -8,10 +19,8 @@ use sdrmm_modem::{
     pulse::{self, Norm},
 };
 use sdrmm_wire::{
-    BroadcastService, BroadcastServiceKind, BroadcastStatus, BroadcastSystem, ChannelDescriptor,
-    ChannelParams, ChannelSettings, DatvParams, DatvRollOff, DatvStandard, DecoderEvent,
-    DecoderFamily, EventKind, MAX_DATV_SYMBOL_RATE, MAX_SUPERFRAME_CODE, MIN_DATV_SYMBOL_RATE,
-    SuperframeStatus,
+    ChannelDescriptor, ChannelSettings, ClickProfile, DecoderEvent, DecoderFamily, EventContract,
+    EventKind,
 };
 
 use super::{
@@ -26,7 +35,7 @@ use super::{
     ts::{PesUnit, StreamKind as ElementaryKind, TsDemux},
 };
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
     broadcast_media::{BroadcastMedia, Kind as MediaKind},
     check_rate,
 };
@@ -65,34 +74,34 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: input_rate_hz(&DatvParams::default()),
     has_audio: true,
     has_video: true,
-    emits: vec![EventKind::BroadcastData, EventKind::Broadcast],
+    emits: vec![EventKind::BROADCAST_DATA, BroadcastStatus::KIND],
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
 fn params(settings: &ChannelSettings) -> Result<DatvParams, ChannelError> {
-    match settings.params {
-        ChannelParams::Datv(p) => {
-            if p.superframe_reference > MAX_SUPERFRAME_CODE
-                || p.superframe_payload > MAX_SUPERFRAME_CODE
-            {
-                Err(ChannelError::InvalidSettings(format!(
-                    "DATV superframe codes must be at most {MAX_SUPERFRAME_CODE}"
-                )))
-            } else if p.symbol_rate.is_finite()
-                && (MIN_DATV_SYMBOL_RATE..=MAX_DATV_SYMBOL_RATE).contains(&p.symbol_rate)
-            {
-                Ok(p)
-            } else {
-                Err(ChannelError::InvalidSettings(format!(
-                    "DATV symbol rate must be in [{MIN_DATV_SYMBOL_RATE}, {MAX_DATV_SYMBOL_RATE}] baud, got {}",
-                    p.symbol_rate
-                )))
-            }
-        }
-        ref other => Err(ChannelError::InvalidSettings(format!(
-            "datv channel got {} params",
-            other.type_id()
-        ))),
+    checked(
+        settings
+            .params
+            .parse()
+            .map_err(ChannelError::InvalidSettings)?,
+    )
+}
+
+fn checked(p: DatvParams) -> Result<DatvParams, ChannelError> {
+    if p.superframe_reference > MAX_SUPERFRAME_CODE || p.superframe_payload > MAX_SUPERFRAME_CODE {
+        Err(ChannelError::InvalidSettings(format!(
+            "DATV superframe codes must be at most {MAX_SUPERFRAME_CODE}"
+        )))
+    } else if p.symbol_rate.is_finite()
+        && (MIN_DATV_SYMBOL_RATE..=MAX_DATV_SYMBOL_RATE).contains(&p.symbol_rate)
+    {
+        Ok(p)
+    } else {
+        Err(ChannelError::InvalidSettings(format!(
+            "DATV symbol rate must be in [{MIN_DATV_SYMBOL_RATE}, {MAX_DATV_SYMBOL_RATE}] baud, got {}",
+            p.symbol_rate
+        )))
     }
 }
 
@@ -102,13 +111,7 @@ pub fn occupied_band(p: &DatvParams) -> (f64, f64) {
 }
 
 pub fn channel_filter(p: &DatvParams) -> Result<ChannelFilter, ChannelError> {
-    let p = params(&ChannelSettings {
-        frequency_hz: 0.0,
-        squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Datv(*p),
-        blanker: Default::default(),
-        if_filter: Default::default(),
-    })?;
+    let p = checked(*p)?;
     let (_, half) = occupied_band(&p);
     let rate = input_rate_hz(&p);
     let pass = half.min(flat_bandwidth_hz(rate) / 2.0);
@@ -396,64 +399,68 @@ impl DatvChannel {
         self.last = acquired;
         let metrics = self.decoder.metrics();
         let program = self.demux.program();
-        out.broadcast = Some(BroadcastStatus {
-            system: self.system(),
-            audio_frames_ok: self.media.audio_frames,
-            audio_frames_bad: self.media.audio_errors,
-            audio_error: self.media.audio_error.clone(),
-            video_frames_ok: self.media.video_frames,
-            video_frames_bad: self.media.video_errors,
-            video_error: self.media.video_error.clone(),
-            locked: match self.params.standard {
-                DatvStandard::DvbS => acquired.locked,
-                DatvStandard::DvbS2 => acquired.locked || self.second.locked(),
-            },
-            snr_db: acquired.snr_db,
-            frequency_error_hz: self.frequency_error_hz(acquired),
-            symbol_rate: Some(self.params.symbol_rate),
-            service_id: program.map(|program| u32::from(program.number)),
-            label: program.and_then(|program| program.name.clone()),
-            ensemble_label: program.and_then(|program| program.provider.clone()),
-            code_rate: self.coding(),
-            bit_error_rate: (self.params.standard == DatvStandard::DvbS)
-                .then(|| metrics.byte_error_rate())
-                .flatten(),
-            frames_ok: self.frames().0,
-            frames_bad: self
-                .frames()
-                .1
-                .saturating_add(self.demux.dropped)
-                .saturating_add(self.demux.discontinuities),
-            data_error: self
-                .second
-                .superframe_format()
-                .filter(|format| *format > 7)
-                .map(|format| format!("Unsupported superframe format {format}"))
-                .or_else(|| {
-                    (self.demux.scrambled > 0).then(|| "Selected programme is scrambled".to_owned())
+        publish_status(
+            out,
+            BroadcastStatus {
+                system: self.system(),
+                audio_frames_ok: self.media.audio_frames,
+                audio_frames_bad: self.media.audio_errors,
+                audio_error: self.media.audio_error.clone(),
+                video_frames_ok: self.media.video_frames,
+                video_frames_bad: self.media.video_errors,
+                video_error: self.media.video_error.clone(),
+                locked: match self.params.standard {
+                    DatvStandard::DvbS => acquired.locked,
+                    DatvStandard::DvbS2 => acquired.locked || self.second.locked(),
+                },
+                snr_db: acquired.snr_db,
+                frequency_error_hz: self.frequency_error_hz(acquired),
+                symbol_rate: Some(self.params.symbol_rate),
+                service_id: program.map(|program| u32::from(program.number)),
+                label: program.and_then(|program| program.name.clone()),
+                ensemble_label: program.and_then(|program| program.provider.clone()),
+                code_rate: self.coding(),
+                bit_error_rate: (self.params.standard == DatvStandard::DvbS)
+                    .then(|| metrics.byte_error_rate())
+                    .flatten(),
+                frames_ok: self.frames().0,
+                frames_bad: self
+                    .frames()
+                    .1
+                    .saturating_add(self.demux.dropped)
+                    .saturating_add(self.demux.discontinuities),
+                data_error: self
+                    .second
+                    .superframe_format()
+                    .filter(|format| *format > 7)
+                    .map(|format| format!("Unsupported superframe format {format}"))
+                    .or_else(|| {
+                        (self.demux.scrambled > 0)
+                            .then(|| "Selected programme is scrambled".to_owned())
+                    }),
+                text: self.text(),
+                services: self.services(),
+                superframe: self.second.superframe_identity().and_then(|identity| {
+                    Some(SuperframeStatus {
+                        format: identity.format?,
+                        sosf: identity.sosf,
+                        pilot: identity.pilot,
+                        trailer: identity.trailer,
+                        reference: identity.reference,
+                        payload: identity.payload,
+                    })
                 }),
-            text: self.text(),
-            services: self.services(),
-            superframe: self.second.superframe_identity().and_then(|identity| {
-                Some(SuperframeStatus {
-                    format: identity.format?,
-                    sosf: identity.sosf,
-                    pilot: identity.pilot,
-                    trailer: identity.trailer,
-                    reference: identity.reference,
-                    payload: identity.payload,
-                })
-            }),
-            ..BroadcastStatus::default()
-        });
+                ..BroadcastStatus::default()
+            },
+            "program",
+        );
     }
 }
 
-impl ChannelRx for DatvChannel {
+impl NativeChannel for DatvChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
         let rate = input_rate_hz(&params);
@@ -488,7 +495,9 @@ impl ChannelRx for DatvChannel {
             .configure_superframes(superframe_settings(&params));
         Ok(channel)
     }
+}
 
+impl ChannelRx for DatvChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let wanted = params(&settings)?;
         let rebuild = wanted.symbol_rate != self.params.symbol_rate
@@ -543,7 +552,7 @@ impl ChannelRx for DatvChannel {
                 self.packets.extend_from_slice(&second.packets);
                 for (index, pdu) in second.pdus.iter().enumerate() {
                     out.events
-                        .push(DecoderEvent::BroadcastData(sdrmm_wire::BroadcastData {
+                        .push(DecoderEvent::of(&sdrmm_wire::BroadcastData {
                             service_id: self.params.input_stream.map(u32::from),
                             protocol: Some(pdu.protocol),
                             label: pdu.label.clone(),
@@ -580,13 +589,15 @@ impl ChannelRx for DatvChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::broadcast_media::latest_status;
     use crate::{synth, testutil::realtime_budget};
+    use sdrmm_wire::ChannelParams;
 
     fn settings_of(params: DatvParams) -> ChannelSettings {
         ChannelSettings {
             frequency_hz: 0.0,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Datv(params),
+            params: ChannelParams::new("datv", &params).expect("datv settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         }
@@ -615,7 +626,7 @@ mod tests {
         for block in iq.chunks(16_384) {
             out.reset();
             channel.process(block, &mut out);
-            statuses.extend(out.broadcast.take());
+            statuses.extend(latest_status(&out));
         }
         statuses
     }

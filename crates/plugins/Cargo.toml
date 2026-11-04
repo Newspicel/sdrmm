@@ -1,0 +1,29 @@
+[package]
+name = "sdrmm-plugins"
+description = "Loads WASM decoder plugins into the decoder registry"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+sdrmm-wire.workspace = true
+sdrmm-dsp.workspace = true
+sdrmm-channels.workspace = true
+num-complex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+notify.workspace = true
+wasmtime.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+wasmtime = { workspace = true, features = ["wat"] }

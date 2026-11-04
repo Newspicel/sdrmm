@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 
+use crate::eot::EotStatus;
 use num_complex::Complex;
-use sdrmm_wire::EotStatus;
 
 use super::{fm_modulate, silence};
 use crate::eot::{

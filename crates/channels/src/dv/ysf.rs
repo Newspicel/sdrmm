@@ -1,18 +1,24 @@
+use crate::registry::Native;
+use sdrmm_wire::{KindSpec, SettingField};
 use std::sync::LazyLock;
 
+use crate::dv::YsfParams;
 use num_complex::Complex;
-use sdrmm_dsp::{CyclicCode, Viterbi5, crc16_msb};
+use sdrmm_dsp::{CyclicCode, Viterbi5, crc16_msb, word_msb};
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
-    DvFrame, DvFrameKind, DvMode, EventKind, YsfParams,
+    CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, DecoderEvent, DecoderFamily,
+    DvFrame, DvFrameKind, EventKind,
 };
 
 use super::{
     INPUT_RATE_HZ, SymbolWindow, c4fm_demod, c4fm_params, tap_c4fm,
     vocoder::{AMBE_3600_INTERLEAVE, MbeDecoder, half_rate_code_vectors},
 };
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 pub(crate) const BAUD: f64 = 4_800.0;
 pub(crate) const DEVIATION_HZ: f64 = 1_944.0;
@@ -55,8 +61,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    emits: vec![EventKind::Dv],
+    emits: vec![EventKind::DV],
     calls: Some(CallGate::Frames),
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
@@ -66,14 +73,15 @@ pub struct YsfChannel {
     decoder: Decoder,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&YsfParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Ysf(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "ysf channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn dv_frame(kind: DvFrameKind) -> DvFrame {
+    DvFrame::new("YSF", kind)
+}
+
+fn params(settings: &ChannelSettings) -> Result<YsfParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -84,11 +92,10 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     super::channel_filter(BANDWIDTH_HZ)
 }
 
-impl ChannelRx for YsfChannel {
+impl NativeChannel for YsfChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         params(&settings)?;
@@ -98,7 +105,9 @@ impl ChannelRx for YsfChannel {
             decoder: Decoder::new(),
         })
     }
+}
 
+impl ChannelRx for YsfChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings)?;
         Ok(())
@@ -196,7 +205,7 @@ impl Decoder {
                         || self.callsigns != self.reported_callsigns
                     {
                         self.callsigns.apply(&mut info.frame);
-                        out.events.push(DecoderEvent::Dv(info.frame.clone()));
+                        out.events.push(DecoderEvent::of(&info.frame.clone()));
                         self.reported_callsigns = self.callsigns.clone();
                     }
                     self.last_kind = Some(info.frame.kind);
@@ -252,7 +261,7 @@ impl Decoder {
             2 => DvFrameKind::Terminator,
             _ => DvFrameKind::Voice,
         };
-        let mut frame = DvFrame::new(DvMode::Ysf, kind);
+        let mut frame = dv_frame(kind);
         frame.errors_corrected = errors;
         frame.group_call = Some(fich[0] >> 2 & 0x03 != 0x03);
         let data_mode = fich[2] & 0x03;
@@ -489,9 +498,7 @@ fn pack<const N: usize>(bits: &[bool]) -> Option<[u8; N]> {
         return None;
     }
     Some(std::array::from_fn(|byte| {
-        bits[byte * 8..byte * 8 + 8]
-            .iter()
-            .fold(0u8, |value, &bit| value << 1 | u8::from(bit))
+        word_msb(&bits[byte * 8..byte * 8 + 8]) as u8
     }))
 }
 
@@ -518,6 +525,26 @@ fn data_mode_name(dt: u8) -> &'static str {
     }
 }
 
+fn ysf_signatures() -> Vec<sdrmm_wire::SignalSignature> {
+    super::mode_signatures("ysf", super::AMATEUR_VU)
+}
+
+pub(crate) fn ysf_decoder() -> Native<YsfParams> {
+    Native::new::<YsfChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .signatures(ysf_signatures)
+        .form(ysf_form)
+        .kinds(ysf_kinds)
+}
+
+pub(crate) fn ysf_form() -> Vec<SettingField> {
+    Vec::new()
+}
+
+fn ysf_kinds() -> Vec<KindSpec> {
+    vec![]
+}
+
 #[cfg(test)]
 mod tests {
     use blip25_vocoder::fullrate;
@@ -531,13 +558,14 @@ mod tests {
         synth::dv::ysf as tx,
         testutil::settings,
     };
+    use sdrmm_wire::ChannelParams;
 
     fn channel() -> YsfChannel {
         YsfChannel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Ysf(YsfParams::default())),
+            settings(ChannelParams::new("ysf", &YsfParams::default()).expect("ysf settings")),
         )
         .expect("ysf channel")
     }
@@ -549,7 +577,7 @@ mod tests {
         let frames = decode(&mut channel(), &iq);
 
         let header = frames.first().expect("a decoded frame");
-        assert_eq!(header.mode, DvMode::Ysf);
+        assert_eq!(header.mode, "YSF");
         assert_eq!(header.kind, DvFrameKind::Header);
         assert_eq!(header.opcode.as_deref(), Some("V/D mode 2"));
         assert_eq!(header.destination, Some(u32::from(fich.dg_id)));

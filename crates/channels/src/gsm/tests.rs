@@ -1,7 +1,12 @@
+use crate::NativeChannel;
+use crate::gsm::GsmBand;
+use crate::gsm::GsmFrame;
+use crate::gsm::GsmLogicalChannel;
+use crate::gsm::GsmMessage;
+use crate::gsm::GsmParams;
+use crate::gsm::GsmSi;
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelParams, DecoderEvent, GsmBand, GsmFrame, GsmLogicalChannel, GsmMessage, GsmParams, GsmSi,
-};
+use sdrmm_wire::{ChannelParams, DecoderEvent};
 
 use super::{DESCRIPTOR, GsmChannel, burst::INPUT_RATE_HZ};
 use crate::{
@@ -28,7 +33,7 @@ const CIPHERING: &str = "03200d0635112b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b";
 const SI5: &str = "0001030349061d9f6d1810800000000000000000000000";
 
 fn channel(params: GsmParams) -> GsmChannel {
-    let mut settings = settings(ChannelParams::Gsm(params));
+    let mut settings = settings(ChannelParams::of(&params).expect("gsm settings"));
     settings.frequency_hz = ARFCN_725_HZ;
     GsmChannel::new(
         ChannelCtx {
@@ -42,10 +47,7 @@ fn channel(params: GsmParams) -> GsmChannel {
 fn frames(events: &[DecoderEvent]) -> Vec<GsmFrame> {
     events
         .iter()
-        .filter_map(|event| match event {
-            DecoderEvent::Gsm(frame) => Some(frame.clone()),
-            _ => None,
-        })
+        .filter_map(|event| event.read::<GsmFrame>())
         .collect()
 }
 

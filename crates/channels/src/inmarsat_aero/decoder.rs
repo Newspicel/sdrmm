@@ -1,4 +1,5 @@
 use num_complex::Complex;
+use sdrmm_dsp::design_lowpass_blackman_harris;
 use serde_json::Value;
 
 use super::{
@@ -9,7 +10,7 @@ use super::{
     msk::CoherentMsk,
     oqpsk::{self, HrFramer, OqpskDemod},
     su::{self, AeroUserData},
-    taps::{Fir, lowpass_taps},
+    taps::Fir,
 };
 
 pub(crate) const INPUT_RATE: f64 = 48_000.0;
@@ -162,7 +163,7 @@ pub(super) struct AeroChannelDecoder {
 
 pub(super) fn front_filter() -> Fir {
     Fir::new(
-        lowpass_taps(PASSBAND_HZ / INPUT_RATE, FRONT_TAPS),
+        design_lowpass_blackman_harris(FRONT_TAPS, PASSBAND_HZ / INPUT_RATE),
         DECIMATION,
     )
 }

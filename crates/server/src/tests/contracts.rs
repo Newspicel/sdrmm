@@ -21,9 +21,9 @@ const WALKERS: [&str; 10] = [
 ];
 
 const KIND_MATCHES: [&str; 8] = [
+    "calls/bindings.rs",
     "calls/tracker.rs",
     "df_fusion/worker.rs",
-    "event_output/beast.rs",
     "event_output/tunnel.rs",
     "fusion_routes.rs",
     "monitor.rs",
@@ -130,13 +130,28 @@ fn no_server_code_walks_the_graph_for_meaning() {
     assert!(offenders.is_empty(), "{offenders:#?}");
 }
 
+const KIND_NAMES: [&str; 5] = [
+    "DecoderEvent::of(",
+    "DecoderEvent::tagged(",
+    ".read::<",
+    ".is::<",
+    "EventKind::named(",
+];
+
+fn names_a_kind(code: &str) -> bool {
+    KIND_NAMES.iter().any(|naming| code.contains(naming))
+        || code
+            .match_indices("EventKind::")
+            .any(|(at, path)| code[at + path.len()..].starts_with(|c: char| c.is_ascii_uppercase()))
+}
+
 #[test]
 fn only_typed_consumers_and_producers_name_an_event_kind() {
     let sources = production_sources();
     let naming = |name: &str| {
         sources
             .iter()
-            .any(|(held, code)| held == name && code.contains("DecoderEvent::"))
+            .any(|(held, code)| held == name && names_a_kind(code))
     };
     let offenders: Vec<&str> = sources
         .iter()

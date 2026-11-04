@@ -1,0 +1,1077 @@
+[
+  {
+    "id": "fm-radio",
+    "name": "FM radio",
+    "description": "Wideband FM broadcast with RDS station text.",
+    "explainer": "The wide humps across the display are FM stations, each about 200 kHz across. The channel is tuned to one of them; RDS decodes the station name and radio text from a subcarrier you cannot hear. Drag the channel marker or edit its offset to move between stations.",
+    "center_hz": 98000000.0,
+    "sample_rate": 2400000.0,
+    "channels": [
+      {
+        "frequency_hz": 98000000.0,
+        "params": {
+          "type": "wfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "airband",
+    "name": "Airband",
+    "description": "AM aircraft voice: tower, approach and ground.",
+    "explainer": "Civil aviation voice is AM between 118 and 137 MHz, 25 kHz apart. Transmissions are short and sporadic: leave the squelch on and wait. The 2.4 MHz window covers roughly 117–119.3 MHz, so tower, ground and approach are usually all reachable by moving the channel offset alone. 121.5 MHz is the emergency frequency and is normally silent.",
+    "center_hz": 118100000.0,
+    "sample_rate": 2400000.0,
+    "channels": [
+      {
+        "frequency_hz": 118100000.0,
+        "params": {
+          "type": "am",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "adsb",
+    "name": "Aircraft (ADS-B)",
+    "description": "1090 MHz aircraft positions on the map.",
+    "explainer": "Aircraft broadcast their identity, altitude, speed and position on 1090 MHz. Reception is line-of-sight, so range depends on antenna height far more than on gain.",
+    "center_hz": 1090000000.0,
+    "sample_rate": 2400000.0,
+    "channels": [
+      {
+        "frequency_hz": 1090000000.0,
+        "params": {
+          "type": "adsb",
+          "settings": {}
+        },
+        "sinks": [
+          "map",
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "acars",
+    "name": "Aircraft data (ACARS)",
+    "description": "Airline datalink text on the VHF ACARS channels.",
+    "explainer": "ACARS carries short text between aircraft and their airline: position reports, weather, link tests, gate changes and maintenance messages. The allocation is regional, so five channels are decoded at once: 131.550 MHz is the worldwide primary, 131.725 MHz serves Europe and 131.425 MHz the Asia-Pacific region. Traffic is bursty: near a busy airport expect a message every few seconds, elsewhere a handful per hour.",
+    "center_hz": 131637500.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 131425000.0,
+        "params": {
+          "type": "acars",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 131525000.0,
+        "params": {
+          "type": "acars",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 131550000.0,
+        "params": {
+          "type": "acars",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 131725000.0,
+        "params": {
+          "type": "acars",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 131850000.0,
+        "params": {
+          "type": "acars",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ais",
+    "name": "Ships (AIS)",
+    "description": "Marine AIS positions on the map.",
+    "explainer": "Ships broadcast position and identity on two VHF channels, 161.975 and 162.025 MHz. Both channels are decoded at once. Coverage is line-of-sight over water, which is usually far better than over land.",
+    "center_hz": 162000000.0,
+    "sample_rate": 2400000.0,
+    "channels": [
+      {
+        "frequency_hz": 161975000.0,
+        "params": {
+          "type": "ais",
+          "settings": {}
+        },
+        "sinks": [
+          "map",
+          "log",
+          "readout"
+        ]
+      },
+      {
+        "frequency_hz": 162025000.0,
+        "params": {
+          "type": "ais",
+          "settings": {
+            "ais_channel": "b"
+          }
+        },
+        "sinks": [
+          "map",
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "aprs",
+    "name": "APRS",
+    "description": "Amateur position and message packets (144.800 MHz).",
+    "explainer": "APRS is AX.25 packet radio at 1200 baud AFSK. Each burst is a short chirp; stations report position, weather or messages. 144.800 MHz is the European calling frequency: North America uses 144.390 MHz.",
+    "center_hz": 144800000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 144800000.0,
+        "params": {
+          "type": "aprs",
+          "settings": {}
+        },
+        "sinks": [
+          "map",
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "pagers",
+    "name": "Pagers",
+    "description": "POCSAG, FLEX and ERMES pager messages.",
+    "explainer": "Pager traffic still carries hospital, industrial and emergency dispatch messages. The three decoders cover POCSAG at every standard baud rate, all four FLEX modes and European ERMES. Frequencies are regional; check your national allocation before tuning.",
+    "center_hz": 466075000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 466075000.0,
+        "params": {
+          "type": "pocsag",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 466075000.0,
+        "params": {
+          "type": "flex",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 466075000.0,
+        "params": {
+          "type": "ermes",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "railroad-eot",
+    "name": "Railroad EOT",
+    "description": "End-of-Train brake pressure, motion and marker light.",
+    "explainer": "North American freight trains carry an End-of-Train unit that reports rear brake pipe pressure, motion and battery on 457.9375 MHz. The locomotive answers and sends emergency commands on 452.9375 MHz; retune the channel there to log them.",
+    "center_hz": 457700000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 457937500.0,
+        "params": {
+          "type": "eot",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "weather-radio",
+    "name": "NOAA Weather Radio",
+    "description": "Forecast voice plus the SAME alert headers that drive it.",
+    "explainer": "The seven NWR channels between 162.400 and 162.550 MHz carry continuous forecast voice. An alert is announced by a SAME header burst sent three times before the voice and closed by an end-of-message burst after it. The speaker plays the voice; the SAME node logs the event code, the counties it covers and how long it stays valid. Retune both channels to whichever of the seven your transmitter uses.",
+    "center_hz": 162475000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 162550000.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker"
+        ]
+      },
+      {
+        "frequency_hz": 162550000.0,
+        "params": {
+          "type": "same",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "distress-beacons",
+    "name": "406 MHz beacons",
+    "description": "EPIRB, ELT and PLB identity and position.",
+    "explainer": "Distress beacons send a half-second burst every 50 seconds between 406.0 and 406.1 MHz. The channel covers 406.024 to 406.044 MHz, where most beacons sit. Self-test bursts are marked as such.",
+    "center_hz": 406000000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 406034000.0,
+        "params": {
+          "type": "sarsat",
+          "settings": {}
+        },
+        "sinks": [
+          "map",
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "drone-remote-id",
+    "name": "Drone Remote ID",
+    "description": "Drone ID, position and pilot over Bluetooth.",
+    "explainer": "Drones broadcast their serial number, position and pilot location under ASTM F3411 and EN 4709-002. Bluetooth 4 adverts arrive on channel 38; Bluetooth 5 long range puts its data on the channels around it.",
+    "center_hz": 2426000000.0,
+    "sample_rate": 20000000.0,
+    "channels": [
+      {
+        "frequency_hz": 2426000000.0,
+        "params": {
+          "type": "remote_id",
+          "settings": {
+            "link": "bluetooth_band"
+          }
+        },
+        "sinks": [
+          "map",
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "drone-remote-id-wifi",
+    "name": "Drone Remote ID · Wi-Fi",
+    "description": "Drone ID, position and pilot from Wi-Fi beacons.",
+    "explainer": "DJI and many other drones send Remote ID in Wi-Fi beacons, usually on channel 6. Retune to channel 1, 11 or 149 if nothing shows.",
+    "center_hz": 2437000000.0,
+    "sample_rate": 20000000.0,
+    "channels": [
+      {
+        "frequency_hz": 2437000000.0,
+        "params": {
+          "type": "remote_id",
+          "settings": {
+            "link": "wifi"
+          }
+        },
+        "sinks": [
+          "map",
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ble-devices",
+    "name": "BLE devices",
+    "description": "Bluetooth LE devices, beacons and trackers.",
+    "explainer": "Phones, tags and sensors advertise on channel 38. A 20 MS/s window also hears long range adverts on the data channels around it.",
+    "center_hz": 2426000000.0,
+    "sample_rate": 20000000.0,
+    "channels": [
+      {
+        "frequency_hz": 2426000000.0,
+        "params": {
+          "type": "ble",
+          "settings": {
+            "link": "band"
+          }
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ism-433",
+    "name": "433 MHz sensors",
+    "description": "Weather stations, thermometers, remotes and door sensors.",
+    "explainer": "Decodes OOK and FSK sensors the way rtl_433 does. Tick unknown to also log repeated codes no decoder knows.",
+    "center_hz": 433920000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 433920000.0,
+        "params": {
+          "type": "ism",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "wmbus-868",
+    "name": "868 MHz meters",
+    "description": "Water, heat and energy meters.",
+    "explainer": "Reads wireless M-Bus modes T and C. Add a meter's key to open encrypted readings.",
+    "center_hz": 868950000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 868950000.0,
+        "params": {
+          "type": "wmbus",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ism-survey",
+    "name": "2.4 GHz survey",
+    "description": "Who uses 2.4 GHz: Wi-Fi, Bluetooth, Zigbee, ovens.",
+    "explainer": "Sorts every burst by width, length and channel grid, from energy alone. One report per second.",
+    "center_hz": 2442000000.0,
+    "sample_rate": 20000000.0,
+    "channels": [
+      {
+        "frequency_hz": 2442000000.0,
+        "params": {
+          "type": "ism_survey",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "wifi-occupancy",
+    "name": "Wi-Fi occupancy",
+    "description": "How busy each Wi-Fi channel is.",
+    "explainer": "Busy time from energy alone, once a second. A 20 MS/s radio sees one channel; 80 MS/s sees all of 2.4 GHz.",
+    "center_hz": 2437000000.0,
+    "sample_rate": 20000000.0,
+    "channels": [
+      {
+        "frequency_hz": 2437000000.0,
+        "params": {
+          "type": "wifi_occupancy",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "noise-figure",
+    "name": "Noise figure",
+    "description": "Receiver noise figure with a switched noise source.",
+    "explainer": "Feed a calibrated noise source into the antenna port, set its ENR and switch it on and off. Each switch settles a new Y-factor reading.",
+    "center_hz": 100000000.0,
+    "sample_rate": 1000000.0,
+    "channels": [
+      {
+        "frequency_hz": 100000000.0,
+        "params": {
+          "type": "noise_figure",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "per-tester",
+    "name": "PER tester",
+    "description": "Packet and bit error rate of PER test frames.",
+    "explainer": "Counts numbered 2-FSK test frames and compares each payload with its known PRBS9 pattern. The signal generator sends them as PER test frames.",
+    "center_hz": 145000000.0,
+    "sample_rate": 240000.0,
+    "channels": [
+      {
+        "frequency_hz": 145000000.0,
+        "params": {
+          "type": "per",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "sid-monitor",
+    "name": "SID monitor",
+    "description": "Solar flares in VLF transmitter levels.",
+    "explainer": "Flares lift or dip daytime VLF signals for minutes to hours. Needs a radio that reaches 16 to 46 kHz and a long wire or loop.",
+    "center_hz": 30000.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 30000.0,
+        "params": {
+          "type": "sid",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "radio-clock",
+    "name": "Radio clock",
+    "description": "DCF77 civil time and minute-code inspection.",
+    "explainer": "DCF77 lowers its 77.5 kHz carrier once per second. The pulse width carries the next minute's time and date, with separate parity checks for minute, hour and calendar fields. Select WWVB, MSF or JJY in the channel settings and retune to the service used in your region.",
+    "center_hz": 77500.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 77500.0,
+        "params": {
+          "type": "radio_clock",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "navtex",
+    "name": "NAVTEX",
+    "description": "Coastal navigation warnings on 490 and 518 kHz.",
+    "explainer": "NAVTEX broadcasts navigational and meteorological warnings to ships as 100 baud FSK teleprinter text. 518 kHz carries the international English service, 490 kHz the national-language one, and both are decoded here. Stations transmit on a schedule a few times a day, so leave it running; reception is far better after dark.",
+    "center_hz": 504000.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 490000.0,
+        "params": {
+          "type": "navtex",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 518000.0,
+        "params": {
+          "type": "navtex",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gnss-lab",
+    "name": "GNSS lab",
+    "description": "Inspect GPS L1 C/A acquisition and NAV subframes.",
+    "explainer": "This educational receiver searches one GPS PRN at a time so the code phase, Doppler and correlation strength stay visible. After acquisition it checks the 50 bit/s navigation-word parity and reports subframe ID, time of week and the truncated GPS week from subframe 1. It is not a navigation-grade position solution.",
+    "center_hz": 1575420000.0,
+    "sample_rate": 2048000.0,
+    "channels": [
+      {
+        "frequency_hz": 1575420000.0,
+        "params": {
+          "type": "gnss",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ham-2m",
+    "name": "Ham 2 m",
+    "description": "The 2 metre amateur band, FM repeater output segment.",
+    "explainer": "145.600–145.800 MHz carries FM repeater outputs, 12.5 kHz apart. Point the scanner at this range to find the active ones: a repeater is silent between overs, so a sweep finds far more than sitting on one channel.",
+    "center_hz": 145700000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 145700000.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "marine-vhf",
+    "name": "Marine VHF",
+    "description": "Marine voice channels around 156–162 MHz.",
+    "explainer": "Channel 16 (156.800 MHz) is the international distress and calling channel and is monitored everywhere; working traffic moves off it. Marine VHF is narrowband FM, 25 kHz apart.",
+    "center_hz": 156800000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 156800000.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "pmr446",
+    "name": "PMR446 walkie-talkies",
+    "description": "The eight classic licence-free FM channels at 446 MHz.",
+    "explainer": "PMR446 handsets are sold without a licence across Europe, so this is the band with the most everyday traffic: markets, building sites, ski slopes and events. Channels 1–8 sit 12.5 kHz apart from 446.00625 MHz and all eight are open at once, each with automatic squelch so only a real transmission reaches the speaker. The readout shows the CTCSS or DCS code a handset sends, which is what its 'privacy code' setting really is. Channels 9–16 continue to 446.19375 MHz and are visible on the scope.",
+    "center_hz": 446100000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 446006250.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "readout"
+        ],
+        "squelch": {
+          "mode": "auto",
+          "margin_db": 8.0
+        }
+      },
+      {
+        "frequency_hz": 446018750.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "readout"
+        ],
+        "squelch": {
+          "mode": "auto",
+          "margin_db": 8.0
+        }
+      },
+      {
+        "frequency_hz": 446031250.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "readout"
+        ],
+        "squelch": {
+          "mode": "auto",
+          "margin_db": 8.0
+        }
+      },
+      {
+        "frequency_hz": 446043750.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "readout"
+        ],
+        "squelch": {
+          "mode": "auto",
+          "margin_db": 8.0
+        }
+      },
+      {
+        "frequency_hz": 446056250.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "readout"
+        ],
+        "squelch": {
+          "mode": "auto",
+          "margin_db": 8.0
+        }
+      },
+      {
+        "frequency_hz": 446068750.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "readout"
+        ],
+        "squelch": {
+          "mode": "auto",
+          "margin_db": 8.0
+        }
+      },
+      {
+        "frequency_hz": 446081250.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "readout"
+        ],
+        "squelch": {
+          "mode": "auto",
+          "margin_db": 8.0
+        }
+      },
+      {
+        "frequency_hz": 446093750.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "readout"
+        ],
+        "squelch": {
+          "mode": "auto",
+          "margin_db": 8.0
+        }
+      }
+    ]
+  },
+  {
+    "id": "digital-voice",
+    "name": "Digital voice (70 cm)",
+    "description": "DMR, D-STAR, System Fusion and M17 decoded side by side.",
+    "explainer": "Amateur repeaters carry four incompatible digital voice systems that all look alike on a waterfall. Running one decoder per system on the same frequency answers which is in use: whichever locks is the mode, and the log names the talkgroup, callsign or reflector it carries while the speaker plays the decoded voice. Retune the receiver to a repeater output near you: 439 MHz is only the middle of the segment.",
+    "center_hz": 439000000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 439000000.0,
+        "params": {
+          "type": "dmr",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 439000000.0,
+        "params": {
+          "type": "dstar",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 439000000.0,
+        "params": {
+          "type": "ysf",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 439000000.0,
+        "params": {
+          "type": "m17",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "tetra-cell",
+    "name": "TETRA cell",
+    "description": "Cell identity, calls and short messages of a TETRA carrier.",
+    "explainer": "Tune to a TETRA downlink. The log names the network, location area and carrier, then each call setup, talker and SDS. Voice is not decoded, and air-encrypted cells only show their identity. 392.5 MHz is only an example.",
+    "center_hz": 392500000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 392500000.0,
+        "params": {
+          "type": "tetra",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dab-check",
+    "name": "DAB ensemble check",
+    "description": "Confirm a DAB block is on air and measure its lock.",
+    "explainer": "A DAB ensemble is one 1.536 MHz wide OFDM block carrying a bundle of stations. This template locks to the block's transmission frame and reports lock, signal-to-noise and frequency error, which is what an antenna or filter change has to improve before anything else matters. It does not play DAB audio. 178.352 MHz is block 5C; the channel settings list the other blocks.",
+    "center_hz": 178352000.0,
+    "sample_rate": 2048000.0,
+    "channels": [
+      {
+        "frequency_hz": 178352000.0,
+        "params": {
+          "type": "dab",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hf-digital",
+    "name": "HF digital (20 m)",
+    "description": "FT8, FT4 and WSPR decoded together on 20 metres.",
+    "explainer": "These three modes trade speed for sensitivity and decode signals well below the noise floor, which is why 20 m stays busy even when the band sounds empty. FT8 (14.074 MHz) and FT4 (14.080 MHz) are contacts on a 15 and 7.5 second clock; WSPR (14.0956 MHz) is beacons on a two-minute one. Decoding depends on the computer clock being right: an error over about a second costs you every FT8 slot.",
+    "center_hz": 14084800.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 14074000.0,
+        "params": {
+          "type": "ft8",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 14080000.0,
+        "params": {
+          "type": "ft4",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 14095600.0,
+        "params": {
+          "type": "wspr",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hf-keyboard",
+    "name": "HF keyboard modes (20 m)",
+    "description": "CW, RTTY and PSK31 read as text, with the audio to match.",
+    "explainer": "The oldest live modes on the band are still hand-tuned: each decoder is only a few hundred hertz wide, so drag its marker onto a trace on the scope until the text comes out clean. 14.100 MHz carries the international beacon project, whose eighteen stations transmit their callsign in Morse in turn, so it is the one frequency here that is busy on a schedule. The SSB channel demodulates the same segment so you hear what the decoders are reading.",
+    "center_hz": 14085000.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 14070150.0,
+        "params": {
+          "type": "psk",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      },
+      {
+        "frequency_hz": 14083000.0,
+        "params": {
+          "type": "rtty",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      },
+      {
+        "frequency_hz": 14100000.0,
+        "params": {
+          "type": "morse",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      },
+      {
+        "frequency_hz": 14099500.0,
+        "params": {
+          "type": "ssb",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hf-sstv",
+    "name": "SSTV pictures (20 m)",
+    "description": "Slow-scan television on 14.230 MHz, picture and sound.",
+    "explainer": "SSTV sends a still picture as audio, one line at a time, in one to two minutes. The mode is announced by a VIS header at the start of a transmission and detected for you, so a picture starts building as soon as one is received. 14.230 MHz is the worldwide calling frequency; the SSB channel plays the warble the decoder is turning into the image.",
+    "center_hz": 14230000.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 14230000.0,
+        "params": {
+          "type": "sstv",
+          "settings": {}
+        },
+        "sinks": [
+          "video",
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 14230000.0,
+        "params": {
+          "type": "ssb",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hf-modems",
+    "name": "HF data modems",
+    "description": "Names STANAG, MIL-STD-188-110 and 2G ALE signals.",
+    "explainer": "Put the channel on the USB dial of a data signal. The identifier names the modem, its carrier and, for MIL-STD-188-110A, the rate from its preamble.",
+    "center_hz": 8500000.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 8500000.0,
+        "params": {
+          "type": "stanag",
+          "settings": {}
+        },
+        "sinks": [
+          "log",
+          "readout"
+        ]
+      },
+      {
+        "frequency_hz": 8500000.0,
+        "params": {
+          "type": "ssb",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "weather-sats",
+    "name": "Weather satellites (137.9 MHz)",
+    "description": "Meteor-M LRPT pictures during a pass.",
+    "explainer": "Meteor-M N2-4 sends a digital picture on 137.900 MHz while it passes overhead, OQPSK at 72k. It is the last 137 MHz weather satellite: the NOAA APT ones left the air in August 2025. Use the Satellite node for Doppler.",
+    "center_hz": 137900000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 137900000.0,
+        "params": {
+          "type": "lrpt",
+          "settings": {}
+        },
+        "sinks": [
+          "video",
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hf-wefax",
+    "name": "Weather fax (HF)",
+    "description": "DWD weather charts from Pinneberg on 7.880 MHz.",
+    "explainer": "Radiofax sends weather charts line by line. Start and stop tones begin and end a chart; the start tone picks the IOC for you. Channels sit on the USB carrier, 1.9 kHz below the published frequency.",
+    "center_hz": 7880000.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 7878100.0,
+        "params": {
+          "type": "wefax",
+          "settings": {}
+        },
+        "sinks": [
+          "video",
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 7878100.0,
+        "params": {
+          "type": "ssb",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "radiosondes",
+    "name": "Radiosondes (403 MHz)",
+    "description": "Weather balloon position and readings, RS41, DFM, M10, M20, iMet.",
+    "explainer": "Weather services launch radiosondes once or twice a day. Each sends its position, temperature, humidity and pressure every second. Set the channel to your nearest launch site's frequency.",
+    "center_hz": 403000000.0,
+    "sample_rate": 2048000.0,
+    "channels": [
+      {
+        "frequency_hz": 403000000.0,
+        "params": {
+          "type": "radiosonde",
+          "settings": {}
+        },
+        "sinks": [
+          "map",
+          "log",
+          "readout"
+        ]
+      }
+    ]
+  }
+]

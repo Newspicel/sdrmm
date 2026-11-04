@@ -7,8 +7,10 @@ use std::{
 };
 
 use num_complex::Complex;
+use sdrmm_channels::DmrParams;
+use sdrmm_channels::NativeChannel;
 use sdrmm_channels::{ChannelCtx, ChannelOutputs, ChannelRx, DmrChannel};
-use sdrmm_wire::{ChannelParams, ChannelSettings, DmrParams};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 const AIR_RATE_HZ: f64 = 48_000.0;
 
@@ -63,8 +65,8 @@ fn channel() -> DmrChannel {
             input_rate: AIR_RATE_HZ,
         },
         ChannelSettings {
-            params: ChannelParams::Dmr(DmrParams::default()),
-            ..ChannelSettings::default_for("dmr").unwrap()
+            params: ChannelParams::new("dmr", &DmrParams::default()).expect("dmr settings"),
+            ..sdrmm_channels::default_settings("dmr").unwrap()
         },
     )
     .unwrap()

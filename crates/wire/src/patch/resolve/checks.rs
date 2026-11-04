@@ -91,7 +91,7 @@ fn settings_valid(body: &NodeBody) -> bool {
         NodeBody::SpectrumMonitor(settings) => settings.valid(),
         NodeBody::Propagation(settings) => settings.valid(),
         NodeBody::Recorder(settings) => settings.valid(),
-        NodeBody::DmrTrunk(settings) => settings.valid(),
+        NodeBody::Trunk(settings) => settings.valid(),
         NodeBody::EventOutput(settings) => settings.target.valid(),
         NodeBody::Satellite(satellite) => satellite.valid(),
         NodeBody::Rotator(rotator) => rotator.valid(),

@@ -323,12 +323,12 @@ impl Protection {
     #[cfg(test)]
     #[must_use]
     pub fn fic() -> Self {
-        Self::fic_for_mode(sdrmm_wire::DabTransmissionMode::I)
+        Self::fic_for_mode(crate::dab::DabTransmissionMode::I)
     }
 
     #[must_use]
-    pub fn fic_for_mode(mode: sdrmm_wire::DabTransmissionMode) -> Self {
-        let third = mode == sdrmm_wire::DabTransmissionMode::Iii;
+    pub fn fic_for_mode(mode: crate::dab::DabTransmissionMode) -> Self {
+        let third = mode == crate::dab::DabTransmissionMode::Iii;
         Self {
             segments: vec![(if third { 29 } else { 21 }, 16), (3, 15)],
             frame_bits: if third { 1024 } else { 768 },

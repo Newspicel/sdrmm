@@ -1,12 +1,14 @@
+use crate::NativeChannel;
+use crate::airtime::AirtimeSpan;
+use crate::airtime::IsmKind;
+use crate::airtime::IsmSurveyParams;
+use crate::airtime::IsmSurveyReport;
 use sdrmm_dsp::airtime::Burst;
-use sdrmm_wire::{
-    AirtimeSpan, ChannelParams, ChannelSettings, DecoderEvent, IsmKind, IsmSurveyParams,
-    IsmSurveyReport,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{IsmSurveyChannel, tally::Tally};
 use crate::{
-    ChannelCtx, ChannelRx,
+    ChannelCtx,
     airtime::scene::Scene,
     synth::ism::{ble_advert, oven_burst, wifi_frame, zigbee_frame},
     testutil::settings,
@@ -18,7 +20,10 @@ const RATE: f64 = 20e6;
 fn report(scene: &Scene) -> IsmSurveyReport {
     let tuned = ChannelSettings {
         frequency_hz: CENTRE_HZ,
-        ..settings(ChannelParams::IsmSurvey(IsmSurveyParams::default()))
+        ..settings(
+            ChannelParams::new("ism_survey", &IsmSurveyParams::default())
+                .expect("ism_survey settings"),
+        )
     };
     let mut channel =
         IsmSurveyChannel::new(ChannelCtx { input_rate: RATE }, tuned).expect("builds");
@@ -26,10 +31,7 @@ fn report(scene: &Scene) -> IsmSurveyReport {
         .run(1.01, &mut channel)
         .events
         .into_iter()
-        .filter_map(|event| match event {
-            DecoderEvent::IsmSurvey(report) => Some(report),
-            _ => None,
-        })
+        .filter_map(|event| event.read::<IsmSurveyReport>())
         .collect();
     assert_eq!(reports.len(), 1);
     reports.remove(0)

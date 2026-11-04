@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
@@ -6,12 +11,12 @@ use sdrmm_modem::{
     cpm::{CpmDemod, CpmParams, Mapping, TIMING_BW_BURST},
     pulse::{self, Norm},
 };
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    PocsagBaud, PocsagMessage, PocsagParams, PocsagPayload,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const CHANNEL_TAPS: usize = 65;
 
@@ -54,7 +59,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: 24_000.0,
     has_audio: false,
-    emits: vec![EventKind::Pocsag],
+    emits: vec![EventKind::named("pocsag")],
     ..ChannelDescriptor::default()
 });
 
@@ -82,14 +87,8 @@ fn cpm_params(rate: f64, baud: u16) -> CpmParams {
     )
 }
 
-fn params(settings: &ChannelSettings) -> Result<&PocsagParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Pocsag(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "pocsag channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<PocsagParams, ChannelError> {
+    crate::settings_of::<PocsagParams>(settings)
 }
 
 fn check_params(p: &PocsagParams) -> Result<(), ChannelError> {
@@ -270,7 +269,7 @@ impl Candidate {
         } else {
             (PocsagPayload::Alpha, alpha_text(&self.payload))
         };
-        out.push(DecoderEvent::Pocsag(PocsagMessage {
+        out.push(DecoderEvent::of(&PocsagMessage {
             address: pending.address,
             function: pending.function,
             baud: self.baud,
@@ -355,15 +354,14 @@ fn numeric_text(bits: &[bool]) -> String {
     text
 }
 
-impl ChannelRx for PocsagChannel {
+impl NativeChannel for PocsagChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
-        check_params(p)?;
+        check_params(&p)?;
         Ok(Self {
             slicer: mapping(),
             invert: p.invert,
@@ -373,10 +371,12 @@ impl ChannelRx for PocsagChannel {
             soft: Vec::new(),
         })
     }
+}
 
+impl ChannelRx for PocsagChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
-        check_params(p)?;
+        check_params(&p)?;
         self.invert = p.invert;
         if p.baud != self.baud {
             self.baud = p.baud;
@@ -429,9 +429,75 @@ impl PocsagChannel {
     }
 }
 
+const PAGING: &[HzRange] = &[
+    HzRange::mhz(148.0, 175.0),
+    HzRange::mhz(426.0, 470.0),
+    HzRange::mhz(929.0, 932.0),
+];
+
+fn pocsag_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "POCSAG (512 bd)",
+            &[Modulation::Fsk2],
+            HzRange::new(6_000.0, 20_000.0),
+            "two-level keying at a pager rate and ±4.5 kHz",
+        )
+        .symbol_rate(HzRange::about(512.0, 0.05))
+        .deviation(HzRange::new(3_000.0, 6_000.0))
+        .on(PAGING),
+        SignalSignature::new(
+            "POCSAG (1200 bd)",
+            &[Modulation::Fsk2],
+            HzRange::new(6_000.0, 20_000.0),
+            "two-level keying at a pager rate and ±4.5 kHz",
+        )
+        .symbol_rate(HzRange::about(1_200.0, 0.05))
+        .deviation(HzRange::new(3_000.0, 6_000.0))
+        .on(PAGING),
+        SignalSignature::new(
+            "POCSAG (2400 bd)",
+            &[Modulation::Fsk2],
+            HzRange::new(6_000.0, 20_000.0),
+            "two-level keying at a pager rate and ±4.5 kHz",
+        )
+        .symbol_rate(HzRange::about(2_400.0, 0.05))
+        .deviation(HzRange::new(3_000.0, 6_000.0))
+        .on(PAGING),
+    ]
+}
+
+fn pocsag_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("pocsag"))
+}
+
+pub(crate) fn pocsag_decoder() -> Native<PocsagParams> {
+    Native::new::<PocsagChannel>(occupied_band)
+        .filter(channel_filter)
+        .signatures(pocsag_signatures)
+        .trial(pocsag_trial)
+        .form(pocsag_form)
+        .kinds(pocsag_kinds)
+}
+
+pub(crate) fn pocsag_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("baud", "Baud", Control::choice::<PocsagBaud>())
+            .title("POCSAG baud")
+            .quiet(PocsagBaud::Auto),
+        SettingField::bandwidth(&[12_500.0, 25_000.0]),
+        SettingField::invert(),
+    ]
+}
+
+fn pocsag_kinds() -> Vec<KindSpec> {
+    vec![crate::pocsag::pocsag_kind()]
+}
+
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::NfmParams;
+    use crate::nfm::NfmParams;
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
     use crate::{
@@ -451,7 +517,7 @@ mod tests {
     fn channel_with(params: PocsagParams) -> PocsagChannel {
         PocsagChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Pocsag(params)),
+            settings(ChannelParams::of(&params).expect("settings")),
         )
         .unwrap()
     }
@@ -505,10 +571,11 @@ mod tests {
             chan.process(&iq[pos..end], &mut out);
             assert!(out.audio_pcm.is_empty(), "pocsag must produce no audio");
             for event in out.events.drain(..) {
-                match event {
-                    DecoderEvent::Pocsag(m) => messages.push(m),
-                    other => panic!("unexpected event {other:?}"),
-                }
+                messages.push(
+                    event
+                        .read::<PocsagMessage>()
+                        .unwrap_or_else(|| panic!("unexpected event {event:?}")),
+                )
             }
             pos = end;
         }
@@ -574,10 +641,16 @@ mod tests {
     #[test]
     fn apply_switches_the_rate_set() {
         let mut chan = channel();
-        chan.apply(settings(ChannelParams::Pocsag(PocsagParams {
-            baud: PocsagBaud::B512,
-            ..PocsagParams::default()
-        })))
+        chan.apply(settings(
+            ChannelParams::new(
+                "pocsag",
+                &PocsagParams {
+                    baud: PocsagBaud::B512,
+                    ..PocsagParams::default()
+                },
+            )
+            .expect("pocsag settings"),
+        ))
         .unwrap();
         assert_expected_pages(&run(&mut chan, &burst(&pages(), 512)), 512);
         assert!(
@@ -585,10 +658,16 @@ mod tests {
             "a pinned rate must not decode another one"
         );
 
-        chan.apply(settings(ChannelParams::Pocsag(PocsagParams {
-            baud: PocsagBaud::B2400,
-            ..PocsagParams::default()
-        })))
+        chan.apply(settings(
+            ChannelParams::new(
+                "pocsag",
+                &PocsagParams {
+                    baud: PocsagBaud::B2400,
+                    ..PocsagParams::default()
+                },
+            )
+            .expect("pocsag settings"),
+        ))
         .unwrap();
         assert_expected_pages(&run(&mut chan, &burst(&pages(), 2_400)), 2_400);
     }
@@ -762,11 +841,13 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel();
-        let err = chan.apply(settings(ChannelParams::Nfm(NfmParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = PocsagChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Nfm(NfmParams::default())),
+            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -776,10 +857,16 @@ mod tests {
         for bad in [0.0, -1.0, 24_000.0, f64::NAN] {
             let built = PocsagChannel::new(
                 ChannelCtx { input_rate: RATE },
-                settings(ChannelParams::Pocsag(PocsagParams {
-                    bandwidth_hz: bad,
-                    ..PocsagParams::default()
-                })),
+                settings(
+                    ChannelParams::new(
+                        "pocsag",
+                        &PocsagParams {
+                            bandwidth_hz: bad,
+                            ..PocsagParams::default()
+                        },
+                    )
+                    .expect("pocsag settings"),
+                ),
             );
             assert!(
                 matches!(built, Err(ChannelError::InvalidSettings(_))),
@@ -794,7 +881,9 @@ mod tests {
             ChannelCtx {
                 input_rate: 240_000.0,
             },
-            settings(ChannelParams::Pocsag(PocsagParams::default())),
+            settings(
+                ChannelParams::new("pocsag", &PocsagParams::default()).expect("pocsag settings"),
+            ),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

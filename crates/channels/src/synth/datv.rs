@@ -1,9 +1,11 @@
 #![allow(clippy::expect_used)]
 
+use crate::datv::DatvCodeRate;
+use crate::datv::DatvParams;
+use crate::datv::DatvStandard;
 use num_complex::Complex;
 use sdrmm_dsp::FracResampler;
 use sdrmm_modem::pulse::{self, Norm};
-use sdrmm_wire::{DatvCodeRate, DatvParams, DatvStandard};
 
 pub use crate::datv::dvbs2::ldpc::{Frame as LdpcFrame, Ldpc};
 use crate::datv::{

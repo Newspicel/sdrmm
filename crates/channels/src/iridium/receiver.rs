@@ -1,4 +1,5 @@
 use num_complex::Complex;
+use sdrmm_dsp::design_rrc_unit_energy;
 
 use super::CHANNEL_RATE;
 use super::burst::{BurstDetector, Window};
@@ -10,30 +11,6 @@ const MF_TAPS: usize = 51;
 const MF_ALPHA: f64 = 0.4;
 const QUIET_GUARD: usize = 300;
 const QUIET_TAIL: usize = 1_000;
-
-pub fn rrc_taps(sps: f64, num_taps: usize, beta: f64) -> Vec<f32> {
-    use std::f64::consts::{PI, SQRT_2};
-    let mid = (num_taps - 1) as f64 / 2.0;
-    let mut taps: Vec<f64> = (0..num_taps)
-        .map(|n| {
-            let t = (n as f64 - mid) / sps;
-            if t.abs() < 1e-9 {
-                1.0 - beta + 4.0 * beta / PI
-            } else if (t.abs() - 1.0 / (4.0 * beta)).abs() < 1e-9 {
-                (beta / SQRT_2)
-                    * ((1.0 + 2.0 / PI) * (PI / (4.0 * beta)).sin()
-                        + (1.0 - 2.0 / PI) * (PI / (4.0 * beta)).cos())
-            } else {
-                let pt = PI * t;
-                ((pt * (1.0 - beta)).sin() + 4.0 * beta * t * (pt * (1.0 + beta)).cos())
-                    / (pt * (1.0 - (4.0 * beta * t).powi(2)))
-            }
-        })
-        .collect();
-    let energy: f64 = taps.iter().map(|h| h * h).sum::<f64>().sqrt();
-    taps.iter_mut().for_each(|h| *h /= energy);
-    taps.into_iter().map(|h| h as f32).collect()
-}
 
 pub fn matched_filter(x: &[Complex<f32>], taps: &[f32]) -> Vec<Complex<f32>> {
     let half = taps.len() / 2;
@@ -59,7 +36,7 @@ impl WindowDemod {
     pub fn new() -> Self {
         Self {
             demod: IridiumDemod::new(CHANNEL_RATE),
-            taps: rrc_taps(CHANNEL_RATE / SYMBOL_RATE, MF_TAPS, MF_ALPHA),
+            taps: design_rrc_unit_energy(CHANNEL_RATE / SYMBOL_RATE, MF_ALPHA, MF_TAPS),
         }
     }
 

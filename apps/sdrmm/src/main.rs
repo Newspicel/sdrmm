@@ -24,6 +24,8 @@ struct Args {
     db: Option<PathBuf>,
     #[arg(long)]
     recordings_dir: Option<PathBuf>,
+    #[arg(long)]
+    plugins_dir: Option<PathBuf>,
     #[arg(long, hide = true, default_value_t = 1.0, value_parser = parse_playback_speed)]
     playback_speed: f64,
     #[arg(long, env = "SDRMM_TOKEN", hide_env_values = true)]
@@ -115,12 +117,20 @@ fn parse_playback_speed(raw: &str) -> Result<f64, String> {
 }
 
 fn resolve_recordings_dir(cli: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    resolve_data_dir(cli, "recordings", "--recordings-dir")
+}
+
+fn resolve_plugins_dir(cli: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    resolve_data_dir(cli, "plugins", "--plugins-dir")
+}
+
+fn resolve_data_dir(cli: Option<PathBuf>, name: &str, flag: &str) -> anyhow::Result<PathBuf> {
     let path = match cli {
         Some(path) => path,
         None => dirs::data_dir()
-            .context("no platform data directory; pass --recordings-dir")?
+            .with_context(|| format!("no platform data directory; pass {flag}"))?
             .join("sdrmm")
-            .join("recordings"),
+            .join(name),
     };
     std::path::absolute(&path).with_context(|| format!("cannot resolve {}", path.display()))
 }
@@ -146,6 +156,7 @@ fn run(mut args: Args) -> anyhow::Result<()> {
     sdrmm_server::diagnostics::install_tracing()?;
     let db_path = resolve_db_path(args.db.take())?;
     let recordings_dir = resolve_recordings_dir(args.recordings_dir.take())?;
+    let plugins_dir = resolve_plugins_dir(args.plugins_dir.take())?;
     if args.doctor {
         print!(
             "{}",
@@ -170,6 +181,9 @@ fn run(mut args: Args) -> anyhow::Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("cannot create {}", parent.display()))?;
     }
+    let _plugins = sdrmm_plugins::PluginWatcher::start(plugins_dir)
+        .map_err(|error| tracing::error!(%error, "plugins are off"))
+        .ok();
     let engine = Engine::with_registry(
         sdrmm_engine::builtin_registry_accelerated(
             Some(recordings_dir.clone()),

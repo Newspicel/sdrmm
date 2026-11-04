@@ -1,85 +1,25 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct ToneSquelchStatus {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ctcss_hz: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dcs_code: Option<u16>,
-    pub open: bool,
-}
+use super::{EventContract, EventKind};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct ScramblerStatus {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inversion_hz: Option<f64>,
-    pub confidence: f64,
-}
-
+/// How a digital voice mode names its colour code.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum DvMode {
+pub enum CodeStyle {
     #[default]
-    Dmr,
-    Dstar,
-    Ysf,
-    Nxdn,
-    P25,
-    Dpmr,
-    M17,
-    #[serde(rename = "freedv")]
-    FreeDv,
-    Tetra,
+    ColorCode,
+    Nac,
+    Ran,
 }
 
-impl DvMode {
-    #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Dmr => "DMR",
-            Self::Dstar => "D-STAR",
-            Self::Ysf => "YSF",
-            Self::Nxdn => "NXDN",
-            Self::P25 => "P25",
-            Self::Dpmr => "dPMR",
-            Self::M17 => "M17",
-            Self::FreeDv => "FreeDV",
-            Self::Tetra => "TETRA",
-        }
-    }
-
-    #[must_use]
-    pub fn type_id(self) -> &'static str {
-        match self {
-            Self::Dmr => "dmr",
-            Self::Dstar => "dstar",
-            Self::Ysf => "ysf",
-            Self::Nxdn => "nxdn",
-            Self::P25 => "p25",
-            Self::Dpmr => "dpmr",
-            Self::M17 => "m17",
-            Self::FreeDv => "freedv",
-            Self::Tetra => "tetra",
-        }
-    }
-
-    #[must_use]
-    pub fn from_type_id(type_id: &str) -> Option<Self> {
-        [
-            Self::Dmr,
-            Self::Dstar,
-            Self::Ysf,
-            Self::Nxdn,
-            Self::P25,
-            Self::Dpmr,
-            Self::M17,
-            Self::FreeDv,
-            Self::Tetra,
-        ]
-        .into_iter()
-        .find(|mode| mode.type_id() == type_id)
-    }
+/// How a digital voice mode names its network, system and site identifiers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SiteNaming {
+    #[default]
+    Network,
+    Cellular,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -161,7 +101,12 @@ pub enum DvTrunkProtocol {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct DvFrame {
-    pub mode: DvMode,
+    /// The mode's display name, as its decoder states it.
+    pub mode: String,
+    #[serde(default)]
+    pub code_style: CodeStyle,
+    #[serde(default)]
+    pub site_naming: SiteNaming,
     pub kind: DvFrameKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<u8>,
@@ -236,9 +181,9 @@ pub struct DvFrame {
 
 impl DvFrame {
     #[must_use]
-    pub fn new(mode: DvMode, kind: DvFrameKind) -> Self {
+    pub fn new(mode: &str, kind: DvFrameKind) -> Self {
         Self {
-            mode,
+            mode: mode.to_owned(),
             kind,
             ..Self::default()
         }
@@ -263,4 +208,8 @@ impl DvFrame {
             (None, None) => None,
         }
     }
+}
+
+impl EventContract for DvFrame {
+    const KIND: EventKind = EventKind::DV;
 }

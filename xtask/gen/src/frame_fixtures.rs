@@ -1,8 +1,8 @@
-use sdrmm_wire::frame::{FusionGridFrame, SpatialSpectrumFrame, VisibilityFrame};
 use sdrmm_wire::{
     AudioFrame, FrameError, IqFrame, RangeDopplerFrame, SpectrumFrame, SymbolFrame, SymbolPlane,
     VideoData, VideoFrame,
 };
+use sdrmm_wire::{frame::FusionGridFrame, frame::SpatialSpectrumFrame, frame::VisibilityFrame};
 
 pub(crate) fn frames() -> Result<Vec<(&'static str, Vec<u8>)>, FrameError> {
     Ok(vec![

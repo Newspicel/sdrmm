@@ -127,9 +127,6 @@ fn the_published_limits_name_their_wire_constants() {
         json["patch"]["monitors_per_radio"],
         crate::patch::MAX_MONITORS_PER_RADIO
     );
-    assert_eq!(json["wmbus"]["meter_digits"], crate::wmbus::METER_DIGITS);
-    assert_eq!(json["wmbus"]["key_digits"], crate::wmbus::KEY_DIGITS);
-    assert_eq!(json["wmbus"]["keys"], crate::wmbus::MAX_WMBUS_KEYS);
     assert_eq!(json["audio"]["rate_hz"], crate::audio::AUDIO_RATE_HZ);
     assert_eq!(json["audio"]["notches"], crate::audio::MAX_AUDIO_NOTCHES);
     assert_eq!(

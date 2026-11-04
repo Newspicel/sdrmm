@@ -26,7 +26,6 @@ import {
 import { RadarPlot } from "./RadarPlot";
 import { RadarChips, RadarSettings } from "./RadarSettings";
 import {
-  adsbCell,
   bearingCell,
   clutterText,
   confirmedTracks,
@@ -40,11 +39,12 @@ import {
   referenceText,
   sortTracks,
   TRACK_ROWS,
+  truthCell,
 } from "./radar";
 
 const AGE_TICK_MS = 1_000;
 const CLEAR_ACTION = "Clear";
-const TRACK_HEADS = ["Track", "km", "m/s", "Bearing", "dB", "ADS-B"] as const;
+const TRACK_HEADS = ["Track", "km", "m/s", "Bearing", "dB", "Truth"] as const;
 
 function useTrackClear(node: string): { clear: () => void; pending: boolean } {
   const mutation = useMutation({
@@ -232,7 +232,7 @@ function TrackTable({
                 {bearing.text}
               </td>
               <td className={TABLE_CELL}>{track.snr_db.toFixed(0)}</td>
-              <td className={`${TABLE_CELL} max-w-20 truncate`}>{adsbCell(track)}</td>
+              <td className={`${TABLE_CELL} max-w-20 truncate`}>{truthCell(track)}</td>
             </tr>
           );
         })}

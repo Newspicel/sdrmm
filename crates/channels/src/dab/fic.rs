@@ -36,11 +36,11 @@ pub struct FicDecoder {
 impl FicDecoder {
     #[must_use]
     pub fn new() -> Self {
-        Self::for_mode(sdrmm_wire::DabTransmissionMode::I)
+        Self::for_mode(crate::dab::DabTransmissionMode::I)
     }
 
     #[must_use]
-    pub fn for_mode(mode: sdrmm_wire::DabTransmissionMode) -> Self {
+    pub fn for_mode(mode: crate::dab::DabTransmissionMode) -> Self {
         Self {
             protection: Protection::fic_for_mode(mode),
             viterbi: ViterbiK7::new(ConvCode::new(&GENERATORS)),
@@ -135,11 +135,11 @@ pub struct FicEncoder {
 impl FicEncoder {
     #[must_use]
     pub fn new() -> Self {
-        Self::for_mode(sdrmm_wire::DabTransmissionMode::I)
+        Self::for_mode(crate::dab::DabTransmissionMode::I)
     }
 
     #[must_use]
-    pub fn for_mode(mode: sdrmm_wire::DabTransmissionMode) -> Self {
+    pub fn for_mode(mode: crate::dab::DabTransmissionMode) -> Self {
         Self {
             protection: Protection::fic_for_mode(mode),
             code: ConvCode::new(&GENERATORS),
@@ -198,13 +198,13 @@ mod tests {
     fn mode_three_protects_four_fibs_with_the_longer_codeword() {
         let fibs = [fib(1), fib(2), fib(3), fib(4)];
         let mut sent = Vec::new();
-        assert!(FicEncoder::for_mode(sdrmm_wire::DabTransmissionMode::Iii).block(&fibs, &mut sent));
+        assert!(FicEncoder::for_mode(crate::dab::DabTransmissionMode::Iii).block(&fibs, &mut sent));
         assert_eq!(sent.len(), 3072);
         let mut received = softs(&sent);
         for at in (0..received.len()).step_by(29) {
             received[at] = -received[at];
         }
-        let mut decoder = FicDecoder::for_mode(sdrmm_wire::DabTransmissionMode::Iii);
+        let mut decoder = FicDecoder::for_mode(crate::dab::DabTransmissionMode::Iii);
         let mut out = Vec::new();
         decoder.block(&received, &mut out);
         assert_eq!(out, fibs);

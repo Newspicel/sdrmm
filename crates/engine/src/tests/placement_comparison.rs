@@ -196,12 +196,12 @@ fn scenario(seed: u64, count: usize, radio_count: u32) -> (Vec<Radio>, Vec<Place
                 decoder.held = Some(decoder.lanes[0]);
                 decoder.pinned = random.next(4) == 0;
             }
-            if let ChannelParams::Nfm(params) = &mut decoder.settings.params {
-                params.bandwidth_hz = if random.next(3) == 0 {
-                    25_000.0
-                } else {
-                    12_500.0
-                };
+            if random.next(3) == 0 {
+                decoder.settings.params = ChannelParams::of(&NfmParams {
+                    bandwidth_hz: 25_000.0,
+                    ..NfmParams::default()
+                })
+                .expect("nfm settings");
             }
             decoder
         })
@@ -441,17 +441,25 @@ fn disjoint_ranges_asymmetric_bands_and_impossible_bandwidths_match_the_oracle()
     let mut b = radio(B, tuned(400e6));
     b.settings.sample_rate = Some(96_000.0);
     let mut upper = decoder("upper", 100_021_000.0, &[A, B]);
-    upper.settings.params = ChannelParams::Ssb(sdrmm_wire::SsbParams {
-        sideband: sdrmm_wire::Sideband::Usb,
-        bandwidth_hz: 3_000.0,
-    });
+    upper.settings.params = ChannelParams::new(
+        "ssb",
+        &sdrmm_channels::SsbParams {
+            sideband: sdrmm_wire::Sideband::Usb,
+            bandwidth_hz: 3_000.0,
+        },
+    )
+    .expect("ssb settings");
     let mut lower = decoder("lower", 100_021_000.0, &[A, B]);
-    lower.settings.params = ChannelParams::Ssb(sdrmm_wire::SsbParams {
-        sideband: sdrmm_wire::Sideband::Lsb,
-        bandwidth_hz: 3_000.0,
-    });
+    lower.settings.params = ChannelParams::new(
+        "ssb",
+        &sdrmm_channels::SsbParams {
+            sideband: sdrmm_wire::Sideband::Lsb,
+            bandwidth_hz: 3_000.0,
+        },
+    )
+    .expect("ssb settings");
     let mut wide = decoder("wide", 400e6, &[A, B]);
-    wide.settings.params = ChannelSettings::default_for("wfm").unwrap().params;
+    wide.settings.params = sdrmm_channels::default_settings("wfm").unwrap().params;
     verify_exact(&[upper, lower, wide, decoder("gap", 250e6, &[A])], &[a, b]);
 }
 

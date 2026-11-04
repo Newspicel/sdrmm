@@ -1,15 +1,17 @@
+use crate::registry::Native;
+use sdrmm_wire::{EventContract, KindSpec, NumberSpec, SettingField};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Ddc, Decimator, NoiseFloor, SpectrumAnalyzer, design_lowpass};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, CwSkimmerParams, CwSkimmerSpot,
-    DecoderEvent, DecoderFamily, EventKind, MorseParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily};
 
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, MorseChannel,
-    check_input_rate, morse::FIT_MAX,
+    NativeChannel, check_input_rate,
+    morse::{FIT_MAX, MorseParams, MorseText, morse_kind},
 };
 
 const RATE: f64 = 48_000.0;
@@ -44,7 +46,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 24_000.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::CwSkimmer],
+    emits: vec![CwSkimmerSpot::KIND],
     ..ChannelDescriptor::default()
 });
 
@@ -69,10 +71,11 @@ impl Track {
         let morse_settings = ChannelSettings {
             frequency_hz: 0.0,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Morse(MorseParams {
+            params: ChannelParams::of(&MorseParams {
                 bandwidth_hz: 400.0,
                 wpm,
-            }),
+            })
+            .map_err(ChannelError::InvalidSettings)?,
             blanker: Default::default(),
             if_filter: Default::default(),
         };
@@ -136,7 +139,7 @@ impl Track {
         self.output.reset();
         self.morse.process(&self.narrow, &mut self.output);
         for event in self.output.events.drain(..) {
-            let DecoderEvent::Morse(message) = event else {
+            let Some(message) = event.read::<MorseText>() else {
                 continue;
             };
             let spot = CwSkimmerSpot {
@@ -183,14 +186,8 @@ pub struct CwSkimmerChannel {
     tracks: Vec<Track>,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&CwSkimmerParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::CwSkimmer(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "cw skimmer got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<CwSkimmerParams, ChannelError> {
+    crate::settings_of::<CwSkimmerParams>(settings)
 }
 
 fn check_params(params: &CwSkimmerParams) -> Result<(), ChannelError> {
@@ -227,7 +224,7 @@ fn publish(spots: &mut Vec<CwSkimmerSpot>, out: &mut ChannelOutputs) {
     }
     spots.truncate(kept);
     for spot in spots.drain(..) {
-        out.events.push(DecoderEvent::CwSkimmer(spot));
+        out.events.push(DecoderEvent::of(&spot));
     }
 }
 
@@ -399,14 +396,13 @@ impl CwSkimmerChannel {
     }
 }
 
-impl ChannelRx for CwSkimmerChannel {
+impl NativeChannel for CwSkimmerChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let params = params(&settings)?;
+        let params = &params(&settings)?;
         check_params(params)?;
         Ok(Self {
             bandwidth_hz: params.bandwidth_hz,
@@ -425,9 +421,11 @@ impl ChannelRx for CwSkimmerChannel {
             tracks: Vec::with_capacity(usize::from(params.max_signals)),
         })
     }
+}
 
+impl ChannelRx for CwSkimmerChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let params = params(&settings)?;
+        let params = &params(&settings)?;
         check_params(params)?;
         self.configure(params)
     }
@@ -452,6 +450,42 @@ impl ChannelRx for CwSkimmerChannel {
     }
 }
 
+pub(crate) fn cw_skimmer_decoder() -> Native<CwSkimmerParams> {
+    Native::new::<CwSkimmerChannel>(occupied_band)
+        .filter(channel_filter)
+        .form(cw_skimmer_form)
+        .kinds(cw_skimmer_kinds)
+}
+
+pub(crate) fn cw_skimmer_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new(
+            "bandwidth_hz",
+            "Passband",
+            NumberSpec::hz(1_000.0, 24_000.0, 500.0),
+        )
+        .title("CW skimmer passband"),
+        SettingField::new(
+            "threshold_db",
+            "Acquire",
+            NumberSpec::new(3.0, 40.0, 1.0).unit("dB SNR"),
+        )
+        .title("Carrier threshold above the noise floor"),
+        SettingField::new("max_signals", "Signals", NumberSpec::new(1.0, 128.0, 1.0))
+            .title("Maximum simultaneous CW signals"),
+        SettingField::new(
+            "wpm",
+            "Speed",
+            NumberSpec::new(3.0, 80.0, 1.0).unit("WPM").optional("auto"),
+        )
+        .title("Morse speed, empty to track each signal"),
+    ]
+}
+
+fn cw_skimmer_kinds() -> Vec<KindSpec> {
+    vec![morse_kind(), cw_skimmer_kind()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,7 +494,7 @@ mod tests {
     fn channel(params: CwSkimmerParams) -> Result<CwSkimmerChannel, ChannelError> {
         CwSkimmerChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::CwSkimmer(params)),
+            settings(ChannelParams::of(&params).expect("cw_skimmer settings")),
         )
     }
 
@@ -489,10 +523,7 @@ mod tests {
         }
         out.events
             .iter()
-            .filter_map(|event| match event {
-                DecoderEvent::CwSkimmer(spot) => Some(spot.clone()),
-                _ => None,
-            })
+            .filter_map(DecoderEvent::read::<CwSkimmerSpot>)
             .collect()
     }
 
@@ -700,12 +731,15 @@ mod tests {
         synth::add_noise(&mut iq, 17, 0.002);
         let mut channel = CwSkimmerChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::CwSkimmer(CwSkimmerParams {
-                bandwidth_hz: 16_000.0,
-                threshold_db: 8.0,
-                max_signals: 8,
-                wpm: None,
-            })),
+            settings(
+                ChannelParams::of(&CwSkimmerParams {
+                    bandwidth_hz: 16_000.0,
+                    threshold_db: 8.0,
+                    max_signals: 8,
+                    wpm: None,
+                })
+                .expect("cw_skimmer settings"),
+            ),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -715,10 +749,7 @@ mod tests {
         let spots = out
             .events
             .iter()
-            .filter_map(|event| match event {
-                DecoderEvent::CwSkimmer(spot) => Some(spot),
-                _ => None,
-            })
+            .filter_map(DecoderEvent::read::<CwSkimmerSpot>)
             .collect::<Vec<_>>();
         let first_text = spots
             .iter()

@@ -1,9 +1,13 @@
-use sdrmm_wire::{BroadcastStatus, DecoderEvent, RttyText, ServerEvent};
+use sdrmm_channels::RttyText;
+use sdrmm_wire::{
+    ChannelStatus, DecoderEvent, ServerEvent,
+    present::{Field, FieldValue},
+};
 
 use super::*;
 
 fn rtty(text: &str) -> DecoderEvent {
-    DecoderEvent::Rtty(RttyText {
+    DecoderEvent::of(&RttyText {
         text: text.to_owned(),
     })
 }
@@ -11,6 +15,7 @@ fn rtty(text: &str) -> DecoderEvent {
 fn system(node: &str) -> trunking::TrunkSystem {
     trunking::TrunkSystem {
         node: node.to_owned(),
+        decoder: String::new(),
         protocol: Default::default(),
         discovery: Default::default(),
         channel_map: Vec::new(),
@@ -48,26 +53,24 @@ async fn a_channel_publishes_with_the_node_it_was_opened_for() {
 }
 
 #[tokio::test]
-async fn broadcast_status_also_reaches_its_own_channel_face() {
+async fn a_channel_status_reaches_its_own_channel_face() {
     let engine = virtual_engine();
     let mut events = engine.subscribe_events();
-    let mut decoded = engine.subscribe_decoded();
-    let status = BroadcastStatus {
-        locked: true,
-        ..BroadcastStatus::default()
+    let status = ChannelStatus {
+        readouts: vec![Field {
+            label: "Lock".to_owned(),
+            value: FieldValue::Flag(true),
+        }],
+        choices: Vec::new(),
     };
 
     engine
         .decoded_sink(1, 2, Some("channel:dab"))
-        .publish(225_648_000.0, DecoderEvent::Broadcast(status.clone()));
+        .publish_status(225_648_000.0, status.clone());
 
-    assert!(matches!(
-        next(&mut decoded).await.event,
-        DecoderEvent::Broadcast(_)
-    ));
     let face = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            if let Ok(ServerEvent::ChannelBroadcast { node, status }) = events.recv().await {
+            if let Ok(ServerEvent::ChannelStatus { node, status }) = events.recv().await {
                 return (node, *status);
             }
         }

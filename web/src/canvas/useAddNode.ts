@@ -12,7 +12,9 @@ export function useAddNode(): AddNode {
   const placeNode = useNodePlacement();
 
   return (kind, channelType, at) => {
-    const body = newNodeBody(workspace.context.catalog, kind, { channelType });
+    const body = newNodeBody(workspace.context.catalog, kind, {
+      channelType: channelType ?? workspace.context.channelTypes[0]?.type_id,
+    });
     if (body === null) {
       pushToast(`Unknown node: ${kind}`);
       return;

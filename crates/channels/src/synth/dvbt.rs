@@ -1,6 +1,6 @@
+use crate::datv::DatvCodeRate;
 use num_complex::Complex;
 use sdrmm_dsp::fft::Transform;
-use sdrmm_wire::DatvCodeRate;
 
 use crate::datv::{
     dvbs::DvbsEncoder,

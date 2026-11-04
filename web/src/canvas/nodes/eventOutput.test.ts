@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { eventOutputConfigured, newOutputTarget, outputServices } from "./eventOutput";
+import type { FeedEntry } from "../../lib/types";
+import { eventOutputConfigured, feedTarget, newOutputTarget, outputServices } from "./eventOutput";
+
+const PROBE_FEED: FeedEntry = {
+  format: "probe",
+  name: "Probe TCP",
+  default_address: "127.0.0.1:30999",
+  kinds: [],
+};
 
 const matrix = (access_token: string) =>
   eventOutputConfigured({
@@ -17,6 +25,9 @@ const postgres = (url: string, table: string, username: string) =>
 
 const influx = (url: string, bucket: string) =>
   eventOutputConfigured({ service: "influx", url, bucket, org: "", token: "" });
+
+const has = (feeds: FeedEntry[]) =>
+  outputServices(false, "mqtt", feeds).some((option) => option.value === "feed");
 
 const offered = (notify: boolean, current: "desktop" | "mqtt") =>
   outputServices(notify, current).some((option) => option.value === "desktop");
@@ -41,14 +52,28 @@ describe("event output configuration", () => {
     expect(eventOutputConfigured({ service: "csv", file: " " })).toBe(false);
   });
 
-  it("opens Beast only after an address and explicit enable", () => {
-    expect(
-      eventOutputConfigured({ service: "beast", address: "127.0.0.1:30005", enabled: false }),
-    ).toBe(false);
-    expect(eventOutputConfigured({ service: "beast", address: "", enabled: true })).toBe(false);
-    expect(
-      eventOutputConfigured({ service: "beast", address: "127.0.0.1:30005", enabled: true }),
-    ).toBe(true);
+  it("opens a feed only after a format, an address and explicit enable", () => {
+    const closed = { service: "feed", format: "probe", address: "127.0.0.1:30999" } as const;
+    expect(eventOutputConfigured({ ...closed, enabled: false })).toBe(false);
+    expect(eventOutputConfigured({ ...closed, address: "", enabled: true })).toBe(false);
+    expect(eventOutputConfigured({ ...closed, format: "", enabled: true })).toBe(false);
+    expect(eventOutputConfigured({ ...closed, enabled: true })).toBe(true);
+  });
+
+  it("starts a feed in the first format the catalog lists, on its own address", () => {
+    expect(newOutputTarget("feed", [PROBE_FEED])).toEqual(feedTarget(PROBE_FEED));
+    expect(feedTarget(PROBE_FEED)).toEqual({
+      service: "feed",
+      format: "probe",
+      address: "127.0.0.1:30999",
+      enabled: false,
+    });
+  });
+
+  it("offers a feed only when a decoder registered one", () => {
+    expect(has([])).toBe(false);
+    expect(has([PROBE_FEED])).toBe(true);
+    expect(outputServices(false, "feed").some((option) => option.value === "feed")).toBe(true);
   });
 
   it("needs a webhook endpoint", () => {
@@ -89,8 +114,8 @@ describe("event output configuration", () => {
   });
 
   it("starts every service unconfigured", () => {
-    for (const service of ["webhook", "matrix", "mqtt", "beast", "postgres", "influx"] as const) {
-      const target = newOutputTarget(service);
+    for (const service of ["webhook", "matrix", "mqtt", "feed", "postgres", "influx"] as const) {
+      const target = newOutputTarget(service, [PROBE_FEED]);
       expect(target.service).toBe(service);
       expect(eventOutputConfigured(target)).toBe(false);
     }

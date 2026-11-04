@@ -1,15 +1,19 @@
+use crate::registry::Native;
+use sdrmm_wire::{KindSpec, NumberSpec, SettingField};
+mod model;
+pub use model::*;
 mod levels;
 
 use std::{ops::Range, sync::LazyLock};
 
 use num_complex::Complex;
 use sdrmm_dsp::airtime::PowerFrames;
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    MAX_ENR_DB, MEASUREMENT_REPORT_MS, MIN_ENR_DB, NoiseFigureParams, NoiseFigureReport,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 use levels::{Levels, Pair};
 
 const RATE: f64 = 500_000.0;
@@ -30,25 +34,19 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2.0 * MEASURED_HALF_HZ,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::NoiseFigure],
+    emits: vec![EventKind::named("noise_figure")],
     ..ChannelDescriptor::default()
 });
 
 fn params(settings: &ChannelSettings) -> Result<NoiseFigureParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::NoiseFigure(params)
-            if params.enr_db.is_finite() && (MIN_ENR_DB..=MAX_ENR_DB).contains(&params.enr_db) =>
-        {
-            Ok(*params)
-        }
-        ChannelParams::NoiseFigure(params) => Err(ChannelError::InvalidSettings(format!(
+    let params: NoiseFigureParams = crate::settings_of(settings)?;
+    if params.enr_db.is_finite() && (MIN_ENR_DB..=MAX_ENR_DB).contains(&params.enr_db) {
+        Ok(params)
+    } else {
+        Err(ChannelError::InvalidSettings(format!(
             "ENR must be {MIN_ENR_DB}..={MAX_ENR_DB} dB, got {}",
             params.enr_db
-        ))),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "noise figure channel got {} params",
-            other.type_id()
-        ))),
+        )))
     }
 }
 
@@ -137,7 +135,7 @@ impl Meter {
         if self.blocks.is_multiple_of(REPORT_BLOCKS)
             && let Some(report) = self.report()
         {
-            out.events.push(DecoderEvent::NoiseFigure(report));
+            out.events.push(DecoderEvent::of(&report));
         }
     }
 
@@ -173,11 +171,10 @@ impl NoiseFigureChannel {
     }
 }
 
-impl ChannelRx for NoiseFigureChannel {
+impl NativeChannel for NoiseFigureChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         Ok(Self {
@@ -187,7 +184,9 @@ impl ChannelRx for NoiseFigureChannel {
             frames: PowerFrames::new(FFT_LEN),
         })
     }
+}
 
+impl ChannelRx for NoiseFigureChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.meter.enr_db = params(&settings)?.enr_db;
         if settings.frequency_hz != self.frequency_hz {
@@ -217,6 +216,28 @@ impl ChannelRx for NoiseFigureChannel {
         let Self { frames, meter, .. } = self;
         frames.process(iq, |power| meter.frame(power, out));
     }
+}
+
+pub(crate) fn noise_figure_decoder() -> Native<NoiseFigureParams> {
+    Native::new::<NoiseFigureChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .form(noise_figure_form)
+        .kinds(noise_figure_kinds)
+}
+
+pub(crate) fn noise_figure_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new(
+            "enr_db",
+            "ENR",
+            NumberSpec::new(f64::from(MIN_ENR_DB), f64::from(MAX_ENR_DB), 0.01).unit("dB"),
+        )
+        .title("Excess noise ratio of the noise source at this frequency"),
+    ]
+}
+
+fn noise_figure_kinds() -> Vec<KindSpec> {
+    vec![noise_figure_kind()]
 }
 
 #[cfg(test)]

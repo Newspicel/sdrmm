@@ -1,4 +1,9 @@
-use sdrmm_wire::{EotArming, EotBattery, EotStatus, HotCommand, HotRequest};
+use crate::eot::EotArming;
+use crate::eot::EotBattery;
+use crate::eot::EotStatus;
+use crate::eot::HotCommand;
+use crate::eot::HotRequest;
+use sdrmm_wire::ChannelParams;
 
 use super::*;
 use crate::{synth, testutil::settings};
@@ -31,7 +36,7 @@ fn rear() -> synth::eot::Rear {
 fn channel() -> EotChannel {
     EotChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Eot(EotParams::default())),
+        settings(ChannelParams::new("eot", &EotParams::default()).expect("eot settings")),
     )
     .unwrap()
 }
@@ -39,10 +44,7 @@ fn channel() -> EotChannel {
 fn eot(out: ChannelOutputs) -> Vec<EotMessage> {
     out.events
         .into_iter()
-        .filter_map(|event| match event {
-            DecoderEvent::Eot(message) => Some(message),
-            _ => None,
-        })
+        .filter_map(|event| event.read::<EotMessage>())
         .collect()
 }
 

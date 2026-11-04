@@ -1,21 +1,28 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
 use std::sync::LazyLock;
 
+use crate::dv::NxdnBandwidth;
+use crate::dv::NxdnParams;
 use num_complex::Complex;
 use sdrmm_dsp::{
-    Viterbi5,
+    Viterbi5, crc_msb_bits,
     fec::conv::{CONFIDENT, ERASURE},
 };
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
-    DvFrame, DvFrameKind, DvMode, EventKind, NxdnBandwidth, NxdnParams,
+    CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, CodeStyle, DecoderEvent,
+    DecoderFamily, DvFrame, DvFrameKind, EventKind,
 };
 
 use super::{
     INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, inverted, tap_c4fm,
     vocoder::{AMBE_3600_INTERLEAVE, MbeDecoder, half_rate_code_vectors},
 };
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 pub(crate) const FSW: u64 = 0x000C_DF59;
 pub(crate) const FSW_BITS: u32 = 20;
@@ -68,8 +75,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 6_250.0,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    emits: vec![EventKind::Dv],
+    emits: vec![EventKind::DV],
     calls: Some(CallGate::Frames),
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
@@ -82,14 +90,18 @@ pub struct NxdnChannel {
     baud: f64,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&NxdnParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Nxdn(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "nxdn channel got {} params",
-            other.type_id()
-        ))),
+fn dv_frame(kind: DvFrameKind) -> DvFrame {
+    DvFrame {
+        code_style: CodeStyle::Ran,
+        ..DvFrame::new("NXDN", kind)
     }
+}
+
+fn params(settings: &ChannelSettings) -> Result<NxdnParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn occupied_band(p: &NxdnParams) -> (f64, f64) {
@@ -102,14 +114,13 @@ pub(crate) fn channel_filter(p: &NxdnParams) -> ChannelFilter {
     super::channel_filter(bandwidth)
 }
 
-impl ChannelRx for NxdnChannel {
+impl NativeChannel for NxdnChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = *params(&settings)?;
+        let p = params(&settings)?;
         let (baud, deviation, _) = shape(p.bandwidth);
         Ok(Self {
             demod: c4fm_demod(&c4fm_params(ctx.input_rate, baud, deviation, RRC_ALPHA)),
@@ -120,9 +131,11 @@ impl ChannelRx for NxdnChannel {
             baud,
         })
     }
+}
 
+impl ChannelRx for NxdnChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let p = *params(&settings)?;
+        let p = params(&settings)?;
         if p.bandwidth != self.bandwidth {
             let (baud, deviation, _) = shape(p.bandwidth);
             self.demod = c4fm_demod(&c4fm_params(self.input_rate, baud, deviation, RRC_ALPHA));
@@ -304,7 +317,7 @@ impl Decoder {
             return;
         }
         self.last_kind = Some(frame.kind);
-        out.events.push(DecoderEvent::Dv(frame));
+        out.events.push(DecoderEvent::of(&frame));
     }
 
     fn frame(&mut self) -> Option<(DvFrame, Vec<[bool; 72]>)> {
@@ -334,7 +347,7 @@ impl Decoder {
             _ if rf_channel == 0 => DvFrameKind::Control,
             _ => DvFrameKind::Voice,
         };
-        let mut frame = DvFrame::new(DvMode::Nxdn, kind);
+        let mut frame = dv_frame(kind);
         frame.opcode = Some(format!(
             "{} {}",
             channel_name(rf_channel),
@@ -465,7 +478,9 @@ fn decode_sacch(channel: &[i16], viterbi: &mut Viterbi5) -> Option<Sacch> {
     coded.extend([-CONFIDENT; 8]);
     let mut info = Vec::with_capacity(40);
     viterbi.decode(&coded, &mut info);
-    if info.len() < 32 || crc_msb(0x27, 0x3f, &info[..26]) != bits_to_u32(&info, 26, 6) {
+    if info.len() < 32
+        || crc_msb_bits(0x27, 6, 0x3f, info[..26].iter().copied()) != bits_to_u32(&info, 26, 6)
+    {
         return None;
     }
     let data = std::array::from_fn(|i| info[8 + i]);
@@ -497,20 +512,13 @@ fn decode_facch(channel: &[i16], viterbi: &mut Viterbi5) -> Option<[bool; FACCH_
     coded.extend([-CONFIDENT; 8]);
     let mut info = Vec::with_capacity(100);
     viterbi.decode(&coded, &mut info);
-    if info.len() < 92 || crc_msb(0x080f, 0x0fff, &info[..80]) != bits_to_u32(&info, 80, 12) {
+    if info.len() < 92
+        || crc_msb_bits(0x080f, 12, 0x0fff, info[..80].iter().copied())
+            != bits_to_u32(&info, 80, 12)
+    {
         return None;
     }
     Some(std::array::from_fn(|i| info[i]))
-}
-
-fn crc_msb(poly: u32, init: u32, bits: &[bool]) -> u32 {
-    let width = 32 - poly.leading_zeros();
-    let top = 1 << (width - 1);
-    let mask = (1 << width) - 1;
-    bits.iter().fold(init, |crc, &bit| {
-        let feedback = bit ^ (crc & top != 0);
-        ((crc << 1) ^ if feedback { poly } else { 0 }) & mask
-    })
 }
 
 struct AliasSegment {
@@ -600,6 +608,26 @@ fn channel_name(rf_channel: u32) -> &'static str {
     }
 }
 
+fn nxdn_signatures() -> Vec<sdrmm_wire::SignalSignature> {
+    super::mode_signatures("nxdn", super::LAND_MOBILE)
+}
+
+pub(crate) fn nxdn_decoder() -> Native<NxdnParams> {
+    Native::new::<NxdnChannel>(occupied_band)
+        .filter(|p| Ok(channel_filter(p)))
+        .signatures(nxdn_signatures)
+        .form(nxdn_form)
+        .kinds(nxdn_kinds)
+}
+
+pub(crate) fn nxdn_form() -> Vec<SettingField> {
+    vec![SettingField::new("bandwidth", "Width", Control::choice::<NxdnBandwidth>()).title("Width")]
+}
+
+fn nxdn_kinds() -> Vec<KindSpec> {
+    vec![]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -611,13 +639,14 @@ mod tests {
         synth::dv::nxdn as tx,
         testutil::settings,
     };
+    use sdrmm_wire::ChannelParams;
 
     fn channel(bandwidth: NxdnBandwidth) -> NxdnChannel {
         NxdnChannel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Nxdn(NxdnParams { bandwidth })),
+            settings(ChannelParams::new("nxdn", &NxdnParams { bandwidth }).expect("nxdn settings")),
         )
         .expect("nxdn channel")
     }
@@ -627,7 +656,7 @@ mod tests {
         let iq = tx::transmission(&tx::Shape::default(), 1, true, INPUT_RATE_HZ);
         let frames = decode(&mut channel(NxdnBandwidth::Narrow), &iq);
         let first = frames.first().expect("a decoded frame");
-        assert_eq!(first.mode, DvMode::Nxdn);
+        assert_eq!(first.mode, "NXDN");
         assert_eq!(first.kind, DvFrameKind::Header);
         assert_eq!(
             first.opcode.as_deref(),
@@ -853,8 +882,11 @@ mod tests {
             .iter()
             .flat_map(|byte| (0..8).rev().map(move |shift| byte >> shift & 1 == 1))
             .collect();
-        assert_eq!(crc_msb(0x27, 0x3F, &bits), 0x0D);
-        assert_eq!(crc_msb(0x80F, 0, &bits).reverse_bits() >> 20, 0xDAF);
+        assert_eq!(crc_msb_bits(0x27, 6, 0x3F, bits.iter().copied()), 0x0D);
+        assert_eq!(
+            crc_msb_bits(0x80F, 12, 0, bits.iter().copied()).reverse_bits() >> 20,
+            0xDAF
+        );
     }
 
     #[test]
@@ -912,7 +944,7 @@ mod tests {
         message_bits(STRUCTURE, 2, &mut message);
         message_bits(RAN, 6, &mut message);
         message.extend(data);
-        let check = crc_msb(0x27, 0x3F, &message);
+        let check = crc_msb_bits(0x27, 6, 0x3F, message.iter().copied());
         message_bits(check, 6, &mut message);
         message.extend([false; 4]);
 
@@ -950,7 +982,7 @@ mod tests {
         let layer3: [bool; FACCH_INFO_BITS] = std::array::from_fn(|i| i % 5 < 2);
 
         let mut message = layer3.to_vec();
-        let check = crc_msb(0x080F, 0x0FFF, &message);
+        let check = crc_msb_bits(0x080F, 12, 0x0FFF, message.iter().copied());
         message_bits(check, 12, &mut message);
         message.extend([false; 4]);
 

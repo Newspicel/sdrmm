@@ -1,4 +1,5 @@
-use sdrmm_wire::{WefaxIoc, WefaxLpm};
+use crate::wefax::WefaxIoc;
+use crate::wefax::WefaxLpm;
 
 use super::track::Track;
 use crate::VideoPicture;

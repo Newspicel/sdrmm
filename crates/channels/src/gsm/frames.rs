@@ -1,4 +1,4 @@
-use sdrmm_wire::GsmLogicalChannel;
+use crate::gsm::GsmLogicalChannel;
 
 use super::{burst::HYPERFRAME, coding::SCH_INFO};
 

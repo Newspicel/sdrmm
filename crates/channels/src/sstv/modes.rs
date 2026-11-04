@@ -1,4 +1,4 @@
-use sdrmm_wire::SstvMode;
+use crate::sstv::SstvMode;
 
 pub(crate) const SYNC_HZ: f64 = 1_200.0;
 pub(crate) const PORCH_HZ: f64 = 1_500.0;

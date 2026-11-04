@@ -1,7 +1,7 @@
 #[cfg(any(test, feature = "synth"))]
 mod encode;
 
-use sdrmm_wire::TetrapolBand;
+use crate::tetrapol::TetrapolBand;
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use encode::{encode_data, encode_voice, frame_bits};

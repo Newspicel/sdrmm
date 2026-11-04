@@ -3,6 +3,28 @@ use utoipa::ToSchema;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum Sideband {
+    #[default]
+    Usb,
+    Lsb,
+}
+
+crate::named!(Sideband);
+
+impl Sideband {
+    pub const ALL: [Self; 2] = [Self::Usb, Self::Lsb];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Usb => "USB",
+            Self::Lsb => "LSB",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Modulation {
     #[default]
     None,
@@ -80,7 +102,7 @@ pub struct IdentSignal {
     pub modulation: Modulation,
     pub confidence: f32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sideband: Option<crate::channel::Sideband>,
+    pub sideband: Option<Sideband>,
     /// Where the signal sits on the dial, in absolute Hz.
     pub frequency_hz: f64,
     pub center_offset_hz: f64,
@@ -127,5 +149,15 @@ impl IdentReport {
     #[must_use]
     pub fn best(&self) -> Option<&ProtocolMatch> {
         self.loudest().and_then(IdentSignal::best)
+    }
+}
+
+/// The modulation of `signal`, with its sideband when it has one.
+#[must_use]
+pub fn modulation_label(signal: &IdentSignal) -> String {
+    let base = signal.modulation.label();
+    match signal.sideband {
+        Some(sideband) => format!("{base} ({})", sideband.label()),
+        None => base.to_owned(),
     }
 }

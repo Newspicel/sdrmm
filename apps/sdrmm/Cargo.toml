@@ -34,6 +34,7 @@ gpu-fft = ["sdrmm-server/gpu-fft", "sdrmm-engine/gpu-fft"]
 [dependencies]
 sdrmm-server.workspace = true
 sdrmm-engine.workspace = true
+sdrmm-plugins.workspace = true
 sdrmm-device-soapy = { workspace = true, optional = true }
 
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal"] }

@@ -1,11 +1,13 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use num_complex::Complex;
+use sdrmm_channels::DatvParams;
+use sdrmm_channels::DatvStandard;
 use sdrmm_channels::{
     ChannelCtx, ChannelOutputs, Dvbs2Modulation as Modulation, Dvbs2Rate as Rate, synth,
 };
 use sdrmm_modem_test_support::ber::perf::measure_throughput;
-use sdrmm_wire::{ChannelParams, ChannelSettings, DatvParams, DatvStandard};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 const BLOCK: usize = 2_048;
 const SECONDS: usize = 1;
@@ -21,10 +23,14 @@ fn settings(standard: DatvStandard) -> ChannelSettings {
     ChannelSettings {
         frequency_hz: 0.0,
         squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Datv(DatvParams {
-            standard,
-            ..synth::datv::params()
-        }),
+        params: ChannelParams::new(
+            "datv",
+            &DatvParams {
+                standard,
+                ..synth::datv::params()
+            },
+        )
+        .expect("datv settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     }
@@ -39,7 +45,11 @@ fn drive(
     for block in iq.chunks(BLOCK) {
         outputs.reset();
         rx.process(block, outputs);
-        if let Some(status) = &outputs.broadcast {
+        for status in outputs
+            .events
+            .iter()
+            .filter_map(sdrmm_wire::DecoderEvent::read::<sdrmm_channels::BroadcastStatus>)
+        {
             frames_ok = frames_ok.max(u64::from(status.frames_ok));
         }
     }

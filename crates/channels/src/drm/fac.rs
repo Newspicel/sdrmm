@@ -1,3 +1,5 @@
+use sdrmm_dsp::word_msb;
+
 use super::{
     bits::crc,
     coding::{Qam, R1_2, R1_3, R1_4, R2_3, Rate},
@@ -31,9 +33,7 @@ pub struct Fac {
 }
 
 fn take(bits: &[bool], at: &mut usize, width: usize) -> u32 {
-    let value = bits[*at..*at + width]
-        .iter()
-        .fold(0u32, |value, &bit| value << 1 | u32::from(bit));
+    let value = word_msb(&bits[*at..*at + width]) as u32;
     *at += width;
     value
 }

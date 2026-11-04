@@ -1,13 +1,16 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::{f64::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    VorParams, VorReading,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate, datalink,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate, datalink,
 };
 
 const RATE: f64 = 48_000.0;
@@ -21,7 +24,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Vor],
+    emits: vec![EventKind::named("vor")],
     ..ChannelDescriptor::default()
 });
 
@@ -60,14 +63,11 @@ pub struct VorChannel {
     settled: bool,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&VorParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Vor(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "VOR channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<VorParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 fn check_params(params: &VorParams) -> Result<(), ChannelError> {
@@ -88,20 +88,21 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     datalink::channel_filter(RATE, HALF_BANDWIDTH)
 }
 
-impl ChannelRx for VorChannel {
+impl NativeChannel for VorChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let params = params(&settings)?.clone();
+        let params = params(&settings)?;
         check_params(&params)?;
         Ok(Self::build(params))
     }
+}
 
+impl ChannelRx for VorChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let params = params(&settings)?.clone();
+        let params = params(&settings)?;
         check_params(&params)?;
         self.params = params;
         Ok(())
@@ -196,7 +197,7 @@ impl VorChannel {
                 .atan2(1.0 - pole * omega.cos())
                 .to_degrees();
         let radial = (variable_phase - reference_phase + filter_lag).rem_euclid(360.0);
-        out.events.push(DecoderEvent::Vor(VorReading {
+        out.events.push(DecoderEvent::of(&VorReading {
             station: self.params.station.clone(),
             station_lat: self.params.station_lat,
             station_lon: self.params.station_lon,
@@ -218,6 +219,78 @@ impl VorChannel {
     }
 }
 
+const VOR_BAND: &[HzRange] = &[HzRange::mhz(108.0, 118.0)];
+
+fn vor_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "VOR",
+            &[Modulation::Am],
+            HzRange::new(15_000.0, 25_000.0),
+            "a 30 Hz AM bearing tone and a 9960 Hz subcarrier on a VOR frequency",
+        )
+        .on(VOR_BAND),
+    ]
+}
+
+pub(crate) fn vor_decoder() -> Native<VorParams> {
+    Native::new::<VorChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(113_000_000.0)
+        .signatures(vor_signatures)
+        .form(vor_form)
+        .kinds(vor_kinds)
+}
+
+pub(crate) fn vor_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new(
+            "station",
+            "Station",
+            Control::optional_text("Optional identifier"),
+        )
+        .title("VOR station identifier")
+        .quiet(None::<String>),
+        SettingField::new(
+            "station_lat",
+            "Lat",
+            NumberSpec::new(-90.0, 90.0, 0.00001)
+                .unit("°")
+                .optional("Unknown"),
+        )
+        .title("VOR station latitude"),
+        SettingField::new(
+            "station_lon",
+            "Lon",
+            NumberSpec::new(-180.0, 180.0, 0.00001)
+                .unit("°")
+                .optional("Unknown"),
+        )
+        .title("VOR station longitude"),
+        SettingField::new(
+            "magnetic_declination_deg",
+            "Declination",
+            NumberSpec::new(-180.0, 180.0, 0.1).unit("°"),
+        )
+        .title("East-positive magnetic declination at the VOR"),
+        SettingField::new(
+            "report_ms",
+            "Every",
+            NumberSpec::new(
+                f64::from(MIN_NAVAID_REPORT_MS),
+                f64::from(MAX_NAVAID_REPORT_MS),
+                250.0,
+            )
+            .unit("ms"),
+        )
+        .title("VOR report interval"),
+    ]
+}
+
+fn vor_kinds() -> Vec<KindSpec> {
+    vec![crate::vor::vor_kind()]
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
@@ -226,6 +299,7 @@ mod tests {
     use crate::testutil::{
         THROUGHPUT_ATTEMPTS, fastest_seconds, realtime_budget, run_events, settings,
     };
+    use sdrmm_wire::ChannelParams;
 
     const ANNEX_10_TONE_HZ: f64 = 30.0;
     const ANNEX_10_SUBCARRIER_HZ: f64 = 9_960.0;
@@ -265,15 +339,12 @@ mod tests {
     fn last_reading(iq: &[Complex<f32>]) -> VorReading {
         let mut channel = VorChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Vor(VorParams::default())),
+            settings(ChannelParams::of(&VorParams::default()).expect("vor settings")),
         )
         .expect("channel");
         run_events(&mut channel, iq)
             .into_iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Vor(reading) => Some(reading),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<VorReading>())
             .next_back()
             .expect("VOR reading")
     }
@@ -323,16 +394,13 @@ mod tests {
             };
             let mut channel = VorChannel::new(
                 ChannelCtx { input_rate: RATE },
-                settings(ChannelParams::Vor(params)),
+                settings(ChannelParams::of(&params).expect("vor settings")),
             )
             .expect("channel");
             let events = run_events(&mut channel, &crate::synth::vor::transmission(radial, 2));
             let reading = events
                 .iter()
-                .filter_map(|event| match event {
-                    DecoderEvent::Vor(reading) => Some(reading),
-                    _ => None,
-                })
+                .filter_map(|event| event.read::<VorReading>())
                 .next_back()
                 .expect("VOR reading");
             let error = (reading.radial_deg - radial + 180.0).rem_euclid(360.0) - 180.0;
@@ -345,21 +413,18 @@ mod tests {
     fn measures_the_radial_at_the_shortest_report_interval() {
         for radial in [0.0, 37.0, 123.0, 301.0] {
             let params = VorParams {
-                report_ms: sdrmm_wire::MIN_NAVAID_REPORT_MS,
+                report_ms: MIN_NAVAID_REPORT_MS,
                 ..VorParams::default()
             };
             let mut channel = VorChannel::new(
                 ChannelCtx { input_rate: RATE },
-                settings(ChannelParams::Vor(params)),
+                settings(ChannelParams::of(&params).expect("vor settings")),
             )
             .expect("channel");
             let events = run_events(&mut channel, &crate::synth::vor::transmission(radial, 2));
             let reading = events
                 .iter()
-                .filter_map(|event| match event {
-                    DecoderEvent::Vor(reading) => Some(reading),
-                    _ => None,
-                })
+                .filter_map(|event| event.read::<VorReading>())
                 .next_back()
                 .expect("VOR reading");
             let error = (reading.radial_deg - radial + 180.0).rem_euclid(360.0) - 180.0;
@@ -369,7 +434,7 @@ mod tests {
 
     #[test]
     fn a_report_interval_outside_the_wire_range_is_rejected() {
-        for report_ms in [0, sdrmm_wire::MAX_NAVAID_REPORT_MS + 1] {
+        for report_ms in [0, MAX_NAVAID_REPORT_MS + 1] {
             let params = VorParams {
                 report_ms,
                 ..VorParams::default()
@@ -377,18 +442,20 @@ mod tests {
             assert!(
                 VorChannel::new(
                     ChannelCtx { input_rate: RATE },
-                    settings(ChannelParams::Vor(params.clone())),
+                    settings(ChannelParams::of(&params).expect("vor settings")),
                 )
                 .is_err(),
                 "{report_ms}"
             );
             let mut channel = VorChannel::new(
                 ChannelCtx { input_rate: RATE },
-                settings(ChannelParams::Vor(VorParams::default())),
+                settings(ChannelParams::of(&VorParams::default()).expect("vor settings")),
             )
             .expect("channel");
             assert!(
-                channel.apply(settings(ChannelParams::Vor(params))).is_err(),
+                channel
+                    .apply(settings(ChannelParams::of(&params).expect("vor settings")))
+                    .is_err(),
                 "{report_ms}"
             );
         }
@@ -400,7 +467,7 @@ mod tests {
         let elapsed = fastest_seconds(THROUGHPUT_ATTEMPTS, || {
             let mut channel = VorChannel::new(
                 ChannelCtx { input_rate: RATE },
-                settings(ChannelParams::Vor(VorParams::default())),
+                settings(ChannelParams::of(&VorParams::default()).expect("vor settings")),
             )
             .expect("channel");
             let started = Instant::now();

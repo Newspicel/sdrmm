@@ -1,4 +1,4 @@
-use sdrmm_wire::LorawanFrame;
+use crate::lora::LorawanFrame;
 
 use super::{Keys, frame, le_u16, le_u24, mic, msb_first_hex, split_mic};
 use crate::crypto::Aes;

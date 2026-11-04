@@ -1,23 +1,23 @@
-use std::fmt;
-
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use utoipa::ToSchema;
-use utoipa::openapi::{RefOr, schema::Schema};
-
-use super::{
-    AcarsMessage, AdsbMessage, AisMessage, AprsPacket, BroadcastData, BroadcastStatus,
-    CwSkimmerSpot, DataLinkMessage, DectFrame, DvFrame, EotMessage, ErmesMessage, FlexMessage,
-    GnssFrame, IdentReport, IlsReading, MorseText, NavtexMessage, PocsagMessage, PskText,
-    RadioClockFrame, RdsUpdate, RttyText, ScramblerStatus, SelcallSequence, SstvPicture,
-    ToneSquelchStatus, VorReading, WsjtMessage, WsprSpot,
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    marker::PhantomData,
+    sync::Arc,
 };
+
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::{Value, value::RawValue};
+use utoipa::ToSchema;
+
 use crate::{
     patch::Hue,
-    present::{EventPayload, Presentation},
+    present::{EventPayload, Presentation, overlay_value},
 };
-use Capability::{Bearing, Clip, Duration, Geo, Log, Picture, Spot, Station, Text, Voice};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Capability {
     Log,
@@ -30,6 +30,8 @@ pub enum Capability {
     Text,
     Picture,
     Clip,
+    /// The view carries an altitude: an aircraft or balloon a radar can be checked against.
+    Track,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -60,47 +62,160 @@ pub enum Lifetime {
     Standing,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct KindInfo {
-    pub name: &'static str,
-    pub noun: &'static str,
-    pub caps: &'static [Capability],
-    pub symbol: Option<Symbol>,
-    pub hue: Hue,
-    pub lifetime: Lifetime,
-}
+pub const SIGHTING_S: u32 = 300;
 
-const SIGHTING_S: u32 = 300;
+/// The name an event kind goes by on the wire, in filters and in the registry.
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
+#[serde(transparent)]
+#[schema(value_type = String)]
+pub struct EventKind(Cow<'static, str>);
 
-impl KindInfo {
-    const fn caps(self, caps: &'static [Capability]) -> Self {
-        Self { caps, ..self }
-    }
-
-    const fn symbol(self, symbol: Symbol) -> Self {
-        Self {
-            symbol: Some(symbol),
-            ..self
-        }
-    }
-
-    const fn standing(self) -> Self {
-        Self {
-            lifetime: Lifetime::Standing,
-            ..self
-        }
-    }
-
-    const fn sighting(self) -> Self {
-        Self {
-            lifetime: Lifetime::Sighting { ttl_s: SIGHTING_S },
-            ..self
-        }
+impl EventKind {
+    #[must_use]
+    pub const fn named(tag: &'static str) -> Self {
+        Self(Cow::Borrowed(tag))
     }
 
     #[must_use]
-    pub fn has(&self, cap: Capability) -> bool {
-        self.caps.contains(&cap)
+    pub fn new(tag: impl Into<String>) -> Self {
+        Self(Cow::Owned(tag.into()))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for EventKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl fmt::Debug for EventKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "EventKind({})", self.as_str())
+    }
+}
+
+impl PartialEq<str> for EventKind {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&str> for EventKind {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+/// One decoded event: the kind it is and that kind's own payload.
+///
+/// The payload travels as JSON text: building one on the DSP thread costs one buffer however many
+/// fields it has, and the control plane parses it when it reads.
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct DecoderEvent {
+    pub kind: EventKind,
+    #[schema(value_type = serde_json::Value)]
+    data: Box<RawValue>,
+}
+
+/// A payload type bound to the event kind it travels as.
+pub trait EventContract: Serialize + DeserializeOwned {
+    const KIND: EventKind;
+}
+
+const EVENT_BUFFER: usize = 256;
+
+/// `payload` as JSON text. A payload that cannot be serialized becomes `null`, which every reader
+/// then rejects rather than reading half of it.
+fn raw(payload: &impl Serialize) -> Box<RawValue> {
+    let mut text = Vec::with_capacity(EVENT_BUFFER);
+    serde_json::to_writer(&mut text, payload)
+        .ok()
+        .and_then(|()| String::from_utf8(text).ok())
+        .and_then(|text| RawValue::from_string(text).ok())
+        .unwrap_or_else(null)
+}
+
+fn null() -> Box<RawValue> {
+    RawValue::from_string("null".to_owned()).unwrap_or_default()
+}
+
+impl<'de> Deserialize<'de> for DecoderEvent {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Stated {
+            kind: EventKind,
+            #[serde(default)]
+            data: Value,
+        }
+        let stated = Stated::deserialize(deserializer)?;
+        Ok(Self::tagged(stated.kind, &stated.data))
+    }
+}
+
+impl PartialEq for DecoderEvent {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+            && (self.data.get() == other.data.get() || self.data() == other.data())
+    }
+}
+
+impl DecoderEvent {
+    #[must_use]
+    pub fn of<T: EventContract>(payload: &T) -> Self {
+        Self::tagged(T::KIND, payload)
+    }
+
+    /// `payload` as an event of `kind`, for a payload type several kinds share.
+    #[must_use]
+    pub fn tagged(kind: EventKind, payload: &impl Serialize) -> Self {
+        Self {
+            kind,
+            data: raw(payload),
+        }
+    }
+
+    /// The payload as a JSON value; `null` when it does not parse.
+    #[must_use]
+    pub fn data(&self) -> Value {
+        serde_json::from_str(self.data.get()).unwrap_or(Value::Null)
+    }
+
+    /// The payload as JSON text, as it travels.
+    #[must_use]
+    pub fn raw_data(&self) -> &str {
+        self.data.get()
+    }
+
+    /// Replaces the payload with `data`.
+    pub fn set_data(&mut self, data: &Value) {
+        self.data = raw(data);
+    }
+
+    /// The payload as `T`, whatever kind carries it.
+    #[must_use]
+    pub fn payload<T: DeserializeOwned>(&self) -> Option<T> {
+        serde_json::from_str(self.data.get()).ok()
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> EventKind {
+        self.kind.clone()
+    }
+
+    #[must_use]
+    pub fn is<T: EventContract>(&self) -> bool {
+        self.kind == T::KIND
+    }
+
+    /// The payload as `T`, only when this event is of `T`'s kind.
+    #[must_use]
+    pub fn read<T: EventContract>(&self) -> Option<T> {
+        if self.is::<T>() { self.payload() } else { None }
     }
 }
 
@@ -114,383 +229,449 @@ pub struct EventKindEntry {
     pub symbol: Option<Symbol>,
     pub hue: Hue,
     pub lifetime: Lifetime,
+    /// A decode of this kind shows the signal is the decoder's. Free text a decoder reads out of
+    /// any noise does not.
+    #[serde(default = "verifies_by_default")]
+    pub verifies: bool,
+    /// A reading of this kind stands only inside its decoder's allocation: the decoder measures
+    /// whatever carrier it is given.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allocated: bool,
 }
 
-const fn info(name: &'static str, noun: &'static str, hue: Hue) -> KindInfo {
-    KindInfo {
-        name,
-        noun,
-        caps: &[],
-        symbol: None,
-        hue,
-        lifetime: Lifetime::Instant,
-    }
+fn verifies_by_default() -> bool {
+    true
 }
 
-macro_rules! decoder_events {
-    ($( ($variant:ident, $tag:literal, $payload:ty, $info:expr) ),* $(,)?) => {
-        #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-        #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
-        pub enum DecoderEvent {
-            $( $variant($payload), )*
-        }
-
-        #[derive(
-            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-            ToSchema,
-        )]
-        #[serde(rename_all = "snake_case")]
-        pub enum EventKind {
-            $( $variant, )*
-        }
-
-        impl EventKind {
-            pub const ALL: &'static [Self] = &[$( Self::$variant ),*];
-
-            #[must_use]
-            pub const fn as_str(self) -> &'static str {
-                match self {
-                    $( Self::$variant => $tag, )*
-                }
-            }
-
-            #[must_use]
-            pub const fn info(self) -> &'static KindInfo {
-                match self {
-                    $( Self::$variant => {
-                        const INFO: KindInfo = $info;
-                        &INFO
-                    } )*
-                }
-            }
-        }
-
-        impl DecoderEvent {
-            #[must_use]
-            pub const fn kind(&self) -> EventKind {
-                match self {
-                    $( Self::$variant(_) => EventKind::$variant, )*
-                }
-            }
-
-            #[must_use]
-            pub fn present(&self) -> Presentation {
-                let mut view = match self {
-                    $( Self::$variant(payload) => payload.present(EventKind::$variant), )*
-                };
-                if view.label.is_none() {
-                    view.label.clone_from(&view.entity);
-                }
-                view
-            }
-
-            pub fn merge(&mut self, newer: &Self) -> bool {
-                match (self, newer) {
-                    $( (Self::$variant(older), Self::$variant(newer)) => {
-                        EventPayload::merge(older, newer);
-                        true
-                    } )*
-                    _ => false,
-                }
-            }
-
-            pub fn strip_clip(&mut self) {
-                match self {
-                    $( Self::$variant(payload) => payload.strip_clip(), )*
-                }
-            }
-        }
-    };
-}
-
-decoder_events! {
-    (Transmission, "transmission", crate::Transmission,
-        info("Transmission", "Transmissions", Hue::Muted).caps(&[Log, Duration, Clip])),
-    (Rds, "rds", RdsUpdate, info("RDS", "Stations", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Pocsag, "pocsag", PocsagMessage,
-        info("POCSAG", "Pagers", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Flex, "flex", FlexMessage, info("FLEX", "Pagers", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Ermes, "ermes", ErmesMessage,
-        info("ERMES", "Pagers", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Eot, "eot", EotMessage,
-        info("End-of-Train", "Trains", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Sarsat, "sarsat", crate::sarsat::SarsatMessage,
-        info("406 MHz beacon", "Beacons", Hue::Pink)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Beacon).sighting()),
-    (Tetrapol, "tetrapol", crate::tetrapol::TetrapolMessage,
-        info("Tetrapol", "Radios", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Adsb, "adsb", AdsbMessage,
-        info("ADS-B", "Aircraft", Hue::Teal)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Plane).sighting()),
-    (Ais, "ais", AisMessage,
-        info("AIS", "Vessels", Hue::Amber)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Ship).sighting()),
-    (Aprs, "aprs", AprsPacket,
-        info("APRS", "Stations", Hue::Violet)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Station).sighting()),
-    (Rtty, "rtty", RttyText, info("RTTY", "RTTY", Hue::Muted).caps(&[Log, Text])),
-    (Morse, "morse", MorseText, info("Morse", "Morse", Hue::Muted).caps(&[Log, Text])),
-    (CwSkimmer, "cw_skimmer", CwSkimmerSpot,
-        info("CW skimmer", "CW spots", Hue::Muted).caps(&[Log])),
-    (Selcall, "selcall", SelcallSequence, info("Selcall", "Selcall", Hue::Muted).caps(&[Log])),
-    (Navtex, "navtex", NavtexMessage,
-        info("NAVTEX", "Stations", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Acars, "acars", AcarsMessage,
-        info("ACARS", "Aircraft", Hue::Teal)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Plane).sighting()),
-    (Tone, "tone", ToneSquelchStatus, info("Tone", "Tones", Hue::Muted).caps(&[Log])),
-    (Scrambler, "scrambler", ScramblerStatus,
-        info("Scrambler", "Scramblers", Hue::Muted).caps(&[Log])),
-    (Dv, "dv", DvFrame,
-        info("Digital voice", "Radios", Hue::Blue)
-            .caps(&[Log, Station, Geo, Voice]).symbol(Symbol::Person).sighting()),
-    (Call, "call", crate::rest::VoiceCall,
-        info("Call", "Calls", Hue::Accent)
-            .caps(&[Log, Station, Voice, Duration, Clip]).sighting()),
-    (Ft8, "ft8", WsjtMessage,
-        info("FT8", "Stations", Hue::Muted).caps(&[Log, Station, Spot]).sighting()),
-    (Ft4, "ft4", WsjtMessage,
-        info("FT4", "Stations", Hue::Muted).caps(&[Log, Station, Spot]).sighting()),
-    (Psk, "psk", PskText, info("PSK", "PSK", Hue::Muted).caps(&[Log, Text])),
-    (Wspr, "wspr", WsprSpot,
-        info("WSPR", "Stations", Hue::Muted).caps(&[Log, Station, Spot]).sighting()),
-    (Ident, "ident", IdentReport, info("Signal ID", "Signals", Hue::Muted).caps(&[Log])),
-    (BroadcastData, "broadcast_data", BroadcastData,
-        info("Broadcast data", "Services", Hue::Muted).caps(&[Log])),
-    (Broadcast, "broadcast", BroadcastStatus, info("Broadcast", "Services", Hue::Muted)),
-    (RadioClock, "radio_clock", RadioClockFrame,
-        info("Radio clock", "Clocks", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Gnss, "gnss", GnssFrame,
-        info("GNSS lab", "Satellites", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Sstv, "sstv", SstvPicture, info("SSTV", "Pictures", Hue::Orange).caps(&[Log, Picture])),
-    (Vor, "vor", VorReading,
-        info("VOR", "Beacons", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Ils, "ils", IlsReading, info("ILS", "ILS", Hue::Muted).caps(&[Log])),
-    (Dsc, "dsc", DataLinkMessage,
-        info("DSC", "Vessels", Hue::Amber)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Ship).sighting()),
-    (InmarsatStdc, "inmarsat_stdc", DataLinkMessage,
-        info("Inmarsat STD-C", "Vessels", Hue::Amber)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Ship).sighting()),
-    (InmarsatAero, "inmarsat_aero", DataLinkMessage,
-        info("Inmarsat Aero", "Aircraft", Hue::Teal)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Plane).sighting()),
-    (Vdl2, "vdl2", DataLinkMessage,
-        info("VDL Mode 2", "Aircraft", Hue::Teal)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Plane).sighting()),
-    (Hfdl, "hfdl", DataLinkMessage,
-        info("HFDL", "Aircraft", Hue::Teal)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Plane).sighting()),
-    (Iridium, "iridium", DataLinkMessage,
-        info("Iridium", "Bursts", Hue::Blue)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Dot).sighting()),
-    (Df, "df", crate::fusion::DfBearing,
-        info("Bearing", "Bearings", Hue::Indigo)
-            .caps(&[Log, Station, Geo, Bearing]).symbol(Symbol::Antenna).sighting()),
-    (DfFix, "df_fix", crate::fusion::DfEstimate,
-        info("Fix", "Fixes", Hue::Indigo)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Fix).sighting()),
-    (Radar, "radar", crate::radar::RadarTrackEvent,
-        info("Radar", "Tracks", Hue::Orange)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Echo).sighting()),
-    (RadarSites, "radar_sites", crate::radar::RadarSites,
-        info("Radar sites", "Sites", Hue::Orange)
-            .caps(&[Station, Geo]).symbol(Symbol::Antenna).standing()),
-    (Nav, "nav", crate::fusion::NavGuide,
-        info("Guidance", "Targets", Hue::Indigo)
-            .caps(&[Station, Geo]).symbol(Symbol::Target).standing()),
-    (Satellite, "satellite", crate::satellite::SatelliteFix,
-        info("Satellite", "Satellites", Hue::Pink)
-            .caps(&[Station, Geo]).symbol(Symbol::Satellite).standing()),
-    (Dect, "dect", DectFrame,
-        info("DECT", "Base stations", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Gsm, "gsm", crate::gsm::GsmFrame,
-        info("GSM", "Cells", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Apt, "apt", crate::weather::AptImage,
-        info("NOAA APT", "Pictures", Hue::Orange).caps(&[Log, Picture])),
-    (Lrpt, "lrpt", crate::weather::LrptImage,
-        info("Meteor LRPT", "Pictures", Hue::Orange).caps(&[Log, Picture])),
-    (Wefax, "wefax", crate::weather::WefaxPicture,
-        info("WEFAX", "Pictures", Hue::Orange).caps(&[Log, Picture])),
-    (Same, "same", crate::same::SameMessage,
-        info("SAME", "Alerts", Hue::Orange).caps(&[Log, Station]).sighting()),
-    (Radiosonde, "radiosonde", crate::weather::RadiosondeFrame,
-        info("Radiosonde", "Sondes", Hue::Orange)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Balloon).sighting()),
-    (Lora, "lora", crate::lora::LoraFrame,
-        info("LoRa", "Nodes", Hue::Green)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Node).sighting()),
-    (RemoteId, "remote_id", crate::remote_id::RemoteIdFrame,
-        info("Remote ID", "Drones", Hue::Cyan)
-            .caps(&[Log, Station, Geo]).symbol(Symbol::Drone).sighting()),
-    (Ble, "ble", crate::ble::BleAdvert,
-        info("BLE", "Devices", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (WifiOccupancy, "wifi_occupancy", crate::airtime::WifiOccupancyReport,
-        info("Wi-Fi load", "Wi-Fi load", Hue::Muted).caps(&[Log])),
-    (IsmSurvey, "ism_survey", crate::airtime::IsmSurveyReport,
-        info("2.4 GHz", "2.4 GHz", Hue::Muted).caps(&[Log])),
-    (Ism, "ism", crate::ism::IsmMessage,
-        info("ISM sensor", "Sensors", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (Wmbus, "wmbus", crate::wmbus::WmbusMessage,
-        info("wM-Bus", "Meters", Hue::Muted).caps(&[Log, Station]).sighting()),
-    (NoiseFigure, "noise_figure", crate::measurement::NoiseFigureReport,
-        info("Noise figure", "Noise figure", Hue::Muted).caps(&[Log])),
-    (Per, "per", crate::measurement::PerReport, info("PER", "PER", Hue::Muted).caps(&[Log])),
-    (Sid, "sid", crate::measurement::SidReport, info("SID", "SID", Hue::Muted).caps(&[Log])),
-    (Stanag, "stanag", crate::stanag::StanagReport,
-        info("STANAG", "STANAG", Hue::Muted).caps(&[Log])),
-}
-
-const _: () = assert!(EventKind::ALL.len() <= 128);
-
-impl EventKind {
+impl EventKindEntry {
     #[must_use]
-    pub fn parse(text: &str) -> Option<Self> {
-        Self::ALL.iter().copied().find(|kind| kind.as_str() == text)
-    }
-
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        self.info().name
-    }
-
-    #[must_use]
-    pub fn has(self, cap: Capability) -> bool {
-        self.info().has(cap)
-    }
-
-    #[must_use]
-    pub fn entry(self) -> EventKindEntry {
-        let info = self.info();
-        EventKindEntry {
-            kind: self,
-            name: info.name.to_owned(),
-            noun: info.noun.to_owned(),
-            caps: info.caps.to_vec(),
-            symbol: info.symbol,
-            hue: info.hue,
-            lifetime: info.lifetime,
+    pub fn new(kind: EventKind, name: &str, noun: &str, hue: Hue) -> Self {
+        Self {
+            kind,
+            name: name.to_owned(),
+            noun: noun.to_owned(),
+            caps: Vec::new(),
+            symbol: None,
+            hue,
+            lifetime: Lifetime::Instant,
+            verifies: true,
+            allocated: false,
         }
     }
 
     #[must_use]
-    pub fn entries() -> Vec<EventKindEntry> {
-        Self::ALL.iter().map(|kind| kind.entry()).collect()
+    pub fn caps(mut self, caps: &[Capability]) -> Self {
+        self.caps = caps.to_vec();
+        self
     }
 
-    const fn bit(self) -> u128 {
-        1 << self as u32
+    #[must_use]
+    pub fn symbol(mut self, symbol: Symbol) -> Self {
+        self.symbol = Some(symbol);
+        self
+    }
+
+    #[must_use]
+    pub fn standing(mut self) -> Self {
+        self.lifetime = Lifetime::Standing;
+        self
+    }
+
+    #[must_use]
+    pub fn sighting(mut self) -> Self {
+        self.lifetime = Lifetime::Sighting { ttl_s: SIGHTING_S };
+        self
+    }
+
+    #[must_use]
+    pub fn tentative(mut self) -> Self {
+        self.verifies = false;
+        self
+    }
+
+    #[must_use]
+    pub fn allocated(mut self) -> Self {
+        self.allocated = true;
+        self
+    }
+
+    #[must_use]
+    pub fn has(&self, cap: Capability) -> bool {
+        self.caps.contains(&cap)
     }
 }
 
-impl fmt::Display for EventKind {
+/// How the platform reads one kind's payloads without knowing their type.
+pub trait KindCodec: Send + Sync {
+    fn present(&self, kind: &EventKind, data: &Value) -> Result<Presentation, String>;
+
+    fn merge(&self, older: &mut Value, newer: &Value) {
+        overlay_value(older, newer);
+    }
+
+    fn strip_clip(&self, _data: &mut Value) {}
+}
+
+struct Typed<T>(PhantomData<fn() -> T>);
+
+impl<T: EventPayload> KindCodec for Typed<T> {
+    fn present(&self, kind: &EventKind, data: &Value) -> Result<Presentation, String> {
+        let payload: T = serde_json::from_value(data.clone())
+            .map_err(|error| format!("{kind} payload: {error}"))?;
+        Ok(payload.present(kind))
+    }
+
+    fn merge(&self, older: &mut Value, newer: &Value) {
+        let (Ok(mut base), Ok(top)) = (
+            serde_json::from_value::<T>(older.clone()),
+            serde_json::from_value::<T>(newer.clone()),
+        ) else {
+            *older = newer.clone();
+            return;
+        };
+        base.merge(&top);
+        if let Ok(merged) = serde_json::to_value(base) {
+            *older = merged;
+        }
+    }
+
+    fn strip_clip(&self, data: &mut Value) {
+        if let Ok(mut payload) = serde_json::from_value::<T>(data.clone()) {
+            payload.strip_clip();
+            if let Ok(stripped) = serde_json::to_value(payload) {
+                *data = stripped;
+            }
+        }
+    }
+}
+
+/// An event kind as the registry holds it: what it is called and how to read it.
+#[derive(Clone)]
+pub struct KindSpec {
+    pub entry: EventKindEntry,
+    pub codec: Arc<dyn KindCodec>,
+}
+
+impl KindSpec {
+    #[must_use]
+    pub fn of<T: EventPayload + EventContract + 'static>(
+        name: &str,
+        noun: &str,
+        hue: Hue,
+    ) -> KindSpecBuilder {
+        Self::tagged::<T>(T::KIND, name, noun, hue)
+    }
+
+    /// A kind whose payload type other kinds share.
+    #[must_use]
+    pub fn tagged<T: EventPayload + 'static>(
+        kind: EventKind,
+        name: &str,
+        noun: &str,
+        hue: Hue,
+    ) -> KindSpecBuilder {
+        KindSpecBuilder {
+            entry: EventKindEntry::new(kind, name, noun, hue),
+            codec: Arc::new(Typed::<T>(PhantomData)),
+        }
+    }
+
+    /// A kind read through its own codec, as a plugin supplies one.
+    #[must_use]
+    pub fn with_codec(entry: EventKindEntry, codec: Arc<dyn KindCodec>) -> Self {
+        Self { entry, codec }
+    }
+}
+
+impl fmt::Debug for KindSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+        f.debug_tuple("KindSpec").field(&self.entry).finish()
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct KindSet(u128);
+pub struct KindSpecBuilder {
+    entry: EventKindEntry,
+    codec: Arc<dyn KindCodec>,
+}
 
-impl KindSet {
-    pub const EMPTY: Self = Self(0);
-
+impl KindSpecBuilder {
     #[must_use]
-    pub fn all() -> Self {
-        EventKind::ALL.iter().copied().collect()
+    pub fn caps(mut self, caps: &[Capability]) -> Self {
+        self.entry = self.entry.caps(caps);
+        self
     }
 
     #[must_use]
-    pub fn with_cap(cap: Capability) -> Self {
-        EventKind::ALL
+    pub fn symbol(mut self, symbol: Symbol) -> Self {
+        self.entry = self.entry.symbol(symbol);
+        self
+    }
+
+    #[must_use]
+    pub fn standing(mut self) -> Self {
+        self.entry = self.entry.standing();
+        self
+    }
+
+    #[must_use]
+    pub fn sighting(mut self) -> Self {
+        self.entry = self.entry.sighting();
+        self
+    }
+
+    #[must_use]
+    pub fn tentative(mut self) -> Self {
+        self.entry = self.entry.tentative();
+        self
+    }
+
+    #[must_use]
+    pub fn allocated(mut self) -> Self {
+        self.entry = self.entry.allocated();
+        self
+    }
+
+    #[must_use]
+    pub fn build(self) -> KindSpec {
+        KindSpec {
+            entry: self.entry,
+            codec: self.codec,
+        }
+    }
+}
+
+/// Turns events into the bytes of a wire format other software reads, such as an aircraft
+/// feed.
+pub trait FeedEncoder: Send + Sync {
+    /// The frame for `event`, one of the feed's kinds, or why it cannot be framed.
+    fn encode(&self, event: &DecoderEvent) -> Result<Vec<u8>, String>;
+}
+
+/// A feed format a decoder offers, with the kinds it encodes.
+#[derive(Clone)]
+pub struct FeedSpec {
+    pub format: String,
+    pub name: String,
+    pub default_address: String,
+    pub kinds: KindSet,
+    /// Sent to idle clients so they know the feed is alive; empty sends nothing.
+    pub heartbeat: Vec<u8>,
+    pub encoder: Arc<dyn FeedEncoder>,
+}
+
+impl fmt::Debug for FeedSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FeedSpec")
+            .field("format", &self.format)
+            .field("kinds", &self.kinds)
+            .finish_non_exhaustive()
+    }
+}
+
+/// A feed format as the frontend lists it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct FeedEntry {
+    pub format: String,
+    pub name: String,
+    pub default_address: String,
+    pub kinds: KindSet,
+}
+
+/// Every event kind the running server knows: the platform's own and those of every decoder
+/// registered now, with the feed formats they offer.
+#[derive(Clone, Debug, Default)]
+pub struct EventCatalog {
+    kinds: BTreeMap<EventKind, KindSpec>,
+    feeds: Vec<FeedSpec>,
+}
+
+impl EventCatalog {
+    #[must_use]
+    pub fn new(specs: impl IntoIterator<Item = KindSpec>) -> Self {
+        Self {
+            kinds: specs
+                .into_iter()
+                .map(|spec| (spec.entry.kind.clone(), spec))
+                .collect(),
+            feeds: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_feeds(mut self, feeds: impl IntoIterator<Item = FeedSpec>) -> Self {
+        self.feeds.extend(feeds);
+        self
+    }
+
+    #[must_use]
+    pub fn feeds(&self) -> &[FeedSpec] {
+        &self.feeds
+    }
+
+    #[must_use]
+    pub fn feed(&self, format: &str) -> Option<&FeedSpec> {
+        self.feeds.iter().find(|feed| feed.format == format)
+    }
+
+    #[must_use]
+    pub fn feed_entries(&self) -> Vec<FeedEntry> {
+        self.feeds
             .iter()
-            .copied()
-            .filter(|kind| kind.has(cap))
+            .map(|feed| FeedEntry {
+                format: feed.format.clone(),
+                name: feed.name.clone(),
+                default_address: feed.default_address.clone(),
+                kinds: feed.kinds.clone(),
+            })
             .collect()
     }
 
     #[must_use]
-    pub const fn with(self, kind: EventKind) -> Self {
-        Self(self.0 | kind.bit())
+    pub fn feed_kinds(&self, format: &str) -> KindSet {
+        self.feed(format)
+            .map(|feed| feed.kinds.clone())
+            .unwrap_or_default()
     }
 
     #[must_use]
-    pub const fn contains(self, kind: EventKind) -> bool {
-        self.0 & kind.bit() != 0
+    pub fn entry(&self, kind: &EventKind) -> Option<&EventKindEntry> {
+        self.kinds.get(kind).map(|spec| &spec.entry)
     }
 
     #[must_use]
-    pub const fn union(self, other: Self) -> Self {
-        Self(self.0 | other.0)
+    pub fn entries(&self) -> Vec<EventKindEntry> {
+        self.kinds.values().map(|spec| spec.entry.clone()).collect()
     }
 
     #[must_use]
-    pub const fn intersection(self, other: Self) -> Self {
-        Self(self.0 & other.0)
+    pub fn parse(&self, tag: &str) -> Option<EventKind> {
+        self.kinds.keys().find(|kind| kind.as_str() == tag).cloned()
     }
 
     #[must_use]
-    pub const fn without(self, other: Self) -> Self {
-        Self(self.0 & !other.0)
+    pub fn has(&self, kind: &EventKind, cap: Capability) -> bool {
+        self.entry(kind).is_some_and(|entry| entry.has(cap))
     }
 
     #[must_use]
-    pub const fn is_empty(self) -> bool {
-        self.0 == 0
+    pub fn all(&self) -> KindSet {
+        self.kinds.keys().cloned().collect()
     }
 
     #[must_use]
-    pub const fn len(self) -> usize {
-        self.0.count_ones() as usize
+    pub fn with_cap(&self, cap: Capability) -> KindSet {
+        self.kinds
+            .values()
+            .filter(|spec| spec.entry.has(cap))
+            .map(|spec| spec.entry.kind.clone())
+            .collect()
     }
 
-    pub fn iter(self) -> impl Iterator<Item = EventKind> {
-        EventKind::ALL
-            .iter()
-            .copied()
-            .filter(move |kind| self.contains(*kind))
+    /// How `event` reads in a log. A kind nobody registered, or a payload its codec rejects,
+    /// still presents, naming what is wrong instead of hiding the event.
+    #[must_use]
+    pub fn present(&self, event: &DecoderEvent) -> Presentation {
+        let presented = match self.kinds.get(&event.kind) {
+            Some(spec) => spec.codec.present(&event.kind, &event.data()),
+            None => Err(format!("unknown event kind {}", event.kind)),
+        };
+        let mut view = presented.unwrap_or_else(Presentation::of);
+        if view.label.is_none() {
+            view.label.clone_from(&view.entity);
+        }
+        view
+    }
+
+    /// Folds `newer` into `older` when both are of one kind.
+    pub fn merge(&self, older: &mut DecoderEvent, newer: &DecoderEvent) -> bool {
+        if older.kind != newer.kind {
+            return false;
+        }
+        let mut merged = older.data();
+        let top = newer.data();
+        match self.kinds.get(&older.kind) {
+            Some(spec) => spec.codec.merge(&mut merged, &top),
+            None => overlay_value(&mut merged, &top),
+        }
+        older.set_data(&merged);
+        true
+    }
+
+    pub fn strip_clip(&self, event: &mut DecoderEvent) {
+        if let Some(spec) = self.kinds.get(&event.kind) {
+            let mut data = event.data();
+            spec.codec.strip_clip(&mut data);
+            event.set_data(&data);
+        }
+    }
+}
+
+/// A set of event kinds, sorted, as a filter or a port states it.
+#[derive(Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct KindSet(BTreeSet<EventKind>);
+
+impl utoipa::PartialSchema for KindSet {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        <Vec<String> as utoipa::PartialSchema>::schema()
+    }
+}
+
+impl ToSchema for KindSet {}
+
+impl KindSet {
+    pub const EMPTY: Self = Self(BTreeSet::new());
+
+    #[must_use]
+    pub fn with(mut self, kind: EventKind) -> Self {
+        self.0.insert(kind);
+        self
+    }
+
+    #[must_use]
+    pub fn contains(&self, kind: &EventKind) -> bool {
+        self.0.contains(kind)
+    }
+
+    #[must_use]
+    pub fn union(&self, other: &Self) -> Self {
+        self.0.union(&other.0).cloned().collect()
+    }
+
+    #[must_use]
+    pub fn intersection(&self, other: &Self) -> Self {
+        self.0.intersection(&other.0).cloned().collect()
+    }
+
+    #[must_use]
+    pub fn without(&self, other: &Self) -> Self {
+        self.0.difference(&other.0).cloned().collect()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &EventKind> {
+        self.0.iter()
     }
 }
 
 impl FromIterator<EventKind> for KindSet {
     fn from_iter<I: IntoIterator<Item = EventKind>>(kinds: I) -> Self {
-        kinds.into_iter().fold(Self::EMPTY, Self::with)
+        Self(kinds.into_iter().collect())
     }
 }
 
 impl fmt::Debug for KindSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_set().entries(self.iter()).finish()
-    }
-}
-
-impl Serialize for KindSet {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.iter())
-    }
-}
-
-impl<'de> Deserialize<'de> for KindSet {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Vec::<EventKind>::deserialize(deserializer)?
-            .into_iter()
-            .collect())
-    }
-}
-
-impl utoipa::PartialSchema for KindSet {
-    fn schema() -> RefOr<Schema> {
-        <Vec<EventKind> as utoipa::PartialSchema>::schema()
-    }
-}
-
-impl ToSchema for KindSet {
-    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
-        schemas.push((
-            <EventKind as ToSchema>::name().into_owned(),
-            <EventKind as utoipa::PartialSchema>::schema(),
-        ));
-        <EventKind as ToSchema>::schemas(schemas);
     }
 }
 

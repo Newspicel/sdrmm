@@ -1,4 +1,4 @@
-use sdrmm_wire::DectCapability as Cap;
+use crate::dect::DectCapability as Cap;
 
 use super::mac::{bit, field};
 
@@ -232,7 +232,7 @@ fn modulation(a: u64, out: &mut Vec<Cap>) {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::DectCapability as Cap;
+    use crate::dect::DectCapability as Cap;
 
     use super::{NextPart, Part, decode};
     use crate::dect::mac::{a_field_crc_ok, field};

@@ -1,8 +1,8 @@
 use std::f32::consts::TAU;
 
+use crate::lrpt::LrptMode;
 use num_complex::Complex;
 use sdrmm_dsp::design_rrc;
-use sdrmm_wire::LrptMode;
 
 pub const ROLL_OFF: f64 = 0.6;
 const FILTER_SPAN: usize = 6;

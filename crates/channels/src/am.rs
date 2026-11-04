@@ -1,15 +1,18 @@
+use crate::registry::Native;
+use sdrmm_wire::{ClickProfile, Control, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Agc, Decimator, RealDecimator, design_lowpass};
 use sdrmm_modem::analog::{AmDemod, AmDetector, AmMode, AmParams as AmWaveform, AmRx};
-use sdrmm_wire::{
-    AmParams, CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily,
-};
+use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily};
 
 use crate::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx,
-    TxPayload, check_input_rate, clamp_full_scale,
+    NativeChannel, TxPayload, check_input_rate, clamp_full_scale,
     tx::{Burst, TxQueue},
     voice_leveller,
 };
@@ -27,6 +30,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: 48_000.0,
     has_audio: true,
     calls: Some(CallGate::Squelch),
+    click: ClickProfile::Detector,
+    levels_audio: true,
+    analog_voice: true,
     ..ChannelDescriptor::default()
 });
 
@@ -35,14 +41,8 @@ pub struct AmChannel {
     leveller: Agc,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&AmParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Am(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "am channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<AmParams, ChannelError> {
+    crate::settings_of::<AmParams>(settings)
 }
 
 fn check_bandwidth(p: &AmParams) -> Result<(), ChannelError> {
@@ -101,23 +101,24 @@ fn demodulator(p: &AmParams) -> Result<AmDemod, ChannelError> {
     ))
 }
 
-impl ChannelRx for AmChannel {
+impl NativeChannel for AmChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
         Ok(Self {
-            demod: demodulator(p)?,
+            demod: demodulator(&p)?,
             leveller: voice_leveller(),
         })
     }
+}
 
+impl ChannelRx for AmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
-        self.demod = demodulator(p)?;
+        self.demod = demodulator(&p)?;
         Ok(())
     }
 
@@ -150,14 +151,14 @@ impl ChannelTx for AmTx {
         let p = params(&settings)?;
         Ok(Self {
             queue: TxQueue::new(DESCRIPTOR.type_id.as_str(), f64::from(AUDIO_RATE)),
-            audio_lp: audio_lowpass(p)?,
+            audio_lp: audio_lowpass(&p)?,
             filtered: Vec::new(),
             burst: Burst::new(ctx.input_rate),
         })
     }
 
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        self.audio_lp = audio_lowpass(params(&settings)?)?;
+        self.audio_lp = audio_lowpass(&params(&settings)?)?;
         Ok(())
     }
 
@@ -189,13 +190,62 @@ impl ChannelTx for AmTx {
     }
 }
 
+const AIRBAND: &[HzRange] = &[HzRange::mhz(118.0, 137.0)];
+
+fn am_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "AM voice",
+            &[Modulation::Am],
+            HzRange::new(2_000.0, 12_000.0),
+            "amplitude modulation over a carrier",
+        ),
+        SignalSignature::new(
+            "Airband voice (AM)",
+            &[Modulation::Am],
+            HzRange::new(4_000.0, 10_000.0),
+            "amplitude modulation over a carrier in the aeronautical band",
+        )
+        .on(AIRBAND),
+    ]
+}
+
+/// Opens the filter a quarter past the heard width.
+fn am_tune(signal: &sdrmm_wire::IdentSignal, p: &mut AmParams) -> f64 {
+    p.bandwidth_hz = (signal.bandwidth_hz * 1.25).clamp(4000.0, 30_000.0);
+    0.0
+}
+
+pub(crate) fn am_decoder() -> Native<AmParams> {
+    Native::new::<AmChannel>(|p: &AmParams| (-p.bandwidth_hz / 2.0, p.bandwidth_hz / 2.0))
+        .filter(channel_filter)
+        .tx::<AmTx>()
+        .signatures(am_signatures)
+        .tune(am_tune)
+        .form(am_form)
+        .kinds(am_kinds)
+}
+
+pub(crate) fn am_form() -> Vec<SettingField> {
+    vec![
+        SettingField::bandwidth(&[5_000.0, 8_000.0, 10_000.0]),
+        SettingField::new("sync", "Sync", Control::Toggle)
+            .title("Lock to the carrier; clearer under fading"),
+    ]
+}
+
+fn am_kinds() -> Vec<KindSpec> {
+    vec![]
+}
+
 #[cfg(test)]
 mod tests {
     use std::f64::consts::TAU;
 
-    use sdrmm_wire::{NfmParams, WfmParams};
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
+    use crate::{nfm::NfmParams, wfm::WfmParams};
     use crate::{
         synth::{burst, tone_audio},
         testutil::{am_iq, dominant_tone, rms, run_ragged, settings, tone_power},
@@ -206,7 +256,7 @@ mod tests {
     fn channel(p: AmParams) -> AmChannel {
         AmChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Am(p)),
+            settings(ChannelParams::of(&p).expect("am settings")),
         )
         .unwrap()
     }
@@ -232,10 +282,13 @@ mod tests {
             bandwidth_hz: 10_000.0,
             ..AmParams::default()
         });
-        chan.apply(settings(ChannelParams::Am(AmParams {
-            bandwidth_hz: 6_000.0,
-            ..AmParams::default()
-        })))
+        chan.apply(settings(
+            ChannelParams::of(&AmParams {
+                bandwidth_hz: 6_000.0,
+                ..AmParams::default()
+            })
+            .expect("am settings"),
+        ))
         .unwrap();
         let audio = run_ragged(&mut chan, &am_iq(RATE, 1_000.0, 0.5, 48_000));
         let window = &audio[4_000..16_000];
@@ -284,7 +337,9 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(AmParams::default());
-        let err = chan.apply(settings(ChannelParams::Wfm(WfmParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("wfm", &WfmParams::default()).expect("wfm settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     }
 
@@ -293,10 +348,13 @@ mod tests {
     }
 
     fn tx_params() -> ChannelSettings {
-        settings(ChannelParams::Am(AmParams {
-            bandwidth_hz: 10_000.0,
-            ..AmParams::default()
-        }))
+        settings(
+            ChannelParams::of(&AmParams {
+                bandwidth_hz: 10_000.0,
+                ..AmParams::default()
+            })
+            .expect("am settings"),
+        )
     }
 
     fn transmitter() -> AmTx {
@@ -384,7 +442,10 @@ mod tests {
 
     #[test]
     fn tx_rejects_mismatched_params_and_input_rate() {
-        let built = AmTx::new(ctx(), settings(ChannelParams::Nfm(NfmParams::default())));
+        let built = AmTx::new(
+            ctx(),
+            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+        );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
         let built = AmTx::new(
             ChannelCtx {

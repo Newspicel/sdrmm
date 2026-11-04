@@ -27,8 +27,8 @@
   "aprs": {
     "type": "aprs",
     "settings": {
-      "mode": "afsk1200",
-      "bandwidth_hz": 12500.0
+      "bandwidth_hz": 12500.0,
+      "mode": "afsk1200"
     }
   },
   "apt": {
@@ -40,12 +40,12 @@
   "atv": {
     "type": "atv",
     "settings": {
-      "modulation": "am",
-      "standard": "ccir625",
       "bandwidth_hz": 1500000.0,
-      "invert": false,
+      "color": "monochrome",
       "interlace": true,
-      "color": "monochrome"
+      "invert": false,
+      "modulation": "am",
+      "standard": "ccir625"
     }
   },
   "ble": {
@@ -58,28 +58,28 @@
     "type": "cw_skimmer",
     "settings": {
       "bandwidth_hz": 24000.0,
-      "threshold_db": 10.0,
-      "max_signals": 32
+      "max_signals": 32,
+      "threshold_db": 10.0
     }
   },
   "dab": {
     "type": "dab",
     "settings": {
-      "transmission_mode": "i",
-      "mode": "auto"
+      "mode": "auto",
+      "transmission_mode": "i"
     }
   },
   "datv": {
     "type": "datv",
     "settings": {
-      "superframes": false,
-      "superframe_reference": 0,
-      "superframe_payload": 0,
-      "superframe_search": false,
-      "standard": "dvb_s",
-      "symbol_rate": 333000.0,
       "code_rate": "auto",
-      "roll_off": "pct35"
+      "roll_off": "pct35",
+      "standard": "dvb_s",
+      "superframe_payload": 0,
+      "superframe_reference": 0,
+      "superframe_search": false,
+      "superframes": false,
+      "symbol_rate": 333000.0
     }
   },
   "dect": {
@@ -93,8 +93,8 @@
   "dmr": {
     "type": "dmr",
     "settings": {
-      "slots": "both",
-      "ignore_crc": false
+      "ignore_crc": false,
+      "slots": "both"
     }
   },
   "dpmr": {
@@ -104,8 +104,8 @@
   "drm": {
     "type": "drm",
     "settings": {
-      "mode": "auto",
-      "bandwidth_hz": 100000.0
+      "bandwidth_hz": 100000.0,
+      "mode": "auto"
     }
   },
   "dsc": {
@@ -119,9 +119,9 @@
   "dvbt": {
     "type": "dvbt",
     "settings": {
-      "standard": "dvb_t",
       "bandwidth": "mhz8",
-      "low_priority": false
+      "low_priority": false,
+      "standard": "dvb_t"
     }
   },
   "eot": {
@@ -154,32 +154,32 @@
   "ft4": {
     "type": "ft4",
     "settings": {
-      "audio_low_hz": 200.0,
       "audio_high_hz": 3000.0,
+      "audio_low_hz": 200.0,
       "max_candidates": 200
     }
   },
   "ft8": {
     "type": "ft8",
     "settings": {
-      "audio_low_hz": 200.0,
       "audio_high_hz": 3000.0,
+      "audio_low_hz": 200.0,
       "max_candidates": 200
     }
   },
   "gnss": {
     "type": "gnss",
     "settings": {
-      "prn": 1,
       "doppler_hz": 10000,
+      "prn": 1,
       "threshold": 4.0
     }
   },
   "gsm": {
     "type": "gsm",
     "settings": {
-      "paging": true,
-      "follow": true
+      "follow": true,
+      "paging": true
     }
   },
   "hfdl": {
@@ -226,17 +226,17 @@
   "ism_survey": {
     "type": "ism_survey",
     "settings": {
-      "span": "mhz20",
-      "margin_db": 10.0
+      "margin_db": 10.0,
+      "span": "mhz20"
     }
   },
   "lora": {
     "type": "lora",
     "settings": {
       "bandwidth": "khz125",
-      "spreading_factor": "all",
       "iq": "normal",
-      "protocol": "auto"
+      "protocol": "auto",
+      "spreading_factor": "all"
     }
   },
   "lrpt": {
@@ -265,9 +265,9 @@
     "type": "nfm",
     "settings": {
       "bandwidth_hz": 12500.0,
-      "tone_mode": "off",
+      "compander": false,
       "scrambler_mode": "off",
-      "compander": false
+      "tone_mode": "off"
     }
   },
   "noise_figure": {
@@ -296,8 +296,8 @@
   "pocsag": {
     "type": "pocsag",
     "settings": {
-      "baud": "auto",
       "bandwidth_hz": 12500.0,
+      "baud": "auto",
       "invert": false
     }
   },
@@ -311,8 +311,8 @@
   "radio_clock": {
     "type": "radio_clock",
     "settings": {
-      "standard": "dcf77",
-      "invert": false
+      "invert": false,
+      "standard": "dcf77"
     }
   },
   "radiosonde": {
@@ -329,9 +329,9 @@
     "type": "rtty",
     "settings": {
       "baud": 45.45,
+      "invert": false,
       "shift_hz": 170.0,
       "stop_bits": "one_and_half",
-      "invert": false,
       "unshift_on_space": true
     }
   },
@@ -363,16 +363,16 @@
   "ssb": {
     "type": "ssb",
     "settings": {
-      "sideband": "usb",
-      "bandwidth_hz": 2700.0
+      "bandwidth_hz": 2700.0,
+      "sideband": "usb"
     }
   },
   "sstv": {
     "type": "sstv",
     "settings": {
+      "keep_partial": true,
       "modulation": "usb",
-      "slant_correction": true,
-      "keep_partial": true
+      "slant_correction": true
     }
   },
   "stanag": {
@@ -406,8 +406,8 @@
     "type": "wefax",
     "settings": {
       "ioc": "ioc576",
-      "lpm": "lpm120",
-      "keep_partial": true
+      "keep_partial": true,
+      "lpm": "lpm120"
     }
   },
   "wfm": {
@@ -420,8 +420,8 @@
   "wifi_occupancy": {
     "type": "wifi_occupancy",
     "settings": {
-      "span": "mhz20",
-      "margin_db": 6.0
+      "margin_db": 6.0,
+      "span": "mhz20"
     }
   },
   "wmbus": {
@@ -431,8 +431,8 @@
   "wspr": {
     "type": "wspr",
     "settings": {
-      "audio_low_hz": 1400.0,
       "audio_high_hz": 1600.0,
+      "audio_low_hz": 1400.0,
       "max_candidates": 200
     }
   },

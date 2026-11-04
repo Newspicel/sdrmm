@@ -7,31 +7,15 @@ use crate::{
     rest::EventAudio,
 };
 
-mod aviation;
 mod broadcast;
-mod datalink;
-mod dect;
-mod location;
-mod maritime;
-mod measure;
-mod navaid;
-mod paging;
-mod picture;
-mod text;
+mod ident;
 mod voice;
-mod wsjt;
-
-pub(crate) use picture::{picture_fields, picture_size};
-pub use wsjt::{grid_lat_lon, square_of};
-
-#[cfg(test)]
-mod tests;
 
 const FEET_TO_METRES: f64 = 0.3048;
 const KNOTS_TO_KILOMETRES_PER_HOUR: f64 = 1.852;
 
 pub trait EventPayload: Clone + Serialize + DeserializeOwned {
-    fn present(&self, kind: EventKind) -> Presentation;
+    fn present(&self, kind: &EventKind) -> Presentation;
 
     fn merge(&mut self, newer: &Self) {
         overlay_some(self, newer);
@@ -75,6 +59,12 @@ pub struct Presentation {
     pub callsign: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub gone: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track: Option<TrackFix>,
+    /// Whether the payload passed its integrity check, when it carries one. `Some(false)` also
+    /// marks a payload that says nothing about the signal being decoded, such as a tone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified: Option<bool>,
 }
 
 impl Presentation {
@@ -87,21 +77,42 @@ impl Presentation {
     }
 }
 
-#[cfg(test)]
 impl Presentation {
-    pub(crate) fn field(&self, label: &str) -> Option<&FieldValue> {
+    #[must_use]
+    pub fn field(&self, label: &str) -> Option<&FieldValue> {
         self.fields
             .iter()
             .find(|field| field.label == label)
             .map(|field| &field.value)
     }
 
-    pub(crate) fn labels(&self) -> Vec<&str> {
+    #[must_use]
+    pub fn labels(&self) -> Vec<&str> {
         self.fields
             .iter()
             .map(|field| field.label.as_str())
             .collect()
     }
+}
+
+/// A moving target as a passive radar checks it: where it is and how it moves.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct TrackFix {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lat: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lon: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub altitude_m: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed_mps: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub course_deg: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub climb_mps: Option<f64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -372,6 +383,20 @@ pub fn joined(parts: impl IntoIterator<Item = String>) -> String {
     parts.into_iter().collect::<Vec<_>>().join(" · ")
 }
 
+/// Every non-null field of `newer` laid over `older`; a non-object `newer` replaces `older`.
+pub fn overlay_value(older: &mut serde_json::Value, newer: &serde_json::Value) {
+    match (older, newer) {
+        (serde_json::Value::Object(base), serde_json::Value::Object(top)) => {
+            for (key, value) in top {
+                if !value.is_null() {
+                    base.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        (older, newer) => *older = newer.clone(),
+    }
+}
+
 pub fn overlay_some<T: Clone + Serialize + DeserializeOwned>(older: &mut T, newer: &T) {
     *older = overlaid(older, newer).unwrap_or_else(|| newer.clone());
 }
@@ -389,4 +414,35 @@ fn overlaid<T: Serialize + DeserializeOwned>(older: &T, newer: &T) -> Option<T> 
         }
     }
     serde_json::from_value(serde_json::Value::Object(base)).ok()
+}
+
+pub fn picture_size(width: u16, height: u16) -> Option<FieldValue> {
+    text_of(format!("{width} × {height}"))
+}
+
+pub fn took(duration_ms: u32) -> Option<FieldValue> {
+    number(Some(f64::from(duration_ms) / 1_000.0), Unit::Seconds, 1)
+}
+
+pub fn picture_fields(
+    lead: &[(&str, Option<FieldValue>)],
+    lines: u16,
+    complete: bool,
+    duration_ms: u32,
+) -> Vec<Field> {
+    let mut shown = fields(lead);
+    shown.extend(fields(&[
+        ("Lines", count(Some(lines))),
+        ("Complete", flag(Some(complete))),
+        ("Took", took(duration_ms)),
+    ]));
+    shown
+}
+
+pub fn text_pane(text: &str, fields: Vec<Field>) -> Presentation {
+    Presentation {
+        text: Some(text.to_owned()),
+        fields,
+        ..Presentation::of(text.to_owned())
+    }
 }

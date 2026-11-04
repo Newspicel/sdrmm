@@ -8,7 +8,7 @@ use sdrmm_device::DeviceRegistry;
 use sdrmm_device_recording::RecordingDriver;
 use sdrmm_engine::{Engine, TrunkSystem, trunking::TrunkRadio};
 use sdrmm_recorder::SigmfWriter;
-use sdrmm_wire::{DmrDiscovery, DmrTrunkProtocol, TrunkChannelSource};
+use sdrmm_wire::{TrunkChannelSource, TrunkDiscovery, TrunkProtocol};
 use tempfile::TempDir;
 
 const DEVICE_RATE: f64 = 240_000.0;
@@ -76,8 +76,9 @@ async fn one_probe_follows_the_band_to_the_channel_a_grant_points_at() {
 
     engine.configure_trunking(vec![TrunkSystem {
         node: "trunk".to_owned(),
-        protocol: DmrTrunkProtocol::Auto,
-        discovery: DmrDiscovery {
+        decoder: String::new(),
+        protocol: TrunkProtocol::Auto,
+        discovery: TrunkDiscovery {
             enabled: true,
             ranges: Vec::new(),
             max_probes: 1,
@@ -155,8 +156,9 @@ async fn the_search_finds_the_other_repeater_of_a_capacity_plus_system() {
 
     engine.configure_trunking(vec![TrunkSystem {
         node: "trunk".to_owned(),
-        protocol: DmrTrunkProtocol::CapacityPlus,
-        discovery: DmrDiscovery {
+        decoder: String::new(),
+        protocol: TrunkProtocol::CapacityPlus,
+        discovery: TrunkDiscovery {
             enabled: true,
             ranges: Vec::new(),
             max_probes: 1,

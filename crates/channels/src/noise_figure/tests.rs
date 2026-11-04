@@ -1,7 +1,8 @@
+use crate::NativeChannel;
+use crate::noise_figure::NoiseFigureParams;
+use crate::noise_figure::NoiseFigureReport;
 use num_complex::Complex;
-use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecoderEvent, NoiseFigureParams, NoiseFigureReport,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{NoiseFigureChannel, RATE, levels::Pair, noise_factor};
 use crate::{
@@ -11,7 +12,10 @@ use crate::{
 };
 
 fn tuned(enr_db: f32) -> ChannelSettings {
-    settings(ChannelParams::NoiseFigure(NoiseFigureParams { enr_db }))
+    settings(
+        ChannelParams::new("noise_figure", &NoiseFigureParams { enr_db })
+            .expect("noise_figure settings"),
+    )
 }
 
 fn channel(enr_db: f32) -> NoiseFigureChannel {
@@ -28,10 +32,11 @@ fn reports(channel: &mut NoiseFigureChannel, iq: &[Complex<f32>]) -> Vec<NoiseFi
     for block in iq.chunks(7_777) {
         out.reset();
         channel.process(block, &mut out);
-        found.extend(out.events.drain(..).filter_map(|event| match event {
-            DecoderEvent::NoiseFigure(report) => Some(report),
-            _ => None,
-        }));
+        found.extend(
+            out.events
+                .drain(..)
+                .filter_map(|event| event.read::<NoiseFigureReport>()),
+        );
     }
     found
 }

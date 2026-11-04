@@ -1,3 +1,7 @@
+use crate::registry::Native;
+use sdrmm_wire::{KindSpec, NumberSpec, SettingField};
+mod model;
+pub use model::*;
 mod stations;
 mod tracker;
 
@@ -5,13 +9,12 @@ use std::{ops::Range, sync::LazyLock};
 
 use num_complex::Complex;
 use sdrmm_dsp::airtime::PowerFrames;
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    MAX_SID_REPORT_S, MAX_SID_THRESHOLD_DB, MIN_SID_REPORT_S, MIN_SID_THRESHOLD_DB, SidParams,
-    SidReport, SidStationLevel,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 use stations::Station;
 use tracker::Tracker;
 
@@ -30,17 +33,12 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2.0 * USABLE_HALF_HZ,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Sid],
+    emits: vec![EventKind::named("sid")],
     ..ChannelDescriptor::default()
 });
 
 fn params(settings: &ChannelSettings) -> Result<SidParams, ChannelError> {
-    let ChannelParams::Sid(params) = &settings.params else {
-        return Err(ChannelError::InvalidSettings(format!(
-            "SID channel got {} params",
-            settings.params.type_id()
-        )));
-    };
+    let params: SidParams = crate::settings_of(settings)?;
     if !(MIN_SID_REPORT_S..=MAX_SID_REPORT_S).contains(&params.report_s) {
         return Err(ChannelError::InvalidSettings(format!(
             "report interval must be {MIN_SID_REPORT_S}..={MAX_SID_REPORT_S} s, got {}",
@@ -55,7 +53,7 @@ fn params(settings: &ChannelSettings) -> Result<SidParams, ChannelError> {
             params.threshold_db
         )));
     }
-    Ok(*params)
+    Ok(params)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -199,11 +197,10 @@ fn report(params: &SidParams, window: &mut Window, lanes: &mut [Lane]) -> SidRep
     }
 }
 
-impl ChannelRx for SidChannel {
+impl NativeChannel for SidChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         Ok(Self {
@@ -215,7 +212,9 @@ impl ChannelRx for SidChannel {
             window: Window::new(),
         })
     }
+}
 
+impl ChannelRx for SidChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         let moved = settings.frequency_hz != self.frequency_hz;
@@ -259,11 +258,50 @@ impl ChannelRx for SidChannel {
             window.add(power);
             if window.frames >= due {
                 out.events
-                    .push(DecoderEvent::Sid(report(params, window, lanes)));
+                    .push(DecoderEvent::of(&report(params, window, lanes)));
                 window.reset();
             }
         });
     }
+}
+
+pub(crate) fn sid_decoder() -> Native<SidParams> {
+    Native::new::<SidChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(30_000.0)
+        .form(sid_form)
+        .kinds(sid_kinds)
+}
+
+pub(crate) fn sid_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new(
+            "report_s",
+            "Every",
+            NumberSpec::new(
+                f64::from(MIN_SID_REPORT_S),
+                f64::from(MAX_SID_REPORT_S),
+                1.0,
+            )
+            .unit("s"),
+        )
+        .title("Averaging interval of each report"),
+        SettingField::new(
+            "threshold_db",
+            "Threshold",
+            NumberSpec::new(
+                f64::from(MIN_SID_THRESHOLD_DB),
+                f64::from(MAX_SID_THRESHOLD_DB),
+                0.5,
+            )
+            .unit("dB"),
+        )
+        .title("Level change against the baseline that counts as a disturbance"),
+    ]
+}
+
+fn sid_kinds() -> Vec<KindSpec> {
+    vec![sid_kind()]
 }
 
 #[cfg(test)]

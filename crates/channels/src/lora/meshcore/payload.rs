@@ -1,4 +1,5 @@
-use sdrmm_wire::{MeshcoreContent, MeshcorePayloadType};
+use crate::lora::MeshcoreContent;
+use crate::lora::MeshcorePayloadType;
 
 use super::advert_data::{self, PUBLIC_KEY_LEN};
 use super::frame::Frame;

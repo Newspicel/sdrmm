@@ -99,7 +99,7 @@ mod beamformer {
             let mut out = ProcessorOutput::new(OutputSlots {
                 report: self.report.as_mut(),
                 surface: None,
-                events: &mut [],
+                bearings: &mut [],
                 lanes: &mut self.beam,
             });
             processor.process(&block(lanes, self.clock), &mut out);

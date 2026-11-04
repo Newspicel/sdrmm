@@ -3,8 +3,9 @@ mod position;
 
 use std::sync::LazyLock;
 
+use crate::sarsat::SarsatMessage;
+use crate::sarsat::SarsatProtocol;
 use sdrmm_dsp::SyndromeDecoder;
-use sdrmm_wire::{SarsatMessage, SarsatProtocol};
 
 pub(crate) const SHORT_BITS: usize = 88;
 pub(crate) const LONG_BITS: usize = 120;

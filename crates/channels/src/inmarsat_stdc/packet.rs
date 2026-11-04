@@ -1,4 +1,4 @@
-use sdrmm_wire::SeaArea;
+use crate::inmarsat_stdc::SeaArea;
 use serde_json::{Value, json};
 
 use super::fields::{

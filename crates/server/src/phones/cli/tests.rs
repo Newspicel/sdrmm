@@ -1,9 +1,6 @@
 use std::net::{Ipv4Addr, TcpListener};
 
-use sdrmm_wire::{
-    OfferState, PairUri,
-    phone::{key_check, valid_pair_code},
-};
+use sdrmm_wire::{OfferState, PairUri, phone::key_check, phone::valid_pair_code};
 
 use super::*;
 use crate::{

@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 
+use crate::sstv::SstvMode;
 use num_complex::Complex;
-use sdrmm_wire::SstvMode;
 
 use crate::sstv::modes::{
     BREAK_MS, HIGH_SEPARATOR_HZ, LEADER_HZ, LEADER_MS, PORCH_HZ, Part, SYNC_HZ, Scan, VIS_BIT_MS,

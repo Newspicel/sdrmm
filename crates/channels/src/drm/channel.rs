@@ -1,11 +1,14 @@
 use std::sync::LazyLock;
 
+use crate::broadcast_media::BroadcastService;
+use crate::broadcast_media::BroadcastServiceKind;
+use crate::broadcast_media::BroadcastSystem;
+use crate::broadcast_media::{BroadcastStatus, publish_status};
+use crate::drm::DrmMode;
+use crate::drm::DrmParams;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
-use sdrmm_wire::{
-    BroadcastService, BroadcastServiceKind, BroadcastStatus, BroadcastSystem, ChannelDescriptor,
-    ChannelSettings, DecoderFamily, DrmMode, DrmParams, EventKind,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, ClickProfile, DecoderFamily, EventContract};
 
 use super::{
     DRM_PLUS_BANDWIDTH_HZ, INPUT_RATE_HZ,
@@ -17,8 +20,8 @@ use super::{
     receiver::Receiver,
 };
 use crate::{
-    ChannelCtx, ChannelError, ChannelOutputs, ChannelRx, broadcast_media::BroadcastMedia,
-    check_input_rate, dab::pacer::Pacer,
+    ChannelCtx, ChannelError, ChannelOutputs, ChannelRx, NativeChannel,
+    broadcast_media::BroadcastMedia, check_input_rate, dab::pacer::Pacer,
 };
 
 const DECIMATION: usize = 4;
@@ -35,7 +38,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: DRM_PLUS_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    emits: vec![EventKind::Broadcast],
+    emits: vec![BroadcastStatus::KIND],
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
@@ -280,7 +284,7 @@ impl DrmChannel {
                 ..BroadcastStatus::default()
             },
         };
-        out.broadcast = Some(status);
+        publish_status(out, status, "service");
     }
 
     fn locked_status(&self, locked: &Locked) -> BroadcastStatus {
@@ -376,11 +380,10 @@ fn occupancy_khz(mode: Robustness, occupancy: u8) -> f32 {
         .unwrap_or(0.0)
 }
 
-impl ChannelRx for DrmChannel {
+impl NativeChannel for DrmChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         Ok(Self {
@@ -402,7 +405,9 @@ impl ChannelRx for DrmChannel {
             frames: 0,
         })
     }
+}
 
+impl ChannelRx for DrmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let wanted = params(&settings)?;
         let restart =

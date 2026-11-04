@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 pub(crate) mod aac;
 pub(crate) mod audio;
 pub(crate) mod bits;
@@ -16,7 +21,7 @@ pub(crate) mod sdc;
 pub(crate) mod text;
 
 use sdrmm_dsp::{FirC, design_lowpass};
-use sdrmm_wire::{ChannelParams, ChannelSettings, DrmMode, DrmParams};
+use sdrmm_wire::ChannelSettings;
 
 pub use channel::DrmChannel;
 
@@ -26,16 +31,21 @@ const INPUT_RATE_HZ: f64 = 192_000.0;
 const MIN_DRM30_BANDWIDTH_HZ: f64 = 4_500.0;
 const MAX_DRM30_BANDWIDTH_HZ: f64 = 20_000.0;
 const DRM_PLUS_BANDWIDTH_HZ: f64 = 100_000.0;
+const DRM30_DEFAULT_HZ: f64 = 10_000.0;
+const DRM30_BANDWIDTHS_HZ: [f64; 6] = [4_500.0, 5_000.0, 9_000.0, 10_000.0, 18_000.0, 20_000.0];
 const FILTER_TAPS: usize = 127;
 const FILTER_MARGIN_HZ: f64 = 1_000.0;
 
 fn params(settings: &ChannelSettings) -> Result<DrmParams, ChannelError> {
-    let ChannelParams::Drm(p) = settings.params else {
-        return Err(ChannelError::InvalidSettings(format!(
-            "drm channel got {} params",
-            settings.params.type_id()
-        )));
-    };
+    checked(
+        settings
+            .params
+            .parse()
+            .map_err(ChannelError::InvalidSettings)?,
+    )
+}
+
+fn checked(p: DrmParams) -> Result<DrmParams, ChannelError> {
     let valid = p.bandwidth_hz.is_finite()
         && match p.mode {
             DrmMode::Drm30 => {
@@ -70,13 +80,7 @@ pub(crate) fn occupied_band(p: &DrmParams) -> (f64, f64) {
 }
 
 pub(crate) fn channel_filter(p: &DrmParams) -> Result<ChannelFilter, ChannelError> {
-    let p = params(&ChannelSettings {
-        frequency_hz: 0.0,
-        squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Drm(*p),
-        blanker: Default::default(),
-        if_filter: Default::default(),
-    })?;
+    let p = checked(*p)?;
     let (low, high) = occupied_band(&p);
     let low = (low - FILTER_MARGIN_HZ).max(-INPUT_RATE_HZ * 0.45);
     let high = (high + FILTER_MARGIN_HZ).min(INPUT_RATE_HZ * 0.45);
@@ -86,4 +90,63 @@ pub(crate) fn channel_filter(p: &DrmParams) -> Result<ChannelFilter, ChannelErro
         &design_lowpass(FILTER_TAPS, half_width),
         centre,
     )))
+}
+
+const HF: &[HzRange] = &[HzRange::khz(150.0, 30_000.0)];
+
+const DRM_VHF: &[HzRange] = &[HzRange::mhz(47.0, 108.0), HzRange::mhz(174.0, 240.0)];
+
+fn drm_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "DRM30",
+            &[Modulation::Ofdm],
+            HzRange::new(4_000.0, 21_000.0),
+            "OFDM with a 9 to 24 ms useful symbol in a broadcast HF channel",
+        )
+        .symbol_length(HzRange::new(9_000.0, 24_500.0))
+        .on(HF),
+        SignalSignature::new(
+            "DRM+",
+            &[Modulation::Ofdm],
+            HzRange::new(80_000.0, 120_000.0),
+            "OFDM with a 2.25 ms useful symbol in a 100 kHz channel",
+        )
+        .symbol_length(HzRange::about(2_250.0, 0.03))
+        .on(DRM_VHF),
+    ]
+}
+
+pub(crate) fn drm_decoder() -> Native<DrmParams> {
+    Native::new::<DrmChannel>(occupied_band)
+        .filter(channel_filter)
+        .signatures(drm_signatures)
+        .form(drm_form)
+        .kinds(drm_kinds)
+        .settle(settle)
+}
+
+/// DRM30 takes one of its standard widths; DRM+ and auto take the full 100 kHz.
+fn settle(p: &mut DrmParams) {
+    let drm30 = p.mode == DrmMode::Drm30;
+    if !drm30 {
+        p.bandwidth_hz = default_drm_bandwidth_hz();
+    } else if !DRM30_BANDWIDTHS_HZ.contains(&p.bandwidth_hz) {
+        p.bandwidth_hz = DRM30_DEFAULT_HZ;
+    }
+}
+
+pub(crate) fn drm_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("mode", "Mode", Control::choice::<DrmMode>())
+            .title("DRM mode")
+            .quiet(DrmMode::Auto),
+        SettingField::bandwidth(&DRM30_BANDWIDTHS_HZ).when("mode", [DrmMode::Drm30]),
+        crate::broadcast_media::service_field("service", 3.0),
+    ]
+}
+
+/// The service picker the running decoder fills from its status.
+fn drm_kinds() -> Vec<KindSpec> {
+    vec![crate::broadcast_media::broadcast_kind()]
 }

@@ -1,11 +1,12 @@
-use sdrmm_wire::{
-    AirtimeSpan, ChannelParams, ChannelSettings, DecoderEvent, WifiOccupancyParams,
-    WifiOccupancyReport,
-};
+use crate::NativeChannel;
+use crate::airtime::AirtimeSpan;
+use crate::airtime::WifiOccupancyParams;
+use crate::airtime::WifiOccupancyReport;
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::WifiOccupancyChannel;
 use crate::{
-    ChannelCtx, ChannelRx,
+    ChannelCtx,
     airtime::scene::Scene,
     synth::{self, ism::wifi_frame},
     testutil::settings,
@@ -20,7 +21,7 @@ fn channel(span: AirtimeSpan, frequency_hz: f64) -> WifiOccupancyChannel {
     };
     let tuned = ChannelSettings {
         frequency_hz,
-        ..settings(ChannelParams::WifiOccupancy(params))
+        ..settings(ChannelParams::of(&params).expect("wifi_occupancy settings"))
     };
     WifiOccupancyChannel::new(
         ChannelCtx {
@@ -36,10 +37,7 @@ fn reports(scene: &Scene, channel: &mut WifiOccupancyChannel) -> Vec<WifiOccupan
         .run(1.01, channel)
         .events
         .into_iter()
-        .filter_map(|event| match event {
-            DecoderEvent::WifiOccupancy(report) => Some(report),
-            _ => None,
-        })
+        .filter_map(|event| event.read::<WifiOccupancyReport>())
         .collect()
 }
 

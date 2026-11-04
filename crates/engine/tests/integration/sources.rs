@@ -1,8 +1,13 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use sdrmm_channels::AdsbMessage;
+use sdrmm_channels::PocsagMessage;
+use sdrmm_channels::ToneSquelchStatus;
 use std::{path::Path, sync::Arc, time::Duration};
 
 use num_complex::Complex;
+use sdrmm_channels::NfmParams;
+use sdrmm_channels::PocsagParams;
 use sdrmm_channels::synth::catalog::CATALOG;
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_recording::RecordingDriver;
@@ -13,7 +18,7 @@ use sdrmm_engine::Engine;
 use sdrmm_recorder::SigmfWriter;
 use sdrmm_wire::{
     ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent, DeviceSettings, ExtraValue,
-    NfmParams, PocsagParams, Squelch,
+    Squelch,
 };
 use tempfile::TempDir;
 
@@ -104,16 +109,15 @@ async fn a_recording_node_plays_its_library_stem_into_a_decoder() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: Squelch::Off,
-            params: ChannelParams::Pocsag(PocsagParams::default()),
+            params: ChannelParams::new("pocsag", &PocsagParams::default())
+                .expect("pocsag settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Pocsag(_)),
+        |event| event.is::<PocsagMessage>(),
     )
     .await;
-    let DecoderEvent::Pocsag(page) = record.event else {
-        panic!("a POCSAG page");
-    };
+    let page = record.event.read::<PocsagMessage>().expect("a POCSAG page");
     assert_eq!(page.address, 1_234_567);
 }
 
@@ -156,14 +160,15 @@ async fn a_signal_generator_node_opens_once_per_node_and_decodes() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: Squelch::Off,
-            params: ChannelParams::Pocsag(PocsagParams::default()),
+            params: ChannelParams::new("pocsag", &PocsagParams::default())
+                .expect("pocsag settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Pocsag(_)),
+        |event| event.is::<PocsagMessage>(),
     )
     .await;
-    assert!(matches!(record.event, DecoderEvent::Pocsag(_)));
+    assert!(record.event.is::<PocsagMessage>());
 }
 
 #[tokio::test]
@@ -181,20 +186,29 @@ async fn a_generated_signal_reaches_the_decoder_it_is_named_for() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: Squelch::Off,
-            params: ChannelParams::Nfm(NfmParams {
-                tone_mode: sdrmm_wire::NfmToneMode::Ctcss,
-                ctcss_hz: Some(88.5),
-                ..NfmParams::default()
-            }),
+            params: ChannelParams::new(
+                "nfm",
+                &NfmParams {
+                    tone_mode: sdrmm_channels::NfmToneMode::Ctcss,
+                    ctcss_hz: Some(88.5),
+                    ..NfmParams::default()
+                },
+            )
+            .expect("nfm settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Tone(tone) if tone.ctcss_hz.is_some()),
+        |event| {
+            event
+                .read::<ToneSquelchStatus>()
+                .is_some_and(|tone| tone.ctcss_hz.is_some())
+        },
     )
     .await;
-    let DecoderEvent::Tone(tone) = record.event else {
-        unreachable!("filtered above")
-    };
+    let tone = record
+        .event
+        .read::<ToneSquelchStatus>()
+        .expect("filtered above");
     assert!(
         tone.ctcss_hz.is_some_and(|hz| (hz - 88.5).abs() < 2.0),
         "the generated CTCSS tone must be the one the catalog names: {tone:?}"
@@ -233,7 +247,8 @@ async fn a_signal_that_needs_another_rate_takes_the_whole_chain_with_it() {
             ChannelSettings {
                 frequency_hz: CENTER_HZ,
                 squelch: Squelch::Off,
-                params: ChannelParams::Pocsag(PocsagParams::default()),
+                params: ChannelParams::new("pocsag", &PocsagParams::default())
+                    .expect("pocsag settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -255,15 +270,16 @@ async fn a_signal_that_needs_another_rate_takes_the_whole_chain_with_it() {
         ChannelSettings {
             frequency_hz: CENTER_HZ,
             squelch: Squelch::Off,
-            params: ChannelParams::Adsb(sdrmm_wire::AdsbParams::default()),
+            params: ChannelParams::new("adsb", &sdrmm_channels::AdsbParams::default())
+                .expect("adsb settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Adsb(_)),
+        |event| event.is::<AdsbMessage>(),
     )
     .await;
     assert!(
-        matches!(record.event, DecoderEvent::Adsb(_)),
+        record.event.is::<AdsbMessage>(),
         "a decoder added after the rate moved must still decode"
     );
 }

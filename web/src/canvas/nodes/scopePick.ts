@@ -66,11 +66,13 @@ export function bookmarkDraft(
   };
 }
 
+/** The decoder a new channel here runs: the band plan's, the one listening, else the first. */
 export function channelTypeAt(
   suggested: ChannelParams | null,
   listening: ChannelInfo | undefined,
-): string {
-  return suggested?.type ?? listening?.settings.params.type ?? "nfm";
+  first: string | undefined,
+): string | undefined {
+  return suggested?.type ?? listening?.settings.params.type ?? first;
 }
 
 const awaitingCreation = new Map<string, number>();

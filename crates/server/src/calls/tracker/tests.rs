@@ -1,5 +1,5 @@
 use sdrmm_device::DeviceRegistry;
-use sdrmm_wire::{ChannelParams, ChannelSettings, DvMode, Squelch, VoiceCall};
+use sdrmm_wire::{ChannelParams, ChannelSettings, Squelch, VoiceCall};
 
 use super::*;
 
@@ -34,7 +34,7 @@ fn record(kind: DvFrameKind, slot: u8) -> DecodedRecord {
         channel: 2,
         at: "2026-08-14T10:00:00Z".to_owned(),
         freq_hz: 451_125_000.0,
-        event: DecoderEvent::Dv(DvFrame {
+        event: DecoderEvent::of(&DvFrame {
             kind,
             slot: Some(slot),
             color_code: Some(3),
@@ -42,7 +42,7 @@ fn record(kind: DvFrameKind, slot: u8) -> DecodedRecord {
             destination: Some(91),
             group_call: Some(true),
             encrypted: Some(false),
-            ..DvFrame::default()
+            ..DvFrame::new("DMR", kind)
         }),
         view: None,
     }
@@ -66,10 +66,7 @@ fn silence(frames: usize) -> PcmBlock {
 
 fn completed(decoded: &mut tokio::sync::broadcast::Receiver<DecodedRecord>) -> Vec<VoiceCall> {
     std::iter::from_fn(|| decoded.try_recv().ok())
-        .filter_map(|record| match record.event {
-            DecoderEvent::Call(call) => Some(call),
-            _ => None,
-        })
+        .filter_map(|record| record.event.read::<VoiceCall>())
         .collect()
 }
 
@@ -147,7 +144,7 @@ fn a_conventional_transmission_completes_one_call() {
     let announced = completed(&mut decoded);
     assert_eq!(announced.len(), 1);
     assert_eq!(announced[0].node, "dmr");
-    assert_eq!(announced[0].mode, "dmr");
+    assert_eq!(announced[0].mode, "DMR");
     assert_eq!(calls.list().len(), 1);
 }
 
@@ -213,7 +210,7 @@ fn a_partial_link_control_does_not_split_a_call() {
         slot: Some(1),
         source: Some(1001),
         destination: Some(91),
-        ..DvFrame::new(DvMode::Dmr, DvFrameKind::Voice)
+        ..DvFrame::new("DMR", DvFrameKind::Voice)
     };
     let partial = DvFrame {
         source: None,

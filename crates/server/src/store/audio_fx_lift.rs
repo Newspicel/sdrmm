@@ -89,8 +89,8 @@ fn take_chains(state: &mut Value) -> Option<Vec<Lifted>> {
 }
 
 fn worth_a_node(chain: &AudioProcessing, type_id: &str) -> bool {
-    let levelled_by_its_demod =
-        matches!(type_id, "am" | "ssb") && chain.agc == AudioAgcMode::Medium;
+    let levelled_by_its_demod = chain.agc == AudioAgcMode::Medium
+        && sdrmm_channels::descriptor(type_id).is_some_and(|descriptor| descriptor.levels_audio);
     let rest = AudioProcessing {
         agc: if levelled_by_its_demod {
             AudioAgcMode::Off

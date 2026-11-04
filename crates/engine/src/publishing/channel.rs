@@ -9,7 +9,7 @@ use std::{
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
 use sdrmm_channels::{AUDIO_RATE, ChannelCtx, ChannelOutputs, ChannelRx};
-use sdrmm_wire::{ChannelSettings, DecoderEvent};
+use sdrmm_wire::ChannelSettings;
 
 use super::Publisher;
 use crate::{
@@ -168,8 +168,8 @@ impl ChannelPublisher {
                 for event in packet.outputs.events.drain(..) {
                     decoded.publish(packet.frequency, event);
                 }
-                if let Some(status) = packet.outputs.broadcast.take() {
-                    decoded.publish(packet.frequency, DecoderEvent::Broadcast(status));
+                if let Some(status) = packet.outputs.status.take() {
+                    decoded.publish_status(packet.frequency, status);
                 }
                 for image in packet.outputs.images.drain(..) {
                     decoded.publish_image(packet.frequency, image);

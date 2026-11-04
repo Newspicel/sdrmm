@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use anyhow::Result;
+use sdrmm_channels::DabTransmissionMode;
 use sdrmm_channels::synth;
 use sdrmm_recorder::SigmfWriter;
-use sdrmm_wire::DabTransmissionMode;
 
 pub fn run(out: &Path) -> Result<()> {
     std::fs::create_dir_all(out)?;

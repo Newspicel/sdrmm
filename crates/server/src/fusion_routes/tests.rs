@@ -1,11 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecodedRecord, DfBearing, DfFusionState, EventOrigin, GpsNode,
-    HuntSettings, NO_CHANNEL, NavTargetKind, NodeKind, PatchEdge, PatchGraph, PatchNode, PortRef,
-    Position, PositionSource, WorkspaceSnapshot,
-    fusion::BearingSource,
-    geo::{self, LatLon},
+    ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent, DfBearing, DfFusionState,
+    EventOrigin, GpsNode, HuntSettings, NO_CHANNEL, NavTargetKind, NodeKind, PatchEdge, PatchGraph,
+    PatchNode, PortRef, Position, PositionSource, WorkspaceSnapshot, fusion::BearingSource, geo,
+    geo::LatLon,
 };
 use tokio::sync::broadcast;
 
@@ -125,7 +124,7 @@ fn record(origin: &str, bearing: DfBearing) -> DecodedRecord {
         channel: NO_CHANNEL,
         at: jiff::Timestamp::now().to_string(),
         freq_hz: 433.92e6,
-        event: DecoderEvent::Df(bearing),
+        event: DecoderEvent::of(&bearing),
         sinks: Vec::new(),
         callsign: None,
         view: None,

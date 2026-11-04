@@ -1,4 +1,4 @@
-use sdrmm_wire::DataLinkMessage;
+use crate::datalink::DataLinkMessage;
 use xng_types::{AppInfo, Message, Provenance, StationIdentity};
 
 use crate::datalink::{self, Quality};

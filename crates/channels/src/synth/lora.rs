@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 
+use crate::lora::LoraCodingRate;
 use num_complex::Complex;
-use sdrmm_wire::LoraCodingRate;
 
 use crate::lora::{
     lorawan, meshcore, meshtastic,

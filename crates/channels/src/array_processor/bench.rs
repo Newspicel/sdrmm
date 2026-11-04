@@ -1,8 +1,5 @@
 use num_complex::Complex;
-use sdrmm_wire::{
-    ArrayGeometry, ArrayTuningMode, Coherence, DecoderEvent, ProcessorReading, RdsUpdate,
-    SurfaceFrame,
-};
+use sdrmm_wire::{ArrayGeometry, ArrayTuningMode, Coherence, ProcessorReading, SurfaceFrame};
 
 use super::{
     ArrayBlock, ArrayCtx, CalView, CorrectionView, LaneBuffer, OutputSlots, OutputTally, Pose,
@@ -91,7 +88,7 @@ pub(crate) fn noise(len: usize, seed: u32) -> Vec<Complex<f32>> {
 pub(crate) struct Sink {
     pub(crate) report: Option<ProcessorReading>,
     pub(crate) surface: Option<SurfaceFrame>,
-    pub(crate) events: Vec<DecoderEvent>,
+    pub(crate) bearings_slots: Vec<sdrmm_wire::fusion::DfBearing>,
     pub(crate) lanes: Vec<LaneBuffer>,
 }
 
@@ -100,7 +97,7 @@ impl Sink {
         Self {
             report: ProcessorReading::empty(type_id),
             surface: None,
-            events: vec![DecoderEvent::Rds(RdsUpdate::default()); 2],
+            bearings_slots: (0..2).map(|_| crate::df::reserved_bearing(8)).collect(),
             lanes: lane_capacities
                 .iter()
                 .map(|capacity| LaneBuffer::new(*capacity))
@@ -115,7 +112,7 @@ impl Sink {
         let mut out = ProcessorOutput::new(OutputSlots {
             report: self.report.as_mut(),
             surface: self.surface.as_mut(),
-            events: &mut self.events,
+            bearings: &mut self.bearings_slots,
             lanes: &mut self.lanes,
         });
         work(&mut out);

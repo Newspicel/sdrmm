@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 mod assembly;
 pub(crate) mod coding;
 mod frame;
@@ -12,13 +17,11 @@ use sdrmm_modem::{
     cpm::{CpmDemod, CpmParams, Mapping, TIMING_BW_CONTINUOUS},
     pulse::{self, Norm},
 };
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, EventKind,
-    MAX_TETRAPOL_SCRAMBLING, TETRAPOL_BANDWIDTH_HZ, TetrapolBand, TetrapolParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily, EventKind};
 
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
     dv::{INPUT_RATE_HZ, tap_symbols},
 };
 use coding::Decoder;
@@ -41,7 +44,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: TETRAPOL_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    emits: vec![EventKind::Tetrapol],
+    emits: vec![EventKind::named("tetrapol")],
     ..ChannelDescriptor::default()
 });
 
@@ -55,14 +58,11 @@ pub(crate) fn cpm_params(sps: f64) -> CpmParams {
     )
 }
 
-fn params(settings: &ChannelSettings) -> Result<&TetrapolParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Tetrapol(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "tetrapol channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<TetrapolParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 fn check_params(params: &TetrapolParams) -> Result<(), ChannelError> {
@@ -116,15 +116,14 @@ impl TetrapolChannel {
     }
 }
 
-impl ChannelRx for TetrapolChannel {
+impl NativeChannel for TetrapolChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
-        check_params(params)?;
+        check_params(&params)?;
         let sps = ctx.input_rate / BAUD;
         let cpm = cpm_params(sps);
         Ok(Self {
@@ -143,10 +142,12 @@ impl ChannelRx for TetrapolChannel {
             soft: Vec::new(),
         })
     }
+}
 
+impl ChannelRx for TetrapolChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
-        check_params(params)?;
+        check_params(&params)?;
         if params.band != self.band {
             self.band = params.band;
             self.scrambling.reset();
@@ -183,6 +184,55 @@ impl ChannelRx for TetrapolChannel {
     fn rejected(&self) -> u32 {
         self.link.rejected()
     }
+}
+
+const TETRAPOL_BANDS: &[HzRange] = &[
+    HzRange::mhz(70.0, 87.5),
+    HzRange::mhz(380.0, 400.0),
+    HzRange::mhz(410.0, 430.0),
+];
+
+fn tetrapol_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "Tetrapol",
+            &[Modulation::Fsk2],
+            HzRange::new(8_000.0, 14_000.0),
+            "8 kbaud GMSK in a 12.5 kHz channel on a Tetrapol band",
+        )
+        .symbol_rate(HzRange::new(7_600.0, 8_400.0))
+        .deviation(HzRange::new(1_400.0, 2_600.0))
+        .on(TETRAPOL_BANDS),
+    ]
+}
+
+fn tetrapol_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("tetrapol"))
+}
+
+pub(crate) fn tetrapol_decoder() -> Native<TetrapolParams> {
+    Native::new::<TetrapolChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .signatures(tetrapol_signatures)
+        .trial(tetrapol_trial)
+        .form(tetrapol_form)
+        .kinds(tetrapol_kinds)
+}
+
+pub(crate) fn tetrapol_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("band", "Band", Control::choice::<TetrapolBand>()).title("Tetrapol band"),
+        SettingField::new(
+            "scrambling",
+            "Scrambling",
+            NumberSpec::new(0.0, f64::from(MAX_TETRAPOL_SCRAMBLING), 1.0).optional("auto"),
+        )
+        .title("Scrambling code, empty to find it"),
+    ]
+}
+
+fn tetrapol_kinds() -> Vec<KindSpec> {
+    vec![crate::tetrapol::tetrapol_kind()]
 }
 
 #[cfg(test)]

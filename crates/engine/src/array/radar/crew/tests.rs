@@ -8,7 +8,9 @@ use sdrmm_channels::passive_radar::{
     CafBackend, CpiJob, CpiStage, CpuCaf, CubeOut, RadarCtx, RadarPlan as StagePlan, RadarPod, plan,
 };
 use sdrmm_test_support::assert_no_alloc;
-use sdrmm_wire::radar::{ClutterMethod, ClutterParams, PassiveRadarParams, ReferenceCleaning};
+use sdrmm_wire::{
+    radar::ClutterMethod, radar::ClutterParams, radar::PassiveRadarParams, radar::ReferenceCleaning,
+};
 
 use super::*;
 

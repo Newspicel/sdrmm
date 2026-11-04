@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use sdrmm_dsp::{DVB_PRIMITIVE, ReedSolomon};
+use sdrmm_dsp::{DVB_PRIMITIVE, ReedSolomon, crc24_reflected};
 
 pub const RS6_N: usize = 52;
 const RS6_NPAR: usize = 10;
@@ -171,18 +171,7 @@ pub fn rs8_correct(sent: &[u8; RS8_SENT]) -> Option<[u8; RS8_DATA]> {
 
 pub fn iip_crc24(data: &[u8]) -> u32 {
     const REVERSED_POLY: u32 = 0xAD85DD;
-    let mut crc: u32 = 0xFF_FFFF;
-    for &byte in data {
-        crc ^= u32::from(byte);
-        for _ in 0..8 {
-            crc = if crc & 1 != 0 {
-                (crc >> 1) ^ REVERSED_POLY
-            } else {
-                crc >> 1
-            };
-        }
-    }
-    crc ^ 0x0C91B6
+    crc24_reflected(REVERSED_POLY, 0xFF_FFFF, data) ^ 0x0C91B6
 }
 
 pub fn checksum_16(msg: &[u8; RS8_DATA]) -> u16 {

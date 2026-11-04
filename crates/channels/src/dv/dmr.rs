@@ -1,19 +1,27 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
 use std::sync::LazyLock;
 
+use crate::dv::DmrParams;
+use crate::dv::DmrSlots;
 use num_complex::Complex;
-use sdrmm_dsp::{Bptc128, Bptc196, CyclicCode, ParityCode, crc16_msb, rs129_parity};
+use sdrmm_dsp::{
+    Bptc128, Bptc196, CyclicCode, ParityCode, crc_msb_bits, crc16_msb, pack_msb_into, rs129_parity,
+};
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
-    DmrParams, DmrSlots, DvChannelDefinition, DvFrame, DvFrameKind, DvMode, DvSlotActivity,
-    DvTrunkProtocol, EventKind, Vendor,
+    CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, DecoderEvent, DecoderFamily,
+    DvChannelDefinition, DvFrame, DvFrameKind, DvSlotActivity, DvTrunkProtocol, EventKind, Vendor,
 };
 
 use super::{
-    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, pack_bytes, tap_c4fm,
+    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, tap_c4fm,
     vocoder::{HALF_RATE_SOFT_BITS, MbeDecoder},
 };
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 pub(crate) const BAUD: f64 = 4_800.0;
 pub(crate) const DEVIATION_HZ: f64 = 1_944.0;
@@ -91,8 +99,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    emits: vec![EventKind::Dv],
+    emits: vec![EventKind::DV],
     calls: Some(CallGate::Frames),
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
@@ -170,14 +179,15 @@ pub struct DmrChannel {
     decoder: Decoder,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&DmrParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Dmr(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "dmr channel got {} params",
-            other.type_id()
-        ))),
-    }
+pub(crate) fn dv_frame(kind: DvFrameKind) -> DvFrame {
+    DvFrame::new("DMR", kind)
+}
+
+fn params(settings: &ChannelSettings) -> Result<DmrParams, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -188,17 +198,18 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     super::channel_filter(BANDWIDTH_HZ)
 }
 
-impl ChannelRx for DmrChannel {
+impl NativeChannel for DmrChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
         Self::with_options(ctx, params.slots, params.ignore_crc)
     }
+}
 
+impl ChannelRx for DmrChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         self.set_options(params.slots, params.ignore_crc);
@@ -533,7 +544,7 @@ impl Decoder {
             .slot
             .is_none_or(|slot| self.params.slots.accepts(slot))
         {
-            out.events.push(DecoderEvent::Dv(frame));
+            out.events.push(DecoderEvent::of(&frame));
         }
     }
 
@@ -617,14 +628,14 @@ impl Decoder {
     }
 
     fn checked_block(&mut self, payload: &[bool; 96], mask: u16, errors: u32) -> Option<DvFrame> {
-        pack_bytes(&payload[..80], &mut self.bytes);
+        pack_msb_into(&payload[..80], &mut self.bytes);
         let expected = dmr_crc16(&self.bytes) ^ mask;
         let verified = expected == bits_to_u32(payload, 80, 16) as u16;
         if !self.keep_unverified(verified, errors, MAX_UNVERIFIED_REPAIRS) {
             self.reject();
             return None;
         }
-        let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+        let mut frame = dv_frame(DvFrameKind::Control);
         frame.crc_verified = Some(verified);
         Some(frame)
     }
@@ -651,7 +662,7 @@ impl Decoder {
         payload: &[bool; 96],
         mask: [u8; 3],
     ) -> Option<DvFrame> {
-        pack_bytes(payload, &mut self.bytes);
+        pack_msb_into(payload, &mut self.bytes);
         let (lc, parity) = self.bytes.split_at(LC_BITS / 8);
         let mut received = [parity[0], parity[1], parity[2]];
         for (byte, m) in received.iter_mut().zip(mask) {
@@ -768,7 +779,7 @@ impl Decoder {
     fn decode_lc(&mut self, index: usize, lc: &[bool]) -> DvFrame {
         let flco = bits_to_u32(lc, 2, 6) as u8;
         let fid = bits_to_u32(lc, 8, 8) as u8;
-        let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Header);
+        let mut frame = dv_frame(DvFrameKind::Header);
         set_dmr_vendor(&mut frame, fid);
         match (fid, flco) {
             (0, 0 | 3) | (0x10, 0) | (0x06, 0 | 3) => {
@@ -884,7 +895,7 @@ impl Decoder {
                 written += 1;
             }
         }
-        pack_bytes(&lc, &mut self.bytes);
+        pack_msb_into(&lc, &mut self.bytes);
         let sum = self.bytes.iter().map(|&b| u32::from(b)).sum::<u32>() % 31;
         if sum != checksum {
             self.reject();
@@ -985,20 +996,12 @@ fn short_lc_message(payload: &[bool; SHORT_LC_BITS]) -> Option<DvFrame> {
 }
 
 fn crc8_dmr(bits: &[bool]) -> u8 {
-    let mut crc = 0u8;
-    for &bit in bits {
-        let high = crc & 0x80 != 0;
-        crc <<= 1;
-        if high != bit {
-            crc ^= 0x07;
-        }
-    }
-    crc
+    crc_msb_bits(0x07, 8, 0, bits.iter().copied()) as u8
 }
 
 fn decode_short_lc(bits: &[bool]) -> DvFrame {
     let slco = bits_to_u32(bits, 0, 4) as u8;
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     frame.vendor = Some(Vendor::Etsi);
     frame.manufacturer_id = Some(0);
     match slco {
@@ -1522,7 +1525,7 @@ fn decode_announcement(frame: &mut DvFrame, payload: &[bool]) {
 
 fn valid_mbc_crc(payload: &[bool; 96]) -> bool {
     let mut bytes = Vec::with_capacity(10);
-    pack_bytes(&payload[..80], &mut bytes);
+    pack_msb_into(&payload[..80], &mut bytes);
     dmr_crc16(&bytes) == bits_to_u32(payload, 80, 16) as u16
 }
 
@@ -1560,7 +1563,7 @@ fn data_format_name(format: u8) -> &'static str {
 }
 
 fn data_block(payload: &[bool], name: &str) -> DvFrame {
-    let mut frame = DvFrame::new(DvMode::Dmr, DvFrameKind::Data);
+    let mut frame = dv_frame(DvFrameKind::Data);
     frame.opcode = Some(name.to_owned());
     frame.data = Some(hex_bits(payload));
     frame
@@ -1790,6 +1793,61 @@ fn signed_bits(value: u32, width: u32) -> i32 {
 
 fn dmr_crc16(data: &[u8]) -> u16 {
     !crc16_msb(0x1021, 0, data)
+}
+
+/// A DMR transmission keys up one 30 ms slot of every two.
+const SLOT_BURST_MS: sdrmm_wire::HzRange = sdrmm_wire::HzRange::new(25.0, 35.0);
+
+fn dmr_signatures() -> Vec<sdrmm_wire::SignalSignature> {
+    super::mode_signatures("dmr", super::LAND_MOBILE)
+        .into_iter()
+        .map(|signature| signature.burst_hint(SLOT_BURST_MS))
+        .collect()
+}
+
+pub(crate) fn dmr_decoder() -> Native<DmrParams> {
+    Native::new::<DmrChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .signatures(dmr_signatures)
+        .form(dmr_form)
+        .kinds(dmr_kinds)
+        .trunking(crate::Trunking {
+            watch: dmr_watch,
+            follow: dmr_follow,
+        })
+}
+
+fn dmr_watch(ignore_crc: bool) -> Result<sdrmm_wire::ChannelParams, ChannelError> {
+    sdrmm_wire::ChannelParams::of(&DmrParams {
+        slots: DmrSlots::Both,
+        ignore_crc,
+    })
+    .map_err(ChannelError::InvalidSettings)
+}
+
+fn dmr_follow(slot: u8, ignore_crc: bool) -> Result<sdrmm_wire::ChannelParams, ChannelError> {
+    let slots = match slot {
+        1 => DmrSlots::One,
+        2 => DmrSlots::Two,
+        other => {
+            return Err(ChannelError::InvalidSettings(format!(
+                "DMR has slots 1 and 2, not {other}"
+            )));
+        }
+    };
+    sdrmm_wire::ChannelParams::of(&DmrParams { slots, ignore_crc })
+        .map_err(ChannelError::InvalidSettings)
+}
+
+pub(crate) fn dmr_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("slots", "Slot", Control::choice::<DmrSlots>()).title("Slot"),
+        SettingField::new("ignore_crc", "Skip CRC", Control::Toggle).title("Ignore data CRC"),
+    ]
+}
+
+fn dmr_kinds() -> Vec<KindSpec> {
+    vec![]
 }
 
 #[cfg(test)]

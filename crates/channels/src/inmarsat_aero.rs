@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 mod acquisition;
 mod burst;
 mod cchannel;
@@ -14,6 +19,46 @@ mod state;
 mod su;
 mod taps;
 
+const INMARSAT_BAND: &[HzRange] = &[HzRange::mhz(1_525.0, 1_559.0)];
+
+fn inmarsat_aero_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "Inmarsat Aero",
+            &[Modulation::Psk2, Modulation::Psk4, Modulation::Unknown],
+            HzRange::new(2_000.0, 20_000.0),
+            "phase keying at an aeronautical satellite rate",
+        )
+        .symbol_rate(HzRange::new(500.0, 11_000.0))
+        .on(INMARSAT_BAND),
+    ]
+}
+
+fn inmarsat_aero_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("inmarsat_aero"))
+}
+
+pub(crate) fn inmarsat_aero_decoder() -> Native<InmarsatAeroParams> {
+    Native::new::<InmarsatAeroChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(1_541_450_000.0)
+        .signatures(inmarsat_aero_signatures)
+        .trial(inmarsat_aero_trial)
+        .form(inmarsat_aero_form)
+        .kinds(inmarsat_aero_kinds)
+}
+
+pub(crate) fn inmarsat_aero_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("channel", "Channel", Control::choice::<AeroChannel>())
+            .title("Aero channel"),
+    ]
+}
+
+fn inmarsat_aero_kinds() -> Vec<KindSpec> {
+    vec![crate::datalink::inmarsat_aero_kind()]
+}
+
 #[cfg(test)]
 mod modulate;
 #[cfg(test)]
@@ -26,17 +71,15 @@ use self::{
     decoder::{AeroChannelDecoder, AeroEvent, INPUT_RATE},
     receiver::{BurstReceiver, CircuitEvent, CircuitReceiver, burst_tag},
 };
+use crate::datalink::DataLinkMessage;
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
     acars::block as acars_block,
     check_input_rate,
     datalink::{self, Quality},
 };
 use num_complex::Complex;
-use sdrmm_wire::{
-    AeroChannel, ChannelDescriptor, ChannelParams, ChannelSettings, DataLinkMessage, DecoderEvent,
-    DecoderFamily, EventKind, InmarsatAeroParams,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -52,7 +95,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: INPUT_RATE,
     has_audio: false,
-    emits: vec![EventKind::InmarsatAero],
+    emits: vec![EventKind::named("inmarsat_aero")],
     ..ChannelDescriptor::default()
 });
 
@@ -83,8 +126,11 @@ impl Receiver {
                 events.drain(..).map(circuit_message).collect()
             }
         };
-        out.events
-            .extend(messages.into_iter().map(DecoderEvent::InmarsatAero));
+        out.events.extend(
+            messages
+                .into_iter()
+                .map(|message| DecoderEvent::tagged(EventKind::named("inmarsat_aero"), &message)),
+        );
     }
 }
 
@@ -93,14 +139,8 @@ pub struct InmarsatAeroChannel {
     receiver: Receiver,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&InmarsatAeroParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::InmarsatAero(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "inmarsat Aero channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<InmarsatAeroParams, ChannelError> {
+    crate::settings_of::<InmarsatAeroParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -232,11 +272,10 @@ fn circuit_message(event: CircuitEvent) -> DataLinkMessage {
     )
 }
 
-impl ChannelRx for InmarsatAeroChannel {
+impl NativeChannel for InmarsatAeroChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let channel = params(&settings)?.channel;
@@ -245,7 +284,9 @@ impl ChannelRx for InmarsatAeroChannel {
             receiver: Receiver::new(channel),
         })
     }
+}
 
+impl ChannelRx for InmarsatAeroChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let channel = params(&settings)?.channel;
         if channel != self.channel {

@@ -6,8 +6,8 @@ use std::time::Duration;
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
 use sdrmm_wire::ProcessorParams;
-use sdrmm_wire::array::{MAX_ARRAY_LANES, MIN_ARRAY_LANES};
 use sdrmm_wire::processor::ProbeParams;
+use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use super::{
     ArrayBlock, ArrayCtx, ArrayProcessor, Execution, LaneFormat, MAX_LANE_PORTS, MAX_LANES,

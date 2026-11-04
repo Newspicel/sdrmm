@@ -7,11 +7,11 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use sdrmm_wire::{
-    ApiError, ArrayNode, Attitude, BearingSource, ChannelNode, DecodedRecord, DecoderEvent,
-    DeviceBackend, DeviceNode, DeviceRef, DfNode, GpsNode, HeadingSource, HuntMission, HuntNode,
-    MissionActionResponse, NodeBody, PassiveRadarNode, PatchEdge, PatchNode, PortRef, Position,
-    PositionFix, PositionLink, PositionSource, RackLayout, ServerEvent, SignalMapNode, SweepState,
-    TriangulationNode, WorkspaceSnapshot, patch::stream_port,
+    ApiError, ArrayNode, Attitude, BearingSource, ChannelNode, DeviceBackend, DeviceNode,
+    DeviceRef, DfNode, GpsNode, HeadingSource, HuntMission, HuntNode, MissionActionResponse,
+    NodeBody, PassiveRadarNode, PatchEdge, PatchNode, PortRef, Position, PositionFix, PositionLink,
+    PositionSource, RackLayout, ServerEvent, SignalMapNode, SweepState, TriangulationNode,
+    WorkspaceSnapshot, patch::stream_port,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
 use tower::ServiceExt;
@@ -1051,10 +1051,12 @@ async fn hunt_with_a_position_wire_offers_sweep_and_mark() {
     let bearing = tokio::time::timeout(WAIT, async {
         loop {
             match records.recv().await {
-                Ok(DecodedRecord {
-                    event: DecoderEvent::Df(bearing),
-                    ..
-                }) => return bearing,
+                Ok(record) if record.event.is::<sdrmm_wire::DfBearing>() => {
+                    return record
+                        .event
+                        .read::<sdrmm_wire::DfBearing>()
+                        .expect("a bearing");
+                }
                 Ok(_) | Err(RecvError::Lagged(_)) => {}
                 Err(RecvError::Closed) => panic!("the decoded feed closed"),
             }

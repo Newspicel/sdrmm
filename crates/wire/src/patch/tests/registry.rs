@@ -151,18 +151,25 @@ fn the_catalog_serves_roles_faces_and_every_port_type() {
 
 #[test]
 fn the_catalog_serves_every_event_kind() {
+    crate::decode::test_kinds::install();
     let catalog = PatchCatalog::build();
-    let served: Vec<crate::EventKind> =
-        catalog.event_kinds.iter().map(|entry| entry.kind).collect();
-    assert_eq!(served, crate::EventKind::ALL);
+    let served: crate::KindSet = catalog
+        .event_kinds
+        .iter()
+        .map(|entry| entry.kind.clone())
+        .collect();
+    assert_eq!(served, crate::KindSet::all());
     let json = serde_json::to_value(&catalog).expect("json");
-    let adsb = json["event_kinds"]
+    let station = json["event_kinds"]
         .as_array()
-        .and_then(|kinds| kinds.iter().find(|entry| entry["kind"] == "adsb"))
-        .expect("adsb");
-    assert_eq!(adsb["noun"], "Aircraft");
-    assert_eq!(adsb["symbol"], "plane");
-    assert_eq!(adsb["caps"], serde_json::json!(["log", "station", "geo"]));
+        .and_then(|kinds| kinds.iter().find(|entry| entry["kind"] == "probe_station"))
+        .expect("probe station");
+    assert_eq!(station["noun"], "Stations");
+    assert_eq!(station["symbol"], "plane");
+    assert_eq!(
+        station["caps"],
+        serde_json::json!(["log", "station", "geo"])
+    );
 }
 
 #[test]

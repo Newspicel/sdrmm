@@ -1,4 +1,4 @@
-use sdrmm_wire::DeviceBackend;
+use sdrmm_wire::{DeviceBackend, DfBearing};
 use std::sync::atomic::AtomicU32;
 
 use super::*;
@@ -11,7 +11,7 @@ fn nfm_decoder(engine: &Engine, ds: u32, frequency_hz: f64) -> u32 {
             ChannelSettings {
                 frequency_hz,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Nfm(NfmParams::default()),
+                params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -611,7 +611,7 @@ async fn a_hunt_streams_a_strength_a_walker_can_follow() {
             ChannelSettings {
                 frequency_hz: SIGNAL_HZ + 50_000.0,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Nfm(NfmParams::default()),
+                params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -1265,11 +1265,10 @@ async fn hunt_sweep_publishes_a_df_event() {
     let deadline = Instant::now() + Duration::from_secs(3);
     let (origin, bearing) = loop {
         match decoded.try_recv() {
-            Ok(DecodedRecord {
-                origin,
-                event: DecoderEvent::Df(bearing),
-                ..
-            }) => break (origin, bearing),
+            Ok(record) if record.event.is::<DfBearing>() => {
+                let bearing = record.event.read::<DfBearing>().expect("a bearing");
+                break (record.origin, bearing);
+            }
             Ok(_) => {}
             Err(_) => {
                 assert!(Instant::now() < deadline, "the sweep sent no bearing");

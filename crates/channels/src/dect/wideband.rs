@@ -1,6 +1,7 @@
+use crate::dect::DECT_CARRIER_SPACING_HZ;
+use crate::dect::DectBand;
 use num_complex::Complex;
 use sdrmm_dsp::{Channelizer, Nco};
-use sdrmm_wire::{DECT_CARRIER_SPACING_HZ, DectBand};
 
 use super::burst::{Burst, Detector, INPUT_RATE_HZ, OCCUPIED_BANDWIDTH_HZ};
 use crate::ChannelError;
@@ -134,7 +135,7 @@ fn drop_images(bursts: &mut Vec<Burst>) {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::DectBand;
+    use crate::dect::DectBand;
 
     use super::{bins, input_rate, plan};
 

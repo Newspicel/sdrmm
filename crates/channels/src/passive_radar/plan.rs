@@ -10,11 +10,12 @@ use sdrmm_dsp::radar::threshold::CfarStatistic;
 use sdrmm_dsp::radar::track::TrackerConfig;
 use sdrmm_dsp::radar::wiener::GroupPlan;
 use sdrmm_wire::ProcessorParams;
-use sdrmm_wire::radar::{
-    CfarKind, CfarParams, CfarWindow, ClutterMethod, DAB_SAMPLE_RATE_HZ, DopplerWindow,
-    Illuminator, LIGHT_SPEED_M_S, MAX_ECA_ORDER, PassiveRadarParams, RADAR_MAX_BATCHES,
-    RADAR_MAX_GATES, RADAR_MAX_WORKING_BYTES, RADAR_MIN_BATCHES, ReferenceCleaning,
-    SurveillanceSet, TrackerParams,
+use sdrmm_wire::{
+    radar::CfarKind, radar::CfarParams, radar::CfarWindow, radar::ClutterMethod,
+    radar::DAB_SAMPLE_RATE_HZ, radar::DopplerWindow, radar::Illuminator, radar::LIGHT_SPEED_M_S,
+    radar::MAX_ECA_ORDER, radar::PassiveRadarParams, radar::RADAR_MAX_BATCHES,
+    radar::RADAR_MAX_GATES, radar::RADAR_MAX_WORKING_BYTES, radar::RADAR_MIN_BATCHES,
+    radar::ReferenceCleaning, radar::SurveillanceSet, radar::TrackerParams,
 };
 
 use crate::ChannelError;

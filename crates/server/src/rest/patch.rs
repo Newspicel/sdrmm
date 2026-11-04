@@ -1,6 +1,6 @@
 use sdrmm_wire::{
-    MAX_NODES, PatchError, PatchGraph,
-    patch::resolve::{self, ResolveCtx, WireVerdict, WiringRequest},
+    MAX_NODES, PatchError, PatchGraph, patch::resolve, patch::resolve::ResolveCtx,
+    patch::resolve::WireVerdict, patch::resolve::WiringRequest,
 };
 
 use super::*;
@@ -29,7 +29,7 @@ pub(super) async fn post_patch_wiring(
     let verdicts = tokio::task::spawn_blocking(move || {
         let live = engine.snapshot();
         let ctx = ResolveCtx {
-            descriptors: Some(sdrmm_channels::descriptor_table()),
+            descriptors: Some(&sdrmm_channels::descriptors()),
             live: Some(&live),
         };
         resolve::wiring(&request.graph, &request.from, &ctx)

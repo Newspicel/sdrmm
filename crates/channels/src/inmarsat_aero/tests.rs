@@ -1,5 +1,8 @@
+use crate::NativeChannel;
+use crate::datalink::DataLinkMessage;
+use crate::inmarsat_aero::InmarsatAeroParams;
 use num_complex::Complex;
-use sdrmm_wire::{ChannelParams, DataLinkMessage, DecoderEvent, InmarsatAeroParams};
+use sdrmm_wire::ChannelParams;
 use serde_json::Value;
 
 use super::{
@@ -159,7 +162,10 @@ pub(super) fn ours(iq: &[Complex<f32>]) -> Vec<DataLinkMessage> {
         ChannelCtx {
             input_rate: INPUT_RATE,
         },
-        settings(ChannelParams::InmarsatAero(InmarsatAeroParams::default())),
+        settings(
+            ChannelParams::new("inmarsat_aero", &InmarsatAeroParams::default())
+                .expect("inmarsat_aero settings"),
+        ),
     )
     .expect("channel");
     let mut out = ChannelOutputs::default();
@@ -167,10 +173,11 @@ pub(super) fn ours(iq: &[Complex<f32>]) -> Vec<DataLinkMessage> {
     for chunk in chunked(iq) {
         out.reset();
         channel.process(chunk, &mut out);
-        messages.extend(out.events.drain(..).filter_map(|event| match event {
-            DecoderEvent::InmarsatAero(message) => Some(message),
-            _ => None,
-        }));
+        messages.extend(
+            out.events
+                .drain(..)
+                .filter_map(|event| crate::datalink::read(&event, "inmarsat_aero")),
+        );
     }
     messages
 }

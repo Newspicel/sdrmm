@@ -1,7 +1,10 @@
 use std::f64::consts::TAU;
 
+use crate::same::SAME_BAUD;
+use crate::same::SAME_BURSTS;
+use crate::same::SAME_MARK_HZ;
+use crate::same::SAME_SPACE_HZ;
 use num_complex::Complex;
-use sdrmm_wire::{SAME_BAUD, SAME_BURSTS, SAME_MARK_HZ, SAME_SPACE_HZ};
 
 use super::{fm_modulate, silence};
 use crate::same::{

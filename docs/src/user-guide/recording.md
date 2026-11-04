@@ -75,7 +75,7 @@ What makes a call:
 
 | Channel | A call is |
 |---|---|
-| Digital voice, DMR trunk | One call, from header to end |
+| Digital voice, trunk system | One call, from header to end |
 | AM, NFM, SSB, DECT | One squelch opening. Gaps under 1.5 s stay in the call |
 
 An analog channel with squelch off has no calls. Use the Audio recorder for continuous audio.

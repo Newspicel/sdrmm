@@ -1,14 +1,19 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, EventContract, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, ToneCorrelator, design_lowpass};
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    SelcallParams, SelcallSequence, SelcallSystem,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const INPUT_RATE_HZ: f64 = 48_000.0;
 const BANDWIDTH_HZ: f64 = 12_500.0;
@@ -93,7 +98,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    emits: vec![EventKind::Selcall],
+    emits: vec![SelcallSequence::KIND],
     ..ChannelDescriptor::default()
 });
 
@@ -103,14 +108,8 @@ pub struct SelcallChannel {
     decoder: Decoder,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&SelcallParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Selcall(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "selcall channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<SelcallParams, ChannelError> {
+    crate::settings_of::<SelcallParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -136,11 +135,10 @@ fn demodulator() -> AngleDemod {
     )
 }
 
-impl ChannelRx for SelcallChannel {
+impl NativeChannel for SelcallChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
@@ -150,7 +148,9 @@ impl ChannelRx for SelcallChannel {
             decoder: Decoder::new(params.system),
         })
     }
+}
 
+impl ChannelRx for SelcallChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params.system != self.decoder.system {
@@ -313,7 +313,7 @@ impl Decoder {
             let mut durations = [0; CALL_SYMBOLS];
             durations.copy_from_slice(&self.durations_ms);
             durations.sort_unstable();
-            out.events.push(DecoderEvent::Selcall(SelcallSequence {
+            out.events.push(DecoderEvent::of(&SelcallSequence {
                 system: self.system,
                 code: self.symbols.iter().collect(),
                 tone_ms: durations[CALL_SYMBOLS / 2],
@@ -323,10 +323,64 @@ impl Decoder {
     }
 }
 
+const SELCALL_BANDS: &[HzRange] = &[HzRange::mhz(136.0, 174.0), HzRange::mhz(400.0, 470.0)];
+
+fn selcall_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "Selcall (tone sequence over FM)",
+            &[Modulation::Fm],
+            HzRange::new(6_000.0, 25_000.0),
+            "a run of audio tones inside an FM channel",
+        )
+        .deviation(HzRange::new(1_000.0, 5_500.0))
+        .on(SELCALL_BANDS)
+        .prior(0.9),
+    ]
+}
+
+fn selcall_trial() -> sdrmm_wire::SignalTrial {
+    let systems = [SelcallSystem::Ccir1, SelcallSystem::Zvei1];
+    let settings = systems
+        .into_iter()
+        .filter_map(|system| sdrmm_wire::ChannelParams::of(&SelcallParams { system }).ok())
+        .collect();
+    sdrmm_wire::SignalTrial::proven_by(SelcallSequence::KIND).trying(settings)
+}
+
+pub(crate) fn selcall_decoder() -> Native<SelcallParams> {
+    Native::new::<SelcallChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .signatures(selcall_signatures)
+        .trial(selcall_trial)
+        .form(selcall_form)
+        .kinds(selcall_kinds)
+}
+
+pub(crate) fn selcall_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("system", "Plan", Control::choice::<SelcallSystem>())
+            .title("Selective calling tone plan"),
+    ]
+}
+
+fn selcall_kinds() -> Vec<KindSpec> {
+    vec![selcall_kind()]
+}
+
 #[cfg(test)]
 mod tests {
+    use sdrmm_wire::ChannelParams;
+
     use super::*;
     use crate::{synth, testutil::settings};
+
+    fn calls(events: &[DecoderEvent]) -> Vec<Option<SelcallSequence>> {
+        events
+            .iter()
+            .map(DecoderEvent::read::<SelcallSequence>)
+            .collect()
+    }
 
     const CCIR_PUBLISHED_TONE_HZ: [(char, f64); 11] = [
         ('0', 1_981.0),
@@ -437,35 +491,35 @@ mod tests {
                 decoder.push(sample, &mut out);
             }
             assert!(
-                matches!(out.events.as_slice(), [DecoderEvent::Selcall(call)] if call.code == code),
+                matches!(calls(&out.events).as_slice(), [Some(call)] if call.code == code),
                 "{system:?} {code} produced {:?}",
                 out.events
             );
         }
     }
 
-    fn decode(system: SelcallSystem, code: &str) -> Vec<DecoderEvent> {
+    fn decode(system: SelcallSystem, code: &str) -> Vec<Option<SelcallSequence>> {
         let params = SelcallParams { system };
         let iq = synth::selcall::transmission(system, code, INPUT_RATE_HZ).unwrap();
         let mut channel = SelcallChannel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::Selcall(params)),
+            settings(ChannelParams::of(&params).expect("selcall settings")),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
         for block in iq.chunks(317) {
             channel.process(block, &mut out);
         }
-        out.events
+        calls(&out.events)
     }
 
     #[test]
     fn ccir_repeat_marker_decodes_to_the_repeated_digit() {
         assert!(matches!(
             decode(SelcallSystem::Ccir1, "12234").as_slice(),
-            [DecoderEvent::Selcall(call)] if call.code == "12234" && call.system == SelcallSystem::Ccir1
+            [Some(call)] if call.code == "12234" && call.system == SelcallSystem::Ccir1
         ));
     }
 
@@ -473,7 +527,7 @@ mod tests {
     fn zvei_group_symbols_and_repeat_marker_decode() {
         assert!(matches!(
             decode(SelcallSystem::Zvei1, "A11D0").as_slice(),
-            [DecoderEvent::Selcall(call)] if call.code == "A11D0" && call.system == SelcallSystem::Zvei1
+            [Some(call)] if call.code == "A11D0" && call.system == SelcallSystem::Zvei1
         ));
     }
 
@@ -481,7 +535,7 @@ mod tests {
     fn a_three_digit_run_alternates_the_repeat_marker() {
         assert!(matches!(
             decode(SelcallSystem::Ccir1, "11123").as_slice(),
-            [DecoderEvent::Selcall(call)] if call.code == "11123"
+            [Some(call)] if call.code == "11123"
         ));
     }
 

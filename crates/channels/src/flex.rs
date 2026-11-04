@@ -1,13 +1,18 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+use sdrmm_wire::{KindSpec, SettingField};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass, hamming_distance};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    FlexMessage, FlexParams, PagerPayload,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 pub(crate) mod codeword;
 mod fragments;
@@ -53,7 +58,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::Flex],
+    emits: vec![EventKind::named("flex")],
     ..ChannelDescriptor::default()
 });
 
@@ -173,14 +178,8 @@ pub struct FlexChannel {
     fragments: Reassembly,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&FlexParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Flex(params) => Ok(params),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "flex channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<FlexParams, ChannelError> {
+    crate::settings_of::<FlexParams>(settings)
 }
 
 fn check_params(params: &FlexParams) -> Result<(), ChannelError> {
@@ -770,15 +769,14 @@ fn binary(field: &[u32]) -> String {
         .join(" ")
 }
 
-impl ChannelRx for FlexChannel {
+impl NativeChannel for FlexChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
-        check_params(params)?;
+        check_params(&params)?;
         Ok(Self {
             invert: params.invert,
             afc: Afc::new(RATE),
@@ -797,10 +795,12 @@ impl ChannelRx for FlexChannel {
             fragments: Reassembly::new(FRAGMENT_WAIT),
         })
     }
+}
 
+impl ChannelRx for FlexChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
-        check_params(params)?;
+        check_params(&params)?;
         self.invert = params.invert;
         Ok(())
     }
@@ -826,10 +826,55 @@ impl ChannelRx for FlexChannel {
     }
 }
 
+const PAGING: &[HzRange] = &[
+    HzRange::mhz(148.0, 175.0),
+    HzRange::mhz(426.0, 470.0),
+    HzRange::mhz(929.0, 932.0),
+];
+
+fn flex_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "FLEX",
+            &[Modulation::Fsk2, Modulation::Fsk4],
+            HzRange::new(6_000.0, 20_000.0),
+            "1600 to 6400 baud keying at ±4.8 kHz, pager band",
+        )
+        .symbol_rate(HzRange::new(1_500.0, 6_700.0))
+        .deviation(HzRange::new(3_500.0, 6_000.0))
+        .on(PAGING),
+    ]
+}
+
+fn flex_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("flex"))
+}
+
+pub(crate) fn flex_decoder() -> Native<FlexParams> {
+    Native::new::<FlexChannel>(occupied_band)
+        .filter(channel_filter)
+        .signatures(flex_signatures)
+        .trial(flex_trial)
+        .form(flex_form)
+        .kinds(flex_kinds)
+}
+
+pub(crate) fn flex_form() -> Vec<SettingField> {
+    vec![
+        SettingField::bandwidth(&[12_500.0, 25_000.0]),
+        SettingField::invert(),
+    ]
+}
+
+fn flex_kinds() -> Vec<KindSpec> {
+    vec![crate::flex::flex_kind()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{synth, testutil::settings};
+    use sdrmm_wire::ChannelParams;
 
     #[test]
     fn decodes_a_p2000_page_off_air() {
@@ -841,7 +886,7 @@ mod tests {
         channel_filter(&params).unwrap().process(&iq, &mut filtered);
         let mut channel = FlexChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Flex(params)),
+            settings(ChannelParams::of(&params).expect("settings")),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -851,10 +896,7 @@ mod tests {
         let messages = out
             .events
             .iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Flex(message) => Some(message),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<FlexMessage>())
             .collect::<Vec<_>>();
         assert_eq!(messages.len(), 1, "{messages:?}");
         assert_eq!(messages[0].address, 2_029_574);
@@ -939,7 +981,9 @@ mod tests {
             let iq = synth::flex::transmission_mode(&page, 7, 83, RATE, mode);
             let mut channel = FlexChannel::new(
                 ChannelCtx { input_rate: RATE },
-                settings(ChannelParams::Flex(FlexParams::default())),
+                settings(
+                    ChannelParams::new("flex", &FlexParams::default()).expect("flex settings"),
+                ),
             )
             .unwrap();
             let mut out = ChannelOutputs::default();
@@ -949,10 +993,7 @@ mod tests {
             let messages = out
                 .events
                 .iter()
-                .filter_map(|event| match event {
-                    DecoderEvent::Flex(message) => Some(message),
-                    _ => None,
-                })
+                .filter_map(|event| event.read::<FlexMessage>())
                 .collect::<Vec<_>>();
             assert_eq!(messages.len(), 1, "{mode:?}");
             assert_eq!(messages[0].address, 123_456);
@@ -984,7 +1025,7 @@ mod tests {
         filter.process(iq, &mut filtered);
         let mut channel = FlexChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Flex(FlexParams::default())),
+            settings(ChannelParams::new("flex", &FlexParams::default()).expect("flex settings")),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -994,10 +1035,7 @@ mod tests {
         let messages = out
             .events
             .into_iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Flex(message) => Some(message),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<FlexMessage>())
             .collect();
         (messages, channel.rejected())
     }

@@ -1,9 +1,6 @@
 use std::collections::VecDeque;
 
-use sdrmm_wire::{
-    DfEstimate, NavMode, NavTarget, NavTargetKind, PositionFix,
-    geo::{self, LatLon},
-};
+use sdrmm_wire::{DfEstimate, NavMode, NavTarget, NavTargetKind, PositionFix, geo, geo::LatLon};
 
 use super::observation::Observation;
 

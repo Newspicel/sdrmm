@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { paramsWith } from "../src/components/channelSettings";
 import type {
   ChannelInfo,
   ChannelSettings,
@@ -550,7 +551,7 @@ const atv: Scene = {
       if (params.type !== "atv") {
         throw new Error("an ATV channel");
       }
-      return { params: { ...params, settings: { ...params.settings, interlace: true } } };
+      return { params: paramsWith(params.type, { ...params.settings, interlace: true }) };
     });
     await fitForCapture(page);
   },

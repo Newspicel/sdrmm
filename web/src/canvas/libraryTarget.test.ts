@@ -29,8 +29,8 @@ const GRAPH: PatchGraph = {
   nodes: [
     node("device:1", { kind: "device", data: {} }),
     node("device:2", { kind: "device", data: {} }),
-    node("channel:1", { kind: "channel", data: { channel_type: "nfm" } }),
-    node("channel:2", { kind: "channel", data: { channel_type: "nfm", tuning_locked: true } }),
+    node("channel:1", { kind: "channel", data: { channel_type: "voice" } }),
+    node("channel:2", { kind: "channel", data: { channel_type: "voice", tuning_locked: true } }),
     node("speaker:1", { kind: "speaker" }),
   ],
   edges: [{ from: { node: "device:1", port: "iq" }, to: { node: "channel:1", port: "iq" } }],

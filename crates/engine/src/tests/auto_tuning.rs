@@ -253,7 +253,7 @@ fn a_decoder_too_wide_to_clear_the_spike_is_held_as_far_off_it_as_the_window_all
         settings: ChannelSettings {
             frequency_hz: ADSB_CENTER_HZ,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Adsb(AdsbParams::default()),
+            params: ChannelParams::new("adsb", &AdsbParams::default()).expect("adsb settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         },
@@ -455,7 +455,7 @@ fn a_decoder_wider_than_the_window_names_the_width_it_needs() {
     };
     let wfm = ChannelSettings {
         frequency_hz: TEST_CENTER_HZ,
-        ..ChannelSettings::default_for("wfm").expect("wfm")
+        ..sdrmm_channels::default_settings("wfm").expect("wfm")
     };
     let (low, high) = sdrmm_channels::occupied_band(&wfm.params);
     assert_eq!(

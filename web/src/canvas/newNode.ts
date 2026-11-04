@@ -10,6 +10,7 @@ import type {
 } from "../lib/types";
 
 export interface NewNodeSeed {
+  /** The decoder a channel runs; a channel without one has no body. */
   channelType?: string;
 }
 
@@ -36,10 +37,9 @@ export function newNodeBody(
   seed: NewNodeSeed = {},
 ): NodeBody | null {
   if (kind === "channel") {
-    return {
-      kind,
-      data: { channel_type: seed.channelType ?? "nfm" },
-    };
+    return seed.channelType === undefined
+      ? null
+      : { kind, data: { channel_type: seed.channelType } };
   }
   return defaultBody(catalog, kind);
 }

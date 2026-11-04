@@ -1,4 +1,7 @@
-use sdrmm_wire::{SarsatBeacon, SarsatMessage, SarsatProtocol};
+use crate::sarsat::SarsatBeacon;
+use crate::sarsat::SarsatMessage;
+use crate::sarsat::SarsatProtocol;
+use sdrmm_wire::ChannelParams;
 
 use super::*;
 use crate::{
@@ -20,7 +23,7 @@ fn fix() -> EpirbFix {
 fn channel() -> SarsatChannel {
     SarsatChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Sarsat(SarsatParams::default())),
+        settings(ChannelParams::new("sarsat", &SarsatParams::default()).expect("sarsat settings")),
     )
     .unwrap()
 }
@@ -34,10 +37,7 @@ fn run(iq: &[Complex<f32>]) -> (Vec<SarsatMessage>, u32) {
     let messages = out
         .events
         .into_iter()
-        .filter_map(|event| match event {
-            DecoderEvent::Sarsat(message) => Some(message),
-            _ => None,
-        })
+        .filter_map(|event| event.read::<SarsatMessage>())
         .collect();
     (messages, channel.rejected())
 }
@@ -142,7 +142,7 @@ fn the_bandwidth_is_checked() {
     };
     let built = SarsatChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Sarsat(params)),
+        settings(ChannelParams::of(&params).expect("settings")),
     );
     assert!(built.is_err());
 }

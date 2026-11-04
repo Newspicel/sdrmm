@@ -8,11 +8,11 @@ use std::{
 };
 
 use prospect::Prospector;
+use sdrmm_channels::Trunking;
 use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent, DmrChannelEntry, DmrDiscovery,
-    DmrParams, DmrSlots, DmrTrunkProtocol, DvFrame, DvFrameKind, DvTrunkProtocol, StateScope,
-    TrunkChannel, TrunkChannelSource, TrunkControl, TrunkFollower, TrunkProbe, TrunkProblem,
-    TrunkSystemStatus,
+    ChannelParams, ChannelSettings, DecodedRecord, DvFrame, DvFrameKind, DvTrunkProtocol,
+    StateScope, TrunkChannel, TrunkChannelEntry, TrunkChannelSource, TrunkControl, TrunkDiscovery,
+    TrunkFollower, TrunkProbe, TrunkProblem, TrunkProtocol, TrunkSystemStatus,
 };
 
 use crate::Engine;
@@ -27,10 +27,12 @@ const RETRY_MAX: Duration = Duration::from_secs(300);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrunkSystem {
     pub node: String,
-    pub protocol: DmrTrunkProtocol,
-    pub discovery: DmrDiscovery,
-    pub channel_map: Vec<DmrChannelEntry>,
-    pub learned: Vec<DmrChannelEntry>,
+    /// The decoder the node asked for; empty takes the first one that trunks.
+    pub decoder: String,
+    pub protocol: TrunkProtocol,
+    pub discovery: TrunkDiscovery,
+    pub channel_map: Vec<TrunkChannelEntry>,
+    pub learned: Vec<TrunkChannelEntry>,
     pub radio: Option<TrunkRadio>,
 }
 
@@ -57,7 +59,8 @@ pub(crate) struct Heard {
 #[derive(Clone)]
 struct Carrier {
     system_node: String,
-    protocol: DmrTrunkProtocol,
+    trunking: Trunking,
+    protocol: TrunkProtocol,
     device_set: u32,
     stream: u32,
     center_hz: f64,
@@ -208,6 +211,9 @@ impl Follower {
             let Some(control) = self.controls.get(&system.node) else {
                 continue;
             };
+            let Some((decoder, trunking)) = sdrmm_channels::trunking(&system.decoder) else {
+                continue;
+            };
             let (device_set, channel) = (control.device_set, control.channel);
             let Some(set) = state.device_sets.iter().find(|set| set.id == device_set) else {
                 continue;
@@ -215,7 +221,7 @@ impl Follower {
             let Some(info) = set.channels.iter().find(|info| info.id == channel) else {
                 continue;
             };
-            if !matches!(info.settings.params, ChannelParams::Dmr(_)) {
+            if info.settings.params.type_id() != decoder {
                 continue;
             }
             let Some(center_hz) = set.settings.center_hz else {
@@ -229,6 +235,7 @@ impl Follower {
                 (device_set, channel),
                 Carrier {
                     system_node: system.node.clone(),
+                    trunking,
                     protocol: system.protocol,
                     device_set,
                     stream: info.stream,
@@ -242,16 +249,12 @@ impl Follower {
         carriers
     }
 
-    fn protocol_of(
-        &self,
-        system_node: &str,
-        configured: DmrTrunkProtocol,
-    ) -> Option<DvTrunkProtocol> {
+    fn protocol_of(&self, system_node: &str, configured: TrunkProtocol) -> Option<DvTrunkProtocol> {
         match configured {
-            DmrTrunkProtocol::CapacityPlus => Some(DvTrunkProtocol::CapacityPlus),
-            DmrTrunkProtocol::HyteraXpt => Some(DvTrunkProtocol::HyteraXpt),
-            DmrTrunkProtocol::TierThree => Some(DvTrunkProtocol::TierThree),
-            DmrTrunkProtocol::Auto => self.detected.get(system_node).copied(),
+            TrunkProtocol::CapacityPlus => Some(DvTrunkProtocol::CapacityPlus),
+            TrunkProtocol::HyteraXpt => Some(DvTrunkProtocol::HyteraXpt),
+            TrunkProtocol::TierThree => Some(DvTrunkProtocol::TierThree),
+            TrunkProtocol::Auto => self.detected.get(system_node).copied(),
         }
     }
 
@@ -259,9 +262,10 @@ impl Follower {
         let Some(engine) = self.engine.upgrade() else {
             return false;
         };
-        let DecoderEvent::Dv(frame) = &record.event else {
+        let Some(frame) = record.event.read::<DvFrame>() else {
             return false;
         };
+        let frame = &frame;
         if let Some(probe) = self.probes.get(&(record.device_set, record.channel)) {
             let (system_node, freq_hz) = (probe.system_node.clone(), probe.freq_hz);
             return self.prospect(&engine, &system_node, freq_hz, frame);
@@ -450,12 +454,12 @@ impl Follower {
                 Ok(()) | Err(_) => {}
             }
         }
-        let wanted: Vec<(String, TrunkRadio)> = self
+        let wanted: Vec<(String, TrunkRadio, String)> = self
             .systems
             .iter()
-            .filter_map(|system| Some((system.node.clone(), system.radio?)))
+            .filter_map(|system| Some((system.node.clone(), system.radio?, system.decoder.clone())))
             .collect();
-        for (node, radio) in wanted {
+        for (node, radio, decoder) in wanted {
             if self
                 .controls
                 .get(&node)
@@ -463,10 +467,13 @@ impl Follower {
             {
                 continue;
             }
-            let params = ChannelParams::Dmr(DmrParams {
-                slots: DmrSlots::Both,
-                ignore_crc: true,
-            });
+            let params = match control_params(&decoder) {
+                Ok(params) => params,
+                Err(error) => {
+                    tracing::warn!(node, %error, "no decoder can run this trunk system");
+                    continue;
+                }
+            };
             let settings = ChannelSettings {
                 frequency_hz: radio.control_hz as f64,
                 squelch: sdrmm_wire::Squelch::Off,
@@ -617,10 +624,13 @@ impl Follower {
     }
 
     fn open_probe(&mut self, engine: &Engine, system_node: &str, freq_hz: u64, carrier: &Carrier) {
-        let params = ChannelParams::Dmr(DmrParams {
-            slots: DmrSlots::Both,
-            ignore_crc: true,
-        });
+        let params = match (carrier.trunking.watch)(true) {
+            Ok(params) => params,
+            Err(error) => {
+                tracing::warn!(system_node, %error, "could not build a trunk probe");
+                return;
+            }
+        };
         let settings = ChannelSettings {
             frequency_hz: freq_hz as f64,
             squelch: sdrmm_wire::Squelch::Off,
@@ -778,14 +788,13 @@ impl Follower {
             );
             return;
         }
-        let params = ChannelParams::Dmr(DmrParams {
-            slots: if grant.slot == 1 {
-                DmrSlots::One
-            } else {
-                DmrSlots::Two
-            },
-            ignore_crc: carrier.ignore_crc,
-        });
+        let params = match (carrier.trunking.follow)(grant.slot, carrier.ignore_crc) {
+            Ok(params) => params,
+            Err(error) => {
+                self.fail(key, grant, error.to_string());
+                return;
+            }
+        };
         let settings = ChannelSettings {
             frequency_hz: grant.freq_hz as f64,
             squelch: sdrmm_wire::Squelch::Off,
@@ -1162,7 +1171,10 @@ fn device_sets(live: &[Carrier]) -> Vec<u32> {
 }
 
 fn probe_reach(carrier: &Carrier) -> Option<std::ops::RangeInclusive<u64>> {
-    let (low, high) = sdrmm_channels::occupied_band(&ChannelParams::Dmr(DmrParams::default()));
+    let Ok(watch) = (carrier.trunking.watch)(true) else {
+        return None;
+    };
+    let (low, high) = sdrmm_channels::occupied_band(&watch);
     let nyquist = carrier.sample_rate / 2.0;
     let lowest = (carrier.center_hz - nyquist - low).max(0.0);
     let highest = carrier.center_hz + nyquist - high;
@@ -1172,11 +1184,19 @@ fn probe_reach(carrier: &Carrier) -> Option<std::ops::RangeInclusive<u64>> {
     Some((lowest.ceil() as u64)..=(highest.floor() as u64))
 }
 
+/// The control channel settings of the decoder a trunk system runs on.
+fn control_params(decoder: &str) -> Result<ChannelParams, String> {
+    let (_, trunking) = sdrmm_channels::trunking(decoder)
+        .ok_or_else(|| format!("no registered decoder trunks as {decoder:?}"))?;
+    (trunking.watch)(true).map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
+    use sdrmm_channels::{DmrParams, DmrSlots};
     use sdrmm_device::DeviceRegistry;
     use sdrmm_device_virtual::VirtualDriver;
-    use sdrmm_wire::{DecoderEvent, DeviceSettings, DvChannelDefinition, DvMode};
+    use sdrmm_wire::{DecoderEvent, DeviceSettings, DvChannelDefinition};
 
     use super::*;
 
@@ -1203,7 +1223,7 @@ mod tests {
                 ChannelSettings {
                     frequency_hz: center_hz,
                     squelch: sdrmm_wire::Squelch::Off,
-                    params: ChannelParams::Dmr(DmrParams::default()),
+                    params: ChannelParams::new("dmr", &DmrParams::default()).expect("dmr settings"),
                     blanker: Default::default(),
                     if_filter: Default::default(),
                 },
@@ -1212,22 +1232,22 @@ mod tests {
         (device_set, channel, center_hz)
     }
 
-    fn follower(engine: &Arc<Engine>, protocol: DmrTrunkProtocol, carrier: (u32, u32)) -> Follower {
+    fn follower(engine: &Arc<Engine>, protocol: TrunkProtocol, carrier: (u32, u32)) -> Follower {
         searching_follower(
             engine,
             protocol,
             carrier,
-            DmrDiscovery::default(),
+            TrunkDiscovery::default(),
             Vec::new(),
         )
     }
 
     fn searching_follower(
         engine: &Arc<Engine>,
-        protocol: DmrTrunkProtocol,
+        protocol: TrunkProtocol,
         carrier: (u32, u32),
-        discovery: DmrDiscovery,
-        channel_map: Vec<DmrChannelEntry>,
+        discovery: TrunkDiscovery,
+        channel_map: Vec<TrunkChannelEntry>,
     ) -> Follower {
         let control_hz = engine
             .snapshot()
@@ -1241,6 +1261,7 @@ mod tests {
             status: Arc::new(Mutex::new(Vec::new())),
             systems: vec![TrunkSystem {
                 node: "trunk".to_owned(),
+                decoder: String::new(),
                 protocol,
                 discovery,
                 channel_map,
@@ -1284,7 +1305,7 @@ mod tests {
             channel: carrier.1,
             at: "2026-08-14T10:00:00Z".to_owned(),
             freq_hz: 451_000_000.0,
-            event: DecoderEvent::Dv(frame),
+            event: DecoderEvent::of(&frame),
             view: None,
         }
     }
@@ -1299,7 +1320,7 @@ mod tests {
                 rx_hz,
                 color_code: None,
             }),
-            ..DvFrame::new(DvMode::Dmr, DvFrameKind::Control)
+            ..DvFrame::new("DMR", DvFrameKind::Control)
         }
     }
 
@@ -1310,14 +1331,14 @@ mod tests {
             channel: Some(LOGICAL_CHANNEL),
             slot: Some(slot),
             destination: Some(91),
-            ..DvFrame::new(DvMode::Dmr, DvFrameKind::Control)
+            ..DvFrame::new("DMR", DvFrameKind::Control)
         }
     }
 
-    fn search_over(center_hz: f64) -> DmrDiscovery {
-        DmrDiscovery {
+    fn search_over(center_hz: f64) -> TrunkDiscovery {
+        TrunkDiscovery {
             enabled: true,
-            ranges: vec![sdrmm_wire::DmrSearchRange {
+            ranges: vec![sdrmm_wire::TrunkSearchRange {
                 start_hz: center_hz as u64 + 12_500,
                 end_hz: center_hz as u64 + 50_000,
                 step_hz: 12_500,
@@ -1331,7 +1352,7 @@ mod tests {
             slot: Some(slot),
             destination: Some(destination),
             source: Some(source),
-            ..DvFrame::new(DvMode::Dmr, DvFrameKind::Header)
+            ..DvFrame::new("DMR", DvFrameKind::Header)
         }
     }
 
@@ -1357,7 +1378,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, center_hz) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, DmrTrunkProtocol::TierThree, carrier);
+        let mut follower = follower(&engine, TrunkProtocol::TierThree, carrier);
         let traffic = center_hz as u64 + 125_000;
 
         follower.observe(&record(carrier, definition(traffic)));
@@ -1370,10 +1391,14 @@ mod tests {
         assert_eq!(followed.settings.frequency_hz, traffic as f64);
         assert_eq!(
             followed.settings.params,
-            ChannelParams::Dmr(DmrParams {
-                slots: DmrSlots::Two,
-                ignore_crc: false,
-            })
+            ChannelParams::new(
+                "dmr",
+                &DmrParams {
+                    slots: DmrSlots::Two,
+                    ignore_crc: false,
+                }
+            )
+            .expect("dmr settings")
         );
         let status = status(&follower);
         assert_eq!(status.followers.len(), 1);
@@ -1387,7 +1412,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, _) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, DmrTrunkProtocol::TierThree, carrier);
+        let mut follower = follower(&engine, TrunkProtocol::TierThree, carrier);
 
         follower.observe(&record(carrier, grant(1)));
 
@@ -1400,7 +1425,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, center_hz) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, DmrTrunkProtocol::TierThree, carrier);
+        let mut follower = follower(&engine, TrunkProtocol::TierThree, carrier);
         let traffic = center_hz as u64 + 125_000;
 
         follower.observe(&record(carrier, definition(traffic)));
@@ -1418,7 +1443,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, _) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, DmrTrunkProtocol::Auto, carrier);
+        let mut follower = follower(&engine, TrunkProtocol::Auto, carrier);
         assert!(
             follower.followers.is_empty(),
             "auto followed before it knew"
@@ -1429,7 +1454,7 @@ mod tests {
             DvFrame {
                 trunk_protocol: Some(DvTrunkProtocol::CapacityPlus),
                 crc_verified: Some(true),
-                ..DvFrame::new(DvMode::Dmr, DvFrameKind::Control)
+                ..DvFrame::new("DMR", DvFrameKind::Control)
             },
         ));
 
@@ -1450,10 +1475,10 @@ mod tests {
         let second = center_hz as u64 + 25_000;
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::CapacityPlus,
+            TrunkProtocol::CapacityPlus,
             carrier,
-            DmrDiscovery::default(),
-            vec![DmrChannelEntry {
+            TrunkDiscovery::default(),
+            vec![TrunkChannelEntry {
                 lcn: 2,
                 freq_hz: second,
             }],
@@ -1464,7 +1489,7 @@ mod tests {
             DvFrame {
                 trunk_protocol: Some(DvTrunkProtocol::CapacityPlus),
                 crc_verified: Some(true),
-                ..DvFrame::new(DvMode::Dmr, DvFrameKind::Control)
+                ..DvFrame::new("DMR", DvFrameKind::Control)
             },
         ));
 
@@ -1497,7 +1522,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, _) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, DmrTrunkProtocol::Auto, carrier);
+        let mut follower = follower(&engine, TrunkProtocol::Auto, carrier);
         assert!(
             follower.followers.is_empty(),
             "auto followed before it knew"
@@ -1508,29 +1533,27 @@ mod tests {
             DvFrame {
                 trunk_protocol: Some(DvTrunkProtocol::HyteraXpt),
                 crc_verified: Some(true),
-                ..DvFrame::new(DvMode::Dmr, DvFrameKind::Control)
+                ..DvFrame::new("DMR", DvFrameKind::Control)
             },
         ));
 
         let set = engine.snapshot().device_sets.remove(0);
         assert_eq!(set.channels.len(), 3, "both slots were not provisioned");
         assert!(set.channels.iter().any(|channel| {
-            matches!(
-                channel.settings.params,
-                ChannelParams::Dmr(DmrParams {
-                    slots: DmrSlots::One,
-                    ..
-                })
-            )
+            channel.settings.params.type_id == "dmr"
+                && channel
+                    .settings
+                    .params
+                    .parse::<DmrParams>()
+                    .is_ok_and(|params| params.slots == DmrSlots::One)
         }));
         assert!(set.channels.iter().any(|channel| {
-            matches!(
-                channel.settings.params,
-                ChannelParams::Dmr(DmrParams {
-                    slots: DmrSlots::Two,
-                    ..
-                })
-            )
+            channel.settings.params.type_id == "dmr"
+                && channel
+                    .settings
+                    .params
+                    .parse::<DmrParams>()
+                    .is_ok_and(|params| params.slots == DmrSlots::Two)
         }));
         let status = status(&follower);
         assert_eq!(status.detected, Some(DvTrunkProtocol::HyteraXpt));
@@ -1544,7 +1567,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, center_hz) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, DmrTrunkProtocol::TierThree, carrier);
+        let mut follower = follower(&engine, TrunkProtocol::TierThree, carrier);
         let far = center_hz as u64 + 10_000_000;
 
         follower.observe(&record(carrier, definition(far)));
@@ -1564,7 +1587,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, center_hz) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, DmrTrunkProtocol::TierThree, carrier);
+        let mut follower = follower(&engine, TrunkProtocol::TierThree, carrier);
         follower.observe(&record(carrier, definition(center_hz as u64 + 125_000)));
         follower.observe(&record(carrier, grant(1)));
         assert_eq!(engine.snapshot().device_sets[0].channels.len(), 2);
@@ -1603,8 +1626,9 @@ mod tests {
             status: Arc::new(Mutex::new(Vec::new())),
             systems: vec![TrunkSystem {
                 node: "trunk".to_owned(),
-                protocol: DmrTrunkProtocol::TierThree,
-                discovery: DmrDiscovery::default(),
+                decoder: String::new(),
+                protocol: TrunkProtocol::TierThree,
+                discovery: TrunkDiscovery::default(),
                 channel_map: Vec::new(),
                 learned: Vec::new(),
                 radio: Some(TrunkRadio {
@@ -1675,8 +1699,9 @@ mod tests {
             status: Arc::new(Mutex::new(Vec::new())),
             systems: vec![TrunkSystem {
                 node: "trunk".to_owned(),
-                protocol: DmrTrunkProtocol::TierThree,
-                discovery: DmrDiscovery::default(),
+                decoder: String::new(),
+                protocol: TrunkProtocol::TierThree,
+                discovery: TrunkDiscovery::default(),
                 channel_map: Vec::new(),
                 learned: Vec::new(),
                 radio: radio(center_hz as u64 + 12_500),
@@ -1721,8 +1746,9 @@ mod tests {
             status: Arc::new(Mutex::new(Vec::new())),
             systems: vec![TrunkSystem {
                 node: "trunk".to_owned(),
-                protocol: DmrTrunkProtocol::TierThree,
-                discovery: DmrDiscovery::default(),
+                decoder: String::new(),
+                protocol: TrunkProtocol::TierThree,
+                discovery: TrunkDiscovery::default(),
                 channel_map: Vec::new(),
                 learned: Vec::new(),
                 radio: Some(TrunkRadio {
@@ -1775,10 +1801,10 @@ mod tests {
         let traffic_hz = center_hz as u64 + 25_000;
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::TierThree,
+            TrunkProtocol::TierThree,
             carrier,
-            DmrDiscovery::default(),
-            vec![DmrChannelEntry {
+            TrunkDiscovery::default(),
+            vec![TrunkChannelEntry {
                 lcn: LOGICAL_CHANNEL,
                 freq_hz: traffic_hz,
             }],
@@ -1794,7 +1820,7 @@ mod tests {
                 destination: Some(9_999),
                 source: Some(9_998),
                 data: Some("data call".to_owned()),
-                ..DvFrame::new(DvMode::Dmr, DvFrameKind::Control)
+                ..DvFrame::new("DMR", DvFrameKind::Control)
             },
         ));
 
@@ -1811,10 +1837,10 @@ mod tests {
         let traffic_hz = center_hz as u64 + 25_000;
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::TierThree,
+            TrunkProtocol::TierThree,
             carrier,
-            DmrDiscovery::default(),
-            vec![DmrChannelEntry {
+            TrunkDiscovery::default(),
+            vec![TrunkChannelEntry {
                 lcn: LOGICAL_CHANNEL,
                 freq_hz: traffic_hz,
             }],
@@ -1842,7 +1868,7 @@ mod tests {
                         logical_channel: Some(LOGICAL_CHANNEL),
                     },
                 ],
-                ..DvFrame::new(DvMode::Dmr, DvFrameKind::Control)
+                ..DvFrame::new("DMR", DvFrameKind::Control)
             },
         ));
 
@@ -1865,7 +1891,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::TierThree,
+            TrunkProtocol::TierThree,
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -1884,7 +1910,7 @@ mod tests {
                     destination: Some(9_001),
                     logical_channel: Some(LOGICAL_CHANNEL),
                 }],
-                ..DvFrame::new(DvMode::Dmr, DvFrameKind::Control)
+                ..DvFrame::new("DMR", DvFrameKind::Control)
             },
         ));
         follower.reconcile();
@@ -1900,9 +1926,9 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::TierThree,
+            TrunkProtocol::TierThree,
             carrier,
-            DmrDiscovery {
+            TrunkDiscovery {
                 enabled: true,
                 ranges: Vec::new(),
                 max_probes: 4,
@@ -1928,7 +1954,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::TierThree,
+            TrunkProtocol::TierThree,
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -1968,7 +1994,7 @@ mod tests {
         let device_set = engine
             .create_device_set("virtual:band")
             .expect("virtual device");
-        let mut follower = follower(&engine, DmrTrunkProtocol::TierThree, (device_set, u32::MAX));
+        let mut follower = follower(&engine, TrunkProtocol::TierThree, (device_set, u32::MAX));
         follower.controls.clear();
         follower.reconcile();
 
@@ -1984,7 +2010,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::TierThree,
+            TrunkProtocol::TierThree,
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -2025,7 +2051,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::TierThree,
+            TrunkProtocol::TierThree,
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -2062,10 +2088,10 @@ mod tests {
         let traffic_hz = center_hz as u64 + 25_000;
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::TierThree,
+            TrunkProtocol::TierThree,
             carrier,
             search_over(center_hz),
-            vec![DmrChannelEntry {
+            vec![TrunkChannelEntry {
                 lcn: LOGICAL_CHANNEL,
                 freq_hz: traffic_hz,
             }],
@@ -2088,7 +2114,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::TierThree,
+            TrunkProtocol::TierThree,
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -2112,7 +2138,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::TierThree,
+            TrunkProtocol::TierThree,
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -2139,7 +2165,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            DmrTrunkProtocol::TierThree,
+            TrunkProtocol::TierThree,
             carrier,
             search_over(center_hz),
             Vec::new(),

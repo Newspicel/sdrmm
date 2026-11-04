@@ -1,8 +1,9 @@
 use std::f32::consts::FRAC_PI_4;
 use std::f64::consts::TAU;
 
+use crate::stanag::StanagInterleave;
+use crate::stanag::StanagRate;
 use num_complex::Complex;
-use sdrmm_wire::{StanagInterleave, StanagRate};
 
 const SAMPLES_PER_SYMBOL: usize = 2;
 const SEGMENT: usize = 32;

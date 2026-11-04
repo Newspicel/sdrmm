@@ -1,16 +1,22 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, EventContract, KindSpec, NumberSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, FmDemod, RealDecimator, design_lowpass};
 #[cfg(any(test, feature = "synth"))]
 use sdrmm_modem::cpm::{CpmParams, Mapping};
+use sdrmm_modem::ita2::{self, ShiftDecoder};
 use sdrmm_modem::pulse::{self, Norm};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    RttyParams, RttyText,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const CHANNEL_TAPS: usize = 257;
 
@@ -25,20 +31,6 @@ const IDLE_FLUSH_BITS: f64 = 24.0;
 const FRAME_BITS: usize = 7;
 const STOP_INDEX: usize = FRAME_BITS - 1;
 
-pub(crate) const LETTERS: [char; 32] = [
-    '\0', 'E', '\n', 'A', ' ', 'S', 'I', 'U', '\r', 'D', 'R', 'J', 'N', 'F', 'C', 'K', 'T', 'Z',
-    'L', 'W', 'H', 'Y', 'P', 'Q', 'O', 'B', 'G', '\0', 'M', 'X', 'V', '\0',
-];
-
-pub(crate) const FIGURES: [char; 32] = [
-    '\0', '3', '\n', '-', ' ', '\0', '8', '7', '\r', '$', '4', '\'', ',', '!', ':', '(', '5', '"',
-    ')', '2', '#', '6', '0', '1', '9', '?', '&', '\0', '.', '/', ';', '\0',
-];
-
-pub(crate) const FIGS_CODE: u8 = 0x1B;
-pub(crate) const LTRS_CODE: u8 = 0x1F;
-pub(crate) const SPACE_CODE: u8 = 0x04;
-
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "rtty".to_owned(),
     name: "RTTY".to_owned(),
@@ -47,7 +39,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 1_000.0,
     input_rate_hz: 8_000.0,
     has_audio: false,
-    emits: vec![EventKind::Rtty],
+    emits: vec![RttyText::KIND],
     ..ChannelDescriptor::default()
 });
 
@@ -60,14 +52,8 @@ pub struct RttyChannel {
     filtered: Vec<f32>,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&RttyParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Rtty(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "rtty channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<RttyParams, ChannelError> {
+    crate::settings_of::<RttyParams>(settings)
 }
 
 fn check_params(p: &RttyParams) -> Result<(), ChannelError> {
@@ -121,14 +107,13 @@ pub(crate) fn cell_params(baud: f64, shift_hz: f64, rate: f64) -> CpmParams {
     )
 }
 
-impl ChannelRx for RttyChannel {
+impl NativeChannel for RttyChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = params(&settings)?;
+        let p = &params(&settings)?;
         check_params(p)?;
         Ok(Self {
             demod: FmDemod::new(ctx.input_rate, p.shift_hz / 2.0),
@@ -139,9 +124,11 @@ impl ChannelRx for RttyChannel {
             filtered: Vec::new(),
         })
     }
+}
 
+impl ChannelRx for RttyChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let p = params(&settings)?;
+        let p = &params(&settings)?;
         check_params(p)?;
         let rate = DESCRIPTOR.input_rate_hz;
         self.demod = FmDemod::new(rate, p.shift_hz / 2.0);
@@ -184,7 +171,7 @@ struct Decoder {
     unshift_on_space: bool,
     positive: bool,
     frame: Option<Frame>,
-    figs: bool,
+    ita2: ShiftDecoder,
     text: String,
     newline: bool,
     since_char: usize,
@@ -198,7 +185,7 @@ impl Decoder {
             unshift_on_space: true,
             positive: true,
             frame: None,
-            figs: false,
+            ita2: ShiftDecoder::new(&ita2::FIGURES_US),
             text: String::new(),
             newline: false,
             since_char: 0,
@@ -263,24 +250,11 @@ impl Decoder {
 
     fn emit(&mut self, code: u8, out: &mut ChannelOutputs) {
         self.since_char = 0;
-        match code {
-            FIGS_CODE => {
-                self.figs = true;
-                return;
-            }
-            LTRS_CODE => {
-                self.figs = false;
-                return;
-            }
-            _ => {}
-        }
-        let ch = if self.figs {
-            FIGURES[code as usize]
-        } else {
-            LETTERS[code as usize]
+        let Some(ch) = self.ita2.decode(code) else {
+            return;
         };
-        if code == SPACE_CODE && self.unshift_on_space {
-            self.figs = false;
+        if code == ita2::SPACE && self.unshift_on_space {
+            self.ita2.unshift();
         }
         match ch {
             '\0' => {}
@@ -305,19 +279,67 @@ impl Decoder {
         if self.text.is_empty() {
             return;
         }
-        out.events.push(DecoderEvent::Rtty(RttyText {
+        out.events.push(DecoderEvent::of(&RttyText {
             text: self.text.clone(),
         }));
         self.text.clear();
     }
 }
 
+fn rtty_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "RTTY",
+            &[Modulation::Fsk2],
+            HzRange::new(100.0, 2_500.0),
+            "a slow two-tone shift, teleprinter speed",
+        )
+        .symbol_rate(HzRange::new(40.0, 110.0))
+        .deviation(HzRange::new(40.0, 500.0)),
+    ]
+}
+
+pub(crate) fn rtty_decoder() -> Native<RttyParams> {
+    Native::new::<RttyChannel>(occupied_band)
+        .filter(channel_filter)
+        .signatures(rtty_signatures)
+        .form(rtty_form)
+        .kinds(rtty_kinds)
+}
+
+pub(crate) fn rtty_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new(
+            "baud",
+            "Baud",
+            NumberSpec::new(10.0, 1_200.0, 0.05).presets(&RTTY_BAUDS, |baud| format!("{baud}")),
+        )
+        .title("RTTY baud"),
+        SettingField::new(
+            "shift_hz",
+            "Shift",
+            NumberSpec::hz(20.0, 2_000.0, 5.0).presets(&RTTY_SHIFTS_HZ, |hz| format!("{hz}")),
+        )
+        .title("RTTY shift"),
+        SettingField::new("stop_bits", "Stop", Control::choice::<RttyStopBits>())
+            .title("RTTY stop bits"),
+        SettingField::invert(),
+        SettingField::new("unshift_on_space", "Unshift", Control::Toggle)
+            .title("Drop back to letters after a space, as most stations expect"),
+    ]
+}
+
+fn rtty_kinds() -> Vec<KindSpec> {
+    vec![rtty_kind()]
+}
+
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{NfmParams, RttyStopBits};
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
     use crate::{
+        nfm::NfmParams,
         synth::{
             self,
             rtty::{encode_codes, modulate, transmission},
@@ -331,7 +353,7 @@ mod tests {
     fn channel(p: RttyParams) -> RttyChannel {
         RttyChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Rtty(p)),
+            settings(ChannelParams::of(&p).expect("rtty settings")),
         )
         .unwrap()
     }
@@ -353,9 +375,9 @@ mod tests {
             chan.process(&iq[pos..end], &mut out);
             assert!(out.audio_pcm.is_empty(), "rtty must not produce audio");
             for ev in &out.events {
-                match ev {
-                    DecoderEvent::Rtty(t) => texts.push(t.text.clone()),
-                    other => panic!("unexpected event {other:?}"),
+                match ev.read::<RttyText>() {
+                    Some(t) => texts.push(t.text),
+                    None => panic!("unexpected event {ev:?}"),
                 }
             }
             pos = end;
@@ -371,29 +393,6 @@ mod tests {
         let mut iq = transmission(text, p.baud, p.shift_hz, p.stop_bits.periods(), RATE);
         iq.extend_from_slice(&tail(p.baud));
         iq
-    }
-
-    #[test]
-    fn ita2_rows_match_the_standard_alphabet() {
-        #[rustfmt::skip]
-        const STANDARD: [(u8, char, char); 32] = [
-            (0x00, '\0', '\0'), (0x01, 'E',  '3'),  (0x02, '\n', '\n'), (0x03, 'A',  '-'),
-            (0x04, ' ',  ' '),  (0x05, 'S',  '\0'), (0x06, 'I',  '8'),  (0x07, 'U',  '7'),
-            (0x08, '\r', '\r'), (0x09, 'D',  '$'),  (0x0A, 'R',  '4'),  (0x0B, 'J',  '\''),
-            (0x0C, 'N',  ','),  (0x0D, 'F',  '!'),  (0x0E, 'C',  ':'),  (0x0F, 'K',  '('),
-            (0x10, 'T',  '5'),  (0x11, 'Z',  '"'),  (0x12, 'L',  ')'),  (0x13, 'W',  '2'),
-            (0x14, 'H',  '#'),  (0x15, 'Y',  '6'),  (0x16, 'P',  '0'),  (0x17, 'Q',  '1'),
-            (0x18, 'O',  '9'),  (0x19, 'B',  '?'),  (0x1A, 'G',  '&'),  (0x1B, '\0', '\0'),
-            (0x1C, 'M',  '.'),  (0x1D, 'X',  '/'),  (0x1E, 'V',  ';'),  (0x1F, '\0', '\0'),
-        ];
-        for (code, letter, figure) in STANDARD {
-            let index = code as usize;
-            assert_eq!(LETTERS[index], letter, "letters row at {code:#04x}");
-            assert_eq!(FIGURES[index], figure, "figures row at {code:#04x}");
-        }
-        assert_eq!(FIGS_CODE, 0x1B);
-        assert_eq!(LTRS_CODE, 0x1F);
-        assert_eq!(SPACE_CODE, 0x04);
     }
 
     #[test]
@@ -457,7 +456,7 @@ mod tests {
 
     #[test]
     fn unshift_on_space_recovers_a_stream_that_lost_its_letters_shift() {
-        let codes = [FIGS_CODE, 0x17, 0x07, SPACE_CODE, 0x03, 0x19, 0x0E];
+        let codes = [ita2::FIGS, 0x17, 0x07, ita2::SPACE, 0x03, 0x19, 0x0E];
         let p = RttyParams::default();
         let mut iq = modulate(
             &encode_codes(&codes, p.stop_bits.periods()),
@@ -530,7 +529,7 @@ mod tests {
             stop_bits: RttyStopBits::Two,
             ..RttyParams::default()
         };
-        chan.apply(settings(ChannelParams::Rtty(p.clone())))
+        chan.apply(settings(ChannelParams::of(&p).expect("rtty settings")))
             .unwrap();
         let texts = decode_blocks(&mut chan, &burst("QRV 75 BAUD", &p), &BLOCKS);
         assert_eq!(texts, vec!["QRV 75 BAUD".to_owned()]);
@@ -562,7 +561,7 @@ mod tests {
         ] {
             let built = RttyChannel::new(
                 ChannelCtx { input_rate: RATE },
-                settings(ChannelParams::Rtty(p.clone())),
+                settings(ChannelParams::of(&p).expect("rtty settings")),
             );
             assert!(
                 matches!(built, Err(ChannelError::InvalidSettings(_))),
@@ -578,11 +577,13 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(RttyParams::default());
-        let err = chan.apply(settings(ChannelParams::Nfm(NfmParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = RttyChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Nfm(NfmParams::default())),
+            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -593,7 +594,7 @@ mod tests {
             ChannelCtx {
                 input_rate: 48_000.0,
             },
-            settings(ChannelParams::Rtty(RttyParams::default())),
+            settings(ChannelParams::of(&RttyParams::default()).expect("rtty settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

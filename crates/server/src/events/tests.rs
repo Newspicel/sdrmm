@@ -1,6 +1,8 @@
+use sdrmm_channels::AdsbMessage;
+use sdrmm_channels::RttyText;
 use sdrmm_wire::{
-    AdsbMessage, ChannelNode, DecoderEvent, EventKind, EventOrigin, FilterMode, NodeBody,
-    PatchEdge, PatchNode, PortRef, Position, RttyText,
+    ChannelNode, DecoderEvent, EventKind, EventOrigin, FilterMode, NodeBody, PatchEdge, PatchNode,
+    PortRef, Position,
 };
 
 use super::*;
@@ -54,13 +56,13 @@ fn only(kind: EventKind) -> EventFilterNode {
 }
 
 fn rtty(text: &str) -> DecoderEvent {
-    DecoderEvent::Rtty(RttyText {
+    DecoderEvent::of(&RttyText {
         text: text.to_owned(),
     })
 }
 
 fn aircraft() -> DecoderEvent {
-    DecoderEvent::Adsb(AdsbMessage {
+    DecoderEvent::of(&AdsbMessage {
         icao: "3c6444".to_owned(),
         ..AdsbMessage::default()
     })
@@ -84,7 +86,7 @@ fn from(source: Option<&str>, event: DecoderEvent) -> DecodedRecord {
 }
 
 fn routes(graph: &PatchGraph) -> EventRoutes {
-    let descriptors = sdrmm_channels::descriptor_table();
+    let descriptors = &sdrmm_channels::descriptors();
     let ctx = sdrmm_wire::ResolveCtx {
         descriptors: Some(descriptors),
         live: None,
@@ -107,7 +109,7 @@ fn rtty_graph() -> PatchGraph {
     PatchGraph {
         nodes: vec![
             channel("rtty", "rtty"),
-            filter("only-calls", only(EventKind::Call)),
+            filter("only-calls", only(EventKind::CALL)),
             node("chat", NodeBody::DecoderLog(Default::default())),
             node("export", NodeBody::Export),
             node("idle", NodeBody::DecoderLog(Default::default())),
@@ -172,7 +174,7 @@ fn a_kind_the_sink_does_not_accept_is_not_stamped_and_counts_as_ignored() {
         edges: vec![edge("dmr", "map")],
     };
     let routes = routes(&graph);
-    let call = DecoderEvent::Call(sdrmm_wire::VoiceCall {
+    let call = DecoderEvent::of(&sdrmm_wire::VoiceCall {
         id: 1,
         node: "dmr".to_owned(),
         started_at: "2026-09-21T10:00:00Z".to_owned(),
@@ -266,7 +268,7 @@ fn one_open_wire_is_enough_to_reach_a_sink_once() {
     let graph = PatchGraph {
         nodes: vec![
             channel("rtty", "rtty"),
-            filter("only-calls", only(EventKind::Call)),
+            filter("only-calls", only(EventKind::CALL)),
             node("chat", NodeBody::DecoderLog(Default::default())),
         ],
         edges: vec![
@@ -291,7 +293,7 @@ fn a_filter_is_never_a_sink() {
 }
 
 fn plane(callsign: Option<&str>, place: Option<(f64, f64)>) -> DecoderEvent {
-    DecoderEvent::Adsb(AdsbMessage {
+    DecoderEvent::of(&AdsbMessage {
         icao: "3c6444".to_owned(),
         callsign: callsign.map(str::to_owned),
         lat: place.map(|(lat, _)| lat),
@@ -362,7 +364,7 @@ fn a_full_station_table_drops_its_oldest() {
     for icao in 0..=stations::MAX_STATIONS {
         let mut record = from(
             Some("adsb"),
-            DecoderEvent::Adsb(AdsbMessage {
+            DecoderEvent::of(&AdsbMessage {
                 icao: format!("{icao:06x}"),
                 ..AdsbMessage::default()
             }),

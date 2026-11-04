@@ -209,7 +209,7 @@ async fn a_hunt_mark_needs_a_running_hunt_a_position_and_a_heading() {
             .await
             .expect("mark event")
             .expect("decoded stream");
-        if let DecoderEvent::Df(bearing) = record.event {
+        if let Some(bearing) = record.event.read::<sdrmm_wire::DfBearing>() {
             assert_eq!(
                 record.origin.map(|origin| origin.node).as_deref(),
                 Some("hunt")

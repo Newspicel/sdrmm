@@ -1,4 +1,6 @@
-use sdrmm_wire::{AdsbMessage, DecoderEvent, EventKind, EventOrigin, RttyText};
+use sdrmm_channels::AdsbMessage;
+use sdrmm_channels::RttyText;
+use sdrmm_wire::{DecoderEvent, EventKind, EventOrigin};
 
 use super::*;
 
@@ -20,7 +22,7 @@ fn from(source: &str, event: DecoderEvent) -> DecodedRecord {
 }
 
 fn adsb(callsign: Option<&str>, place: Option<(f64, f64)>) -> DecoderEvent {
-    DecoderEvent::Adsb(AdsbMessage {
+    DecoderEvent::of(&AdsbMessage {
         icao: "3c6444".to_owned(),
         df: 17,
         callsign: callsign.map(str::to_owned),
@@ -60,7 +62,7 @@ fn a_callsign_frame_and_a_position_frame_build_one_plane() {
     assert_eq!(plane.view.label.as_deref(), Some("DLH123"));
     assert!(plane.view.place.is_some(), "the merged plane keeps its fix");
     assert_eq!(plane.trail.len(), 1);
-    assert_eq!(plane.symbol, EventKind::Adsb.info().symbol);
+    assert_eq!(plane.symbol, EventKind::named("adsb").info().symbol);
 }
 
 #[test]
@@ -90,7 +92,7 @@ fn two_decoders_of_one_kind_are_two_groups() {
 #[test]
 fn an_instant_kind_never_becomes_an_entity() {
     let mut entities = Entities::default();
-    let rtty = DecoderEvent::Rtty(RttyText {
+    let rtty = DecoderEvent::of(&RttyText {
         text: "CQ".to_owned(),
     });
 
@@ -164,7 +166,7 @@ fn the_oldest_entities_leave_when_the_sink_is_full() {
     let start = Instant::now();
     let mut evicted = 0;
     for n in 0..=MAX_ENTITIES {
-        let event = DecoderEvent::Adsb(AdsbMessage {
+        let event = DecoderEvent::of(&AdsbMessage {
             icao: format!("{n:06x}"),
             ..AdsbMessage::default()
         });

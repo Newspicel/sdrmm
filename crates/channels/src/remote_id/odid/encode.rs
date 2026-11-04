@@ -1,7 +1,13 @@
-use sdrmm_wire::{
-    AuthType, EuCategory, HeightReference, OperatorLocationType, RemoteIdLocation, RemoteIdMessage,
-    RemoteIdSystem, UaStatus, UaType, UasIdType,
-};
+use crate::remote_id::AuthType;
+use crate::remote_id::EuCategory;
+use crate::remote_id::HeightReference;
+use crate::remote_id::OperatorLocationType;
+use crate::remote_id::RemoteIdLocation;
+use crate::remote_id::RemoteIdMessage;
+use crate::remote_id::RemoteIdSystem;
+use crate::remote_id::UaStatus;
+use crate::remote_id::UaType;
+use crate::remote_id::UasIdType;
 
 use super::{EPOCH_2019, ID_SIZE, MAX_PACK_MESSAGES, MESSAGE_SIZE, PACK, TEXT_SIZE};
 

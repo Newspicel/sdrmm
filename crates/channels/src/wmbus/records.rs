@@ -1,4 +1,6 @@
-use sdrmm_wire::{WmbusFunction, WmbusQuantity, WmbusRecord};
+use crate::wmbus::WmbusFunction;
+use crate::wmbus::WmbusQuantity;
+use crate::wmbus::WmbusRecord;
 
 use crate::datalink::hex;
 

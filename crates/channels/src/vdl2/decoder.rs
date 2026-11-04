@@ -1,7 +1,5 @@
-use std::f64::consts::PI;
-
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, ReedSolomon};
+use sdrmm_dsp::{Decimator, ReedSolomon, design_lowpass_blackman_harris};
 use serde_json::{Value, json};
 
 use crate::acars::block::{AcarsBlock, parse as parse_acars};
@@ -186,28 +184,7 @@ fn cotp_reassemble(full: &[u8], v: &mut Value, cotp: &mut CotpReassembler, now: 
 }
 
 fn selectivity(cutoff: f64) -> Decimator {
-    Decimator::new(&lowpass_taps(cutoff, SELECTIVITY_TAPS), 1)
-}
-
-fn lowpass_taps(cutoff: f64, num_taps: usize) -> Vec<f32> {
-    const A: [f64; 4] = [0.35875, 0.48829, 0.14128, 0.01168];
-    let last = num_taps as f64 - 1.0;
-    let center = last / 2.0;
-    let taps: Vec<f64> = (0..num_taps)
-        .map(|i| {
-            let x = 2.0 * PI * i as f64 / last;
-            let window = A[0] - A[1] * x.cos() + A[2] * (2.0 * x).cos() - A[3] * (3.0 * x).cos();
-            let t = i as f64 - center;
-            let sinc = if t.abs() < 1e-12 {
-                2.0 * cutoff
-            } else {
-                (2.0 * PI * cutoff * t).sin() / (PI * t)
-            };
-            sinc * window
-        })
-        .collect();
-    let sum: f64 = taps.iter().sum();
-    taps.into_iter().map(|t| (t / sum) as f32).collect()
+    Decimator::new(&design_lowpass_blackman_harris(SELECTIVITY_TAPS, cutoff), 1)
 }
 
 #[cfg(test)]

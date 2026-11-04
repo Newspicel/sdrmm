@@ -143,8 +143,8 @@ describe("decoderLogExportUrl", () => {
   afterEach(() => setToken(null));
 
   it("drops blank fields and carries the sink it exports for", () => {
-    expect(decoderLogExportUrl("csv", { q: "", kind: "adsb" })).toBe(
-      "/api/decoderlog/export/csv?kind=adsb",
+    expect(decoderLogExportUrl("csv", { q: "", kind: "plane" })).toBe(
+      "/api/decoderlog/export/csv?kind=plane",
     );
     expect(decoderLogExportUrl("json", { sink: "export:a1", q: "wx" })).toBe(
       "/api/decoderlog/export/json?sink=export%3Aa1&q=wx",

@@ -78,8 +78,9 @@ fn resolve(store: &Store, engine: &Engine, resolved: &Resolved) -> Vec<TrunkSyst
         .nodes
         .iter()
         .filter_map(|node| match &node.body {
-            NodeBody::DmrTrunk(settings) => Some(TrunkSystem {
+            NodeBody::Trunk(settings) => Some(TrunkSystem {
                 node: node.id.clone(),
+                decoder: settings.decoder.clone(),
                 protocol: settings.protocol,
                 discovery: settings.discovery.clone(),
                 channel_map: settings.channel_map.clone(),
@@ -98,7 +99,7 @@ pub(crate) fn learned_for(
     saved: &sdrmm_wire::WorkspaceState,
     node: &str,
     systems: &[sdrmm_wire::TrunkSystemStatus],
-) -> Vec<sdrmm_wire::DmrChannelEntry> {
+) -> Vec<sdrmm_wire::TrunkChannelEntry> {
     let color_code = systems
         .iter()
         .find(|system| system.node == node)
@@ -112,7 +113,7 @@ pub(crate) fn learned_for(
 fn own_radio(
     patch: &ResolvedPatch,
     node: &str,
-    settings: &sdrmm_wire::DmrTrunkNode,
+    settings: &sdrmm_wire::TrunkNode,
 ) -> Option<TrunkRadio> {
     let control_hz = settings.control_hz?;
     let (device_set, stream) = patch.first_feed(node, IQ_PORT)?.tap.as_ref()?.lane()?;
@@ -130,7 +131,7 @@ mod tests {
 
     use sdrmm_device::DeviceRegistry;
     use sdrmm_wire::{
-        DeviceRef, DmrTrunkNode, DmrTrunkProtocol, PatchEdge, PatchNode, PortRef, Position,
+        DeviceRef, PatchEdge, PatchNode, PortRef, Position, TrunkNode, TrunkProtocol,
         UpdateWorkspaceRequest, WorkspaceSnapshot,
     };
 
@@ -146,9 +147,9 @@ mod tests {
     fn trunk_node() -> PatchNode {
         PatchNode {
             id: "trunk".to_owned(),
-            body: NodeBody::DmrTrunk(DmrTrunkNode {
-                protocol: DmrTrunkProtocol::TierThree,
-                ..DmrTrunkNode::default()
+            body: NodeBody::Trunk(TrunkNode {
+                protocol: TrunkProtocol::TierThree,
+                ..TrunkNode::default()
             }),
             position: Position { x: 0.0, y: 0.0 },
             size: None,
@@ -161,10 +162,10 @@ mod tests {
         let mut snapshot = WorkspaceSnapshot::starter();
         snapshot.graph.nodes.push(PatchNode {
             id: "trunk".to_owned(),
-            body: NodeBody::DmrTrunk(DmrTrunkNode {
-                protocol: DmrTrunkProtocol::TierThree,
+            body: NodeBody::Trunk(TrunkNode {
+                protocol: TrunkProtocol::TierThree,
                 control_hz,
-                ..DmrTrunkNode::default()
+                ..TrunkNode::default()
             }),
             position: Position { x: 0.0, y: 0.0 },
             size: None,

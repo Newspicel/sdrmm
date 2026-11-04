@@ -2,6 +2,7 @@ use std::f64::consts::{PI, TAU};
 
 use num_complex::Complex;
 use sdrmm_dsp::{mode_s_append_overlaid_parity, mode_s_append_parity};
+use sdrmm_modem::constellation::tables::gray;
 use sdrmm_modem::ppm::SlotWaveform;
 
 const IDENT_CHARSET: &[u8; 64] =
@@ -225,8 +226,8 @@ fn barometric_field(alt_ft: i32) -> u64 {
     if c & 5 == 5 {
         c ^= 2;
     }
-    let gray_five = gray_encode(five_hundreds);
-    let gray_c = gray_encode(c);
+    let gray_five = gray(five_hundreds);
+    let gray_c = gray(c);
     let bit = |value: u32, index: u32| u64::from(value >> index & 1);
     bit(gray_c, 2) << 11
         | bit(gray_five, 5) << 10
@@ -239,10 +240,6 @@ fn barometric_field(alt_ft: i32) -> u64 {
         | bit(gray_five, 7) << 2
         | bit(gray_five, 0) << 1
         | bit(gray_five, 6)
-}
-
-fn gray_encode(value: u32) -> u32 {
-    value ^ (value >> 1)
 }
 
 fn modulo(a: f64, b: f64) -> f64 {

@@ -1,10 +1,7 @@
 use sdrmm_dsp::manifold::Direction;
 use sdrmm_dsp::scene::{ArrayScene, SceneSignal, SceneSource};
 use sdrmm_dsp::special::wrap_deg;
-use sdrmm_wire::{
-    ArrayGeometry, ArrayTuningMode, Coherence, DecoderEvent, RdsUpdate, SpatialSpectrumFrame,
-    Winding,
-};
+use sdrmm_wire::{ArrayGeometry, ArrayTuningMode, Coherence, SpatialSpectrumFrame, Winding};
 
 use super::*;
 use crate::array_processor::{
@@ -134,16 +131,16 @@ impl Rig {
                 ..Pose::default()
             },
         };
-        let mut events = [DecoderEvent::Rds(RdsUpdate::default())];
+        let mut events = [crate::df::reserved_bearing(4)];
         let mut out = ProcessorOutput::new(OutputSlots {
             report: self.report.as_mut(),
             surface: self.surface.as_mut(),
-            events: &mut events,
+            bearings: &mut events,
             lanes: &mut [],
         });
         self.processor.process(&block, &mut out);
         let tally = out.tally();
-        assert_eq!(tally.events, 0);
+        assert_eq!(tally.bearings, 0);
         if tally.report
             && let Some(ProcessorReading::SpatialSpectrum(reading)) = &self.report
         {

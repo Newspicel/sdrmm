@@ -1,13 +1,18 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, EventContract, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
-use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
-    RadioClockFrame, RadioClockParams, RadioClockStandard,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 const RATE: f64 = 2_000.0;
 const CHANNEL_TAPS: usize = 257;
@@ -24,7 +29,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 200.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![EventKind::RadioClock],
+    emits: vec![RadioClockFrame::KIND],
     ..ChannelDescriptor::default()
 });
 
@@ -53,14 +58,8 @@ pub struct RadioClockChannel {
     decoder: Decoder,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&RadioClockParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::RadioClock(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "radio-clock channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<RadioClockParams, ChannelError> {
+    crate::settings_of::<RadioClockParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -74,14 +73,13 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     ))
 }
 
-impl ChannelRx for RadioClockChannel {
+impl NativeChannel for RadioClockChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = *params(&settings)?;
+        let p = params(&settings)?;
         Ok(Self {
             standard: p.standard,
             invert: p.invert,
@@ -99,9 +97,11 @@ impl ChannelRx for RadioClockChannel {
             decoder: Decoder::new(p.standard),
         })
     }
+}
 
+impl ChannelRx for RadioClockChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let p = *params(&settings)?;
+        let p = params(&settings)?;
         if p.standard != self.standard || p.invert != self.invert {
             self.standard = p.standard;
             self.invert = p.invert;
@@ -233,7 +233,7 @@ impl RadioClockChannel {
                 b: self.bins[2] >= half_bin,
             };
             if let Some(frame) = self.decoder.feed(second) {
-                out.events.push(DecoderEvent::RadioClock(frame));
+                out.events.push(DecoderEvent::of(&frame));
             }
         }
         self.have_boundary = true;
@@ -697,8 +697,55 @@ fn ordinal_date(year: u16, ordinal: u16) -> Option<(u16, u16)> {
     None
 }
 
+const TIME_SIGNALS: &[HzRange] = &[
+    HzRange::spot_khz(40.0, 0.5),
+    HzRange::spot_khz(60.0, 0.5),
+    HzRange::spot_khz(68.5, 0.5),
+    HzRange::spot_khz(77.5, 0.5),
+    HzRange::spot_khz(162.0, 0.5),
+];
+
+fn radio_clock_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "Time signal (DCF77 / MSF / WWVB / JJY)",
+            &[Modulation::Carrier, Modulation::Ook, Modulation::Am],
+            HzRange::new(0.0, 400.0),
+            "a longwave carrier dipped once a second on a standard-time frequency",
+        )
+        .on(TIME_SIGNALS),
+    ]
+}
+
+pub(crate) fn radio_clock_decoder() -> Native<RadioClockParams> {
+    Native::new::<RadioClockChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
+        .home(77_500.0)
+        .signatures(radio_clock_signatures)
+        .form(radio_clock_form)
+        .kinds(radio_clock_kinds)
+}
+
+pub(crate) fn radio_clock_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new(
+            "standard",
+            "Service",
+            Control::choice::<RadioClockStandard>(),
+        )
+        .title("Radio clock service"),
+        SettingField::invert(),
+    ]
+}
+
+fn radio_clock_kinds() -> Vec<KindSpec> {
+    vec![radio_clock_kind()]
+}
+
 #[cfg(test)]
 mod tests {
+    use sdrmm_wire::ChannelParams;
+
     use super::*;
 
     fn set(bits: &mut [Symbol], fields: &[(usize, u16)], value: u16) {
@@ -1042,10 +1089,11 @@ mod tests {
         let settings = ChannelSettings {
             frequency_hz: 0.0,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::RadioClock(RadioClockParams {
+            params: ChannelParams::of(&RadioClockParams {
                 standard,
                 invert: false,
-            }),
+            })
+            .expect("radio_clock settings"),
             blanker: Default::default(),
             if_filter: Default::default(),
         };
@@ -1058,10 +1106,7 @@ mod tests {
         output
             .events
             .into_iter()
-            .filter_map(|event| match event {
-                DecoderEvent::RadioClock(frame) => Some(frame),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<RadioClockFrame>())
             .collect()
     }
 

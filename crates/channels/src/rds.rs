@@ -1,3 +1,5 @@
+mod model;
+pub use model::*;
 use std::f64::consts::FRAC_1_SQRT_2;
 
 use num_complex::Complex;
@@ -9,7 +11,7 @@ use sdrmm_modem::{
     constellation::{Constellation, tables},
     symbolcode::DifferentialDecoder,
 };
-use sdrmm_wire::{DecoderEvent, RdsUpdate};
+use sdrmm_wire::DecoderEvent;
 
 const BIT_RATE: f64 = 1_187.5;
 const PILOT_HZ: f64 = 19_000.0;
@@ -344,7 +346,7 @@ impl GroupDecoder {
         let changed = self.station.apply(&self.blocks);
         if changed || self.block_errors != self.reported_errors {
             self.reported_errors = self.block_errors;
-            out.push(DecoderEvent::Rds(self.station.update(
+            out.push(DecoderEvent::of(&self.station.update(
                 self.groups,
                 self.blocks_read,
                 self.block_errors,
@@ -706,8 +708,11 @@ mod tests {
     }
 
     fn last_update(events: &[DecoderEvent]) -> RdsUpdate {
-        match events.last() {
-            Some(DecoderEvent::Rds(update)) => update.clone(),
+        match events
+            .last()
+            .map(|event| (event, event.read::<RdsUpdate>()))
+        {
+            Some((_, Some(update))) => update,
             other => panic!("expected an rds update, got {other:?}"),
         }
     }
@@ -742,10 +747,7 @@ mod tests {
     fn radiotexts(events: &[DecoderEvent]) -> Vec<String> {
         events
             .iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Rds(update) => update.radiotext.clone(),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<RdsUpdate>()?.radiotext)
             .collect()
     }
 

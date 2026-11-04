@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::fec::conv;
+use sdrmm_dsp::{crc_msb_bits, fec::conv};
 
 use super::{bits, c4fm, dibits, filler};
 
@@ -163,13 +163,8 @@ fn encode_facch(data: &[bool; 80]) -> Vec<bool> {
     interleaved
 }
 
-fn append_crc(info: &mut Vec<bool>, poly: u32, init: u32, width: usize) {
-    let top = 1 << (width - 1);
-    let mask = (1 << width) - 1;
-    let crc = info.iter().fold(init, |crc, &bit| {
-        let feedback = bit ^ (crc & top != 0);
-        ((crc << 1) ^ if feedback { poly } else { 0 }) & mask
-    });
+fn append_crc(info: &mut Vec<bool>, poly: u32, init: u32, width: u32) {
+    let crc = crc_msb_bits(poly, width, init, info.iter().copied());
     info.extend((0..width).map(|i| crc >> (width - 1 - i) & 1 != 0));
 }
 

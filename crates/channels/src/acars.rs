@@ -1,3 +1,8 @@
+use crate::registry::Native;
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+use sdrmm_wire::{KindSpec, SettingField};
+mod model;
+pub use model::*;
 pub(crate) mod adsc;
 pub(crate) mod airline5z;
 mod app;
@@ -17,6 +22,43 @@ pub(crate) mod ohma;
 pub(crate) mod oooi;
 pub(crate) mod position;
 pub(crate) mod qseries;
+const ACARS_VHF: &[HzRange] = &[HzRange::mhz(129.0, 137.0)];
+
+fn acars_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "ACARS",
+            &[Modulation::Am, Modulation::Ook],
+            HzRange::new(2_400.0, 9_000.0),
+            "2400 baud minimum-shift keying carried on an AM carrier",
+        )
+        .symbol_rate(HzRange::about(2_400.0, 0.06))
+        .on(ACARS_VHF),
+    ]
+}
+
+fn acars_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("acars"))
+}
+
+pub(crate) fn acars_decoder() -> Native<AcarsParams> {
+    Native::new::<AcarsChannel>(occupied_band)
+        .filter(channel_filter)
+        .home(131_550_000.0)
+        .signatures(acars_signatures)
+        .trial(acars_trial)
+        .form(acars_form)
+        .kinds(acars_kinds)
+}
+
+pub(crate) fn acars_form() -> Vec<SettingField> {
+    vec![SettingField::bandwidth(&[8_000.0, 12_500.0, 25_000.0])]
+}
+
+fn acars_kinds() -> Vec<KindSpec> {
+    vec![crate::acars::acars_kind()]
+}
+
 #[cfg(test)]
 mod real_messages;
 pub(crate) mod reasm;
@@ -34,12 +76,12 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{DcBlocker, Decimator, design_lowpass};
 use sdrmm_modem::cpm::MskDetector;
-use sdrmm_wire::{
-    AcarsMessage, AcarsParams, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily, EventKind,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 use block::AcarsBlock;
 use miam::FileReassembler;
@@ -67,7 +109,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: 24_000.0,
     has_audio: false,
-    emits: vec![EventKind::Acars],
+    emits: vec![EventKind::named("acars")],
     ..ChannelDescriptor::default()
 });
 
@@ -79,14 +121,8 @@ pub struct AcarsChannel {
     framer: Framer,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&AcarsParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Acars(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "acars channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<AcarsParams, ChannelError> {
+    crate::settings_of::<AcarsParams>(settings)
 }
 
 fn check_params(p: &AcarsParams) -> Result<(), ChannelError> {
@@ -116,14 +152,13 @@ pub(crate) fn channel_filter(p: &AcarsParams) -> Result<ChannelFilter, ChannelEr
     )))
 }
 
-impl ChannelRx for AcarsChannel {
+impl NativeChannel for AcarsChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        check_params(params(&settings)?)?;
+        check_params(&params(&settings)?)?;
         Ok(Self {
             envelope: Vec::new(),
             bits: Vec::new(),
@@ -132,9 +167,11 @@ impl ChannelRx for AcarsChannel {
             framer: Framer::new(),
         })
     }
+}
 
+impl ChannelRx for AcarsChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        check_params(params(&settings)?)
+        check_params(&params(&settings)?)
     }
 
     fn retuned(&mut self) {
@@ -245,7 +282,7 @@ impl Framer {
                 self.crc_len += 1;
                 if self.crc_len == 2 {
                     match self.decode() {
-                        Some(message) => out.events.push(DecoderEvent::Acars(message)),
+                        Some(message) => out.events.push(DecoderEvent::of(&message)),
                         None => self.rejected = self.rejected.saturating_add(1),
                     }
                     self.restart();
@@ -337,7 +374,8 @@ fn message(
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::NfmParams;
+    use crate::nfm::NfmParams;
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
     use crate::{
@@ -354,7 +392,7 @@ mod tests {
     fn channel() -> AcarsChannel {
         let mut chan = AcarsChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Acars(AcarsParams::default())),
+            settings(ChannelParams::new("acars", &AcarsParams::default()).expect("acars settings")),
         )
         .unwrap();
         let mut out = ChannelOutputs::default();
@@ -380,10 +418,10 @@ mod tests {
             chan.process(&iq[pos..end], &mut out);
             assert!(out.audio_pcm.is_empty(), "acars must not produce audio");
             for ev in &out.events {
-                match ev {
-                    DecoderEvent::Acars(m) => messages.push(m.clone()),
-                    other => panic!("unexpected event {other:?}"),
-                }
+                messages.push(
+                    ev.read::<AcarsMessage>()
+                        .unwrap_or_else(|| panic!("unexpected event {ev:?}")),
+                )
             }
             pos = end;
         }
@@ -600,9 +638,10 @@ mod tests {
         let messages = out
             .events
             .iter()
-            .map(|event| match event {
-                DecoderEvent::Acars(message) => message.clone(),
-                other => panic!("unexpected event {other:?}"),
+            .map(|event| {
+                event
+                    .read::<AcarsMessage>()
+                    .unwrap_or_else(|| panic!("unexpected event {event:?}"))
             })
             .collect();
         (framer, messages)
@@ -818,7 +857,7 @@ mod tests {
             assert!(matches!(
                 AcarsChannel::new(
                     ChannelCtx { input_rate: RATE },
-                    settings(ChannelParams::Acars(p)),
+                    settings(ChannelParams::of(&p).expect("settings")),
                 ),
                 Err(ChannelError::InvalidSettings(_))
             ));
@@ -828,7 +867,9 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel();
-        let err = chan.apply(settings(ChannelParams::Nfm(NfmParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     }
 
@@ -838,7 +879,7 @@ mod tests {
             ChannelCtx {
                 input_rate: 8_000.0,
             },
-            settings(ChannelParams::Acars(AcarsParams::default())),
+            settings(ChannelParams::new("acars", &AcarsParams::default()).expect("acars settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

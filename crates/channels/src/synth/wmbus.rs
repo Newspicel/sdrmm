@@ -1,5 +1,6 @@
+use crate::wmbus::WmbusFormat;
+use crate::wmbus::WmbusMode;
 use num_complex::Complex;
-use sdrmm_wire::{WmbusFormat, WmbusMode};
 
 use crate::{
     synth,

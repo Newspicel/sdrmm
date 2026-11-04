@@ -1,5 +1,6 @@
 use std::sync::LazyLock;
 
+use crate::dv::M17Params;
 use num_complex::Complex;
 use sdrmm_dsp::{
     CyclicCode, Viterbi5, crc16_msb,
@@ -7,14 +8,17 @@ use sdrmm_dsp::{
 };
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
-    DvFrame, DvFrameKind, DvMode, EventKind, M17Params,
+    CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, DecoderEvent, DecoderFamily,
+    DvFrame, DvFrameKind, EventKind,
 };
 
 use super::{
     INPUT_RATE_HZ, SymbolWindow, c4fm_demod, c4fm_params, tap_c4fm, vocoder::Codec2Decoder,
 };
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 pub(crate) const BAUD: f64 = 4_800.0;
 pub(crate) const DEVIATION_HZ: f64 = 2_400.0;
@@ -69,8 +73,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    emits: vec![EventKind::Dv],
+    emits: vec![EventKind::DV],
     calls: Some(CallGate::Frames),
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
@@ -80,14 +85,15 @@ pub struct M17Channel {
     decoder: Decoder,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&M17Params, ChannelError> {
-    match &settings.params {
-        ChannelParams::M17(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "m17 channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn dv_frame(kind: DvFrameKind) -> DvFrame {
+    DvFrame::new("M17", kind)
+}
+
+fn params(settings: &ChannelSettings) -> Result<M17Params, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -98,11 +104,10 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     super::channel_filter(BANDWIDTH_HZ)
 }
 
-impl ChannelRx for M17Channel {
+impl NativeChannel for M17Channel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         params(&settings)?;
@@ -112,7 +117,9 @@ impl ChannelRx for M17Channel {
             decoder: Decoder::new()?,
         })
     }
+}
 
+impl ChannelRx for M17Channel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings)?;
         Ok(())
@@ -205,7 +212,7 @@ impl Decoder {
                 && let Some(kind) = self.pending.take()
                 && let Some(frame) = self.payload(kind, out)
             {
-                out.events.push(DecoderEvent::Dv(frame));
+                out.events.push(DecoderEvent::of(&frame));
             }
             return;
         }
@@ -217,10 +224,8 @@ impl Decoder {
             self.in_stream = false;
             self.stream_type = None;
             self.late_chunks = 0;
-            out.events.push(DecoderEvent::Dv(DvFrame::new(
-                DvMode::M17,
-                DvFrameKind::Terminator,
-            )));
+            out.events
+                .push(DecoderEvent::of(&dv_frame(DvFrameKind::Terminator)));
             return;
         }
         for (sync, kind) in [
@@ -245,9 +250,7 @@ impl Decoder {
                 frame
             }
             FrameType::Stream => self.stream(out),
-            FrameType::Packet => self
-                .in_stream
-                .then(|| DvFrame::new(DvMode::M17, DvFrameKind::Data)),
+            FrameType::Packet => self.in_stream.then(|| dv_frame(DvFrameKind::Data)),
         }
     }
 
@@ -386,7 +389,7 @@ impl Decoder {
 }
 
 fn frame_from_lsf(lsf: &[u8; LSF_BYTES]) -> Option<DvFrame> {
-    let mut frame = DvFrame::new(DvMode::M17, DvFrameKind::Header);
+    let mut frame = dv_frame(DvFrameKind::Header);
     frame.destination_call = callsign(u64::from_be_bytes([
         0, 0, lsf[0], lsf[1], lsf[2], lsf[3], lsf[4], lsf[5],
     ]));
@@ -447,13 +450,14 @@ mod tests {
         synth::dv::m17 as tx,
         testutil::settings,
     };
+    use sdrmm_wire::ChannelParams;
 
     fn channel() -> M17Channel {
         M17Channel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::M17(M17Params::default())),
+            settings(ChannelParams::new("m17", &M17Params::default()).expect("m17 settings")),
         )
         .expect("m17 channel")
     }
@@ -464,7 +468,7 @@ mod tests {
         let frames = decode(&mut channel(), &iq);
 
         let lsf = frames.first().expect("a decoded frame");
-        assert_eq!(lsf.mode, DvMode::M17);
+        assert_eq!(lsf.mode, "M17");
         assert_eq!(lsf.kind, DvFrameKind::Header);
         assert_eq!(lsf.source_call.as_deref(), Some("DL1ABC"));
         assert_eq!(lsf.destination_call.as_deref(), Some("ALL"));

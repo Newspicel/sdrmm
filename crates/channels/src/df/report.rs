@@ -4,10 +4,12 @@ use sdrmm_dsp::doa::{
 };
 use sdrmm_dsp::manifold::AzimuthSpan;
 use sdrmm_dsp::special::norm_deg;
-use sdrmm_wire::processor::df::{DF_POINTS, MAX_DF_PEAKS, MAX_STATION_ID_LEN};
 use sdrmm_wire::{
-    BearingSource, CalPhase, CalSourceKind, DecoderEvent, DfAlgorithm, DfBearing, DfOtherPeak,
-    DfPeak, DfReading, LatLon, ProcessorReading,
+    BearingSource, CalPhase, CalSourceKind, DfAlgorithm, DfBearing, DfOtherPeak, DfPeak, DfReading,
+    LatLon, ProcessorReading,
+};
+use sdrmm_wire::{
+    processor::df::DF_POINTS, processor::df::MAX_DF_PEAKS, processor::df::MAX_STATION_ID_LEN,
 };
 
 use super::DfProcessor;
@@ -77,7 +79,9 @@ fn write_text(target: &mut String, text: &str) {
     target.push_str(text);
 }
 
-fn reserved_bearing(node_len: usize) -> DfBearing {
+/// A bearing with room for every field a DF processor fills, so filling it allocates nothing.
+#[must_use]
+pub fn reserved_bearing(node_len: usize) -> DfBearing {
     DfBearing {
         bearing_deg: 0.0,
         confidence: 0.0,
@@ -354,16 +358,11 @@ impl DfProcessor {
         ) else {
             return;
         };
-        let Some(slot) = out.event() else {
+        let Some(slot) = out.bearing() else {
             return;
         };
-        if !matches!(slot, DecoderEvent::Df(_)) {
-            *slot = DecoderEvent::Df(reserved_bearing(self.node.len()));
-        }
-        if let DecoderEvent::Df(bearing) = slot {
-            self.fill_bearing(bearing, &primary, heading, &fix, outcome);
-        }
-        out.publish_event();
+        self.fill_bearing(slot, &primary, heading, &fix, outcome);
+        out.publish_bearing();
     }
 
     fn fill_bearing(

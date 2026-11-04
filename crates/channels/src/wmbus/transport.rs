@@ -1,4 +1,6 @@
-use sdrmm_wire::{WmbusKey, WmbusRecord, WmbusSecurity};
+use crate::wmbus::WmbusKey;
+use crate::wmbus::WmbusRecord;
+use crate::wmbus::WmbusSecurity;
 
 use super::{coding::crc, records};
 use crate::crypto::{self, Aes};
@@ -222,7 +224,7 @@ fn decrypt_cbc(
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::WmbusQuantity;
+    use crate::wmbus::WmbusQuantity;
 
     use super::*;
 

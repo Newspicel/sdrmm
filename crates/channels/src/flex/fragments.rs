@@ -1,4 +1,5 @@
-use sdrmm_wire::{DecoderEvent, FlexMessage};
+use crate::flex::FlexMessage;
+use sdrmm_wire::DecoderEvent;
 
 /// The fragment number of a message's first piece; later pieces count 0, 1, 2, 0, ...
 const FIRST: u8 = 3;
@@ -135,12 +136,12 @@ fn joined(mut earlier: FlexMessage, later: FlexMessage) -> FlexMessage {
 fn finished(mut message: FlexMessage, complete: bool) -> DecoderEvent {
     message.text = message.text.trim().to_owned();
     message.complete &= complete;
-    DecoderEvent::Flex(message)
+    DecoderEvent::of(&message)
 }
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::PagerPayload;
+    use crate::flex::PagerPayload;
 
     use super::*;
 
@@ -165,13 +166,18 @@ mod tests {
         }
     }
 
-    fn pages(events: &[DecoderEvent]) -> Vec<(&str, bool)> {
+    fn pages(events: &[DecoderEvent]) -> Vec<(String, bool)> {
         events
             .iter()
-            .filter_map(|event| match event {
-                DecoderEvent::Flex(page) => Some((page.text.as_str(), page.complete)),
-                _ => None,
-            })
+            .filter_map(|event| event.read::<FlexMessage>())
+            .map(|page| (page.text, page.complete))
+            .collect()
+    }
+
+    fn owned(pages: &[(&str, bool)]) -> Vec<(String, bool)> {
+        pages
+            .iter()
+            .map(|&(text, complete)| (text.to_owned(), complete))
             .collect()
     }
 
@@ -201,12 +207,12 @@ mod tests {
         );
         assert_eq!(
             pages(&events),
-            [
+            owned(&[
                 ("other", true),
                 ("Trauma Alert # of Patients ETA: 4 MINS", true)
-            ]
+            ])
         );
-        let DecoderEvent::Flex(joined) = &events[1] else {
+        let Some(joined) = events[1].read::<FlexMessage>() else {
             panic!("a flex page");
         };
         assert_eq!(joined.errors_corrected, 3);
@@ -217,7 +223,7 @@ mod tests {
         let mut fragments = Reassembly::new(WAIT);
         let mut events = Vec::new();
         fragments.accept(message(7, "of Patients"), piece(0, false), 0, &mut events);
-        assert_eq!(pages(&events), [("of Patients", false)]);
+        assert_eq!(pages(&events), owned(&[("of Patients", false)]));
     }
 
     #[test]
@@ -226,7 +232,7 @@ mod tests {
         let mut events = Vec::new();
         fragments.accept(message(7, "one "), piece(3, true), 0, &mut events);
         fragments.accept(message(7, "three"), piece(1, false), 10, &mut events);
-        assert_eq!(pages(&events), [("one", false), ("three", false)]);
+        assert_eq!(pages(&events), owned(&[("one", false), ("three", false)]));
     }
 
     #[test]
@@ -237,7 +243,7 @@ mod tests {
         fragments.expire(WAIT, &mut events);
         assert!(events.is_empty());
         fragments.expire(WAIT + 1, &mut events);
-        assert_eq!(pages(&events), [("Trauma", false)]);
+        assert_eq!(pages(&events), owned(&[("Trauma", false)]));
     }
 
     #[test]
@@ -247,7 +253,7 @@ mod tests {
         fragments.accept(message(7, "Trauma "), piece(3, true), 0, &mut events);
         fragments.abandon();
         fragments.expire(1, &mut events);
-        assert_eq!(pages(&events), [("Trauma", false)]);
+        assert_eq!(pages(&events), owned(&[("Trauma", false)]));
         fragments.accept(message(8, "next "), piece(3, true), 2, &mut events);
         fragments.expire(3, &mut events);
         assert_eq!(events.len(), 1);
@@ -261,7 +267,7 @@ mod tests {
             fragments.accept(message(address, "x"), piece(3, true), 0, &mut events);
         }
         assert_eq!(events.len(), 1);
-        let DecoderEvent::Flex(oldest) = &events[0] else {
+        let Some(oldest) = events[0].read::<FlexMessage>() else {
             panic!("a flex page");
         };
         assert_eq!((oldest.address, oldest.complete), (0, false));
@@ -274,7 +280,7 @@ mod tests {
         let long = "x".repeat(MAX_TEXT);
         fragments.accept(message(7, &long), piece(3, true), 0, &mut events);
         fragments.accept(message(7, "tail"), piece(0, false), 1, &mut events);
-        let DecoderEvent::Flex(page) = &events[0] else {
+        let Some(page) = events[0].read::<FlexMessage>() else {
             panic!("a flex page");
         };
         assert_eq!((page.text.len(), page.complete), (MAX_TEXT, false));

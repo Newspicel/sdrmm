@@ -53,7 +53,7 @@ pub(super) async fn send(
 }
 
 pub(super) fn line(output_node: &str, facts: &EventFacts) -> String {
-    let mut text = escape_name(facts.kind, &[',', ' ']);
+    let mut text = escape_name(&facts.kind, &[',', ' ']);
     for (key, value) in [
         ("output", Some(output_node.to_owned())),
         ("device_set", Some(facts.device_set.to_string())),

@@ -22,6 +22,7 @@ export function TextChip({
   placeholder,
   maxLength,
   secret = false,
+  quiet = value === "",
   disabled,
   onCommit,
 }: {
@@ -33,6 +34,7 @@ export function TextChip({
   placeholder?: string;
   maxLength?: number;
   secret?: boolean;
+  quiet?: boolean;
   disabled?: boolean;
   onCommit: (value: string) => boolean | void;
 }) {
@@ -41,7 +43,7 @@ export function TextChip({
       label={label}
       value={shown ?? chipText(value, secret, placeholder)}
       title={title}
-      quiet={value === ""}
+      quiet={quiet}
       disabled={disabled}
     >
       {() => (

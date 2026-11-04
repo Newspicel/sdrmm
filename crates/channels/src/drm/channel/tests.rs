@@ -3,7 +3,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_wire::{ChannelParams, DrmMode};
+use sdrmm_wire::ChannelParams;
+
+use crate::broadcast_media::latest_status;
+use crate::drm::DrmMode;
 
 use super::*;
 use crate::{
@@ -19,11 +22,15 @@ fn settings(mode: DrmMode, bandwidth_hz: f64, service: Option<u8>) -> ChannelSet
     ChannelSettings {
         frequency_hz: 0.0,
         squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Drm(DrmParams {
-            mode,
-            bandwidth_hz,
-            service,
-        }),
+        params: ChannelParams::new(
+            "drm",
+            &DrmParams {
+                mode,
+                bandwidth_hz,
+                service,
+            },
+        )
+        .expect("drm settings"),
         blanker: Default::default(),
         if_filter: Default::default(),
     }
@@ -44,8 +51,8 @@ fn channel(mode: DrmMode, service: Option<u8>) -> DrmChannel {
     .expect("a DRM channel")
 }
 
-fn status(out: &ChannelOutputs) -> &BroadcastStatus {
-    out.broadcast.as_ref().expect("a broadcast status")
+fn status(out: &ChannelOutputs) -> BroadcastStatus {
+    latest_status(out).expect("a broadcast status")
 }
 
 fn run(channel: &mut DrmChannel, iq: &[Complex<f32>]) -> ChannelOutputs {
@@ -273,7 +280,7 @@ fn never_locks(channel: &mut DrmChannel, iq: &[Complex<f32>]) {
     for block in iq.chunks(4_096) {
         out.reset();
         channel.process(block, &mut out);
-        assert!(!out.broadcast.as_ref().is_some_and(|status| status.locked));
+        assert!(!latest_status(&out).is_some_and(|status| status.locked));
     }
 }
 

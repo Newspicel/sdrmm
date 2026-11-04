@@ -1,9 +1,11 @@
 use std::fmt::Write as _;
 
+use crate::tetrapol::TetrapolAddress;
+use crate::tetrapol::TetrapolLogicalChannel;
+use crate::tetrapol::TetrapolMessage;
+use crate::tetrapol::TetrapolPayload;
 use sdrmm_dsp::hdlc_fcs_ok;
-use sdrmm_wire::{
-    DecoderEvent, TetrapolAddress, TetrapolLogicalChannel, TetrapolMessage, TetrapolPayload,
-};
+use sdrmm_wire::DecoderEvent;
 
 use super::{
     assembly::{Assembler, MAX_FRAME_BYTES, Step},
@@ -468,7 +470,7 @@ impl Link {
         data: &[u8],
         out: &mut ChannelOutputs,
     ) {
-        out.events.push(DecoderEvent::Tetrapol(TetrapolMessage {
+        out.events.push(DecoderEvent::of(&TetrapolMessage {
             channel: self.channel(origin.start),
             frame: self
                 .frame_number(origin.start)
@@ -487,7 +489,7 @@ impl Link {
         }
         let seconds = self.voice.frames as f32 * FRAME_S;
         self.voice.frames = 0;
-        out.events.push(DecoderEvent::Tetrapol(TetrapolMessage {
+        out.events.push(DecoderEvent::of(&TetrapolMessage {
             channel: TetrapolLogicalChannel::Traffic,
             frame: None,
             scrambling: self.voice.scrambling,

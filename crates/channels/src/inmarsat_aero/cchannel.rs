@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn the_c_setting_reports_call_progress_and_one_voice_start() {
-        use crate::{ChannelCtx, ChannelRx};
+        use crate::{ChannelCtx, NativeChannel};
         let info = frame_with(&call_progress([0x12, 0x34, 0x56], 0x7E), 0xA7);
         let mut encoder = CChannelEncoder::new();
         let bits: Vec<u8> = (0..6).flat_map(|_| encoder.encode(&info)).collect();
@@ -398,18 +398,21 @@ mod tests {
             ChannelCtx {
                 input_rate: CHANNEL_RATE_HR,
             },
-            crate::testutil::settings(sdrmm_wire::ChannelParams::InmarsatAero(
-                sdrmm_wire::InmarsatAeroParams {
-                    channel: sdrmm_wire::AeroChannel::C,
-                },
-            )),
+            crate::testutil::settings(
+                sdrmm_wire::ChannelParams::new(
+                    "inmarsat_aero",
+                    &crate::inmarsat_aero::InmarsatAeroParams {
+                        channel: crate::inmarsat_aero::AeroChannel::C,
+                    },
+                )
+                .expect("inmarsat_aero settings"),
+            ),
         )
         .expect("aero channel");
         let kinds: Vec<String> = crate::testutil::run_events(&mut channel, &iq)
             .into_iter()
-            .filter_map(|event| match event {
-                sdrmm_wire::DecoderEvent::InmarsatAero(message) => Some(message.message_type),
-                _ => None,
+            .filter_map(|event| {
+                crate::datalink::read(&event, "inmarsat_aero").map(|message| message.message_type)
             })
             .collect();
         assert!(

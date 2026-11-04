@@ -1,15 +1,19 @@
 use std::sync::LazyLock;
 
+use crate::dv::P25Params;
 use num_complex::Complex;
-use sdrmm_dsp::{CyclicCode, ParityCode, crc16_msb, rs64_decode};
+use sdrmm_dsp::{CyclicCode, ParityCode, crc16_msb, rs64_decode, word_msb};
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
-    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
-    DvFrame, DvFrameKind, DvMode, EventKind, P25Params, Vendor,
+    CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, CodeStyle, DecoderEvent,
+    DecoderFamily, DvFrame, DvFrameKind, EventKind, Vendor,
 };
 
 use super::{INPUT_RATE_HZ, SymbolWindow, c4fm_demod, c4fm_params, tap_c4fm, vocoder::MbeDecoder};
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 pub(crate) const BAUD: f64 = 4_800.0;
 pub(crate) const DEVIATION_HZ: f64 = 1_944.0;
@@ -50,8 +54,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    emits: vec![EventKind::Dv],
+    emits: vec![EventKind::DV],
     calls: Some(CallGate::Frames),
+    click: ClickProfile::Vocoder,
     ..ChannelDescriptor::default()
 });
 
@@ -61,14 +66,18 @@ pub struct P25Channel {
     decoder: Decoder,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&P25Params, ChannelError> {
-    match &settings.params {
-        ChannelParams::P25(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "p25 channel got {} params",
-            other.type_id()
-        ))),
+fn dv_frame(kind: DvFrameKind) -> DvFrame {
+    DvFrame {
+        code_style: CodeStyle::Nac,
+        ..DvFrame::new("P25", kind)
     }
+}
+
+fn params(settings: &ChannelSettings) -> Result<P25Params, ChannelError> {
+    settings
+        .params
+        .parse()
+        .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -79,11 +88,10 @@ pub(crate) fn channel_filter() -> ChannelFilter {
     super::channel_filter(BANDWIDTH_HZ)
 }
 
-impl ChannelRx for P25Channel {
+impl NativeChannel for P25Channel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         params(&settings)?;
@@ -93,7 +101,9 @@ impl ChannelRx for P25Channel {
             decoder: Decoder::new(),
         })
     }
+}
 
+impl ChannelRx for P25Channel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings)?;
         Ok(())
@@ -180,7 +190,7 @@ impl Decoder {
             if self.countdown == 0 {
                 if let Some(duid) = self.pending_duid.take() {
                     for frame in self.metadata(duid) {
-                        out.events.push(DecoderEvent::Dv(frame));
+                        out.events.push(DecoderEvent::of(&frame));
                     }
                     if matches!(duid, DUID_TERMINATOR | DUID_TERMINATOR_LC) {
                         self.encryption = None;
@@ -188,7 +198,7 @@ impl Decoder {
                     self.hunting = true;
                 } else if let Some((duid, frame)) = self.nid() {
                     if let Some(frame) = frame {
-                        out.events.push(DecoderEvent::Dv(frame));
+                        out.events.push(DecoderEvent::of(&frame));
                     }
                     let total_symbols = frame_bits(duid) / 2;
                     let consumed = SYNC_BITS as usize / 2 + NID_SYMBOLS;
@@ -252,7 +262,7 @@ impl Decoder {
         self.pending_nac = nac;
         self.pending_errors = errors;
 
-        let mut frame = DvFrame::new(DvMode::P25, kind);
+        let mut frame = dv_frame(kind);
         frame.color_code = Some(nac);
         frame.errors_corrected = errors;
         frame.opcode = Some(duid_name(duid).to_owned());
@@ -356,7 +366,7 @@ impl Decoder {
             return None;
         };
         let bits = symbols_to_bits(&data);
-        let mut frame = DvFrame::new(DvMode::P25, DvFrameKind::Voice);
+        let mut frame = dv_frame(DvFrameKind::Voice);
         frame.opcode = Some("encryption synchronization".to_owned());
         decode_encryption(&mut frame, &bits, 0);
         self.encryption = frame.encrypted;
@@ -378,7 +388,7 @@ impl Decoder {
         }
         let (data, rs_errors) = rs64_decode(&symbols, 20)?;
         let bits = symbols_to_bits(&data);
-        let mut frame = DvFrame::new(DvMode::P25, DvFrameKind::Header);
+        let mut frame = dv_frame(DvFrameKind::Header);
         frame.opcode = Some("header data unit".to_owned());
         decode_p25_vendor(&mut frame, bits_value(&bits[72..80]) as u8);
         frame.message_indicator = Some(hex_bits(&bits[..72]));
@@ -426,7 +436,7 @@ impl Decoder {
     }
 
     fn packet_data(&self) -> DvFrame {
-        let mut frame = DvFrame::new(DvMode::P25, DvFrameKind::Data);
+        let mut frame = dv_frame(DvFrameKind::Data);
         frame.opcode = Some("packet data unit".to_owned());
         frame.data = Some(hex_bits(
             &self.logical[BODY_START.min(self.logical.len())..],
@@ -443,8 +453,7 @@ impl Decoder {
 }
 
 fn bits_value(bits: &[bool]) -> u32 {
-    bits.iter()
-        .fold(0u32, |value, &bit| value << 1 | u32::from(bit))
+    word_msb(bits) as u32
 }
 
 fn symbols_to_bits(symbols: &[u8]) -> Vec<bool> {
@@ -482,7 +491,7 @@ fn decode_p25_vendor(frame: &mut DvFrame, mfid: u8) {
 fn decode_p25_link_control(bits: &[bool]) -> DvFrame {
     let lcf = bits_value(&bits[..8]) as u8;
     let mfid = bits_value(&bits[8..16]) as u8;
-    let mut frame = DvFrame::new(DvMode::P25, DvFrameKind::Voice);
+    let mut frame = dv_frame(DvFrameKind::Voice);
     decode_p25_vendor(&mut frame, mfid);
     if mfid != 0 {
         frame.opcode = Some(format!(
@@ -592,7 +601,7 @@ fn p25_data_deinterleave(coded: &[bool]) -> Option<[bool; 196]> {
 fn decode_tsbk(payload: &[bool; 96]) -> DvFrame {
     let opcode = bits_value(&payload[2..8]) as u8;
     let mfid = bits_value(&payload[8..16]) as u8;
-    let mut frame = DvFrame::new(DvMode::P25, DvFrameKind::Control);
+    let mut frame = dv_frame(DvFrameKind::Control);
     decode_p25_vendor(&mut frame, mfid);
     if mfid != 0 {
         frame.opcode = Some(format!(
@@ -733,13 +742,14 @@ mod tests {
         synth::dv::p25 as tx,
         testutil::settings,
     };
+    use sdrmm_wire::ChannelParams;
 
     fn channel() -> P25Channel {
         P25Channel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::P25(P25Params::default())),
+            settings(ChannelParams::new("p25", &P25Params::default()).expect("p25 settings")),
         )
         .expect("p25 channel")
     }
@@ -750,7 +760,7 @@ mod tests {
         let frames = decode(&mut channel(), &iq);
 
         let header = frames.first().expect("a decoded frame");
-        assert_eq!(header.mode, DvMode::P25);
+        assert_eq!(header.mode, "P25");
         assert_eq!(header.kind, DvFrameKind::Header);
         assert_eq!(header.color_code, Some(0x293));
         assert_eq!(header.errors_corrected, 0);

@@ -1,5 +1,6 @@
+use crate::radiosonde::RadiosondeFrame;
+use crate::radiosonde::SondeType;
 use jiff::{Timestamp, civil::DateTime, tz::TimeZone};
-use sdrmm_wire::{RadiosondeFrame, SondeType};
 
 pub(crate) const WGS84_A: f64 = 6_378_137.0;
 pub(crate) const WGS84_B: f64 = 6_356_752.314_245_18;

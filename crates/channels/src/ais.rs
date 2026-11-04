@@ -1,13 +1,18 @@
+use crate::registry::Native;
+use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod model;
+pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, bits_be, design_lowpass};
-use sdrmm_wire::{
-    AisMessage, AisParams, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily, EventKind,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
+use crate::{
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+};
 
 mod burst;
 
@@ -35,7 +40,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 25_000.0,
     input_rate_hz: 48_000.0,
     has_audio: false,
-    emits: vec![EventKind::Ais],
+    emits: vec![EventKind::named("ais")],
     ..ChannelDescriptor::default()
 });
 
@@ -46,14 +51,8 @@ pub struct AisChannelRx {
     decoded: Vec<Decoded>,
 }
 
-fn params(settings: &ChannelSettings) -> Result<&AisParams, ChannelError> {
-    match &settings.params {
-        ChannelParams::Ais(p) => Ok(p),
-        other => Err(ChannelError::InvalidSettings(format!(
-            "ais channel got {} params",
-            other.type_id()
-        ))),
-    }
+fn params(settings: &ChannelSettings) -> Result<AisParams, ChannelError> {
+    crate::settings_of::<AisParams>(settings)
 }
 
 fn check_params(_p: &AisParams) -> Result<(), ChannelError> {
@@ -74,15 +73,14 @@ pub(crate) fn channel_filter(p: &AisParams) -> Result<ChannelFilter, ChannelErro
     )))
 }
 
-impl ChannelRx for AisChannelRx {
+impl NativeChannel for AisChannelRx {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
     }
-
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
-        check_params(p)?;
+        check_params(&p)?;
         Ok(Self {
             letter: p.ais_channel.letter(),
             seq: 0,
@@ -90,10 +88,12 @@ impl ChannelRx for AisChannelRx {
             decoded: Vec::new(),
         })
     }
+}
 
+impl ChannelRx for AisChannelRx {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
-        check_params(p)?;
+        check_params(&p)?;
         self.letter = p.ais_channel.letter();
         Ok(())
     }
@@ -109,7 +109,7 @@ impl ChannelRx for AisChannelRx {
             let fill = (6 - bits % 6) % 6;
             let nmea = sentences(&armour(payload, bits), fill, self.letter, &mut self.seq);
             if let Some(message) = decode(payload, bits, self.letter, nmea) {
-                out.events.push(DecoderEvent::Ais(message));
+                out.events.push(DecoderEvent::of(&message));
             }
         }
     }
@@ -247,9 +247,54 @@ fn sentences(payload: &str, fill: usize, letter: char, seq: &mut u8) -> String {
     out
 }
 
+const AIS_CHANNELS: &[HzRange] = &[
+    HzRange::spot_khz(161_975.0, 12.5),
+    HzRange::spot_khz(162_025.0, 12.5),
+];
+
+fn ais_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "AIS",
+            &[Modulation::Fsk2],
+            HzRange::new(12_000.0, 30_000.0),
+            "9600 baud GMSK in a 25 kHz maritime channel",
+        )
+        .symbol_rate(HzRange::about(9_600.0, 0.05))
+        .deviation(HzRange::new(1_800.0, 3_200.0))
+        .on(AIS_CHANNELS),
+    ]
+}
+
+fn ais_trial() -> sdrmm_wire::SignalTrial {
+    sdrmm_wire::SignalTrial::proven_by(EventKind::named("ais"))
+}
+
+pub(crate) fn ais_decoder() -> Native<AisParams> {
+    Native::new::<AisChannelRx>(occupied_band)
+        .filter(channel_filter)
+        .home(161_975_000.0)
+        .signatures(ais_signatures)
+        .trial(ais_trial)
+        .form(ais_form)
+        .kinds(ais_kinds)
+}
+
+pub(crate) fn ais_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("ais_channel", "Channel", Control::choice::<AisChannel>())
+            .title("AIS channel"),
+    ]
+}
+
+fn ais_kinds() -> Vec<KindSpec> {
+    vec![crate::ais::ais_kind()]
+}
+
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{AisChannel, AmParams};
+    use crate::am::AmParams;
+    use sdrmm_wire::ChannelParams;
 
     use super::*;
     use crate::{
@@ -267,9 +312,15 @@ mod tests {
     const RATE: f64 = 48_000.0;
 
     fn ais_settings(channel: AisChannel) -> ChannelSettings {
-        settings(ChannelParams::Ais(AisParams {
-            ais_channel: channel,
-        }))
+        settings(
+            ChannelParams::new(
+                "ais",
+                &AisParams {
+                    ais_channel: channel,
+                },
+            )
+            .expect("ais settings"),
+        )
     }
 
     fn channel(ais_channel: AisChannel) -> AisChannelRx {
@@ -305,10 +356,11 @@ mod tests {
             chan.process(&iq[pos..end], &mut out);
             assert!(out.audio_pcm.is_empty(), "ais must not produce audio");
             for event in out.events.drain(..) {
-                match event {
-                    DecoderEvent::Ais(m) => msgs.push(m),
-                    other => panic!("unexpected event {other:?}"),
-                }
+                msgs.push(
+                    event
+                        .read::<AisMessage>()
+                        .unwrap_or_else(|| panic!("unexpected event {event:?}")),
+                )
             }
             pos = end;
         }
@@ -340,7 +392,10 @@ mod tests {
     }
 
     fn select(iq: &[Complex<f32>]) -> Vec<Complex<f32>> {
-        let mut filter = crate::channel_filter(&ChannelParams::Ais(AisParams::default())).unwrap();
+        let mut filter = crate::channel_filter(
+            &ChannelParams::new("ais", &AisParams::default()).expect("ais settings"),
+        )
+        .unwrap();
         let mut out = Vec::new();
         filter.process(iq, &mut out);
         out
@@ -624,11 +679,13 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(AisChannel::A);
-        let err = chan.apply(settings(ChannelParams::Am(AmParams::default())));
+        let err = chan.apply(settings(
+            ChannelParams::new("am", &AmParams::default()).expect("am settings"),
+        ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = AisChannelRx::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::Am(AmParams::default())),
+            settings(ChannelParams::new("am", &AmParams::default()).expect("am settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

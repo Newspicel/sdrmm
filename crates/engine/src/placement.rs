@@ -118,6 +118,7 @@ impl Engine {
 
 fn carried_info(decoder: &Placeable, stream: u32) -> ChannelInfo {
     ChannelInfo {
+        band: None,
         id: 0,
         stream,
         node: Some(decoder.node.clone()),

@@ -1,8 +1,8 @@
 use std::f32::consts::PI;
 
+use crate::dab::DabTransmissionMode;
 use num_complex::Complex;
 use sdrmm_dsp::{CONFIDENT, Soft, fft::Transform};
-use sdrmm_wire::DabTransmissionMode;
 
 use super::mode::Mode;
 

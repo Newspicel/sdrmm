@@ -283,7 +283,7 @@ mod tests {
 
     use sdrmm_wire::{
         ChannelNode, NodeBody, NodeKind, PatchEdge, PatchGraph, PatchNode, PortRef, Position, Runs,
-        patch::resolve::{ResolveCtx, compile},
+        patch::resolve::ResolveCtx, patch::resolve::compile,
     };
 
     use super::*;

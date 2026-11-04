@@ -1,4 +1,5 @@
-use sdrmm_wire::{DecoderEvent, RadiosondeFrame, SondeType};
+use crate::radiosonde::RadiosondeFrame;
+use crate::radiosonde::SondeType;
 
 use super::{
     demod::{Polarity, SymbolClock, SyncMatcher},
@@ -385,7 +386,7 @@ impl Dfm {
         self.frames.rejected()
     }
 
-    pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<DecoderEvent>) {
+    pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<RadiosondeFrame>) {
         for &sample in audio {
             if let Some(symbol) = self.clock.push(sample) {
                 self.symbol(symbol, out);
@@ -393,7 +394,7 @@ impl Dfm {
         }
     }
 
-    fn symbol(&mut self, symbol: f32, out: &mut Vec<DecoderEvent>) {
+    fn symbol(&mut self, symbol: f32, out: &mut Vec<RadiosondeFrame>) {
         match &mut self.receive {
             Receive::Hunt => {
                 if let Some(polarity) = self.sync.push(symbol > 0.0) {
@@ -416,7 +417,7 @@ impl Dfm {
                     *bit = polarity.apply(pair[1] > pair[0]);
                 }
                 if let Some(frame) = self.frames.decode(&self.payload) {
-                    out.push(DecoderEvent::Radiosonde(frame));
+                    out.push(frame);
                 }
             }
         }

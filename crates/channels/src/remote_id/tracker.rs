@@ -1,6 +1,12 @@
 use std::collections::VecDeque;
 
-use sdrmm_wire::{RemoteIdFrame, RemoteIdMessage, RemoteIdPhy, RemoteIdTransport};
+use crate::remote_id::RemoteIdFrame;
+
+use crate::remote_id::RemoteIdMessage;
+
+use crate::remote_id::RemoteIdPhy;
+
+use crate::remote_id::RemoteIdTransport;
 
 use super::odid;
 

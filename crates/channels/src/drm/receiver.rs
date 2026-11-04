@@ -1,4 +1,5 @@
 use num_complex::Complex;
+use sdrmm_dsp::pack_msb_into;
 
 use super::{
     aac::{AudioConfig, Coding},
@@ -6,7 +7,6 @@ use super::{
         Superframes, XheAssembler, aac_frames, aac_superframe, frame_audio_frames, join_protected,
         split_text,
     },
-    bits::pack,
     cells::{Cell as Kind, Layout},
     coding::{Plan, Qam},
     fac::{Fac, fac_bits, fac_rate},
@@ -402,7 +402,7 @@ impl Receiver {
             self.data_error = Some("MSC frame could not be decoded");
             return;
         }
-        pack(&self.bits, &mut self.bytes);
+        pack_msb_into(&self.bits, &mut self.bytes);
         self.logical_frames = self.logical_frames.saturating_add(1);
         self.select();
         let Some(selection) = self.selection.as_ref() else {

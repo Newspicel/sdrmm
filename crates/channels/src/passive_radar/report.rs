@@ -1,9 +1,10 @@
 use sdrmm_dsp::radar::batch::MAX_SURVEILLANCE;
 use sdrmm_dsp::radar::track::TRAIL_LEN;
-use sdrmm_wire::radar::{
-    AoaState, MAX_RADAR_DETECTIONS, MAX_RADAR_TRACKS, MAX_TRACK_TRAIL, RadarAoa, RadarAxes,
-    RadarDetection, RadarHealth, RadarTrack, RadarTrackEvent, RadarTrailPoint, RadarUpdate,
-    ReferenceHealth, TrackChange, TrackState,
+use sdrmm_wire::{
+    radar::AoaState, radar::MAX_RADAR_DETECTIONS, radar::MAX_RADAR_TRACKS, radar::MAX_TRACK_TRAIL,
+    radar::RadarAoa, radar::RadarAxes, radar::RadarDetection, radar::RadarHealth,
+    radar::RadarTrack, radar::RadarTrackEvent, radar::RadarTrailPoint, radar::RadarUpdate,
+    radar::ReferenceHealth, radar::TrackChange, radar::TrackState,
 };
 
 use super::plan::RadarPlan;
@@ -238,7 +239,7 @@ pub fn track_events(pod: &RadarPod, out: &mut Vec<RadarTrackEvent>) {
         bearing_deg: None,
         lat: None,
         lon: None,
-        icao: None,
+        target: None,
     }));
 }
 
@@ -285,7 +286,7 @@ fn fill_tracks(pod: &RadarPod, tracks: &mut Vec<RadarTrack>) {
             misses: 0,
             aoa: None,
             fix: None,
-            adsb: None,
+            truth: None,
             trail: Vec::with_capacity(MAX_TRACK_TRAIL),
         };
         write_track(&mut slot, track);
@@ -311,7 +312,7 @@ fn write_track(slot: &mut RadarTrack, track: &TrackPod) {
     slot.misses = track.misses;
     slot.aoa = track.aoa.as_ref().map(wire_aoa);
     slot.fix = None;
-    slot.adsb = None;
+    slot.truth = None;
     slot.trail.clear();
     slot.trail
         .extend(track.trail[..track.trail_len.min(TRAIL_LEN)].iter().map(

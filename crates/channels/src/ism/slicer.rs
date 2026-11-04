@@ -1,4 +1,4 @@
-use sdrmm_wire::IsmCoding;
+use crate::ism::IsmCoding;
 
 use super::{RATE, bits::Bits, pulse::Package};
 
@@ -318,7 +318,7 @@ fn manchester(s: Samples, package: &Package<'_>, bits: &mut Bits, emit: &mut dyn
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sdrmm_wire::IsmModulation;
+    use crate::ism::IsmModulation;
 
     fn us(values: &[u32]) -> Vec<u32> {
         values.iter().map(|v| v / 4).collect()

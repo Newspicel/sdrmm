@@ -1,8 +1,11 @@
 mod dji;
 mod french;
 
+use crate::remote_id::RemoteIdFrame;
+use crate::remote_id::RemoteIdPhy;
+use crate::remote_id::RemoteIdTransport;
 use sdrmm_modem::wifi::{self as phy, WifiPhy};
-use sdrmm_wire::{DecoderEvent, RemoteIdFrame, RemoteIdPhy, RemoteIdTransport};
+use sdrmm_wire::DecoderEvent;
 
 use super::{
     odid::APP_CODE,
@@ -172,7 +175,7 @@ impl phy::Sink for Events<'_> {
             level_dbfs: frame.level_dbfs,
         };
         if let Some(event) = self::frame(&mpdu, self.tracker) {
-            self.events.push(DecoderEvent::RemoteId(event));
+            self.events.push(DecoderEvent::of(&event));
         }
     }
 }

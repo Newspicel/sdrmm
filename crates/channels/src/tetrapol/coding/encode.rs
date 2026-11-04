@@ -1,4 +1,4 @@
-use sdrmm_wire::TetrapolBand;
+use crate::tetrapol::TetrapolBand;
 
 use super::{
     BLOCK_BYTES, DATA_CRC, DATA_FIELD_BITS, DataBlock, FIRST_CODED, FIRST_STEPS, FRAME_BITS,

@@ -34,7 +34,7 @@ const PLAN: BandPlan = {
       service: "maritime",
       start_hz: 156_000_000,
       stop_hz: 162_000_000,
-      suggested: { type: "nfm", settings: {} },
+      suggested: { type: "voice", settings: {} },
     },
   ],
   lanes: [
@@ -56,7 +56,7 @@ function channel(params: ChannelInfo["settings"]["params"]): ChannelInfo {
 }
 
 const onStream = (id: number, stream: number): ChannelInfo => ({
-  ...channel({ type: "nfm", settings: {} }),
+  ...channel({ type: "voice", settings: {} }),
   id,
   stream,
 });
@@ -142,7 +142,7 @@ describe("pickText", () => {
 
 describe("bookmarkDraft", () => {
   it("names the allocation the frequency falls in, with the mode it suggests", () => {
-    expect(bookmarkDraft(156_800_000, PLAN)).toEqual({ label: "Marine VHF", mode: "nfm" });
+    expect(bookmarkDraft(156_800_000, PLAN)).toEqual({ label: "Marine VHF", mode: "voice" });
   });
 
   it("falls back to the frequency itself where nothing is allocated", () => {
@@ -157,16 +157,20 @@ describe("bookmarkDraft", () => {
 describe("channelTypeAt", () => {
   it("prefers what the band plan allocates there", () => {
     expect(
-      channelTypeAt({ type: "am", settings: {} }, channel({ type: "ssb", settings: {} })),
-    ).toBe("am");
+      channelTypeAt(
+        { type: "planned", settings: {} },
+        channel({ type: "heard", settings: {} }),
+        "first",
+      ),
+    ).toBe("planned");
   });
 
   it("otherwise opens in the mode already being listened to", () => {
-    expect(channelTypeAt(null, channel({ type: "ssb", settings: {} }))).toBe("ssb");
+    expect(channelTypeAt(null, channel({ type: "heard", settings: {} }), "first")).toBe("heard");
   });
 
-  it("falls back to narrow FM", () => {
-    expect(channelTypeAt(null, undefined)).toBe("nfm");
+  it("falls back to the first registered decoder", () => {
+    expect(channelTypeAt(null, undefined, "first")).toBe("first");
   });
 });
 
@@ -183,9 +187,9 @@ describe("creation tunes", () => {
 });
 
 const tuned = (id: number, hz: number): ChannelInfo => ({
-  ...channel({ type: "nfm", settings: {} }),
+  ...channel({ type: "voice", settings: {} }),
   id,
-  settings: { frequency_hz: hz, params: { type: "nfm", settings: {} } },
+  settings: { frequency_hz: hz, params: { type: "voice", settings: {} } },
 });
 
 describe("markerAt", () => {

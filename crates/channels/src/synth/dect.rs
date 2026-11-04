@@ -1,8 +1,8 @@
 use std::f64::consts::TAU;
 
+use crate::dect::DectBand;
 use num_complex::Complex;
 use sdrmm_modem::pulse::{self, Norm};
-use sdrmm_wire::DectBand;
 
 use crate::dect::{
     bfield::{B_BYTES, BField},

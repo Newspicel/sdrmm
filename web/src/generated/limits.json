@@ -2,7 +2,6 @@
   "light_speed_m_s": 299792458.0,
   "band_seed_hz": 200000.0,
   "spectrum_signal_margin_db": 10.0,
-  "sonde_burst_m": 26000,
   "array": {
     "lanes": {
       "min": 2,
@@ -426,7 +425,7 @@
   "name_len": 64,
   "note_len": 4096,
   "filter": {
-    "kinds": 63,
+    "kinds": 256,
     "ids": 256,
     "duration_ms": 600000,
     "text_len": 128
@@ -483,11 +482,6 @@
     "metres_per_degree_lon": 111320.0,
     "metres_per_degree_lat": 110540.0,
     "min_cos_lat": 0.01
-  },
-  "wmbus": {
-    "keys": 256,
-    "meter_digits": 8,
-    "key_digits": 32
   },
   "workspace_state_version": 2
 }

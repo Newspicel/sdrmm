@@ -1,6 +1,9 @@
+use crate::NativeChannel;
+use crate::iridium::IridiumParams;
+use crate::iridium::IridiumSpan;
 use num_complex::Complex;
 use sdrmm_dsp::fft::FftPair;
-use sdrmm_wire::{ChannelParams, DecoderEvent, IridiumParams, IridiumSpan};
+use sdrmm_wire::ChannelParams;
 
 use super::super::CHANNEL_RATE;
 use super::super::modulate::modulate;
@@ -8,7 +11,7 @@ use super::super::sensitivity::{Found, Sent, es_n0_sigma, matches, traffic};
 use super::super::tests::Gaussian;
 use super::{USABLE_FRACTION, WidebandDecoder};
 use crate::testutil::{run_events, settings};
-use crate::{ChannelCtx, ChannelRx, IridiumChannel};
+use crate::{ChannelCtx, IridiumChannel};
 
 const RATE: f64 = 2_500_000.0;
 const ES_N0_DB: f64 = 14.0;
@@ -129,30 +132,33 @@ fn a_wide_channel_reports_where_the_burst_was() {
     let params = IridiumParams {
         span: IridiumSpan::Mhz1,
     };
-    let rate = crate::input_rate(&ChannelParams::Iridium(params));
+    let rate = crate::input_rate(&ChannelParams::of(&params).expect("settings"));
     assert_eq!(rate, 1_000_000.0);
     assert_eq!(
-        crate::occupied_band(&ChannelParams::Iridium(params)),
+        crate::occupied_band(&ChannelParams::of(&params).expect("settings")),
         (-rate * USABLE_FRACTION, rate * USABLE_FRACTION)
     );
     let (placed, iq) = scene(rate, &[-310_000.0], &[0.1], 0.2);
     let mut channel = IridiumChannel::new(
         ChannelCtx { input_rate: rate },
-        settings(ChannelParams::Iridium(params)),
+        settings(ChannelParams::of(&params).expect("settings")),
     )
     .expect("channel");
     let events = run_events(&mut channel, &iq);
-    assert!(events.iter().any(|event| matches!(
-        event,
-        DecoderEvent::Iridium(message)
-            if message.frequency_error_hz.is_some_and(|hz| (f64::from(hz) - placed[0].offset_hz).abs() < 1_000.0)
-    )));
+    assert!(
+        events
+            .iter()
+            .filter_map(|event| crate::datalink::read(event, "iridium"))
+            .any(|message| message
+                .frequency_error_hz
+                .is_some_and(|hz| (f64::from(hz) - placed[0].offset_hz).abs() < 1_000.0))
+    );
     assert!(
         IridiumChannel::new(
             ChannelCtx {
                 input_rate: CHANNEL_RATE
             },
-            settings(ChannelParams::Iridium(params)),
+            settings(ChannelParams::of(&params).expect("settings")),
         )
         .is_err()
     );

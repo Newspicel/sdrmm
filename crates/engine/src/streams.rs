@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, atomic::Ordering},
 };
 
-use sdrmm_channels::{ChannelError, ClickProfile};
+use sdrmm_channels::ChannelError;
 use sdrmm_device::DeviceError;
 use sdrmm_wire::{
     AudioProcessing, AudioRoute, ChannelDescriptor, ChannelInfo, ChannelLevel, DeviceSetStatus,
@@ -154,7 +154,7 @@ impl Engine {
         Ok(FxSource {
             pcm: handle.sinks.pcm_tx.subscribe(),
             channels: sdrmm_channels::audio_channels(&info.settings.params),
-            profile: ClickProfile::for_params(&info.settings.params),
+            profile: sdrmm_channels::click_profile(&info.settings.params),
             capacity: crate::audio::pcm_channel_cap(sample_rate_of(&state.settings)),
         })
     }

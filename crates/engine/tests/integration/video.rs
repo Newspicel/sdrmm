@@ -2,15 +2,18 @@
 
 use std::{sync::Arc, time::Duration};
 
+use sdrmm_channels::AtvModulation;
+use sdrmm_channels::AtvParams;
+use sdrmm_channels::AtvStandard;
+use sdrmm_channels::NfmParams;
+use sdrmm_channels::SstvMode;
+use sdrmm_channels::SstvParams;
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_recording::RecordingDriver;
 use sdrmm_device_virtual::VirtualDriver;
 use sdrmm_engine::Engine;
 use sdrmm_recorder::SigmfWriter;
-use sdrmm_wire::{
-    AtvModulation, AtvParams, AtvStandard, ChannelParams, ChannelSettings, NfmParams, SstvMode,
-    SstvParams,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings};
 use tempfile::TempDir;
 
 const VIDEO_TIMEOUT: Duration = Duration::from_secs(30);
@@ -21,8 +24,9 @@ const FIELDS_PER_FULL_FRAME: usize = 2;
 
 #[tokio::test]
 async fn dvb_satellite_video_reaches_the_color_video_stream() {
+    use sdrmm_channels::DatvParams;
+    use sdrmm_channels::DatvStandard;
     use sdrmm_channels::synth::datv;
-    use sdrmm_wire::{DatvParams, DatvStandard};
     for (standard, extended, superframes) in [
         (DatvStandard::DvbS, false, false),
         (DatvStandard::DvbS2, false, false),
@@ -67,13 +71,17 @@ async fn dvb_satellite_video_reaches_the_color_video_stream() {
                 ChannelSettings {
                     frequency_hz: CENTER_HZ,
                     squelch: sdrmm_wire::Squelch::Off,
-                    params: ChannelParams::Datv(DatvParams {
-                        standard,
-                        superframes,
-                        symbol_rate: datv::SYMBOL_RATE,
-                        code_rate: datv::CODE_RATE,
-                        ..DatvParams::default()
-                    }),
+                    params: ChannelParams::new(
+                        "datv",
+                        &DatvParams {
+                            standard,
+                            superframes,
+                            symbol_rate: datv::SYMBOL_RATE,
+                            code_rate: datv::CODE_RATE,
+                            ..DatvParams::default()
+                        },
+                    )
+                    .expect("datv settings"),
                     blanker: Default::default(),
                     if_filter: Default::default(),
                 },
@@ -141,7 +149,8 @@ async fn dvbt_media_crosses_a_virtual_device_and_reaches_audio_and_video() {
             ChannelSettings {
                 frequency_hz: CENTER_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Dvbt(sdrmm_wire::DvbtParams::default()),
+                params: ChannelParams::new("dvbt", &sdrmm_channels::DvbtParams::default())
+                    .expect("dvbt settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -203,7 +212,7 @@ async fn an_atv_transmission_reaches_the_video_stream_as_a_picture() {
             ChannelSettings {
                 frequency_hz: CENTER_HZ + OFFSET_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Atv(params),
+                params: ChannelParams::new("atv", &params).expect("atv settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -274,7 +283,7 @@ async fn a_channel_without_video_refuses_the_subscription() {
             ChannelSettings {
                 frequency_hz: 100_000_000.0,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Nfm(NfmParams::default()),
+                params: ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },
@@ -337,7 +346,7 @@ async fn an_sstv_transmission_reaches_the_image_stream_as_a_finished_picture() {
             ChannelSettings {
                 frequency_hz: CENTER_HZ + SSTV_OFFSET_HZ,
                 squelch: sdrmm_wire::Squelch::Off,
-                params: ChannelParams::Sstv(SstvParams::default()),
+                params: ChannelParams::new("sstv", &SstvParams::default()).expect("sstv settings"),
                 blanker: Default::default(),
                 if_filter: Default::default(),
             },

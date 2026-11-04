@@ -1,6 +1,11 @@
 use std::fmt::Write;
 
-use sdrmm_wire::{LatLon, SeaArea, sea_area::roman};
+use sdrmm_modem::ita2::{self, ShiftDecoder};
+use sdrmm_wire::LatLon;
+
+use crate::inmarsat_stdc::SeaArea;
+
+use crate::inmarsat_stdc::roman;
 use serde_json::{Value, json};
 
 pub const PRIORITY: [&str; 4] = ["routine", "safety", "urgency", "distress"];
@@ -212,29 +217,12 @@ pub fn mes_id(bytes: &[u8]) -> String {
     hex_upper(bytes)
 }
 
-const ITA2_LTRS: [&str; 32] = [
-    "\0", "E", "\n", "A", " ", "S", "I", "U", "\r", "D", "R", "J", "N", "F", "C", "K", "T", "Z",
-    "L", "W", "H", "Y", "P", "Q", "O", "B", "G", "", "M", "X", "V", "",
-];
-const ITA2_FIGS: [&str; 32] = [
-    "\0", "3", "\n", "-", " ", "'", "8", "7", "\r", "\u{5}", "4", "\u{7}", ",", "!", ":", "(", "5",
-    "+", ")", "2", "\u{a3}", "6", "0", "1", "9", "?", "&", "", ".", "/", ";", "",
-];
-const ITA2_LETTERS_SHIFT: usize = 0x1F;
-const ITA2_FIGURES_SHIFT: usize = 0x1B;
-
 pub fn ita2_decode(bytes: &[u8]) -> String {
-    let mut out = String::new();
-    let mut figures = false;
-    for &byte in bytes {
-        match usize::from(byte & 0x1F) {
-            ITA2_LETTERS_SHIFT => figures = false,
-            ITA2_FIGURES_SHIFT => figures = true,
-            code if figures => out.push_str(ITA2_FIGS[code]),
-            code => out.push_str(ITA2_LTRS[code]),
-        }
-    }
-    out
+    let mut shift = ShiftDecoder::new(&ita2::FIGURES_INTERNATIONAL);
+    bytes
+        .iter()
+        .filter_map(|&byte| shift.decode(byte))
+        .collect()
 }
 
 pub fn egc_address_len(service: u8) -> usize {

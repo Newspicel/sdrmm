@@ -3,16 +3,17 @@ import { Chips, ChoiceChip, NumberChip } from "../../components/face/Chips";
 import { TextChip } from "../../components/face/TextChip";
 import { aboutQuery } from "../../lib/api";
 import { portOn, useFeeds } from "../../lib/resolved";
-import type { EventOutputTarget, PatchNode, PatchNodeOf } from "../../lib/types";
+import type { EventOutputTarget, FeedEntry, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { BeastOutputControls } from "./BeastOutputControls";
 import {
   eventOutputConfigured,
+  feedTarget,
   newOutputTarget,
   outputServices,
   WEBHOOK_FORMATS,
 } from "./eventOutput";
+import { FeedOutputControls } from "./FeedOutputControls";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 import { OutputDelivery } from "./OutputDelivery";
 
@@ -27,6 +28,7 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
   const workspace = useWorkspaceContext();
   const notify = useQuery(aboutQuery(true)).data?.notify === true;
   const target = node.data.target;
+  const feeds = workspace.context.catalog.feeds ?? [];
   const inputs = useFeeds(node.id, "events").length;
   const configured = eventOutputConfigured(target);
   const audio = portOn(workspace.resolved, node.id, "audio", "in") !== undefined;
@@ -46,13 +48,13 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
             label="Service"
             title="Output service"
             value={target.service}
-            options={outputServices(notify, target.service)}
-            onChange={(service) => editTarget(newOutputTarget(service))}
+            options={outputServices(notify, target.service, feeds)}
+            onChange={(service) => editTarget(newOutputTarget(service, feeds))}
           />
-          <TargetChips target={target} onEdit={editTarget} />
+          <TargetChips target={target} feeds={feeds} onEdit={editTarget} />
         </Chips>
-        {target.service === "beast" ? (
-          <BeastOutputControls
+        {target.service === "feed" ? (
+          <FeedOutputControls
             node={node.id}
             target={target}
             connected={inputs > 0}
@@ -103,9 +105,11 @@ type TargetOf<S extends EventOutputTarget["service"]> = Extract<EventOutputTarge
 
 function TargetChips({
   target,
+  feeds,
   onEdit,
 }: {
   target: EventOutputTarget;
+  feeds: readonly FeedEntry[];
   onEdit: (next: EventOutputTarget) => void;
 }) {
   switch (target.service) {
@@ -122,16 +126,8 @@ function TargetChips({
           onCommit={(file) => onEdit({ ...target, file })}
         />
       );
-    case "beast":
-      return (
-        <TextChip
-          label="Listen"
-          name="Beast listen address"
-          title="Beast binary TCP server. Wire ADS-B events in, then connect your feeder to this address."
-          value={target.address}
-          onCommit={(address) => onEdit({ ...target, address, enabled: false })}
-        />
-      );
+    case "feed":
+      return <FeedChips target={target} feeds={feeds} onEdit={onEdit} />;
     case "tunnel":
       return <TunnelChips target={target} onEdit={onEdit} />;
     case "webhook":
@@ -357,6 +353,40 @@ function MqttChips({
         value={target.password ?? ""}
         secret
         onCommit={(password) => onEdit({ ...target, password })}
+      />
+    </>
+  );
+}
+
+function FeedChips({
+  target,
+  feeds,
+  onEdit,
+}: {
+  target: TargetOf<"feed">;
+  feeds: readonly FeedEntry[];
+  onEdit: (next: TargetOf<"feed">) => void;
+}) {
+  const format = target.format ?? "";
+  const options = feeds.map((feed) => ({ value: feed.format, label: feed.name }));
+  if (!options.some((option) => option.value === format)) {
+    options.push({ value: format, label: format === "" ? "none" : format });
+  }
+  return (
+    <>
+      <ChoiceChip
+        label="Format"
+        title="Feed format"
+        value={format}
+        options={options}
+        onChange={(next) => onEdit(feedTarget(feeds.find((feed) => feed.format === next)))}
+      />
+      <TextChip
+        label="Listen"
+        name="Feed listen address"
+        title="TCP server address. Wire events in, then connect a client here."
+        value={target.address}
+        onCommit={(address) => onEdit({ ...target, address, enabled: false })}
       />
     </>
   );

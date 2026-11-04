@@ -13,7 +13,7 @@ const status = (file: string, node: string): AudioRecordingStatus => ({
 
 const channel = (audio_recordings?: AudioRecordingStatus[]): ChannelInfo => ({
   id: 1,
-  settings: { frequency_hz: 1, params: { type: "nfm", settings: {} } },
+  settings: { frequency_hz: 1, params: { type: "voice", settings: {} } },
   audio_recordings,
 });
 

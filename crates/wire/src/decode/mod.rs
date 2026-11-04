@@ -1,35 +1,21 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-mod aviation;
 mod broadcast;
-mod datalink;
-mod dect;
-#[cfg(test)]
-pub(crate) mod fixtures;
 mod ident;
-mod maritime;
-mod navaid;
-mod pager;
-mod picture;
+mod platform;
 mod registry;
-mod text;
+mod signature;
+#[cfg(test)]
+pub(crate) mod test_kinds;
 mod voice;
-mod wsjt;
 
-pub use aviation::*;
 pub use broadcast::*;
-pub use datalink::*;
-pub use dect::*;
 pub use ident::*;
-pub use maritime::*;
-pub use navaid::*;
-pub use pager::*;
-pub use picture::*;
+pub use platform::*;
 pub use registry::*;
-pub use text::*;
+pub use signature::*;
 pub use voice::*;
-pub use wsjt::*;
 
 pub const NO_CHANNEL: u32 = u32::MAX;
 
@@ -49,6 +35,3 @@ pub struct DecodedRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub callsign: Option<crate::Callsign>,
 }
-
-#[cfg(test)]
-mod tests;

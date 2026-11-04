@@ -1,4 +1,5 @@
-use sdrmm_wire::{LorawanFrame, LorawanMessageType};
+use crate::lora::LorawanFrame;
+use crate::lora::LorawanMessageType;
 
 use super::{Keys, Session, frame, le_u16, le_u32, mac, mic, split_mic};
 use crate::crypto::{self, Aes};

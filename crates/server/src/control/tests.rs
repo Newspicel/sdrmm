@@ -2,8 +2,8 @@ use std::sync::Mutex;
 
 use sdrmm_wire::{
     ChannelNode, NodeBody, PatchEdge, PatchGraph, PatchNode, PortRef, Position, RotatorNode, Runs,
-    SatelliteLook, SatelliteNode, ScannerNode, SkyTrack, Tap,
-    patch::resolve::{ResolveCtx, compile},
+    SatelliteLook, SatelliteNode, ScannerNode, SkyTrack, Tap, patch::resolve::ResolveCtx,
+    patch::resolve::compile,
 };
 
 use super::*;
