@@ -206,7 +206,7 @@ impl StdcDecoder {
 }
 
 pub fn to_datalink(packet: &StdcPacket) -> DataLinkMessage {
-    datalink::message(
+    let message = datalink::message(
         &Body::StdC {
             name: packet.name,
             text: packet.text.as_deref(),
@@ -218,7 +218,11 @@ pub fn to_datalink(packet: &StdcPacket) -> DataLinkMessage {
             ..Quality::default()
         },
         Some(&packet.raw),
-    )
+    );
+    DataLinkMessage {
+        area: packet.area.clone(),
+        ..message
+    }
 }
 
 pub struct InmarsatStdcChannel {

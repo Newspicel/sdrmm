@@ -181,6 +181,9 @@ pub enum Shape {
         symbol: Symbol,
         label: String,
     },
+    Polygon {
+        points: Vec<LatLon>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]

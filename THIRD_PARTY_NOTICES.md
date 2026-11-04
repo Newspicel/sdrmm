@@ -873,7 +873,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [use-sync-external-store](https://github.com/react/react#readme) | 1.7.0 | MIT |
 | [zustand](https://github.com/pmndrs/zustand) | 4.5.7, 5.0.16 | MIT |
 
-## Hardware libraries (12)
+## Hardware libraries (13)
 
 | Component | Version | License |
 | --- | --- | --- |
@@ -887,6 +887,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [libairspy](https://github.com/airspy/airspyone_host) | - | BSD-3-Clause |
 | [libairspyhf](https://github.com/airspy/airspyhf) | - | BSD-3-Clause |
 | [mbelib](https://github.com/szechyjs/mbelib) | - | ISC |
+| [NAVAREA limits (United States Coast Guard)](https://www.arcgis.com/home/item.html?id=161e115920164289af6d70130b3e8a1f) | - | LicenseRef-USCG-public-use |
 | [SoapySDR](https://github.com/pothosware/SoapySDR) | - | BSL-1.0 |
 | [xng](https://github.com/airframesio/xng) | - | MIT OR Apache-2.0 |
 

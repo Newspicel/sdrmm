@@ -2,15 +2,23 @@ use super::{
     EventPayload, Field, FieldValue, Place, Presentation, Unit, count, fields, flag, joined,
     lat_lon, number, position, repaired, text, text_of, trimmed,
 };
-use crate::decode::{
-    DataLinkMessage, EotArming, EotBattery, EotMessage, EotReport, EotStatus, EventKind, HotRequest,
+use crate::{
+    SeaArea,
+    decode::{
+        DataLinkMessage, EotArming, EotBattery, EotMessage, EotReport, EotStatus, EventKind,
+        HotRequest,
+    },
 };
 
 impl EventPayload for DataLinkMessage {
     fn present(&self, _kind: EventKind) -> Presentation {
+        let area = self.area.as_ref();
         Presentation {
-            entity: trimmed(self.station.as_deref()),
-            place: lat_lon(self.lat, self.lon).map(Place::at),
+            entity: trimmed(self.station.as_deref()).or_else(|| area.map(SeaArea::label)),
+            place: lat_lon(self.lat, self.lon)
+                .or_else(|| area.and_then(SeaArea::center))
+                .map(Place::at),
+            shapes: area.map(SeaArea::shapes).unwrap_or_default(),
             fields: data_link_fields(self),
             ..Presentation::of(data_link_summary(self))
         }
@@ -27,6 +35,10 @@ fn data_link_fields(m: &DataLinkMessage) -> Vec<Field> {
         ("SNR", number(m.snr_db, Unit::Db, 1)),
         ("Frequency error", number(m.frequency_error_hz, Unit::Hz, 1)),
         ("Position", position(m.lat, m.lon)),
+        (
+            "Area",
+            m.area.as_ref().and_then(|area| text_of(area.label())),
+        ),
         ("Text", text(m.text.as_deref())),
         ("Details", details(&m.details)),
         ("Raw", text(m.raw.as_deref())),
@@ -131,7 +143,7 @@ fn eot_arming(arming: EotArming) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::LatLon;
+    use crate::{LatLon, present::Shape};
 
     fn message(details: serde_json::Value) -> DataLinkMessage {
         serde_json::from_value(serde_json::json!({
@@ -178,6 +190,29 @@ mod tests {
             view.field("Details"),
             text(Some("{\n  \"level\": 3\n}")).as_ref()
         );
+    }
+
+    #[test]
+    fn an_addressed_sea_area_is_the_entity_place_and_shape() {
+        let mut link = message(serde_json::json!({}));
+        link.station = None;
+        link.lat = None;
+        link.lon = None;
+        link.area = Some(SeaArea::Navarea { number: 12 });
+        let view = link.present(EventKind::InmarsatStdc);
+        assert_eq!(view.entity.as_deref(), Some("NAVAREA XII"));
+        assert_eq!(view.field("Area"), text(Some("NAVAREA XII")).as_ref());
+        assert!(view.place.is_some());
+        assert!(matches!(view.shapes.as_slice(), [Shape::Polygon { .. }]));
+    }
+
+    #[test]
+    fn a_station_and_its_fix_win_over_the_area() {
+        let mut link = message(serde_json::json!({}));
+        link.area = Some(SeaArea::Navarea { number: 12 });
+        let view = link.present(EventKind::InmarsatStdc);
+        assert_eq!(view.entity.as_deref(), Some(".D-AIBC"));
+        assert_eq!(view.place.map(|place| place.at.lat), Some(52.5));
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use sdrmm_wire::{LatLon, SeaArea, sea_area::roman};
 use serde_json::{Value, json};
 
 pub const PRIORITY: [&str; 4] = ["routine", "safety", "urgency", "distress"];
@@ -357,19 +358,6 @@ pub fn nav_met_area_coordinator(area: u8) -> Option<&'static str> {
     })
 }
 
-pub fn area_roman(number: u8) -> String {
-    const TENS: [&str; 4] = ["", "X", "XX", "XXX"];
-    const ONES: [&str; 10] = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"];
-    if number == 0 || number >= 40 {
-        return number.to_string();
-    }
-    format!(
-        "{}{}",
-        TENS[usize::from(number / 10)],
-        ONES[usize::from(number % 10)]
-    )
-}
-
 pub fn egc_area(service: u8, address: &[u8]) -> Option<Value> {
     let (shape, c3_format) = area_shape(service)?;
     let payload = address.get(1..).unwrap_or(&[]);
@@ -389,6 +377,47 @@ pub fn egc_area(service: u8, address: &[u8]) -> Option<Value> {
         object.insert("geometry".to_owned(), geometry);
     }
     Some(area)
+}
+
+pub fn sea_area(service: u8, address: &[u8]) -> Option<SeaArea> {
+    let (shape, _) = area_shape(service)?;
+    let payload = address.get(1..)?;
+    match shape {
+        AreaShape::Rectangular => {
+            let &[lat, lon, north, east] = payload.first_chunk::<4>()?;
+            Some(SeaArea::Rectangle {
+                south_west: position(lat, lon, north),
+                north_deg: north & 0x7F,
+                east_deg: east,
+            })
+        }
+        AreaShape::Circular => {
+            let &[lat, lon, radius_high, radius_low] = payload.first_chunk::<4>()?;
+            Some(SeaArea::Circle {
+                center: position(lat, lon, radius_high),
+                radius_nm: u16::from_be_bytes([radius_high & 0x7F, radius_low]),
+            })
+        }
+        AreaShape::NavMetArea => Some(SeaArea::Navarea {
+            number: *payload.first()?,
+        }),
+        AreaShape::Coastal => Some(SeaArea::Coastal {
+            navarea: *payload.first()?,
+            letter: payload
+                .get(1)
+                .map(|byte| byte & 0x7F)
+                .filter(u8::is_ascii_uppercase)
+                .map(|letter| char::from(letter).to_string()),
+        }),
+        AreaShape::AllShips => None,
+    }
+}
+
+fn position(lat: u8, lon: u8, west_flag: u8) -> LatLon {
+    LatLon {
+        lat: f64::from(signed(i32::from(lat & 0x7F), lat & 0x80 != 0)),
+        lon: f64::from(signed(i32::from(lon), west_flag & 0x80 != 0)),
+    }
 }
 
 fn signed(magnitude: i32, negative: bool) -> i32 {
@@ -445,7 +474,7 @@ pub fn nav_met_geometry(shape: AreaShape, payload: &[u8]) -> Option<Value> {
     let number = *payload.first()?;
     let mut geometry = json!({
         "area_number": number,
-        "area_roman": area_roman(number),
+        "area_roman": roman(number),
         "coordinator": nav_met_area_coordinator(number),
     });
     let Some(object) = geometry.as_object_mut() else {
@@ -649,8 +678,39 @@ mod tests {
         assert_eq!(coastal["coordinator"], "France");
         assert_eq!(coastal["coastal_area"], "C");
         assert_eq!(coastal["subject"], "navigational-warnings");
-        assert_eq!(area_roman(17), "XVII");
-        assert_eq!(area_roman(21), "XXI");
+    }
+
+    #[test]
+    fn sea_area_reads_the_manual_worked_examples() {
+        let at = |lat, lon| LatLon { lat, lon };
+        assert_eq!(
+            sea_area(0x04, &[0x04, 0x3C, 0x0A, 0x9E, 0x19, 0, 0]),
+            Some(SeaArea::Rectangle {
+                south_west: at(60.0, -10.0),
+                north_deg: 30,
+                east_deg: 25,
+            })
+        );
+        assert_eq!(
+            sea_area(0x14, &[0x14, 0xA6, 0xA4, 0x03, 0xE7, 0, 0]),
+            Some(SeaArea::Circle {
+                center: at(-38.0, 164.0),
+                radius_nm: 999,
+            })
+        );
+        assert_eq!(
+            sea_area(0x31, &[0x31, 12, 0]),
+            Some(SeaArea::Navarea { number: 12 })
+        );
+        assert_eq!(
+            sea_area(0x13, b"\x13\x02CA\x00\x00"),
+            Some(SeaArea::Coastal {
+                navarea: 2,
+                letter: Some("C".to_owned()),
+            })
+        );
+        assert_eq!(sea_area(0x00, &[0, 0, 0]), None);
+        assert_eq!(sea_area(0x04, &[0x04, 0x3C]), None);
     }
 
     #[test]

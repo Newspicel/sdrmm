@@ -143,5 +143,7 @@ pub struct DataLinkMessage {
     pub lon: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub area: Option<crate::SeaArea>,
     pub details: serde_json::Value,
 }

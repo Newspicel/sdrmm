@@ -4043,6 +4043,7 @@ export interface components {
         /** @enum {string} */
         DabTransmissionMode: "auto" | "i" | "ii" | "iii" | "iv";
         DataLinkMessage: {
+            area?: components["schemas"]["SeaArea"] | null;
             crc_ok: boolean;
             details: unknown;
             /** Format: int32 */
@@ -9086,6 +9087,33 @@ export interface components {
             /** Format: double */
             inversion_hz?: number | null;
         };
+        /** @description The sea area an Inmarsat EGC call is addressed to: its C3 address field, read as geometry. */
+        SeaArea: {
+            /** Format: int32 */
+            east_deg: number;
+            /** @enum {string} */
+            kind: "rectangle";
+            /** Format: int32 */
+            north_deg: number;
+            south_west: components["schemas"]["LatLon"];
+        } | {
+            center: components["schemas"]["LatLon"];
+            /** @enum {string} */
+            kind: "circle";
+            /** Format: int32 */
+            radius_nm: number;
+        } | {
+            /** @enum {string} */
+            kind: "navarea";
+            /** Format: int32 */
+            number: number;
+        } | {
+            /** @enum {string} */
+            kind: "coastal";
+            letter?: string | null;
+            /** Format: int32 */
+            navarea: number;
+        };
         SelcallParams: {
             system?: components["schemas"]["SelcallSystem"];
         };
@@ -9397,6 +9425,10 @@ export interface components {
             /** @enum {string} */
             shape: "pin";
             symbol: components["schemas"]["Symbol"];
+        } | {
+            points: components["schemas"]["LatLon"][];
+            /** @enum {string} */
+            shape: "polygon";
         };
         /** @enum {string} */
         Sideband: "usb" | "lsb";

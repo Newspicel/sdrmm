@@ -50,6 +50,7 @@ pub mod sarsat;
 pub mod satellite;
 pub mod scan;
 pub mod schedule;
+pub mod sea_area;
 pub mod sink;
 pub mod stanag;
 pub mod state;
@@ -328,6 +329,7 @@ pub use schedule::{
     MAX_SCHEDULE_WINDOWS, MAX_TIME_ZONE_LEN, MINUTES_PER_DAY, ScheduleNode, ScheduleStatus,
     ScheduleWindow, Weekday,
 };
+pub use sea_area::SeaArea;
 pub use sink::{
     Entity, EntityKey, PositionTrack, PropagationCell, PropagationPath, PropagationSummary,
     PropagationView, SinkFeed, SinkUpdate, SurfaceRef,

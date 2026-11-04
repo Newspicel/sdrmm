@@ -96,6 +96,12 @@ const NATIVE: &[Native] = &[
         files: &["codec2-LGPL-2.1.txt"],
     },
     Native {
+        name: "NAVAREA limits (United States Coast Guard)",
+        license: "LicenseRef-USCG-public-use",
+        url: "https://www.arcgis.com/home/item.html?id=161e115920164289af6d70130b3e8a1f",
+        files: &[],
+    },
+    Native {
         name: "xng",
         license: "MIT OR Apache-2.0",
         url: "https://github.com/airframesio/xng",

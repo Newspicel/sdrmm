@@ -1,10 +1,11 @@
+use sdrmm_wire::SeaArea;
 use serde_json::{Value, json};
 
 use super::fields::{
     PRIORITY, bulletin_status, channel_type_name, checksum_ok, decode_payload, downlink_mhz,
     egc_address_len, egc_area, egc_service_long_name, egc_service_name, frame_to_utc_hms,
-    hex_upper, ia5, mes_id, parse_stations, round4, sat_les, services_full, services_short,
-    tdm_slots, uplink_mhz,
+    hex_upper, ia5, mes_id, parse_stations, round4, sat_les, sea_area, services_full,
+    services_short, tdm_slots, uplink_mhz,
 };
 
 const ASSEMBLY_MAX_AGE: u32 = 8;
@@ -20,6 +21,7 @@ pub struct StdcPacket {
     pub fec_corrected: Option<u32>,
     pub uw_ber_ppt: Option<u32>,
     pub raw: Vec<u8>,
+    pub area: Option<SeaArea>,
 }
 
 impl StdcPacket {
@@ -33,6 +35,7 @@ impl StdcPacket {
             fec_corrected: None,
             uw_ber_ppt: None,
             raw: Vec::new(),
+            area: None,
         }
     }
 
@@ -46,6 +49,7 @@ impl StdcPacket {
             fec_corrected: None,
             uw_ber_ppt: None,
             raw: packet.to_vec(),
+            area: None,
         }
     }
 }
@@ -515,6 +519,7 @@ impl PacketParser {
             fec_corrected: None,
             uw_ber_ppt: None,
             raw: payload,
+            area: None,
         })
     }
 
@@ -596,6 +601,7 @@ fn assembled_egc(mut done: EgcAssembly) -> StdcPacket {
         fec_corrected: None,
         uw_ber_ppt: None,
         raw: payload,
+        area: sea_area(done.service, &done.address),
     }
 }
 

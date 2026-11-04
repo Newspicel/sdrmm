@@ -64,6 +64,7 @@ pub fn message<T: Serialize + ?Sized>(
         lat,
         lon,
         raw,
+        area: None,
         details: body,
     }
 }
@@ -80,6 +81,7 @@ fn damaged(quality: Quality, raw: Option<String>, error: &serde_json::Error) -> 
         lat: None,
         lon: None,
         raw,
+        area: None,
         details: Value::Object(Map::from_iter([(
             SERIALIZATION_ERROR.to_owned(),
             Value::String(error.to_string()),

@@ -9094,6 +9094,13 @@
       ]
     },
     {
+      "name": "NAVAREA limits (United States Coast Guard)",
+      "license": "LicenseRef-USCG-public-use",
+      "source": "native",
+      "url": "https://www.arcgis.com/home/item.html?id=161e115920164289af6d70130b3e8a1f",
+      "texts": []
+    },
+    {
       "name": "SoapySDR",
       "license": "BSL-1.0",
       "source": "native",

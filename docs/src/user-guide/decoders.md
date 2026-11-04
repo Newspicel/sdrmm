@@ -75,6 +75,10 @@ circuit signalling. It plays no audio.
 Iridium decodes one 50 kHz channel. A **Span** of 1, 2.5, 5 or 10 MHz decodes bursts across a
 radio running at that sample rate, using the middle 80%.
 
+Inmarsat STD-C draws each EGC call's sea area on a wired **Map**: a NAVAREA or METAREA by its
+limits, a coastal call by its NAVAREA, and rectangles and circles as sent. NAVAREA limits are
+simplified from the United States Coast Guard layer.
+
 ## Pager text
 
 Some German POCSAG networks send umlauts as `{ | } [ \ ] ~`. SDRmm converts them inside

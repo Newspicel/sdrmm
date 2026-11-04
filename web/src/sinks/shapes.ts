@@ -72,6 +72,11 @@ function ring(coordinates: Lnglat[], key: string, color: string, into: ShapeFeat
   into.lines.push(line(coordinates, key, color, RING_LOOK));
 }
 
+function closed(points: Lnglat[]): Lnglat[] {
+  const first = points[0];
+  return first === undefined ? points : [...points, first];
+}
+
 export function addShape(shape: Shape, key: string, color: string, into: ShapeFeatures): void {
   switch (shape.shape) {
     case "ray":
@@ -104,6 +109,11 @@ export function addShape(shape: Shape, key: string, color: string, into: ShapeFe
         into.lines.push(
           line(unwrapTrail(shape.points.map(lnglat)), key, color, LINE_LOOK[shape.style]),
         );
+      }
+      return;
+    case "polygon":
+      if (shape.points.length >= 3) {
+        ring(closed(unwrapTrail(shape.points.map(lnglat))), key, color, into);
       }
       return;
     case "pin":

@@ -86,6 +86,7 @@ fn kind_matches_the_serialized_tag() {
         lat: None,
         lon: None,
         raw: None,
+        area: None,
         details: serde_json::Value::Null,
     };
     for ev in [

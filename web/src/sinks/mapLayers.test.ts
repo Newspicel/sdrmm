@@ -84,6 +84,38 @@ describe("map layers from a sink feed", () => {
     ]);
   });
 
+  it("closes a polygon into one filled, outlined ring", () => {
+    const entity = placed(
+      "NAVAREA XIV",
+      {
+        shapes: [
+          {
+            shape: "polygon",
+            points: [
+              { lat: 0, lon: 170 },
+              { lat: 0, lon: 240 },
+              { lat: -60, lon: 240 },
+            ],
+          },
+        ],
+      },
+      "amber",
+      "ship",
+    );
+    entity.last_seen = new Date(NOW).toISOString();
+
+    const shapes = shapeCollections([entity], COLORS, NOW);
+
+    const ring = [
+      [170, 0],
+      [240, 0],
+      [240, -60],
+      [170, 0],
+    ];
+    expect(shapes.fills[0]?.geometry.coordinates).toEqual([ring]);
+    expect(shapes.lines[0]?.geometry.coordinates).toEqual(ring);
+  });
+
   it("fades the shapes of an entity that went quiet", () => {
     const entity = placed(
       "R",

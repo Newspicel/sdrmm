@@ -14199,6 +14199,16 @@
           "details"
         ],
         "properties": {
+          "area": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SeaArea"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "crc_ok": {
             "type": "boolean"
           },
@@ -33706,6 +33716,111 @@
           }
         }
       },
+      "SeaArea": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "south_west",
+              "north_deg",
+              "east_deg",
+              "kind"
+            ],
+            "properties": {
+              "east_deg": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "rectangle"
+                ]
+              },
+              "north_deg": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "south_west": {
+                "$ref": "#/components/schemas/LatLon"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "center",
+              "radius_nm",
+              "kind"
+            ],
+            "properties": {
+              "center": {
+                "$ref": "#/components/schemas/LatLon"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "circle"
+                ]
+              },
+              "radius_nm": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "number",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "navarea"
+                ]
+              },
+              "number": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "navarea",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "coastal"
+                ]
+              },
+              "letter": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "navarea": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "The sea area an Inmarsat EGC call is addressed to: its C3 address field, read as geometry."
+      },
       "SelcallParams": {
         "type": "object",
         "properties": {
@@ -35011,6 +35126,27 @@
               },
               "symbol": {
                 "$ref": "#/components/schemas/Symbol"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "points",
+              "shape"
+            ],
+            "properties": {
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LatLon"
+                }
+              },
+              "shape": {
+                "type": "string",
+                "enum": [
+                  "polygon"
+                ]
               }
             }
           }
