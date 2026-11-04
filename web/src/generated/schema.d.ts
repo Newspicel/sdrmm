@@ -5878,6 +5878,7 @@ export interface components {
             duration_ms?: number | null;
             entity?: string | null;
             fields?: components["schemas"]["Field"][];
+            file?: components["schemas"]["PresentedFile"] | null;
             gone?: boolean;
             headline?: string | null;
             label?: string | null;
@@ -5893,6 +5894,15 @@ export interface components {
              */
             verified?: boolean | null;
             voice?: components["schemas"]["VoiceFacts"] | null;
+        };
+        /** @description A file an event carried, inlined as a data URL so any view can show or save it. */
+        PresentedFile: {
+            /** @description Whether a view may draw it as a picture. */
+            image?: boolean;
+            media_type: string;
+            /** @description A name safe to save under. */
+            name: string;
+            url: string;
         };
         PresetDevice: {
             channels: components["schemas"]["ChannelSettings"][];

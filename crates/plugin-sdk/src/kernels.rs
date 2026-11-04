@@ -5,6 +5,8 @@
 
 use num_complex::Complex;
 
+/// Host imports. Every call is sound: only plain values and buffers that live in this module's
+/// memory for the whole call cross the boundary.
 #[cfg(target_arch = "wasm32")]
 mod host {
     #[link(wasm_import_module = "sdrmm")]
@@ -65,7 +67,6 @@ impl Fir {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            // SAFETY: the host reads `taps` from this module's memory during the call only.
             let handle = unsafe {
                 host::fir_new(
                     host::address(taps),
@@ -89,7 +90,6 @@ impl Fir {
         #[cfg(target_arch = "wasm32")]
         {
             out.resize(input.len() / self.decimation + 1, Complex::new(0.0, 0.0));
-            // SAFETY: both buffers live in this module's memory for the whole call.
             let written = unsafe {
                 host::fir_process(
                     self.handle,
@@ -130,7 +130,6 @@ impl Fft {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            // SAFETY: plain values cross the boundary.
             let handle = unsafe { host::fft_new(host::len(len), u32::from(inverse)) };
             Ok(Self {
                 len,
@@ -165,7 +164,6 @@ impl Fft {
         }
         let buf = &mut buf[..self.len];
         #[cfg(target_arch = "wasm32")]
-        // SAFETY: `buf` lives in this module's memory for the whole call.
         unsafe {
             host::fft_run(self.handle, host::address(buf), host::len(buf.len()));
         }
@@ -191,7 +189,6 @@ impl Resampler {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            // SAFETY: a plain value crosses the boundary.
             let handle = unsafe { host::resampler_new(ratio) };
             Ok(Self {
                 handle: host::checked(handle, "resampler")?,
@@ -209,7 +206,6 @@ impl Resampler {
         {
             let cap = (input.len() as f64 * self.ratio).ceil() as usize + 16;
             out.resize(cap, Complex::new(0.0, 0.0));
-            // SAFETY: both buffers live in this module's memory for the whole call.
             let written = unsafe {
                 host::resampler_process(
                     self.handle,
@@ -229,7 +225,6 @@ impl Resampler {
 #[cfg(target_arch = "wasm32")]
 impl Drop for Fir {
     fn drop(&mut self) {
-        // SAFETY: a plain handle crosses the boundary.
         unsafe { host::kernel_drop(self.handle) }
     }
 }
@@ -237,7 +232,6 @@ impl Drop for Fir {
 #[cfg(target_arch = "wasm32")]
 impl Drop for Fft {
     fn drop(&mut self) {
-        // SAFETY: a plain handle crosses the boundary.
         unsafe { host::kernel_drop(self.handle) }
     }
 }
@@ -245,7 +239,6 @@ impl Drop for Fft {
 #[cfg(target_arch = "wasm32")]
 impl Drop for Resampler {
     fn drop(&mut self) {
-        // SAFETY: a plain handle crosses the boundary.
         unsafe { host::kernel_drop(self.handle) }
     }
 }
@@ -253,7 +246,6 @@ impl Drop for Resampler {
 /// Writes a line to the server log.
 pub fn log(message: &str) {
     #[cfg(target_arch = "wasm32")]
-    // SAFETY: the host reads `message` from this module's memory during the call only.
     unsafe {
         host::log(
             0,

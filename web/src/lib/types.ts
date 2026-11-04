@@ -203,6 +203,7 @@ export type NodeProblem = components["schemas"]["NodeProblem"];
 export type PortActivity = components["schemas"]["PortActivity"];
 export type EventAudio = components["schemas"]["EventAudio"];
 export type Presentation = components["schemas"]["Presentation"];
+export type PresentedFile = components["schemas"]["PresentedFile"];
 export type Field = components["schemas"]["Field"];
 export type KindView = components["schemas"]["KindView"];
 export type SortKey = components["schemas"]["SortKey"];

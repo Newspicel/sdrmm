@@ -8,6 +8,7 @@ import { groupsOf, type SinkGroup, type SinkView } from "../lib/sinks";
 import { toastError } from "../lib/toasts";
 import type { CapturedImage, EventKindEntry } from "../lib/types";
 import { Fields } from "./Fields";
+import { FileView } from "./FileView";
 import { KindViews, ViewTable } from "./KindViews";
 import { Pictures } from "./Pictures";
 import { tableRows } from "./viewData";
@@ -141,6 +142,7 @@ function LatestRecord({ group }: { group: SinkGroup }) {
     <div className={PANE}>
       <span className="text-sm text-ink">{latest.view.summary}</span>
       <Fields fields={latest.view.fields ?? []} />
+      {latest.view.file != null && <FileView file={latest.view.file} />}
     </div>
   );
 }

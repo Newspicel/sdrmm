@@ -170,6 +170,7 @@ mod tests {
 
     #[test]
     fn every_port_and_port_type_says_what_it_carries() {
+        sdrmm_channels::registry::init();
         let catalog = PatchCatalog::build();
         for info in &catalog.port_types {
             assert!(info.note.is_some(), "{} has no note", info.name);
@@ -188,6 +189,7 @@ mod tests {
 
     #[test]
     fn the_page_names_every_node_port_type_and_kind() {
+        sdrmm_channels::registry::init();
         let catalog = PatchCatalog::build();
         let page = page(&catalog);
         for node in &catalog.nodes {

@@ -233,18 +233,70 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "acars",
+              "adsb",
+              "ais",
+              "aprs",
+              "apt",
               "bearing_fix",
+              "ble",
+              "broadcast",
               "broadcast_data",
               "call",
+              "cw_skimmer",
+              "dect",
               "df",
               "df_fix",
+              "dsc",
               "dv",
+              "eot",
+              "ermes",
+              "flex",
+              "ft4",
+              "ft8",
+              "gnss",
+              "gsm",
+              "hfdl",
               "ident",
+              "ils",
+              "inmarsat_aero",
+              "inmarsat_stdc",
+              "iridium",
+              "ism",
+              "ism_survey",
+              "lora",
+              "lrpt",
+              "morse",
               "nav",
+              "navtex",
+              "noise_figure",
+              "per",
+              "pocsag",
+              "psk",
               "radar",
               "radar_sites",
+              "radio_clock",
+              "radiosonde",
+              "rds",
+              "remote_id",
+              "rtty",
+              "same",
+              "sarsat",
               "satellite",
-              "transmission"
+              "scrambler",
+              "selcall",
+              "sid",
+              "sstv",
+              "stanag",
+              "tetrapol",
+              "tone",
+              "transmission",
+              "vdl2",
+              "vor",
+              "wefax",
+              "wifi_occupancy",
+              "wmbus",
+              "wspr"
             ]
           },
           "multi": "many",
@@ -397,14 +449,29 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "acars",
+              "adsb",
+              "ais",
+              "aprs",
               "bearing_fix",
               "df",
               "df_fix",
+              "dsc",
               "dv",
+              "hfdl",
+              "inmarsat_aero",
+              "inmarsat_stdc",
+              "iridium",
+              "lora",
               "nav",
               "radar",
               "radar_sites",
-              "satellite"
+              "radiosonde",
+              "remote_id",
+              "sarsat",
+              "satellite",
+              "vdl2",
+              "vor"
             ]
           },
           "multi": "many",
@@ -502,7 +569,11 @@
           "direction": "in",
           "payload": {
             "type": "events",
-            "kinds": []
+            "kinds": [
+              "ft4",
+              "ft8",
+              "wspr"
+            ]
           },
           "multi": "many",
           "keeps": [
@@ -557,18 +628,70 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "acars",
+              "adsb",
+              "ais",
+              "aprs",
+              "apt",
               "bearing_fix",
+              "ble",
+              "broadcast",
               "broadcast_data",
               "call",
+              "cw_skimmer",
+              "dect",
               "df",
               "df_fix",
+              "dsc",
               "dv",
+              "eot",
+              "ermes",
+              "flex",
+              "ft4",
+              "ft8",
+              "gnss",
+              "gsm",
+              "hfdl",
               "ident",
+              "ils",
+              "inmarsat_aero",
+              "inmarsat_stdc",
+              "iridium",
+              "ism",
+              "ism_survey",
+              "lora",
+              "lrpt",
+              "morse",
               "nav",
+              "navtex",
+              "noise_figure",
+              "per",
+              "pocsag",
+              "psk",
               "radar",
               "radar_sites",
+              "radio_clock",
+              "radiosonde",
+              "rds",
+              "remote_id",
+              "rtty",
+              "same",
+              "sarsat",
               "satellite",
-              "transmission"
+              "scrambler",
+              "selcall",
+              "sid",
+              "sstv",
+              "stanag",
+              "tetrapol",
+              "tone",
+              "transmission",
+              "vdl2",
+              "vor",
+              "wefax",
+              "wifi_occupancy",
+              "wmbus",
+              "wspr"
             ]
           },
           "multi": "many"
@@ -605,15 +728,66 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "acars",
+              "adsb",
+              "ais",
+              "aprs",
+              "apt",
               "bearing_fix",
+              "ble",
               "broadcast_data",
               "call",
+              "cw_skimmer",
+              "dect",
               "df",
               "df_fix",
+              "dsc",
               "dv",
+              "eot",
+              "ermes",
+              "flex",
+              "ft4",
+              "ft8",
+              "gnss",
+              "gsm",
+              "hfdl",
               "ident",
+              "ils",
+              "inmarsat_aero",
+              "inmarsat_stdc",
+              "iridium",
+              "ism",
+              "ism_survey",
+              "lora",
+              "lrpt",
+              "morse",
+              "navtex",
+              "noise_figure",
+              "per",
+              "pocsag",
+              "psk",
               "radar",
-              "transmission"
+              "radio_clock",
+              "radiosonde",
+              "rds",
+              "remote_id",
+              "rtty",
+              "same",
+              "sarsat",
+              "scrambler",
+              "selcall",
+              "sid",
+              "sstv",
+              "stanag",
+              "tetrapol",
+              "tone",
+              "transmission",
+              "vdl2",
+              "vor",
+              "wefax",
+              "wifi_occupancy",
+              "wmbus",
+              "wspr"
             ]
           },
           "multi": "many",
@@ -621,7 +795,7 @@
             "history",
             "clips"
           ],
-          "takes": "Bearing fix, Broadcast data, Call, Bearing, Fix, Digital voice, Signal ID, Radar, Transmission"
+          "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
         }
       ],
       "needs_channel_type": false,
@@ -665,18 +839,70 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "acars",
+              "adsb",
+              "ais",
+              "aprs",
+              "apt",
               "bearing_fix",
+              "ble",
+              "broadcast",
               "broadcast_data",
               "call",
+              "cw_skimmer",
+              "dect",
               "df",
               "df_fix",
+              "dsc",
               "dv",
+              "eot",
+              "ermes",
+              "flex",
+              "ft4",
+              "ft8",
+              "gnss",
+              "gsm",
+              "hfdl",
               "ident",
+              "ils",
+              "inmarsat_aero",
+              "inmarsat_stdc",
+              "iridium",
+              "ism",
+              "ism_survey",
+              "lora",
+              "lrpt",
+              "morse",
               "nav",
+              "navtex",
+              "noise_figure",
+              "per",
+              "pocsag",
+              "psk",
               "radar",
               "radar_sites",
+              "radio_clock",
+              "radiosonde",
+              "rds",
+              "remote_id",
+              "rtty",
+              "same",
+              "sarsat",
               "satellite",
-              "transmission"
+              "scrambler",
+              "selcall",
+              "sid",
+              "sstv",
+              "stanag",
+              "tetrapol",
+              "tone",
+              "transmission",
+              "vdl2",
+              "vor",
+              "wefax",
+              "wifi_occupancy",
+              "wmbus",
+              "wspr"
             ]
           },
           "multi": "many"
@@ -784,18 +1010,70 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "acars",
+              "adsb",
+              "ais",
+              "aprs",
+              "apt",
               "bearing_fix",
+              "ble",
+              "broadcast",
               "broadcast_data",
               "call",
+              "cw_skimmer",
+              "dect",
               "df",
               "df_fix",
+              "dsc",
               "dv",
+              "eot",
+              "ermes",
+              "flex",
+              "ft4",
+              "ft8",
+              "gnss",
+              "gsm",
+              "hfdl",
               "ident",
+              "ils",
+              "inmarsat_aero",
+              "inmarsat_stdc",
+              "iridium",
+              "ism",
+              "ism_survey",
+              "lora",
+              "lrpt",
+              "morse",
               "nav",
+              "navtex",
+              "noise_figure",
+              "per",
+              "pocsag",
+              "psk",
               "radar",
               "radar_sites",
+              "radio_clock",
+              "radiosonde",
+              "rds",
+              "remote_id",
+              "rtty",
+              "same",
+              "sarsat",
               "satellite",
-              "transmission"
+              "scrambler",
+              "selcall",
+              "sid",
+              "sstv",
+              "stanag",
+              "tetrapol",
+              "tone",
+              "transmission",
+              "vdl2",
+              "vor",
+              "wefax",
+              "wifi_occupancy",
+              "wmbus",
+              "wspr"
             ]
           },
           "multi": "many"
@@ -807,18 +1085,70 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "acars",
+              "adsb",
+              "ais",
+              "aprs",
+              "apt",
               "bearing_fix",
+              "ble",
+              "broadcast",
               "broadcast_data",
               "call",
+              "cw_skimmer",
+              "dect",
               "df",
               "df_fix",
+              "dsc",
               "dv",
+              "eot",
+              "ermes",
+              "flex",
+              "ft4",
+              "ft8",
+              "gnss",
+              "gsm",
+              "hfdl",
               "ident",
+              "ils",
+              "inmarsat_aero",
+              "inmarsat_stdc",
+              "iridium",
+              "ism",
+              "ism_survey",
+              "lora",
+              "lrpt",
+              "morse",
               "nav",
+              "navtex",
+              "noise_figure",
+              "per",
+              "pocsag",
+              "psk",
               "radar",
               "radar_sites",
+              "radio_clock",
+              "radiosonde",
+              "rds",
+              "remote_id",
+              "rtty",
+              "same",
+              "sarsat",
               "satellite",
-              "transmission"
+              "scrambler",
+              "selcall",
+              "sid",
+              "sstv",
+              "stanag",
+              "tetrapol",
+              "tone",
+              "transmission",
+              "vdl2",
+              "vor",
+              "wefax",
+              "wifi_occupancy",
+              "wmbus",
+              "wspr"
             ]
           },
           "multi": "many"
@@ -919,19 +1249,70 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "acars",
+              "adsb",
+              "ais",
+              "aprs",
+              "apt",
               "bearing_fix",
+              "ble",
               "broadcast_data",
               "call",
+              "cw_skimmer",
+              "dect",
               "df",
               "df_fix",
+              "dsc",
               "dv",
+              "eot",
+              "ermes",
+              "flex",
+              "ft4",
+              "ft8",
+              "gnss",
+              "gsm",
+              "hfdl",
               "ident",
+              "ils",
+              "inmarsat_aero",
+              "inmarsat_stdc",
+              "iridium",
+              "ism",
+              "ism_survey",
+              "lora",
+              "lrpt",
+              "morse",
+              "navtex",
+              "noise_figure",
+              "per",
+              "pocsag",
+              "psk",
               "radar",
-              "transmission"
+              "radio_clock",
+              "radiosonde",
+              "rds",
+              "remote_id",
+              "rtty",
+              "same",
+              "sarsat",
+              "scrambler",
+              "selcall",
+              "sid",
+              "sstv",
+              "stanag",
+              "tetrapol",
+              "tone",
+              "transmission",
+              "vdl2",
+              "vor",
+              "wefax",
+              "wifi_occupancy",
+              "wmbus",
+              "wspr"
             ]
           },
           "multi": "many",
-          "takes": "Bearing fix, Broadcast data, Call, Bearing, Fix, Digital voice, Signal ID, Radar, Transmission"
+          "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
         }
       ],
       "needs_channel_type": false,
@@ -1208,22 +1589,73 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "acars",
+              "adsb",
+              "ais",
+              "aprs",
+              "apt",
               "bearing_fix",
+              "ble",
               "broadcast_data",
               "call",
+              "cw_skimmer",
+              "dect",
               "df",
               "df_fix",
+              "dsc",
               "dv",
+              "eot",
+              "ermes",
+              "flex",
+              "ft4",
+              "ft8",
+              "gnss",
+              "gsm",
+              "hfdl",
               "ident",
+              "ils",
+              "inmarsat_aero",
+              "inmarsat_stdc",
+              "iridium",
+              "ism",
+              "ism_survey",
+              "lora",
+              "lrpt",
+              "morse",
+              "navtex",
+              "noise_figure",
+              "per",
+              "pocsag",
+              "psk",
               "radar",
-              "transmission"
+              "radio_clock",
+              "radiosonde",
+              "rds",
+              "remote_id",
+              "rtty",
+              "same",
+              "sarsat",
+              "scrambler",
+              "selcall",
+              "sid",
+              "sstv",
+              "stanag",
+              "tetrapol",
+              "tone",
+              "transmission",
+              "vdl2",
+              "vor",
+              "wefax",
+              "wifi_occupancy",
+              "wmbus",
+              "wspr"
             ]
           },
           "multi": "many",
           "keeps": [
             "history"
           ],
-          "takes": "Bearing fix, Broadcast data, Call, Bearing, Fix, Digital voice, Signal ID, Radar, Transmission"
+          "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
         }
       ],
       "needs_channel_type": false,
@@ -2665,7 +3097,9 @@
           "direction": "in",
           "payload": {
             "type": "events",
-            "kinds": []
+            "kinds": [
+              "adsb"
+            ]
           },
           "multi": "many",
           "takes": "tracks",
@@ -4326,18 +4760,70 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "acars",
+              "adsb",
+              "ais",
+              "aprs",
+              "apt",
               "bearing_fix",
+              "ble",
+              "broadcast",
               "broadcast_data",
               "call",
+              "cw_skimmer",
+              "dect",
               "df",
               "df_fix",
+              "dsc",
               "dv",
+              "eot",
+              "ermes",
+              "flex",
+              "ft4",
+              "ft8",
+              "gnss",
+              "gsm",
+              "hfdl",
               "ident",
+              "ils",
+              "inmarsat_aero",
+              "inmarsat_stdc",
+              "iridium",
+              "ism",
+              "ism_survey",
+              "lora",
+              "lrpt",
+              "morse",
               "nav",
+              "navtex",
+              "noise_figure",
+              "per",
+              "pocsag",
+              "psk",
               "radar",
               "radar_sites",
+              "radio_clock",
+              "radiosonde",
+              "rds",
+              "remote_id",
+              "rtty",
+              "same",
+              "sarsat",
               "satellite",
-              "transmission"
+              "scrambler",
+              "selcall",
+              "sid",
+              "sstv",
+              "stanag",
+              "tetrapol",
+              "tone",
+              "transmission",
+              "vdl2",
+              "vor",
+              "wefax",
+              "wifi_occupancy",
+              "wmbus",
+              "wspr"
             ]
           },
           "multi": "many"
@@ -4578,7 +5064,8 @@
           "payload": {
             "type": "events",
             "kinds": [
-              "df"
+              "df",
+              "vor"
             ]
           },
           "multi": "many",
@@ -4690,6 +5177,157 @@
   ],
   "event_kinds": [
     {
+      "kind": "acars",
+      "name": "ACARS",
+      "noun": "Aircraft",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "plane",
+      "hue": "teal",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "adsb",
+      "name": "ADS-B",
+      "noun": "Aircraft",
+      "caps": [
+        "log",
+        "station",
+        "geo",
+        "track"
+      ],
+      "symbol": "plane",
+      "hue": "teal",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "table",
+          "columns": [
+            "icao",
+            "callsign",
+            "altitude",
+            "speed",
+            "track",
+            "climb",
+            "squawk",
+            "position"
+          ],
+          "sort": {
+            "field": "altitude",
+            "descending": true
+          },
+          "key": "icao"
+        }
+      ]
+    },
+    {
+      "kind": "ais",
+      "name": "AIS",
+      "noun": "Vessels",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "ship",
+      "hue": "amber",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "table",
+          "columns": [
+            "mmsi",
+            "name",
+            "call_sign",
+            "sog",
+            "cog",
+            "heading",
+            "destination",
+            "position"
+          ],
+          "sort": {
+            "field": "name",
+            "descending": false
+          },
+          "key": "mmsi"
+        }
+      ]
+    },
+    {
+      "kind": "aprs",
+      "name": "APRS",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "station",
+      "hue": "violet",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "table",
+          "columns": [
+            "source",
+            "symbol",
+            "position",
+            "speed",
+            "altitude",
+            "temperature",
+            "wind",
+            "gust",
+            "humidity",
+            "pressure",
+            "rain_1_h"
+          ],
+          "sort": {
+            "field": "source",
+            "descending": false
+          },
+          "key": "source"
+        }
+      ]
+    },
+    {
+      "kind": "apt",
+      "name": "NOAA APT",
+      "noun": "Pictures",
+      "caps": [
+        "log",
+        "picture"
+      ],
+      "hue": "orange",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "picture"
+        }
+      ]
+    },
+    {
       "kind": "bearing_fix",
       "name": "Bearing fix",
       "noun": "Fixes",
@@ -4703,6 +5341,51 @@
       "lifetime": {
         "type": "sighting",
         "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "ble",
+      "name": "BLE",
+      "noun": "Devices",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "table",
+          "columns": [
+            "address",
+            "name",
+            "vendor",
+            "beacon",
+            "channel",
+            "level",
+            "repeats"
+          ],
+          "sort": {
+            "field": "level",
+            "descending": true
+          },
+          "key": "address"
+        }
+      ]
+    },
+    {
+      "kind": "broadcast",
+      "name": "Broadcast",
+      "noun": "Services",
+      "caps": [],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
       },
       "verifies": true
     },
@@ -4736,6 +5419,72 @@
         "ttl_s": 300
       },
       "verifies": true
+    },
+    {
+      "kind": "cw_skimmer",
+      "name": "CW skimmer",
+      "noun": "CW spots",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "table",
+          "columns": [
+            "signal",
+            "speed",
+            "snr",
+            "text"
+          ],
+          "sort": {
+            "field": "signal",
+            "descending": false
+          },
+          "key": "signal"
+        }
+      ]
+    },
+    {
+      "kind": "dect",
+      "name": "DECT",
+      "noun": "Base stations",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "table",
+          "columns": [
+            "rfpi",
+            "access_class",
+            "carrier",
+            "slot_pair",
+            "authentication",
+            "encryption",
+            "handsets",
+            "voice",
+            "level",
+            "bursts"
+          ],
+          "sort": {
+            "field": "carrier",
+            "descending": false
+          },
+          "key": "rfpi"
+        }
+      ]
     },
     {
       "kind": "df",
@@ -4773,6 +5522,23 @@
       "verifies": true
     },
     {
+      "kind": "dsc",
+      "name": "DSC",
+      "noun": "Vessels",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "ship",
+      "hue": "amber",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
       "kind": "dv",
       "name": "Digital voice",
       "noun": "Radios",
@@ -4784,6 +5550,150 @@
       ],
       "symbol": "person",
       "hue": "blue",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "eot",
+      "name": "End-of-Train",
+      "noun": "Trains",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "ermes",
+      "name": "ERMES",
+      "noun": "Pagers",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "flex",
+      "name": "FLEX",
+      "noun": "Pagers",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "ft4",
+      "name": "FT4",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station",
+        "spot"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "ft8",
+      "name": "FT8",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station",
+        "spot"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "gnss",
+      "name": "GNSS lab",
+      "noun": "Satellites",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "gsm",
+      "name": "GSM",
+      "noun": "Cells",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "table",
+          "columns": [
+            "cell",
+            "band",
+            "arfcn",
+            "bsic",
+            "ccch",
+            "neighbours",
+            "offset",
+            "snr"
+          ],
+          "sort": {
+            "field": "arfcn",
+            "descending": false
+          },
+          "key": "cell"
+        }
+      ]
+    },
+    {
+      "kind": "hfdl",
+      "name": "HFDL",
+      "noun": "Aircraft",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "plane",
+      "hue": "teal",
       "lifetime": {
         "type": "sighting",
         "ttl_s": 300
@@ -4804,6 +5714,177 @@
       "verifies": true
     },
     {
+      "kind": "ils",
+      "name": "ILS",
+      "noun": "ILS",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "allocated": true
+    },
+    {
+      "kind": "inmarsat_aero",
+      "name": "Inmarsat Aero",
+      "noun": "Aircraft",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "plane",
+      "hue": "teal",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "inmarsat_stdc",
+      "name": "Inmarsat STD-C",
+      "noun": "Vessels",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "ship",
+      "hue": "amber",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "iridium",
+      "name": "Iridium",
+      "noun": "Bursts",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "dot",
+      "hue": "blue",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "ism",
+      "name": "ISM sensor",
+      "noun": "Sensors",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "ism_survey",
+      "name": "2.4 GHz",
+      "noun": "2.4 GHz",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "meter",
+          "field": "busy",
+          "min": 0.0,
+          "max": 100.0
+        },
+        {
+          "type": "trend",
+          "fields": [
+            "busy"
+          ],
+          "window_s": 600
+        }
+      ]
+    },
+    {
+      "kind": "lora",
+      "name": "LoRa",
+      "noun": "Nodes",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "node",
+      "hue": "green",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "table",
+          "columns": [
+            "protocol",
+            "sf",
+            "snr",
+            "frequency_error",
+            "integrity",
+            "position"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "lrpt",
+      "name": "Meteor LRPT",
+      "noun": "Pictures",
+      "caps": [
+        "log",
+        "picture"
+      ],
+      "hue": "orange",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "picture"
+        }
+      ]
+    },
+    {
+      "kind": "morse",
+      "name": "Morse",
+      "noun": "Morse",
+      "caps": [
+        "log",
+        "text"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": false
+    },
+    {
       "kind": "nav",
       "name": "Guidance",
       "noun": "Targets",
@@ -4817,6 +5898,101 @@
         "type": "standing"
       },
       "verifies": true
+    },
+    {
+      "kind": "navtex",
+      "name": "NAVTEX",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "noise_figure",
+      "name": "Noise figure",
+      "noun": "Noise figure",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "trend",
+          "fields": [
+            "noise_figure",
+            "y_factor"
+          ],
+          "window_s": 600
+        }
+      ]
+    },
+    {
+      "kind": "per",
+      "name": "PER",
+      "noun": "PER",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "meter",
+          "field": "per",
+          "min": 0.0,
+          "max": 100.0
+        },
+        {
+          "type": "trend",
+          "fields": [
+            "per"
+          ],
+          "window_s": 600
+        }
+      ]
+    },
+    {
+      "kind": "pocsag",
+      "name": "POCSAG",
+      "noun": "Pagers",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "psk",
+      "name": "PSK",
+      "noun": "PSK",
+      "caps": [
+        "log",
+        "text"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": false
     },
     {
       "kind": "radar",
@@ -4851,6 +6027,146 @@
       "verifies": true
     },
     {
+      "kind": "radio_clock",
+      "name": "Radio clock",
+      "noun": "Clocks",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "radiosonde",
+      "name": "Radiosonde",
+      "noun": "Sondes",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "balloon",
+      "hue": "orange",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "rds",
+      "name": "RDS",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "table",
+          "columns": [
+            "pi",
+            "station",
+            "programme",
+            "radiotext",
+            "traffic",
+            "announcement",
+            "block_errors"
+          ],
+          "key": "pi"
+        }
+      ]
+    },
+    {
+      "kind": "remote_id",
+      "name": "Remote ID",
+      "noun": "Drones",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "drone",
+      "hue": "cyan",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "table",
+          "columns": [
+            "uas_id",
+            "type",
+            "height",
+            "speed",
+            "pilot_distance",
+            "operator",
+            "link",
+            "level"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "rtty",
+      "name": "RTTY",
+      "noun": "RTTY",
+      "caps": [
+        "log",
+        "text"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": false
+    },
+    {
+      "kind": "same",
+      "name": "SAME",
+      "noun": "Alerts",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "orange",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "sarsat",
+      "name": "406 MHz beacon",
+      "noun": "Beacons",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "beacon",
+      "hue": "pink",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
       "kind": "satellite",
       "name": "Satellite",
       "noun": "Satellites",
@@ -4862,6 +6178,153 @@
       "hue": "pink",
       "lifetime": {
         "type": "standing"
+      },
+      "verifies": true
+    },
+    {
+      "kind": "scrambler",
+      "name": "Scrambler",
+      "noun": "Scramblers",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true
+    },
+    {
+      "kind": "selcall",
+      "name": "Selcall",
+      "noun": "Selcall",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true
+    },
+    {
+      "kind": "sid",
+      "name": "SID",
+      "noun": "SID",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "trend",
+          "fields": [
+            "jxn_16400_level",
+            "hwu_18300_level",
+            "gqd_19580_level",
+            "nwc_19800_level",
+            "icv_20270_level",
+            "npm_21400_level",
+            "hwu_21750_level",
+            "gqz_22100_level",
+            "jji_22200_level",
+            "dho38_23400_level",
+            "naa_24000_level",
+            "nlk_24800_level",
+            "nml_25200_level",
+            "tbb_26700_level",
+            "nrk_37500_level",
+            "nau_40750_level",
+            "nsy_45900_level"
+          ],
+          "window_s": 3600
+        },
+        {
+          "type": "trend",
+          "fields": [
+            "jxn_16400_deviation",
+            "hwu_18300_deviation",
+            "gqd_19580_deviation",
+            "nwc_19800_deviation",
+            "icv_20270_deviation",
+            "npm_21400_deviation",
+            "hwu_21750_deviation",
+            "gqz_22100_deviation",
+            "jji_22200_deviation",
+            "dho38_23400_deviation",
+            "naa_24000_deviation",
+            "nlk_24800_deviation",
+            "nml_25200_deviation",
+            "tbb_26700_deviation",
+            "nrk_37500_deviation",
+            "nau_40750_deviation",
+            "nsy_45900_deviation"
+          ],
+          "window_s": 3600
+        }
+      ]
+    },
+    {
+      "kind": "sstv",
+      "name": "SSTV",
+      "noun": "Pictures",
+      "caps": [
+        "log",
+        "picture"
+      ],
+      "hue": "orange",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "picture"
+        }
+      ]
+    },
+    {
+      "kind": "stanag",
+      "name": "STANAG",
+      "noun": "STANAG",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true
+    },
+    {
+      "kind": "tetrapol",
+      "name": "Tetrapol",
+      "noun": "Radios",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "tone",
+      "name": "Tone",
+      "noun": "Tones",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
       },
       "verifies": true
     },
@@ -4879,8 +6342,115 @@
         "type": "instant"
       },
       "verifies": true
+    },
+    {
+      "kind": "vdl2",
+      "name": "VDL Mode 2",
+      "noun": "Aircraft",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "plane",
+      "hue": "teal",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "vor",
+      "name": "VOR",
+      "noun": "Beacons",
+      "caps": [
+        "log",
+        "station",
+        "geo",
+        "bearing"
+      ],
+      "symbol": "beacon",
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "wefax",
+      "name": "WEFAX",
+      "noun": "Pictures",
+      "caps": [
+        "log",
+        "picture"
+      ],
+      "hue": "orange",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "picture"
+        }
+      ]
+    },
+    {
+      "kind": "wifi_occupancy",
+      "name": "Wi-Fi load",
+      "noun": "Wi-Fi load",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true
+    },
+    {
+      "kind": "wmbus",
+      "name": "wM-Bus",
+      "noun": "Meters",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "wspr",
+      "name": "WSPR",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station",
+        "spot"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
     }
   ],
-  "feeds": [],
+  "feeds": [
+    {
+      "format": "beast",
+      "name": "Beast",
+      "default_address": "127.0.0.1:30005",
+      "kinds": [
+        "adsb"
+      ]
+    }
+  ],
   "processors": []
 }

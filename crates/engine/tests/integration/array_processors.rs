@@ -159,7 +159,10 @@ fn a_time_only_processor_runs_before_phase_is_solved() {
         .unwrap();
     let running = wait_status(&bench.engine, "the radar to run", LOCK_WAIT, |now| {
         let radar = processor_status(now, "radar");
-        now.sync == sdrmm_wire::SyncState::Locked && radar.running && radar.gated.is_none()
+        now.sync == sdrmm_wire::SyncState::Locked
+            && radar.running
+            && radar.gated.is_none()
+            && processor_status(now, "df").gated != Some(ProcessorGate::Sync)
     });
     assert!(!running.phase_ready);
     assert_eq!(

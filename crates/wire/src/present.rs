@@ -8,8 +8,11 @@ use crate::{
 };
 
 mod broadcast;
+mod file;
 mod ident;
 mod voice;
+
+pub use file::PresentedFile;
 
 const FEET_TO_METRES: f64 = 0.3048;
 const KNOTS_TO_KILOMETRES_PER_HOUR: f64 = 1.852;
@@ -49,6 +52,8 @@ pub struct Presentation {
     pub duration_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<PresentedFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clip: Option<EventAudio>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

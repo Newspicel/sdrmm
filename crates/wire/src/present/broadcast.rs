@@ -1,4 +1,4 @@
-use super::{EventPayload, Presentation, count, fields, text};
+use super::{EventPayload, Presentation, PresentedFile, count, fields, text};
 use crate::decode::{BroadcastData, EventKind};
 
 const PLAIN_TEXT: &str = "text/plain";
@@ -13,6 +13,11 @@ impl EventPayload for BroadcastData {
                 ("bytes", "Bytes", count(Some(self.bytes.len() as f64))),
                 ("text", "Text", text(body.as_deref())),
             ]),
+            file: Some(PresentedFile::inline(
+                &self.name,
+                &self.media_type,
+                &self.bytes,
+            )),
             ..Presentation::of(format!("{} · {} bytes", self.name, self.bytes.len()))
         }
     }

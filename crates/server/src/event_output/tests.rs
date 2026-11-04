@@ -86,6 +86,7 @@ fn call() -> VoiceCall {
 }
 
 fn call_record() -> DecodedRecord {
+    sdrmm_channels::registry::init();
     DecodedRecord {
         origin: None,
         sinks: Vec::new(),
@@ -130,6 +131,7 @@ fn stem_of(call: VoiceCall) -> String {
 }
 
 fn decoded() -> DecodedRecord {
+    sdrmm_channels::registry::init();
     DecodedRecord {
         origin: None,
         sinks: vec!["matched".to_owned()],

@@ -18,7 +18,10 @@ pub const ARRAY_EXPORTS: &str = r#"(func (export "sdrmm_array_open") (param i32 
 
 /// A plugin answering every control call with an empty object, written where tests may write.
 pub fn wat_plugin(name: &str, abi: u32, manifest: &str, process: &str, extra: &str) -> PathBuf {
-    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("{name}.wat"));
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    std::fs::create_dir_all(&dir)
+        .unwrap_or_else(|error| panic!("create {}: {error}", dir.display()));
+    let path = dir.join(format!("{name}.wat"));
     std::fs::write(&path, wat_text(abi, manifest, process, extra))
         .unwrap_or_else(|error| panic!("write module: {error}"));
     path

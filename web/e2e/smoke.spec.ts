@@ -225,7 +225,7 @@ test.describe("the workspace", () => {
         const state: StateSnapshot = await page.request.get("/api/state").then((r) => r.json());
         return state.device_sets[0]?.channels.map((c) => c.settings.params.type) ?? [];
       })
-      .toEqual(["wfm"]);
+      .toEqual(["am"]);
     await expect(channel).toHaveCount(1);
     await expect(channel.getByRole("slider", { name: /squelch threshold/i })).toBeVisible();
 

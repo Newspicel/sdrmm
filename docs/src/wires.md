@@ -20,18 +20,70 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 
 | Kind | Name | Shows as | Facts |
 |---|---|---|---|
+| `acars` | ACARS | Aircraft | log, station, geo |
+| `adsb` | ADS-B | Aircraft | log, station, geo, track |
+| `ais` | AIS | Vessels | log, station, geo |
+| `aprs` | APRS | Stations | log, station, geo |
+| `apt` | NOAA APT | Pictures | log, picture |
 | `bearing_fix` | Bearing fix | Fixes | log, station, geo |
+| `ble` | BLE | Devices | log, station |
+| `broadcast` | Broadcast | Services |  |
 | `broadcast_data` | Broadcast data | Services | log |
 | `call` | Call | Calls | log, station, voice, duration, clip |
+| `cw_skimmer` | CW skimmer | CW spots | log |
+| `dect` | DECT | Base stations | log, station |
 | `df` | Bearing | Bearings | log, station, geo, bearing |
 | `df_fix` | Fix | Fixes | log, station, geo |
+| `dsc` | DSC | Vessels | log, station, geo |
 | `dv` | Digital voice | Radios | log, station, geo, voice |
+| `eot` | End-of-Train | Trains | log, station |
+| `ermes` | ERMES | Pagers | log, station |
+| `flex` | FLEX | Pagers | log, station |
+| `ft4` | FT4 | Stations | log, station, spot |
+| `ft8` | FT8 | Stations | log, station, spot |
+| `gnss` | GNSS lab | Satellites | log, station |
+| `gsm` | GSM | Cells | log, station |
+| `hfdl` | HFDL | Aircraft | log, station, geo |
 | `ident` | Signal ID | Signals | log |
+| `ils` | ILS | ILS | log |
+| `inmarsat_aero` | Inmarsat Aero | Aircraft | log, station, geo |
+| `inmarsat_stdc` | Inmarsat STD-C | Vessels | log, station, geo |
+| `iridium` | Iridium | Bursts | log, station, geo |
+| `ism` | ISM sensor | Sensors | log, station |
+| `ism_survey` | 2.4 GHz | 2.4 GHz | log |
+| `lora` | LoRa | Nodes | log, station, geo |
+| `lrpt` | Meteor LRPT | Pictures | log, picture |
+| `morse` | Morse | Morse | log, text |
 | `nav` | Guidance | Targets | station, geo |
+| `navtex` | NAVTEX | Stations | log, station |
+| `noise_figure` | Noise figure | Noise figure | log |
+| `per` | PER | PER | log |
+| `pocsag` | POCSAG | Pagers | log, station |
+| `psk` | PSK | PSK | log, text |
 | `radar` | Radar | Tracks | log, station, geo |
 | `radar_sites` | Radar sites | Sites | station, geo |
+| `radio_clock` | Radio clock | Clocks | log, station |
+| `radiosonde` | Radiosonde | Sondes | log, station, geo |
+| `rds` | RDS | Stations | log, station |
+| `remote_id` | Remote ID | Drones | log, station, geo |
+| `rtty` | RTTY | RTTY | log, text |
+| `same` | SAME | Alerts | log, station |
+| `sarsat` | 406 MHz beacon | Beacons | log, station, geo |
 | `satellite` | Satellite | Satellites | station, geo |
+| `scrambler` | Scrambler | Scramblers | log |
+| `selcall` | Selcall | Selcall | log |
+| `sid` | SID | SID | log |
+| `sstv` | SSTV | Pictures | log, picture |
+| `stanag` | STANAG | STANAG | log |
+| `tetrapol` | Tetrapol | Radios | log, station |
+| `tone` | Tone | Tones | log |
 | `transmission` | Transmission | Transmissions | log, duration, clip |
+| `vdl2` | VDL Mode 2 | Aircraft | log, station, geo |
+| `vor` | VOR | Beacons | log, station, geo, bearing |
+| `wefax` | WEFAX | Pictures | log, picture |
+| `wifi_occupancy` | Wi-Fi load | Wi-Fi load | log |
+| `wmbus` | wM-Bus | Meters | log, station |
+| `wspr` | WSPR | Stations | log, station, spot |
 
 ## Sources
 
@@ -67,7 +119,7 @@ Ports follow the decoder the node runs.
 | `position` | in | Position | A live fix and the heading it comes with | one |
 | `baseband` | out | Baseband | One channel, filtered and decimated | many |
 | `audio` | out | Audio | Live audio | many |
-| `events` | out | Events | 12 kinds | many. Decoded messages and calls. Analog calls need squelch |
+| `events` | out | Events | any kind | many. Decoded messages and calls. Analog calls need squelch |
 | `video` | out | Video | Decoded video frames and pictures | many |
 
 ## Tools
@@ -89,7 +141,7 @@ Catches and decodes everything in view
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one |
-| `events` | out | Events | 12 kinds | many |
+| `events` | out | Events | any kind | many |
 
 ### Trunk system
 
@@ -107,8 +159,8 @@ Passes only matching events
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 12 kinds | many |
-| `events` | out | Events | 12 kinds | many |
+| `events` | in | Events | any kind | many |
+| `events` | out | Events | any kind | many |
 
 ### Audio FX
 
@@ -185,7 +237,7 @@ Aircraft echoes of FM, DAB or DVB-T
 |---|---|---|---|---|
 | `array` | in | Array | One lane per antenna element | one |
 | `tx` | in | Position | A live fix and the heading it comes with | one. GPS node fixed at the transmitter |
-| `truth` | in | Events |  | many. Tracks with altitude used as truth |
+| `truth` | in | Events | ADS-B | many. Tracks with altitude used as truth |
 | `events` | out | Events | Radar, Radar sites | many. Track events |
 
 ### Stitch
@@ -229,7 +281,7 @@ An array processor from a plugin
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `array` | in | Array | One lane per antenna element | one |
-| `events` | out | Events | 12 kinds | many |
+| `events` | out | Events | any kind | many |
 
 ### Triangulation
 
@@ -247,7 +299,7 @@ Live fix from each station's newest bearing
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | Bearing | many. Bearings with a known origin |
+| `events` | in | Events | Bearing, VOR | many. Bearings with a known origin |
 | `events` | out | Events | Bearing fix | many |
 
 ### Note
@@ -286,7 +338,7 @@ Decoded positions on a map
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 8 kinds | many |
+| `events` | in | Events | 23 kinds | many |
 | `position` | in | Position | A live fix and the heading it comes with | many |
 
 ### Signal survey
@@ -304,7 +356,7 @@ Where FT8, FT4 and WSPR signals came from
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events |  | many, keeps history |
+| `events` | in | Events | FT4, FT8, WSPR | many, keeps history |
 | `position` | in | Position | A live fix and the heading it comes with | one |
 
 ### Readout
@@ -313,7 +365,7 @@ Current decoder state
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 12 kinds | many |
+| `events` | in | Events | any kind | many |
 
 ### Decoder log
 
@@ -321,7 +373,7 @@ Every decoded message in a table
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 9 kinds | many, keeps history, clips |
+| `events` | in | Events | 60 kinds | many, keeps history, clips |
 
 ### Event output
 
@@ -329,7 +381,7 @@ Sends events out, saves call audio
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 9 kinds | many |
+| `events` | in | Events | 60 kinds | many |
 
 ### Video
 
@@ -382,7 +434,7 @@ Saves logged rows as CSV or JSON
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 9 kinds | many, keeps history |
+| `events` | in | Events | 60 kinds | many, keeps history |
 
 ### Rotator
 

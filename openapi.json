@@ -20677,6 +20677,16 @@
               "$ref": "#/components/schemas/Field"
             }
           },
+          "file": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PresentedFile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "gone": {
             "type": "boolean"
           },
@@ -20753,6 +20763,31 @@
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      "PresentedFile": {
+        "type": "object",
+        "description": "A file an event carried, inlined as a data URL so any view can show or save it.",
+        "required": [
+          "name",
+          "media_type",
+          "url"
+        ],
+        "properties": {
+          "image": {
+            "type": "boolean",
+            "description": "Whether a view may draw it as a picture."
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "description": "A name safe to save under."
+          },
+          "url": {
+            "type": "string"
           }
         }
       },

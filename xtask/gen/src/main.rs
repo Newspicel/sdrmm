@@ -88,6 +88,7 @@ const OPENAPI: &str = "openapi.json";
 /// them and a test holds the committed copies to them, so drift fails the test run rather than
 /// a gate that would have to build the server just to look.
 fn generated(root: &Path) -> Result<Vec<(&'static str, String)>> {
+    sdrmm_channels::registry::init();
     let catalog = sdrmm_wire::PatchCatalog::build();
     let spec = sdrmm_server::openapi()
         .to_pretty_json()

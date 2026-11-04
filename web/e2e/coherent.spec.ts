@@ -197,7 +197,7 @@ test("crosses bearings from two places and clears them", async ({ page }) => {
 
   await deleteWire(page, edgeKey(["finder", "events"], ["tri", "events"]));
   await tri.getByRole("button", { name: "Clear" }).click();
-  await expect(readout(tri, "Estimate")).toHaveText("-");
+  await expect(readout(tri, "Estimate")).toHaveCount(0);
   await expect(readout(tri, "Bearings")).toHaveText("0");
 });
 

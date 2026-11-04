@@ -120,7 +120,16 @@ fn field(message: &serde_json::Value, name: &str) -> String {
         .to_string()
 }
 
+/// Plays SDRconnect on one connection. Whatever the client sent before the connection went away
+/// still counts as heard, so a stop raced by a failed IQ write is not lost.
 fn serve(peer: &WebSocketPeer, behaviour: Behaviour, nth: usize, observed: &Observed) {
+    exchange(peer, behaviour, nth, observed);
+    while let Some(text) = peer.next_message(Duration::from_millis(50)) {
+        lock(observed).entry(nth).or_default().push(text);
+    }
+}
+
+fn exchange(peer: &WebSocketPeer, behaviour: Behaviour, nth: usize, observed: &Observed) {
     let mut values = properties(behaviour);
     let mut streaming = false;
     let started = Instant::now();

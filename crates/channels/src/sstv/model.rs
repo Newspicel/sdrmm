@@ -205,6 +205,7 @@ mod model_tests {
 
     #[test]
     fn an_sstv_picture_summarises_its_mode_size_and_outcome() {
+        crate::registry::init();
         let complete = DecoderEvent::of(&SstvPicture {
             seq: 1,
             mode: SstvMode::MartinM1,
