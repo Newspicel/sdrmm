@@ -11817,6 +11817,14 @@
                 "type": "null"
               }
             ]
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
           }
         }
       },

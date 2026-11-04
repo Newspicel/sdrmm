@@ -399,6 +399,8 @@ impl Default for HuntNode {
 pub struct DecoderLogNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<crate::LogGroupKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]

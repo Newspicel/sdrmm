@@ -216,11 +216,7 @@ describe("list entries", () => {
       { type: "text" },
       { label: "Address", when: [{ key: "kind", any_of: ["session"] }] },
     ),
-    field(
-      "key",
-      { type: "text", secret: true },
-      { when: [{ key: "kind", any_of: ["session"] }] },
-    ),
+    field("key", { type: "text", secret: true }, { when: [{ key: "kind", any_of: ["session"] }] }),
   ];
 
   it("start from the fallbacks they show", () => {

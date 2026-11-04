@@ -61,13 +61,18 @@ export function DecoderLogPanel({
   wires,
   group,
   onGroup,
+  limit,
+  onLimit,
 }: {
   wires: WireScope;
   group: LogGroupKey | null;
   onGroup: (group: LogGroupKey | null) => void;
+  limit: number;
+  onLimit: (limit: number) => void;
 }) {
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<LogFilter>(DEFAULT_LOG_FILTER);
+  const [q, setQ] = useState(DEFAULT_LOG_FILTER.q);
+  const filter = useMemo<LogFilter>(() => ({ q, limit }), [q, limit]);
   const [search, setSearch] = useState(DEFAULT_LOG_FILTER.q);
   const [cleared, setCleared] = useState<number | null>(null);
   const [widths, setWidths] = useState<ColumnWidths>(readColumnWidths);
@@ -75,15 +80,12 @@ export function DecoderLogPanel({
   const scroller = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (search === filter.q) {
+    if (search === q) {
       return;
     }
-    const timer = window.setTimeout(
-      () => setFilter((f) => ({ ...f, q: search })),
-      SEARCH_DEBOUNCE_MS,
-    );
+    const timer = window.setTimeout(() => setQ(search), SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [search, filter.q]);
+  }, [search, q]);
 
   const query = toQuery(filter, wires);
   const log = useQuery({ ...decoderLogQuery(query), enabled: group === null });
@@ -118,9 +120,9 @@ export function DecoderLogPanel({
     },
   });
 
-  const patch = (next: Partial<LogFilter>): void => {
+  const pickLimit = (next: number): void => {
     setCleared(null);
-    setFilter((f) => ({ ...f, ...next }));
+    onLimit(next);
   };
 
   const source = group === null ? log : grouped;
@@ -153,7 +155,7 @@ export function DecoderLogPanel({
               title="Row limit"
               value={filter.limit}
               options={LIMIT_CHOICES}
-              onChange={(limit) => patch({ limit })}
+              onChange={pickLimit}
             />
           </div>
 

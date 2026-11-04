@@ -862,18 +862,19 @@ fn a_scanner_keeps_its_settings() {
 }
 
 #[test]
-fn a_decoder_log_keeps_its_grouping() {
+fn a_decoder_log_keeps_its_grouping_and_row_limit() {
     let body: NodeBody =
         serde_json::from_str(r#"{"kind":"decoder_log","data":{}}"#).expect("a plain log");
     assert_eq!(body, NodeBody::DecoderLog(DecoderLogNode::default()));
 
     let grouped: NodeBody =
-        serde_json::from_str(r#"{"kind":"decoder_log","data":{"group":"station"}}"#)
+        serde_json::from_str(r#"{"kind":"decoder_log","data":{"group":"station","limit":2000}}"#)
             .expect("a grouped log");
     assert_eq!(
         grouped,
         NodeBody::DecoderLog(DecoderLogNode {
-            group: Some(crate::LogGroupKey::Station)
+            group: Some(crate::LogGroupKey::Station),
+            limit: Some(2000),
         })
     );
 }

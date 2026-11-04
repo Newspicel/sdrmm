@@ -3486,6 +3486,8 @@ export interface components {
         };
         DecoderLogNode: {
             group?: components["schemas"]["LogGroupKey"] | null;
+            /** Format: int32 */
+            limit?: number | null;
         };
         DecoderLogResponse: {
             /** Format: int64 */
