@@ -185,12 +185,13 @@ fn recording_router_with_shell(dir: &Path) -> (Router, Arc<FakeShell>) {
     (router, shell)
 }
 
+/// Serves the API without the background runtime: no recorder reconciler may stop a recording the
+/// test started by hand.
 fn recording_router_without_reconcilers(dir: &Path) -> (Router, Arc<Engine>) {
-    let state = recording_state(dir);
+    let mut state = recording_state(dir);
+    configure(&mut state, &ServerOptions::default());
     let engine = state.engine.clone();
-    let (router, background) = router_with_state(state, &ServerOptions::default());
-    drop(background);
-    (router, engine)
+    (app(&state, auth::ListenerRole::Main, false), engine)
 }
 
 fn recording_router(dir: &Path) -> Router {
