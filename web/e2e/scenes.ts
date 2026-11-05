@@ -516,7 +516,7 @@ const ident: Scene = {
   async ready(page) {
     await expect(
       face(page, "readout")
-        .getByText(/confident/i)
+        .getByText(/confirmed/i)
         .first(),
     ).toBeVisible({ timeout: 60_000 });
   },
