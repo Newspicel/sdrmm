@@ -3,9 +3,8 @@
 //! A template for decoder plugins: a settings form, one event kind with a presenter and view
 //! hints, the health footer, a host FFT doing the heavy lifting, a transmitter ([`Beacon`]) and
 //! an array processor ([`LaneMeter`]).
-//! Build it with
-//! `cargo build -p sdrmm-plugin-example --target wasm32-unknown-unknown --release` and drop the
-//! `.wasm` into the server's plugins directory.
+//! Build it in this folder with `cargo build --target wasm32-unknown-unknown --release` and drop
+//! the `.wasm` into the server's plugins directory.
 
 mod beacon;
 pub mod lane_meter;

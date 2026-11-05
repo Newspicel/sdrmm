@@ -1,0 +1,11 @@
+[template]
+cargo_generate_version = ">=0.23"
+ignore = ["c"]
+
+[placeholders.sdrmm_tag]
+type = "string"
+prompt = "sdr-- release to build against, as on GitHub"
+regex = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+
+[hooks]
+pre = ["template.rhai"]

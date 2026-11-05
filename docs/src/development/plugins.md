@@ -12,11 +12,22 @@ reason shows as an error.
 This section is for Rust. For C, Zig, Go, AssemblyScript and others, see
 [Plugins in any language](plugin-abi.md).
 
-Start from `crates/plugin-example`, a carrier detector:
+Start a new plugin from `crates/plugin-example`, a carrier detector. Pick the tag of the server
+you run:
 
 ```sh
-cargo build -p sdrmm-plugin-example --target wasm32-unknown-unknown --release
-cp target/wasm32-unknown-unknown/release/sdrmm_plugin_example.wasm ~/Library/Application\ Support/sdrmm/plugins/
+cargo install cargo-generate
+cargo generate --git https://github.com/newspicel/sdrmm --tag v2.4.3 crates/plugin-example \
+  --name my-plugin --define sdrmm_tag=v2.4.3
+cd my-plugin
+cargo build --target wasm32-unknown-unknown --release
+cp target/wasm32-unknown-unknown/release/my_plugin.wasm ~/Library/Application\ Support/sdrmm/plugins/
+```
+
+An existing crate adds the SDK as a git dependency:
+
+```toml
+sdrmm-plugin = { git = "https://github.com/newspicel/sdrmm", tag = "v2.4.3" }
 ```
 
 A plugin crate depends on `sdrmm-plugin`, builds as a `cdylib`, implements `Plugin` and calls
