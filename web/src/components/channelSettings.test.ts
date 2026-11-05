@@ -6,6 +6,7 @@ import {
   AUDIO_LIMITS,
   audioChainActive,
   channelHasAudio,
+  channelPassband,
   channelWidthHz,
   clampOffsetHz,
   IF_LIMITS,
@@ -430,5 +431,23 @@ describe("IF filter", () => {
     expect(ifFilterSummary({ enabled: true, high_hz: 40_000 }, WFM_HZ)).toMatch(
       /^−100 kHz \+40 kHz$/,
     );
+  });
+
+  it("narrows the drawn passband and carries the notches", () => {
+    const notch = { frequency_hz: 99_930_000, width_hz: 2_000 };
+    expect(channelPassband({ high_hz: 40_000, notches: [notch] }, WFM_HZ)).toEqual({
+      lowHz: -100_000,
+      highHz: 100_000,
+      notches: [],
+    });
+    expect(
+      channelPassband(
+        { enabled: true, low_hz: -150_000, high_hz: 40_000, notches: [notch] },
+        WFM_HZ,
+      ),
+    ).toEqual({ lowHz: -100_000, highHz: 40_000, notches: [{ atHz: 99_930_000, widthHz: 2_000 }] });
+    expect(
+      channelPassband({ enabled: true, notches: [{ frequency_hz: 99_930_000 }] }, WFM_HZ).notches,
+    ).toEqual([{ atHz: 99_930_000, widthHz: IF_LIMITS.notchWidthSeedHz }]);
   });
 });

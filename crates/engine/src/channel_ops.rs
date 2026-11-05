@@ -293,10 +293,7 @@ impl Engine {
                 info.node.clone(),
             )
         };
-        let mut need_host = old.frequency_hz != settings.frequency_hz
-            || old.params != settings.params
-            || old.squelch != settings.squelch
-            || old.blanker != settings.blanker;
+        let mut need_host = old != settings;
         let mut orphaned: Vec<ChannelAudioRecording> = Vec::new();
         let mut orphaned_baseband = BasebandSinks::default();
         let staged = loop {

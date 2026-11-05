@@ -100,6 +100,31 @@ export function withIfNotchRemoved(filter: IfFilter, index: number): IfFilter {
   return { ...filter, notches: (filter.notches ?? []).filter((_, at) => at !== index) };
 }
 
+export interface ChannelPassband {
+  lowHz: number;
+  highHz: number;
+  notches: readonly { atHz: number; widthHz: number }[];
+}
+
+/** What a channel decodes around its frequency: IF edges only narrow the decoder's own band. */
+export function channelPassband(
+  filter: IfFilter | undefined,
+  bandwidthHz: number,
+): ChannelPassband {
+  const own = { lowHz: -bandwidthHz / 2, highHz: bandwidthHz / 2, notches: [] };
+  if (!(filter?.enabled ?? false)) {
+    return own;
+  }
+  return {
+    lowHz: Math.max(own.lowHz, filter?.low_hz ?? own.lowHz),
+    highHz: Math.min(own.highHz, filter?.high_hz ?? own.highHz),
+    notches: (filter?.notches ?? []).map((notch) => ({
+      atHz: notch.frequency_hz,
+      widthHz: notch.width_hz ?? IF_LIMITS.notchWidthSeedHz,
+    })),
+  };
+}
+
 export function ifFilterSummary(filter: IfFilter, bandwidthHz: number): string {
   const notches = filter.notches?.length ?? 0;
   const edged = (filter.low_hz ?? null) !== null || (filter.high_hz ?? null) !== null;

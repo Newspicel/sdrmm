@@ -2,7 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Fragment, type ReactNode, type RefObject, useCallback, useMemo, useRef } from "react";
 import { Button } from "../../components/BaseControls";
 import { identify, suggestedAt } from "../../components/bandPlan";
-import { channelFrequencyHz, channelWidthHz } from "../../components/channelSettings";
+import {
+  type ChannelPassband,
+  channelFrequencyHz,
+  channelPassband,
+  channelWidthHz,
+} from "../../components/channelSettings";
 import { plotButton } from "../../components/controls";
 import { clampWindow } from "../../components/dbRange";
 import { formatHz, formatMhz } from "../../components/format";
@@ -518,10 +523,14 @@ function Markers({
               return (
                 <Fragment key={channel.id}>
                   {bandwidth !== null && visible > 0 && (
-                    <span
-                      aria-hidden
-                      className={`absolute inset-y-0 -translate-x-1/2 ${active ? "bg-plot-ink/10" : "bg-plot-ink/5"}`}
-                      style={{ left: `${at * 100}%`, width: `${(bandwidth / visible) * 100}%` }}
+                    <ChannelBand
+                      passband={channelPassband(channel.settings.if_filter, bandwidth)}
+                      at={at}
+                      visible={visible}
+                      notchAt={(radioHz) =>
+                        spanToView(view, offsetToSpan(radioHz - centerHz, spanHz))
+                      }
+                      active={active}
                     />
                   )}
                   <span
@@ -585,6 +594,43 @@ function Markers({
         );
       })}
     </div>
+  );
+}
+
+function ChannelBand({
+  passband,
+  at,
+  visible,
+  notchAt,
+  active,
+}: {
+  passband: ChannelPassband;
+  at: number;
+  visible: number;
+  notchAt: (hz: number) => number;
+  active: boolean;
+}) {
+  const span = (left: number, width: number) => ({
+    left: `${left * 100}%`,
+    width: `${(width / visible) * 100}%`,
+  });
+  return (
+    <>
+      <span
+        aria-hidden
+        className={`absolute inset-y-0 ${active ? "bg-plot-ink/10" : "bg-plot-ink/5"}`}
+        style={span(at + passband.lowHz / visible, passband.highHz - passband.lowHz)}
+      />
+      {passband.notches.map((notch) => (
+        <span
+          key={`${notch.atHz}:${notch.widthHz}`}
+          aria-hidden
+          data-if-notch
+          className="absolute inset-y-0 min-w-px -translate-x-1/2 bg-danger/25"
+          style={span(notchAt(notch.atHz), notch.widthHz)}
+        />
+      ))}
+    </>
   );
 }
 

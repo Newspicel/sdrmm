@@ -224,6 +224,49 @@ async fn patching_the_blanker_reaches_the_running_channel() {
     engine.remove_device_set(ds).unwrap();
 }
 
+fn settled_level_db(engine: &Engine, ds: u32, ch: u32, until: impl Fn(f32) -> bool) -> f32 {
+    let mut level_db = f32::NEG_INFINITY;
+    for _ in 0..300 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        if let Some(level) = engine.channel_levels(ds).iter().find(|l| l.channel == ch) {
+            level_db = level.level_db;
+            if until(level_db) {
+                break;
+            }
+        }
+    }
+    level_db
+}
+
+#[tokio::test]
+async fn patching_the_if_filter_reaches_the_running_channel() {
+    let engine = virtual_engine();
+    let ds = engine.create_device_set("virtual:band").unwrap();
+    let open = nfm_settings(sdrmm_device_virtual::NFM_CARRIER_OFFSET_HZ);
+    let ch = engine.add_channel(ds, 0, open.clone()).unwrap();
+    let carrier_db = settled_level_db(&engine, ds, ch, |db| db > -30.0);
+    assert!(
+        carrier_db > -30.0,
+        "the carrier never showed: {carrier_db} dB"
+    );
+    let shaped = ChannelSettings {
+        if_filter: sdrmm_wire::IfFilter {
+            enabled: true,
+            low_hz: Some(4_000.0),
+            high_hz: Some(6_000.0),
+            notches: Vec::new(),
+        },
+        ..open
+    };
+    engine.patch_channel(ds, ch, shaped).unwrap();
+    let cut_db = settled_level_db(&engine, ds, ch, |db| db < carrier_db - 15.0);
+    assert!(
+        cut_db < carrier_db - 15.0,
+        "IF edges left the carrier at {cut_db} dB against {carrier_db} dB"
+    );
+    engine.remove_device_set(ds).unwrap();
+}
+
 #[tokio::test]
 async fn audio_fx_refuses_settings_outside_their_controls() {
     let engine = virtual_engine();
