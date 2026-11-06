@@ -28,7 +28,12 @@ pub fn snapshot(receivers: usize) -> WorkspaceSnapshot {
             0.0,
         ),
         node(SCOPE, NodeBody::Scope, COLUMN, 0.0),
-        node(SPEAKER, NodeBody::Speaker, 2.0 * COLUMN, 0.0),
+        node(
+            SPEAKER,
+            NodeBody::Speaker(sdrmm_wire::SpeakerNode::default()),
+            2.0 * COLUMN,
+            0.0,
+        ),
     ];
     let mut edges = vec![wire(RECORDING, SCOPE, PortType::Iq)];
     for index in 0..receivers {

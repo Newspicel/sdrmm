@@ -1,7 +1,9 @@
 import { Play, Square } from "lucide-react";
+import { useEffect } from "react";
 import { Button } from "../../components/BaseControls";
 import { BTN, ICON_BTN } from "../../components/controls";
 import { meterTone } from "../../components/dbfs";
+import { Chips } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { GainMeter, MeterRow } from "../../components/face/Meter";
 import { FaceStats, Stat } from "../../components/face/Stats";
@@ -9,12 +11,13 @@ import { Icon } from "../../components/Icon";
 import { Tip } from "../../components/Tip";
 import { tapKey } from "../../lib/audio/engine";
 import { resumeAudioOutput } from "../../lib/audio/sink";
-import { useChannelAudio } from "../../lib/audio/useChannelAudio";
+import { audioEngine, useChannelAudio } from "../../lib/audio/useChannelAudio";
 import { type Input, useInputs } from "../../lib/resolved";
 import type { PatchNode } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { AudioSpectrogramView } from "./AudioSpectrogramView";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
+import { SpeakerOutputChip } from "./SpeakerOutputChip";
 import { inputKey } from "./sinkInputs";
 import {
   type SpeakerHealth,
@@ -22,13 +25,19 @@ import {
   useAudioPeakDb,
   useSpeakerHealth,
 } from "./speaker";
+import { speakerOutputOf } from "./speakerOutput";
 
 export function SpeakerFace({ node }: { node: PatchNode }) {
   const inputs = useInputs(node.id, "audio");
   const health = useSpeakerHealth(node.id, inputs, import.meta.env.DEV);
+  const output = speakerOutputOf(node);
+  useEffect(() => audioEngine.setOutput(node.id, output), [node.id, output]);
   return (
     <NodeShell node={node} title="Speaker" category="output">
       <FaceBody>
+        <Chips>
+          <SpeakerOutputChip node={node} />
+        </Chips>
         {inputs.length === 0 ? (
           <FaceEmpty hint="Wire a channel's audio in" />
         ) : (

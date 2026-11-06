@@ -185,7 +185,7 @@ async fn retyping_drops_a_wire_the_new_decoder_refuses_with_a_notice() {
     let mut snapshot = virtual_snapshot("band", &[("voice", "nfm", "iq")]);
     snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
         id: "loud".to_owned(),
-        body: NodeBody::Speaker,
+        body: NodeBody::Speaker(sdrmm_wire::SpeakerNode::default()),
         position: sdrmm_wire::Position { x: 800.0, y: 300.0 },
         size: None,
         label: None,

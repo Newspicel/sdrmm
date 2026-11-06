@@ -285,7 +285,7 @@ fn an_fx_chain_deeper_than_the_cap_feeds_nothing() {
     let depth = MAX_PASS_DEPTH + 1;
     let mut nodes = vec![
         channel("a", "probe_voice"),
-        node("speaker", NodeBody::Speaker),
+        node("speaker", NodeBody::Speaker(crate::SpeakerNode::default())),
     ];
     let mut edges = vec![audio("a", "fx0")];
     for index in 0..depth {
@@ -438,7 +438,7 @@ fn a_trunk_system_runs_on_its_control_and_follower_channels() {
     let graph = PatchGraph {
         nodes: vec![
             node("trunk", NodeBody::Trunk(Default::default())),
-            node("speaker", NodeBody::Speaker),
+            node("speaker", NodeBody::Speaker(crate::SpeakerNode::default())),
         ],
         edges: Vec::new(),
     };
@@ -493,7 +493,7 @@ fn a_feed_from_a_bound_decoder_taps_its_channel() {
             radio("dev", "band"),
             channel("voice", "probe_voice"),
             fx("clean"),
-            node("speaker", NodeBody::Speaker),
+            node("speaker", NodeBody::Speaker(crate::SpeakerNode::default())),
         ],
         edges: vec![
             wire(("dev", "iq"), ("voice", "iq")),

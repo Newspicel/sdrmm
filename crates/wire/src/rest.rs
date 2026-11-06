@@ -1205,9 +1205,9 @@ mod tests {
     fn kinds_in_is_sorted_and_deduplicated() {
         let graph = graph_with(
             &[
-                ("s", NodeBody::Speaker),
+                ("s", NodeBody::Speaker(crate::SpeakerNode::default())),
                 ("d", NodeBody::Device(crate::DeviceNode::default())),
-                ("s2", NodeBody::Speaker),
+                ("s2", NodeBody::Speaker(crate::SpeakerNode::default())),
             ],
             &[],
         );

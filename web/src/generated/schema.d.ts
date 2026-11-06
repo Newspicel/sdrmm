@@ -5072,6 +5072,7 @@ export interface components {
             /** @enum {string} */
             kind: "baseband_scope";
         } | {
+            data: components["schemas"]["SpeakerNode"];
             /** @enum {string} */
             kind: "speaker";
         } | {
@@ -7325,6 +7326,12 @@ export interface components {
              */
             span_db: number;
         };
+        /**
+         * @description The output device's name as the operating system lists it, or None for the system default.
+         *     Kept by name, since a browser salts device ids per origin and the app's port changes between
+         *     runs. Transparent, so a speaker saved with no `data` at all still loads.
+         */
+        SpeakerNode: string | null;
         SpectrumMonitorNode: {
             disabled_protocols?: string[];
             /** Format: float */

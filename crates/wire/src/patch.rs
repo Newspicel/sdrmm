@@ -345,6 +345,24 @@ pub struct AudioRecorderNode {
     pub skip_silence: bool,
 }
 
+pub const MAX_SPEAKER_OUTPUT_LEN: usize = 256;
+
+/// The output device's name as the operating system lists it, or None for the system default.
+/// Kept by name, since a browser salts device ids per origin and the app's port changes between
+/// runs. Transparent, so a speaker saved with no `data` at all still loads.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(transparent)]
+pub struct SpeakerNode(pub Option<String>);
+
+impl SpeakerNode {
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        self.0
+            .as_ref()
+            .is_none_or(|name| !name.is_empty() && name.chars().count() <= MAX_SPEAKER_OUTPUT_LEN)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct SignalMapNode {

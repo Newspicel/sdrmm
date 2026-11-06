@@ -87,6 +87,7 @@ fn settings_valid(body: &NodeBody) -> bool {
         NodeBody::Device(device) => device.device.as_ref().is_none_or(DeviceRef::valid),
         NodeBody::EventFilter(settings) => settings.valid(),
         NodeBody::Note(note) => note.valid(),
+        NodeBody::Speaker(speaker) => speaker.valid(),
         NodeBody::AudioFx(fx) => fx.settings.validate().is_ok(),
         NodeBody::SpectrumMonitor(settings) => settings.valid(),
         NodeBody::Propagation(settings) => settings.valid(),

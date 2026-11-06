@@ -51,7 +51,24 @@ wrap_browser_process_handler! {
 
     impl BrowserProcessHandler {
         fn on_context_initialized(&self) {
+            name_audio_outputs(&self.start);
             window::open(&self.start);
         }
     }
+}
+
+/// Chromium names audio output devices only to a page that may use the microphone. Granting it
+/// to the app's own origin lets each Speaker list its outputs by name without opening a mic.
+fn name_audio_outputs(start: &Start) {
+    let Some(context) = request_context_get_global_context() else {
+        tracing::warn!("no browser context: audio outputs stay unnamed");
+        return;
+    };
+    let origin = CefString::from(start.url.origin().ascii_serialization().as_str());
+    context.set_content_setting(
+        Some(&origin),
+        Some(&origin),
+        ContentSettingTypes::MEDIASTREAM_MIC,
+        ContentSettingValues::ALLOW,
+    );
 }

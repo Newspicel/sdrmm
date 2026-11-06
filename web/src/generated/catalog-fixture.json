@@ -421,7 +421,8 @@
       "needs_channel_type": false,
       "needs_processor_type": false,
       "default_body": {
-        "kind": "speaker"
+        "kind": "speaker",
+        "data": null
       }
     },
     {

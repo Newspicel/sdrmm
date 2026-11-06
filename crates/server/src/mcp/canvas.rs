@@ -221,7 +221,7 @@ mod tests {
             &mut graph,
             PutNodeArgs {
                 node: Some("scope".to_owned()),
-                ..adding(NodeBody::Speaker)
+                ..adding(NodeBody::Speaker(sdrmm_wire::SpeakerNode::default()))
             },
         );
         assert!(refused.is_err());
@@ -246,7 +246,7 @@ mod tests {
         let mut graph = graph();
         let missing = PutNodeArgs {
             node: Some("nope".to_owned()),
-            ..adding(NodeBody::Speaker)
+            ..adding(NodeBody::Speaker(sdrmm_wire::SpeakerNode::default()))
         };
         assert!(put_node(&mut graph, missing).is_err());
         assert!(remove_node(&mut graph, "nope").is_err());

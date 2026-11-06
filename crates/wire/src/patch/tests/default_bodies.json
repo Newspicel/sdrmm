@@ -46,7 +46,8 @@
     "kind": "baseband_scope"
   },
   {
-    "kind": "speaker"
+    "kind": "speaker",
+    "data": null
   },
   {
     "kind": "map"

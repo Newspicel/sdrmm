@@ -381,7 +381,7 @@ fn trunks_hand_out_audio_monitors_hand_out_clips_and_scanners_watch_a_lane() {
             node("trunk", NodeBody::Trunk(TrunkNode::default())),
             node("monitor", NodeBody::SpectrumMonitor(Default::default())),
             node("scan", NodeBody::Scanner(ScannerNode::default())),
-            node("spk", NodeBody::Speaker),
+            node("spk", NodeBody::Speaker(crate::SpeakerNode::default())),
             log("log"),
         ],
         edges: vec![

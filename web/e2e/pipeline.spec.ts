@@ -185,7 +185,7 @@ for (const { fallback, delayOutput, wideband } of [
             position: { x: 350, y: 0 },
             data: { channel_type: wideband ? "wfm" : "nfm" },
           },
-          { id: "speaker", kind: "speaker", position: { x: 700, y: 0 } },
+          { id: "speaker", kind: "speaker", data: null, position: { x: 700, y: 0 } },
         ],
         edges: [
           { from: { node: "radio", port: "iq" }, to: { node: "voice", port: "iq" } },

@@ -22,8 +22,11 @@ class FakeAudioContext {
   createScriptProcessor = vi.fn((frames: number) => new FakeScriptProcessor(frames));
   private readonly listeners = new Set<() => void>();
 
-  constructor() {
+  constructor(readonly options: { sinkId?: string } = {}) {
     FakeAudioContext.instances.push(this);
+  }
+  setSinkId(): Promise<void> {
+    return Promise.resolve();
   }
   addEventListener(_type: string, listener: () => void): void {
     this.listeners.add(listener);
@@ -114,6 +117,11 @@ describe("createWebAudioSink", () => {
     vi.stubGlobal("navigator", {
       mediaDevices: {
         addEventListener: (_type: string, listener: () => void) => deviceListeners.push(listener),
+        enumerateDevices: () =>
+          Promise.resolve([
+            { kind: "audiooutput", deviceId: "default", label: "Default" },
+            { kind: "audiooutput", deviceId: "dev-js8", label: "js8" },
+          ]),
       },
     });
   });
@@ -451,5 +459,29 @@ describe("createWebAudioSink", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("plays a named output on its own context, shared by its sinks", async () => {
+    createDecoder.mockImplementation(() => Promise.resolve(idleDecoder()));
+    const { createWebAudioSink } = await importSink();
+
+    await createWebAudioSink("1:1", 1, vi.fn(), vi.fn(), null);
+    await createWebAudioSink("2:1", 1, vi.fn(), vi.fn(), "js8");
+    await createWebAudioSink("2:2", 1, vi.fn(), vi.fn(), "js8");
+
+    expect(FakeAudioContext.instances.map((ctx) => ctx.options.sinkId)).toEqual([
+      undefined,
+      "dev-js8",
+    ]);
+  });
+
+  it("refuses an output that is not connected", async () => {
+    createDecoder.mockImplementation(() => Promise.resolve(idleDecoder()));
+    const { createWebAudioSink } = await importSink();
+
+    await expect(createWebAudioSink("1:1", 1, vi.fn(), vi.fn(), "fldigi")).rejects.toThrow(
+      'Output "fldigi" not found',
+    );
+    expect(FakeAudioContext.instances).toHaveLength(0);
   });
 });

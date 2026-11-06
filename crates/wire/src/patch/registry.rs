@@ -7,7 +7,7 @@ use super::{
     EVENTS_PORT, EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps, NodeCategory,
     POSITION_PORT, Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo, RADAR_TRUTH_PORT,
     RADAR_TX_PORT, RecorderNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalMapNode,
-    TriangulationNode, TrunkNode, VIDEO_PORT, input, output,
+    SpeakerNode, TriangulationNode, TrunkNode, VIDEO_PORT, input, output,
 };
 use crate::{
     channel::{ChannelDescriptor, SettingField},
@@ -432,7 +432,7 @@ macro_rules! node_registry {
                 Face::sized(420, 340).min(320, 200), [
                 input(BASEBAND_PORT, Payload::Baseband),
             ]),
-            (Speaker, "speaker", Output, "Speaker", "Plays channel audio", Role::Plain,
+            (Speaker(SpeakerNode), "speaker", Output, "Speaker", "Plays channel audio", Role::Plain,
                 Face::fit(320), [
                 audio_in(),
             ]),

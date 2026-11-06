@@ -185,7 +185,7 @@ fn workspace() -> PatchGraph {
             node("dev", NodeBody::Device(DeviceNode::default())),
             node("scope", NodeBody::Scope),
             channel("ch", "probe_voice"),
-            node("spk", NodeBody::Speaker),
+            node("spk", NodeBody::Speaker(crate::SpeakerNode::default())),
         ],
         edges: vec![
             edge(("dev", "iq"), ("scope", "iq")),
@@ -2136,3 +2136,29 @@ fn triangulation_without_data_loads_with_defaults() {
 
 mod arrays;
 mod registry;
+
+#[test]
+fn a_speaker_saved_before_outputs_loads_on_the_system_output() {
+    let body: NodeBody = serde_json::from_str(r#"{"kind":"speaker"}"#).expect("old speaker");
+    assert_eq!(body, NodeBody::Speaker(SpeakerNode::default()));
+}
+
+#[test]
+fn a_speaker_keeps_its_output_by_name() {
+    let body = NodeBody::Speaker(SpeakerNode(Some("js8".to_owned())));
+    let json = serde_json::to_string(&body).expect("speaker json");
+    assert_eq!(json, r#"{"kind":"speaker","data":"js8"}"#);
+    assert_eq!(
+        serde_json::from_str::<NodeBody>(&json).expect("speaker"),
+        body
+    );
+}
+
+#[test]
+fn a_speaker_output_name_is_bounded() {
+    let named = |name: String| SpeakerNode(Some(name));
+    assert!(SpeakerNode::default().valid());
+    assert!(named("ä".repeat(MAX_SPEAKER_OUTPUT_LEN)).valid());
+    assert!(!named("x".repeat(MAX_SPEAKER_OUTPUT_LEN + 1)).valid());
+    assert!(!named(String::new()).valid());
+}

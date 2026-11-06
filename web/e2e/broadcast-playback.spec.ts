@@ -44,7 +44,7 @@ for (const system of ["dab", "dvbt", "dvbs", "dvbs2", "dvbs2x", "dvbs2sf"] as co
             position: { x: 400, y: 0 },
             data: { channel_type: type },
           },
-          { id: "speaker", kind: "speaker", position: { x: 800, y: 0 } },
+          { id: "speaker", kind: "speaker", data: null, position: { x: 800, y: 0 } },
           { id: "display", kind: sink, position: { x: 800, y: 300 } },
         ],
         edges: [

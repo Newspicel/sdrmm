@@ -193,6 +193,29 @@ describe("AudioEngine", () => {
     expect(sinks[1]?.pushed).toHaveLength(1);
   });
 
+  it("moves only the picked speaker's channels to its new output", async () => {
+    const made: { output: string | null | undefined; sink: FakeSink }[] = [];
+    const routed = fresh((_key, volume, onError, _onReport, output) => {
+      const sink = new FakeSink(volume, onError);
+      made.push({ output, sink });
+      return Promise.resolve(sink);
+    });
+    routed.start(tap(2));
+    routed.start(tap(3));
+    await flush();
+    expect(made.map(({ output }) => output)).toEqual([null, null]);
+
+    routed.setOutput("spk2", "js8");
+    routed.setOutput("spk2", "js8");
+    await flush();
+
+    expect(routed.getOutput("spk2")).toBe("js8");
+    expect(made).toHaveLength(3);
+    expect(made[0]?.sink.closed).toBe(true);
+    expect(made[1]?.sink.closed).toBe(false);
+    expect(made[2]?.output).toBe("js8");
+  });
+
   it("does not subscribe a cancelled start when delayed output becomes ready", async () => {
     engine.setOutputRunning(false);
     engine.start(tap(2));

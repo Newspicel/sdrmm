@@ -18,6 +18,7 @@ export type SinkFactory = (
   volume: number,
   onError: (err: unknown) => void,
   onReport: (report: WorkletReport) => void,
+  output?: string | null,
 ) => Promise<AudioSink>;
 
 export interface AudioSocket {
@@ -62,6 +63,7 @@ function keyOf(entry: ChannelEntry): string {
 
 export class AudioEngine {
   private readonly entries = new Map<string, ChannelEntry>();
+  private readonly outputs = new Map<string, string | null>();
   private readonly storeListeners = new Set<() => void>();
   private outputRunning = true;
   private socket: AudioSocket | null = null;
@@ -160,8 +162,24 @@ export class AudioEngine {
   }
 
   rerouteOutput(): void {
+    this.rerouteWhere(() => true);
+  }
+
+  getOutput(node: string): string | null {
+    return this.outputs.get(node) ?? null;
+  }
+
+  setOutput(node: string, output: string | null): void {
+    if (this.getOutput(node) === output) {
+      return;
+    }
+    this.outputs.set(node, output);
+    this.rerouteWhere((entry) => entry.tap.node === node);
+  }
+
+  private rerouteWhere(moves: (entry: ChannelEntry) => boolean): void {
     for (const entry of this.entries.values()) {
-      if (!entry.desired) continue;
+      if (!entry.desired || !moves(entry)) continue;
       entry.generation += 1;
       this.releaseSubscription(entry);
       this.teardown(entry);
@@ -382,6 +400,7 @@ export class AudioEngine {
       (report) => {
         if (entry.desired && entry.generation === generation) this.observe(entry, report);
       },
+      this.getOutput(entry.tap.node),
     )
       .then((sink) => {
         entry.sinkPending = false;

@@ -127,6 +127,19 @@ DPDFNet is trained on speech. Leave it off for music, data tones and CW.
 Pick a DPDFNet model, then press the download button next to it. DPDFNet 2 is light; 8 sounds
 better and costs more CPU. The button next to a downloaded model removes it.
 
+## Speaker output
+
+**Out** on a Speaker picks its sound device. Give each decoder program its own Speaker and
+virtual device:
+
+| System | Virtual device |
+|---|---|
+| Linux | `pactl load-module module-null-sink sink_name=js8`, then read `js8.monitor` in the program |
+| Windows | VB-Cable |
+| macOS | BlackHole |
+
+In a browser, press **Show device names** once to list devices by name.
+
 ## Filter events
 
 Put an **Event filter** between a decoder and its outputs. Every rule you set must match.

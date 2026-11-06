@@ -4,6 +4,7 @@ import type { OpusPacketDecoder } from "./decoder";
 import { createOpusPacketDecoder } from "./decoder";
 import type { AudioSink, SinkFactory } from "./engine";
 import { isWatched, publishAudio } from "./monitor";
+import { outputIdOf } from "./outputs";
 import { createPlayback, type Playback } from "./playback";
 import type { WorkletReport } from "./worklet";
 import { CHANNELS, SAMPLE_RATE, TARGET_FRAMES } from "./worklet";
@@ -12,8 +13,17 @@ const VOLUME_RANGE_DB = 60;
 const VOLUME_RAMP_SECONDS = 0.02;
 const DEVICE_SETTLE_MS = 750;
 
-let ctx: AudioContext | null = null;
-let liveSinks = 0;
+interface Output {
+  readonly key: string;
+  readonly context: AudioContext;
+  sinks: number;
+}
+
+type SinkedOptions = AudioContextOptions & { sinkId?: string };
+
+const SYSTEM = "";
+
+const outputs = new Map<string, Output>();
 const outputListeners = new Set<(running: boolean) => void>();
 const rerouteListeners = new Set<() => void>();
 let recoveryArmed = false;
@@ -26,7 +36,11 @@ export function gainForVolume(volume: number): number {
 }
 
 export function isOutputRunning(): boolean {
-  return ctx === null || ctx.state === "running";
+  return [...outputs.values()].every(running);
+}
+
+function running({ context }: Output): boolean {
+  return context.state === "running";
 }
 
 export function onOutputStateChange(listener: (running: boolean) => void): () => void {
@@ -44,57 +58,75 @@ export function resumeAudioOutput(): void {
 }
 
 function attemptResume(): void {
-  if (ctx === null || ctx.state === "running" || ctx.state === "closed") {
-    return;
+  for (const { context } of outputs.values()) {
+    if (context.state !== "running" && context.state !== "closed") {
+      context.resume().catch(() => {});
+    }
   }
-  ctx.resume().catch(() => {});
 }
 
 function handleStateChange(): void {
-  const running = isOutputRunning();
-  if (running) {
+  const allRunning = isOutputRunning();
+  if (allRunning) {
     disarmRecovery();
   } else {
     armRecovery();
   }
   for (const listener of outputListeners) {
-    listener(running);
+    listener(allRunning);
   }
-  if (running && liveSinks === 0) {
-    closeContext();
+  for (const output of outputs.values()) {
+    if (output.sinks === 0 && running(output)) {
+      closeOutput(output.key);
+    }
   }
 }
 
-function acquireContext(): AudioContext {
-  if (ctx === null) {
-    ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
-    ctx.addEventListener("statechange", handleStateChange);
-    watchOutputDevices();
+async function acquireOutput(name: string | null): Promise<Output> {
+  const key = name ?? SYSTEM;
+  const held = outputs.get(key);
+  if (held !== undefined) {
+    held.sinks += 1;
+    return held;
   }
-  liveSinks += 1;
-  return ctx;
+  const options: SinkedOptions = { sampleRate: SAMPLE_RATE };
+  if (name !== null) {
+    options.sinkId = await outputIdOf(name);
+  }
+  const raced = outputs.get(key);
+  if (raced !== undefined) {
+    raced.sinks += 1;
+    return raced;
+  }
+  const context = new AudioContext(options);
+  context.addEventListener("statechange", handleStateChange);
+  watchOutputDevices();
+  const output = { key, context, sinks: 1 };
+  outputs.set(key, output);
+  return output;
 }
 
-function releaseContext(context: AudioContext): void {
-  if (context !== ctx) {
+function releaseOutput(output: Output): void {
+  if (outputs.get(output.key) !== output) {
     return;
   }
-  liveSinks -= 1;
-  if (liveSinks === 0 && context.state === "running") {
-    closeContext();
+  output.sinks -= 1;
+  if (output.sinks === 0 && running(output)) {
+    closeOutput(output.key);
   }
 }
 
-function closeContext(): void {
-  const closing = ctx;
-  if (closing === null) {
+function closeOutput(key: string): void {
+  const output = outputs.get(key);
+  if (output === undefined) {
     return;
   }
-  ctx = null;
-  liveSinks = 0;
-  closing.removeEventListener("statechange", handleStateChange);
-  disarmRecovery();
-  closing.close().catch(() => {});
+  outputs.delete(key);
+  output.context.removeEventListener("statechange", handleStateChange);
+  if (outputs.size === 0) {
+    disarmRecovery();
+  }
+  output.context.close().catch(() => {});
 }
 
 function watchOutputDevices(): void {
@@ -110,10 +142,12 @@ function watchOutputDevices(): void {
 }
 
 function reroute(): void {
-  if (ctx === null || ctx.state !== "running") {
+  if (![...outputs.values()].some(running)) {
     return;
   }
-  closeContext();
+  for (const key of outputs.keys()) {
+    closeOutput(key);
+  }
   for (const listener of rerouteListeners) {
     listener();
   }
@@ -143,8 +177,15 @@ function handleVisibility(): void {
   }
 }
 
-export const createWebAudioSink: SinkFactory = async (key, volume, onError, onReport) => {
-  const context = acquireContext();
+export const createWebAudioSink: SinkFactory = async (
+  key,
+  volume,
+  onError,
+  onReport,
+  name = null,
+) => {
+  const output = await acquireOutput(name);
+  const { context } = output;
   if (context.state !== "running") {
     attemptResume();
     handleStateChange();
@@ -166,7 +207,7 @@ export const createWebAudioSink: SinkFactory = async (key, volume, onError, onRe
       onError,
     );
   } catch (err) {
-    releaseContext(context);
+    releaseOutput(output);
     throw err;
   }
   const gain = new GainNode(context, { gain: gainForVolume(volume) });
@@ -209,7 +250,7 @@ export const createWebAudioSink: SinkFactory = async (key, volume, onError, onRe
     playback.release();
     gain.disconnect();
     removeLatency();
-    releaseContext(context);
+    releaseOutput(output);
     throw err;
   }
 
@@ -246,7 +287,7 @@ export const createWebAudioSink: SinkFactory = async (key, volume, onError, onRe
       playback.send("close");
       playback.release();
       gain.disconnect();
-      releaseContext(context);
+      releaseOutput(output);
     },
   };
   return sink;
