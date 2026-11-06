@@ -7,10 +7,10 @@ chips will differ.
 
 | Work | CPU median | GPU median | Runs on |
 | --- | ---: | ---: | --- |
-| Spectrum, 4,096 points | 15.6 µs | 201.6 µs | CPU |
-| Spectrum, 4 × 4,096 | 61.9 µs | 178.4 µs | CPU |
-| Spectrum, 16 × 4,096 | 251.5 µs | 222.4 µs | CPU, margin too small |
-| Spectrum, 4 × 65,536 | 1.291 ms | 0.519 ms | GPU would win for larger displays |
+| Spectrum frame, 64 × 4,096 | 0.48 ms | 0.33 ms | CPU, cheap either way |
+| Spectrum frame, 64 × 32,768 | 4.89 ms | 1.23 ms | GPU |
+| Spectrum frame, 64 × 65,536 | 11.3 ms | 2.29 ms | GPU |
+| Spectrum frame, 64 × 262,144 | 56.0 ms | 7.89 ms | GPU |
 | Filter bank, 13 bands, 8,192 samples | 79.5 µs | 177.3 µs | CPU |
 | Filter bank, 13 bands, 32,768 samples | 395.4 µs | 222.6 µs | Larger than any real block |
 
@@ -28,9 +28,13 @@ The radar correlation uses at most 512 MiB of GPU memory. If it needs more, has 
 hits a GPU error, it runs on the CPU instead and logs a warning. The capture thread hands off
 preallocated jobs without waiting. Overload is counted; retunes and gaps discard stale work.
 
-Spectra below 65,536 points always stay on the CPU. Larger ones use the GPU only if a startup
-benchmark shows it at least 20% faster. The batched spectrum and filter-bank shaders are
-benchmarks only.
+A spectrum frame averages up to 64 overlapping transforms in linear power. Spectra below 32,768
+points stay on the CPU, which spends at most 128 M transformed samples per second: full overlap
+up to 61.44 MS/s, 16 transforms per frame at 245.76 MS/s. Larger spectra use the GPU if a startup
+benchmark shows it at least 20% faster. The GPU takes contiguous samples, cuts the windows itself,
+and reads back one spectrum per frame. The same benchmark caps it at a quarter of the GPU's time:
+on the M4 Max, 63 transforms per frame with 50% overlap at 245.76 MS/s, for 4% of the DSP thread.
+The filter-bank shader is a benchmark only.
 
 ## Reproduce
 

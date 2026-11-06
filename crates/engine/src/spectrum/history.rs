@@ -1,6 +1,6 @@
 use num_complex::Complex;
 
-pub(in crate::runtime) struct SpectrumHistory {
+pub(super) struct SpectrumHistory {
     samples: Vec<Complex<f32>>,
     window: Vec<Complex<f32>>,
     write: usize,
@@ -9,7 +9,7 @@ pub(in crate::runtime) struct SpectrumHistory {
 }
 
 impl SpectrumHistory {
-    pub(in crate::runtime) fn new(size: usize) -> Self {
+    pub(super) fn new(size: usize) -> Self {
         assert!(size > 0);
         Self {
             samples: vec![Complex::new(0.0, 0.0); size],
@@ -20,14 +20,14 @@ impl SpectrumHistory {
         }
     }
 
-    pub(in crate::runtime) fn reset(&mut self) {
+    pub(super) fn reset(&mut self) {
         self.samples.fill(Complex::new(0.0, 0.0));
         self.write = 0;
         self.since_last = 0;
         self.fresh = 0;
     }
 
-    pub(in crate::runtime) fn settling(&self, hop: usize) -> bool {
+    pub(super) fn settling(&self, hop: usize) -> bool {
         self.fresh < hop
     }
 
@@ -39,7 +39,7 @@ impl SpectrumHistory {
         }
     }
 
-    pub(in crate::runtime) fn push(
+    pub(super) fn push(
         &mut self,
         mut input: &[Complex<f32>],
         mut index: u64,

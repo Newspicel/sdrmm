@@ -1,12 +1,20 @@
-use std::hint::black_box;
+use std::{
+    hint::black_box,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use sdrmm_dsp::{SpectrumAnalyzer, subband::SubbandPlan};
+use num_complex::Complex;
+use sdrmm_dsp::{PowerAverage, SpectrumAnalyzer, subband::SubbandPlan};
 
-use super::*;
+use super::{
+    Context,
+    spectrum::{Batch, Stream, batch_for},
+};
+use crate::spectrum::{Cadence, Tuning, display_window};
 
 mod compute;
 mod radar;
-mod spectrum;
 mod wideband;
 
 pub(crate) fn samples(size: usize, seed: u32) -> Vec<Complex<f32>> {
@@ -41,9 +49,9 @@ pub(crate) fn measure(name: &str, mut run: impl FnMut()) {
     );
 }
 
-#[test]
-#[ignore = "hardware benchmark"]
-fn benchmark_offload() {
+const FRAME: usize = 64;
+
+fn hardware() -> Arc<Context> {
     let context = Arc::new(Context::new().expect("hardware GPU required"));
     let info = context.device.adapter_info();
     println!(
@@ -53,64 +61,99 @@ fn benchmark_offload() {
     if cfg!(target_os = "macos") {
         assert_eq!(info.backend, wgpu::Backend::Metal);
     }
-    for size in [4096, 16_384, 65_536] {
-        let input = samples(size, 0x1234567);
-        let mut output = vec![0.0; size];
-        let mut cpu = SpectrumAnalyzer::new(size);
-        let mut gpu = Processor::new(context.clone(), size).unwrap();
-        measure(&format!("spectrum/{size}/cpu"), || {
-            cpu.power_db(black_box(&input), &mut output);
-            black_box(&output);
+    context
+}
+
+/// One frame of [`FRAME`] half-overlapping transforms: the old CPU path (dB per transform,
+/// averaged back in power), the new CPU path (power summed directly) and GPU batches.
+#[test]
+#[ignore = "hardware benchmark"]
+fn benchmark_spectrum_frame() {
+    let context = hardware();
+    for size in [4_096, 32_768, 65_536, 262_144] {
+        let hop = size / 2;
+        let input = samples((FRAME - 1) * hop + size, 0x1234567);
+        let mut cpu = SpectrumAnalyzer::with_window(display_window(size));
+        let mut average = PowerAverage::new(size);
+        let mut db = vec![0.0; size];
+        measure(&format!("frame/{size}/cpu_db"), || {
+            for start in (0..FRAME).map(|j| j * hop) {
+                cpu.power_db(black_box(&input[start..start + size]), &mut db);
+                average.add(&db);
+            }
+            average.take_db(&mut db);
         });
-        measure(&format!("spectrum/{size}/gpu"), || {
-            gpu.power_db(black_box(&input), &mut output).unwrap();
-            black_box(&output);
+        measure(&format!("frame/{size}/cpu_power"), || {
+            for start in (0..FRAME).map(|j| j * hop) {
+                cpu.accumulate(black_box(&input[start..start + size]), &mut average);
+            }
+            average.take_db(&mut db);
         });
-    }
-    let plan = SubbandPlan::new(20_000_000.0).unwrap();
-    for size in [2048, 4096, 8192, 32_768] {
-        let input = samples(size, 0x1234567);
-        let mut bank = plan.filter_bank(size);
-        measure(&format!("wideband/{size}/cpu"), || {
-            bank.process(black_box(&input));
-            black_box(bank.samples(0));
-        });
+        let default = batch_for(size);
+        for chunk in [4, 8, 16, 32, 64].into_iter().filter(|&c| c <= default) {
+            let mut batch = Batch::new(context.clone(), size, chunk).unwrap();
+            measure(&format!("frame/{size}/gpu_batch{chunk}"), || {
+                let mut done = 0;
+                while done < FRAME {
+                    let count = batch.fitting(hop).min(FRAME - done);
+                    batch.add(&input[done * hop..], hop, count).unwrap();
+                    done += count;
+                }
+                batch.take_db(FRAME as u32, &mut db).unwrap();
+            });
+        }
     }
 }
 
+/// Feeds 245.76 MS/s in real time through the GPU stream and reports what the DSP thread
+/// spends on it and how many frames arrive.
 #[test]
 #[ignore = "hardware benchmark"]
-fn benchmark_candidates() {
-    let context = Arc::new(Context::new().expect("hardware GPU required"));
-    println!("adapter={:?}", context.device.adapter_info());
-    for size in [4096, 16_384, 65_536] {
-        for batches in [1, 4, 16] {
-            let input = samples(size * batches, 0x1234567);
-            let mut expected = vec![0.0; input.len()];
-            let mut actual = expected.clone();
-            let mut cpu = SpectrumAnalyzer::new(size);
-            let mut gpu = spectrum::Spectrum::new(context.clone(), size, batches);
-            for (input, out) in input.chunks(size).zip(expected.chunks_mut(size)) {
-                cpu.power_db(input, out);
+fn benchmark_spectrum_stream() {
+    let context = hardware();
+    for (rate, size) in [
+        (20_000_000.0, 32_768),
+        (61_440_000.0, 65_536),
+        (245_760_000.0, 262_144),
+    ] {
+        let budget = super::spectrum::budget(context.clone(), size).expect("GPU wins");
+        let cadence = Cadence::new(rate, size, budget);
+        let tuning = Tuning {
+            center_hz: 1e9,
+            span_hz: rate as f32,
+        };
+        let mut stream = Stream::new(context.clone(), size).unwrap();
+        let block = samples(1 << 17, 0x1234567);
+        let blocks = (rate / block.len() as f64) as usize;
+        let mut frames = 0;
+        let mut publish = |_: crate::spectrum::SpectrumFrame, db: &[f32]| {
+            black_box(db);
+            frames += 1;
+        };
+        let mut busy = Duration::ZERO;
+        let start = Instant::now();
+        for index in 0..blocks {
+            let due = start + Duration::from_secs_f64((index * block.len()) as f64 / rate);
+            while Instant::now() < due {
+                std::hint::spin_loop();
             }
-            gpu.compute(&input, &mut actual);
-            let error = expected
-                .iter()
-                .zip(&actual)
-                .map(|(a, b)| (a - b).abs())
-                .fold(0.0f32, f32::max);
-            assert!(error < 0.1, "spectrum error={error}");
-            measure(&format!("spectrum/{size}/{batches}/cpu"), || {
-                for (input, out) in input.chunks(size).zip(expected.chunks_mut(size)) {
-                    cpu.power_db(black_box(input), out);
-                }
-                black_box(&expected);
-            });
-            measure(&format!("spectrum/{size}/{batches}/gpu_batched"), || {
-                gpu.compute(black_box(&input), &mut actual);
-                black_box(&actual);
-            });
+            let began = Instant::now();
+            let at = (index * block.len()) as u64;
+            stream
+                .push(&block, at, tuning, cadence, &mut publish)
+                .unwrap();
+            busy += began.elapsed();
         }
+        let wall = start.elapsed();
+        std::thread::sleep(Duration::from_millis(100));
+        stream.idle(&mut publish).unwrap();
+        println!(
+            "stream/{rate}/{size},budget={budget:.3e},hop={},averages={},frames={frames},wall_s={:.3},dsp_busy_pct={:.2}",
+            cadence.hop,
+            cadence.averages,
+            wall.as_secs_f64(),
+            100.0 * busy.as_secs_f64() / wall.as_secs_f64(),
+        );
     }
 }
 

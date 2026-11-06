@@ -2,41 +2,83 @@
 use std::sync::Arc;
 
 use num_complex::Complex;
-use sdrmm_dsp::{SpectrumAnalyzer as CpuSpectrumAnalyzer, blackman_harris};
+use sdrmm_dsp::blackman_harris;
+
+pub(crate) use cpu::CpuSpectrum;
+
+mod cpu;
+mod history;
 
 #[cfg(any(feature = "gpu-fft", test))]
-const GPU_MIN_FFT_SIZE: usize = 65_536;
+const GPU_MIN_FFT_SIZE: usize = 32_768;
+const TARGET_FPS: f64 = 30.0;
+const MAX_AVERAGES: u32 = 64;
+/// Transformed samples per second the DSP thread spends on the display. At 245.76 MS/s this
+/// keeps the 16 averages a frame the CPU path always had; slower rates get overlap for free.
+const CPU_BUDGET: f64 = 128e6;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct SpectrumFrame {
+    pub(crate) timestamp: u64,
+    pub(crate) center_hz: f64,
+    pub(crate) span_hz: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Tuning {
+    pub(crate) center_hz: f64,
+    pub(crate) span_hz: f32,
+}
+
+impl Tuning {
+    pub(crate) const fn frame(self, timestamp: u64) -> SpectrumFrame {
+        SpectrumFrame {
+            timestamp,
+            center_hz: self.center_hz,
+            span_hz: self.span_hz,
+        }
+    }
+}
+
+/// How far apart transforms start and how many of them average into one published frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Cadence {
+    pub(crate) hop: usize,
+    pub(crate) averages: u32,
+}
+
+impl Cadence {
+    /// Overlaps transforms as far as `budget` transformed samples per second allow, never closer
+    /// than a quarter window, and averages what fits one frame period.
+    pub(crate) fn new(sample_rate: f64, size: usize, budget: f64) -> Self {
+        let per_frame = (sample_rate / TARGET_FPS).max(1.0);
+        let affordable = sample_rate * size as f64 / budget.max(1.0);
+        let hop = (per_frame / f64::from(MAX_AVERAGES))
+            .max(affordable)
+            .max((size / 4) as f64)
+            .ceil()
+            .max(1.0) as usize;
+        let averages = (per_frame / hop as f64).round() as u32;
+        Self {
+            hop,
+            averages: averages.clamp(1, MAX_AVERAGES),
+        }
+    }
+}
 
 pub(crate) struct SpectrumPlan {
     size: usize,
     #[cfg(feature = "gpu-fft")]
-    gpu: Option<Arc<gpu::Context>>,
+    gpu: Option<(Arc<gpu::Context>, f64)>,
 }
 
 impl SpectrumPlan {
     pub(crate) fn new(size: usize, lanes: usize) -> Self {
         #[cfg(feature = "gpu-fft")]
         {
-            let gpu = if should_use_gpu(size, lanes) {
-                match gpu::context() {
-                    Ok(context) if gpu::spectrum_is_faster(context.clone(), size) => {
-                        tracing::info!(
-                            adapter = context.adapter_name(),
-                            fft_size = size,
-                            lanes,
-                            "using GPU spectrum FFT"
-                        );
-                        Some(context.clone())
-                    }
-                    Ok(_) => None,
-                    Err(error) => {
-                        tracing::warn!(%error, "GPU spectrum FFT unavailable; using CPU");
-                        None
-                    }
-                }
-            } else {
-                None
-            };
+            let gpu = should_use_gpu(size, lanes)
+                .then(|| gpu_context(size, lanes))
+                .flatten();
             Self { size, gpu }
         }
 
@@ -53,89 +95,123 @@ impl SpectrumPlan {
 
     pub(crate) fn analyzer(&self) -> SpectrumAnalyzer {
         #[cfg(feature = "gpu-fft")]
-        if let Some(context) = &self.gpu {
-            match gpu::Analyzer::new(context.clone(), self.size) {
-                Ok(analyzer) => {
+        if let Some((context, budget)) = &self.gpu {
+            match gpu::spectrum::Stream::new(context.clone(), self.size) {
+                Ok(stream) => {
                     return SpectrumAnalyzer::Gpu {
-                        analyzer: Box::new(analyzer),
-                        fallback: cpu_analyzer(self.size),
-                        failed: false,
+                        stream: Some(Box::new(stream)),
+                        budget: *budget,
+                        fallback: CpuSpectrum::new(self.size),
                     };
                 }
                 Err(error) => {
-                    tracing::warn!(%error, "could not create GPU spectrum FFT; using CPU");
+                    tracing::warn!(%error, "could not start the GPU spectrum; using CPU");
                 }
             }
         }
 
-        SpectrumAnalyzer::Cpu(cpu_analyzer(self.size))
+        SpectrumAnalyzer::Cpu(CpuSpectrum::new(self.size))
     }
+}
+
+#[cfg(feature = "gpu-fft")]
+fn gpu_context(size: usize, lanes: usize) -> Option<(Arc<gpu::Context>, f64)> {
+    let context = gpu::context()
+        .inspect_err(|error| tracing::warn!(%error, "GPU spectrum unavailable; using CPU"))
+        .ok()?;
+    let budget = gpu::spectrum::budget(context.clone(), size)?;
+    tracing::info!(
+        adapter = context.adapter_name(),
+        fft_size = size,
+        lanes,
+        "using GPU spectrum"
+    );
+    Some((context.clone(), budget))
 }
 
 pub(crate) enum SpectrumAnalyzer {
-    Cpu(CpuSpectrumAnalyzer),
+    Cpu(CpuSpectrum),
     #[cfg(feature = "gpu-fft")]
     Gpu {
-        analyzer: Box<gpu::Analyzer>,
-        fallback: CpuSpectrumAnalyzer,
-        failed: bool,
+        stream: Option<Box<gpu::spectrum::Stream>>,
+        budget: f64,
+        fallback: CpuSpectrum,
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct SpectrumFrame {
-    pub(crate) timestamp: u64,
-    pub(crate) center_hz: f64,
-    pub(crate) span_hz: f32,
-}
-
 impl SpectrumAnalyzer {
-    pub(crate) fn size(&self) -> usize {
+    pub(crate) fn cadence(&self, sample_rate: f64, size: usize) -> Cadence {
         match self {
-            Self::Cpu(analyzer) => analyzer.size(),
+            Self::Cpu(_) => Cadence::new(sample_rate, size, CPU_BUDGET),
             #[cfg(feature = "gpu-fft")]
-            Self::Gpu { fallback, .. } => fallback.size(),
+            Self::Gpu { stream, budget, .. } => {
+                let budget = if stream.is_some() {
+                    *budget
+                } else {
+                    CPU_BUDGET
+                };
+                Cadence::new(sample_rate, size, budget)
+            }
         }
     }
 
-    pub(crate) fn power_db(
+    pub(crate) fn push(
         &mut self,
-        input: &[Complex<f32>],
-        out: &mut [f32],
-        frame: SpectrumFrame,
-    ) -> Option<SpectrumFrame> {
-        let size = self.size();
-        if input.len() != size || out.len() != size {
-            tracing::error!(
-                input = input.len(),
-                out = out.len(),
-                size,
-                "spectrum buffers do not fit the transform; frame dropped"
-            );
-            return None;
-        }
+        samples: &[Complex<f32>],
+        index: u64,
+        tuning: Tuning,
+        cadence: Cadence,
+        publish: &mut impl FnMut(SpectrumFrame, &[f32]),
+    ) {
         match self {
-            Self::Cpu(analyzer) => {
-                analyzer.power_db(input, out);
-                Some(frame)
-            }
+            Self::Cpu(spectrum) => spectrum.push(samples, index, tuning, cadence, publish),
             #[cfg(feature = "gpu-fft")]
             Self::Gpu {
-                analyzer,
-                fallback,
-                failed,
+                stream, fallback, ..
             } => {
-                if !*failed {
-                    match analyzer.power_db(input, out, frame) {
-                        Ok(completed) => return completed,
-                        Err(error) => {
-                            tracing::warn!(%error, "GPU spectrum FFT failed; switching to CPU");
-                            *failed = true;
-                        }
-                    }
+                let Some(gpu) = stream else {
+                    return fallback.push(samples, index, tuning, cadence, publish);
+                };
+                if let Err(error) = gpu.push(samples, index, tuning, cadence, publish) {
+                    tracing::error!(%error, "GPU spectrum failed; switching to CPU");
+                    *stream = None;
+                    fallback.push(samples, index, tuning, cadence, publish);
                 }
-                fallback.power_db(input, out);
-                Some(frame)
+            }
+        }
+    }
+
+    pub(crate) fn restart(&mut self, publish: &mut impl FnMut(SpectrumFrame, &[f32])) {
+        match self {
+            Self::Cpu(spectrum) => spectrum.restart(publish),
+            #[cfg(feature = "gpu-fft")]
+            Self::Gpu {
+                stream, fallback, ..
+            } => match stream {
+                Some(gpu) => gpu.restart(),
+                None => fallback.restart(publish),
+            },
+        }
+    }
+
+    pub(crate) fn idle(
+        &mut self,
+        cadence: Cadence,
+        publish: &mut impl FnMut(SpectrumFrame, &[f32]),
+    ) {
+        match self {
+            Self::Cpu(spectrum) => spectrum.idle(cadence, publish),
+            #[cfg(feature = "gpu-fft")]
+            Self::Gpu {
+                stream, fallback, ..
+            } => {
+                let Some(gpu) = stream else {
+                    return fallback.idle(cadence, publish);
+                };
+                if let Err(error) = gpu.idle(publish) {
+                    tracing::error!(%error, "GPU spectrum failed; switching to CPU");
+                    *stream = None;
+                }
             }
         }
     }
@@ -145,8 +221,8 @@ pub(crate) fn display_window(size: usize) -> Vec<f32> {
     blackman_harris(size)
 }
 
-pub(crate) fn cpu_analyzer(size: usize) -> CpuSpectrumAnalyzer {
-    CpuSpectrumAnalyzer::with_window(display_window(size))
+pub(crate) fn cpu_analyzer(size: usize) -> sdrmm_dsp::SpectrumAnalyzer {
+    sdrmm_dsp::SpectrumAnalyzer::with_window(display_window(size))
 }
 
 #[cfg(any(feature = "gpu-fft", test))]
@@ -158,89 +234,4 @@ fn should_use_gpu(size: usize, _lanes: usize) -> bool {
 use crate::gpu;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn buffers_that_do_not_fit_the_transform_drop_the_frame_instead_of_panicking() {
-        let mut analyzer = SpectrumAnalyzer::Cpu(cpu_analyzer(64));
-        let frame = SpectrumFrame {
-            timestamp: 7,
-            center_hz: 100e6,
-            span_hz: 48_000.0,
-        };
-        let input = vec![Complex::new(0.0, 0.0); 32];
-        let mut out = vec![0.0; 32];
-        assert_eq!(analyzer.power_db(&input, &mut out, frame), None);
-        let input = vec![Complex::new(0.0, 0.0); 64];
-        let mut out = vec![0.0; 64];
-        assert_eq!(analyzer.power_db(&input, &mut out, frame), Some(frame));
-    }
-
-    #[test]
-    fn gpu_selection_only_targets_expensive_workloads() {
-        assert!(!should_use_gpu(4096, 1));
-        assert!(should_use_gpu(GPU_MIN_FFT_SIZE, 1));
-        assert!(!should_use_gpu(4096, 4));
-        assert!(!should_use_gpu(4096, 32));
-        assert!(!should_use_gpu(16_384, 4));
-        assert!(!should_use_gpu(12_345, 4));
-    }
-
-    #[cfg(feature = "gpu-fft")]
-    #[test]
-    #[ignore = "CI runs this explicitly with a guaranteed headless adapter"]
-    fn gpu_matches_cpu_when_a_hardware_adapter_is_available() {
-        let context = match gpu::Context::new_for_test().map(Arc::new) {
-            Ok(context) => context,
-            Err(error) if std::env::var_os("SDRMM_REQUIRE_GPU_FFT_TEST").is_some() => {
-                panic!("required GPU FFT test adapter is unavailable: {error}")
-            }
-            Err(_) => return,
-        };
-        let size = 1024;
-        let mut noise = 0x1234_5678_u32;
-        let input: Vec<_> = (0..size)
-            .map(|index| {
-                noise = noise.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-                let phase = std::f32::consts::TAU * 117.0 * index as f32 / size as f32;
-                let dither = (noise as f32 / u32::MAX as f32 - 0.5) * 0.02;
-                Complex::from_polar(0.75, phase) + Complex::new(dither, -0.5 * dither)
-            })
-            .collect();
-        let mut expected = vec![0.0; size];
-        cpu_analyzer(size).power_db(&input, &mut expected);
-        let mut actual = vec![0.0; size];
-        let mut analyzer = gpu::Analyzer::new(context, size).unwrap();
-        let frame = SpectrumFrame {
-            timestamp: 1,
-            center_hz: 100_000_000.0,
-            span_hz: 2_400_000.0,
-        };
-        assert_eq!(analyzer.power_db(&input, &mut actual, frame).unwrap(), None);
-        let deadline = std::time::Instant::now() + gpu::GPU_FRAME_BUDGET.saturating_mul(3);
-        while analyzer.power_db(&input, &mut actual, frame).unwrap() != Some(frame) {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "GPU spectrum worker did not return a frame"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
-
-        for (bin, (&cpu, &gpu)) in expected.iter().zip(&actual).enumerate() {
-            assert!(
-                (cpu - gpu).abs() < 0.1,
-                "bin {bin}: CPU {cpu} dB, GPU {gpu} dB"
-            );
-        }
-        let mut fallback = SpectrumAnalyzer::Gpu {
-            analyzer: Box::new(analyzer),
-            fallback: cpu_analyzer(size),
-            failed: true,
-        };
-        sdrmm_test_support::assert_no_alloc("spectrum CPU fallback", || {
-            assert_eq!(fallback.power_db(&input, &mut actual, frame), Some(frame));
-        });
-        assert_eq!(actual, expected);
-    }
-}
+mod tests;

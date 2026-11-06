@@ -11,10 +11,7 @@ use arc_swap::ArcSwap;
 
 use super::{
     ChannelHost, DspCommand, DspMeta, MAX_LANE_CHANNELS, MAX_LANE_MONITORS, dsp_block_len,
-    frontend::Frontend,
-    retire::Reclaimer,
-    spectrum::{average::FrameAverage, history::SpectrumHistory},
-    subbands::Subbands,
+    frontend::Frontend, retire::Reclaimer, subbands::Subbands,
 };
 use crate::{
     audio_recording::AudioTaps,
@@ -22,12 +19,10 @@ use crate::{
     network_export::NetworkExportTap,
     publishing::{recording::RecordingPublisher, spectrum::SpectrumPublisher},
     recording::RecorderTap,
-    spectrum::{SpectrumAnalyzer, SpectrumFrame},
+    spectrum::{SpectrumAnalyzer, SpectrumFrame, Tuning},
     time_machine::TimeMachineTap,
 };
 
-const TARGET_FPS: f64 = 30.0;
-const SPECTRUM_AVERAGES: u32 = 16;
 const IDLE_PARK: Duration = Duration::from_millis(20);
 
 #[derive(Default)]
@@ -116,10 +111,6 @@ pub(super) fn dsp_loop(
         ..
     } = lane;
     let size = *spectrum_size;
-    let mut spectrum_history = SpectrumHistory::new(size);
-    let mut db = vec![0.0f32; size];
-    let mut frame_average = FrameAverage::new(size);
-    let mut averaged = vec![0.0f32; size];
     let mut channels = hosted_channels();
     let mut monitors = hosted_monitors();
     let mut tap: Option<RecorderTap> = None;
@@ -127,6 +118,10 @@ pub(super) fn dsp_loop(
     let mut network_tap: Option<NetworkExportTap> = None;
     let mut history: Option<TimeMachineTap> = None;
     let mut seq: u32 = 0;
+    let mut publish = |frame: SpectrumFrame, db: &[f32]| {
+        seq = seq.wrapping_add(1);
+        publisher.publish(seq, frame, db);
+    };
     let mut next_input = None;
     let mut served = Instant::now();
     let mut frontend = Frontend::new(*meta.load_full());
@@ -147,7 +142,11 @@ pub(super) fn dsp_loop(
             &mut retirement,
         );
         let snapshot = *meta.load_full();
-        let (hop, averages) = spectrum_cadence(snapshot.sample_rate, size);
+        let cadence = analyzer.cadence(snapshot.sample_rate, size);
+        let tuning = Tuning {
+            center_hz: snapshot.center_hz,
+            span_hz: snapshot.sample_rate as f32,
+        };
         frontend.follow(snapshot);
         subbands.prepare(&mut channels, snapshot.center_hz, snapshot.sample_rate);
         let block_len = dsp_block_len(snapshot.sample_rate);
@@ -155,11 +154,7 @@ pub(super) fn dsp_loop(
             record_stall(stalled_us, &mut served);
             if next_input.is_some_and(|next| next != total) {
                 frontend.reset();
-                spectrum_history.reset();
-                if let Some(partial) = frame_average.flush(&mut averaged) {
-                    seq = seq.wrapping_add(1);
-                    publisher.publish(seq, partial, &averaged);
-                }
+                analyzer.restart(&mut publish);
             }
             next_input = Some(total + raw.len() as u64);
             let slice = frontend.apply(raw);
@@ -201,38 +196,14 @@ pub(super) fn dsp_loop(
                     host.process_at(slice, total, snapshot.center_hz);
                 }
             }
-            spectrum_history.push(slice, total, hop, |window, timestamp| {
-                let frame = SpectrumFrame {
-                    timestamp,
-                    center_hz: snapshot.center_hz,
-                    span_hz: snapshot.sample_rate as f32,
-                };
-                if let Some(completed) = analyzer.power_db(window, &mut db, frame)
-                    && let Some(done) = frame_average.push(completed, &db, averages, &mut averaged)
-                {
-                    seq = seq.wrapping_add(1);
-                    publisher.publish(seq, done, &averaged);
-                }
-            });
+            analyzer.push(slice, total, tuning, cadence, &mut publish);
         });
         if consumed == 0 {
-            if spectrum_history.settling(hop)
-                && let Some(partial) = frame_average.flush(&mut averaged)
-            {
-                seq = seq.wrapping_add(1);
-                publisher.publish(seq, partial, &averaged);
-            }
+            analyzer.idle(cadence, &mut publish);
             std::thread::park_timeout(IDLE_PARK);
         }
     }
     release_recording(tap.take(), recording_publisher.take());
-}
-
-fn spectrum_cadence(sample_rate: f64, size: usize) -> (usize, u32) {
-    let per_frame = (sample_rate / TARGET_FPS).max(1.0);
-    let hop = ((per_frame / f64::from(SPECTRUM_AVERAGES)) as usize).max(size / 4);
-    let averages = (per_frame / hop as f64).round() as u32;
-    (hop, averages.clamp(1, SPECTRUM_AVERAGES))
 }
 
 fn record_stall(stalled_us: &AtomicU64, served: &mut Instant) {
@@ -421,21 +392,6 @@ fn drain_commands(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn each_published_frame_averages_the_transforms_that_fit_its_period() {
-        for rate in [2_400_000.0, 20_000_000.0, 61_440_000.0, 245_760_000.0] {
-            let (hop, averages) = spectrum_cadence(rate, crate::runtime::spectrum_size(rate));
-            assert_eq!(averages, SPECTRUM_AVERAGES);
-            let covered = hop as f64 * f64::from(averages) / rate;
-            assert!(
-                (covered - 1.0 / TARGET_FPS).abs() < 1e-3,
-                "{rate}: {covered} s"
-            );
-        }
-        assert_eq!(spectrum_cadence(48_000.0, 4_096), (1_024, 2));
-        assert_eq!(spectrum_cadence(8_000.0, 4_096).1, 1);
-    }
 
     #[test]
     fn taking_in_a_channel_allocates_nothing_on_the_dsp_thread() {

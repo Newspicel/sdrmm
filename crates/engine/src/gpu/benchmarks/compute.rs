@@ -1,5 +1,7 @@
+use std::{sync::mpsc, time::Duration};
+
+pub(super) use crate::gpu::compute::*;
 use crate::gpu::*;
-pub(super) use crate::gpu::{compute::*, fft::*};
 
 pub(crate) fn storage(context: &Context, count: usize) -> wgpu::Buffer {
     buffer(

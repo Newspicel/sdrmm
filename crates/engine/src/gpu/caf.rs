@@ -1,9 +1,6 @@
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU8, Ordering},
-    },
-    time::{Duration, Instant},
+use std::sync::{
+    Arc,
+    atomic::{AtomicU8, Ordering},
 };
 
 use bytemuck::{Pod, Zeroable};
@@ -17,19 +14,17 @@ use wgpu::util::DeviceExt;
 
 use super::{
     Context, buffer,
-    compute::{Kernel, compile, grid, initialized, module},
+    compute::{
+        FAILED, Kernel, MAPPED, PENDING, Readback, compile, grid, initialized, module, settle,
+    },
     fft::{FftBatch, Transforms, check_size},
 };
 
 type C32 = Complex<f32>;
 
 pub(crate) const MAX_GPU_BYTES: u64 = 512 << 20;
-const PATIENCE: Duration = Duration::from_secs(2);
 const THREADS: u64 = 256;
 const COMPLEX_BYTES: u64 = 8;
-const PENDING: u8 = 0;
-const MAPPED: u8 = 1;
-const FAILED: u8 = 2;
 const IDLE: u8 = 3;
 
 #[repr(C)]
@@ -132,63 +127,6 @@ const fn slots(shape: &BatchShape) -> usize {
     1 + shape.eca() as usize + shape.lanes
 }
 
-struct Readback {
-    buffer: wgpu::Buffer,
-    bytes: u64,
-    state: Arc<AtomicU8>,
-}
-
-impl Readback {
-    fn new(context: &Context, label: &str, bytes: u64) -> Self {
-        Self {
-            buffer: buffer(
-                &context.device,
-                label,
-                bytes,
-                wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            ),
-            bytes,
-            state: Arc::new(AtomicU8::new(PENDING)),
-        }
-    }
-
-    fn copy(&self, encoder: &mut wgpu::CommandEncoder, source: &wgpu::Buffer) {
-        encoder.copy_buffer_to_buffer(source, 0, &self.buffer, 0, self.bytes);
-    }
-
-    fn wait(&self, context: &Context, submission: wgpu::SubmissionIndex) -> Result<(), String> {
-        self.state.store(PENDING, Ordering::Release);
-        let state = Arc::clone(&self.state);
-        self.buffer
-            .map_async(wgpu::MapMode::Read, .., move |result| {
-                let outcome = if result.is_ok() { MAPPED } else { FAILED };
-                state.store(outcome, Ordering::Release);
-            });
-        context
-            .device
-            .poll(wgpu::PollType::Wait {
-                submission_index: Some(submission),
-                timeout: Some(PATIENCE),
-            })
-            .map_err(|error| format!("wait for the GPU: {error}"))?;
-        settle(context, &self.state)
-    }
-
-    fn read(&self, into: impl FnOnce(&[C32]) -> Result<(), String>) -> Result<(), String> {
-        let result = self
-            .buffer
-            .get_mapped_range(..)
-            .map_err(|error| format!("read GPU output: {error}"))
-            .and_then(|view| {
-                let values = bytemuck::try_cast_slice(&view)
-                    .map_err(|error| format!("GPU output layout: {error}"))?;
-                into(values)
-            });
-        self.buffer.unmap();
-        result
-    }
-}
-
 struct Staging {
     buffer: wgpu::Buffer,
     state: Arc<AtomicU8>,
@@ -235,24 +173,6 @@ impl Staging {
                 let outcome = if result.is_ok() { MAPPED } else { FAILED };
                 state.store(outcome, Ordering::Release);
             });
-    }
-}
-
-fn settle(context: &Context, state: &AtomicU8) -> Result<(), String> {
-    let deadline = Instant::now() + PATIENCE;
-    loop {
-        match state.load(Ordering::Acquire) {
-            MAPPED => return Ok(()),
-            FAILED => return Err("GPU mapping failed".to_owned()),
-            _ if Instant::now() >= deadline => return Err("GPU mapping timed out".to_owned()),
-            _ => {
-                context
-                    .device
-                    .poll(wgpu::PollType::Poll)
-                    .map_err(|error| format!("poll the GPU: {error}"))?;
-                std::thread::yield_now();
-            }
-        }
     }
 }
 

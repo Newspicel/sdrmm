@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use num_complex::Complex;
+
 use super::{super::*, compute::*};
 
 pub(super) struct Wideband {

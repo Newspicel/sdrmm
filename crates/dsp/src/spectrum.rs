@@ -56,6 +56,31 @@ impl SpectrumAnalyzer {
         bins_db(negative, scale, low);
         bins_db(positive, scale, high);
     }
+
+    /// Adds one transform's linear power to `average` in display order, skipping the dB round
+    /// trip that [`Self::power_db`] followed by [`PowerAverage::add`] would cost.
+    pub fn accumulate(&mut self, input: &[Complex<f32>], average: &mut PowerAverage) {
+        assert_eq!(input.len(), self.size, "input length must equal FFT size");
+        assert_eq!(average.sum.len(), self.size, "average length mismatch");
+
+        for ((dst, &s), &w) in self.buf.iter_mut().zip(input).zip(&self.window) {
+            *dst = s * w;
+        }
+        self.fft.process(&mut self.buf);
+
+        let scale = self.inv_gain * self.inv_gain;
+        let (positive, negative) = self.buf.split_at(self.size - self.size / 2);
+        let (low, high) = average.sum.split_at_mut(self.size / 2);
+        add_power(negative, scale, low);
+        add_power(positive, scale, high);
+        average.count += 1;
+    }
+}
+
+fn add_power(bins: &[Complex<f32>], scale: f32, sum: &mut [f32]) {
+    for (slot, bin) in sum.iter_mut().zip(bins) {
+        *slot += bin.norm_sqr() * scale;
+    }
 }
 
 fn bins_db(bins: &[Complex<f32>], scale: f32, out: &mut [f32]) {
@@ -552,6 +577,33 @@ mod tests {
         assert!(calm < raw / 3.0, "spread {calm} dB, raw {raw} dB");
         let mean = out.iter().sum::<f32>() / out.len() as f32;
         assert!((mean - -80.0).abs() < 1.0, "mean read as {mean}");
+    }
+
+    #[test]
+    fn accumulating_power_matches_averaging_each_transform_in_db() {
+        let size = 1_024;
+        let mut analyzer = SpectrumAnalyzer::new(size);
+        let mut via_db = PowerAverage::new(size);
+        let mut direct = PowerAverage::new(size);
+        let mut db = vec![0.0; size];
+        for seed in 1..=4u32 {
+            let input: Vec<_> = (0..size)
+                .map(|n| {
+                    let phase = 0.37 * n as f32 * seed as f32;
+                    Complex::new(phase.cos(), phase.sin()) * 0.1
+                })
+                .collect();
+            analyzer.power_db(&input, &mut db);
+            via_db.add(&db);
+            analyzer.accumulate(&input, &mut direct);
+        }
+        assert_eq!(direct.count(), 4);
+        let (mut expected, mut actual) = (vec![0.0; size], vec![0.0; size]);
+        via_db.take_db(&mut expected);
+        direct.take_db(&mut actual);
+        for (bin, (want, got)) in expected.iter().zip(&actual).enumerate() {
+            assert!((want - got).abs() < 0.01, "bin {bin}: {want} vs {got}");
+        }
     }
 
     #[test]
