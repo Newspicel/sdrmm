@@ -3266,9 +3266,9 @@ dependencies = [
 
 [[package]]
 name = "mfsk-core"
-version = "0.14.0"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66cc848416e7d49c53801f7d6620e800df29f8b641979c898e233f57fc3a8b06"
+checksum = "37981a8c61c73fdbfcbb78f0fd68704fddf1363ff76620d13b12c73383da0e45"
 dependencies = [
  "crc",
  "num-complex",
@@ -6421,7 +6421,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
