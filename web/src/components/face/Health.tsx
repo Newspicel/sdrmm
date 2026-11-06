@@ -3,6 +3,9 @@ import { formatSignedHz } from "../format";
 import type { ChipTone } from "./Chips";
 import { Stat } from "./Stats";
 
+/** A measured offset drifts; digits past a tenth are noise. */
+const MEASURED_DECIMALS = 1;
+
 export interface HealthStat {
   key: string;
   label: string;
@@ -29,7 +32,7 @@ export function healthStats(health: ChannelHealth | undefined): HealthStat[] {
     stats.push({
       key: "freq",
       label: "Δf",
-      text: formatSignedHz(health.freq_error_hz),
+      text: formatSignedHz(health.freq_error_hz, MEASURED_DECIMALS),
       title: "Offset from the tuned frequency",
     });
   }

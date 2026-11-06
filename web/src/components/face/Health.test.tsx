@@ -18,6 +18,7 @@ describe("health footer", () => {
       ["Err", "2.0/s", "warn"],
     ]);
     expect(healthStats({ errors_per_s: 0 })[0]?.tone).toBeUndefined();
+    expect(healthStats({ freq_error_hz: -101.273551941 })[0]?.text).toBe("−101.3 Hz");
   });
 
   it("draws a lock dot titled by its state", () => {

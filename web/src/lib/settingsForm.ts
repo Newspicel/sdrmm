@@ -229,6 +229,28 @@ export type OptionStatus = (key: string) => string | undefined;
 
 const NO_STATUS: OptionStatus = () => undefined;
 
+function statusOptions(control: Control): readonly ParamOption[] {
+  switch (control.type) {
+    case "choice":
+      return control.options;
+    case "number":
+      return control.presets ?? [];
+    case "live":
+      return statusOptions(control.fallback);
+    default:
+      return [];
+  }
+}
+
+/** The status readouts an option of `form` already names, which a face need not repeat. */
+export function namedReadouts(form: Form, choices: readonly ParamChoice[]): ReadonlySet<string> {
+  return new Set(
+    form.flatMap((field) =>
+      statusOptions(effectiveControl(field, choices)).flatMap((option) => option.status ?? []),
+    ),
+  );
+}
+
 /** An option's label, followed by the status readout it names while the decoder runs. */
 export function optionLabel(option: ParamOption, status: OptionStatus = NO_STATUS): string {
   const text = option.status == null ? undefined : status(option.status);

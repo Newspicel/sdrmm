@@ -40,17 +40,22 @@ const OUTPUT_SLOTS: usize = 32;
 const OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 
 /// A broadcast decoder's status as both its `broadcast` event and its node face: the readouts,
-/// and the services it found offered for the `service_key` setting.
+/// and the services it found offered for the `service_key` setting. The face keeps how the
+/// stream decodes ([`FACE_FIELDS`], bad frames once there are any); what it decoded, such as
+/// the ensemble or the text now playing, travels on the event alone.
 pub(crate) fn publish_status(out: &mut ChannelOutputs, status: BroadcastStatus, service_key: &str) {
     out.events.push(DecoderEvent::of(&status));
     let mut readouts = status.present(&BroadcastStatus::KIND).fields;
-    readouts.retain(|field| !HEALTH_FIELDS.contains(&field.key.as_str()));
+    readouts.retain(|field| {
+        FACE_FIELDS.contains(&field.key.as_str())
+            || (field.key == BAD_FRAMES_READOUT && status.frames_bad > 0)
+    });
     out.status = Some(ChannelStatus {
         health: health(&status),
         readouts,
         choices: vec![ParamChoice {
             name: service_key.to_owned(),
-            options: status.services.iter().map(service_option).collect(),
+            options: service_options(&status.services),
         }],
     });
 }
@@ -75,6 +80,18 @@ pub(crate) fn latest_status(out: &ChannelOutputs) -> Option<BroadcastStatus> {
         .iter()
         .rev()
         .find_map(DecoderEvent::read::<BroadcastStatus>)
+}
+
+/// The services found, led by `Auto` naming the one it chose; none while nothing was found,
+/// so the picker keeps its stand-in.
+fn service_options(services: &[BroadcastService]) -> Vec<ParamOption> {
+    if services.is_empty() {
+        return Vec::new();
+    }
+    let auto = ParamOption::new(serde_json::Value::Null, "Auto").status(SERVICE_READOUT);
+    std::iter::once(auto)
+        .chain(services.iter().map(service_option))
+        .collect()
 }
 
 fn service_option(service: &BroadcastService) -> ParamOption {

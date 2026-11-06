@@ -14,6 +14,7 @@ import {
   isQuiet,
   lanesOf,
   lanesValue,
+  namedReadouts,
   optionLabel,
   parseHz,
   presetIndex,
@@ -113,6 +114,18 @@ describe("option status", () => {
   it("keeps the bare label while no readout answers", () => {
     expect(choiceItems(options, null).options[0]?.label).toBe("Auto");
     expect(choiceItems(options, null, () => "").options[0]?.label).toBe("Auto");
+  });
+
+  it("names the readouts its options show, so a face need not repeat them", () => {
+    const form: Form = [
+      field("mode", { type: "choice", options }),
+      field("rate", { type: "live", fallback: { ...NUMBER, presets: [auto] } }),
+      field("on", TOGGLE),
+    ];
+    expect([...namedReadouts(form, [])]).toEqual(["mode"]);
+    const live = [{ name: "rate", options: [{ value: null, label: "Auto", status: "rate" }] }];
+    expect([...namedReadouts(form, live)]).toEqual(["mode", "rate"]);
+    expect(namedReadouts([field("on", TOGGLE)], []).size).toBe(0);
   });
 });
 

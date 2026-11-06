@@ -20,10 +20,11 @@ import {
   SKIPPED_HINT,
 } from "../../components/format";
 import { SignalRow } from "../../components/SignalRow";
-import { useChannelStatus } from "../../lib/channelStatus";
+import { statusChoices, useChannelStatus } from "../../lib/channelStatus";
 import { audioPassing, heardHz, useLevelStore } from "../../lib/levels";
 import { channelQueueSummary, queueLagging, usePipelineHealth } from "../../lib/pipeline";
 import { controllerOf, heldByOf, runsOf, sweptBy } from "../../lib/resolved";
+import { namedReadouts } from "../../lib/settingsForm";
 import type { BandMiss, ChannelStatus, Field, PatchNode, PatchNodeOf } from "../../lib/types";
 import { channelSettingsOf, liveChannelOf, useChannelEdit } from "../../lib/useChannelEdit";
 import type { ChannelEdit } from "../../lib/useChannelPatch";
@@ -154,6 +155,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
             deviceSet={live.deviceSet}
             channel={live.id}
             status={channelStatus}
+            named={namedReadouts(descriptor?.settings ?? [], statusChoices(channelStatus))}
             rejected={channel?.rejected ?? 0}
             skipped={channel?.skipped ?? 0}
           />
@@ -212,19 +214,21 @@ function ChannelFooterStats({
   deviceSet,
   channel,
   status,
+  named,
   rejected,
   skipped,
 }: {
   deviceSet: number;
   channel: number;
   status: ChannelStatus | undefined;
+  named: ReadonlySet<string>;
   rejected: number;
   skipped: number;
 }) {
   const pipeline = usePipelineHealth((state) => state.health);
   const summary = channelQueueSummary(pipeline, deviceSet, channel);
   const dropped = summary?.dropped ?? 0;
-  const readouts = status?.readouts ?? [];
+  const readouts = (status?.readouts ?? []).filter((field) => !named.has(field.key));
   if (
     !queueLagging(summary) &&
     dropped === 0 &&

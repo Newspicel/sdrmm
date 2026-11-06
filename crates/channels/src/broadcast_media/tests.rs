@@ -504,13 +504,7 @@ fn a_published_status_is_an_event_and_offers_its_services() {
     assert_eq!(latest_status(&out), Some(status));
     let face = out.status.expect("a channel status");
     assert_eq!(face.health.lock, Some(true));
-    assert!(
-        face.readouts
-            .iter()
-            .all(|field| !HEALTH_FIELDS.contains(&field.key.as_str())),
-        "the footer shows lock, SNR and offset: {:?}",
-        face.readouts
-    );
+    assert_eq!(readout_keys(&face), ["system"]);
     let [choice] = face.choices.as_slice() else {
         panic!("one choice: {:?}", face.choices);
     };
@@ -520,7 +514,15 @@ fn a_published_status_is_an_event_and_offers_its_services() {
         .iter()
         .map(|option| (option.value.clone(), option.label.as_str()))
         .collect();
-    assert_eq!(options, [(0x1234.into(), "Radio One"), (7.into(), "7")]);
+    assert_eq!(
+        options,
+        [
+            (serde_json::Value::Null, "Auto"),
+            (0x1234.into(), "Radio One"),
+            (7.into(), "7")
+        ]
+    );
+    assert_eq!(choice.options[0].status.as_deref(), Some(SERVICE_READOUT));
 }
 
 #[test]
@@ -604,7 +606,64 @@ fn every_auto_option_shows_a_readout_the_status_carries() {
         ]
     );
     assert!(
-        shown.iter().all(|key| keys.contains(key)),
-        "{shown:?} not all among {keys:?}"
+        shown
+            .iter()
+            .all(|key| keys.contains(key) && FACE_FIELDS.contains(&key.as_str())),
+        "{shown:?} not all among {keys:?} and on the face"
     );
+}
+
+fn readout_keys(face: &ChannelStatus) -> Vec<&str> {
+    face.readouts
+        .iter()
+        .map(|field| field.key.as_str())
+        .collect()
+}
+
+#[test]
+fn a_face_shows_how_the_stream_decodes_not_what_it_decoded() {
+    let status = BroadcastStatus {
+        locked: true,
+        label: Some("Radio One".to_owned()),
+        ensemble_label: Some("Ensemble".to_owned()),
+        bitrate_kbps: Some(64),
+        dynamic_label: Some("Song".to_owned()),
+        frames_ok: 10,
+        ..BroadcastStatus::default()
+    };
+    let mut out = ChannelOutputs::default();
+
+    publish_status(&mut out, status.clone(), "service_id");
+    let face = out.status.take().expect("a channel status");
+    assert_eq!(
+        readout_keys(&face),
+        [SYSTEM_READOUT, SERVICE_READOUT, "bitrate"]
+    );
+
+    publish_status(
+        &mut out,
+        BroadcastStatus {
+            frames_bad: 2,
+            ..status
+        },
+        "service_id",
+    );
+    let face = out.status.expect("a channel status");
+    assert_eq!(
+        readout_keys(&face),
+        [
+            SYSTEM_READOUT,
+            SERVICE_READOUT,
+            "bitrate",
+            BAD_FRAMES_READOUT
+        ]
+    );
+}
+
+#[test]
+fn no_services_found_offers_no_auto_either() {
+    let mut out = ChannelOutputs::default();
+    publish_status(&mut out, BroadcastStatus::default(), "service_id");
+    let face = out.status.expect("a channel status");
+    assert!(face.choices[0].options.is_empty());
 }

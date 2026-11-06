@@ -33,8 +33,8 @@ export function formatHz(hz: number): string {
   return si(hz, "Hz");
 }
 
-export function formatSignedHz(hz: number): string {
-  return `${hz < 0 ? "−" : "+"}${formatHz(Math.abs(hz))}`;
+export function formatSignedHz(hz: number, decimals = DECIMALS): string {
+  return `${hz < 0 ? "−" : "+"}${si(Math.abs(hz), "Hz", decimals)}`;
 }
 
 export function formatSampleRate(samplesPerSecond: number): string {

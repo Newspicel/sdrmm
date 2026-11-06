@@ -145,8 +145,20 @@ pub(crate) const TRANSMISSION_MODE_READOUT: &str = "transmission_mode";
 /// The readout naming the code rate found, which `Auto` shows.
 pub(crate) const CODE_RATE_READOUT: &str = "code_rate";
 
-/// Fields the standard health footer already shows, left out of a face's readouts.
-pub(crate) const HEALTH_FIELDS: [&str; 3] = ["locked", "snr", "offset"];
+/// The readout counting frames that failed their check.
+pub(crate) const BAD_FRAMES_READOUT: &str = "bad_frames";
+
+/// The readout naming the service played, which the service picker's `Auto` shows.
+pub(crate) const SERVICE_READOUT: &str = "service";
+
+/// The readouts a face carries: what an `Auto` option names, and the stream's bitrate.
+pub(crate) const FACE_FIELDS: [&str; 5] = [
+    SYSTEM_READOUT,
+    TRANSMISSION_MODE_READOUT,
+    CODE_RATE_READOUT,
+    SERVICE_READOUT,
+    "bitrate",
+];
 
 impl EventPayload for BroadcastStatus {
     fn present(&self, _kind: &EventKind) -> Presentation {
@@ -170,7 +182,7 @@ impl EventPayload for BroadcastStatus {
                         .filter(|mode| *mode != DabTransmissionMode::Auto)
                         .and_then(|mode| text_of(mode.choice_label())),
                 ),
-                ("service", "Service", text(self.label.as_deref())),
+                (SERVICE_READOUT, "Service", text(self.label.as_deref())),
                 ("ensemble", "Ensemble", text(self.ensemble_label.as_deref())),
                 (
                     "bitrate",
@@ -186,7 +198,7 @@ impl EventPayload for BroadcastStatus {
                 ("now", "Now", text(self.dynamic_label.as_deref())),
                 ("frames", "Frames", count(Some(f64::from(self.frames_ok)))),
                 (
-                    "bad_frames",
+                    BAD_FRAMES_READOUT,
                     "Bad frames",
                     count(Some(f64::from(self.frames_bad))),
                 ),
