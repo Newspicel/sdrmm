@@ -10,8 +10,8 @@ inputs:
   target:
     description: Additional target triple
     default: ""
-  tauri:
-    description: Install the Tauri Linux packages
+  cef:
+    description: Install what building and packaging Chromium needs
     default: "false"
 runs:
   using: composite
@@ -26,15 +26,22 @@ runs:
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends clang libclang-dev nasm python3 make cmake
-    - if: runner.os == 'Linux' && inputs.tauri == 'true'
+    - if: runner.os == 'Linux' && inputs.cef == 'true'
       shell: bash
       run: |
         sudo apt-get install -y --no-install-recommends \
-          libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev \
-          file patchelf xdg-utils gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-alsa
+          ninja-build file patchelf rpm xdg-utils libnss3 libnspr4 libatk1.0-0t64 \
+          libatk-bridge2.0-0t64 libatspi2.0-0t64 libcups2t64 libdrm2 libgbm1 libxkbcommon0 \
+          libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libpango-1.0-0 libcairo2 libasound2t64
     - if: runner.os == 'macOS'
       shell: bash
       run: brew list nasm > /dev/null 2>&1 || brew install nasm
+    - if: runner.os == 'macOS' && inputs.cef == 'true'
+      shell: bash
+      run: brew list ninja > /dev/null 2>&1 || brew install ninja
+    - if: runner.os == 'Windows' && inputs.cef == 'true'
+      shell: pwsh
+      run: choco install ninja --no-progress -y
     - if: runner.os == 'Windows'
       uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
       with:

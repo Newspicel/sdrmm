@@ -2,17 +2,12 @@
 set -euo pipefail
 
 arch="$1"
-tools="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
+tools="${XDG_CACHE_HOME:-$HOME/.cache}/.cargo-packager/AppImage"
 mkdir -p "$tools"
 
 apprun_release=apprun-old
 linuxdeploy_release=1-alpha-20251107-1
 appimage_plugin_release=1-alpha-20250213-1
-gtk_plugin_commit=dda522bce37387f1b853d9095713bfaa924c8423
-gstreamer_plugin_commit=2a2e67491c32995a3f279ad0ecbe77abd512b42a
-
-gtk_plugin_sha256=7804c9eef13e59bf2783aad9882ef9db8f3f3f9e8d631874b1d348d550a3693f
-gstreamer_plugin_sha256=c107b49d84edbffc6ab226ed1007e0626a4f7aa2c3a36b7782bef62351d49e94
 
 case "$arch" in
   x86_64)
@@ -59,16 +54,11 @@ fetch() {
 }
 
 releases=https://github.com
-raw=https://raw.githubusercontent.com
 
 fetch "$releases/tauri-apps/binary-releases/releases/download/$apprun_release/AppRun-$arch" \
   "AppRun-$arch" "$apprun_sha256"
 fetch "$releases/linuxdeploy/linuxdeploy/releases/download/$linuxdeploy_release/linuxdeploy-$arch.AppImage" \
   "linuxdeploy-$arch.AppImage" "$linuxdeploy_sha256"
-fetch "$raw/tauri-apps/linuxdeploy-plugin-gtk/$gtk_plugin_commit/linuxdeploy-plugin-gtk.sh" \
-  linuxdeploy-plugin-gtk.sh "$gtk_plugin_sha256"
-fetch "$raw/tauri-apps/linuxdeploy-plugin-gstreamer/$gstreamer_plugin_commit/linuxdeploy-plugin-gstreamer.sh" \
-  linuxdeploy-plugin-gstreamer.sh "$gstreamer_plugin_sha256"
 fetch "$releases/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/$appimage_plugin_release/linuxdeploy-plugin-appimage-$arch.AppImage" \
   linuxdeploy-plugin-appimage.AppImage "$appimage_plugin_sha256"
 ls -l "$tools"

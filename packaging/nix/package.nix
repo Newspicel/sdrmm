@@ -6,23 +6,16 @@
   cmake,
   copyDesktopItems,
   makeDesktopItem,
+  ninja,
+  runCommand,
   wrapGAppsHook3,
-  cairo,
-  gdk-pixbuf,
-  glib,
+  cef-binary,
   gtk3,
-  libayatana-appindicator,
   libGL,
   libopus,
   ffmpeg,
-  librsvg,
-  libsoup_3,
-  openssl,
-  pango,
   soapysdr,
   vulkan-loader,
-  webkitgtk_4_1,
-  xdotool,
   soapyPlugins ? [ ],
   sdrplayApi ? null,
 }:
@@ -33,6 +26,36 @@ let
     vulkan-loader
   ]
   ++ lib.optional (sdrplayApi != null) sdrplayApi;
+
+  # The Chromium build `cef-dll-sys` in Cargo.lock was generated for. Nix has no network in the
+  # sandbox, so the archive is pinned here by the SHA-1 the CEF index publishes.
+  cefVersion = "156.0.15";
+  cefArchive = {
+    x86_64-linux = {
+      platform = "linux64";
+      hash = "sha1-CSNUJyIuAmpPNDmXQt8nxdmKT4o=";
+    };
+    aarch64-linux = {
+      platform = "linuxarm64";
+      hash = "sha1-hWAtuOgTrYJLRa5UIYR2qj2R1WE=";
+    };
+  };
+  cef = cef-binary.override {
+    version = cefVersion;
+    gitRevision = "cf671c0";
+    chromiumVersion = "156.0.8078.80";
+    srcHashes = lib.mapAttrs (_: archive: archive.hash) cefArchive;
+  };
+  archive = cefArchive.${stdenv.hostPlatform.system};
+  # The layout `cef-dll-sys` reads from CEF_PATH: the runtime beside the SDK.
+  cefDir = runCommand "sdrmm-cef-${cefVersion}" { } ''
+    mkdir -p $out
+    ln -s ${cef}/Release/* ${cef}/Resources/* $out/
+    ln -s ${cef}/{CMakeLists.txt,cmake,include,libcef_dll,CREDITS.html} $out/
+    cat > $out/archive.json <<EOF
+    {"type":"minimal","name":"cef_binary_${cefVersion}+gcf671c0+chromium-156.0.8078.80_${archive.platform}_minimal.tar.bz2","sha1":""}
+    EOF
+  '';
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "sdrmm-desktop";
@@ -55,30 +78,29 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   nativeBuildInputs = [
     cmake
+    ninja
     rustPlatform.bindgenHook
     copyDesktopItems
     pkg-config
     wrapGAppsHook3
   ];
 
+  # cmake and ninja build CEF's wrapper from cargo, not as the package's own build system.
+  dontUseCmakeConfigure = true;
+  dontUseNinjaBuild = true;
+  dontUseNinjaInstall = true;
+  dontUseNinjaCheck = true;
+
+  env.CEF_PATH = cefDir;
+
   buildInputs = [
-    cairo
-    gdk-pixbuf
-    glib
     gtk3
-    libayatana-appindicator
     libopus
     (ffmpeg.override {
       withGPL = false;
       withVersion3 = false;
       withFdkAac = true;
     })
-    librsvg
-    libsoup_3
-    openssl
-    pango
-    webkitgtk_4_1
-    xdotool
   ];
 
   # Nix fetches nothing without a pinned hash, so the web bundle comes prebuilt: the release
@@ -110,7 +132,17 @@ rustPlatform.buildRustPackage (finalAttrs: {
     })
   ];
 
+  # Chromium runs from beside the helper in lib/sdrmm-app, which the launcher's rpath names.
   postInstall = ''
+    runtime="$out/lib/sdrmm-app"
+    mkdir -p "$runtime"
+    mv "$out/bin/sdrmm-desktop-helper" "$runtime/"
+    for file in ${cef}/Release/* ${cef}/Resources/*; do
+      case "$(basename "$file")" in
+        chrome-sandbox | *.a) ;;
+        *) ln -s "$file" "$runtime/" ;;
+      esac
+    done
     install -Dm644 apps/desktop/icons/128x128.png \
       "$out/share/icons/hicolor/128x128/apps/dev.newspicel.sdrmm.png"
     install -Dm644 apps/desktop/icons/128x128@2x.png \

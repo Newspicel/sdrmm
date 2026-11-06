@@ -13,7 +13,7 @@ pub fn utf8(path: &Path) -> Result<&str> {
 }
 
 pub fn run_with_env(program: &str, args: &[&str], cwd: &Path, env: &[(&str, &str)]) -> Result<()> {
-    println!("$ {program} {}", args.join(" "));
+    println!("$ {program} {}", shown(args).join(" "));
     let status = Command::new(program)
         .args(args)
         .envs(env.iter().copied())
@@ -21,9 +21,16 @@ pub fn run_with_env(program: &str, args: &[&str], cwd: &Path, env: &[(&str, &str
         .status()
         .with_context(|| format!("failed to spawn `{program}` (is it installed?)"))?;
     if !status.success() {
-        bail!("`{program} {}` failed with {status}", args.join(" "));
+        bail!("`{program} {}` failed with {status}", shown(args).join(" "));
     }
     Ok(())
+}
+
+/// Inline JSON configs are long; the log shows their first line.
+fn shown<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    args.iter()
+        .map(|arg| if arg.starts_with('{') { "{...}" } else { arg })
+        .collect()
 }
 
 pub fn retry(attempts: usize, mut run: impl FnMut() -> Result<()>) -> Result<()> {

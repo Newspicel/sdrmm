@@ -53,7 +53,7 @@ registry: descriptors, settings forms, event kinds with their presenters, feeds 
 shared behavior is a capability or facet a decoder declares.
 
 `apps/sdrmm` is the CLI and owns the process. `apps/desktop` starts the same server on a random
-loopback port and opens it in a Tauri window. Both probe SoapySDR in a short-lived child process.
+loopback port and opens it in a Chromium (CEF) window. Both probe SoapySDR in a short-lived child process.
 `apps/ios` and `apps/android` are native phone apps on `sdrmm-mobile-core`.
 
 The dependency rules:

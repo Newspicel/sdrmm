@@ -38,7 +38,7 @@ while IFS= read -r path; do
     *) check_name "$path" ;;
   esac
   checked=$((checked + 1))
-done < <(find "$bundle" -maxdepth 2 \
+done < <(find "$bundle" -maxdepth 1 \
   \( -name '*.app' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
      -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) | sort)
 

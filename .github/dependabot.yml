@@ -11,11 +11,6 @@ updates:
     groups:
       cargo-minor:
         update-types: [minor, patch]
-    ignore:
-      - dependency-name: tauri
-        update-types: [version-update:semver-major]
-      - dependency-name: tauri-build
-        update-types: [version-update:semver-major]
 
   - package-ecosystem: npm
     directories: [/web, /site]

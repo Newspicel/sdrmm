@@ -3,45 +3,53 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use sdrmm_server::StoreError;
-use tauri::AppHandle;
-use tauri_plugin_dialog::{
-    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
-};
 
-use crate::update;
+use crate::{exit::Exit, update};
 
 const UPDATE: &str = "Update";
 const DELETE: &str = "Delete database";
 const QUIT: &str = "Quit";
 
-pub fn ask(app: &AppHandle, db: PathBuf, error: &StoreError) {
-    let handle = app.clone();
-    app.dialog()
-        .message(format!("{error}\n\n{}", db.display()))
-        .title("Database is newer")
-        .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::YesNoCancelCustom(
-            UPDATE.to_string(),
-            DELETE.to_string(),
-            QUIT.to_string(),
-        ))
-        .show_with_result(move |choice| act(&handle, &db, &choice));
+#[derive(Debug, PartialEq, Eq)]
+enum Choice {
+    Update,
+    Delete,
+    Quit,
 }
 
-fn act(app: &AppHandle, db: &Path, choice: &MessageDialogResult) {
-    match choice {
-        MessageDialogResult::Custom(label) if label == UPDATE => {
-            tauri::async_runtime::spawn(update::update_now(app.clone()));
-        }
-        MessageDialogResult::Custom(label) if label == DELETE => match delete(db) {
-            Ok(()) => app.restart(),
+pub fn ask(db: PathBuf, error: &StoreError) -> Exit {
+    let answer = MessageDialog::new()
+        .set_title("Database is newer")
+        .set_description(format!("{error}\n\n{}", db.display()))
+        .set_level(MessageLevel::Warning)
+        .set_buttons(MessageButtons::YesNoCancelCustom(
+            UPDATE.to_owned(),
+            DELETE.to_owned(),
+            QUIT.to_owned(),
+        ))
+        .show();
+    match choice(&answer) {
+        Choice::Update => update::update_now(),
+        Choice::Delete => match delete(&db) {
+            Ok(()) => Exit::Relaunch,
             Err(e) => {
                 tracing::error!("could not delete {}: {e}", db.display());
-                app.exit(1);
+                Exit::Failed
             }
         },
-        _ => app.exit(0),
+        Choice::Quit => Exit::Quit,
+    }
+}
+
+fn choice(answer: &MessageDialogResult) -> Choice {
+    match answer {
+        MessageDialogResult::Custom(label) if label == UPDATE => Choice::Update,
+        MessageDialogResult::Custom(label) if label == DELETE => Choice::Delete,
+        MessageDialogResult::Yes => Choice::Update,
+        MessageDialogResult::No => Choice::Delete,
+        _ => Choice::Quit,
     }
 }
 
@@ -69,5 +77,16 @@ mod tests {
         std::fs::write(dir.path().join("sdrmm.db-wal"), b"wal").unwrap();
         delete(&db).unwrap();
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn every_platform_answer_maps_to_one_choice() {
+        let custom = |label: &str| MessageDialogResult::Custom(label.to_owned());
+        assert_eq!(choice(&custom(UPDATE)), Choice::Update);
+        assert_eq!(choice(&custom(DELETE)), Choice::Delete);
+        assert_eq!(choice(&custom(QUIT)), Choice::Quit);
+        assert_eq!(choice(&MessageDialogResult::Yes), Choice::Update);
+        assert_eq!(choice(&MessageDialogResult::No), Choice::Delete);
+        assert_eq!(choice(&MessageDialogResult::Cancel), Choice::Quit);
     }
 }

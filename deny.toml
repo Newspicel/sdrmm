@@ -1,29 +1,15 @@
 # Supply-chain gate for `cargo xtask audit` (CI mirrors it verbatim).
 
 [advisories]
-# Unsound advisories default to workspace-direct crates, which hides RUSTSEC-2024-0429:
-# the one advisory in this tree that is a soundness bug rather than a "no longer maintained"
-# notice. A transitive dependency can dereference a null pointer just as well as a direct one.
+# Unsound advisories default to workspace-direct crates; a transitive dependency can
+# dereference a null pointer just as well as a direct one.
 unsound = "all"
 # Unmaintained is the opposite case: it is only actionable for crates we chose ourselves.
-# Nothing unmaintained here today is one: the ten gtk3-rs crates, five `unic-*` and
-# `proc-macro-error` arrive through `tauri`, `paste` through `utoipa-axum`, and pinning them
-# as ignores would bury the advisories we can actually reason about under a wall of upstream
-# noise.
+# `paste` arrives through `utoipa-axum`, and pinning upstream notices as ignores would bury the
+# advisories we can actually reason about.
 unmaintained = "workspace"
-# An exception that no longer applies is a lie about the tree, so make it fail rather than warn:
-# when tauri finally moves off gtk3, this gate is what tells us to delete the ignore below.
+# An exception that no longer applies is a lie about the tree, so make it fail rather than warn.
 unused-ignored-advisory = "deny"
-
-ignore = [
-    # `glib` 0.18.5 is the newest version that can exist in this graph: the fix landed in
-    # 0.20.0, gtk3-rs is end-of-life at 0.18.2 (its 0.18 branch has had no commit since
-    # Dec 2023), and tauri v2 pins that whole stack through tao/wry/gtk/webkit2gtk. The
-    # affected functions, `VariantStrIter::{next,nth,last,next_back,nth_back}`, are called
-    # by nothing in the graph: glib is the only crate here that so much as names the type, and
-    # it reaches us only through the Linux desktop shell. Drop this the day tauri ships gtk4.
-    { id = "RUSTSEC-2024-0429", reason = "glib::VariantStrIter is unreachable here, and no fixed version exists below glib 0.20 / gtk4" },
-]
 
 [licenses]
 # Everything the AGPL-3.0-or-later binaries may carry. GPL-3.0-only, LGPL-2.1-or-later and the
@@ -37,6 +23,7 @@ allow = [
     "BSD-3-Clause",
     "BSL-1.0",
     "BlueOak-1.0.0",
+    "bzip2-1.0.6",
     "CC0-1.0",
     "CDLA-Permissive-2.0",
     "ISC",
@@ -51,7 +38,7 @@ allow = [
 ]
 
 [bans]
-# Duplicate versions are somebody else's dependency tree: tauri alone brings four `windows-sys`.
+# Duplicate versions are somebody else's dependency tree, `windows-sys` above all.
 # `cargo xtask check` pins the pair that actually breaks a build (gpu-allocator vs wgpu-hal).
 multiple-versions = "allow"
 wildcards = "deny"

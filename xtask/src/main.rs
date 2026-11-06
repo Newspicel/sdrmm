@@ -11,15 +11,13 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand};
 use notify::{Config, Event, EventKind, PollWatcher, RecursiveMode, Watcher};
-pub(crate) use xtask_release::bundled;
 pub(crate) use xtask_release::dist::release_features;
-pub(crate) use xtask_release::media::{ensure_target, media_dir, media_env, run_against_media};
+pub(crate) use xtask_release::media::{ensure_target, media_dir, media_env};
 pub(crate) use xtask_release::proc::{run, run_with_env, utf8};
 pub(crate) use xtask_release::web::{PNPM, ensure_web_deps, web_build};
 
 mod architecture;
 mod bandplan;
-mod bundle;
 mod comments;
 mod ios;
 mod licenses;
@@ -67,11 +65,14 @@ enum Cmd {
         #[arg(long)]
         offline: bool,
     },
+    /// Lints the desktop app; `--bundles` packages it, `--run` starts it.
     Desktop {
         #[arg(long)]
         target: Option<String>,
-        #[arg(long)]
+        #[arg(long, conflicts_with = "run")]
         bundles: Option<String>,
+        #[arg(long)]
+        run: bool,
     },
     #[command(flatten)]
     Release(xtask_release::Cmd),
@@ -105,7 +106,11 @@ fn main() -> Result<()> {
         Cmd::Smoke => smoke(&root()),
         Cmd::Screenshots => screenshots(&root()),
         Cmd::Bandplan { offline } => bandplan::run(&root(), offline),
-        Cmd::Desktop { target, bundles } => desktop(&root(), target.as_deref(), bundles.as_deref()),
+        Cmd::Desktop {
+            target,
+            bundles,
+            run,
+        } => desktop(&root(), target.as_deref(), bundles.as_deref(), run),
         Cmd::Release(cmd) => xtask_release::run(&root(), &cmd),
         Cmd::Mobile(args) => mobile::run(&root(), &args),
         Cmd::Ios { action } => ios::run(&root(), &action),
@@ -497,7 +502,6 @@ mod dev_command_tests {
 fn check(root: &Path) -> Result<()> {
     architecture::check(root)?;
     units::check(root)?;
-    bundle::check_resources(root)?;
     check_toolchain_pins(root)?;
     comments::check(root)?;
     check_windows_rs_alignment(root)?;
@@ -829,70 +833,36 @@ fn agree(what: &str, pins: &[(String, String)]) -> Result<()> {
 const NO_SOAPY_RUNTIME: (&str, &str) = ("SDRMM_SOAPY_LIBRARY", "/nonexistent/libSoapySDR");
 const NO_SOAPY_TARGET: &str = "target/no-soapy";
 
-fn desktop(root: &Path, target: Option<&str>, bundles: Option<&str>) -> Result<()> {
+fn desktop(root: &Path, target: Option<&str>, bundles: Option<&str>, run: bool) -> Result<()> {
+    if run {
+        return xtask_release::desktop::run(root);
+    }
+    if let Some(bundles) = bundles {
+        return xtask_release::desktop::package(root, target, bundles);
+    }
     ensure_target(root, target)?;
-    let features = release_features();
+    let cef = xtask_release::desktop::cef_path(root);
     let media = media_dir(root, target)?;
-
-    let Some(bundles) = bundles else {
-        let mut args = vec![
-            "clippy",
+    let env = [("CEF_PATH", utf8(&cef)?)];
+    for step in [&["clippy", "--all-targets"][..], &["test"][..]] {
+        let features = release_features();
+        let mut args = step.to_vec();
+        args.extend([
             "-p",
             "sdrmm-desktop",
-            "--all-targets",
             &features[0],
             &features[1],
             &features[2],
-        ];
+        ]);
         if let Some(triple) = target {
-            args.push("--target");
-            args.push(triple);
+            args.extend(["--target", triple]);
         }
-        args.extend(["--", "-D", "warnings"]);
-        return run_against_media(&args, root, media.as_deref());
-    };
-
-    web_build(root)?;
-    bundle::check_resources(root)?;
-
-    let installed = Command::new("cargo")
-        .args(["tauri", "--version"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success());
-    ensure!(
-        installed,
-        "the Tauri CLI is missing: `cargo install --locked tauri-cli`"
-    );
-    let bundled_config = bundled::desktop_config_for(root, target)?;
-    let unsigned = std::env::var_os("TAURI_SIGNING_PRIVATE_KEY").is_none();
-    if unsigned {
-        println!(
-            "note: TAURI_SIGNING_PRIVATE_KEY is unset: bundling unsigned, so these installers \
-             cannot be served to the updater."
-        );
+        if step[0] == "clippy" {
+            args.extend(["--", "-D", "warnings"]);
+        }
+        xtask_release::media::run_against_media_with(&args, root, media.as_deref(), &env)?;
     }
-    let mut args = vec![
-        "tauri",
-        "build",
-        "--config",
-        &bundled_config,
-        "--bundles",
-        bundles,
-        "--",
-        &features[0],
-        &features[1],
-        &features[2],
-    ];
-    if let Some(triple) = target {
-        args.insert(2, "--target");
-        args.insert(3, triple);
-    }
-    if unsigned {
-        args.insert(2, "--no-sign");
-    }
-    run_against_media(&args, &root.join("apps/desktop"), media.as_deref())
+    Ok(())
 }
 
 fn perf(root: &Path) -> Result<()> {
@@ -984,7 +954,15 @@ enum TestStep {
 }
 
 const TEST_ARCHIVE: &str = "tests.tar.zst";
-const TEST_TARGETS: [&str; 4] = ["--workspace", "--lib", "--bins", "--tests"];
+/// The desktop app links Chromium, which only `cargo xtask desktop` fetches and tests against.
+const TEST_TARGETS: [&str; 6] = [
+    "--workspace",
+    "--exclude",
+    "sdrmm-desktop",
+    "--lib",
+    "--bins",
+    "--tests",
+];
 
 /// Runs every workspace crate under nextest, which schedules all test binaries into one pool
 /// rather than running them one at a time. The synthesized SigMF pairs come first because they

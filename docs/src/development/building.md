@@ -103,7 +103,7 @@ The bench radios hear one FM emitter at 137° and its echo at 250°.
 | `cargo xtask smoke` | Playwright against a real `sdrmm` process |
 | `cargo xtask perf` | DSP, channel and engine throughput and allocation gates |
 | `cargo xtask audit` | RustSec advisories through cargo-deny |
-| `cargo xtask desktop` | Clippy on the Tauri app, no installers |
+| `cargo xtask desktop` | Clippy and tests on the desktop app, no installers |
 | `cargo xtask sanitize` | Channel tests, with the vendored C, under AddressSanitizer and UBSan |
 | `cargo xtask fuzz` | libFuzzer on every channel type, channel settings, and dPMR voice |
 
@@ -191,14 +191,16 @@ them, and `cargo xtask test` regenerates them.
 
 ## Desktop app
 
-The Tauri app is a workspace member but not a default member. On Linux it needs WebKitGTK:
+The desktop app embeds Chromium through [cef-rs](https://github.com/tauri-apps/cef-rs). It is a
+workspace member but not a default member. Its build downloads CEF into `target/cef` and needs
+CMake and Ninja. On Linux, Chromium also needs its runtime libraries:
 
 ```sh
-sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+sudo apt-get install -y ninja-build libnss3 libatk-bridge2.0-0t64 libcups2t64 libgbm1 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libasound2t64
 ```
 
-`cargo xtask desktop` checks that it compiles; [Releases](releases.md#desktop-bundles) builds
-installers.
+`cargo xtask desktop` lints and tests it, `cargo xtask desktop --run` starts it, and
+[Releases](releases.md#desktop-bundles) builds installers.
 
 ## Before a commit
 

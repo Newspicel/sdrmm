@@ -6,15 +6,21 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
-/// Windows artifacts also get an `{os}-{arch}-{installer}` key: the updater looks that up
-/// first, so an MSI install updates through the MSI instead of gaining a second, per-user
-/// NSIS install that its shortcuts never launch.
-const KINDS: &[(&str, &str, Option<&str>)] = &[
-    ("darwin", ".app.tar.gz", None),
-    ("linux", ".AppImage", None),
-    ("windows", "-setup.exe", Some("nsis")),
-    ("windows", ".msi", Some("msi")),
+/// Each kind: the platform's OS name, the artifact suffix, the Tauri installer key, and the
+/// `cargo-packager` format. Windows artifacts also get an `{os}-{arch}-{installer}` key: Tauri
+/// clients look that up first, so an MSI install updates through the MSI instead of gaining a
+/// second, per-user NSIS install that its shortcuts never launch.
+const KINDS: &[(&str, &str, Option<&str>, &str)] = &[
+    ("darwin", ".app.tar.gz", None, "app"),
+    ("linux", ".AppImage", None, "appimage"),
+    ("windows", "-setup.exe", Some("nsis"), "nsis"),
+    ("windows", ".msi", Some("msi"), "wix"),
 ];
+
+/// Releases before the move to `cargo packager` were Tauri apps, whose updater calls macOS
+/// `darwin`; the current app calls it `macos`. The manifest names both until no Tauri build is
+/// left to update.
+const MACOS: (&str, &str) = ("darwin", "macos");
 
 const NON_UPDATER_KINDS: &[&str] = &[".deb", ".rpm", ".dmg"];
 
@@ -48,6 +54,7 @@ struct Manifest {
 struct Platform {
     signature: String,
     url: String,
+    format: &'static str,
 }
 
 #[derive(Clone)]
@@ -55,6 +62,7 @@ struct Candidate {
     rank: usize,
     file: String,
     signature: String,
+    format: &'static str,
 }
 
 pub fn manifest(dir: &Path, version: &str, base_url: &str, out: Option<&Path>) -> Result<()> {
@@ -107,6 +115,7 @@ fn build(sigs: &[(String, String)], version: &str, base_url: &str) -> Result<Man
             platform,
             rank,
             installer,
+            format,
         }) = classify(&file)?
         else {
             continue;
@@ -120,6 +129,7 @@ fn build(sigs: &[(String, String)], version: &str, base_url: &str) -> Result<Man
             rank,
             file,
             signature: signature.trim().to_string(),
+            format,
         };
         if let Some(installer) = installer {
             let key = format!("{platform}-{installer}");
@@ -157,6 +167,14 @@ fn build(sigs: &[(String, String)], version: &str, base_url: &str) -> Result<Man
         );
     }
 
+    let renamed: Vec<(String, Candidate)> = best
+        .iter()
+        .filter_map(|(platform, candidate)| {
+            let arch = platform.strip_prefix(&format!("{}-", MACOS.0))?;
+            Some((format!("{}-{arch}", MACOS.1), candidate.clone()))
+        })
+        .collect();
+    best.extend(renamed);
     best.extend(by_installer);
     Ok(Manifest {
         version: version.to_string(),
@@ -169,6 +187,7 @@ fn build(sigs: &[(String, String)], version: &str, base_url: &str) -> Result<Man
                     Platform {
                         signature: candidate.signature,
                         url,
+                        format: candidate.format,
                     },
                 )
             })
@@ -180,16 +199,18 @@ struct Kind {
     platform: String,
     rank: usize,
     installer: Option<&'static str>,
+    format: &'static str,
 }
 
 fn classify(file: &str) -> Result<Option<Kind>> {
     let kind = KINDS
         .iter()
         .enumerate()
-        .find_map(|(rank, (os, ext, installer))| {
-            file.ends_with(ext).then_some((*os, rank, *installer))
+        .find_map(|(rank, (os, ext, installer, format))| {
+            file.ends_with(ext)
+                .then_some((*os, rank, *installer, *format))
         });
-    let Some((os, rank, installer)) = kind else {
+    let Some((os, rank, installer, format)) = kind else {
         ensure!(
             NON_UPDATER_KINDS.iter().any(|ext| file.ends_with(ext)),
             "`{file}` is not an updater artifact any bundle target emits"
@@ -210,6 +231,7 @@ fn classify(file: &str) -> Result<Option<Kind>> {
         platform: format!("{os}-{arch}"),
         rank,
         installer,
+        format,
     }))
 }
 
@@ -339,6 +361,17 @@ mod tests {
         sigs.push(("SDRmm_1.2.3_amd64.pkg.sig".to_string(), "sig".to_string()));
         let err = build(&sigs, "1.2.3", BASE).unwrap_err().to_string();
         assert!(err.contains("not an updater artifact"), "{err}");
+    }
+
+    #[test]
+    fn tauri_and_cargo_packager_clients_both_find_the_macos_update() {
+        let manifest = build(&release(), "1.2.3", BASE).unwrap();
+        let tauri = &manifest.platforms["darwin-aarch64"];
+        let packager = &manifest.platforms["macos-aarch64"];
+        assert_eq!(tauri.url, packager.url);
+        assert_eq!(packager.format, "app");
+        assert_eq!(manifest.platforms["linux-x86_64"].format, "appimage");
+        assert_eq!(manifest.platforms["windows-x86_64"].format, "nsis");
     }
 
     #[test]

@@ -69,7 +69,7 @@ Also tried, and not adopted:
 Each browser case ran 30 warmup, 180 measured, and 61 idle frames with 1, 4, or 8 views. GPU timer
 queries measure shader time; frame intervals catch missed deadlines. WebKit 26.5 also passed with
 zero idle waterfall draws and 16 ms p95 frames, but has no GPU timer queries. These are browser
-numbers, not packaged Tauri measurements.
+numbers, not packaged desktop app measurements.
 
 Raw results: [repaint every frame](data/rendering-m4-max-before.jsonl),
 [repaint on change](data/rendering-m4-max-after.jsonl),

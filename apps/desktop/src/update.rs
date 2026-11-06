@@ -1,26 +1,33 @@
-use anyhow::Result;
-use tauri::AppHandle;
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-use tauri_plugin_updater::UpdaterExt;
+use anyhow::{Context, Result};
+use cargo_packager_updater::{Config, Update, WindowsConfig, WindowsUpdateInstallMode};
+use semver::Version;
+use tokio::runtime::Handle;
+use url::Url;
+
+use crate::{dialog, exit::Exit, shell};
 
 const RELEASE: Option<&str> = option_env!("SDRMM_RELEASE");
 const RELEASES: &str = "https://github.com/Newspicel/sdrmm/releases";
+const PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2QkUwNzFEODc5MzYzRTgKUldUb1k1T0hIUWUrMXQ5M21PK2VmYUJFekgvZnoyS0U1dm9TQ1RPNW5kTnVRTkRaOU9TZUFMelcK";
+const ENDPOINTS: [&str; 2] = [
+    "https://downloads.sdrmm.com/releases/latest.json?version={{current_version}}&target={{target}}&arch={{arch}}",
+    "https://github.com/newspicel/sdrmm/releases/latest/download/latest.json",
+];
 
-pub fn spawn(app: &AppHandle) {
+pub fn spawn(runtime: &Handle) {
     if let Some(skip) = skipped() {
         tracing::info!("update check skipped: {}", skip.reason());
         return;
     }
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = check(&app).await {
+    runtime.spawn(async {
+        if let Err(e) = check().await {
             tracing::warn!("update check failed: {e:#}");
         }
     });
 }
 
-async fn check(app: &AppHandle) -> Result<()> {
-    let Some(update) = app.updater()?.check().await? else {
+async fn check() -> Result<()> {
+    let Some(update) = tokio::task::spawn_blocking(find).await?? else {
         tracing::debug!("no update available");
         return Ok(());
     };
@@ -29,80 +36,87 @@ async fn check(app: &AppHandle) -> Result<()> {
         update.current_version,
         update.version
     );
-    if !prompt(app, &update.version).await {
+    if !prompt(&update.version).await {
         return Ok(());
     }
-    update.download_and_install(|_, _| {}, || {}).await?;
-    app.restart()
+    tokio::task::spawn_blocking(move || update.download_and_install()).await??;
+    shell::quit(Exit::Relaunch);
+    Ok(())
 }
 
-pub async fn update_now(app: AppHandle) {
+async fn prompt(version: &str) -> bool {
+    dialog::confirm(
+        "Update available",
+        format!(
+            "SDRmm {version} is available.\n\nInstalling restarts the app, which stops any \
+             recording or stream that is running."
+        ),
+        "Install and restart",
+        "Later",
+    )
+    .await
+}
+
+/// Called before the window exists, when the database belongs to a newer release.
+pub fn update_now() -> Exit {
     match skipped() {
         Some(Skip::Packaged) => {
             tracing::info!("update skipped: {}", Skip::Packaged.reason());
-            use_package_manager(&app).await;
+            dialog::inform("Update", "Update SDRmm with your package manager.");
+            Exit::Quit
         }
         Some(Skip::Unreleased) => {
             tracing::info!("update skipped: {}", Skip::Unreleased.reason());
             open_releases();
+            Exit::Quit
         }
-        None => {
-            let installed = install(&app).await.unwrap_or_else(|e| {
-                tracing::warn!("update failed: {e:#}");
-                false
-            });
-            if !installed {
+        None => match install() {
+            Ok(true) => Exit::Relaunch,
+            Ok(false) => {
                 open_releases();
+                Exit::Quit
             }
-        }
+            Err(e) => {
+                tracing::warn!("update failed: {e:#}");
+                open_releases();
+                Exit::Quit
+            }
+        },
     }
-    app.exit(0);
+}
+
+fn install() -> Result<bool> {
+    let Some(update) = find()? else {
+        return Ok(false);
+    };
+    update.download_and_install()?;
+    Ok(true)
+}
+
+fn find() -> Result<Option<Update>> {
+    let current = Version::parse(env!("CARGO_PKG_VERSION"))?;
+    Ok(cargo_packager_updater::check_update(current, config()?)?)
+}
+
+fn config() -> Result<Config> {
+    let endpoints = ENDPOINTS
+        .iter()
+        .map(|endpoint| Url::parse(endpoint).with_context(|| format!("endpoint {endpoint}")))
+        .collect::<Result<_>>()?;
+    Ok(Config {
+        endpoints,
+        pubkey: PUBKEY.to_owned(),
+        windows: Some(WindowsConfig {
+            installer_args: None,
+            install_mode: Some(WindowsUpdateInstallMode::Passive),
+        }),
+    })
 }
 
 fn open_releases() {
-    if let Err(e) = tauri_plugin_opener::open_url(RELEASES, None::<&str>) {
+    if let Err(e) = opener::open_browser(RELEASES) {
         tracing::warn!("could not open {RELEASES}: {e}");
     }
-}
-
-async fn use_package_manager(app: &AppHandle) {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog()
-        .message("Update SDRmm with your package manager.")
-        .title("Update")
-        .kind(MessageDialogKind::Info)
-        .buttons(MessageDialogButtons::Ok)
-        .show(move |_| {
-            let _ = tx.send(());
-        });
-    let _ = rx.await;
-}
-
-async fn install(app: &AppHandle) -> Result<bool> {
-    let Some(update) = app.updater()?.check().await? else {
-        return Ok(false);
-    };
-    update.download_and_install(|_, _| {}, || {}).await?;
-    app.restart()
-}
-
-async fn prompt(app: &AppHandle, version: &str) -> bool {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog()
-        .message(format!(
-            "SDRmm {version} is available.\n\nInstalling restarts the app, which stops any \
-             recording or stream that is running."
-        ))
-        .title("Update available")
-        .kind(MessageDialogKind::Info)
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "Install and restart".to_string(),
-            "Later".to_string(),
-        ))
-        .show(move |install| {
-            let _ = tx.send(install);
-        });
-    rx.await.unwrap_or(false)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -161,5 +175,11 @@ mod tests {
     #[test]
     fn standalone_releases_update_themselves() {
         assert_eq!(skip(Some("1"), false), None);
+    }
+
+    #[test]
+    fn the_updater_config_parses() {
+        let config = config().unwrap();
+        assert_eq!(config.endpoints.len(), ENDPOINTS.len());
     }
 }

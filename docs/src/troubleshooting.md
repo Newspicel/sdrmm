@@ -18,24 +18,18 @@ It checks drivers, libraries, radio discovery, USB permissions, and storage path
 - Behind a reverse proxy, serve SDRmm at the root. Path prefixes do not work.
 - With TLS on, use `https://`.
 
-## The Linux window is blank or the waterfall is missing
+## The window is blank or the waterfall is missing
 
-Some graphics drivers break WebKitGTK: a blank window, frozen panels, or
-`waterfall unavailable: no WebGL2 context`. Try safe rendering:
+Some graphics drivers break hardware rendering: a blank window, frozen panels, or
+`waterfall unavailable: no WebGL2 context`. Start the app with GPU rendering off:
 
 ```sh
-SDRMM_LINUX_GRAPHICS=safe sdrmm-desktop
+sdrmm-app --disable-gpu
 ```
 
-| Value | Does |
-|---|---|
-| `auto` | Default. Where a display hangs off an NVIDIA card: turns off NVIDIA explicit sync on Wayland, DMABUF on X11. |
-| `safe` | Turns off DMABUF and accelerated compositing. The waterfall may run slower. |
-| `off` | Changes nothing |
-
-For the AppImage, put the variable before the AppImage path. Your own `WEBKIT_*` variables win. If
-the window still fails, run the [portable server](getting-started/install.md#portable-server) with
-`--bind 127.0.0.1:8080` and use a browser.
+The waterfall then runs in software and may be slower. If the window still fails, run the
+[portable server](getting-started/install.md#portable-server) with `--bind 127.0.0.1:8080` and use
+a browser.
 
 ## The token is rejected
 

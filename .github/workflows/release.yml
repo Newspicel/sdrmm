@@ -360,25 +360,21 @@ jobs:
           - label: windows-x86_64
             runner: windows-2025
             target: x86_64-pc-windows-msvc
-            bundles: msi,nsis
+            bundles: wix,nsis
           - label: windows-arm64
             runner: windows-11-arm
             target: aarch64-pc-windows-msvc
             bundles: nsis
     runs-on: ${{ matrix.runner }}
     env:
-      TAURI_ARGS: >-
-        --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-        --config ${{ github.workspace }}/bundled.tauri.json
-        -- --no-default-features --features soapy,sdrplay,rtlsdr,hackrf,airspy,airspyhf,funcube,espsdr,ad936x,net-client,gpu-fft
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
       APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
@@ -386,59 +382,46 @@ jobs:
           cache: release-desktop-${{ matrix.label }}
           save: ${{ github.ref_type != 'tag' }}
           target: ${{ matrix.target }}
-          tauri: true
+          cef: true
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-packager@0.11.8
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: version-stamp
       - uses: ./.github/actions/node
-      - run: pnpm --dir web build
-      - name: UI built
-        shell: bash
-        run: test -f web/dist/index.html
-      - run: cargo xtask-release bundled-config --target ${{ matrix.target }} --out bundled.tauri.json
       - if: contains(matrix.bundles, 'appimage')
         run: scripts/ci/prefetch-appimage-tools.sh "${{ runner.arch == 'ARM64' && 'aarch64' || 'x86_64' }}"
       - id: bundle
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         continue-on-error: ${{ runner.os == 'macOS' }}
-        env:
-          FFMPEG_DIR: ${{ github.workspace }}/.media/${{ matrix.target }}
-        with:
-          projectPath: apps/desktop
-          args: ${{ env.TAURI_ARGS }}
+        run: cargo xtask desktop --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
       - name: Clear failed DMG
         if: steps.bundle.outcome == 'failure'
         run: |
           shopt -s nullglob
           for volume in /Volumes/dmg.*; do hdiutil detach -force "$volume" || true; done
-          rm -f "target/${{ matrix.target }}/release/bundle/macos"/rw.*.dmg
+          rm -f "target/${{ matrix.target }}/release/packages"/rw.*.dmg
       - name: Bundle again
         if: steps.bundle.outcome == 'failure'
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
-        env:
-          FFMPEG_DIR: ${{ github.workspace }}/.media/${{ matrix.target }}
-          TAURI_CLI_VERBOSITY: 1
-        with:
-          projectPath: apps/desktop
-          args: ${{ env.TAURI_ARGS }}
+        run: cargo xtask desktop --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
       - name: Bundle version
         shell: bash
         env:
           VERSION: ${{ needs.version.outputs.version }}
-        run: scripts/ci/check-bundle-version.sh "target/${{ matrix.target }}/release/bundle" "$VERSION"
+        run: scripts/ci/check-bundle-version.sh "target/${{ matrix.target }}/release/packages" "$VERSION"
       - name: App linking
         if: runner.os == 'macOS'
-        run: cargo xtask-release link-check "target/${{ matrix.target }}/release/bundle/macos"
+        run: cargo xtask-release link-check "target/${{ matrix.target }}/release/packages"
       - name: Installer linking
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $setup = Get-ChildItem "target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe"
+          $setup = Get-ChildItem "target/${{ matrix.target }}/release/packages/*-setup.exe"
           Start-Process $setup.FullName -ArgumentList '/S', "/D=$PWD\installed" -Wait
           cargo xtask-release link-check installed
-      - name: AppImage audio
+      - name: AppImage runtime
         if: contains(matrix.bundles, 'appimage')
-        run: scripts/ci/check-appimage-audio.sh "target/${{ matrix.target }}/release/bundle/appimage"
+        run: scripts/ci/check-appimage-runtime.sh "target/${{ matrix.target }}/release/packages"
       - name: Collect bundles
         shell: bash
         run: scripts/ci/collect-bundles.sh "${{ matrix.target }}" "${{ needs.version.outputs.version }}"

@@ -48,19 +48,24 @@ pub fn media_dir(root: &Path, target: Option<&str>) -> Result<Option<PathBuf>> {
 }
 
 pub fn run_against_media(args: &[&str], cwd: &Path, media: Option<&Path>) -> Result<()> {
+    run_against_media_with(args, cwd, media, &[])
+}
+
+pub fn run_against_media_with(
+    args: &[&str],
+    cwd: &Path,
+    media: Option<&Path>,
+    extra: &[(&str, &str)],
+) -> Result<()> {
     let attempts = if cfg!(windows) {
         WINDOWS_LIBCLANG_RELOAD_ATTEMPTS
     } else {
         1
     };
-    retry(attempts, || match media {
-        Some(dir) => {
-            let env = media_env(dir);
-            let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-            run_with_env("cargo", args, cwd, &env)
-        }
-        None => run("cargo", args, cwd),
-    })
+    let media = media.map(media_env).unwrap_or_default();
+    let mut env: Vec<(&str, &str)> = media.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    env.extend_from_slice(extra);
+    retry(attempts, || run_with_env("cargo", args, cwd, &env))
 }
 
 pub fn media_env(dir: &Path) -> Vec<(&'static str, String)> {

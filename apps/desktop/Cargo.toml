@@ -12,6 +12,10 @@ publish = false
 name = "sdrmm-desktop"
 path = "src/main.rs"
 
+[[bin]]
+name = "sdrmm-desktop-helper"
+path = "src/helper.rs"
+
 [lints]
 workspace = true
 
@@ -30,7 +34,7 @@ net-client = ["sdrmm-server/net-client", "sdrmm-engine/net-client"]
 gpu-fft = ["sdrmm-server/gpu-fft", "sdrmm-engine/gpu-fft"]
 
 [build-dependencies]
-tauri-build = { version = "2.7", features = [] }
+winresource = "0.1.31"
 
 [dependencies]
 sdrmm-server.workspace = true
@@ -38,14 +42,21 @@ sdrmm-engine.workspace = true
 sdrmm-plugins.workspace = true
 sdrmm-device-soapy = { workspace = true, optional = true }
 anyhow.workspace = true
-tauri = { version = "2.12", features = [] }
-tauri-plugin-updater = { version = "2.14", default-features = false, features = ["zip", "system-proxy"] }
-tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2.8.0"
-serde_json.workspace = true
+cef = { version = "156.3.0", default-features = false, features = ["sandbox"] }
+cargo-packager-updater = "0.2.3"
+dirs.workspace = true
+notify-rust = "4.18.2"
+opener = { version = "0.9.0", features = ["reveal"] }
+rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal", "common-controls-v6"] }
+semver = "1"
 tokio = { workspace = true, features = ["rt-multi-thread", "net"] }
 tracing.workspace = true
-tauri-plugin-opener = "2.7.2"
+url.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = ["NSString", "NSThread"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSMenu", "NSMenuItem", "NSResponder", "NSRunningApplication"] }
 
 [dev-dependencies]
 tempfile.workspace = true

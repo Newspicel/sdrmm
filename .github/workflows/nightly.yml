@@ -141,7 +141,6 @@ jobs:
         with:
           cache: macos
           save: false
-          tauri: true
       - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-nextest
@@ -218,13 +217,16 @@ jobs:
         run: |
           test -x result/bin/sdrmm-desktop
           test ! -e result/bin/sdrmm
+          test -x result/lib/sdrmm-app/sdrmm-desktop-helper
+          test -e result/lib/sdrmm-app/icudtl.dat
+          test -e result/lib/sdrmm-app/locales/en-US.pak
           test -f result/share/applications/sdrmm-desktop.desktop
           test -f result/share/icons/hicolor/128x128/apps/dev.newspicel.sdrmm.png
           test -z "$(find -L result -path '*/SoapySDR/modules*' -print -quit)"
       - name: Linking
         run: |
           ldd result/bin/.sdrmm-desktop-wrapped | tee ldd
-          grep -q 'libwebkit2gtk-4.1' ldd
+          grep -q 'libcef.so => /nix/store' ldd
           ! grep -q 'libSoapySDR' ldd
       - name: Wrapper
         run: |
@@ -261,7 +263,7 @@ jobs:
         with:
           cache: desktop-${{ matrix.label }}
           save: false
-          tauri: true
+          cef: true
       - run: cargo xtask desktop
 
   ios:

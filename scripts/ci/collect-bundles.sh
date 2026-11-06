@@ -5,7 +5,7 @@ shopt -s nullglob
 target="$1"
 version="$2"
 mkdir -p bundles
-find "target/$target/release/bundle" -maxdepth 2 -type f \
+find "target/$target/release/packages" -maxdepth 1 -type f \
   \( -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
      -o -name '*.msi' -o -name '*-setup.exe' \
      -o -name '*.app.tar.gz' -o -name '*.sig' \) \
@@ -17,7 +17,7 @@ for f in bundles/*.app.tar.gz; do
   mv "$f.sig" "${f%.app.tar.gz}_${version}_${arch}.app.tar.gz.sig"
 done
 
-test -n "$(find bundles -name '*.sig')" || { echo "no .sig files, is TAURI_SIGNING_PRIVATE_KEY set?" >&2; exit 1; }
+test -n "$(find bundles -name '*.sig')" || { echo "no .sig files, is CARGO_PACKAGER_SIGN_PRIVATE_KEY set?" >&2; exit 1; }
 case "$target" in
   *-apple-darwin)
     test -n "$(find bundles -maxdepth 1 -name '*.dmg' -print -quit)" ||

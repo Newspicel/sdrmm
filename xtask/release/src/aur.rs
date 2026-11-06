@@ -91,15 +91,30 @@ fn desktop(digests: &Digests, version: &str) -> Result<Package> {
         conflicts: &["sdrmm-app", "sdrminusminus"],
         desc: "Modular software-defined radio, desktop app",
         depends: &[
+            "alsa-lib",
+            "at-spi2-core",
             "cairo",
             "dbus",
+            "expat",
             "gcc-libs",
-            "gdk-pixbuf2",
             "glib2",
             "glibc",
             "gtk3",
-            "libsoup3",
-            "webkit2gtk-4.1",
+            "libcups",
+            "libdrm",
+            "libx11",
+            "libxcb",
+            "libxcomposite",
+            "libxdamage",
+            "libxext",
+            "libxfixes",
+            "libxkbcommon",
+            "libxrandr",
+            "mesa",
+            "nspr",
+            "nss",
+            "pango",
+            "xdg-utils",
         ],
         sources: sources(digests, version, |arch| {
             format!("sdrmm-app_{version}_{}.deb", arch.deb)
@@ -246,7 +261,8 @@ mod tests {
             "d".repeat(64)
         )), "{pkgbuild}");
         assert!(pkgbuild.contains("sdrmm-app_1.2.3_arm64.deb"));
-        assert!(pkgbuild.contains("depends=('cairo' "));
+        assert!(pkgbuild.contains("depends=('alsa-lib' "));
+        assert!(pkgbuild.contains("'nss'"));
         assert!(pkgbuild.contains("conflicts=('sdrmm-app' 'sdrminusminus')"));
     }
 

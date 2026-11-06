@@ -71,7 +71,6 @@ jobs:
         with:
           cache: ${{ matrix.label }}
           save: ${{ env.SAVE_CACHE }}
-          tauri: true
       - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-nextest
@@ -98,7 +97,6 @@ jobs:
         with:
           cache: shard-${{ matrix.label }}
           save: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}
-          tauri: true
       - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-nextest

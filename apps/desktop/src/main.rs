@@ -2,96 +2,99 @@
 
 use std::{
     net::{Ipv4Addr, SocketAddr},
-    sync::Arc,
+    path::{Path, PathBuf},
+    process::ExitCode,
+    sync::{Arc, Mutex},
 };
 
-use anyhow::Context;
+use anyhow::Result;
 use sdrmm_engine::Engine;
-use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_dialog::DialogExt;
+use sdrmm_plugins::PluginWatcher;
+use url::Url;
+
+use crate::exit::Exit;
 
 mod browser;
-mod download;
-mod graphics;
+mod dialog;
+mod exit;
 mod newer_db;
+mod paths;
 mod reveal;
+mod shell;
 mod update;
 
-fn main() -> anyhow::Result<()> {
+fn main() -> ExitCode {
     #[cfg(feature = "soapy")]
     sdrmm_device_soapy::enable_isolated_probes();
 
-    sdrmm_server::diagnostics::install_tracing()?;
+    if let Err(error) = sdrmm_server::diagnostics::install_tracing() {
+        eprintln!("logging is off: {error}");
+    }
+    let exit = run().unwrap_or_else(|error| {
+        tracing::error!("{error:#}");
+        dialog::fail(&format!("{error:#}"));
+        Exit::Failed
+    });
+    exit.finish()
+}
 
-    unsafe { graphics::configure() };
+fn run() -> Result<Exit> {
+    let _library = shell::load()?;
+    let data_dir = paths::data_dir()?;
+    std::fs::create_dir_all(&data_dir)?;
+    let db = data_dir.join("sdrmm.db");
+    if let Err(error @ sdrmm_server::StoreError::NewerSchema { .. }) =
+        sdrmm_server::Store::open(Some(&db))
+    {
+        return Ok(newer_db::ask(db, &error));
+    }
+    let runtime = tokio::runtime::Runtime::new()?;
+    let engine = Engine::new(Some(data_dir.join("recordings")));
+    let _plugins = watch_plugins(&data_dir, &engine);
+    let url = runtime.block_on(serve(db, Arc::clone(&engine)))?;
+    update::spawn(runtime.handle());
+    let start = shell::Start {
+        url,
+        runtime: runtime.handle().clone(),
+    };
+    let shown = shell::run(start, &paths::cache_dir()?);
+    engine.shutdown();
+    shown?;
+    Ok(Exit::requested())
+}
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .setup(|app| {
-            let data_dir = app.path().app_data_dir()?;
-            std::fs::create_dir_all(&data_dir)?;
-            let db = data_dir.join("sdrmm.db");
-            if let Err(error @ sdrmm_server::StoreError::NewerSchema { .. }) =
-                sdrmm_server::Store::open(Some(&db))
-            {
-                newer_db::ask(app.handle(), db, &error);
-                return Ok(());
-            }
-            let engine = Engine::new(Some(data_dir.join("recordings")));
-            app.manage(engine.clone());
-            let reopen = Arc::downgrade(&engine);
-            match sdrmm_plugins::PluginWatcher::start(data_dir.join("plugins"), move |replaced| {
-                if let Some(engine) = reopen.upgrade() {
-                    engine.plugins_reloaded(replaced);
-                }
-            }) {
-                Ok(watcher) => {
-                    app.manage(std::sync::Mutex::new(watcher));
-                }
-                Err(error) => tracing::error!(%error, "plugins are off"),
-            }
-            let config = sdrmm_server::Config {
-                bind: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
-                db_path: Some(db),
-                tls: None,
-                options: sdrmm_server::ServerOptions {
-                    shell: Some(Arc::new(reveal::Shell(app.handle().clone()))),
-                    ..sdrmm_server::ServerOptions::default()
-                },
-            };
-            let handle = tauri::async_runtime::block_on(sdrmm_server::serve(config, engine))?;
-            let url: tauri::Url = format!("http://{}", handle.local_addr).parse()?;
-            let dialogs = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(error) = handle.join().await {
-                    tracing::error!(%error, "embedded server exited");
-                    dialogs
-                        .dialog()
-                        .message(format!("Server stopped: {error}"))
-                        .show(|_| {});
-                }
-            });
+fn watch_plugins(data_dir: &Path, engine: &Arc<Engine>) -> Option<Mutex<PluginWatcher>> {
+    let reopen = Arc::downgrade(engine);
+    match PluginWatcher::start(data_dir.join("plugins"), move |replaced| {
+        if let Some(engine) = reopen.upgrade() {
+            engine.plugins_reloaded(replaced);
+        }
+    }) {
+        Ok(watcher) => Some(Mutex::new(watcher)),
+        Err(error) => {
+            tracing::error!(%error, "plugins are off");
+            None
+        }
+    }
+}
 
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
-                .title("SDRmm")
-                .inner_size(1280.0, 800.0)
-                .on_new_window(browser::open_in_browser)
-                .on_download(download::handler())
-                .build()?;
-
-            update::spawn(app.handle());
-            Ok(())
-        })
-        .build(tauri::generate_context!())
-        .context("failed to start SDRmm desktop")?
-        .run(|app, event| {
-            if matches!(event, RunEvent::Exit)
-                && let Some(engine) = app.try_state::<Arc<Engine>>()
-            {
-                engine.shutdown();
-            }
-        });
-    Ok(())
+async fn serve(db: PathBuf, engine: Arc<Engine>) -> Result<Url> {
+    let config = sdrmm_server::Config {
+        bind: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+        db_path: Some(db),
+        tls: None,
+        options: sdrmm_server::ServerOptions {
+            shell: Some(Arc::new(reveal::Shell)),
+            ..sdrmm_server::ServerOptions::default()
+        },
+    };
+    let handle = sdrmm_server::serve(config, engine).await?;
+    let url = Url::parse(&format!("http://{}", handle.local_addr))?;
+    tokio::spawn(async move {
+        if let Err(error) = handle.join().await {
+            tracing::error!(%error, "embedded server exited");
+            dialog::tell(format!("Server stopped: {error}")).await;
+        }
+    });
+    Ok(url)
 }

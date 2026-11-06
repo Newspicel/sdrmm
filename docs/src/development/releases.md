@@ -61,30 +61,31 @@ Run the compile gate:
 cargo xtask desktop
 ```
 
-To create installers, install the Tauri CLI:
+To create installers, install cargo-packager:
 
 ```sh
-cargo install --locked tauri-cli
-cargo xtask desktop --bundles dmg
+cargo install --locked cargo-packager
+cargo xtask desktop --bundles app,dmg
 ```
 
-Use `deb,rpm,appimage` on Linux and `msi,nsis` on Windows. Installers use system SoapySDR at
-runtime. Linux and Windows bundles are built on x86-64 and ARM64, each on a native machine. Windows
-ARM64 builds `nsis` alone, because WiX 3 emits no arm64 package.
+Use `deb,rpm,appimage` on Linux and `wix,nsis` on Windows. `rpm` is repackaged from the `deb` and
+needs `dpkg-deb` and `rpmbuild`. Installers use system SoapySDR at runtime. Linux and Windows
+bundles are built on x86-64 and ARM64, each on a native machine. Windows ARM64 builds `nsis` alone,
+because WiX 3 emits no arm64 package.
 
-AppImage builds need `patchelf`, `xdg-utils`, and GStreamer plugin packages. The bundle includes
-the installed plugins WebKit uses for audio.
+The build fetches Chromium (CEF) into `target/cef` and needs CMake and Ninja.
+`cargo xtask desktop --run` builds the app and starts it.
 
 ## Desktop updates
 
 Release builds check `downloads.sdrmm.com` for the latest stable release at startup, then GitHub.
 Local builds never check. On Linux only the AppImage updates itself. On Windows, MSI and NSIS
-installs each update through their own installer kind. Update archives use a Tauri
-updater signature separate from platform code signing. Preserve the private updater key;
-installed clients trust its compiled public key.
+installs each update through their own installer kind. Update archives carry a minisign
+signature separate from platform code signing. Preserve the private updater key; installed
+clients trust its compiled public key. The manifest keeps the keys older Tauri builds read.
 
-Without `TAURI_SIGNING_PRIVATE_KEY`, the bundle task uses `--no-sign`. Those installers cannot
-serve as application updates. Release CI requires signatures and builds the update manifest:
+Without `CARGO_PACKAGER_SIGN_PRIVATE_KEY`, packages carry no updater signature and cannot serve as
+application updates. Release CI requires signatures and builds the update manifest:
 
 ```sh
 cargo xtask updater-manifest \
@@ -144,7 +145,7 @@ Uploads are cached as immutable. Never replace a file; publish a new prefix inst
 | Secret | Needed for | Without it |
 |---|---|---|
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | R2 uploads | A tagged release fails |
-| `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Updater signatures | The release fails |
+| `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Updater signatures, passed to cargo-packager | The release fails |
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | macOS signing and notarization | The release fails |
 | `AUR_SSH_KEY` | Pushing to the AUR | The AUR job is skipped |
 | `WINGET_TOKEN` | WinGet submission | The WinGet job is skipped |

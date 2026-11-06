@@ -1,6 +1,7 @@
 mod aur;
 pub mod bundled;
 pub mod changeset;
+pub mod desktop;
 mod discord;
 pub mod dist;
 mod ios;
@@ -73,12 +74,6 @@ pub enum Cmd {
         target: Option<String>,
     },
     SourceDist,
-    BundledConfig {
-        #[arg(long)]
-        target: Option<String>,
-        #[arg(long)]
-        out: PathBuf,
-    },
     LinkCheck {
         path: PathBuf,
         #[arg(long = "external")]
@@ -107,9 +102,6 @@ pub fn run(root: &Path, cmd: &Cmd) -> Result<()> {
         Cmd::Aur { version, sums, out } => aur::packages(sums, version, out),
         Cmd::Dist { target } => dist::dist(root, target.as_deref()),
         Cmd::SourceDist => dist::source_dist(root),
-        Cmd::BundledConfig { target, out } => {
-            bundled::write_desktop_config(root, target.as_deref(), out)
-        }
         Cmd::LinkCheck { path, external } => linkage::check(path, external),
     }
 }
