@@ -1,0 +1,67 @@
+name: Tauri migration
+
+on:
+  push:
+    branches: [ci/tauri-migration]
+  workflow_dispatch:
+    inputs:
+      from:
+        description: Tauri release to update from
+        default: v2.4.3
+
+permissions:
+  contents: read
+
+env:
+  FROM: ${{ inputs.from || 'v2.4.3' }}
+  VERSION: 9.0.0
+  TARGET: x86_64-pc-windows-msvc
+
+jobs:
+  installers:
+    name: Build installers
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/rust
+        with:
+          cache: release-desktop-windows-x86_64
+          save: "false"
+          target: ${{ env.TARGET }}
+          cef: true
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-packager@0.11.8
+      - uses: ./.github/actions/node
+      - run: cargo xtask-release set-version ${{ env.VERSION }}
+      - run: cargo xtask desktop --target ${{ env.TARGET }} --bundles wix,nsis
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installers
+          path: |
+            target/${{ env.TARGET }}/release/packages/*.msi
+            target/${{ env.TARGET }}/release/packages/*-setup.exe
+          if-no-files-found: error
+          retention-days: 3
+
+  update:
+    name: Update (${{ matrix.kind }})
+    needs: installers
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [nsis, msi]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: installers
+          path: new
+      - name: Download ${{ env.FROM }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$FROM" --pattern '*_x64*' --dir old --repo "$GITHUB_REPOSITORY"
+      - shell: pwsh
+        run: scripts/ci/check-tauri-migration.ps1 -Kind ${{ matrix.kind }} -Old old -New new -Version ${{ env.VERSION }}
