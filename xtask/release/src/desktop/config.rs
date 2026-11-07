@@ -121,7 +121,9 @@ fn linux(root: &Path, staged: &Staged) -> Value {
 }
 
 fn windows(staged: &Staged) -> Value {
-    json!({ "resources": runtime(staged) })
+    let mut config = json!({ "resources": runtime(staged) });
+    merge(&mut config, super::tauri::windows());
+    config
 }
 
 /// Everything beside `libcef`, at the root of the resource directory.
@@ -167,6 +169,20 @@ mod tests {
                 .as_array()
                 .is_some_and(|d| !d.is_empty())
         );
+    }
+
+    #[test]
+    fn windows_installers_replace_the_tauri_release() {
+        let platform = Platform::of("x86_64-pc-windows-msvc").unwrap();
+        let config = config(
+            Path::new("/repo"),
+            &platform,
+            &staged(Some("/stage/runtime")),
+            Path::new("/out"),
+        );
+        assert_eq!(config["resources"][0]["src"], "/stage/runtime");
+        assert!(config["wix"]["fragments"].is_array());
+        assert!(config["nsis"]["preinstallSection"].is_string());
     }
 
     #[test]

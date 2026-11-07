@@ -14,6 +14,7 @@ mod config;
 mod mac;
 mod rpm;
 mod stage;
+mod tauri;
 
 pub const IDENTIFIER: &str = "dev.newspicel.sdrmm";
 const CEF_SYS: &str = "cef-dll-sys";
