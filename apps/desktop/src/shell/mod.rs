@@ -79,6 +79,7 @@ pub fn quit(exit: Exit) {
 fn settings(cache: &Path) -> Result<Settings> {
     let profile = cache.join("browser");
     std::fs::create_dir_all(&profile)?;
+    forget_session(&profile)?;
     let settings = Settings {
         no_sandbox: i32::from(!cfg!(target_os = "macos")),
         root_cache_path: path(&profile),
@@ -104,6 +105,37 @@ fn beside_runtime(settings: Settings) -> Result<Settings> {
     })
 }
 
+/// Chromium reopens the tabs of a run that did not exit cleanly. Their URLs carry that run's
+/// server port, so each would be one more window that cannot reach the server.
+fn forget_session(profile: &Path) -> Result<()> {
+    match std::fs::remove_dir_all(profile.join("Default").join("Sessions")) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+        _ => Ok(()),
+    }
+}
+
 fn path(path: &Path) -> CefString {
     CefString::from(path.to_string_lossy().as_ref())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_previous_session_is_never_restored() {
+        let profile = tempfile::tempdir().unwrap();
+        let sessions = profile.path().join("Default/Sessions");
+        std::fs::create_dir_all(&sessions).unwrap();
+        std::fs::write(sessions.join("Tabs_1"), b"tab").unwrap();
+        forget_session(profile.path()).unwrap();
+        assert!(!sessions.exists());
+        assert!(profile.path().join("Default").exists());
+    }
+
+    #[test]
+    fn a_fresh_profile_has_no_session_to_forget() {
+        let profile = tempfile::tempdir().unwrap();
+        forget_session(profile.path()).unwrap();
+    }
 }

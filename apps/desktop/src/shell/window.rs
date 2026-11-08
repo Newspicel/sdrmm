@@ -16,6 +16,8 @@ thread_local! {
     static BROWSER: RefCell<Option<Browser>> = const { RefCell::new(None) };
 }
 
+/// Opens the window. Its delegate switches the window controls on: cef-rs defaults every
+/// delegate flag to false, where CEF defaults them to true.
 pub fn open(start: &Start) {
     let mut client = Some(client::new(start));
     let url = CefString::from(start.url.as_str());
@@ -96,6 +98,22 @@ wrap_window_delegate! {
             self.browser_view.borrow_mut().take();
         }
 
+        fn with_standard_window_buttons(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
+        fn can_resize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
+        fn can_maximize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
+        fn can_minimize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
         fn can_close(&self, _window: Option<&mut Window>) -> i32 {
             let browser = self.browser_view.borrow().as_ref().and_then(BrowserView::browser);
             match browser.and_then(|browser| browser.host()) {
@@ -103,5 +121,19 @@ wrap_window_delegate! {
                 None => 1,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_window_keeps_its_standard_controls() {
+        let window = ShellWindow::new(RefCell::new(None));
+        assert_eq!(window.with_standard_window_buttons(None), 1);
+        assert_eq!(window.can_resize(None), 1);
+        assert_eq!(window.can_maximize(None), 1);
+        assert_eq!(window.can_minimize(None), 1);
     }
 }
