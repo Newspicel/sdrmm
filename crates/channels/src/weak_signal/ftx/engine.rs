@@ -4,7 +4,10 @@ use num_complex::Complex;
 use realfft::{RealFftPlanner, RealToComplex};
 use sdrmm_dsp::fft::Transform;
 
+mod recall;
+
 use super::{
+    expect::Expected,
     ldpc,
     message::PAYLOAD_BITS,
     protocol::{BASEBAND_SYMBOL, MAX_SYMBOLS, MAX_TONES, Protocol, SAMPLE_RATE},
@@ -143,6 +146,7 @@ impl Engine {
         &mut self,
         samples: &[f32],
         search: &Search,
+        expected: &[Expected],
         accept: &mut dyn FnMut(u128, bool) -> Option<String>,
     ) -> Vec<Found> {
         let mut audio = samples.to_vec();
@@ -170,6 +174,14 @@ impl Engine {
                 self.subtract(&mut audio, result);
             }
             subtracted = fresh_from..found.len();
+        }
+        if !expected.is_empty() {
+            for result in &found[subtracted.end..] {
+                self.subtract(&mut audio, result);
+            }
+            self.transform(&audio);
+            let recalled = self.recall(expected, &found, accept);
+            found.extend(recalled);
         }
         found
     }
@@ -1176,7 +1188,7 @@ mod tests {
         }
         let before = band_power(&audio, 1_234.56);
         let mut engine = Engine::new(&FT8);
-        let found = engine.decode(&audio, &search(), &mut |_, _| Some(String::new()));
+        let found = engine.decode(&audio, &search(), &[], &mut |_, _| Some(String::new()));
         assert_eq!(found.len(), 1);
         engine.subtract(&mut audio, &found[0]);
         let after = band_power(&audio, 1_234.56);

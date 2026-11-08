@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -13,6 +16,14 @@ struct Span {
     start: u64,
     len: usize,
     queued: u64,
+    arrived: SystemTime,
+}
+
+/// When the sample just past a span reached the engine, by the wall clock.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Arrival {
+    pub(crate) end: u64,
+    pub(crate) at: SystemTime,
 }
 
 pub(crate) struct CaptureProducer {
@@ -31,6 +42,7 @@ pub(crate) struct CaptureConsumer {
     last_stale: Option<u64>,
     fresh_since_stale: bool,
     room: Arc<SinkRoom>,
+    arrival: Option<Arrival>,
     pub(crate) metrics: Arc<QueueMetrics>,
 }
 
@@ -56,6 +68,7 @@ pub(crate) fn capture_ring(capacity: usize) -> (CaptureProducer, CaptureConsumer
             last_stale: None,
             fresh_since_stale: false,
             room,
+            arrival: None,
             metrics,
         },
     )
@@ -92,12 +105,18 @@ impl CaptureProducer {
             start,
             len,
             queued: self.metrics.now(),
+            arrived: SystemTime::now(),
         }]);
         len
     }
 }
 
 impl CaptureConsumer {
+    /// The arrival of the span the last consumed samples came from.
+    pub(crate) fn arrival(&self) -> Option<Arrival> {
+        self.arrival
+    }
+
     #[cfg(test)]
     pub(crate) fn consume(
         &mut self,
@@ -131,6 +150,10 @@ impl CaptureConsumer {
             self.pending = Some(span);
             return 0;
         };
+        self.arrival = Some(Arrival {
+            end: span.start + span.len as u64,
+            at: span.arrived,
+        });
         self.metrics.oldest(span.queued);
         let age = u128::from(now.saturating_sub(span.queued));
         let max_age = max_age.as_micros();

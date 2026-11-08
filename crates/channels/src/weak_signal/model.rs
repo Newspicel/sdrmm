@@ -86,6 +86,9 @@ pub struct WsjtMessage {
     pub audio_hz: f32,
     pub time_offset_s: f32,
     pub hard_errors: u32,
+    /// UTC start of the period the message was sent in, when the receiver's clock is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -99,6 +102,9 @@ pub struct WsprSpot {
     pub audio_hz: f32,
     pub time_offset_s: f32,
     pub drift_hz: f32,
+    /// UTC start of the two-minute period the spot was sent in, when the receiver's clock is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<String>,
 }
 
 const RR73: &str = "RR73";
@@ -148,6 +154,7 @@ fn wsjt_fields(m: &WsjtMessage) -> Vec<Field> {
             number(Some(m.time_offset_s), Unit::Seconds, 2),
         ),
         ("hard_errors", "Hard errors", count(Some(m.hard_errors))),
+        ("slot", "Slot", text(slot_time(m.slot.as_deref()))),
         ("message", "Message", text(Some(&m.text))),
     ])
 }
@@ -165,8 +172,13 @@ fn wspr_fields(s: &WsprSpot) -> Vec<Field> {
             number(Some(s.time_offset_s), Unit::Seconds, 2),
         ),
         ("drift", "Drift", number(Some(s.drift_hz), Unit::Hz, 1)),
+        ("slot", "Slot", text(slot_time(s.slot.as_deref()))),
         ("message", "Message", text(Some(&s.text))),
     ])
+}
+
+fn slot_time(slot: Option<&str>) -> Option<&str> {
+    slot.and_then(|slot| slot.get(11..19))
 }
 
 fn wsjt_sender(text: &str) -> Option<&str> {
@@ -254,6 +266,7 @@ mod model_tests {
             audio_hz: 0.0,
             time_offset_s: 0.0,
             hard_errors: 0,
+            slot: Some("2026-11-07T14:59:45Z".to_owned()),
         }
     }
 
@@ -268,6 +281,7 @@ mod model_tests {
             audio_hz: 1_500.0,
             time_offset_s: 0.4,
             drift_hz: 0.0,
+            slot: Some("2026-11-07T14:58:00Z".to_owned()),
         };
         vec![
             (

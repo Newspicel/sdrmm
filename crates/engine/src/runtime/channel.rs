@@ -189,6 +189,7 @@ pub(crate) struct ChannelHost {
     lo_artifact_hz: Option<f64>,
     doppler: Doppler,
     ramp_left: u64,
+    captured: Option<std::time::SystemTime>,
 }
 
 /// Whether the radio's window covers everything this channel occupies.
@@ -279,6 +280,7 @@ impl ChannelHost {
             lo_artifact_hz: None,
             doppler: Doppler::default(),
             ramp_left: 0,
+            captured: None,
         }))
     }
 
@@ -359,9 +361,20 @@ impl ChannelHost {
         }
     }
 
+    /// When the first sample of the next input was captured, if the source's clock is known.
+    pub(super) fn captured_at(&mut self, time: Option<std::time::SystemTime>) {
+        self.captured = time;
+    }
+
     pub(super) fn process(&mut self, input: &[Complex<f32>], center_hz: f64) {
         for block in input.chunks(dsp_block_len(self.device_rate)) {
             self.process_block(block, center_hz);
+            let spent =
+                std::time::Duration::try_from_secs_f64(block.len() as f64 / self.device_rate);
+            self.captured = self
+                .captured
+                .zip(spent.ok())
+                .and_then(|(time, spent)| time.checked_add(spent));
         }
     }
 
@@ -454,6 +467,9 @@ impl ChannelHost {
             .symbols
             .set_wanted(wanted & SYMBOLS_WANTED != 0);
         let mut silence = 0;
+        if let Some(time) = self.captured {
+            self.rx.captured_at(time);
+        }
         if open {
             self.rx.process(&self.filtered, &mut self.outputs);
         } else {

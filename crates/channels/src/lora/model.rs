@@ -1301,6 +1301,7 @@ mod model_tests {
             audio_hz: 1234.5,
             time_offset_s: 0.1,
             hard_errors: 3,
+            slot: None,
         }
         .present(&EventKind::named("ft8"));
         assert_eq!(view.field("Hard errors"), count(Some(3)).as_ref());

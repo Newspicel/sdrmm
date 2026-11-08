@@ -14,7 +14,11 @@ pub(crate) use wspr::waveform as wspr_waveform;
 use ftx::FtxDecoder;
 use wspr::WsprDecoder;
 
-use std::{sync::LazyLock, thread, time::Duration};
+use std::{
+    sync::LazyLock,
+    thread,
+    time::{Duration, SystemTime},
+};
 
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
@@ -120,6 +124,40 @@ impl Mode {
             Self::Wspr => 1.0,
         }
     }
+
+    /// The UTC period transmissions start on.
+    fn period_s(self) -> f64 {
+        match self {
+            Self::Ft8 => 15.0,
+            Self::Ft4 => 7.5,
+            Self::Wspr => 120.0,
+        }
+    }
+
+    /// Where a transmission that started `start_s` into a window captured at `window` sits on
+    /// the UTC grid: its offset from the nominal start of the nearest period, and that period.
+    fn on_the_grid(self, window: SystemTime, start_s: f32) -> Option<(f32, String)> {
+        let window = window
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .ok()?
+            .as_secs_f64();
+        let since_nominal = window + f64::from(start_s) - self.nominal_start_s();
+        let period = (since_nominal / self.period_s()).round() * self.period_s();
+        let start = jiff::Timestamp::from_millisecond((period * 1_000.0).round() as i64).ok()?;
+        Some((
+            (since_nominal - period) as f32,
+            start.strftime("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        ))
+    }
+
+    /// The offset a decode reports: from the UTC grid when the window's capture time is known,
+    /// else from the window's own nominal start.
+    fn timing(self, window: Option<SystemTime>, start_s: f32) -> (f32, Option<String>) {
+        match window.and_then(|window| self.on_the_grid(window, start_s)) {
+            Some((offset, period)) => (offset, Some(period)),
+            None => (start_s - self.nominal_start_s() as f32, None),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -132,6 +170,7 @@ struct Recent {
 struct Job {
     epoch: u64,
     window_start: u64,
+    window_time: Option<SystemTime>,
     audio_low_hz: f32,
     audio_high_hz: f32,
     max_candidates: usize,
@@ -143,7 +182,7 @@ struct Job {
 struct Decoded {
     text: String,
     audio_hz: f32,
-    time_offset_s: f32,
+    window_offset_s: f32,
     event: DecoderEvent,
 }
 
@@ -165,6 +204,7 @@ struct WeakSignal {
     epoch: u64,
     queued: usize,
     skipped: u32,
+    clock: Option<(u64, SystemTime)>,
     recent: Vec<Recent>,
     jobs: Producer<Job>,
     done: Consumer<Done>,
@@ -193,6 +233,7 @@ impl WeakSignal {
             epoch: 0,
             queued: 0,
             skipped: 0,
+            clock: None,
             recent: Vec::new(),
             jobs,
             done,
@@ -215,7 +256,24 @@ impl WeakSignal {
         self.read = 0;
         self.window_start = 0;
         self.epoch = self.epoch.wrapping_add(1);
+        self.clock = None;
         self.recent.clear();
+    }
+
+    fn captured_at(&mut self, time: SystemTime) {
+        let next = self.window_start + (self.audio.len() - self.read) as u64;
+        self.clock = Some((next, time));
+    }
+
+    fn window_time(&self) -> Option<SystemTime> {
+        let (index, time) = self.clock?;
+        let seconds =
+            |samples: u64| Duration::try_from_secs_f64(samples as f64 / INPUT_RATE_HZ).ok();
+        if self.window_start >= index {
+            time.checked_add(seconds(self.window_start - index)?)
+        } else {
+            time.checked_sub(seconds(index - self.window_start)?)
+        }
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
@@ -257,6 +315,7 @@ impl WeakSignal {
         let job = Job {
             epoch: self.epoch,
             window_start: self.window_start,
+            window_time: self.window_time(),
             audio_low_hz: self.audio_low_hz,
             audio_high_hz: self.audio_high_hz,
             max_candidates: self.max_candidates,
@@ -285,7 +344,7 @@ impl WeakSignal {
 
     fn keep(&mut self, window_start: u64, decoded: Decoded, out: &mut ChannelOutputs) {
         let start = window_start as i64
-            + ((self.mode.nominal_start_s() + f64::from(decoded.time_offset_s)) * INPUT_RATE_HZ)
+            + ((self.mode.nominal_start_s() + f64::from(decoded.window_offset_s)) * INPUT_RATE_HZ)
                 .round() as i64;
         if self.is_duplicate(decoded.text, decoded.audio_hz, start) {
             return;
@@ -332,33 +391,36 @@ impl Worker {
         }
     }
 
-    fn decode(&mut self, job: &Job, nominal_start_s: f64) -> Vec<Decoded> {
+    fn decode(&mut self, job: &Job, mode: Mode) -> Vec<Decoded> {
         match self {
             Self::Ftx(decoder, kind) => decoder
                 .decode(
                     &job.samples,
+                    job.window_start,
                     job.audio_low_hz,
                     job.audio_high_hz,
                     job.max_candidates,
                 )
                 .into_iter()
                 .map(|found| {
+                    let (time_offset_s, slot) = mode.timing(job.window_time, found.start_s);
                     let message = WsjtMessage {
                         text: found.text,
                         snr_db: found.snr_db,
                         audio_hz: found.frequency_hz,
-                        time_offset_s: found.start_s - nominal_start_s as f32,
+                        time_offset_s,
                         hard_errors: found.hard_errors,
+                        slot,
                     };
                     Decoded {
                         event: DecoderEvent::tagged(kind.clone(), &message),
                         text: message.text,
                         audio_hz: message.audio_hz,
-                        time_offset_s: message.time_offset_s,
+                        window_offset_s: found.start_s - mode.nominal_start_s() as f32,
                     }
                 })
                 .collect(),
-            Self::Wspr(decoder) => decode_wspr(job, decoder, nominal_start_s),
+            Self::Wspr(decoder) => decode_wspr(job, decoder, mode),
         }
     }
 }
@@ -376,7 +438,7 @@ fn run(mode: Mode, mut input: Consumer<Job>, mut output: Producer<Done>) {
             thread::sleep(WORKER_IDLE);
             continue;
         };
-        let events = worker.decode(&job, mode.nominal_start_s());
+        let events = worker.decode(&job, mode);
         let mut done = Done {
             epoch: job.epoch,
             window_start: job.window_start,
@@ -413,7 +475,7 @@ fn reported_by_a_transmitter(grid: Option<&str>, power_dbm: i32) -> bool {
         && (locator.len() == 4 || (subsquare(locator[4]) && subsquare(locator[5])))
 }
 
-fn decode_wspr(job: &Job, decoder: &mut WsprDecoder, nominal_start_s: f64) -> Vec<Decoded> {
+fn decode_wspr(job: &Job, decoder: &mut WsprDecoder, mode: Mode) -> Vec<Decoded> {
     decoder
         .decode(
             &job.samples,
@@ -426,6 +488,8 @@ fn decode_wspr(job: &Job, decoder: &mut WsprDecoder, nominal_start_s: f64) -> Ve
             reported_by_a_transmitter(spot.message.grid.as_deref(), spot.message.power_dbm)
         })
         .map(|spot| {
+            let (time_offset_s, slot) = mode.timing(job.window_time, spot.start_s);
+            let window_offset_s = spot.start_s - mode.nominal_start_s() as f32;
             let spot = WsprSpot {
                 text: spot.message.text,
                 callsign: spot.message.callsign,
@@ -433,14 +497,15 @@ fn decode_wspr(job: &Job, decoder: &mut WsprDecoder, nominal_start_s: f64) -> Ve
                 power_dbm: spot.message.power_dbm,
                 snr_db: spot.snr_db,
                 audio_hz: spot.frequency_hz,
-                time_offset_s: spot.start_s - nominal_start_s as f32,
+                time_offset_s,
                 drift_hz: spot.drift_hz,
+                slot,
             };
             Decoded {
                 event: DecoderEvent::of(&spot),
                 text: spot.text,
                 audio_hz: spot.audio_hz,
-                time_offset_s: spot.time_offset_s,
+                window_offset_s,
             }
         })
         .collect()
@@ -533,6 +598,10 @@ macro_rules! channel {
 
             fn retuned(&mut self) {
                 self.0.reset();
+            }
+
+            fn captured_at(&mut self, time: SystemTime) {
+                self.0.captured_at(time);
             }
 
             fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
@@ -1019,6 +1088,116 @@ mod tests {
         assert!(
             texts.iter().all(|text| text.is_ascii() && !text.is_empty()),
             "{texts:?}"
+        );
+    }
+
+    /// A station sending `text` at 1 234 Hz in every other FT8 slot, at each period's SNR (none
+    /// when it is silent), in white noise.
+    fn fading_station(text: &str, snrs: &[Option<f32>]) -> Vec<Complex<f32>> {
+        const RATE: usize = 12_000;
+        const SIGMA: f32 = 0.05;
+        let lead = RATE;
+        let mut audio = vec![0.0f32; lead + snrs.len() * 30 * RATE + 15 * RATE];
+        let mut state = 0x5eed_u64;
+        let mut uniform = || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((state >> 11) as f64 / (1u64 << 53) as f64).max(1e-12)
+        };
+        for sample in &mut audio {
+            let (u, v) = (uniform(), uniform());
+            *sample = SIGMA * ((-2.0 * u.ln()).sqrt() * (std::f64::consts::TAU * v).cos()) as f32;
+        }
+        let wave = ftx_waveform(&FT8, pack_ftx(text).expect("packs"), 1_234.0);
+        for (period, snr) in snrs.iter().enumerate() {
+            let Some(snr) = snr else { continue };
+            let amplitude = SIGMA * (2.0 * 10f32.powf(snr / 10.0) * 2_500.0 / 6_000.0).sqrt();
+            let start = lead + period * 30 * RATE + 8 * RATE / 10;
+            for (sample, value) in audio[start..].iter_mut().zip(&wave) {
+                *sample += amplitude * value;
+            }
+        }
+        audio
+            .into_iter()
+            .map(|sample| Complex::new(sample, 0.0))
+            .collect()
+    }
+
+    fn messages(iq: &[Complex<f32>], captured: Option<SystemTime>) -> Vec<WsjtMessage> {
+        let mut channel = Ft8Channel::new(
+            ChannelCtx {
+                input_rate: INPUT_RATE_HZ,
+            },
+            settings(ChannelParams::new("ft8", &WsjtParams::default()).expect("ft8 settings")),
+        )
+        .unwrap();
+        if let Some(time) = captured {
+            channel.captured_at(time);
+        }
+        let mut out = ChannelOutputs::default();
+        for block in iq.chunks(Mode::Ft8.hop_samples()) {
+            channel.process(block, &mut out);
+            channel.settle(&mut out);
+        }
+        out.events
+            .iter()
+            .filter_map(|event| wsjt(event, "ft8"))
+            .collect()
+    }
+
+    fn heard(iq: &[Complex<f32>], text: &str) -> usize {
+        let texts: Vec<String> = messages(iq, None)
+            .into_iter()
+            .map(|message| message.text)
+            .collect();
+        assert!(texts.iter().all(|heard| heard == text), "{texts:?}");
+        texts.len()
+    }
+
+    #[test]
+    fn a_known_capture_time_puts_decodes_on_the_utc_grid() {
+        let first_slot: jiff::Timestamp = "2026-11-07T14:59:45Z".parse().unwrap();
+        let captured = SystemTime::from(first_slot) - Duration::from_secs(1);
+        let iq = fading_station("CQ K1ABC FN42", &[Some(-10.0), Some(-10.0)]);
+        let timed = messages(&iq, Some(captured));
+        let slots: Vec<&str> = timed.iter().filter_map(|m| m.slot.as_deref()).collect();
+        assert_eq!(slots, ["2026-11-07T14:59:45Z", "2026-11-07T15:00:15Z"]);
+        assert!(
+            timed.iter().all(|m| (m.time_offset_s - 0.3).abs() < 0.05),
+            "{timed:?}"
+        );
+        assert!(messages(&iq, None).iter().all(|m| m.slot.is_none()));
+    }
+
+    #[test]
+    fn a_station_that_fades_is_still_heard_where_it_was() {
+        let text = "CQ K1ABC FN42";
+        assert_eq!(
+            heard(
+                &fading_station(text, &[None, Some(-23.0), Some(-23.0)]),
+                text
+            ),
+            0
+        );
+        assert_eq!(
+            heard(
+                &fading_station(text, &[Some(-14.0), Some(-23.0), Some(-23.0)]),
+                text
+            ),
+            3
+        );
+    }
+
+    #[test]
+    fn noise_where_a_station_was_invents_nothing() {
+        let text = "K1ABC W9XYZ R-07";
+        assert_eq!(
+            heard(
+                &fading_station(text, &[Some(-14.0), None, None, None]),
+                text
+            ),
+            1
         );
     }
 }

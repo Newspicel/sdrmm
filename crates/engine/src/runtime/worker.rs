@@ -10,8 +10,8 @@ use std::{
 use arc_swap::ArcSwap;
 
 use super::{
-    ChannelHost, DspCommand, DspMeta, MAX_LANE_CHANNELS, MAX_LANE_MONITORS, dsp_block_len,
-    frontend::Frontend, retire::Reclaimer, subbands::Subbands,
+    ChannelHost, DspCommand, DspMeta, MAX_LANE_CHANNELS, MAX_LANE_MONITORS, clock::SampleClock,
+    dsp_block_len, frontend::Frontend, retire::Reclaimer, subbands::Subbands,
 };
 use crate::{
     audio_recording::AudioTaps,
@@ -123,6 +123,7 @@ pub(super) fn dsp_loop(
         publisher.publish(seq, frame, db);
     };
     let mut next_input = None;
+    let mut clock = SampleClock::new();
     let mut served = Instant::now();
     let mut frontend = Frontend::new(*meta.load_full());
     let mut subbands = Box::new(Subbands::new(meta.load().sample_rate));
@@ -186,7 +187,9 @@ pub(super) fn dsp_loop(
             {
                 slot.retire(Retired::History(keeper));
             }
+            let captured = clock.at(total);
             for (_, host) in &mut channels {
+                host.captured_at(captured);
                 let selected = host
                     .subband(snapshot.center_hz, snapshot.sample_rate)
                     .and_then(|band| subbands.samples(band));
@@ -198,6 +201,9 @@ pub(super) fn dsp_loop(
             }
             analyzer.push(slice, total, tuning, cadence, &mut publish);
         });
+        if let Some(arrival) = consumer.arrival() {
+            clock.observe(arrival, snapshot.sample_rate);
+        }
         if consumed == 0 {
             analyzer.idle(cadence, &mut publish);
             std::thread::park_timeout(IDLE_PARK);

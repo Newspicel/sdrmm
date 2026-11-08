@@ -13,7 +13,7 @@ covers the modes that need more than a frequency.
 | Digital voice | DMR, FreeDV 1600, [TETRA](#tetra), [Tetrapol](#tetrapol) | | D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | |
 | Aviation | ADS-B (1090ES), ACARS, [Inmarsat Classic Aero](#inmarsat-and-iridium) | [Drone Remote ID](#drone-remote-id) | VDL Mode 2, High Frequency Data Link | VOR, ILS localizer / glideslope |
 | Marine | Digital Selective Calling, Inmarsat STD-C / EGC | | AIS, NAVTEX, [406 MHz beacons](#406-mhz-beacons) | |
-| Amateur and HF | FT8 | | CW skimmer, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | |
+| Amateur and HF | [FT8](#ft8-ft4-and-wspr) | | CW skimmer, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | |
 | Paging and telemetry | FLEX pager, Radio clock (DCF77 / WWVB / MSF / JJY), [End-of-Train](#end-of-train) | | POCSAG, Selcall (CCIR/ZVEI), ERMES pager | |
 | Pictures and video | | | [SSTV](#sstv), ATV | |
 | Weather and satellites | [Meteor LRPT](#weather-satellites) | | [WEFAX](#wefax), [NOAA APT](#weather-satellites), [Radiosonde](#radiosondes), [SAME alerts](#same-alerts) | |
@@ -185,6 +185,16 @@ calibration data has arrived, about a minute after first lock.
 On **Map** a climbing or falling sonde gets a dashed forecast path, a ring at the burst point and a
 landing mark. The forecast uses the winds the sonde measured on the way up. **Burst** is the altitude
 assumed while it still climbs; **Ground** is the altitude it lands at.
+
+## FT8, FT4 and WSPR
+
+Each decode carries its UTC **Slot** and a **Time offset** (DT) from it, read from the time the
+radio's samples arrived, as WSJT-X reads its sound card. Keep the server clock synced (NTP). A
+recording played back is timed by when it plays.
+
+A station heard in one period is looked for again one period later, at the same frequency, with
+the messages it is likely to send next. This confirms repeats too weak to decode blind, like the
+a7 pass in WSJT-X.
 
 ## SAME alerts
 

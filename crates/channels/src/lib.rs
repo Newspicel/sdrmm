@@ -435,6 +435,10 @@ pub trait ChannelRx: Send {
 
     fn position_changed(&mut self, _fix: Option<&PositionFix>) {}
 
+    /// When the first sample of the next `process` call was captured, by the wall clock. Called
+    /// only while the source's clock is known.
+    fn captured_at(&mut self, _time: std::time::SystemTime) {}
+
     /// Where the receiver's own LO artifact falls in this channel's baseband, if it falls in it.
     ///
     /// A zero-IF front end's DC term is a carrier like any other and cannot be told apart from a

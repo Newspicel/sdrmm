@@ -394,6 +394,7 @@ mod model_tests {
                     audio_hz: 0.0,
                     time_offset_s: 0.0,
                     hard_errors: 0,
+                    slot: None,
                 },
             ),
             DecoderEvent::tagged(
@@ -404,6 +405,7 @@ mod model_tests {
                     audio_hz: 0.0,
                     time_offset_s: 0.0,
                     hard_errors: 0,
+                    slot: None,
                 },
             ),
             DecoderEvent::of(&PskText {
@@ -419,6 +421,7 @@ mod model_tests {
                 audio_hz: 0.0,
                 time_offset_s: 0.0,
                 drift_hz: 0.0,
+                slot: None,
             }),
             DecoderEvent::of(&BroadcastData {
                 protocol: None,

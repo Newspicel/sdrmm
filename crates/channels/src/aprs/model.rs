@@ -336,6 +336,7 @@ mod model_tests {
                 audio_hz: 1_500.0,
                 time_offset_s: 0.1,
                 hard_errors: 0,
+                slot: None,
             };
             let view = message.present(&EventKind::new(kind));
             assert!(view.callsign.is_some(), "{kind}");

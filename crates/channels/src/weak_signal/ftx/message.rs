@@ -9,7 +9,7 @@ pub(crate) const PAYLOAD_BITS: u32 = 77;
 
 const NTOKENS: u32 = 2_063_592;
 const MAX22: u32 = 4_194_304;
-const MAXGRID4: u32 = 32_400;
+pub(crate) const MAXGRID4: u32 = 32_400;
 const CQ_LETTERS_END: u32 = 1_003 + 27 * 27 * 27 * 27;
 const HASH_PRIME: u64 = 47_055_833_459;
 const BOOK_LIMIT: usize = 4_096;
@@ -116,6 +116,55 @@ impl Reader {
 
     fn take32(&mut self, count: u32) -> u32 {
         self.take(count) as u32
+    }
+}
+
+/// The fields of a standard (`i3` 1 or 2) message, each call kept with its suffix flag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Standard {
+    pub(crate) first: u32,
+    pub(crate) second: u32,
+    pub(crate) roger: bool,
+    pub(crate) extra: u32,
+    pub(crate) i3: u8,
+}
+
+pub(crate) const EXTRA_RRR: u32 = MAXGRID4 + 2;
+pub(crate) const EXTRA_RR73: u32 = MAXGRID4 + 3;
+pub(crate) const EXTRA_73: u32 = MAXGRID4 + 4;
+
+/// The extra field carrying a signal report, as WSJT-X packs `-30` to `+30`.
+pub(crate) fn report_extra(snr_db: i32) -> u32 {
+    MAXGRID4 + (snr_db + 35).unsigned_abs()
+}
+
+impl Standard {
+    pub(crate) fn parse(bits: u128) -> Option<Self> {
+        let i3 = (bits & 7) as u8;
+        if !matches!(i3, 1 | 2) {
+            return None;
+        }
+        let mut reader = Reader::new(bits);
+        Some(Self {
+            first: reader.take32(29),
+            second: reader.take32(29),
+            roger: reader.take(1) == 1,
+            extra: reader.take32(15),
+            i3,
+        })
+    }
+
+    pub(crate) fn bits(self) -> u128 {
+        (u128::from(self.first) << 48)
+            | (u128::from(self.second) << 19)
+            | (u128::from(self.roger) << 18)
+            | (u128::from(self.extra) << 3)
+            | u128::from(self.i3)
+    }
+
+    /// Whether the first call is CQ, QRZ or DE rather than a station.
+    pub(crate) fn opens_with_token(self) -> bool {
+        self.first >> 1 < NTOKENS
     }
 }
 

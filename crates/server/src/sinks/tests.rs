@@ -488,6 +488,7 @@ fn a_propagation_node_turns_wired_spots_into_cells_from_its_receiver() {
                 audio_hz: 1_500.0,
                 time_offset_s: 0.0,
                 hard_errors: 0,
+                slot: None,
             },
         ),
     );

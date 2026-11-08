@@ -2,9 +2,12 @@
 
 use std::{collections::BTreeSet, time::Instant};
 
-use mfsk_core::wspr::{DecodeRequest, WsprCallsignTable};
+use mfsk_core::{
+    decoder::{Decoder, SlotInput},
+    wspr::Wspr,
+};
 
-use super::{SAMPLE_RATE, SLOT_SAMPLES, WsprDecoder, waveform};
+use super::{SLOT_SAMPLES, WsprDecoder, waveform};
 
 struct Noise(u64);
 
@@ -53,12 +56,12 @@ fn slot(snr_db: f32, noise: &mut Noise, messages: &[String]) -> Vec<f32> {
     audio.iter().map(|sample| sample / 40.0).collect()
 }
 
-fn reference(samples: &[f32], table: &mut WsprCallsignTable) -> BTreeSet<String> {
-    DecodeRequest::new(samples, SAMPLE_RATE as u32)
-        .table(table)
-        .decode()
+fn reference(samples: &[f32], table: &mut Decoder<Wspr>) -> BTreeSet<String> {
+    table
+        .decode(&SlotInput::f32(samples))
+        .rows
         .into_iter()
-        .map(|result| result.message.to_string())
+        .map(|row| row.decoded.text)
         .collect()
 }
 
@@ -67,7 +70,7 @@ fn reference(samples: &[f32], table: &mut WsprCallsignTable) -> BTreeSet<String>
 fn wspr_sweep_against_mfsk_core() {
     let mut noise = Noise(0xbeef);
     let mut decoder = WsprDecoder::new();
-    let mut table = WsprCallsignTable::new();
+    let mut table = Decoder::<Wspr>::with_defaults();
     let slots: usize = std::env::var("SLOTS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -123,7 +126,7 @@ fn wspr_sweep_against_mfsk_core() {
 fn wspr_noise_false_decodes() {
     let mut noise = Noise(0x5eed);
     let mut decoder = WsprDecoder::new();
-    let mut table = WsprCallsignTable::new();
+    let mut table = Decoder::<Wspr>::with_defaults();
     let slots: usize = std::env::var("SLOTS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -151,7 +154,7 @@ fn wspr_noise_false_decodes() {
 fn wspr_crowded_band_against_mfsk_core() {
     let mut noise = Noise(0xc0ffee);
     let mut decoder = WsprDecoder::new();
-    let mut table = WsprCallsignTable::new();
+    let mut table = Decoder::<Wspr>::with_defaults();
     let (mut ours, mut theirs, mut total) = (0, 0, 0);
     let (mut ours_time, mut theirs_time) = (0.0, 0.0);
     for _ in 0..8 {

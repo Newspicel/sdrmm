@@ -56,6 +56,7 @@ fn ft8(text: &str) -> DecodedRecord {
                 audio_hz: 1_500.0,
                 time_offset_s: 0.0,
                 hard_errors: 0,
+                slot: None,
             },
         ),
         sinks: Vec::new(),

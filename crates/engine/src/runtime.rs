@@ -1,6 +1,7 @@
 pub(crate) mod capture;
 mod channel;
 pub(crate) mod clip;
+mod clock;
 mod command;
 mod downconvert;
 mod frontend;

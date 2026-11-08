@@ -7,8 +7,9 @@ use std::{
 };
 
 use mfsk_core::{
+    decoder::{Decodable, DecodeParams, Decoder, SlotInput},
+    ft4::Ft4,
     ft8::Ft8,
-    msg::{decode_request::DecodeRequest, wsjt77::unpack77},
 };
 
 use super::{FT8, FtxDecoder};
@@ -128,18 +129,17 @@ fn score(recording: &Recording, decode: impl FnOnce(&[f32]) -> BTreeSet<String>)
     }
 }
 
-fn reference(samples: &[f32]) -> BTreeSet<String> {
-    let pcm: Vec<i16> = samples
-        .iter()
-        .map(|sample| (sample * 32_768.0).round() as i16)
-        .collect();
-    DecodeRequest::<Ft8>::new(&pcm, 200.0, 3_000.0, 1.0, 200)
-        .sic_rounds(2)
-        .decode()
-        .results
-        .iter()
-        .filter_map(|result| unpack77(result.message77()))
+fn mfsk<P: Decodable>(samples: &[f32]) -> BTreeSet<String> {
+    Decoder::<P>::new(DecodeParams::for_band((200.0, 3_000.0)))
+        .decode(&SlotInput::f32(samples))
+        .rows
+        .into_iter()
+        .map(|row| row.decoded.text)
         .collect()
+}
+
+fn reference(samples: &[f32]) -> BTreeSet<String> {
+    mfsk::<Ft8>(samples)
 }
 
 #[test]
@@ -160,7 +160,7 @@ fn ft8_corpus_against_mfsk_core() {
     for recording in &all {
         let ours = score(recording, |samples| {
             decoder
-                .decode(samples, 200.0, 3_000.0, 200)
+                .decode(samples, 0, 200.0, 3_000.0, 200)
                 .into_iter()
                 .map(|found| found.text)
                 .collect()
@@ -213,7 +213,7 @@ fn noise_false_decodes(protocol: &'static super::Protocol) {
             .collect();
         ours.extend(
             decoder
-                .decode(&samples, 200.0, 3_000.0, 200)
+                .decode(&samples, 0, 200.0, 3_000.0, 200)
                 .into_iter()
                 .map(|found| found.text),
         );
@@ -294,25 +294,11 @@ fn slot_with_signals(
 }
 
 fn reference_decode(protocol: &'static super::Protocol, samples: &[f32]) -> BTreeSet<String> {
-    let pcm: Vec<i16> = samples
-        .iter()
-        .map(|sample| (sample * 32_768.0).round() as i16)
-        .collect();
-    let results = if protocol.tones == 8 {
-        DecodeRequest::<Ft8>::new(&pcm, 200.0, 3_000.0, 1.0, 200)
-            .sic_rounds(2)
-            .decode()
-            .results
+    if protocol.tones == 8 {
+        mfsk::<Ft8>(samples)
     } else {
-        DecodeRequest::<mfsk_core::ft4::Ft4>::new(&pcm, 200.0, 3_000.0, 1.0, 200)
-            .sic_rounds(2)
-            .decode()
-            .results
-    };
-    results
-        .iter()
-        .filter_map(|result| unpack77(result.message77()))
-        .collect()
+        mfsk::<Ft4>(samples)
+    }
 }
 
 fn sweep(protocol: &'static super::Protocol, snrs: &[f32]) {
@@ -336,7 +322,7 @@ fn sweep(protocol: &'static super::Protocol, snrs: &[f32]) {
             let audio = slot_with_signals(protocol, snr, &mut noise, &messages);
             let started = Instant::now();
             let found: BTreeSet<String> = decoder
-                .decode(&audio, 200.0, 3_000.0, 200)
+                .decode(&audio, 0, 200.0, 3_000.0, 200)
                 .into_iter()
                 .map(|found| found.text)
                 .collect();

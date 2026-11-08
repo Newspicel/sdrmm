@@ -331,6 +331,7 @@ mod tests {
             audio_hz: 1_500.0,
             time_offset_s: 0.0,
             drift_hz: 0.0,
+            slot: None,
         });
         let resolved = with_callsign(record(spot), &reference).callsign;
         assert_eq!(
