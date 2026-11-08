@@ -6,11 +6,12 @@ use std::arch::x86_64::{
 
 use num_complex::Complex;
 
-use crate::fir::kernel::{BLOCK_FLOATS, Plan, Tap, interpolated_plane_tail, plane_tail};
+use crate::fir::{
+    kernel::{BLOCK_FLOATS, GROUP_BLOCKS, Plan, interpolated_plane_tail, plane_tail, reach_of},
+    run::Run,
+};
 
 type Block = [__m256; 2];
-
-const SETS: usize = 4;
 
 #[target_feature(enable = "avx2,fma")]
 fn zero() -> Block {
@@ -28,14 +29,11 @@ unsafe fn load_block(floats: *const f32, offset: usize) -> Block {
 }
 
 #[target_feature(enable = "avx2,fma")]
-fn store(block: Block) -> [f32; BLOCK_FLOATS] {
-    let mut lanes = [0.0; BLOCK_FLOATS];
-    let (low, high) = lanes.split_at_mut(BLOCK_FLOATS / 2);
+unsafe fn store(block: Block, lanes: &mut [f32; BLOCK_FLOATS]) {
     unsafe {
-        _mm256_storeu_ps(low.as_mut_ptr(), block[0]);
-        _mm256_storeu_ps(high.as_mut_ptr(), block[1]);
+        _mm256_storeu_ps(lanes.as_mut_ptr(), block[0]);
+        _mm256_storeu_ps(lanes.as_mut_ptr().add(BLOCK_FLOATS / 2), block[1]);
     }
-    lanes
 }
 
 #[target_feature(enable = "avx2,fma")]
@@ -53,53 +51,68 @@ fn add_product(sum: Block, samples: Block, tap: f32) -> Block {
 }
 
 #[target_feature(enable = "avx2,fma")]
-unsafe fn samples<const FOLD: bool, C>(floats: *const f32, tap: &Tap<C>) -> Block {
-    let front = unsafe { load_block(floats, tap.front) };
+unsafe fn samples<const FOLD: bool>(floats: *const f32, run: &Run, at: usize) -> Block {
+    let (front, back) = run.offsets(at);
+    let front = unsafe { load_block(floats, front) };
     if FOLD {
-        add(front, unsafe { load_block(floats, tap.back) })
+        add(front, unsafe { load_block(floats, back) })
     } else {
         front
     }
 }
 
+/// Blocks computed side by side. Each coefficient is broadcast once for all of them, and their
+/// independent chains hide the latency one block would expose. Every block sums its taps in run
+/// order, so an output does not depend on how the input was split.
 #[target_feature(enable = "avx2,fma")]
-pub(super) fn real_block<const FOLD: bool>(
-    floats: &[f32],
+unsafe fn real_group<const FOLD: bool, const BLOCKS: usize>(
+    floats: *const f32,
     plan: &Plan<f32>,
-) -> [f32; BLOCK_FLOATS] {
-    let floats = floats[..plan.floats].as_ptr();
-    let mut sets = [zero(); SETS];
-    let (groups, rest) = plan.taps.as_chunks::<SETS>();
-    for group in groups {
-        for (set, tap) in sets.iter_mut().zip(group) {
-            *set = add_product(
-                *set,
-                unsafe { samples::<FOLD, f32>(floats, tap) },
-                tap.value,
-            );
+) -> [Block; BLOCKS] {
+    let mut sums = [zero(); BLOCKS];
+    for run in &plan.runs {
+        for (at, &value) in plan.values[run.range()].iter().enumerate() {
+            for (block, sum) in sums.iter_mut().enumerate() {
+                let samples = unsafe { samples::<FOLD>(floats.add(block * BLOCK_FLOATS), run, at) };
+                *sum = add_product(*sum, samples, value);
+            }
         }
     }
-    for tap in rest {
-        sets[0] = add_product(
-            sets[0],
-            unsafe { samples::<FOLD, f32>(floats, tap) },
-            tap.value,
-        );
+    sums
+}
+
+const REAL_GROUP: usize = GROUP_BLOCKS;
+
+#[target_feature(enable = "avx2,fma")]
+pub(super) fn real_blocks<const FOLD: bool>(floats: &[f32], plan: &Plan<f32>, out: &mut [f32]) {
+    let Some(floats) = reach_of(floats, plan, out) else {
+        return;
+    };
+    let base = floats.as_ptr();
+    let (groups, rest) = out.as_chunks_mut::<{ REAL_GROUP * BLOCK_FLOATS }>();
+    for (index, lanes) in groups.iter_mut().enumerate() {
+        let at = index * REAL_GROUP * BLOCK_FLOATS;
+        let sums = unsafe { real_group::<FOLD, REAL_GROUP>(base.add(at), plan) };
+        unsafe { store_all(&sums, lanes) };
     }
-    store(add(add(sets[0], sets[1]), add(sets[2], sets[3])))
+    let done = groups.len() * REAL_GROUP * BLOCK_FLOATS;
+    for (index, lanes) in rest
+        .as_chunks_mut::<BLOCK_FLOATS>()
+        .0
+        .iter_mut()
+        .enumerate()
+    {
+        let at = done + index * BLOCK_FLOATS;
+        let sums = unsafe { real_group::<FOLD, 1>(base.add(at), plan) };
+        unsafe { store_all(&sums, lanes) };
+    }
 }
 
 #[target_feature(enable = "avx2,fma")]
-unsafe fn complex_step<const FOLD: bool>(
-    sums: [Block; 2],
-    floats: *const f32,
-    tap: &Tap<Complex<f32>>,
-) -> [Block; 2] {
-    let samples = unsafe { samples::<FOLD, Complex<f32>>(floats, tap) };
-    [
-        add_product(sums[0], samples, tap.value.re),
-        add_product(sums[1], samples, tap.value.im),
-    ]
+unsafe fn store_all(sums: &[Block], lanes: &mut [f32]) {
+    for (&sum, lanes) in sums.iter().zip(lanes.as_chunks_mut::<BLOCK_FLOATS>().0) {
+        unsafe { store(sum, lanes) };
+    }
 }
 
 #[target_feature(enable = "avx2,fma")]
@@ -107,25 +120,56 @@ fn rotated(by_re: __m256, by_im: __m256) -> __m256 {
     _mm256_addsub_ps(by_re, _mm256_permute_ps::<0xB1>(by_im))
 }
 
+/// [`real_group`] for complex taps, each block carrying a sum per tap part.
 #[target_feature(enable = "avx2,fma")]
-pub(super) fn complex_block<const FOLD: bool>(
-    floats: &[f32],
+unsafe fn complex_group<const FOLD: bool, const BLOCKS: usize>(
+    floats: *const f32,
     plan: &Plan<Complex<f32>>,
-) -> [f32; BLOCK_FLOATS] {
-    let floats = floats[..plan.floats].as_ptr();
-    let mut sets = [[zero(); 2]; SETS / 2];
-    let (groups, rest) = plan.taps.as_chunks::<{ SETS / 2 }>();
-    for group in groups {
-        for (set, tap) in sets.iter_mut().zip(group) {
-            *set = unsafe { complex_step::<FOLD>(*set, floats, tap) };
+) -> [Block; BLOCKS] {
+    let mut sums = [[zero(); 2]; BLOCKS];
+    for run in &plan.runs {
+        for (at, value) in plan.values[run.range()].iter().enumerate() {
+            for (block, sum) in sums.iter_mut().enumerate() {
+                let samples = unsafe { samples::<FOLD>(floats.add(block * BLOCK_FLOATS), run, at) };
+                *sum = [
+                    add_product(sum[0], samples, value.re),
+                    add_product(sum[1], samples, value.im),
+                ];
+            }
         }
     }
-    for tap in rest {
-        sets[0] = unsafe { complex_step::<FOLD>(sets[0], floats, tap) };
+    sums.map(|[by_re, by_im]| [rotated(by_re[0], by_im[0]), rotated(by_re[1], by_im[1])])
+}
+
+const COMPLEX_GROUP: usize = GROUP_BLOCKS / 2;
+
+#[target_feature(enable = "avx2,fma")]
+pub(super) fn complex_blocks<const FOLD: bool>(
+    floats: &[f32],
+    plan: &Plan<Complex<f32>>,
+    out: &mut [f32],
+) {
+    let Some(floats) = reach_of(floats, plan, out) else {
+        return;
+    };
+    let base = floats.as_ptr();
+    let (groups, rest) = out.as_chunks_mut::<{ COMPLEX_GROUP * BLOCK_FLOATS }>();
+    for (index, lanes) in groups.iter_mut().enumerate() {
+        let at = index * COMPLEX_GROUP * BLOCK_FLOATS;
+        let sums = unsafe { complex_group::<FOLD, COMPLEX_GROUP>(base.add(at), plan) };
+        unsafe { store_all(&sums, lanes) };
     }
-    let by_re = add(sets[0][0], sets[1][0]);
-    let by_im = add(sets[0][1], sets[1][1]);
-    store([rotated(by_re[0], by_im[0]), rotated(by_re[1], by_im[1])])
+    let done = groups.len() * COMPLEX_GROUP * BLOCK_FLOATS;
+    for (index, lanes) in rest
+        .as_chunks_mut::<BLOCK_FLOATS>()
+        .0
+        .iter_mut()
+        .enumerate()
+    {
+        let at = done + index * BLOCK_FLOATS;
+        let sums = unsafe { complex_group::<FOLD, 1>(base.add(at), plan) };
+        unsafe { store_all(&sums, lanes) };
+    }
 }
 
 #[target_feature(enable = "avx2,fma")]

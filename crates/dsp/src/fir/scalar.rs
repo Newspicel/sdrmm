@@ -8,14 +8,14 @@ where
     C: Copy,
 {
     for (lane, sample) in out.iter_mut().enumerate() {
-        *sample = plan.taps.iter().fold(T::zero(), |sum, tap| {
-            let front = window[tap.front / T::FLOATS + lane];
+        *sample = plan.taps().fold(T::zero(), |sum, (front, back, value)| {
+            let front = window[front / T::FLOATS + lane];
             let pair = if FOLD {
-                front + window[tap.back / T::FLOATS + lane]
+                front + window[back / T::FLOATS + lane]
             } else {
                 front
             };
-            sum.add_product(pair, tap.value)
+            sum.add_product(pair, value)
         });
     }
 }
@@ -24,7 +24,7 @@ where
 mod fallback {
     use num_complex::Complex;
 
-    use crate::fir::kernel::{BLOCK_FLOATS, Plan, interpolated_plane_tail, plane_tail};
+    use crate::fir::kernel::{Plan, interpolated_plane_tail, plane_tail};
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub(crate) struct Isa;
@@ -47,45 +47,47 @@ mod fallback {
             vec![Self]
         }
 
-        pub(crate) fn real_block<const FOLD: bool>(
+        pub(crate) fn real_blocks<const FOLD: bool>(
             self,
             floats: &[f32],
             plan: &Plan<f32>,
-        ) -> [f32; BLOCK_FLOATS] {
-            std::array::from_fn(|lane| {
-                plan.taps.iter().fold(0.0, |sum, tap| {
-                    let sample = pair::<FOLD>(floats, tap.front + lane, tap.back + lane);
-                    sum + sample * tap.value
-                })
-            })
+            out: &mut [f32],
+        ) {
+            for (lane, sample) in out.iter_mut().enumerate() {
+                *sample = plan.taps().fold(0.0, |sum, (front, back, value)| {
+                    sum + pair::<FOLD>(floats, front + lane, back + lane) * value
+                });
+            }
         }
 
-        pub(crate) fn complex_real_block<const FOLD: bool>(
+        pub(crate) fn complex_real_blocks<const FOLD: bool>(
             self,
             floats: &[f32],
             plan: &Plan<f32>,
-        ) -> [f32; BLOCK_FLOATS] {
-            self.real_block::<FOLD>(floats, plan)
+            out: &mut [f32],
+        ) {
+            self.real_blocks::<FOLD>(floats, plan, out);
         }
 
-        pub(crate) fn complex_block<const FOLD: bool>(
+        pub(crate) fn complex_blocks<const FOLD: bool>(
             self,
             floats: &[f32],
             plan: &Plan<Complex<f32>>,
-        ) -> [f32; BLOCK_FLOATS] {
-            let mut lanes = [0.0; BLOCK_FLOATS];
-            for (lane, out) in lanes.as_chunks_mut::<2>().0.iter_mut().enumerate() {
-                let sum = plan.taps.iter().fold(Complex::new(0.0, 0.0), |sum, tap| {
-                    let (front, back) = (tap.front + 2 * lane, tap.back + 2 * lane);
-                    let sample = Complex::new(
-                        pair::<FOLD>(floats, front, back),
-                        pair::<FOLD>(floats, front + 1, back + 1),
-                    );
-                    sum + sample * tap.value
-                });
+            out: &mut [f32],
+        ) {
+            for (lane, out) in out.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+                let sum = plan
+                    .taps()
+                    .fold(Complex::new(0.0, 0.0), |sum, (front, back, value)| {
+                        let (front, back) = (front + 2 * lane, back + 2 * lane);
+                        let sample = Complex::new(
+                            pair::<FOLD>(floats, front, back),
+                            pair::<FOLD>(floats, front + 1, back + 1),
+                        );
+                        sum + sample * value
+                    });
                 *out = [sum.re, sum.im];
             }
-            lanes
         }
 
         pub(crate) unsafe fn plane_dot<const N: usize>(

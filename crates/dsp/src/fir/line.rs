@@ -121,15 +121,15 @@ impl<T: Sample> DelayLine<T> {
             .chunks_exact_mut(self.stride)
             .map(|row| &mut row[index..index + groups.len()]);
         let mut rows: [&mut [T]; PHASES] = std::array::from_fn(|_| rows.next().unwrap_or_default());
-        let (quads, last) = groups.as_chunks::<4>();
-        for (slot, [a, b, c, d]) in quads.iter().enumerate() {
-            for (phase, row) in rows.iter_mut().enumerate() {
-                row.as_chunks_mut::<4>().0[slot] = [a[phase], b[phase], c[phase], d[phase]];
+        let (eights, last) = groups.as_chunks::<8>();
+        for (phase, row) in rows.iter_mut().enumerate() {
+            for (slot, eight) in row.as_chunks_mut::<8>().0.iter_mut().zip(eights) {
+                *slot = std::array::from_fn(|at| eight[at][phase]);
             }
         }
         for (offset, group) in last.iter().enumerate() {
             for (row, &sample) in rows.iter_mut().zip(group) {
-                row[4 * quads.len() + offset] = sample;
+                row[8 * eights.len() + offset] = sample;
             }
         }
         groups.len() * PHASES

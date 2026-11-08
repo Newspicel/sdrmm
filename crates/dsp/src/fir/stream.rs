@@ -1,7 +1,7 @@
 use std::ops::Mul;
 
 use super::{
-    kernel::{Accumulate, Isa, Plan},
+    kernel::{Accumulate, GROUP_BLOCKS, Isa, Plan},
     line::DelayLine,
 };
 
@@ -16,7 +16,7 @@ pub(crate) struct StreamFir<T, C> {
 impl<T, C> StreamFir<T, C>
 where
     T: Accumulate<C>,
-    C: Copy + PartialEq + Mul<f32, Output = C>,
+    C: Copy + PartialEq + Default + Mul<f32, Output = C>,
 {
     pub(crate) fn new(taps: &[C], factor: usize) -> Self {
         Self::with_folding(taps, factor, true)
@@ -26,7 +26,7 @@ where
         assert!(!taps.is_empty(), "taps must not be empty");
         assert!(factor >= 1, "factor must be >= 1");
         assert!(factor <= taps.len(), "factor must not exceed the tap count");
-        let line = DelayLine::new(taps.len() - 1, factor, T::LANES);
+        let line = DelayLine::new(taps.len() - 1, factor, GROUP_BLOCKS * T::LANES);
         Self {
             plan: Plan::new::<T>(taps, factor, line.stride(), fold),
             span: taps.len(),
@@ -49,18 +49,13 @@ where
 
     fn emit(&mut self, out: &mut Vec<T>) {
         let windows = self.line.windows(self.span);
-        let mut done = 0;
-        while done < windows {
-            let count = (windows - done).min(T::LANES);
-            let len = out.len();
-            out.resize(len + count, T::zero());
-            let rows = self.line.rows_from(done);
-            if self.plan.folded() {
-                T::block::<true>(self.isa, rows, &self.plan, &mut out[len..]);
-            } else {
-                T::block::<false>(self.isa, rows, &self.plan, &mut out[len..]);
-            }
-            done += count;
+        let len = out.len();
+        out.resize(len + windows, T::zero());
+        let rows = self.line.rows_from(0);
+        if self.plan.folded() {
+            T::blocks::<true>(self.isa, rows, &self.plan, &mut out[len..]);
+        } else {
+            T::blocks::<false>(self.isa, rows, &self.plan, &mut out[len..]);
         }
         self.line.consume(windows);
     }
@@ -109,7 +104,7 @@ mod tests {
     fn ragged<T, C>(fir: &mut StreamFir<T, C>, input: &[T]) -> Vec<T>
     where
         T: Accumulate<C>,
-        C: Copy + PartialEq + Mul<f32, Output = C>,
+        C: Copy + PartialEq + Default + Mul<f32, Output = C>,
     {
         let mut got = Vec::new();
         let mut block = Vec::new();
@@ -207,6 +202,24 @@ mod tests {
             for (index, (a, b)) in a.iter().zip(&b).enumerate() {
                 assert!((a - b).abs() < 1e-6, "sample={index}: {a} vs {b}");
             }
+        }
+    }
+
+    #[test]
+    fn zero_taps_are_skipped_without_changing_the_output() {
+        let input = signal(20_011);
+        let halfband = crate::fir::design_halfband(63, 100.0);
+        let mut sparse = halfband.clone();
+        sparse[5] = 0.0;
+        for (taps, factor) in [(halfband.clone(), 2), (halfband, 1), (sparse, 3)] {
+            let mut fir = StreamFir::<Complex<f32>, f32>::new(&taps, factor);
+            let nonzero = taps.iter().filter(|&&tap| tap != 0.0).count();
+            assert!(fir.plan.values.len() <= nonzero.div_ceil(2) + 1);
+            let expected = reference(&input, &taps, factor, |tap| {
+                Complex::new(f64::from(tap), 0.0)
+            });
+            let label = format!("{} taps by {factor}", taps.len());
+            assert_close(&ragged(&mut fir, &input), &expected, &label);
         }
     }
 

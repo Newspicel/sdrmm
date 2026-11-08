@@ -1,6 +1,6 @@
 use num_complex::Complex;
 
-use super::kernel::{BLOCK_FLOATS, Plan};
+use super::kernel::Plan;
 
 mod avx2;
 mod avx512;
@@ -44,35 +44,38 @@ impl Isa {
         .collect()
     }
 
-    pub(crate) fn real_block<const FOLD: bool>(
+    pub(crate) fn real_blocks<const FOLD: bool>(
         self,
         floats: &[f32],
         plan: &Plan<f32>,
-    ) -> [f32; BLOCK_FLOATS] {
+        out: &mut [f32],
+    ) {
         match self {
-            Self::Sse2 => unsafe { sse2::real_block::<FOLD>(floats, plan) },
-            Self::Avx2 => unsafe { avx2::real_block::<FOLD>(floats, plan) },
-            Self::Avx512 => unsafe { avx512::real_block::<FOLD>(floats, plan) },
+            Self::Sse2 => unsafe { sse2::real_blocks::<FOLD>(floats, plan, out) },
+            Self::Avx2 => unsafe { avx2::real_blocks::<FOLD>(floats, plan, out) },
+            Self::Avx512 => unsafe { avx512::real_blocks::<FOLD>(floats, plan, out) },
         }
     }
 
-    pub(crate) fn complex_real_block<const FOLD: bool>(
+    pub(crate) fn complex_real_blocks<const FOLD: bool>(
         self,
         floats: &[f32],
         plan: &Plan<f32>,
-    ) -> [f32; BLOCK_FLOATS] {
-        self.real_block::<FOLD>(floats, plan)
+        out: &mut [f32],
+    ) {
+        self.real_blocks::<FOLD>(floats, plan, out);
     }
 
-    pub(crate) fn complex_block<const FOLD: bool>(
+    pub(crate) fn complex_blocks<const FOLD: bool>(
         self,
         floats: &[f32],
         plan: &Plan<Complex<f32>>,
-    ) -> [f32; BLOCK_FLOATS] {
+        out: &mut [f32],
+    ) {
         match self {
-            Self::Sse2 => unsafe { sse2::complex_block::<FOLD>(floats, plan) },
-            Self::Avx2 => unsafe { avx2::complex_block::<FOLD>(floats, plan) },
-            Self::Avx512 => unsafe { avx512::complex_block::<FOLD>(floats, plan) },
+            Self::Sse2 => unsafe { sse2::complex_blocks::<FOLD>(floats, plan, out) },
+            Self::Avx2 => unsafe { avx2::complex_blocks::<FOLD>(floats, plan, out) },
+            Self::Avx512 => unsafe { avx512::complex_blocks::<FOLD>(floats, plan, out) },
         }
     }
 

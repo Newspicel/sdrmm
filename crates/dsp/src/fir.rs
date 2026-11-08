@@ -4,6 +4,7 @@ mod kernel;
 mod line;
 #[cfg(target_arch = "aarch64")]
 mod neon;
+mod run;
 #[cfg(any(test, not(any(target_arch = "aarch64", target_arch = "x86_64"))))]
 mod scalar;
 mod stream;
@@ -57,6 +58,66 @@ pub fn kaiser_beta(attenuation_db: f64) -> f64 {
     } else {
         0.0
     }
+}
+
+/// The shortest half-band length, `4k + 3`, whose measured stopband reaches `attenuation_db`
+/// within `transition`. The Kaiser estimate falls a few dB short for short filters, so the
+/// length grows from it until the response meets the attenuation.
+#[must_use]
+pub fn halfband_taps(transition: f64, attenuation_db: f64) -> usize {
+    let estimate = kaiser_taps(transition, attenuation_db);
+    let first = if estimate % 4 == 1 {
+        estimate + 2
+    } else {
+        estimate
+    };
+    let stop = 0.25 + transition / 2.0;
+    (first..=first.saturating_mul(4))
+        .step_by(4)
+        .find(|&taps| {
+            stopband_peak_db(&design_halfband(taps, attenuation_db), stop) <= -attenuation_db
+        })
+        .unwrap_or(first.saturating_mul(4) | 3)
+}
+
+const STOPBAND_PROBES: usize = 512;
+
+fn stopband_peak_db(h: &[f32], stop: f64) -> f64 {
+    (0..=STOPBAND_PROBES)
+        .map(|step| {
+            let freq = stop + (0.5 - stop) * step as f64 / STOPBAND_PROBES as f64;
+            let (re, im) = h
+                .iter()
+                .enumerate()
+                .fold((0.0, 0.0), |(re, im), (k, &tap)| {
+                    let phase = -2.0 * PI * freq * k as f64;
+                    (
+                        re + f64::from(tap) * phase.cos(),
+                        im + f64::from(tap) * phase.sin(),
+                    )
+                });
+            10.0 * (re * re + im * im).log10()
+        })
+        .fold(f64::NEG_INFINITY, f64::max)
+}
+
+/// A Kaiser half-band low-pass, cut off at a quarter of the rate. Every even offset from the
+/// centre is exactly zero, so a decimator by two skips half of the products.
+///
+/// # Panics
+/// Panics unless `taps` is congruent to 3 modulo 4, the length that keeps the outermost taps
+/// nonzero.
+#[must_use]
+pub fn design_halfband(taps: usize, attenuation_db: f64) -> Vec<f32> {
+    assert!(taps % 4 == 3, "a half-band filter has 4k+3 taps");
+    let centre = taps / 2;
+    let mut h = design_lowpass_kaiser(taps, 0.25, attenuation_db);
+    for (index, tap) in h.iter_mut().enumerate() {
+        if index != centre && index.abs_diff(centre).is_multiple_of(2) {
+            *tap = 0.0;
+        }
+    }
+    h
 }
 
 #[must_use]
@@ -281,6 +342,35 @@ mod tests {
                 .fold(f64::NEG_INFINITY, f64::max);
             assert!(worst < 3.0 - attenuation_db, "{taps} taps: {worst:.1} dB");
             assert!(kaiser_taps(width, attenuation_db) <= taps + 2);
+        }
+    }
+
+    #[test]
+    fn a_halfband_is_exactly_zero_at_even_offsets_and_meets_its_edges() {
+        for (transition, attenuation_db) in [(0.4, 100.0), (0.2, 100.0), (0.05, 100.0), (0.1, 72.0)]
+        {
+            let taps = halfband_taps(transition, attenuation_db);
+            assert_eq!(taps % 4, 3);
+            let h = design_halfband(taps, attenuation_db);
+            let centre = taps / 2;
+            for (index, &tap) in h.iter().enumerate() {
+                let even = index.abs_diff(centre) % 2 == 0;
+                assert_eq!(
+                    tap == 0.0,
+                    even && index != centre,
+                    "{taps} taps, index {index}"
+                );
+            }
+            let pass = 0.25 - transition / 2.0;
+            let stop = 0.25 + transition / 2.0;
+            for step in 0..=200 {
+                let f = f64::from(step) / 200.0;
+                let ripple = response_db(&h, pass * f).abs();
+                let allowed = 20.0 * (1.0 + 2.0 * 10f64.powf(-attenuation_db / 20.0)).log10();
+                assert!(ripple < allowed, "{taps} taps: {ripple} dB ripple");
+                let leak = response_db(&h, stop + (0.5 - stop) * f);
+                assert!(leak < 3.0 - attenuation_db, "{taps} taps: {leak:.1} dB");
+            }
         }
     }
 

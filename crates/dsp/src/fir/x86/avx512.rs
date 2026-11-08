@@ -6,7 +6,10 @@ use std::arch::x86_64::{
 
 use num_complex::Complex;
 
-use crate::fir::kernel::{BLOCK_FLOATS, Plan, Tap};
+use crate::fir::{
+    kernel::{BLOCK_FLOATS, Plan, reach_of},
+    run::Run,
+};
 
 const SETS: usize = 4;
 const WIDTH: usize = 16;
@@ -18,10 +21,8 @@ unsafe fn load_block(floats: *const f32, offset: usize) -> __m512 {
 }
 
 #[target_feature(enable = "avx512f")]
-fn store(block: __m512) -> [f32; BLOCK_FLOATS] {
-    let mut lanes = [0.0; BLOCK_FLOATS];
+unsafe fn store(block: __m512, lanes: &mut [f32; BLOCK_FLOATS]) {
     unsafe { _mm512_storeu_ps(lanes.as_mut_ptr(), block) };
-    lanes
 }
 
 #[target_feature(enable = "avx512f")]
@@ -30,56 +31,52 @@ fn add_product(sum: __m512, samples: __m512, tap: f32) -> __m512 {
 }
 
 #[target_feature(enable = "avx512f")]
-unsafe fn samples<const FOLD: bool, C>(floats: *const f32, tap: &Tap<C>) -> __m512 {
-    let front = unsafe { load_block(floats, tap.front) };
+unsafe fn samples<const FOLD: bool>(floats: *const f32, run: &Run, at: usize) -> __m512 {
+    let (front, back) = run.offsets(at);
+    let front = unsafe { load_block(floats, front) };
     if FOLD {
-        _mm512_add_ps(front, unsafe { load_block(floats, tap.back) })
+        _mm512_add_ps(front, unsafe { load_block(floats, back) })
     } else {
         front
     }
 }
 
 #[target_feature(enable = "avx512f")]
-pub(super) fn real_block<const FOLD: bool>(
-    floats: &[f32],
-    plan: &Plan<f32>,
-) -> [f32; BLOCK_FLOATS] {
-    let floats = floats[..plan.floats].as_ptr();
+unsafe fn real_sum<const FOLD: bool>(floats: *const f32, plan: &Plan<f32>) -> __m512 {
     let mut sets = [_mm512_setzero_ps(); SETS];
-    let (groups, rest) = plan.taps.as_chunks::<SETS>();
-    for group in groups {
-        for (set, tap) in sets.iter_mut().zip(group) {
-            *set = add_product(
-                *set,
-                unsafe { samples::<FOLD, f32>(floats, tap) },
-                tap.value,
-            );
+    for run in &plan.runs {
+        let (groups, rest) = plan.values[run.range()].as_chunks::<SETS>();
+        for (index, group) in groups.iter().enumerate() {
+            for (lane, (set, &value)) in sets.iter_mut().zip(group).enumerate() {
+                let samples = unsafe { samples::<FOLD>(floats, run, SETS * index + lane) };
+                *set = add_product(*set, samples, value);
+            }
+        }
+        for (lane, (set, &value)) in sets.iter_mut().zip(rest).enumerate() {
+            let samples = unsafe { samples::<FOLD>(floats, run, SETS * groups.len() + lane) };
+            *set = add_product(*set, samples, value);
         }
     }
-    for tap in rest {
-        sets[0] = add_product(
-            sets[0],
-            unsafe { samples::<FOLD, f32>(floats, tap) },
-            tap.value,
-        );
-    }
-    store(_mm512_add_ps(
+    _mm512_add_ps(
         _mm512_add_ps(sets[0], sets[1]),
         _mm512_add_ps(sets[2], sets[3]),
-    ))
+    )
 }
 
 #[target_feature(enable = "avx512f")]
-unsafe fn complex_step<const FOLD: bool>(
-    sums: [__m512; 2],
-    floats: *const f32,
-    tap: &Tap<Complex<f32>>,
-) -> [__m512; 2] {
-    let samples = unsafe { samples::<FOLD, Complex<f32>>(floats, tap) };
-    [
-        add_product(sums[0], samples, tap.value.re),
-        add_product(sums[1], samples, tap.value.im),
-    ]
+pub(super) fn real_blocks<const FOLD: bool>(floats: &[f32], plan: &Plan<f32>, out: &mut [f32]) {
+    let Some(floats) = reach_of(floats, plan, out) else {
+        return;
+    };
+    let base = floats.as_ptr();
+    for (index, lanes) in out.as_chunks_mut::<BLOCK_FLOATS>().0.iter_mut().enumerate() {
+        unsafe {
+            store(
+                real_sum::<FOLD>(base.add(index * BLOCK_FLOATS), plan),
+                lanes,
+            )
+        };
+    }
 }
 
 #[target_feature(enable = "avx512f")]
@@ -88,25 +85,52 @@ fn rotated(by_re: __m512, by_im: __m512) -> __m512 {
 }
 
 #[target_feature(enable = "avx512f")]
-pub(super) fn complex_block<const FOLD: bool>(
-    floats: &[f32],
-    plan: &Plan<Complex<f32>>,
-) -> [f32; BLOCK_FLOATS] {
-    let floats = floats[..plan.floats].as_ptr();
+unsafe fn complex_sum<const FOLD: bool>(floats: *const f32, plan: &Plan<Complex<f32>>) -> __m512 {
     let mut sets = [[_mm512_setzero_ps(); 2]; SETS / 2];
-    let (groups, rest) = plan.taps.as_chunks::<{ SETS / 2 }>();
-    for group in groups {
-        for (set, tap) in sets.iter_mut().zip(group) {
-            *set = unsafe { complex_step::<FOLD>(*set, floats, tap) };
+    for run in &plan.runs {
+        let (groups, rest) = plan.values[run.range()].as_chunks::<{ SETS / 2 }>();
+        for (index, group) in groups.iter().enumerate() {
+            for (lane, (set, value)) in sets.iter_mut().zip(group).enumerate() {
+                let samples = unsafe { samples::<FOLD>(floats, run, SETS / 2 * index + lane) };
+                *set = [
+                    add_product(set[0], samples, value.re),
+                    add_product(set[1], samples, value.im),
+                ];
+            }
+        }
+        for (lane, (set, value)) in sets.iter_mut().zip(rest).enumerate() {
+            let at = SETS / 2 * groups.len() + lane;
+            let samples = unsafe { samples::<FOLD>(floats, run, at) };
+            *set = [
+                add_product(set[0], samples, value.re),
+                add_product(set[1], samples, value.im),
+            ];
         }
     }
-    for tap in rest {
-        sets[0] = unsafe { complex_step::<FOLD>(sets[0], floats, tap) };
-    }
-    store(rotated(
+    rotated(
         _mm512_add_ps(sets[0][0], sets[1][0]),
         _mm512_add_ps(sets[0][1], sets[1][1]),
-    ))
+    )
+}
+
+#[target_feature(enable = "avx512f")]
+pub(super) fn complex_blocks<const FOLD: bool>(
+    floats: &[f32],
+    plan: &Plan<Complex<f32>>,
+    out: &mut [f32],
+) {
+    let Some(floats) = reach_of(floats, plan, out) else {
+        return;
+    };
+    let base = floats.as_ptr();
+    for (index, lanes) in out.as_chunks_mut::<BLOCK_FLOATS>().0.iter_mut().enumerate() {
+        unsafe {
+            store(
+                complex_sum::<FOLD>(base.add(index * BLOCK_FLOATS), plan),
+                lanes,
+            )
+        };
+    }
 }
 
 fn tail_mask(len: usize) -> __mmask16 {

@@ -1,6 +1,9 @@
 use num_complex::Complex;
 
-use crate::fir::{DelayLine, Isa, design_lowpass, plane_dot, plane_interpolated};
+use crate::fir::{
+    DelayLine, Isa, design_lowpass, design_lowpass_kaiser, kaiser_taps, plane_dot,
+    plane_interpolated,
+};
 
 const PHASES: usize = 128;
 const TAP_MULTIPLE: usize = 8;
@@ -8,12 +11,33 @@ const MAX_EXACT_PHASES: usize = 512;
 const MAX_EXACT_TAPS: usize = 16_384;
 const BATCH: usize = 4;
 
-pub(crate) fn taps_per_phase(ratio: f64) -> usize {
-    taps_for(0.1 * ratio.min(1.0))
+pub(crate) fn taps_per_phase(ratio: f64, prototype: Prototype) -> usize {
+    prototype.taps(0.1 * ratio.min(1.0))
 }
 
-fn taps_for(transition: f64) -> usize {
-    (5.5 / transition).ceil() as usize
+/// The low-pass a resampler's branches are cut from.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Prototype {
+    /// About 74 dB of stopband, the shortest filter for audio and symbol-rate work.
+    Blackman,
+    /// Holds the given attenuation, for a chain that promises it.
+    Kaiser(f64),
+}
+
+impl Prototype {
+    fn taps(self, transition: f64) -> usize {
+        match self {
+            Self::Blackman => (5.5 / transition).ceil() as usize,
+            Self::Kaiser(attenuation_db) => kaiser_taps(transition, attenuation_db),
+        }
+    }
+
+    fn lowpass(self, taps: usize, cutoff: f64) -> Vec<f32> {
+        match self {
+            Self::Blackman => design_lowpass(taps, cutoff),
+            Self::Kaiser(attenuation_db) => design_lowpass_kaiser(taps, cutoff, attenuation_db),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -91,29 +115,40 @@ pub struct FracResampler {
 impl FracResampler {
     #[must_use]
     pub fn new(ratio: f64) -> Self {
-        assert!(ratio.is_finite() && ratio > 0.0, "ratio must be positive");
-        Self::design(ratio, 0.45 * ratio.min(1.0), taps_per_phase(ratio))
+        Self::shaped(ratio, None, Prototype::Blackman)
     }
 
     #[must_use]
     pub fn keeping(ratio: f64, keep: f64) -> Self {
-        assert!(ratio.is_finite() && ratio > 0.0, "ratio must be positive");
-        let narrower = keep.is_finite() && keep > 0.0 && keep < 1.0;
-        if ratio >= 1.0 || !narrower {
-            return Self::new(ratio);
-        }
-        let taps = taps_for(ratio * (1.0 - keep));
-        if taps >= taps_per_phase(ratio) {
-            return Self::new(ratio);
-        }
-        Self::design(ratio, 0.5 * ratio, taps)
+        Self::shaped(ratio, Some(keep), Prototype::Blackman)
     }
 
-    fn design(ratio: f64, cutoff: f64, taps: usize) -> Self {
+    /// [`Self::new`] or, given a band to keep, [`Self::keeping`], cut from a Kaiser prototype that
+    /// holds `attenuation_db` beyond half the output rate.
+    #[must_use]
+    pub fn rejecting(ratio: f64, keep: Option<f64>, attenuation_db: f64) -> Self {
+        Self::shaped(ratio, keep, Prototype::Kaiser(attenuation_db))
+    }
+
+    fn shaped(ratio: f64, keep: Option<f64>, prototype: Prototype) -> Self {
+        assert!(ratio.is_finite() && ratio > 0.0, "ratio must be positive");
+        let full = taps_per_phase(ratio, prototype);
+        let whole = || Self::design(ratio, 0.45 * ratio.min(1.0), full, prototype);
+        let Some(keep) = keep.filter(|&keep| ratio < 1.0 && keep > 0.0 && keep < 1.0) else {
+            return whole();
+        };
+        let taps = prototype.taps(ratio * (1.0 - keep));
+        if taps >= full {
+            return whole();
+        }
+        Self::design(ratio, 0.5 * ratio, taps, prototype)
+    }
+
+    fn design(ratio: f64, cutoff: f64, taps: usize, prototype: Prototype) -> Self {
         let taps_per_phase = taps.next_multiple_of(TAP_MULTIPLE);
         let clock = Clock::for_ratio(ratio, taps_per_phase);
         let phases = clock.phases();
-        let proto = design_lowpass(phases * taps + 1, cutoff / phases as f64);
+        let proto = prototype.lowpass(phases * taps + 1, cutoff / phases as f64);
         let mut rows = vec![0.0f32; (phases + 1) * taps_per_phase];
         for (p, row) in rows.chunks_exact_mut(taps_per_phase).enumerate() {
             let branch = &mut row[taps_per_phase - taps..];

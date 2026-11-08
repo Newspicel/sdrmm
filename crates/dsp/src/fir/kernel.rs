@@ -2,6 +2,8 @@ use std::ops::{Add, Mul};
 
 use num_complex::Complex;
 
+use super::run::{Run, runs};
+
 #[cfg(target_arch = "aarch64")]
 pub(crate) use super::neon::Isa;
 #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
@@ -10,6 +12,11 @@ pub(crate) use super::scalar::Isa;
 pub(crate) use super::x86::Isa;
 
 pub(super) const BLOCK_FLOATS: usize = 16;
+
+/// Blocks a kernel may compute side by side. The output's ragged end is computed as one such
+/// group and copied out, so a delay line keeps this many blocks of slack.
+pub(crate) const GROUP_BLOCKS: usize = 4;
+const GROUP_FLOATS: usize = GROUP_BLOCKS * BLOCK_FLOATS;
 
 pub(crate) trait Sample: Copy + Add<Output = Self> {
     const LANES: usize;
@@ -37,7 +44,8 @@ impl Sample for Complex<f32> {
 
 pub(crate) trait Accumulate<C>: Sample {
     fn add_product(self, sample: Self, coefficient: C) -> Self;
-    fn block<const FOLD: bool>(isa: Isa, window: &[Self], plan: &Plan<C>, out: &mut [Self]);
+    /// Fills `out` with consecutive outputs, the first from the window at the start of `window`.
+    fn blocks<const FOLD: bool>(isa: Isa, window: &[Self], plan: &Plan<C>, out: &mut [Self]);
 }
 
 fn add_product(sum: f32, sample: f32, coefficient: f32) -> f32 {
@@ -53,9 +61,15 @@ impl Accumulate<f32> for f32 {
         add_product(self, sample, coefficient)
     }
 
-    fn block<const FOLD: bool>(isa: Isa, window: &[Self], plan: &Plan<f32>, out: &mut [Self]) {
-        let lanes = isa.real_block::<FOLD>(&window[..plan.reach], plan);
-        out.copy_from_slice(&lanes[..out.len()]);
+    fn blocks<const FOLD: bool>(isa: Isa, window: &[Self], plan: &Plan<f32>, out: &mut [Self]) {
+        let whole = out.len() - out.len() % (Self::LANES * GROUP_BLOCKS);
+        let (full, tail) = out.split_at_mut(whole);
+        isa.real_blocks::<FOLD>(window, plan, full);
+        if !tail.is_empty() {
+            let mut lanes = [0.0; GROUP_FLOATS];
+            isa.real_blocks::<FOLD>(&window[whole..], plan, &mut lanes);
+            tail.copy_from_slice(&lanes[..tail.len()]);
+        }
     }
 }
 
@@ -67,9 +81,15 @@ impl Accumulate<f32> for Complex<f32> {
         )
     }
 
-    fn block<const FOLD: bool>(isa: Isa, window: &[Self], plan: &Plan<f32>, out: &mut [Self]) {
-        let lanes = isa.complex_real_block::<FOLD>(floats(&window[..plan.reach]), plan);
-        unpack(&lanes, out);
+    fn blocks<const FOLD: bool>(isa: Isa, window: &[Self], plan: &Plan<f32>, out: &mut [Self]) {
+        let whole = out.len() - out.len() % (Self::LANES * GROUP_BLOCKS);
+        let (full, tail) = out.split_at_mut(whole);
+        isa.complex_real_blocks::<FOLD>(floats(window), plan, floats_mut(full));
+        if !tail.is_empty() {
+            let mut lanes = [0.0; GROUP_FLOATS];
+            isa.complex_real_blocks::<FOLD>(floats(&window[whole..]), plan, &mut lanes);
+            unpack(&lanes, tail);
+        }
     }
 }
 
@@ -89,14 +109,20 @@ impl Accumulate<Complex<f32>> for Complex<f32> {
         )
     }
 
-    fn block<const FOLD: bool>(
+    fn blocks<const FOLD: bool>(
         isa: Isa,
         window: &[Self],
         plan: &Plan<Complex<f32>>,
         out: &mut [Self],
     ) {
-        let lanes = isa.complex_block::<FOLD>(floats(&window[..plan.reach]), plan);
-        unpack(&lanes, out);
+        let whole = out.len() - out.len() % (Self::LANES * GROUP_BLOCKS);
+        let (full, tail) = out.split_at_mut(whole);
+        isa.complex_blocks::<FOLD>(floats(window), plan, floats_mut(full));
+        if !tail.is_empty() {
+            let mut lanes = [0.0; GROUP_FLOATS];
+            isa.complex_blocks::<FOLD>(floats(&window[whole..]), plan, &mut lanes);
+            unpack(&lanes, tail);
+        }
     }
 }
 
@@ -104,17 +130,21 @@ pub(super) fn floats(samples: &[Complex<f32>]) -> &[f32] {
     unsafe { std::slice::from_raw_parts(samples.as_ptr().cast(), 2 * samples.len()) }
 }
 
-fn unpack(lanes: &[f32; BLOCK_FLOATS], out: &mut [Complex<f32>]) {
+fn floats_mut(samples: &mut [Complex<f32>]) -> &mut [f32] {
+    unsafe { std::slice::from_raw_parts_mut(samples.as_mut_ptr().cast(), 2 * samples.len()) }
+}
+
+/// The window floats `count` blocks of outputs read, checked once so the kernels can walk them
+/// unchecked. `None` when there is no block to compute.
+pub(super) fn reach_of<'a, C>(floats: &'a [f32], plan: &Plan<C>, out: &[f32]) -> Option<&'a [f32]> {
+    let last = out.len().checked_sub(BLOCK_FLOATS)?;
+    Some(&floats[..last + plan.floats])
+}
+
+fn unpack(lanes: &[f32], out: &mut [Complex<f32>]) {
     for (sample, pair) in out.iter_mut().zip(lanes.as_chunks::<2>().0) {
         *sample = Complex::new(pair[0], pair[1]);
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Tap<C> {
-    pub(super) front: usize,
-    pub(super) back: usize,
-    pub(super) value: C,
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -126,58 +156,51 @@ pub(crate) struct Row {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Plan<C> {
-    pub(super) taps: Vec<Tap<C>>,
+    pub(super) runs: Vec<Run>,
+    pub(super) values: Vec<C>,
     #[cfg(target_arch = "aarch64")]
     pub(super) rows: Vec<Row>,
     #[cfg(target_arch = "aarch64")]
     pub(super) row_taps: Vec<C>,
+    #[cfg(test)]
     pub(super) reach: usize,
-    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     pub(super) floats: usize,
     pub(super) folded: bool,
 }
 
 impl<C> Plan<C>
 where
-    C: Copy + PartialEq + Mul<f32, Output = C>,
+    C: Copy + PartialEq + Default + Mul<f32, Output = C>,
 {
     pub(crate) fn new<T: Sample>(taps: &[C], phases: usize, stride: usize, fold: bool) -> Self {
         let offset = |index: usize| ((index % phases) * stride + index / phases) * T::FLOATS;
         let reversed: Vec<C> = taps.iter().rev().copied().collect();
         let folded = fold && reversed.iter().eq(taps.iter());
         let last = taps.len() - 1;
-        let taps: Vec<_> = if folded {
-            (0..taps.len().div_ceil(2))
-                .map(|index| Tap {
-                    front: offset(index),
-                    back: offset(last - index),
-                    value: if index == last - index {
-                        reversed[index] * 0.5
-                    } else {
-                        reversed[index]
-                    },
-                })
-                .collect()
+        let farthest = (0..taps.len()).map(offset).max().unwrap_or(0);
+        let reach = farthest / T::FLOATS + T::LANES;
+        let count = if folded {
+            taps.len().div_ceil(2)
         } else {
-            reversed
-                .iter()
-                .enumerate()
-                .map(|(index, &value)| Tap {
-                    front: offset(index),
-                    back: offset(index),
-                    value,
-                })
-                .collect()
+            taps.len()
         };
-        let farthest = taps.iter().map(|tap| tap.front.max(tap.back)).max();
-        let reach = farthest.unwrap_or(0) / T::FLOATS + T::LANES;
+        let (runs, values) = runs(count, phases, folded, |index| {
+            let mirror = if folded { last - index } else { index };
+            let value = if folded && index == mirror {
+                reversed[index] * 0.5
+            } else {
+                reversed[index]
+            };
+            (offset(index), offset(mirror), value)
+        });
         #[cfg(target_arch = "aarch64")]
         let (rows, row_taps) = rows::<T, C>(&reversed, phases, stride);
         Self {
+            #[cfg(test)]
             reach,
-            #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
             floats: reach * T::FLOATS,
-            taps,
+            runs,
+            values,
             #[cfg(target_arch = "aarch64")]
             rows,
             #[cfg(target_arch = "aarch64")]
@@ -191,15 +214,46 @@ where
     }
 }
 
+impl<C: Copy> Plan<C> {
+    /// Every tap as its offset, its mirror's offset and its value, in run order. The mirror is
+    /// only meaningful in a folded plan.
+    #[cfg(any(test, not(any(target_arch = "aarch64", target_arch = "x86_64"))))]
+    pub(super) fn taps(&self) -> impl Iterator<Item = (usize, usize, C)> + '_ {
+        self.runs.iter().flat_map(move |run| {
+            self.values[run.range()]
+                .iter()
+                .enumerate()
+                .map(move |(at, &value)| {
+                    let (front, back) = run.offsets(at);
+                    (front, back, value)
+                })
+        })
+    }
+}
+
+/// One row per phase, with the zero taps at either end of a row left out: a half-band
+/// decimator's second phase shrinks to its centre tap.
 #[cfg(target_arch = "aarch64")]
-fn rows<T: Sample, C: Copy>(reversed: &[C], phases: usize, stride: usize) -> (Vec<Row>, Vec<C>) {
+fn rows<T: Sample, C: Copy + PartialEq + Default>(
+    reversed: &[C],
+    phases: usize,
+    stride: usize,
+) -> (Vec<Row>, Vec<C>) {
     let mut rows = Vec::with_capacity(phases);
     let mut row_taps = Vec::with_capacity(reversed.len());
     for phase in 0..phases.min(reversed.len()) {
+        let phase_taps: Vec<C> = reversed[phase..].iter().step_by(phases).copied().collect();
+        let Some(first) = phase_taps.iter().position(|&tap| tap != C::default()) else {
+            continue;
+        };
+        let last = phase_taps
+            .iter()
+            .rposition(|&tap| tap != C::default())
+            .unwrap_or(first);
         let start = row_taps.len();
-        row_taps.extend(reversed[phase..].iter().step_by(phases));
+        row_taps.extend_from_slice(&phase_taps[first..=last]);
         rows.push(Row {
-            offset: phase * stride * T::FLOATS,
+            offset: (phase * stride + first) * T::FLOATS,
             taps: start..row_taps.len(),
         });
     }
@@ -306,16 +360,16 @@ mod tests {
     fn one_output<T, C>(isa: Isa, window: &[T], taps: &[C], fold: bool) -> T
     where
         T: Accumulate<C>,
-        C: Copy + PartialEq + Mul<f32, Output = C>,
+        C: Copy + PartialEq + Default + Mul<f32, Output = C>,
     {
         let plan = Plan::new::<T>(taps, 1, window.len() + T::LANES, fold);
         let mut padded = window.to_vec();
-        padded.resize(plan.reach, T::zero());
+        padded.resize(plan.reach + (GROUP_BLOCKS - 1) * T::LANES, T::zero());
         let mut out = [T::zero()];
         if plan.folded() {
-            T::block::<true>(isa, &padded, &plan, &mut out);
+            T::blocks::<true>(isa, &padded, &plan, &mut out);
         } else {
-            T::block::<false>(isa, &padded, &plan, &mut out);
+            T::blocks::<false>(isa, &padded, &plan, &mut out);
         }
         out[0]
     }
@@ -365,20 +419,23 @@ mod tests {
     fn check_block<T, C>(isa: Isa, window: &[T], taps: &[C], phases: usize, label: &str)
     where
         T: Accumulate<C> + Widen + std::fmt::Debug,
-        C: Copy + PartialEq + Mul<f32, Output = C>,
+        C: Copy + PartialEq + Default + Mul<f32, Output = C>,
     {
         let stride = window.len().div_ceil(phases);
         for fold in [false, true] {
             let plan = Plan::new::<T>(taps, phases, stride, fold);
             let mut padded = window.to_vec();
-            padded.resize(plan.reach.max(window.len()), T::zero());
+            padded.resize(
+                plan.reach.max(window.len()) + (GROUP_BLOCKS - 1) * T::LANES,
+                T::zero(),
+            );
             let mut simd = vec![T::zero(); T::LANES];
             let mut reference = simd.clone();
             if plan.folded() {
-                T::block::<true>(isa, &padded, &plan, &mut simd);
+                T::blocks::<true>(isa, &padded, &plan, &mut simd);
                 scalar::block::<T, C, true>(&padded[..plan.reach], &plan, &mut reference);
             } else {
-                T::block::<false>(isa, &padded, &plan, &mut simd);
+                T::blocks::<false>(isa, &padded, &plan, &mut simd);
                 scalar::block::<T, C, false>(&padded[..plan.reach], &plan, &mut reference);
             }
             for (lane, (&a, &b)) in simd.iter().zip(&reference).enumerate() {
@@ -430,8 +487,8 @@ mod tests {
         assert!(Plan::new::<f32>(&symmetric, 1, 64, true).folded());
         assert!(!Plan::new::<f32>(&symmetric, 1, 64, false).folded());
         assert!(!Plan::new::<f32>(&[0.25, 0.5, 1.0, 0.5, 0.2], 1, 64, true).folded());
-        assert_eq!(Plan::new::<f32>(&symmetric, 1, 64, true).taps.len(), 3);
-        assert_eq!(Plan::new::<f32>(&[0.5, 0.5], 1, 64, true).taps.len(), 1);
+        assert_eq!(Plan::new::<f32>(&symmetric, 1, 64, true).values.len(), 3);
+        assert_eq!(Plan::new::<f32>(&[0.5, 0.5], 1, 64, true).values.len(), 1);
     }
 
     fn planes(len: usize) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>) {

@@ -54,6 +54,7 @@ deny = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# The nine `xng-*` decoders are vendored from one pinned revision and nothing else is fetched
+# The nine `xng-*` decoders are vendored from one pinned revision, and `rustfft` is patched to one
+# pinned revision of our fork until its planner changes land upstream. Nothing else is fetched
 # from a git host. A new entry here is a supply-chain decision, not a dependency bump.
-allow-git = ["https://github.com/airframesio/xng"]
+allow-git = ["https://github.com/airframesio/xng", "https://github.com/Newspicel/RustFFT"]

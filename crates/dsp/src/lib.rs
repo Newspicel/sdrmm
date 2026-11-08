@@ -77,8 +77,9 @@ pub use fec::{
     syndrome::SyndromeDecoder,
 };
 pub use fir::{
-    design_bandpass, design_gaussian, design_lowpass, design_lowpass_blackman_harris,
-    design_rds_biphase, design_rds_shaping, design_rrc, design_rrc_unit_energy,
+    design_bandpass, design_gaussian, design_halfband, design_lowpass,
+    design_lowpass_blackman_harris, design_rds_biphase, design_rds_shaping, design_rrc,
+    design_rrc_unit_energy,
 };
 pub use firc::FirC;
 pub use fm::FmDemod;

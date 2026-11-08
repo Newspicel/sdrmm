@@ -59,6 +59,14 @@ fn fir(c: &mut Criterion) {
             });
         });
     }
+    let mut halfband = sdrmm_dsp::Decimator::new(&sdrmm_dsp::design_halfband(63, 100.0), 2);
+    let mut output = Vec::new();
+    group.bench_function("complex_halfband_63_by_2", |b| {
+        b.iter(|| {
+            halfband.process(black_box(&input), &mut output);
+            black_box(&output);
+        });
+    });
     let mut filter = sdrmm_dsp::FirC::new(&complex_taps);
     let mut output = Vec::new();
     group.bench_function("complex_taps_127", |b| {

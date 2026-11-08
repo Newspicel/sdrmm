@@ -5,7 +5,10 @@ use std::arch::x86_64::{
 
 use num_complex::Complex;
 
-use crate::fir::kernel::{BLOCK_FLOATS, Plan, Tap, interpolated_plane_tail, plane_tail};
+use crate::fir::{
+    kernel::{BLOCK_FLOATS, Plan, interpolated_plane_tail, plane_tail, reach_of},
+    run::Run,
+};
 
 type Block = [__m128; 4];
 
@@ -34,12 +37,10 @@ unsafe fn load_block(floats: *const f32, offset: usize) -> Block {
 }
 
 #[target_feature(enable = "sse2")]
-fn store(block: Block) -> [f32; BLOCK_FLOATS] {
-    let mut lanes = [0.0; BLOCK_FLOATS];
+unsafe fn store(block: Block, lanes: &mut [f32; BLOCK_FLOATS]) {
     for (quad, value) in lanes.as_chunks_mut::<4>().0.iter_mut().zip(block) {
         unsafe { _mm_storeu_ps(quad.as_mut_ptr(), value) };
     }
-    lanes
 }
 
 #[target_feature(enable = "sse2")]
@@ -64,40 +65,49 @@ fn add_product(sum: Block, samples: Block, tap: f32) -> Block {
 }
 
 #[target_feature(enable = "sse2")]
-unsafe fn samples<const FOLD: bool, C>(floats: *const f32, tap: &Tap<C>) -> Block {
-    let front = unsafe { load_block(floats, tap.front) };
+unsafe fn samples<const FOLD: bool>(floats: *const f32, run: &Run, at: usize) -> Block {
+    let (front, back) = run.offsets(at);
+    let front = unsafe { load_block(floats, front) };
     if FOLD {
-        add(front, unsafe { load_block(floats, tap.back) })
+        add(front, unsafe { load_block(floats, back) })
     } else {
         front
     }
 }
 
 #[target_feature(enable = "sse2")]
-pub(super) fn real_block<const FOLD: bool>(
-    floats: &[f32],
-    plan: &Plan<f32>,
-) -> [f32; BLOCK_FLOATS] {
-    let floats = floats[..plan.floats].as_ptr();
+unsafe fn real_sum<const FOLD: bool>(floats: *const f32, plan: &Plan<f32>) -> Block {
     let mut sets = [zero(); SETS];
-    let (groups, rest) = plan.taps.as_chunks::<SETS>();
-    for group in groups {
-        for (set, tap) in sets.iter_mut().zip(group) {
-            *set = add_product(
-                *set,
-                unsafe { samples::<FOLD, f32>(floats, tap) },
-                tap.value,
-            );
+    for run in &plan.runs {
+        let (groups, rest) = plan.values[run.range()].as_chunks::<SETS>();
+        for (index, group) in groups.iter().enumerate() {
+            for (lane, (set, &value)) in sets.iter_mut().zip(group).enumerate() {
+                let samples = unsafe { samples::<FOLD>(floats, run, SETS * index + lane) };
+                *set = add_product(*set, samples, value);
+            }
+        }
+        for (lane, (set, &value)) in sets.iter_mut().zip(rest).enumerate() {
+            let samples = unsafe { samples::<FOLD>(floats, run, SETS * groups.len() + lane) };
+            *set = add_product(*set, samples, value);
         }
     }
-    for tap in rest {
-        sets[0] = add_product(
-            sets[0],
-            unsafe { samples::<FOLD, f32>(floats, tap) },
-            tap.value,
-        );
+    add(sets[0], sets[1])
+}
+
+#[target_feature(enable = "sse2")]
+pub(super) fn real_blocks<const FOLD: bool>(floats: &[f32], plan: &Plan<f32>, out: &mut [f32]) {
+    let Some(floats) = reach_of(floats, plan, out) else {
+        return;
+    };
+    let base = floats.as_ptr();
+    for (index, lanes) in out.as_chunks_mut::<BLOCK_FLOATS>().0.iter_mut().enumerate() {
+        unsafe {
+            store(
+                real_sum::<FOLD>(base.add(index * BLOCK_FLOATS), plan),
+                lanes,
+            )
+        };
     }
-    store(add(sets[0], sets[1]))
 }
 
 #[target_feature(enable = "sse2")]
@@ -110,23 +120,41 @@ fn rotated(by_re: __m128, by_im: __m128) -> __m128 {
 }
 
 #[target_feature(enable = "sse2")]
-pub(super) fn complex_block<const FOLD: bool>(
-    floats: &[f32],
-    plan: &Plan<Complex<f32>>,
-) -> [f32; BLOCK_FLOATS] {
-    let floats = floats[..plan.floats].as_ptr();
+unsafe fn complex_sum<const FOLD: bool>(floats: *const f32, plan: &Plan<Complex<f32>>) -> Block {
     let (mut by_re, mut by_im) = (zero(), zero());
-    for tap in &plan.taps {
-        let samples = unsafe { samples::<FOLD, Complex<f32>>(floats, tap) };
-        by_re = add_product(by_re, samples, tap.value.re);
-        by_im = add_product(by_im, samples, tap.value.im);
+    for run in &plan.runs {
+        for (at, value) in plan.values[run.range()].iter().enumerate() {
+            let samples = unsafe { samples::<FOLD>(floats, run, at) };
+            by_re = add_product(by_re, samples, value.re);
+            by_im = add_product(by_im, samples, value.im);
+        }
     }
-    store([
+    [
         rotated(by_re[0], by_im[0]),
         rotated(by_re[1], by_im[1]),
         rotated(by_re[2], by_im[2]),
         rotated(by_re[3], by_im[3]),
-    ])
+    ]
+}
+
+#[target_feature(enable = "sse2")]
+pub(super) fn complex_blocks<const FOLD: bool>(
+    floats: &[f32],
+    plan: &Plan<Complex<f32>>,
+    out: &mut [f32],
+) {
+    let Some(floats) = reach_of(floats, plan, out) else {
+        return;
+    };
+    let base = floats.as_ptr();
+    for (index, lanes) in out.as_chunks_mut::<BLOCK_FLOATS>().0.iter_mut().enumerate() {
+        unsafe {
+            store(
+                complex_sum::<FOLD>(base.add(index * BLOCK_FLOATS), plan),
+                lanes,
+            )
+        };
+    }
 }
 
 #[target_feature(enable = "sse2")]

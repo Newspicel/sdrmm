@@ -5,7 +5,10 @@ use std::arch::aarch64::{
 
 use num_complex::Complex;
 
-use super::kernel::{BLOCK_FLOATS, Plan, Tap, interpolated_plane_tail, plane_tail};
+use super::{
+    kernel::{BLOCK_FLOATS, Plan, interpolated_plane_tail, plane_tail, reach_of},
+    run::Run,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Isa;
@@ -20,28 +23,31 @@ impl Isa {
         vec![Self]
     }
 
-    pub(crate) fn real_block<const FOLD: bool>(
+    pub(crate) fn real_blocks<const FOLD: bool>(
         self,
         floats: &[f32],
         plan: &Plan<f32>,
-    ) -> [f32; BLOCK_FLOATS] {
-        unsafe { real_sliding_block(floats, plan) }
+        out: &mut [f32],
+    ) {
+        unsafe { blocks(floats, plan, out, real_sliding_block) }
     }
 
-    pub(crate) fn complex_real_block<const FOLD: bool>(
+    pub(crate) fn complex_real_blocks<const FOLD: bool>(
         self,
         floats: &[f32],
         plan: &Plan<f32>,
-    ) -> [f32; BLOCK_FLOATS] {
-        unsafe { sliding_block(floats, plan) }
+        out: &mut [f32],
+    ) {
+        unsafe { blocks(floats, plan, out, sliding_block) }
     }
 
-    pub(crate) fn complex_block<const FOLD: bool>(
+    pub(crate) fn complex_blocks<const FOLD: bool>(
         self,
         floats: &[f32],
         plan: &Plan<Complex<f32>>,
-    ) -> [f32; BLOCK_FLOATS] {
-        unsafe { complex_block::<FOLD>(floats, plan) }
+        out: &mut [f32],
+    ) {
+        unsafe { blocks(floats, plan, out, complex_sum::<FOLD>) }
     }
 
     pub(crate) unsafe fn plane_dot<const N: usize>(
@@ -86,15 +92,31 @@ unsafe fn load_block(floats: *const f32, offset: usize) -> Block {
 }
 
 #[target_feature(enable = "neon")]
-fn store(block: Block) -> [f32; BLOCK_FLOATS] {
-    let mut lanes = [0.0; BLOCK_FLOATS];
+unsafe fn store(block: Block, lanes: &mut [f32; BLOCK_FLOATS]) {
     unsafe {
         vst1q_f32_x4(
             lanes.as_mut_ptr(),
             float32x4x4_t(block[0], block[1], block[2], block[3]),
         );
     }
-    lanes
+}
+
+/// Runs `sum` over each block of outputs, storing straight into `out`.
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn blocks<C>(
+    floats: &[f32],
+    plan: &Plan<C>,
+    out: &mut [f32],
+    sum: unsafe fn(*const f32, &Plan<C>) -> Block,
+) {
+    let Some(floats) = reach_of(floats, plan, out) else {
+        return;
+    };
+    let base = floats.as_ptr();
+    for (index, lanes) in out.as_chunks_mut::<BLOCK_FLOATS>().0.iter_mut().enumerate() {
+        unsafe { store(sum(base.add(index * BLOCK_FLOATS), plan), lanes) };
+    }
 }
 
 #[target_feature(enable = "neon")]
@@ -118,10 +140,11 @@ fn add_product(sum: Block, samples: Block, tap: f32) -> Block {
 }
 
 #[target_feature(enable = "neon")]
-unsafe fn samples<const FOLD: bool, C>(floats: *const f32, tap: &Tap<C>) -> Block {
-    let front = unsafe { load_block(floats, tap.front) };
+unsafe fn samples<const FOLD: bool>(floats: *const f32, run: &Run, at: usize) -> Block {
+    let (front, back) = run.offsets(at);
+    let front = unsafe { load_block(floats, front) };
     if FOLD {
-        add(front, unsafe { load_block(floats, tap.back) })
+        add(front, unsafe { load_block(floats, back) })
     } else {
         front
     }
@@ -135,14 +158,13 @@ unsafe fn slid(window: Block, floats: *const f32, offset: usize) -> Block {
 }
 
 #[target_feature(enable = "neon")]
-fn sliding_block(floats: &[f32], plan: &Plan<f32>) -> [f32; BLOCK_FLOATS] {
-    let floats = floats[..plan.floats].as_ptr();
+unsafe fn sliding_block(floats: *const f32, plan: &Plan<f32>) -> Block {
     let mut sums = [zero(); SETS];
     for row in &plan.rows {
         let taps = &plan.row_taps[row.taps.clone()];
         unsafe { sliding_row(&mut sums, floats.add(row.offset), taps) };
     }
-    store(add(add(sums[0], sums[1]), add(sums[2], sums[3])))
+    add(add(sums[0], sums[1]), add(sums[2], sums[3]))
 }
 
 #[target_feature(enable = "neon")]
@@ -189,14 +211,13 @@ unsafe fn sliding_row(sums: &mut [Block; SETS], base: *const f32, taps: &[f32]) 
 }
 
 #[target_feature(enable = "neon")]
-fn real_sliding_block(floats: &[f32], plan: &Plan<f32>) -> [f32; BLOCK_FLOATS] {
-    let floats = floats[..plan.floats].as_ptr();
+unsafe fn real_sliding_block(floats: *const f32, plan: &Plan<f32>) -> Block {
     let mut sums = [zero(); SETS];
     for row in &plan.rows {
         let taps = &plan.row_taps[row.taps.clone()];
         unsafe { real_sliding_row(&mut sums, floats.add(row.offset), taps) };
     }
-    store(add(add(sums[0], sums[1]), add(sums[2], sums[3])))
+    add(add(sums[0], sums[1]), add(sums[2], sums[3]))
 }
 
 #[target_feature(enable = "neon")]
@@ -225,48 +246,41 @@ unsafe fn real_sliding_row(sums: &mut [Block; SETS], base: *const f32, taps: &[f
 }
 
 #[target_feature(enable = "neon")]
-unsafe fn complex_step<const FOLD: bool>(
-    sums: [Block; 2],
-    floats: *const f32,
-    tap: &Tap<Complex<f32>>,
-) -> [Block; 2] {
-    let samples = unsafe { samples::<FOLD, Complex<f32>>(floats, tap) };
-    [
-        add_product(sums[0], samples, tap.value.re),
-        add_product(sums[1], samples, tap.value.im),
-    ]
-}
-
-#[target_feature(enable = "neon")]
 fn rotated(by_re: float32x4_t, by_im: float32x4_t) -> float32x4_t {
     let sign = load(&[-1.0, 1.0, -1.0, 1.0]);
     vfmaq_f32(by_re, vrev64q_f32(by_im), sign)
 }
 
 #[target_feature(enable = "neon")]
-fn complex_block<const FOLD: bool>(
-    floats: &[f32],
-    plan: &Plan<Complex<f32>>,
-) -> [f32; BLOCK_FLOATS] {
-    let floats = floats[..plan.floats].as_ptr();
+unsafe fn complex_sum<const FOLD: bool>(floats: *const f32, plan: &Plan<Complex<f32>>) -> Block {
     let mut sets = [[zero(); 2]; SETS / 2];
-    let (groups, rest) = plan.taps.as_chunks::<{ SETS / 2 }>();
-    for group in groups {
-        for (set, tap) in sets.iter_mut().zip(group) {
-            *set = unsafe { complex_step::<FOLD>(*set, floats, tap) };
+    for run in &plan.runs {
+        let (groups, rest) = plan.values[run.range()].as_chunks::<{ SETS / 2 }>();
+        for (index, group) in groups.iter().enumerate() {
+            for (lane, (set, value)) in sets.iter_mut().zip(group).enumerate() {
+                let samples = unsafe { samples::<FOLD>(floats, run, SETS / 2 * index + lane) };
+                *set = [
+                    add_product(set[0], samples, value.re),
+                    add_product(set[1], samples, value.im),
+                ];
+            }
         }
-    }
-    for tap in rest {
-        sets[0] = unsafe { complex_step::<FOLD>(sets[0], floats, tap) };
+        for (lane, (set, value)) in sets.iter_mut().zip(rest).enumerate() {
+            let samples = unsafe { samples::<FOLD>(floats, run, SETS / 2 * groups.len() + lane) };
+            *set = [
+                add_product(set[0], samples, value.re),
+                add_product(set[1], samples, value.im),
+            ];
+        }
     }
     let by_re = add(sets[0][0], sets[1][0]);
     let by_im = add(sets[0][1], sets[1][1]);
-    store([
+    [
         rotated(by_re[0], by_im[0]),
         rotated(by_re[1], by_im[1]),
         rotated(by_re[2], by_im[2]),
         rotated(by_re[3], by_im[3]),
-    ])
+    ]
 }
 
 #[target_feature(enable = "neon")]

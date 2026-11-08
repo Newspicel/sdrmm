@@ -2,7 +2,8 @@ use num_complex::Complex;
 
 use crate::{
     CubicInterpolator, Decimator, FracResampler, Nco,
-    fir::{design_lowpass_kaiser, kaiser_taps},
+    fir::{design_halfband, design_lowpass_kaiser, halfband_taps, kaiser_taps},
+    resamp::{Prototype, taps_per_phase},
 };
 
 const PASSBAND_FRAC: f64 = 0.4;
@@ -11,6 +12,7 @@ pub const STOPBAND_DB: f64 = 100.0;
 const CHUNK: usize = 2048;
 const CUBIC_SPAN: f64 = 4.0;
 const MIN_FILTERED_UPSAMPLING: f64 = 2.0;
+const MIN_STAGE_TAPS: usize = 11;
 
 #[must_use]
 pub fn flat_bandwidth_hz(output_rate: f64) -> f64 {
@@ -37,10 +39,7 @@ impl Fraction {
         } else if (1.0..MIN_FILTERED_UPSAMPLING).contains(&ratio) {
             Self::Interpolate(CubicInterpolator::new(ratio))
         } else {
-            Self::Resample(Box::new(keep.map_or_else(
-                || FracResampler::new(ratio),
-                |keep| FracResampler::keeping(ratio, keep),
-            )))
+            Self::Resample(Box::new(FracResampler::rejecting(ratio, keep, STOPBAND_DB)))
         }
     }
 
@@ -117,7 +116,7 @@ impl Ddc {
         let mut span = 0.0;
         if output_rate < input_rate {
             for factor in prime_factors_desc(integer_decimation(input_rate / output_rate)) {
-                let (taps, _) = stage_filter(rate, factor, output_rate);
+                let taps = stage_filter(rate, factor, output_rate).taps();
                 span += (taps - 1) as f64 * input_rate / rate;
                 stages.push(stage(rate, factor, output_rate));
                 rate /= factor as f64;
@@ -127,7 +126,8 @@ impl Ddc {
         if (1.0 + 1e-12..MIN_FILTERED_UPSAMPLING).contains(&ratio) {
             span += CUBIC_SPAN * input_rate / rate;
         } else if (ratio - 1.0).abs() > 1e-12 {
-            span += crate::resamp::taps_per_phase(ratio) as f64 * input_rate / rate;
+            span +=
+                taps_per_phase(ratio, Prototype::Kaiser(STOPBAND_DB)) as f64 * input_rate / rate;
         }
         Ok(Self {
             settling: (span * output_rate / input_rate).ceil() as usize,
@@ -228,12 +228,13 @@ fn decimation_cost(quotient: f64, decimation: usize) -> f64 {
     let mut rate = quotient;
     let mut cost = 0.0;
     for factor in prime_factors_desc(decimation) {
-        let (taps, _) = stage_filter(rate, factor, 1.0);
+        let taps = lowpass_stage(rate, factor, 1.0).taps();
         rate /= factor as f64;
         cost += taps as f64 * rate / quotient;
     }
     if (rate - 1.0).abs() > 1e-12 {
-        cost += 2.0 * crate::resamp::taps_per_phase(rate.recip()) as f64 / quotient;
+        cost +=
+            2.0 * taps_per_phase(rate.recip(), Prototype::Kaiser(STOPBAND_DB)) as f64 / quotient;
     }
     cost
 }
@@ -256,16 +257,75 @@ fn prime_factors_desc(mut n: usize) -> Vec<usize> {
 }
 
 fn stage(input_rate: f64, factor: usize, output_rate: f64) -> Decimator {
-    let (taps, cutoff) = stage_filter(input_rate, factor, output_rate);
-    Decimator::new(&design_lowpass_kaiser(taps, cutoff, STOPBAND_DB), factor)
+    Decimator::new(
+        &stage_filter(input_rate, factor, output_rate).design(),
+        factor,
+    )
 }
 
-fn stage_filter(input_rate: f64, factor: usize, output_rate: f64) -> (usize, f64) {
-    let stage_out = input_rate / factor as f64;
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum StageFilter {
+    Lowpass { taps: usize, cutoff: f64 },
+    Halfband { taps: usize },
+}
+
+impl StageFilter {
+    fn taps(self) -> usize {
+        match self {
+            Self::Lowpass { taps, .. } | Self::Halfband { taps } => taps,
+        }
+    }
+
+    /// The nonzero taps, which is what one output costs.
+    fn products(self) -> usize {
+        match self {
+            Self::Lowpass { taps, .. } => taps,
+            Self::Halfband { taps } => taps / 2 + 2,
+        }
+    }
+
+    fn design(self) -> Vec<f32> {
+        match self {
+            Self::Lowpass { taps, cutoff } => design_lowpass_kaiser(taps, cutoff, STOPBAND_DB),
+            Self::Halfband { taps } => design_halfband(taps, STOPBAND_DB),
+        }
+    }
+}
+
+/// The cheaper of the stage's low-pass and, for a stage by two, a half-band that meets the same
+/// passband and protection edges at the same attenuation. Planning prices every stage as its
+/// low-pass, so a cheaper stage by two never changes the plan.
+fn stage_filter(input_rate: f64, factor: usize, output_rate: f64) -> StageFilter {
+    let lowpass = lowpass_stage(input_rate, factor, output_rate);
+    let (pass, stop) = stage_edges(input_rate, factor, output_rate);
+    let transition = 0.5 - 2.0 * pass.max(0.5 - stop);
+    if factor != 2 || transition <= 0.0 {
+        return lowpass;
+    }
+    let halfband = StageFilter::Halfband {
+        taps: halfband_taps(transition, STOPBAND_DB).max(MIN_STAGE_TAPS),
+    };
+    if halfband.products() < lowpass.products() {
+        halfband
+    } else {
+        lowpass
+    }
+}
+
+fn lowpass_stage(input_rate: f64, factor: usize, output_rate: f64) -> StageFilter {
+    let (pass, stop) = stage_edges(input_rate, factor, output_rate);
+    StageFilter::Lowpass {
+        taps: kaiser_taps(stop - pass, STOPBAND_DB).max(MIN_STAGE_TAPS),
+        cutoff: (pass + stop) / 2.0,
+    }
+}
+
+/// The edge the passband must reach and the one beyond which nothing may fold into the
+/// protected band, as fractions of the stage's input rate.
+fn stage_edges(input_rate: f64, factor: usize, output_rate: f64) -> (f64, f64) {
     let pass = PASSBAND_FRAC * output_rate / input_rate;
-    let stop = (stage_out - PROTECT_FRAC * output_rate) / input_rate;
-    let taps = kaiser_taps(stop - pass, STOPBAND_DB).max(11);
-    (taps, (pass + stop) / 2.0)
+    let stop = (input_rate / factor as f64 - PROTECT_FRAC * output_rate) / input_rate;
+    (pass, stop)
 }
 
 #[cfg(test)]
@@ -538,6 +598,41 @@ mod tests {
                 (count - ideal).abs() <= 2,
                 "{fs_in}→{fs_out}: got {count} S/s, ideal {ideal}"
             );
+        }
+    }
+
+    #[test]
+    fn a_stage_by_two_is_a_halfband_only_where_it_is_cheaper() {
+        let early = stage_filter(2_048_000.0, 2, 48_000.0);
+        assert!(matches!(early, StageFilter::Halfband { .. }), "{early:?}");
+        let last = stage_filter(96_000.0, 2, 48_000.0);
+        assert!(matches!(last, StageFilter::Lowpass { .. }), "{last:?}");
+        assert!(matches!(
+            stage_filter(2_048_000.0, 3, 48_000.0),
+            StageFilter::Lowpass { .. }
+        ));
+    }
+
+    #[test]
+    fn every_plan_keeps_the_passband_flat_and_the_neighbours_a_hundred_db_down() {
+        for (input_rate, output_rate) in [
+            (2_048_000.0, 64_000.0),
+            (20_480_000.0, 40_000.0),
+            (61_440_000.0, 48_000.0),
+            (8_000_000.0, 12_500.0),
+            (2_000_000.0, 44_100.0),
+        ] {
+            for relative in [0.0, 0.25, -0.4, 0.4, 0.6, -0.6, 0.75, 1.5, 7.0] {
+                let mut ddc = Ddc::new(input_rate, output_rate, 0.0).expect("rates");
+                let input = tone_at_rate(relative * output_rate, input_rate, 200_000);
+                let output = run(&mut ddc, &input);
+                let db = 20.0 * f64::from(rms_c(&output[ddc.settling()..])).log10();
+                if relative.abs() <= 0.4 {
+                    assert!(db.abs() < 1e-3, "{input_rate} {relative}: passband {db} dB");
+                } else {
+                    assert!(db < -99.5, "{input_rate} {relative}: neighbour {db} dB");
+                }
+            }
         }
     }
 
