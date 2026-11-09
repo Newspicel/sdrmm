@@ -158,6 +158,18 @@ pub struct SymbolSync {
     mid: Complex<f32>,
     primed: bool,
     decisions: Option<Decisions>,
+    acquisition: Option<Acquisition>,
+}
+
+/// A feed-forward timing estimate taken over the opening samples of every burst, so the loop
+/// starts on the symbol centres instead of pulling in from wherever it free-ran to.
+#[derive(Clone, Copy, Debug)]
+struct Acquisition {
+    span: usize,
+    /// Samples kept behind the next one, so a burst's first centre may lie up to half a symbol
+    /// back.
+    reach: usize,
+    armed: bool,
 }
 
 impl SymbolSync {
@@ -188,6 +200,7 @@ impl SymbolSync {
             mid: ZERO,
             primed: false,
             decisions: None,
+            acquisition: None,
         };
         sync.reset();
         sync
@@ -196,6 +209,18 @@ impl SymbolSync {
     #[must_use]
     pub fn with_levels(mut self, levels: &[f32]) -> Self {
         self.decisions = Some(Decisions::new(levels));
+        self
+    }
+
+    /// Estimates the timing of each burst from its first `symbols` symbols before tracking it.
+    /// Symbols of a burst come out once that many have arrived.
+    #[must_use]
+    pub fn with_acquisition(mut self, symbols: usize) -> Self {
+        self.acquisition = Some(Acquisition {
+            span: (symbols as f64 * self.nominal_sps).ceil() as usize,
+            reach: (0.5 * self.nominal_sps).ceil() as usize + 1,
+            armed: true,
+        });
         self
     }
 
@@ -245,7 +270,77 @@ impl SymbolSync {
         hold: bool,
         mut on_sample: impl FnMut(Complex<f32>, bool) -> Option<f64>,
     ) {
+        if hold {
+            self.step_through(false, &mut on_sample);
+        }
         self.buf.extend_from_slice(input);
+        if let Some(acquisition) = &mut self.acquisition {
+            acquisition.armed |= hold;
+        }
+        if let Some(span) = self
+            .acquisition
+            .filter(|a| a.armed && !hold)
+            .map(|a| a.span)
+        {
+            if self.ahead() < span {
+                return;
+            }
+            self.acquire(span);
+        }
+        self.step_through(hold, &mut on_sample);
+        let reach = self.acquisition.map_or(0, |a| a.reach);
+        let drain = (self.pos - 1)
+            .saturating_sub(reach)
+            .saturating_sub(self.consumed)
+            .min(self.buf.len());
+        self.buf.drain(..drain);
+        self.consumed += drain;
+    }
+
+    fn ahead(&self) -> usize {
+        (self.consumed + self.buf.len()).saturating_sub(self.pos)
+    }
+
+    /// Moves the next symbol onto the nearest peak of the envelope's symbol-rate line over the
+    /// `span` samples ahead (Oerder and Meyr). The magnitude, not its square, keeps four-level
+    /// data with a small rolloff from throwing the estimate half a symbol out.
+    fn acquire(&mut self, span: usize) {
+        if let Some(acquisition) = &mut self.acquisition {
+            acquisition.armed = false;
+        }
+        let start = self.pos - self.consumed;
+        let window = &self.buf[start..(start + span).min(self.buf.len())];
+        let line: Complex<f64> = window
+            .iter()
+            .enumerate()
+            .map(|(i, s)| Complex::from_polar(f64::from(s.norm()), -TAU * i as f64 / self.sps))
+            .sum();
+        if !(line.norm() > 0.0 && line.arg().is_finite()) {
+            return;
+        }
+        let peak = (-line.arg() / TAU).rem_euclid(1.0) * self.sps;
+        let next = if self.at_symbol {
+            self.frac
+        } else {
+            self.frac + 0.5 * self.step
+        };
+        let mut at = peak + ((next - peak) / self.sps).round() * self.sps;
+        let earliest = 1.0 - start as f64;
+        if at < earliest {
+            at += self.sps;
+        }
+        let whole = at.floor();
+        self.pos = self.pos.saturating_add_signed(whole as isize);
+        self.frac = at - whole;
+        self.at_symbol = true;
+        self.primed = false;
+    }
+
+    fn step_through(
+        &mut self,
+        hold: bool,
+        on_sample: &mut impl FnMut(Complex<f32>, bool) -> Option<f64>,
+    ) {
         while self.pos + 3 <= self.consumed + self.buf.len() {
             let base = self.pos - self.consumed;
             let y = farrow(&self.buf[base - 1..base + 3], self.frac as f32);
@@ -271,11 +366,6 @@ impl SymbolSync {
             self.at_symbol = !self.at_symbol;
             self.advance();
         }
-        let drain = (self.pos - 1)
-            .saturating_sub(self.consumed)
-            .min(self.buf.len());
-        self.buf.drain(..drain);
-        self.consumed += drain;
     }
 
     #[must_use]
@@ -297,6 +387,9 @@ impl SymbolSync {
         self.primed = false;
         if let Some(decisions) = &mut self.decisions {
             decisions.reset();
+        }
+        if let Some(acquisition) = &mut self.acquisition {
+            acquisition.armed = true;
         }
     }
 
@@ -492,6 +585,21 @@ mod tests {
 
     fn alignment(syms: &[f32], out: &[Complex<f32>], settle: usize) -> Option<usize> {
         (0..8).find(|&d| matches_at(syms, out, settle, d))
+    }
+
+    #[test]
+    fn acquisition_starts_on_the_symbol_centres_at_any_offset() {
+        let syms = symbols(80, 0x1234_5678);
+        for eighth in 0..8 {
+            let signal = bpsk(&syms, 4.0, f64::from(eighth) / 8.0);
+            let mut sync = SymbolSync::new(4.0, 0.02).with_acquisition(32);
+            let mut out = Vec::new();
+            sync.process(&signal, &mut out);
+            assert!(
+                alignment(&syms, &out, 8).is_some(),
+                "offset {eighth}/8: no alignment from the eighth symbol on"
+            );
+        }
     }
 
     #[test]

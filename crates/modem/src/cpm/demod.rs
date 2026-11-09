@@ -40,6 +40,8 @@ const IMAGE_TAPS: usize = 127;
 const OFFSET_LOOP_GAIN: f64 = 0.02;
 const OFFSET_LIMIT_SYMBOLS: f64 = 1.0;
 const STEP_REFRESH: usize = 16;
+/// Symbols each burst's opening timing estimate spans: half a DMR burst.
+const ACQUIRE_SYMBOLS: usize = 64;
 const COARSE_SYMBOLS: f64 = 1024.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -594,7 +596,7 @@ impl<F> CpmDemod<F> {
 }
 
 fn timing_loop(params: &CpmParams, sps: f64, timing_bw: f64) -> SymbolSync {
-    let sync = SymbolSync::new(sps, timing_bw);
+    let sync = SymbolSync::new(sps, timing_bw).with_acquisition(ACQUIRE_SYMBOLS);
     if params.mapping().m() > 2 {
         sync.with_levels(params.mapping().levels())
     } else {
@@ -753,7 +755,7 @@ mod tests {
             })
             .min_by_key(|&(_, errors)| errors)
             .unwrap();
-        assert!((1..40).contains(&delay), "implausible alignment {delay}");
+        assert!((0..40).contains(&delay), "implausible alignment {delay}");
         (errors, got.len() - skip)
     }
 
@@ -944,6 +946,39 @@ mod tests {
             "symbol errors at {bad:?} in the last of {} bursts",
             sent.len() / FRAME
         );
+    }
+
+    #[test]
+    fn the_first_burst_is_clean_at_any_timing_phase() {
+        const ON: usize = 132;
+        let params = four_level(1_944.0);
+        let sent = symbols(ON, 23, 4);
+        let mut keyed = vec![None; 40];
+        keyed.extend(sent.iter().copied().map(Some));
+        keyed.extend(vec![None; 40]);
+        let burst = CpmMod::new(params.clone()).keyed(&keyed);
+        for delay in 0..SPS as usize {
+            let mut iq = noise(0x99, delay);
+            iq.extend_from_slice(&burst);
+            let floor = noise(0xbeef, iq.len());
+            for (s, n) in iq.iter_mut().zip(floor) {
+                *s += n;
+            }
+            let mut demod = CpmDemod::new(&params, &rx_rrc(), TIMING_BW_BURST);
+            listening(&mut demod, 0x1157);
+            let mut soft = Vec::new();
+            demod.process(&iq, &mut soft);
+            let got: Vec<u8> = soft.iter().map(|&s| params.mapping().slice(s)).collect();
+            let errors = (0..soft.len())
+                .map(|lag| {
+                    (1..ON)
+                        .filter(|&i| got.get(i + lag) != Some(&sent[i]))
+                        .count()
+                })
+                .min()
+                .unwrap_or(ON);
+            assert_eq!(errors, 0, "symbol errors at a delay of {delay} samples");
+        }
     }
 
     #[test]

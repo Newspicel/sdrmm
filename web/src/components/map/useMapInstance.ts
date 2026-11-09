@@ -176,8 +176,7 @@ export function useMapInstance(
     if (element === null) {
       return;
     }
-    let alive = true;
-    let built: MapCore | null = null;
+    const life: { alive: boolean; built: MapCore | null } = { alive: true, built: null };
     const builtWith = choiceRef.current;
     buildCore(
       element,
@@ -185,25 +184,25 @@ export function useMapInstance(
       () => inputsRef.current,
       sinks,
       (hit) => selectRef.current(hit),
-      () => alive,
+      () => life.alive,
     )
       .then((result) => {
         if (result === null) {
           return;
         }
-        if (!alive) {
+        if (!life.alive) {
           result.core.map.remove();
           return;
         }
-        built = result.core;
+        life.built = result.core;
         coreRef.current = result.core;
         appliedRef.current = builtWith;
         setBasemap(result.basemap);
       })
       .catch((error: unknown) => recordEvent("error", "map", `map: ${describeError(error)}`));
     return () => {
-      alive = false;
-      built?.map.remove();
+      life.alive = false;
+      life.built?.map.remove();
       coreRef.current = null;
       appliedRef.current = null;
     };
@@ -226,10 +225,10 @@ function useBasemapSwitch(
       return;
     }
     appliedRef.current = choice;
-    let alive = true;
+    const life = { alive: true };
     loadBasemap(choice, core.edge)
       .then((chosen) => {
-        if (!alive || coreRef.current !== core) {
+        if (!life.alive || coreRef.current !== core) {
           return;
         }
         core.ready = false;
@@ -239,7 +238,7 @@ function useBasemapSwitch(
       })
       .catch((error: unknown) => recordEvent("error", "map", `basemap: ${describeError(error)}`));
     return () => {
-      alive = false;
+      life.alive = false;
     };
   }, [coreRef, appliedRef, choice, built, setBasemap]);
 }

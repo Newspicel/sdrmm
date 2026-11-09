@@ -26,22 +26,21 @@ export function ServerDown({
   }, [onReachable, queryClient]);
 
   useEffect(() => {
-    let stopped = false;
-    let timer = 0;
+    const probe = { stopped: false, timer: 0 };
     const tick = async () => {
       const reachable = await serverReachable();
-      if (stopped) {
+      if (probe.stopped) {
         return;
       }
       if (reachable) {
         reconnect();
       }
-      timer = window.setTimeout(() => void tick(), PROBE_MS);
+      probe.timer = window.setTimeout(() => void tick(), PROBE_MS);
     };
-    timer = window.setTimeout(() => void tick(), PROBE_MS);
+    probe.timer = window.setTimeout(() => void tick(), PROBE_MS);
     return () => {
-      stopped = true;
-      window.clearTimeout(timer);
+      probe.stopped = true;
+      window.clearTimeout(probe.timer);
     };
   }, [reconnect]);
 

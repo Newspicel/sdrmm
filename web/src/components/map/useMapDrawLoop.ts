@@ -142,15 +142,16 @@ export function useMapDrawLoop(
 ): void {
   useEffect(() => {
     const painter: Painter = { table: paletteTable(HEAT_COLORMAP), scratch: { pixels: null } };
-    let drawn = freshDrawn(-1);
+    const state = { drawn: freshDrawn(-1) };
     const timer = setInterval(() => {
       const core = readyCore(coreRef.current);
       if (core === null) {
         return;
       }
-      if (drawn.generation !== core.generation) {
-        drawn = freshDrawn(core.generation);
+      if (state.drawn.generation !== core.generation) {
+        state.drawn = freshDrawn(core.generation);
       }
+      const { drawn } = state;
       const inputs = inputsRef.current;
       drawPositions(core, inputs, drawn, sinks);
       drawOverlays(core, inputs, drawn, painter);

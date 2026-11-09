@@ -1481,6 +1481,27 @@ fn a_simplex_call_does_not_invent_a_timeslot() {
 }
 
 #[test]
+fn a_call_decodes_from_its_header_at_any_symbol_timing() {
+    const FAST_RATE_HZ: f64 = 10.0 * INPUT_RATE_HZ;
+    let iq = tx::simplex_transmission(&tx::Call::default(), FAST_RATE_HZ);
+    for delay in (0..100).step_by(10) {
+        let mut late = vec![Complex::new(0.0f32, 0.0); 4_800 + delay];
+        late.extend_from_slice(&iq);
+        let mut ddc = sdrmm_dsp::Ddc::new(FAST_RATE_HZ, INPUT_RATE_HZ, 0.0).expect("rates");
+        let mut slow = Vec::new();
+        ddc.process(&late, &mut slow);
+        let frames = decode(&mut channel(DmrSlots::Both), &slow);
+        assert!(
+            frames
+                .first()
+                .is_some_and(|f| f.kind == DvFrameKind::Header && f.crc_verified == Some(true)),
+            "delay {delay}: {:?}",
+            frames.iter().map(|f| f.kind).collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
 fn a_simplex_call_keeps_every_burst_on_the_speaker() {
     let call = tx::Call::default();
     let iq = tx::simplex_transmission(&call, INPUT_RATE_HZ);

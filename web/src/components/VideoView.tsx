@@ -55,20 +55,24 @@ export function VideoView({
     if (ctx === null) {
       return;
     }
-    let image: ImageData | null = null;
-    let stale = 0;
+    const shown: { image: ImageData | null; stale: number } = { image: null, stale: 0 };
 
     const draw = (frame: VideoFrame): void => {
-      if (image === null || image.width !== frame.width || image.height !== frame.height) {
+      if (
+        shown.image === null ||
+        shown.image.width !== frame.width ||
+        shown.image.height !== frame.height
+      ) {
         canvas.width = frame.width;
         canvas.height = frame.height;
-        image = ctx.createImageData(frame.width, frame.height);
+        shown.image = ctx.createImageData(frame.width, frame.height);
         setGeometry({
           width: frame.width,
           height: frame.height,
           aspect: frame.format === "rgb" ? frame.width / frame.height : DISPLAY_ASPECT,
         });
       }
+      const { image } = shown;
       const rgba = image.data;
       const count = frame.width * frame.height;
       for (let i = 0; i < count; i += 1) {
@@ -87,8 +91,8 @@ export function VideoView({
       }
       ctx.putImageData(image, 0, 0);
       setLive(true);
-      clearTimeout(stale);
-      stale = window.setTimeout(() => setLive(false), STALE_MS);
+      clearTimeout(shown.stale);
+      shown.stale = window.setTimeout(() => setLive(false), STALE_MS);
     };
 
     const input = { node, port, source };
@@ -99,7 +103,7 @@ export function VideoView({
     const stop = videoHub.subscribe(input, draw);
     return () => {
       stop();
-      clearTimeout(stale);
+      clearTimeout(shown.stale);
     };
   }, [node, port, source]);
 

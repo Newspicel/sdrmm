@@ -38,6 +38,8 @@ const SUBHARMONIC_FRACTION: f32 = 0.25;
 const HARMONIC_TOLERANCE: f64 = 0.03;
 
 const KEYED_FRACTION: f32 = 0.35;
+/// How long a keyed burst may sit on its rest frequency before its symbols reach full swing.
+const KEY_EDGE_S: f64 = 1e-3;
 const BOTTOM: f32 = 0.10;
 const MAX_DEPTH_DB: f32 = 100.0;
 
@@ -117,6 +119,7 @@ pub(crate) struct Meter {
     amplitude: Vec<f32>,
     frequency: Vec<f32>,
     keyed: Vec<bool>,
+    settled: Vec<bool>,
     weight: Vec<f32>,
     edge: Vec<f32>,
     runs: Vec<(usize, usize)>,
@@ -145,6 +148,7 @@ impl Meter {
             amplitude: Vec::new(),
             frequency: Vec::new(),
             keyed: Vec::new(),
+            settled: Vec::new(),
             weight: Vec::new(),
             edge: Vec::new(),
             runs: Vec::new(),
@@ -363,11 +367,12 @@ impl Meter {
 
         self.keyed.clear();
         self.keyed.extend(self.amplitude.iter().map(|&a| a >= gate));
+        clear_of_edges(&self.keyed, (rate * KEY_EDGE_S) as usize, &mut self.settled);
 
         self.weight.clear();
         self.weight.push(0.0);
         for i in 1..self.frequency.len() {
-            let carrier = self.keyed[i] && self.keyed[i - 1];
+            let carrier = self.settled[i] && self.settled[i - 1];
             let slope = (self.frequency[i] - self.frequency[i - 1]) / slope_rms;
             let dwell = 1.0 / (1.0 + slope * slope);
             self.weight.push(if carrier {
@@ -757,6 +762,22 @@ fn keyed_runs(keyed: &[bool], minimum: usize, out: &mut Vec<(usize, usize)>) {
             out.push((start, i));
         }
         start = i + 1;
+    }
+}
+
+/// Marks the keyed samples at least `guard` samples from any unkeyed one. The ends of the series
+/// are not edges: a capture that opens or closes mid-burst has no ramp there.
+fn clear_of_edges(keyed: &[bool], guard: usize, out: &mut Vec<bool>) {
+    out.clear();
+    let mut since = guard;
+    out.extend(keyed.iter().map(|&on| {
+        since = if on { since.saturating_add(1) } else { 0 };
+        since > guard
+    }));
+    let mut until = guard;
+    for (slot, &on) in out.iter_mut().zip(keyed).rev() {
+        until = if on { until.saturating_add(1) } else { 0 };
+        *slot &= until > guard;
     }
 }
 

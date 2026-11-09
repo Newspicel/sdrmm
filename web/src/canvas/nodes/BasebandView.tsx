@@ -114,7 +114,7 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
   }, [view, eyeComponent, symbolRate, decimate]);
 
   useEffect(() => {
-    let seen = 0;
+    const blocks = { seen: 0 };
     return iqHub.subscribe(node, PORT, (burst) => {
       frameRef.current = burst;
       const {
@@ -145,15 +145,15 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
           addEye(grid, burst.samples, period, rail, eyeScale(burst.samples, rail));
         }
       }
-      seen += 1;
-      if (seen === 1 || seen % 10 === 0) {
+      blocks.seen += 1;
+      if (blocks.seen === 1 || blocks.seen % 10 === 0) {
         setFrame(burst);
       }
     });
   }, [node]);
 
   useEffect(() => {
-    let seen = 0;
+    const blocks = { seen: 0 };
     merRef.current.clear();
     marginRef.current.clear();
     driftRef.current.clear();
@@ -171,8 +171,8 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
         scaleRef.current = referenceScale(block);
         addConstellation(grid, paired(block), scaleRef.current);
       }
-      seen += 1;
-      if (seen === 1 || seen % 4 === 0) {
+      blocks.seen += 1;
+      if (blocks.seen === 1 || blocks.seen % 4 === 0) {
         setSymbols(block);
       }
     });
@@ -194,7 +194,7 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
   }, [node, showsSpectrum]);
 
   useEffect(() => {
-    let raf = 0;
+    const pending = { raf: 0 };
     const loop = () => {
       draw(
         canvasRef.current,
@@ -210,10 +210,10 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
         { mer: merRef.current, margin: marginRef.current, drift: driftRef.current },
         insetRef.current,
       );
-      raf = requestAnimationFrame(loop);
+      pending.raf = requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    pending.raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(pending.raf);
   }, [colormap]);
 
   const nyquist = frame === null ? Number.POSITIVE_INFINITY : frame.sampleRate / 2;

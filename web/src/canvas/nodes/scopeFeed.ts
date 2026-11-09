@@ -321,7 +321,7 @@ export function useScopeFeed(input: {
       return;
     }
     const state = stateRef.current;
-    let raf = 0;
+    const pending = { raf: 0 };
     const loop = () => {
       const { frame, window } = plotSource(
         state.frame,
@@ -338,10 +338,10 @@ export function useScopeFeed(input: {
         readout: state.readout,
         rollOff: frame === null ? 0 : rollOffShare(state.clean, state.rate, frame.spanHz),
       });
-      raf = requestAnimationFrame(loop);
+      pending.raf = requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    pending.raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(pending.raf);
   }, [onScreen, live, traceRef, hoverRef, densityRef]);
 
   useEffect(() => {
