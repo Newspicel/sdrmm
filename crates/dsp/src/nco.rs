@@ -83,7 +83,12 @@ impl Nco {
     }
 
     pub fn set_freq(&mut self, freq_hz: f32, sample_rate: f32) {
-        let mut turns = (f64::from(freq_hz) / f64::from(sample_rate)).fract();
+        self.set_turns(f64::from(freq_hz) / f64::from(sample_rate));
+    }
+
+    /// Sets the frequency in cycles per sample, at the full precision of the phase accumulator.
+    pub fn set_turns(&mut self, turns: f64) {
+        let mut turns = turns.fract();
         self.valid = turns.is_finite();
         if turns >= 0.5 {
             turns -= 1.0;
@@ -95,6 +100,13 @@ impl Nco {
             self.step = step;
             *self.steps = lanes::Steps::new(step);
         }
+        self.realign();
+    }
+
+    /// Restarts the oscillator at `turns` of a cycle.
+    pub fn set_phase(&mut self, turns: f64) {
+        self.phase = (turns.rem_euclid(1.0) * PHASE_SCALE) as u64;
+        self.lane = 0;
         self.realign();
     }
 
@@ -375,5 +387,21 @@ mod tests {
             max_err < 1e-2,
             "aliased phasor diverged from reference: {max_err}"
         );
+    }
+
+    #[test]
+    fn a_double_precision_tuning_starts_at_the_requested_phase() {
+        let turns = -0.004_123_456_789_012_3;
+        let start = 1_234.567_8;
+        let mut nco = Nco::new(0.25, 1.0);
+        assert!((nco.next_sample() - Complex::new(1.0, 0.0)).norm() < 1e-6);
+        nco.set_turns(turns);
+        nco.set_phase(start * turns);
+        let mut worst = 0.0f32;
+        for index in 0..10_000 {
+            let expected = reference((start + index as f64) * turns);
+            worst = worst.max((nco.next_sample() - expected).norm());
+        }
+        assert!(worst < 4e-7, "error {worst}");
     }
 }

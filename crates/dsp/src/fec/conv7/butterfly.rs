@@ -1,26 +1,28 @@
+/// One sign mask per generator and butterfly: `-1` where that output bit is clear for the even
+/// predecessor, so `(value ^ sign) - sign` turns a received soft value into its correlation.
+pub(super) type Signs = [[i32; 32]; super::MAX_OUTPUTS];
+
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
-pub(super) fn step(
+pub(super) fn step<const N: usize>(
     metrics: &[i32; 64],
     next: &mut [i32; 64],
-    signs: &[[i32; 32]; 2],
-    values: [i32; 2],
+    signs: &Signs,
+    values: [i32; N],
 ) -> u64 {
     use std::arch::aarch64::*;
     unsafe {
-        let first = vdupq_n_s32(values[0]);
-        let second = vdupq_n_s32(values[1]);
+        let received = values.map(|value| vdupq_n_s32(value));
         let weights = vld1q_u32([1, 2, 4, 8].as_ptr());
         let mut decisions = 0u64;
         for group in 0..8 {
             let offset = group * 4;
             let previous = vld2q_s32(metrics.as_ptr().add(offset * 2));
-            let mask0 = vld1q_s32(signs[0].as_ptr().add(offset));
-            let mask1 = vld1q_s32(signs[1].as_ptr().add(offset));
-            let branch = vaddq_s32(
-                vsubq_s32(veorq_s32(first, mask0), mask0),
-                vsubq_s32(veorq_s32(second, mask1), mask1),
-            );
+            let mut branch = vdupq_n_s32(0);
+            for (value, sign) in received.iter().zip(signs) {
+                let mask = vld1q_s32(sign.as_ptr().add(offset));
+                branch = vaddq_s32(branch, vsubq_s32(veorq_s32(*value, mask), mask));
+            }
             let a = vaddq_s32(previous.0, branch);
             let b = vsubq_s32(previous.1, branch);
             let c = vsubq_s32(previous.0, branch);
@@ -37,16 +39,15 @@ pub(super) fn step(
 
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
-pub(super) fn step(
+pub(super) fn step<const N: usize>(
     metrics: &[i32; 64],
     next: &mut [i32; 64],
-    signs: &[[i32; 32]; 2],
-    values: [i32; 2],
+    signs: &Signs,
+    values: [i32; N],
 ) -> u64 {
     use std::arch::x86_64::*;
     unsafe {
-        let first = _mm_set1_epi32(values[0]);
-        let second = _mm_set1_epi32(values[1]);
+        let received = values.map(|value| _mm_set1_epi32(value));
         let mut decisions = 0u64;
         for group in 0..8 {
             let offset = group * 4;
@@ -54,12 +55,11 @@ pub(super) fn step(
             let q = _mm_castsi128_ps(_mm_loadu_si128(metrics.as_ptr().add(offset * 2 + 4).cast()));
             let even = _mm_castps_si128(_mm_shuffle_ps::<0x88>(p, q));
             let odd = _mm_castps_si128(_mm_shuffle_ps::<0xdd>(p, q));
-            let mask0 = _mm_loadu_si128(signs[0].as_ptr().add(offset).cast());
-            let mask1 = _mm_loadu_si128(signs[1].as_ptr().add(offset).cast());
-            let branch = _mm_add_epi32(
-                _mm_sub_epi32(_mm_xor_si128(first, mask0), mask0),
-                _mm_sub_epi32(_mm_xor_si128(second, mask1), mask1),
-            );
+            let mut branch = _mm_setzero_si128();
+            for (value, sign) in received.iter().zip(signs) {
+                let mask = _mm_loadu_si128(sign.as_ptr().add(offset).cast());
+                branch = _mm_add_epi32(branch, _mm_sub_epi32(_mm_xor_si128(*value, mask), mask));
+            }
             let a = _mm_add_epi32(even, branch);
             let b = _mm_sub_epi32(odd, branch);
             let c = _mm_sub_epi32(even, branch);
@@ -79,16 +79,19 @@ pub(super) fn step(
 
 #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
 #[inline(always)]
-pub(super) fn step(
+pub(super) fn step<const N: usize>(
     metrics: &[i32; 64],
     next: &mut [i32; 64],
-    signs: &[[i32; 32]; 2],
-    values: [i32; 2],
+    signs: &Signs,
+    values: [i32; N],
 ) -> u64 {
     let mut decisions = 0u64;
     for i in 0..32 {
-        let branch =
-            ((values[0] ^ signs[0][i]) - signs[0][i]) + ((values[1] ^ signs[1][i]) - signs[1][i]);
+        let branch: i32 = values
+            .iter()
+            .zip(signs)
+            .map(|(&value, sign)| (value ^ sign[i]) - sign[i])
+            .sum();
         let a = metrics[2 * i] + branch;
         let b = metrics[2 * i + 1] - branch;
         let c = metrics[2 * i] - branch;

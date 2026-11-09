@@ -2,6 +2,8 @@ use super::conv::{ERASURE, Soft};
 
 mod butterfly;
 
+use butterfly::Signs;
+
 pub const STATES: usize = 64;
 const MAX_OUTPUTS: usize = 8;
 const STATE_MASK: usize = STATES - 1;
@@ -10,7 +12,7 @@ const STATE_MASK: usize = STATES - 1;
 pub struct ConvCode {
     outputs: usize,
     branch: [u8; 128],
-    pair_signs: Option<[[i32; 32]; 2]>,
+    signs: Option<Signs>,
 }
 
 impl ConvCode {
@@ -30,21 +32,20 @@ impl ConvCode {
             }
             *slot = mask;
         }
-        let pair_signs =
-            (polys.len() == 2 && polys.iter().all(|poly| poly & 0x41 == 0x41)).then(|| {
-                std::array::from_fn(|bit| {
-                    std::array::from_fn(|state| {
-                        if branch[2 * state] & (1 << bit) == 0 {
-                            -1
-                        } else {
-                            0
-                        }
-                    })
+        let signs = polys.iter().all(|poly| poly & 0x41 == 0x41).then(|| {
+            std::array::from_fn(|bit| {
+                std::array::from_fn(|state| {
+                    if branch[2 * state] & (1 << bit) == 0 {
+                        -1
+                    } else {
+                        0
+                    }
                 })
-            });
+            })
+        });
         Self {
             outputs: polys.len(),
-            pair_signs,
+            signs,
             branch,
         }
     }
@@ -165,6 +166,23 @@ fn scalar_step(
     decisions
 }
 
+/// Every generator taps both ends of the register, so the two branches into a state pair carry
+/// opposite correlations and one vector butterfly serves the whole trellis step.
+#[inline(always)]
+fn butterfly_step<const N: usize>(
+    metrics: &[i32; STATES],
+    next: &mut [i32; STATES],
+    signs: &Signs,
+    symbol: &[Soft],
+) -> u64 {
+    butterfly::step::<N>(
+        metrics,
+        next,
+        signs,
+        std::array::from_fn(|index| i32::from(symbol[index])),
+    )
+}
+
 struct Trellis {
     survivors: [[i32; STATES]; 2],
     front: usize,
@@ -205,14 +223,11 @@ impl Trellis {
         } else {
             (&*odd, even)
         };
-        let decisions = match &code.pair_signs {
-            Some(signs) => butterfly::step(
-                metrics,
-                next,
-                signs,
-                [i32::from(symbol[0]), i32::from(symbol[1])],
-            ),
-            None => scalar_step(code, metrics, next, symbol),
+        let decisions = match (&code.signs, symbol.len()) {
+            (Some(signs), 2) => butterfly_step::<2>(metrics, next, signs, symbol),
+            (Some(signs), 3) => butterfly_step::<3>(metrics, next, signs, symbol),
+            (Some(signs), 4) => butterfly_step::<4>(metrics, next, signs, symbol),
+            _ => scalar_step(code, metrics, next, symbol),
         };
         self.front ^= 1;
         decisions
@@ -443,21 +458,24 @@ mod tests {
         bits
     }
 
-    #[test]
-    fn vector_butterflies_match_scalar_survivors_with_extreme_soft_values() {
-        let mut scalar_code = ConvCode::new(&DVB_S);
-        scalar_code.pair_signs = None;
-        let fast_code = ConvCode::new(&DVB_S);
+    fn assert_butterflies_match_scalar(polys: &[u16]) {
+        let mut scalar_code = ConvCode::new(polys);
+        scalar_code.signs = None;
+        let fast_code = ConvCode::new(polys);
+        assert!(fast_code.signs.is_some());
         let mut fast = Trellis::new();
         fast.open();
         let mut scalar = Trellis::new();
         scalar.open();
         let mut seed = 0x91ab21u32;
+        let mut symbol = vec![0 as Soft; polys.len()];
         for _ in 0..4096 {
-            seed ^= seed << 13;
-            seed ^= seed >> 17;
-            seed ^= seed << 5;
-            let symbol = [seed as i16, (seed >> 16) as i16];
+            for value in &mut symbol {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                *value = (seed >> 8) as Soft;
+            }
             assert_eq!(
                 fast.step(&fast_code, &symbol),
                 scalar.step(&scalar_code, &symbol)
@@ -466,6 +484,13 @@ mod tests {
             scalar.normalize();
             assert_eq!(fast.metrics(), scalar.metrics());
         }
+    }
+
+    #[test]
+    fn vector_butterflies_match_scalar_survivors_with_extreme_soft_values() {
+        assert_butterflies_match_scalar(&DVB_S);
+        assert_butterflies_match_scalar(&[0o133, 0o171, 0o165]);
+        assert_butterflies_match_scalar(&DAB);
     }
 
     #[test]
