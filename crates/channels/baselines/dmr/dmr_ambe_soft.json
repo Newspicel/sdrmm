@@ -4,32 +4,32 @@
     "points": [
       {
         "ebn0_db": 14.0,
-        "errors": 603,
-        "trials": 199440
+        "errors": 604,
+        "trials": 578808
       },
       {
         "ebn0_db": 16.0,
-        "errors": 606,
-        "trials": 1284264
+        "errors": 25,
+        "trials": 2160000
       },
       {
         "ebn0_db": 18.0,
-        "errors": 394,
+        "errors": 0,
         "trials": 2160000
       },
       {
         "ebn0_db": 20.0,
-        "errors": 207,
+        "errors": 0,
         "trials": 2160000
       },
       {
         "ebn0_db": 22.0,
-        "errors": 181,
+        "errors": 0,
         "trials": 2160000
       },
       {
         "ebn0_db": 24.0,
-        "errors": 87,
+        "errors": 0,
         "trials": 2160000
       }
     ]
@@ -39,32 +39,32 @@
     "points": [
       {
         "ebn0_db": 14.0,
-        "errors": 105,
-        "trials": 8310
+        "errors": 108,
+        "trials": 24117
       },
       {
         "ebn0_db": 16.0,
-        "errors": 108,
-        "trials": 53511
+        "errors": 6,
+        "trials": 90000
       },
       {
         "ebn0_db": 18.0,
-        "errors": 72,
+        "errors": 0,
         "trials": 90000
       },
       {
         "ebn0_db": 20.0,
-        "errors": 38,
+        "errors": 0,
         "trials": 90000
       },
       {
         "ebn0_db": 22.0,
-        "errors": 33,
+        "errors": 0,
         "trials": 90000
       },
       {
         "ebn0_db": 24.0,
-        "errors": 17,
+        "errors": 0,
         "trials": 90000
       }
     ]
@@ -74,32 +74,32 @@
     "points": [
       {
         "ebn0_db": 14.0,
-        "errors": 35,
-        "trials": 8310
+        "errors": 15,
+        "trials": 24117
       },
       {
         "ebn0_db": 16.0,
-        "errors": 78,
-        "trials": 53511
+        "errors": 1,
+        "trials": 90000
       },
       {
         "ebn0_db": 18.0,
-        "errors": 64,
+        "errors": 0,
         "trials": 90000
       },
       {
         "ebn0_db": 20.0,
-        "errors": 35,
+        "errors": 0,
         "trials": 90000
       },
       {
         "ebn0_db": 22.0,
-        "errors": 17,
+        "errors": 0,
         "trials": 90000
       },
       {
         "ebn0_db": 24.0,
-        "errors": 10,
+        "errors": 0,
         "trials": 90000
       }
     ]

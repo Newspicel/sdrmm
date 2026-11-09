@@ -6,58 +6,131 @@ const MAX_COMPONENT_BITS: usize = 16;
 
 const CHASE_FLIPS: u32 = 4;
 
+const CANDIDATES: usize = 1 << CHASE_FLIPS;
+
 const MAX_SETTLE_REPAIRS: u32 = 4;
 
-fn chase(soft: &mut [Soft], flips: u32, decode: impl Fn(&mut [bool]) -> Option<u32>) -> bool {
-    let n = soft.len();
-    debug_assert!(n <= MAX_COMPONENT_BITS && (flips as usize) <= n);
-    let mut base = [false; MAX_COMPONENT_BITS];
-    for (slot, &s) in base.iter_mut().zip(soft.iter()) {
-        *slot = s > 0;
-    }
-    let mut order: [usize; MAX_COMPONENT_BITS] = std::array::from_fn(|i| i);
-    order[..n].sort_unstable_by_key(|&i| (soft[i].unsigned_abs(), i));
+/// The most a decision may contradict the channel, in mean bit reliabilities. A turbo decoder
+/// finds some codeword near almost anything, so a decision overruling more is likelier one it
+/// found in noise than the one sent.
+const MAX_COST: f32 = 6.0;
 
-    let mut best: Option<u32> = None;
-    let mut winner = base;
-    for pattern in 0..1u32 << flips {
-        let mut cand = base;
-        for (j, &i) in order.iter().enumerate().take(flips as usize) {
-            if pattern >> j & 1 == 1 {
-                cand[i] = !cand[i];
-            }
-        }
-        if decode(&mut cand[..n]).is_none() {
-            continue;
-        }
-        let cost = soft
-            .iter()
-            .zip(&cand)
-            .filter(|&(&s, &c)| (s > 0) != c)
-            .map(|(&s, _)| u32::from(s.unsigned_abs()))
-            .sum();
-        if best.is_none_or(|b| cost < b) {
-            best = Some(cost);
-            winner = cand;
-        }
-    }
-    if best.is_none() {
-        return false;
-    }
-    let mut changed = false;
-    for (s, &w) in soft.iter_mut().zip(&winner) {
-        if (*s > 0) != w || *s == 0 {
-            let mag = (*s).unsigned_abs().clamp(1, i16::MAX as u16) as i16;
-            *s = if w { mag } else { -mag };
-            changed = true;
-        }
-    }
-    changed
+/// [`MAX_COST`] for BPTC(128,77), whose single parity columns leave nearer neighbours.
+const MAX_COST_128: f32 = 3.5;
+
+/// How far a min-sum parity check's reliability is trusted. Min-sum overstates it, and with
+/// only one parity per column an overstated check walks rows into wrong codewords; measured
+/// against AWGN.
+const PARITY_SCALE: f32 = 0.375;
+
+/// Pyndiah's weights for channel values scaled to a mean magnitude of one: how much of the other
+/// dimension's extrinsic reliability each half pass trusts, and the reliability a bit gets when
+/// no tested codeword disagrees with its decision.
+const ALPHA: [f32; 2 * MAX_PASSES] = [0.0, 0.2, 0.3, 0.5, 0.7, 0.9, 1.0, 1.0, 1.0, 1.0];
+const BETA: [f32; 2 * MAX_PASSES] = [0.2, 0.4, 0.6, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+
+/// What `word` costs against `input`: the reliability of every bit it contradicts.
+fn discrepancy(input: &[f32], word: &[bool]) -> f32 {
+    input
+        .iter()
+        .zip(word)
+        .filter(|&(&y, &c)| (y > 0.0) != c)
+        .map(|(&y, _)| y.abs())
+        .sum()
 }
 
-fn even_parity_decode(word: &mut [bool]) -> Option<u32> {
-    let odd = word.iter().fold(false, |acc, &b| acc ^ b);
-    if odd { None } else { Some(0) }
+/// Soft-in soft-out decode of one component word by Chase search over its `flips` least reliable
+/// bits. Each bit's extrinsic reliability is the cost gap to the best tested codeword that
+/// disagrees with it, or `beta` when none does. False when no test pattern decodes.
+fn siso(
+    input: &[f32],
+    flips: u32,
+    beta: f32,
+    decode: impl Fn(&mut [bool]) -> Option<u32>,
+    extrinsic: &mut [f32],
+) -> bool {
+    let n = input.len();
+    debug_assert!(n <= MAX_COMPONENT_BITS && flips <= CHASE_FLIPS && (flips as usize) <= n);
+    let base: [bool; MAX_COMPONENT_BITS] = std::array::from_fn(|i| i < n && input[i] > 0.0);
+    let mut order: [usize; MAX_COMPONENT_BITS] = std::array::from_fn(|i| i);
+    order[..n].sort_unstable_by(|&a, &b| input[a].abs().total_cmp(&input[b].abs()));
+    let mut words = [[false; MAX_COMPONENT_BITS]; CANDIDATES];
+    let mut costs = [0.0f32; CANDIDATES];
+    let mut found = 0;
+    for pattern in 0..1u32 << flips {
+        let mut word = base;
+        for (j, &i) in order.iter().enumerate().take(flips as usize) {
+            if pattern >> j & 1 == 1 {
+                word[i] = !word[i];
+            }
+        }
+        if decode(&mut word[..n]).is_some() {
+            costs[found] = discrepancy(input, &word[..n]);
+            words[found] = word;
+            found += 1;
+        }
+    }
+    let Some(best) = (0..found).min_by(|&a, &b| costs[a].total_cmp(&costs[b])) else {
+        extrinsic.fill(0.0);
+        return false;
+    };
+    for (j, slot) in extrinsic.iter_mut().enumerate() {
+        let sign = if words[best][j] { 1.0 } else { -1.0 };
+        let rival = (0..found)
+            .filter(|&k| words[k][j] != words[best][j])
+            .map(|k| costs[k])
+            .min_by(f32::total_cmp);
+        *slot = rival.map_or(beta * sign, |cost| (cost - costs[best]) * sign - input[j]);
+    }
+    true
+}
+
+/// One half pass over the component words `lines` of a product code: each word reads its channel
+/// values plus `alpha` of the extrinsic the other dimension left, and `component` writes back its
+/// own given `beta`.
+fn half_pass<const N: usize, const L: usize>(
+    channel: &[f32; N],
+    extrinsic: &mut [f32; N],
+    lines: impl Iterator<Item = [usize; L]>,
+    (alpha, beta): (f32, f32),
+    mut component: impl FnMut(&[f32], f32, &mut [f32]),
+) {
+    let mut input = [0.0f32; L];
+    let mut out = [0.0f32; L];
+    for line in lines {
+        for (slot, &a) in input.iter_mut().zip(&line) {
+            *slot = channel[a] + alpha * extrinsic[a];
+        }
+        component(&input, beta, &mut out);
+        for (&a, &w) in line.iter().zip(&out) {
+            extrinsic[a] = w;
+        }
+    }
+}
+
+/// Soft-in soft-out decode of a single parity check by min-sum: each bit hears the parity of the
+/// others, as reliable as the least reliable of them, scaled by `scale`.
+fn parity_siso(input: &[f32], scale: f32, extrinsic: &mut [f32]) {
+    for (j, slot) in extrinsic.iter_mut().enumerate() {
+        let (sign, least) = input
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i != j)
+            .fold((1.0f32, f32::INFINITY), |(sign, least), (_, &y)| {
+                (if y < 0.0 { -sign } else { sign }, least.min(y.abs()))
+            });
+        *slot = scale * sign * least;
+    }
+}
+
+/// Channel values scaled to a mean magnitude of one, or `None` for an all-erasure block.
+fn normalized<const N: usize>(soft: &[Soft; N]) -> Option<[f32; N]> {
+    let mean = soft.iter().map(|&s| f32::from(s).abs()).sum::<f32>() / N as f32;
+    (mean > 0.0).then(|| std::array::from_fn(|i| f32::from(soft[i]) / mean))
+}
+
+fn decisions<const N: usize>(channel: &[f32; N], extrinsic: &[f32; N]) -> [bool; N] {
+    std::array::from_fn(|i| channel[i] + extrinsic[i] > 0.0)
 }
 
 pub struct Bptc196;
@@ -81,42 +154,60 @@ impl Bptc196 {
         Some((Self::extract(&matrix), corrected))
     }
 
+    /// Turbo product decoding (Pyndiah): columns and rows pass extrinsic reliabilities to each
+    /// other, so a component's wrong guess does not reach the other dimension as a certainty.
     #[must_use]
     pub fn decode_soft(coded: &[Soft; Self::CODED_BITS]) -> Option<([bool; Self::DATA_BITS], u32)> {
-        if coded.iter().all(|&s| s == 0) {
-            return None;
-        }
-        let mut matrix = [0 as Soft; Self::CODED_BITS];
-        for (a, slot) in matrix.iter_mut().enumerate() {
+        let mut deinterleaved = [0 as Soft; Self::CODED_BITS];
+        for (a, slot) in deinterleaved.iter_mut().enumerate() {
             *slot = coded[a * 181 % Self::CODED_BITS];
         }
-        let received: [bool; Self::CODED_BITS] = std::array::from_fn(|i| matrix[i] > 0);
-        for _ in 0..MAX_PASSES {
-            let mut changed = false;
-            for c in 0..15 {
-                let mut column: [Soft; 13] = std::array::from_fn(|r| matrix[r * 15 + c + 1]);
-                changed |= chase(&mut column, CHASE_FLIPS, |w| {
-                    ParityCode::HAMMING_13_9.decode(w)
-                });
-                for (r, s) in column.into_iter().enumerate() {
-                    matrix[r * 15 + c + 1] = s;
-                }
-            }
-            for r in 0..13 {
-                let start = r * 15 + 1;
-                changed |= chase(&mut matrix[start..start + 15], CHASE_FLIPS, |w| {
-                    ParityCode::HAMMING_15_11.decode(w)
-                });
-            }
-            if !changed {
+        let channel = normalized(&deinterleaved)?;
+        let mut extrinsic = [0.0f32; Self::CODED_BITS];
+        let columns = || (0..15).map(|c| std::array::from_fn::<_, 13, _>(|r| r * 15 + c + 1));
+        let rows = || (0..13).map(|r| std::array::from_fn::<_, 15, _>(|k| r * 15 + 1 + k));
+        for pass in 0..MAX_PASSES {
+            let column_half = (ALPHA[2 * pass], BETA[2 * pass]);
+            half_pass(
+                &channel,
+                &mut extrinsic,
+                columns(),
+                column_half,
+                |y, beta, w| {
+                    siso(
+                        y,
+                        CHASE_FLIPS,
+                        beta,
+                        |b| ParityCode::HAMMING_13_9.decode(b),
+                        w,
+                    );
+                },
+            );
+            let row_half = (ALPHA[2 * pass + 1], BETA[2 * pass + 1]);
+            half_pass(&channel, &mut extrinsic, rows(), row_half, |y, beta, w| {
+                siso(
+                    y,
+                    CHASE_FLIPS,
+                    beta,
+                    |b| ParityCode::HAMMING_15_11.decode(b),
+                    w,
+                );
+            });
+            if Self::settle(&mut decisions(&channel, &extrinsic)) == Some(0) {
                 break;
             }
         }
-        let mut hard: [bool; Self::CODED_BITS] = std::array::from_fn(|i| matrix[i] > 0);
-        if Self::settle(&mut hard).is_none_or(|repairs| repairs > MAX_SETTLE_REPAIRS) {
+        let mut hard = decisions(&channel, &extrinsic);
+        if Self::settle(&mut hard).is_none_or(|repairs| repairs > MAX_SETTLE_REPAIRS)
+            || discrepancy(&channel, &hard) > MAX_COST
+        {
             return None;
         }
-        let corrected = hard.iter().zip(&received).filter(|(a, b)| a != b).count() as u32;
+        let corrected = hard
+            .iter()
+            .zip(&channel)
+            .filter(|&(&bit, &y)| bit != (y > 0.0))
+            .count() as u32;
         Some((Self::extract(&hard), corrected))
     }
 
@@ -205,39 +296,54 @@ impl Bptc128 {
         Some((Self::extract(&matrix), corrected))
     }
 
+    /// Turbo product decoding as in [`Bptc196::decode_soft`], with exact min-sum parity
+    /// columns.
     #[must_use]
     pub fn decode_soft(coded: &[Soft; Self::CODED_BITS]) -> Option<([bool; Self::DATA_BITS], u32)> {
-        if coded.iter().all(|&s| s == 0) {
-            return None;
-        }
-        let mut matrix = [0 as Soft; Self::CODED_BITS];
+        let mut transposed = [0 as Soft; Self::CODED_BITS];
         for (a, &s) in coded.iter().enumerate() {
-            matrix[Self::transpose(a)] = s;
+            transposed[Self::transpose(a)] = s;
         }
-        let received: [bool; Self::CODED_BITS] = std::array::from_fn(|i| matrix[i] > 0);
-        for _ in 0..MAX_PASSES {
-            let mut changed = false;
-            for r in 0..8 {
-                changed |= chase(&mut matrix[r * 16..r * 16 + 16], CHASE_FLIPS, |w| {
-                    ParityCode::HAMMING_16_11.decode(w)
-                });
-            }
-            for c in 0..16 {
-                let mut column: [Soft; 8] = std::array::from_fn(|r| matrix[r * 16 + c]);
-                changed |= chase(&mut column, 1, even_parity_decode);
-                for (r, s) in column.into_iter().enumerate() {
-                    matrix[r * 16 + c] = s;
-                }
-            }
-            if !changed {
+        let channel = normalized(&transposed)?;
+        let mut extrinsic = [0.0f32; Self::CODED_BITS];
+        let rows = || (0..8).map(|r| std::array::from_fn::<_, 16, _>(|k| r * 16 + k));
+        let columns = || (0..16).map(|c| std::array::from_fn::<_, 8, _>(|r| r * 16 + c));
+        for pass in 0..MAX_PASSES {
+            let row_half = (ALPHA[2 * pass], BETA[2 * pass]);
+            half_pass(&channel, &mut extrinsic, rows(), row_half, |y, beta, w| {
+                siso(
+                    y,
+                    CHASE_FLIPS,
+                    beta,
+                    |b| ParityCode::HAMMING_16_11.decode(b),
+                    w,
+                );
+            });
+            let column_half = (ALPHA[2 * pass + 1], BETA[2 * pass + 1]);
+            half_pass(
+                &channel,
+                &mut extrinsic,
+                columns(),
+                column_half,
+                |y, _, w| {
+                    parity_siso(y, PARITY_SCALE, w);
+                },
+            );
+            if Self::settle(&mut decisions(&channel, &extrinsic)) == Some(0) {
                 break;
             }
         }
-        let mut hard: [bool; Self::CODED_BITS] = std::array::from_fn(|i| matrix[i] > 0);
-        if Self::settle(&mut hard).is_none_or(|repairs| repairs > MAX_SETTLE_REPAIRS) {
+        let mut hard = decisions(&channel, &extrinsic);
+        if Self::settle(&mut hard).is_none_or(|repairs| repairs > MAX_SETTLE_REPAIRS)
+            || discrepancy(&channel, &hard) > MAX_COST_128
+        {
             return None;
         }
-        let corrected = hard.iter().zip(&received).filter(|(a, b)| a != b).count() as u32;
+        let corrected = hard
+            .iter()
+            .zip(&channel)
+            .filter(|&(&bit, &y)| bit != (y > 0.0))
+            .count() as u32;
         Some((Self::extract(&hard), corrected))
     }
 
@@ -472,7 +578,7 @@ mod tests {
         let accepted = (0..10_000)
             .filter(|_| Bptc196::decode_soft(&rng.noise_block::<196>()).is_some())
             .count();
-        assert!(accepted <= 40, "accepted {accepted} of 10000 noise blocks");
+        assert!(accepted <= 5, "accepted {accepted} of 10000 noise blocks");
     }
 
     #[test]
@@ -481,7 +587,7 @@ mod tests {
         let accepted = (0..10_000)
             .filter(|_| Bptc128::decode_soft(&rng.noise_block::<128>()).is_some())
             .count();
-        assert!(accepted <= 160, "accepted {accepted} of 10000 noise blocks");
+        assert!(accepted <= 5, "accepted {accepted} of 10000 noise blocks");
     }
 
     #[test]
@@ -505,6 +611,62 @@ mod tests {
         assert!(
             soft_failures <= 20 && soft_failures * 4 <= hard_failures,
             "soft lost {soft_failures} blocks to hard's {hard_failures}"
+        );
+    }
+
+    #[test]
+    fn bptc196_soft_decoding_rarely_accepts_a_wrong_block() {
+        let (mut hard_right, mut hard_wrong, mut soft_right, mut soft_wrong) = (0, 0, 0, 0);
+        for seed in 0..2_000 {
+            let (data, soft_block) = awgn_trial(seed, 0.7);
+            let hard: [bool; 196] = std::array::from_fn(|i| soft_block[i] > 0);
+            match Bptc196::decode(&hard) {
+                Some((d, _)) if d == data => hard_right += 1,
+                Some(_) => hard_wrong += 1,
+                None => {}
+            }
+            match Bptc196::decode_soft(&soft_block) {
+                Some((d, _)) if d == data => soft_right += 1,
+                Some(_) => soft_wrong += 1,
+                None => {}
+            }
+        }
+        assert!(
+            hard_wrong >= 20,
+            "only {hard_wrong} wrong hard blocks: noise level no longer stresses the decoder"
+        );
+        assert!(
+            soft_right > hard_right && soft_wrong * 10 <= hard_wrong,
+            "soft {soft_right} right {soft_wrong} wrong, hard {hard_right} right {hard_wrong} wrong"
+        );
+    }
+
+    #[test]
+    fn bptc128_soft_decoding_finds_more_blocks_and_rarely_a_wrong_one() {
+        let mut rng = TestRng(0xabc);
+        let (mut hard_right, mut soft_right, mut soft_wrong) = (0, 0, 0);
+        for seed in 0..2_000u32 {
+            let data: [bool; 77] = pattern(seed * 2 + 1);
+            let coded = Bptc128::encode(&data);
+            let soft_block: [Soft; 128] = std::array::from_fn(|i| {
+                let x = if coded[i] { 1.0 } else { -1.0 };
+                ((x + 0.6 * rng.gauss()) * 32.0)
+                    .round()
+                    .clamp(-f64::from(CONFIDENT), f64::from(CONFIDENT)) as Soft
+            });
+            let hard: [bool; 128] = std::array::from_fn(|i| soft_block[i] > 0);
+            if Bptc128::decode(&hard).is_some_and(|(d, _)| d == data) {
+                hard_right += 1;
+            }
+            match Bptc128::decode_soft(&soft_block) {
+                Some((d, _)) if d == data => soft_right += 1,
+                Some(_) => soft_wrong += 1,
+                None => {}
+            }
+        }
+        assert!(
+            soft_right > 2 * hard_right && soft_wrong * 200 <= soft_right,
+            "soft {soft_right} right {soft_wrong} wrong, hard {hard_right} right"
         );
     }
 }

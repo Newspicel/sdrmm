@@ -6,7 +6,8 @@ use crate::dv::DmrParams;
 use crate::dv::DmrSlots;
 use num_complex::Complex;
 use sdrmm_dsp::{
-    Bptc128, Bptc196, CyclicCode, ParityCode, crc_msb_bits, crc16_msb, pack_msb_into, rs129_parity,
+    Bptc128, Bptc196, CyclicCode, ParityCode, crc_msb_bits, crc16_msb, fec::conv::Soft,
+    pack_msb_into, rs129_parity,
 };
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
@@ -274,6 +275,7 @@ struct Decoder {
     follower_slot: [Option<u8>; 2],
     bits: Vec<bool>,
     soft: Vec<i8>,
+    coded: Vec<Soft>,
     bytes: Vec<u8>,
     slots: [SlotState; 2],
     short_lc: ShortLc,
@@ -293,7 +295,7 @@ struct MbcHeader {
 }
 
 struct SlotState {
-    embedded: Vec<bool>,
+    embedded: Vec<Soft>,
     embedded_errors: u32,
     encrypted: Option<bool>,
     talker_alias: TalkerAlias,
@@ -333,6 +335,7 @@ impl Decoder {
             follower_slot: [None; 2],
             bits: Vec::with_capacity(BURST_BITS),
             soft: Vec::with_capacity(BURST_BITS),
+            coded: Vec::with_capacity(BURST_BITS),
             bytes: Vec::with_capacity(BURST_BITS / 8),
             slots: std::array::from_fn(|_| SlotState::new()),
             short_lc: ShortLc::default(),
@@ -562,18 +565,18 @@ impl Decoder {
             self.mbc_headers[index] = None;
         }
 
-        let mut coded = [false; Bptc196::CODED_BITS];
-        for (slot, &bit) in coded
-            .iter_mut()
-            .zip(self.bits[0..98].iter().chain(&self.bits[166..264]))
-        {
-            *slot = bit;
-        }
         if data_type == DT_RATE_THREE_QUARTER_DATA || data_type == DT_RATE_ONE_DATA {
             let mut frame = if data_type == DT_RATE_THREE_QUARTER_DATA {
                 let decoded = decode_rate_three_quarter(&self.bits)?;
                 data_block(&decoded, "rate 3/4 data")
             } else {
+                let mut coded = [false; RATE_ONE_CODED_BITS];
+                for (slot, &bit) in coded
+                    .iter_mut()
+                    .zip(self.bits[0..98].iter().chain(&self.bits[166..264]))
+                {
+                    *slot = bit;
+                }
                 let decoded = decode_rate_one(&coded);
                 data_block(&decoded, "rate 1 data")
             };
@@ -582,7 +585,15 @@ impl Decoder {
             frame.errors_corrected = slot_errors;
             return Some(frame);
         }
-        let Some((payload, payload_errors)) = Bptc196::decode(&coded) else {
+        self.window.soft_bits(0, BURST_SYMBOLS, &mut self.coded);
+        let mut coded = [0 as Soft; Bptc196::CODED_BITS];
+        for (slot, &soft) in coded
+            .iter_mut()
+            .zip(self.coded[0..98].iter().chain(&self.coded[166..264]))
+        {
+            *slot = soft;
+        }
+        let Some((payload, payload_errors)) = Bptc196::decode_soft(&coded) else {
             self.reject();
             return None;
         };
@@ -854,7 +865,11 @@ impl Decoder {
     fn embedded_signalling(&mut self, index: usize, slot: Option<u8>) -> Option<DvFrame> {
         let emb = u64::from(bits_to_u32(&self.bits, 108, 8)) << 8
             | u64::from(bits_to_u32(&self.bits, 148, 8));
-        let (info, errors) = CyclicCode::QR_16_7.decode(emb)?;
+        let Some((info, errors)) = CyclicCode::QR_16_7.decode(emb) else {
+            self.drop_embedded(index);
+            self.reject();
+            return None;
+        };
         let colour = (info >> 3) as u16 & 0x0F;
         let lcss = info & 0b11;
 
@@ -863,9 +878,10 @@ impl Decoder {
             LCSS_LAST | LCSS_CONTINUATION if !self.slots[index].embedded.is_empty() => {}
             _ => return None,
         }
+        self.window.soft_bits(0, BURST_SYMBOLS, &mut self.coded);
         self.slots[index]
             .embedded
-            .extend(self.bits[116..148].iter().copied());
+            .extend(self.coded[116..148].iter().copied());
         self.slots[index].embedded_errors += errors;
 
         if lcss != LCSS_LAST {
@@ -875,11 +891,12 @@ impl Decoder {
             }
             return None;
         }
-        let assembled: Option<[bool; Bptc128::CODED_BITS]> =
+        let assembled: Option<[Soft; Bptc128::CODED_BITS]> =
             self.slots[index].embedded.as_slice().try_into().ok();
         let fragment_errors = self.slots[index].embedded_errors;
         self.drop_embedded(index);
-        let Some((data, bptc_errors)) = assembled.and_then(|coded| Bptc128::decode(&coded)) else {
+        let Some((data, bptc_errors)) = assembled.and_then(|coded| Bptc128::decode_soft(&coded))
+        else {
             self.reject();
             return None;
         };

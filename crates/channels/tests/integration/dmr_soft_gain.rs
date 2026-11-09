@@ -24,7 +24,13 @@ use serde::{Deserialize, Serialize};
 const INFO_BITS: usize = Bptc196::DATA_BITS;
 const PAYLOAD_SYMBOLS: usize = Bptc196::CODED_BITS / 2;
 
-const GRID: [f64; 6] = [13.0, 14.0, 15.0, 16.0, 17.0, 18.0];
+const GRID: [f64; 9] = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0];
+/// The first of the two grid points the quick check re-measures: below it the soft decoder
+/// accepts too few blocks to count errors in.
+const QUICK_FROM: usize = 3;
+/// Errors the quick check counts: enough to place a curve this steep well inside its 0.5 dB
+/// tolerance.
+const QUICK_MIN_ERRORS: u64 = 100;
 const SEED: u64 = 0x0d5f;
 
 const FULL_MIN_ERRORS: u64 = 600;
@@ -250,10 +256,12 @@ fn coded_frame_round_trips_clean_at_high_ebn0() {
 fn coded_curves_match_committed_baselines() {
     let hard: CodedCurves = load(&baseline_path("dmr_bptc_hard_cpm.json"));
     let soft: CodedCurves = load(&baseline_path("dmr_bptc_soft_cpm.json"));
-    let points: Vec<PointStats> = GRID[..2]
+    let points: Vec<PointStats> = GRID
         .iter()
         .enumerate()
-        .map(|(i, &db)| measure_point(db, i, SEED, FULL_MIN_ERRORS, FULL_MAX_FRAMES))
+        .skip(QUICK_FROM)
+        .take(2)
+        .map(|(i, &db)| measure_point(db, i, SEED, QUICK_MIN_ERRORS, FULL_MAX_FRAMES))
         .collect();
     let measured_hard = coded_curves(&points, |p| p.hard, "hard");
     let measured_soft = coded_curves(&points, |p| p.soft, "soft");
@@ -273,7 +281,12 @@ fn coded_curves_match_committed_baselines() {
             &soft.undetected,
         ),
     ] {
-        let worst = sweep::worst_penalty_db_vs_curve(measured, committed, GRID[0], GRID[1]);
+        let worst = sweep::worst_penalty_db_vs_curve(
+            measured,
+            committed,
+            GRID[QUICK_FROM],
+            GRID[QUICK_FROM + 1],
+        );
         assert!(worst.abs() < 0.5, "{name} drift vs committed: {worst} dB");
     }
 }

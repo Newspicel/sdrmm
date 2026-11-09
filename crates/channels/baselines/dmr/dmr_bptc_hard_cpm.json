@@ -3,34 +3,49 @@
     "label": "dmr bptc196 hard, phase-3 cpm chain, post-FEC BER over accepted frames, seed 0xd5f, release",
     "points": [
       {
+        "ebn0_db": 10.0,
+        "errors": 4,
+        "trials": 96
+      },
+      {
+        "ebn0_db": 11.0,
+        "errors": 84,
+        "trials": 1920
+      },
+      {
+        "ebn0_db": 12.0,
+        "errors": 899,
+        "trials": 41280
+      },
+      {
         "ebn0_db": 13.0,
-        "errors": 601,
-        "trials": 53760
+        "errors": 2993,
+        "trials": 354720
       },
       {
         "ebn0_db": 14.0,
-        "errors": 604,
-        "trials": 106272
+        "errors": 3052,
+        "trials": 1153440
       },
       {
         "ebn0_db": 15.0,
-        "errors": 908,
-        "trials": 298464
+        "errors": 1178,
+        "trials": 2059296
       },
       {
         "ebn0_db": 16.0,
-        "errors": 1074,
-        "trials": 902592
+        "errors": 202,
+        "trials": 2568096
       },
       {
         "ebn0_db": 17.0,
-        "errors": 1414,
-        "trials": 1993920
+        "errors": 41,
+        "trials": 2779584
       },
       {
         "ebn0_db": 18.0,
-        "errors": 907,
-        "trials": 2247936
+        "errors": 7,
+        "trials": 2847552
       }
     ]
   },
@@ -38,33 +53,48 @@
     "label": "dmr bptc196 hard, phase-3 cpm chain, FER (refused frames / all frames), seed 0xd5f, release",
     "points": [
       {
+        "ebn0_db": 10.0,
+        "errors": 29999,
+        "trials": 30000
+      },
+      {
+        "ebn0_db": 11.0,
+        "errors": 29980,
+        "trials": 30000
+      },
+      {
+        "ebn0_db": 12.0,
+        "errors": 29570,
+        "trials": 30000
+      },
+      {
         "ebn0_db": 13.0,
-        "errors": 12670,
-        "trials": 13230
+        "errors": 26305,
+        "trials": 30000
       },
       {
         "ebn0_db": 14.0,
-        "errors": 5615,
-        "trials": 6722
+        "errors": 17985,
+        "trials": 30000
       },
       {
         "ebn0_db": 15.0,
-        "errors": 5088,
-        "trials": 8197
+        "errors": 8549,
+        "trials": 30000
       },
       {
         "ebn0_db": 16.0,
-        "errors": 7409,
-        "trials": 16811
+        "errors": 3249,
+        "trials": 30000
       },
       {
         "ebn0_db": 17.0,
-        "errors": 9230,
+        "errors": 1046,
         "trials": 30000
       },
       {
         "ebn0_db": 18.0,
-        "errors": 6584,
+        "errors": 338,
         "trials": 30000
       }
     ]
@@ -73,34 +103,49 @@
     "label": "dmr bptc196 hard, phase-3 cpm chain, undetected-error rate (wrong accepted frames / accepted frames), seed 0xd5f, release",
     "points": [
       {
+        "ebn0_db": 10.0,
+        "errors": 1,
+        "trials": 1
+      },
+      {
+        "ebn0_db": 11.0,
+        "errors": 10,
+        "trials": 20
+      },
+      {
+        "ebn0_db": 12.0,
+        "errors": 121,
+        "trials": 430
+      },
+      {
         "ebn0_db": 13.0,
-        "errors": 90,
-        "trials": 560
+        "errors": 485,
+        "trials": 3695
       },
       {
         "ebn0_db": 14.0,
-        "errors": 110,
-        "trials": 1107
+        "errors": 524,
+        "trials": 12015
       },
       {
         "ebn0_db": 15.0,
-        "errors": 157,
-        "trials": 3109
+        "errors": 224,
+        "trials": 21451
       },
       {
         "ebn0_db": 16.0,
-        "errors": 197,
-        "trials": 9402
+        "errors": 46,
+        "trials": 26751
       },
       {
         "ebn0_db": 17.0,
-        "errors": 266,
-        "trials": 20770
+        "errors": 7,
+        "trials": 28954
       },
       {
         "ebn0_db": 18.0,
-        "errors": 170,
-        "trials": 23416
+        "errors": 2,
+        "trials": 29662
       }
     ]
   }
