@@ -880,6 +880,7 @@ fn pocsag() -> Fixture {
         function: 3,
         text: "SDR FIXTURE".to_owned(),
         numeric: false,
+        seal: None,
     }];
     let rate = Fixture::rate(&params);
     let iq = synth::pocsag::transmission(&pages, 1_200, 4_500.0, rate);
@@ -1459,6 +1460,7 @@ fn ident() -> Fixture {
         function: 3,
         text: "IDENT TEST".to_owned(),
         numeric: false,
+        seal: None,
     }];
     let burst = synth::pocsag::transmission(&pages, 1_200, 4_500.0, rate);
     let mut iq = Vec::new();

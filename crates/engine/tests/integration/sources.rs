@@ -98,6 +98,7 @@ async fn a_recording_node_plays_its_library_stem_into_a_decoder() {
         function: 3,
         text: "from the library".to_owned(),
         numeric: false,
+        seal: None,
     }];
     let iq = sdrmm_channels::synth::pocsag::transmission(&pages, 1_200, 4_500.0, 240_000.0);
     let device = plant(dir.path(), "pocsag-library", &iq, 240_000.0);

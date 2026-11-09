@@ -40,6 +40,13 @@ fn default_pocsag_bandwidth_hz() -> f64 {
     12_500.0
 }
 
+/// The Swissphone IDEA message key a RIC is programmed with, as 32 hex digits.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdeaKey {
+    pub ric: u32,
+    pub key: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PocsagParams {
     #[serde(default)]
@@ -48,6 +55,11 @@ pub struct PocsagParams {
     pub bandwidth_hz: f64,
     #[serde(default)]
     pub invert: bool,
+    /// The organisation code the pagers are programmed with, as up to four hex digits.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub idea_org_code: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub idea_keys: Vec<IdeaKey>,
 }
 
 impl Default for PocsagParams {
@@ -56,6 +68,8 @@ impl Default for PocsagParams {
             baud: PocsagBaud::default(),
             bandwidth_hz: default_pocsag_bandwidth_hz(),
             invert: false,
+            idea_org_code: String::new(),
+            idea_keys: Vec::new(),
         }
     }
 }
@@ -80,9 +94,12 @@ pub struct PocsagMessage {
     pub payload: PocsagPayload,
     pub text: String,
     pub errors_corrected: u32,
+    #[serde(default)]
+    pub encrypted: bool,
 }
 
 const FUNCTION_LETTERS: [char; 4] = ['A', 'B', 'C', 'D'];
+const CIPHER: &str = "IDEA";
 
 impl EventPayload for PocsagMessage {
     fn present(&self, _kind: &EventKind) -> Presentation {
@@ -112,6 +129,7 @@ fn pocsag_fields(p: &PocsagMessage) -> Vec<Field> {
         ),
         ("baud", "Baud", number(Some(p.baud), Unit::Baud, 0)),
         ("payload", "Payload", text_of(pocsag_payload(p.payload))),
+        ("cipher", "Cipher", text(p.encrypted.then_some(CIPHER))),
         ("repaired", "Repaired", repaired(p.errors_corrected)),
         ("text", "Text", text(Some(&p.text))),
     ])
@@ -159,6 +177,7 @@ mod model_tests {
             payload: PocsagPayload::Alpha,
             text: "TEST".to_owned(),
             errors_corrected: 1,
+            encrypted: false,
         });
         let json = serde_json::to_value(&ev).unwrap();
         assert_eq!(json["kind"], "pocsag");
@@ -191,6 +210,35 @@ mod model_tests {
         );
         assert_eq!(view.field("Repaired"), count(Some(2)).as_ref());
         assert_eq!(view.field("Text"), text(Some("CALL 42")).as_ref());
+    }
+
+    #[test]
+    fn idea_settings_default_to_off_and_old_events_read_as_plain() {
+        let params: PocsagParams = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(params.idea_keys.is_empty());
+        assert_eq!(params.idea_org_code, "");
+        let message: PocsagMessage = serde_json::from_value(serde_json::json!({
+            "address": 7, "function": 3, "baud": 512, "payload": "alpha",
+            "text": "X", "errors_corrected": 0,
+        }))
+        .unwrap();
+        assert!(!message.encrypted);
+    }
+
+    #[test]
+    fn an_encrypted_message_names_its_cipher() {
+        let view = present::<PocsagMessage>(
+            EventKind::named("pocsag"),
+            serde_json::json!({
+                "address": 1234, "function": 3, "baud": 1200, "payload": "alpha",
+                "text": "ALARM", "errors_corrected": 0, "encrypted": true,
+            }),
+        );
+        assert_eq!(
+            view.labels(),
+            ["RIC", "Function", "Baud", "Payload", "Cipher", "Text"]
+        );
+        assert_eq!(view.field("Cipher"), text(Some("IDEA")).as_ref());
     }
 
     #[test]

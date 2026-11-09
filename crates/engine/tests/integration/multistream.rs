@@ -693,6 +693,7 @@ async fn a_decoded_frame_reports_its_lanes_absolute_frequency() {
         function: 3,
         text: "LANES".to_owned(),
         numeric: false,
+        seal: None,
     }];
     let mut iq = synth::pocsag::transmission(&pages, 1_200, 4_500.0, PAGING_RATE);
     synth::shift(&mut iq, PAGING_OFFSET_HZ, PAGING_RATE);

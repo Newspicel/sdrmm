@@ -1,9 +1,12 @@
 use crate::registry::Native;
-use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+pub(crate) mod idea;
 mod model;
+use idea::{Civil, Header, KEY_BYTES};
 pub use model::*;
 use std::sync::LazyLock;
+use std::time::SystemTime;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, SyncDetector, design_lowpass, hamming_distance, pocsag_bch_decode};
@@ -33,6 +36,7 @@ const NUMERIC_BITS: usize = 4;
 const SYNC_TOLERANCE: u32 = 2;
 
 const MAX_PAYLOAD_BITS: usize = 128 * PAYLOAD_BITS;
+const MAX_RIC: u32 = (1 << 21) - 1;
 
 const QUIET_SYMBOLS: f64 = 512.0;
 
@@ -70,6 +74,63 @@ pub struct PocsagChannel {
     candidates: Vec<Candidate>,
     locked: Option<usize>,
     soft: Vec<f32>,
+    vault: Vault,
+}
+
+/// The IDEA keys the operator entered, and the clock the pager would seed them with.
+struct Vault {
+    keys: Vec<(u32, [u8; KEY_BYTES])>,
+    org_code: u16,
+    clock: Option<SystemTime>,
+}
+
+impl Vault {
+    fn of(p: &PocsagParams, clock: Option<SystemTime>) -> Result<Self, ChannelError> {
+        let keys = p
+            .idea_keys
+            .iter()
+            .map(|entry| Ok((entry.ric, idea_key(&entry.key)?)))
+            .collect::<Result<_, ChannelError>>()?;
+        Ok(Self {
+            keys,
+            org_code: org_code(&p.idea_org_code)?,
+            clock,
+        })
+    }
+
+    fn key_for(&self, address: u32) -> Option<&[u8; KEY_BYTES]> {
+        self.keys
+            .iter()
+            .find(|(ric, _)| *ric == address)
+            .map(|(_, key)| key)
+    }
+
+    fn now(&self) -> Civil {
+        Civil::local(self.clock.unwrap_or_else(SystemTime::now))
+    }
+}
+
+fn idea_key(text: &str) -> Result<[u8; KEY_BYTES], ChannelError> {
+    crate::crypto::hex(text)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| {
+            ChannelError::InvalidSettings(format!(
+                "an IDEA key is {} hex digits, got {text:?}",
+                2 * KEY_BYTES
+            ))
+        })
+}
+
+fn org_code(text: &str) -> Result<u16, ChannelError> {
+    let digits = text.trim();
+    if digits.is_empty() {
+        return Ok(0);
+    }
+    u16::from_str_radix(digits.trim_start_matches("0x"), 16).map_err(|_| {
+        ChannelError::InvalidSettings(format!(
+            "the IDEA org code is up to four hex digits, got {text:?}"
+        ))
+    })
 }
 
 fn mapping() -> Mapping {
@@ -181,7 +242,7 @@ impl Candidate {
         self.payload.clear();
     }
 
-    fn bit(&mut self, bit: bool, out: &mut Vec<DecoderEvent>) -> Framing {
+    fn bit(&mut self, bit: bool, vault: &Vault, out: &mut Vec<DecoderEvent>) -> Framing {
         let synced = self.detector.push(bit);
         match self.batching {
             Batching::Hunt => {
@@ -195,7 +256,7 @@ impl Candidate {
                 if bits < CODEWORD_BITS {
                     self.batching = Batching::Codeword { index, bits };
                 } else {
-                    self.codeword(index, self.detector.register() as u32, out);
+                    self.codeword(index, self.detector.register() as u32, vault, out);
                     let index = index + 1;
                     self.batching = if index == BATCH_CODEWORDS {
                         Batching::Resync { bits: 0 }
@@ -214,7 +275,7 @@ impl Candidate {
                     self.batching = Batching::Codeword { index: 0, bits: 0 };
                     return Framing::Acquired;
                 } else {
-                    self.flush(out);
+                    self.flush(vault, out);
                     self.batching = Batching::Hunt;
                     return Framing::Lost;
                 }
@@ -223,7 +284,7 @@ impl Candidate {
         Framing::Held
     }
 
-    fn codeword(&mut self, index: usize, word: u32, out: &mut Vec<DecoderEvent>) {
+    fn codeword(&mut self, index: usize, word: u32, vault: &Vault, out: &mut Vec<DecoderEvent>) {
         let Some((word, errors)) = pocsag_bch_decode(word) else {
             if let Some(pending) = &mut self.pending {
                 pending.poisoned = true;
@@ -231,11 +292,11 @@ impl Candidate {
             return;
         };
         if word == IDLE {
-            self.flush(out);
+            self.flush(vault, out);
             return;
         }
         if word >> 31 == 0 {
-            self.flush(out);
+            self.flush(vault, out);
             self.payload.clear();
             self.pending = Some(Pending {
                 address: ((word >> 13) & 0x3_FFFF) << 3 | (index / 2) as u32,
@@ -254,20 +315,13 @@ impl Candidate {
         }
     }
 
-    fn flush(&mut self, out: &mut Vec<DecoderEvent>) {
+    fn flush(&mut self, vault: &Vault, out: &mut Vec<DecoderEvent>) {
         let Some(pending) = self.pending.take() else {
             return;
         };
-        if pending.poisoned {
+        let Some((payload, text, encrypted)) = self.message(&pending, vault) else {
             self.rejected = self.rejected.saturating_add(1);
             return;
-        }
-        let (payload, text) = if self.payload.is_empty() {
-            (PocsagPayload::Tone, String::new())
-        } else if pending.function == 0 {
-            (PocsagPayload::Numeric, numeric_text(&self.payload))
-        } else {
-            (PocsagPayload::Alpha, alpha_text(&self.payload))
         };
         out.push(DecoderEvent::of(&PocsagMessage {
             address: pending.address,
@@ -276,7 +330,34 @@ impl Candidate {
             payload,
             text,
             errors_corrected: pending.errors,
+            encrypted,
         }));
+    }
+
+    /// The page as sent, or `None` when it must be dropped: damaged, or on an IDEA RIC
+    /// without the header the cipher needs.
+    fn message(&self, pending: &Pending, vault: &Vault) -> Option<(PocsagPayload, String, bool)> {
+        if pending.poisoned {
+            return None;
+        }
+        if self.payload.is_empty() {
+            return Some((PocsagPayload::Tone, String::new(), false));
+        }
+        if pending.function == 0 {
+            return Some((PocsagPayload::Numeric, numeric_text(&self.payload), false));
+        }
+        let Some(key) = vault.key_for(pending.address) else {
+            return Some((PocsagPayload::Alpha, alpha_text(&self.payload), false));
+        };
+        let (header, sealed) = Header::parse(&self.payload)?;
+        let opened = idea::decrypt(
+            key,
+            vault.org_code,
+            vault.now(),
+            &header,
+            &alpha_bytes(sealed),
+        );
+        Some((PocsagPayload::Alpha, render_alpha(&opened), true))
     }
 }
 
@@ -286,15 +367,24 @@ fn character(bits: &[bool]) -> u8 {
         .fold(0, |acc, (i, &bit)| acc | u8::from(bit) << i)
 }
 
-fn alpha_text(bits: &[bool]) -> String {
-    let bytes: Vec<u8> = bits
-        .as_chunks::<ALPHA_BITS>()
+fn alpha_bytes(bits: &[bool]) -> Vec<u8> {
+    bits.as_chunks::<ALPHA_BITS>()
         .0
         .iter()
         .map(|chunk| character(chunk))
+        .collect()
+}
+
+fn alpha_text(bits: &[bool]) -> String {
+    let bytes: Vec<u8> = alpha_bytes(bits)
+        .into_iter()
         .take_while(|c| !ALPHA_PADDING.contains(c))
         .collect();
-    if reads_as_german(&bytes) {
+    render_alpha(&bytes)
+}
+
+fn render_alpha(bytes: &[u8]) -> String {
+    if reads_as_german(bytes) {
         bytes.iter().map(|&byte| german_letter(byte)).collect()
     } else {
         bytes.iter().copied().map(char::from).collect()
@@ -369,6 +459,7 @@ impl NativeChannel for PocsagChannel {
             candidates: candidates(ctx.input_rate, p.baud),
             locked: None,
             soft: Vec::new(),
+            vault: Vault::of(&p, None)?,
         })
     }
 }
@@ -377,6 +468,7 @@ impl ChannelRx for PocsagChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         check_params(&p)?;
+        self.vault = Vault::of(&p, self.vault.clock)?;
         self.invert = p.invert;
         if p.baud != self.baud {
             self.baud = p.baud;
@@ -397,7 +489,7 @@ impl ChannelRx for PocsagChannel {
             for &symbol in &soft {
                 let symbol = if self.invert { -symbol } else { symbol };
                 let bit = self.slicer.slice(symbol) == 1;
-                match self.candidates[index].bit(bit, &mut out.events) {
+                match self.candidates[index].bit(bit, &self.vault, &mut out.events) {
                     Framing::Held => {}
                     Framing::Acquired => self.acquire(index),
                     Framing::Lost => {
@@ -408,6 +500,10 @@ impl ChannelRx for PocsagChannel {
             }
         }
         self.soft = soft;
+    }
+
+    fn captured_at(&mut self, time: SystemTime) {
+        self.vault.clock = Some(time);
     }
 
     fn rejected(&self) -> u32 {
@@ -487,6 +583,27 @@ pub(crate) fn pocsag_form() -> Vec<SettingField> {
             .quiet(PocsagBaud::Auto),
         SettingField::bandwidth(&[12_500.0, 25_000.0]),
         SettingField::invert(),
+        SettingField::new(
+            "idea_keys",
+            "IDEA keys",
+            Control::list(idea_key_form(), "none"),
+        )
+        .title("Swissphone IDEA message key per RIC, as programmed into the pagers")
+        .quiet(Vec::<IdeaKey>::new()),
+        SettingField::new("idea_org_code", "Org code", Control::optional_text("hex"))
+            .title("IDEA organisation code the pagers are programmed with, up to four hex digits")
+            .quiet(""),
+    ]
+}
+
+fn idea_key_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("ric", "RIC", NumberSpec::new(0.0, f64::from(MAX_RIC), 1.0)),
+        SettingField::new(
+            "key",
+            "IDEA key",
+            Control::bounded_text("32 hex digits", 2 * KEY_BYTES, true),
+        ),
     ]
 }
 
@@ -496,14 +613,17 @@ fn pocsag_kinds() -> Vec<KindSpec> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, SystemTime};
+
     use crate::nfm::NfmParams;
     use sdrmm_wire::ChannelParams;
 
+    use super::idea::Civil;
     use super::*;
     use crate::{
         synth::{
             add_noise,
-            pocsag::{Page, codewords, keyed, transmission},
+            pocsag::{IdeaSeal, Page, codewords, keyed, transmission},
             silence,
         },
         testutil::settings,
@@ -513,6 +633,127 @@ mod tests {
     const DEVIATION_HZ: f64 = 4_500.0;
     const ALPHA_ADDRESS: u32 = 1_234_567;
     const NUMERIC_ADDRESS: u32 = 1_987_648;
+    const OTHER_ADDRESS: u32 = 4_242;
+    const IDEA_KEY: [u8; 16] = [
+        0x0f, 0x1e, 0x2d, 0x3c, 0x4b, 0x5a, 0x69, 0x78, 0x87, 0x96, 0xa5, 0xb4, 0xc3, 0xd2, 0xe1,
+        0xf0,
+    ];
+    const IDEA_KEY_HEX: &str = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    const ORG_CODE: u16 = 0x4af5;
+
+    fn captured() -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000)
+    }
+
+    fn sealed_page(text: &str) -> Page {
+        Page {
+            seal: Some(IdeaSeal {
+                key: IDEA_KEY,
+                org_code: ORG_CODE,
+                sent: Civil::local(captured()),
+                mask: 0x5A5A5,
+            }),
+            ..alpha_page(text)
+        }
+    }
+
+    fn keyed_params(key: &str) -> PocsagParams {
+        PocsagParams {
+            idea_org_code: "4af5".to_owned(),
+            idea_keys: vec![IdeaKey {
+                ric: ALPHA_ADDRESS,
+                key: key.to_owned(),
+            }],
+            ..PocsagParams::default()
+        }
+    }
+
+    fn keyed_channel(key: &str) -> PocsagChannel {
+        let mut chan = channel_with(keyed_params(key));
+        chan.captured_at(captured());
+        chan
+    }
+
+    #[test]
+    fn a_keyed_ric_decrypts_an_idea_page() {
+        let mut chan = keyed_channel(IDEA_KEY_HEX);
+        let messages = run(&mut chan, &burst(&[sealed_page("ALARM 42")], 1_200));
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert_eq!(messages[0].payload, PocsagPayload::Alpha);
+        assert!(messages[0].encrypted);
+        assert_eq!(messages[0].text, "ALARM 42");
+    }
+
+    #[test]
+    fn an_unkeyed_ric_keeps_the_characters_as_sent() {
+        let mut chan = channel();
+        let messages = run(&mut chan, &burst(&[sealed_page("ALARM 42")], 1_200));
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert!(!messages[0].encrypted);
+        assert_ne!(messages[0].text, "ALARM 42");
+    }
+
+    #[test]
+    fn a_wrong_key_reads_as_noise_but_still_names_the_cipher() {
+        let mut chan = keyed_channel("00000000000000000000000000000000");
+        let messages = run(&mut chan, &burst(&[sealed_page("ALARM 42")], 1_200));
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert!(messages[0].encrypted);
+        assert_ne!(messages[0].text, "ALARM 42");
+    }
+
+    #[test]
+    fn plain_pages_decode_beside_sealed_ones() {
+        let plain = Page {
+            address: OTHER_ADDRESS,
+            ..alpha_page("PLAIN")
+        };
+        let numeric = Page {
+            address: ALPHA_ADDRESS,
+            function: 0,
+            text: "4711".to_owned(),
+            numeric: true,
+            seal: None,
+        };
+        let mut chan = keyed_channel(IDEA_KEY_HEX);
+        let messages = run(
+            &mut chan,
+            &burst(&[sealed_page("ALARM 42"), plain, numeric], 1_200),
+        );
+        assert_eq!(messages.len(), 3, "{messages:?}");
+        assert_eq!(messages[0].text, "ALARM 42");
+        assert!(messages[0].encrypted);
+        assert_eq!(messages[1].text, "PLAIN");
+        assert!(!messages[1].encrypted);
+        assert_eq!(messages[2].payload, PocsagPayload::Numeric);
+        assert_eq!(messages[2].text, "4711");
+        assert!(!messages[2].encrypted);
+    }
+
+    #[test]
+    fn a_keyed_page_too_short_for_its_header_is_rejected() {
+        let mut chan = keyed_channel(IDEA_KEY_HEX);
+        assert!(run(&mut chan, &burst(&[alpha_page("AB")], 1_200)).is_empty());
+        assert_eq!(chan.rejected(), 1);
+    }
+
+    #[test]
+    fn a_malformed_idea_key_or_org_code_is_rejected() {
+        let bad_org = PocsagParams {
+            idea_org_code: "xyz".to_owned(),
+            ..keyed_params(IDEA_KEY_HEX)
+        };
+        for params in [keyed_params("zz"), keyed_params("0f1e"), bad_org] {
+            let built = PocsagChannel::new(
+                ChannelCtx { input_rate: RATE },
+                settings(ChannelParams::of(&params).expect("settings")),
+            );
+            assert!(
+                matches!(built, Err(ChannelError::InvalidSettings(_))),
+                "{params:?} must be rejected"
+            );
+        }
+    }
 
     fn channel_with(params: PocsagParams) -> PocsagChannel {
         PocsagChannel::new(
@@ -533,12 +774,14 @@ mod tests {
                 function: 3,
                 text: "CALL CONTROL 42".to_owned(),
                 numeric: false,
+                seal: None,
             },
             Page {
                 address: NUMERIC_ADDRESS,
                 function: 0,
                 text: "0123456789-U".to_owned(),
                 numeric: true,
+                seal: None,
             },
         ]
     }
@@ -679,6 +922,7 @@ mod tests {
             function: 2,
             text: String::new(),
             numeric: false,
+            seal: None,
         };
         let mut chan = channel();
         let messages = run(&mut chan, &burst(&[page], 1_200));
@@ -695,6 +939,7 @@ mod tests {
             function: 3,
             text: text.to_owned(),
             numeric: false,
+            seal: None,
         }
     }
 
@@ -821,6 +1066,7 @@ mod tests {
             function: 3,
             text: "X".repeat(MAX_PAYLOAD_BITS / ALPHA_BITS + 1),
             numeric: false,
+            seal: None,
         };
         let mut chan = channel();
         assert!(run(&mut chan, &burst(&[long], 2_400)).is_empty());

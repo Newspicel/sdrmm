@@ -85,6 +85,12 @@ Some German POCSAG networks send umlauts as `{ | } [ \ ] ~`. SDRmm converts them
 lowercase words only: `M}nchen` becomes `München`, `Stra~e` becomes `Straße`. `[ALARM]` and
 all-caps messages stay as sent.
 
+Swissphone pagers can carry IDEA-encrypted text. Enter the message key of each RIC and the
+organisation code from the pager programming (PSW900) under the POCSAG settings, and those
+messages decode as text marked `IDEA`. The seed includes the local date and hour, so the
+host clock, or a recording's capture time, has to be within the hour of the transmission.
+A wrong key gives noise, not an error: the air format carries nothing a receiver can check.
+
 ## End-of-Train
 
 The End-of-Train channel reads railroad telemetry. Tune 457.9375 MHz for the rear unit: brake pipe

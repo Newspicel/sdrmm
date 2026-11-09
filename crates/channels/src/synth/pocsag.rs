@@ -5,6 +5,8 @@ use sdrmm_modem::{
     pulse::{self, Norm},
 };
 
+use crate::pocsag::idea::{self, Civil, Header, KEY_BYTES};
+
 const FRAME_SYNC: u32 = 0x7CD2_15D8;
 const IDLE: u32 = 0x7A89_C197;
 const BATCH_CODEWORDS: usize = 16;
@@ -19,12 +21,23 @@ const NUMERIC_ALPHABET: [char; 16] = [
 ];
 const NUMERIC_SPACE: u8 = 12;
 
+/// Seals an alpha page the way a Swissphone system does for an IDEA RIC.
+#[derive(Clone, Copy, Debug)]
+pub struct IdeaSeal {
+    pub key: [u8; KEY_BYTES],
+    pub org_code: u16,
+    pub sent: Civil,
+    /// The first header word, bits the sender is free to pick.
+    pub mask: u32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Page {
     pub address: u32,
     pub function: u8,
     pub text: String,
     pub numeric: bool,
+    pub seal: Option<IdeaSeal>,
 }
 
 #[must_use]
@@ -99,8 +112,12 @@ fn message_codewords(page: &Page) -> Vec<u32> {
             push_lsb_first(&mut bits, NUMERIC_SPACE, NUMERIC_BITS);
         }
     } else {
-        for ch in page.text.chars() {
-            push_lsb_first(&mut bits, ascii7(ch), ALPHA_BITS);
+        if let Some(seal) = &page.seal {
+            seal_text(&mut bits, &page.text, seal);
+        } else {
+            for ch in page.text.chars() {
+                push_lsb_first(&mut bits, ascii7(ch), ALPHA_BITS);
+            }
         }
         while !bits.len().is_multiple_of(PAYLOAD_BITS) {
             bits.push(false);
@@ -116,6 +133,16 @@ fn message_codewords(page: &Page) -> Vec<u32> {
             pocsag_bch_encode(1 << PAYLOAD_BITS | payload)
         })
         .collect()
+}
+
+fn seal_text(bits: &mut Vec<bool>, text: &str, seal: &IdeaSeal) {
+    let header = Header::sealing(seal.mask, &seal.key, seal.sent.minute);
+    bits.extend(header.bits());
+    let seed = header.seed(&seal.key, seal.org_code, seal.sent);
+    let mut stream = idea::Keystream::new(&seal.key, seed);
+    for byte in text.chars().map(ascii7).chain(std::iter::once(0)) {
+        push_lsb_first(bits, byte ^ stream.mask(), ALPHA_BITS);
+    }
 }
 
 fn push_lsb_first(bits: &mut Vec<bool>, value: u8, len: usize) {
@@ -143,6 +170,7 @@ mod tests {
             function,
             text: text.to_owned(),
             numeric,
+            seal: None,
         }
     }
 
@@ -193,6 +221,55 @@ mod tests {
                 "codeword {word:#010x} does not check"
             );
         }
+    }
+
+    #[test]
+    fn a_sealed_page_opens_with_its_key() {
+        let seal = IdeaSeal {
+            key: [7; 16],
+            org_code: 0x4af5,
+            sent: Civil {
+                year: 26,
+                month: 10,
+                day: 9,
+                hour: 13,
+                minute: 17,
+            },
+            mask: 0x5A5A5,
+        };
+        let page = Page {
+            seal: Some(seal),
+            ..page(8, 3, "ALARM 42", false)
+        };
+        let bits: Vec<bool> = message_codewords(&page)
+            .iter()
+            .flat_map(|word| {
+                (0..PAYLOAD_BITS)
+                    .rev()
+                    .map(move |i| word >> (11 + i) & 1 == 1)
+            })
+            .collect();
+        let (header, rest) = Header::parse(&bits).unwrap();
+        assert_eq!(
+            header.minute_nibble(&seal.key),
+            3,
+            "17 minutes past is the fourth step"
+        );
+        let sealed: Vec<u8> = rest
+            .as_chunks::<ALPHA_BITS>()
+            .0
+            .iter()
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .enumerate()
+                    .fold(0, |acc, (i, &bit)| acc | u8::from(bit) << i)
+            })
+            .collect();
+        assert_eq!(
+            idea::decrypt(&seal.key, seal.org_code, seal.sent, &header, &sealed),
+            b"ALARM 42"
+        );
     }
 
     #[test]

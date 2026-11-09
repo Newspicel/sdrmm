@@ -297,6 +297,7 @@ async fn pocsag_page_survives_the_ddc_and_reaches_the_decoded_stream() {
         function: 3,
         text: "ENGINE E2E".to_owned(),
         numeric: false,
+        seal: None,
     }];
     let mut iq = synth::pocsag::transmission(&pages, 1_200, 4_500.0, NARROW_DEVICE_RATE);
     synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);

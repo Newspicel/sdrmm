@@ -176,6 +176,7 @@ fn pocsag_page() -> Vec<Complex<f32>> {
         function: 3,
         text: "SDRmm FIXTURE".to_string(),
         numeric: false,
+        seal: None,
     };
     at(
         pocsag::transmission(&[page], 1_200, 4_500.0, NARROW),

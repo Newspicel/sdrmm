@@ -306,6 +306,7 @@ mod model_tests {
                 payload: PocsagPayload::Tone,
                 text: String::new(),
                 errors_corrected: 0,
+                encrypted: false,
             }),
             DecoderEvent::of(&FlexMessage {
                 address: 1,

@@ -580,6 +580,7 @@ fn pocsag() -> Vec<Complex<f32>> {
         function: 3,
         text: "SDRmm signal generator".to_owned(),
         numeric: false,
+        seal: None,
     }];
     synth::pocsag::transmission(&pages, 1_200, 4_500.0, NARROW)
 }
