@@ -3,7 +3,10 @@ use sdrmm_wire::{Control, EventContract, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
 pub use model::*;
-use std::{f64::consts::FRAC_1_SQRT_2, sync::LazyLock};
+use std::{
+    f64::consts::{FRAC_1_SQRT_2, TAU},
+    sync::LazyLock,
+};
 
 use num_complex::Complex;
 use sdrmm_dsp::{
@@ -29,6 +32,7 @@ const PILOT_CUTOFF_HZ: f64 = 400.0;
 const PILOT_STAGES: usize = 3;
 const PILOT_LOOP_BW_HZ: f64 = 30.0;
 const PILOT_RANGE_HZ: f64 = 120.0;
+const PILOT_DECIM: usize = 8;
 const LOCK_ON: f32 = 0.6;
 const LOCK_OFF: f32 = 0.4;
 const BLEND_TAU_S: f64 = 0.05;
@@ -73,6 +77,7 @@ struct StereoDemux {
     pilot: Nco,
     filter: ComplexOnePole,
     pll: Pll,
+    tracking: PilotTracking,
     difference: Vec<f32>,
     side: Vec<f32>,
     decim: RealDecimator,
@@ -114,11 +119,12 @@ impl StereoDemux {
             pilot: Nco::new(PILOT_HZ as f32, rate as f32),
             filter: ComplexOnePole::new(rate, PILOT_CUTOFF_HZ, PILOT_STAGES),
             pll: Pll::new(
-                PILOT_LOOP_BW_HZ / rate,
+                PILOT_LOOP_BW_HZ * PILOT_DECIM as f64 / rate,
                 FRAC_1_SQRT_2,
                 0.0,
-                PILOT_RANGE_HZ / rate,
+                PILOT_RANGE_HZ * PILOT_DECIM as f64 / rate,
             ),
+            tracking: PilotTracking::default(),
             difference: Vec::new(),
             side: Vec::new(),
             decim: audio_decimator(rate),
@@ -159,11 +165,45 @@ impl StereoDemux {
             let baseband = self
                 .filter
                 .process(Complex::new(sample, 0.0) * carrier.conj());
-            let reference = self.pll.process(baseband);
+            let reference = self.tracking.next(&mut self.pll, baseband);
             let analytic = carrier * reference;
             let subcarrier = analytic * analytic;
             self.difference.push(-2.0 * subcarrier.im * sample);
         }
+    }
+}
+
+/// The pilot loop is 30 Hz wide, so it updates once every [`PILOT_DECIM`] samples and the
+/// reference turns by the loop's own increment in between. That keeps the full-rate subcarrier
+/// phase continuous while the costly phase detector runs at an eighth of the rate.
+struct PilotTracking {
+    reference: Complex<f32>,
+    step: Complex<f32>,
+    until_update: usize,
+}
+
+impl Default for PilotTracking {
+    fn default() -> Self {
+        Self {
+            reference: Complex::new(1.0, 0.0),
+            step: Complex::new(1.0, 0.0),
+            until_update: 0,
+        }
+    }
+}
+
+impl PilotTracking {
+    fn next(&mut self, pll: &mut Pll, baseband: Complex<f32>) -> Complex<f32> {
+        if self.until_update == 0 {
+            self.until_update = PILOT_DECIM;
+            self.reference = pll.process(baseband);
+            let turn = TAU * pll.increment_norm() / PILOT_DECIM as f64;
+            self.step = Complex::from_polar(1.0, turn as f32);
+        } else {
+            self.reference *= self.step;
+        }
+        self.until_update -= 1;
+        self.reference
     }
 }
 
@@ -516,6 +556,22 @@ mod tests {
             first.groups >= 1,
             "an update was emitted before any group was decoded"
         );
+    }
+
+    #[test]
+    fn pilot_reference_follows_an_offset_pilot_between_loop_updates() {
+        let offset_hz = 60.0;
+        let mut demux = StereoDemux::new(RATE, Deemphasis::new(f64::from(AUDIO_RATE), 50.0));
+        let mut worst = 0.0f32;
+        for n in 0..RUN_SAMPLES {
+            let phase = TAU * offset_hz * n as f64 / RATE;
+            let pilot = Complex::from_polar(1.0, phase as f32);
+            let reference = demux.tracking.next(&mut demux.pll, pilot);
+            if n > RUN_SAMPLES / 2 {
+                worst = worst.max((pilot * reference.conj()).arg().abs());
+            }
+        }
+        assert!(worst < 0.01, "reference strays {worst} rad from the pilot");
     }
 
     #[test]
