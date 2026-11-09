@@ -1,11 +1,19 @@
 mod cck;
+mod detect;
 mod plcp;
 
 use num_complex::Complex;
 
-use self::{cck::Cck, plcp::Header};
+use self::{
+    cck::Cck,
+    detect::{DETECT_SPAN, DETECT_SYMBOLS, Matched, first_peak},
+    plcp::Header,
+};
 use super::{Frame, MAX_MPDU_BYTES, Sink, WifiPhy, byte, fcs_ok, level_dbfs};
-use crate::spread::{PnError, PnSequence};
+use crate::{
+    linear::PhaseTracker,
+    spread::{PnError, PnSequence},
+};
 
 pub use self::cck::codeword as cck_codeword;
 pub use self::plcp::{crc16 as header_crc, psdu_bytes};
@@ -13,10 +21,9 @@ pub use self::plcp::{crc16 as header_crc, psdu_bytes};
 pub const SYMBOL: usize = 20;
 pub const BARKER_CHIPS: usize = 11;
 pub const CHIP_SAMPLES: f64 = SYMBOL as f64 / BARKER_CHIPS as f64;
-const DETECT_SYMBOLS: usize = 8;
-const DETECT_THRESHOLD: f32 = 0.2;
-const MIN_POWER: f32 = 1e-9;
 const TIMING_GAIN: f64 = 0.1;
+const PHASE_GAIN: f32 = 0.05;
+const FREQ_GAIN: f32 = 0.002;
 const PHASE_SYMBOLS: usize = 32;
 const PHASE_SEARCH: usize = 4;
 const MAX_PREAMBLE_SYMBOLS: usize = 160;
@@ -46,14 +53,6 @@ pub fn template(barker: &[f32; BARKER_CHIPS]) -> [f32; SYMBOL] {
     })
 }
 
-fn correlate(history: &[Complex<f32>], at: usize, template: &[f32; SYMBOL]) -> Complex<f32> {
-    history[at..at + SYMBOL]
-        .iter()
-        .zip(template)
-        .map(|(&x, &b)| x * b)
-        .sum()
-}
-
 #[derive(Clone, Copy)]
 enum State {
     Search,
@@ -69,14 +68,11 @@ enum Outcome {
 }
 
 pub struct Dsss {
-    template: [f32; SYMBOL],
+    matched: Matched,
     cck: Cck,
     history: Vec<Complex<f32>>,
     bytes: Vec<u8>,
-    energy: f32,
-    rings: [[f32; DETECT_SYMBOLS]; SYMBOL],
-    sums: [f32; SYMBOL],
-    filled: usize,
+    restart: usize,
     consumed: u64,
     cursor: usize,
     ready_at: usize,
@@ -87,14 +83,11 @@ pub struct Dsss {
 impl Dsss {
     pub fn new() -> Result<Self, PnError> {
         Ok(Self {
-            template: template(&barker()?),
+            matched: Matched::new(&template(&barker()?), MAX_HISTORY),
             cck: Cck::new(),
             history: Vec::with_capacity(MAX_HISTORY),
             bytes: Vec::with_capacity(MAX_MPDU_BYTES),
-            energy: 0.0,
-            rings: [[0.0; DETECT_SYMBOLS]; SYMBOL],
-            sums: [0.0; SYMBOL],
-            filled: 0,
+            restart: 0,
             consumed: 0,
             cursor: 0,
             ready_at: 0,
@@ -110,22 +103,17 @@ impl Dsss {
 
     pub fn reset(&mut self) {
         self.history.clear();
+        self.matched.reset();
         self.consumed = 0;
         self.cursor = 0;
         self.ready_at = 0;
         self.state = State::Search;
-        self.restart_detector();
-    }
-
-    fn restart_detector(&mut self) {
-        self.energy = 0.0;
-        self.rings = [[0.0; DETECT_SYMBOLS]; SYMBOL];
-        self.sums = [0.0; SYMBOL];
-        self.filled = 0;
+        self.restart = 0;
     }
 
     pub fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
         self.history.extend_from_slice(iq);
+        self.matched.push(iq);
         loop {
             match self.state {
                 State::Pending(_) if self.history.len() < self.ready_at => break,
@@ -161,60 +149,31 @@ impl Dsss {
         self.ready_at = 0;
         self.cursor = at.max(self.cursor);
         self.state = State::Search;
-        self.restart_detector();
+        self.restart = self.cursor;
     }
 
     fn search(&mut self) -> bool {
-        while self.cursor + LOOKAHEAD <= self.history.len() {
-            let at = self.cursor;
-            if self.filled == 0 {
-                self.energy = self.history[at..at + SYMBOL]
-                    .iter()
-                    .map(|x| x.norm_sqr())
-                    .sum();
-            } else {
-                self.energy +=
-                    self.history[at + SYMBOL - 1].norm_sqr() - self.history[at - 1].norm_sqr();
-            }
-            let rho = if self.energy > MIN_POWER {
-                correlate(&self.history, at, &self.template).norm_sqr()
-                    / (self.energy * SYMBOL as f32)
-            } else {
-                0.0
-            };
-            let phase = at % SYMBOL;
-            let slot = (at / SYMBOL) % DETECT_SYMBOLS;
-            self.sums[phase] += rho - self.rings[phase][slot];
-            self.rings[phase][slot] = rho;
-            self.filled += 1;
-            self.cursor += 1;
-            if self.filled >= SYMBOL * DETECT_SYMBOLS
-                && self.sums[phase] / DETECT_SYMBOLS as f32 > DETECT_THRESHOLD
-                && self.is_peak(phase)
-            {
-                self.state = State::Pending(at);
-                return true;
-            }
+        let to = (self.history.len() + 1).saturating_sub(LOOKAHEAD);
+        let from = self.cursor.max(self.restart + DETECT_SPAN - 1);
+        if let Some(at) = first_peak(&self.matched.rho, from, to) {
+            self.cursor = at + 1;
+            self.state = State::Pending(at);
+            return true;
         }
+        self.cursor = self.cursor.max(to);
         false
-    }
-
-    fn is_peak(&self, phase: usize) -> bool {
-        let next = self.sums[(phase + 1) % SYMBOL];
-        let previous = self.sums[(phase + SYMBOL - 1) % SYMBOL];
-        self.sums[phase] >= previous && self.sums[phase] >= next
     }
 
     fn demodulate(&mut self, start: usize, sink: &impl Sink) -> Outcome {
         let Self {
             history,
-            template,
+            matched,
             cck,
             bytes,
             rejected,
             ..
         } = self;
-        let mut reader = SymbolReader::new(history, start, template);
+        let mut reader = SymbolReader::new(history, &matched.values, start);
         let preamble = match plcp::find_sfd(&mut reader, MAX_PREAMBLE_SYMBOLS) {
             Ok(preamble) => preamble,
             Err(outcome) => return outcome,
@@ -249,15 +208,21 @@ impl Dsss {
     fn trim(&mut self) {
         let keep = match self.state {
             State::Pending(start) => start,
-            State::Search => self.cursor.saturating_sub(1),
+            State::Search => self
+                .cursor
+                .min(self.restart.max(self.cursor.saturating_sub(DETECT_SPAN))),
         };
-        let drop = keep.max(self.history.len().saturating_sub(MAX_HISTORY));
+        let drop = keep
+            .max(self.history.len().saturating_sub(MAX_HISTORY))
+            .min(self.matched.len());
         if drop == 0 {
             return;
         }
         self.history.drain(..drop);
+        self.matched.drain(drop);
         self.consumed += drop as u64;
         self.cursor = self.cursor.saturating_sub(drop);
+        self.restart = self.restart.saturating_sub(drop);
         self.ready_at = self.ready_at.saturating_sub(drop);
         if let State::Pending(start) = &mut self.state {
             *start = start.saturating_sub(drop);
@@ -276,21 +241,25 @@ fn duration(header: &Header) -> usize {
 
 pub(crate) struct SymbolReader<'a> {
     history: &'a [Complex<f32>],
-    template: &'a [f32; SYMBOL],
+    matched: &'a [Complex<f32>],
     position: f64,
     previous: Complex<f32>,
     rotation: Complex<f32>,
+    tracker: PhaseTracker,
+    point: Complex<f32>,
     descrambler: u8,
 }
 
 impl<'a> SymbolReader<'a> {
-    fn new(history: &'a [Complex<f32>], start: usize, template: &'a [f32; SYMBOL]) -> Self {
+    fn new(history: &'a [Complex<f32>], matched: &'a [Complex<f32>], start: usize) -> Self {
         let mut reader = Self {
             history,
-            template,
+            matched,
             position: start as f64,
             previous: Complex::new(0.0, 0.0),
             rotation: Complex::new(1.0, 0.0),
+            tracker: PhaseTracker::new(PHASE_GAIN, FREQ_GAIN),
+            point: Complex::new(1.0, 0.0),
             descrambler: 0,
         };
         reader.position = reader.best_phase(start) as f64;
@@ -320,8 +289,7 @@ impl<'a> SymbolReader<'a> {
     }
 
     fn correlation(&self, at: usize) -> Option<Complex<f32>> {
-        (at >= 1 && at + SYMBOL < self.history.len())
-            .then(|| correlate(self.history, at, self.template))
+        (at >= 1 && at + 1 < self.matched.len()).then(|| self.matched[at])
     }
 
     fn at(&self, position: f64) -> Option<Complex<f32>> {
@@ -332,6 +300,15 @@ impl<'a> SymbolReader<'a> {
     }
 
     fn next(&mut self) -> Option<Complex<f32>> {
+        let centre = self.locate()?;
+        let differential = centre * self.previous.conj() * self.rotation;
+        self.previous = centre;
+        Some(differential)
+    }
+
+    /// The correlation at the tracked symbol start, then the start moved on by one symbol and
+    /// nudged toward the correlation peak.
+    fn locate(&mut self) -> Option<Complex<f32>> {
         let centre = self.at(self.position)?;
         let nearest = self.position.round() as usize;
         let early = self.correlation(nearest.checked_sub(1)?)?.norm();
@@ -343,16 +320,33 @@ impl<'a> SymbolReader<'a> {
             let error = (peak - self.position).clamp(-1.0, 1.0);
             self.position += TIMING_GAIN * error;
         }
-        let differential = centre * self.previous.conj() * self.rotation;
-        self.previous = centre;
         self.position += SYMBOL as f64;
-        Some(differential)
+        Some(centre)
     }
 
+    /// The next symbol against the tracked carrier, and the point decided for it among
+    /// `points`. The tracker then steers by the decision.
+    fn coherent(&mut self, points: Points) -> Option<Complex<f32>> {
+        let centre = self.locate()?;
+        self.tracker.advance(SYMBOL as f32);
+        let derotated = centre * self.tracker.derotator(0.0);
+        let decided = points.nearest(derotated);
+        self.tracker.steer(derotated, decided, SYMBOL as f32);
+        let step = decided * self.point.conj();
+        self.point = decided;
+        self.previous = centre;
+        Some(step)
+    }
+
+    /// Estimates the carrier from the training differentials and starts the tracker on the
+    /// last symbol read.
     pub(crate) fn train(&mut self, differentials: &[Complex<f32>]) {
         let squared: Complex<f32> = differentials.iter().map(|d| d * d).sum();
         let angle = squared.arg() / 2.0;
         self.rotation = Complex::from_polar(1.0, -angle);
+        self.tracker
+            .start(self.previous.arg(), angle / SYMBOL as f32);
+        self.point = Complex::new(1.0, 0.0);
     }
 
     pub(crate) fn raw(&mut self) -> Option<Complex<f32>> {
@@ -366,13 +360,13 @@ impl<'a> SymbolReader<'a> {
     }
 
     pub(crate) fn dbpsk(&mut self) -> Option<bool> {
-        let differential = self.next()?;
-        Some(self.descrambled(differential.re < 0.0))
+        let step = self.coherent(Points::Binary)?;
+        Some(self.descrambled(step.re < 0.0))
     }
 
     pub(crate) fn dqpsk(&mut self) -> Option<[bool; 2]> {
-        let differential = self.next()?;
-        let dibit = quadrant(differential);
+        let step = self.coherent(Points::Quadrature)?;
+        let dibit = quadrant(step);
         Some([self.descrambled(dibit[0]), self.descrambled(dibit[1])])
     }
 
@@ -380,12 +374,9 @@ impl<'a> SymbolReader<'a> {
         self.position
     }
 
-    pub(crate) fn last_phase(&self) -> Complex<f32> {
-        self.previous
-    }
-
-    pub(crate) fn rotation(&self) -> Complex<f32> {
-        self.rotation
+    /// The carrier tracker and the point last decided, both at the centre of the last symbol.
+    pub(crate) fn carrier(&self) -> (PhaseTracker, Complex<f32>) {
+        (self.tracker, self.point)
     }
 
     pub(crate) fn advance_to(&mut self, position: f64) {
@@ -424,6 +415,29 @@ fn skipped(header: &Header, read: usize) -> f64 {
     let bits_left = header.bytes.saturating_sub(read) * 8;
     let per_symbol = if header.phy == WifiPhy::Dsss2m { 2 } else { 1 };
     (bits_left.div_ceil(per_symbol) * SYMBOL) as f64
+}
+
+#[derive(Clone, Copy)]
+enum Points {
+    Binary,
+    Quadrature,
+}
+
+impl Points {
+    fn nearest(self, z: Complex<f32>) -> Complex<f32> {
+        match self {
+            Self::Binary => Complex::new(if z.re < 0.0 { -1.0 } else { 1.0 }, 0.0),
+            Self::Quadrature => nearest_quadrant(z),
+        }
+    }
+}
+
+pub(crate) fn nearest_quadrant(z: Complex<f32>) -> Complex<f32> {
+    if z.re.abs() >= z.im.abs() {
+        Complex::new(z.re.signum(), 0.0)
+    } else {
+        Complex::new(0.0, z.im.signum())
+    }
 }
 
 pub(crate) fn quadrant(differential: Complex<f32>) -> [bool; 2] {

@@ -9,6 +9,7 @@ mod frontend;
 mod modulator;
 mod params;
 mod timing;
+mod tracker;
 
 pub use acquire::{Chirp, FrequencyAcquisition};
 pub use anchor::{AnchorError, PhaseAnchor};
@@ -26,3 +27,4 @@ pub use timing::{
     FeedforwardTiming, MIN_SPS, TimingMetric, TimingTrack, resample_at, rotated_power_offset,
     square_law_offset, square_law_track,
 };
+pub use tracker::PhaseTracker;

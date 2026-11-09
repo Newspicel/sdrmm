@@ -1,13 +1,19 @@
 use num_complex::Complex;
 
-use super::{BARKER_CHIPS, CHIP_SAMPLES, SymbolReader, WifiPhy, byte, plcp::Header, quadrant};
+use super::{
+    CHIP_SAMPLES, SYMBOL, SymbolReader, WifiPhy, byte, nearest_quadrant, plcp::Header, quadrant,
+};
 use crate::{
-    spread::{CckMode, Codebook},
+    linear::PhaseTracker,
+    spread::{CckMode, Codebook, integrate},
     wifi::Sink,
 };
 
 pub const CHIPS: usize = 8;
 const MAX_WORDS: usize = 64;
+const SYMBOL_SAMPLES: f64 = CHIPS as f64 * CHIP_SAMPLES;
+const TIMING_GAIN: f64 = 0.1;
+const TIMING_SPREAD: f64 = CHIP_SAMPLES / 2.0;
 
 pub(crate) struct Cck {
     full: Codebook,
@@ -65,14 +71,50 @@ pub fn codeword(phy: WifiPhy, phi1: f32, label_bits: &[bool]) -> [Complex<f32>; 
     std::array::from_fn(|chip| word[chip] * rotation)
 }
 
-fn interpolate(history: &[Complex<f32>], position: f64) -> Complex<f32> {
-    let index = position.floor();
-    let weight = (position - index) as f32;
-    let index = index as usize;
-    match (history.get(index), history.get(index + 1)) {
-        (Some(&a), Some(&b)) => a * (1.0 - weight) + b * weight,
-        _ => Complex::default(),
+/// The eight chips of a symbol starting at `start`, each integrated over its own interval and
+/// taken off the carrier at its own centre.
+fn chips(
+    history: &[Complex<f32>],
+    start: f64,
+    derotators: &[Complex<f32>; CHIPS],
+) -> [Complex<f32>; CHIPS] {
+    std::array::from_fn(|chip| {
+        let from = start + chip as f64 * CHIP_SAMPLES;
+        integrate(history, from, from + CHIP_SAMPLES) * derotators[chip]
+    })
+}
+
+/// One phasor per chip, the tracked carrier at that chip's centre relative to the symbol's.
+fn derotators(tracker: &PhaseTracker) -> [Complex<f32>; CHIPS] {
+    let step = Complex::from_polar(1.0, -tracker.freq() * CHIP_SAMPLES as f32);
+    let first = tracker.derotator((0.5 * CHIP_SAMPLES - 0.5 * SYMBOL_SAMPLES) as f32);
+    let mut phasor = first;
+    std::array::from_fn(|_| {
+        let here = phasor;
+        phasor *= step;
+        here
+    })
+}
+
+/// The word and quadrant whose rotation of the bank entry lies furthest along the real axis.
+fn decide(bank: &[Complex<f32>]) -> (u32, Complex<f32>) {
+    let mut best = (0, f32::NEG_INFINITY);
+    for (index, z) in bank.iter().enumerate() {
+        let metric = z.re.abs().max(z.im.abs());
+        if metric > best.1 {
+            best = (index, metric);
+        }
     }
+    (best.0 as u32, nearest_quadrant(bank[best.0]))
+}
+
+fn energy(chips: &[Complex<f32>; CHIPS], word: &[Complex<f32>; CHIPS]) -> f32 {
+    chips
+        .iter()
+        .zip(word)
+        .map(|(&y, &w)| y * w.conj())
+        .sum::<Complex<f32>>()
+        .norm()
 }
 
 impl Cck {
@@ -99,33 +141,37 @@ impl Cck {
         let words = book.words().len();
         let label_bits = label_bits(header.phy);
         let symbols = (header.bytes * 8).div_ceil(label_bits + 2);
-        let start = reader.chip_start();
         let history = reader.history();
-        let end = start + (symbols * CHIPS) as f64 * CHIP_SAMPLES;
-        let rotation = reader.rotation().powf(CHIPS as f32 / BARKER_CHIPS as f32);
-        let mut previous = reader.last_phase();
+        let mut start = reader.chip_start();
+        let end = start + symbols as f64 * SYMBOL_SAMPLES;
+        let (mut tracker, mut point) = reader.carrier();
+        tracker.advance((0.5 * (SYMBOL as f64 + SYMBOL_SAMPLES)) as f32);
         let mut pending = [false; 8];
         let mut filled = 0;
         let mut labels = [false; 6];
         for symbol in 0..symbols {
-            let chips: [Complex<f32>; CHIPS] = std::array::from_fn(|chip| {
-                let position = start + ((symbol * CHIPS + chip) as f64 + 0.5) * CHIP_SAMPLES - 0.5;
-                interpolate(history, position)
-            });
-            book.correlate(&chips, &mut self.bank);
-            let (index, z) = self.bank[..words]
-                .iter()
-                .enumerate()
-                .max_by(|a, b| a.1.norm_sqr().total_cmp(&b.1.norm_sqr()))
-                .map_or((0, Complex::default()), |(index, &z)| (index as u32, z));
-            let mut differential = z * previous.conj() * rotation;
+            let turns = derotators(&tracker);
+            let on_time = chips(history, start, &turns);
+            book.correlate(&on_time, &mut self.bank);
+            let (index, decided) = decide(&self.bank[..words]);
+            tracker.steer(self.bank[index as usize], decided, SYMBOL_SAMPLES as f32);
+            let mut step = decided * point.conj();
             if symbol % 2 == 1 {
-                differential = -differential;
+                step = -step;
             }
-            previous = z;
+            point = decided;
+            let word = &book.words()[index as usize];
+            let early = energy(&chips(history, start - TIMING_SPREAD, &turns), word);
+            let late = energy(&chips(history, start + TIMING_SPREAD, &turns), word);
+            let nudge = if early + late > 0.0 {
+                TIMING_GAIN * f64::from((late - early) / (late + early)) * TIMING_SPREAD
+            } else {
+                0.0
+            };
+            start += SYMBOL_SAMPLES + nudge;
+            tracker.advance((SYMBOL_SAMPLES + nudge) as f32);
             word_bits(header.phy, index, &mut labels);
-            let phase_bits = quadrant(differential);
-            for &bit in phase_bits.iter().chain(&labels[..label_bits]) {
+            for &bit in quadrant(step).iter().chain(&labels[..label_bits]) {
                 pending[filled] = reader.descrambled(bit);
                 filled += 1;
                 if filled == 8 && bytes.len() < header.bytes {
@@ -138,7 +184,7 @@ impl Cck {
                 }
             }
         }
-        reader.advance_to(end);
+        reader.advance_to(start.max(end));
         true
     }
 }

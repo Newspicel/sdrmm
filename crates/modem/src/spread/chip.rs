@@ -26,6 +26,24 @@ pub fn sample_at(filtered: &[Complex<f32>], position: f64) -> Complex<f32> {
         .unwrap_or(zero)
 }
 
+/// Integrates samples, each held over `[k, k + 1)`, across `[from, to)`: the matched filter of
+/// a rectangular chip whose length is not a whole number of samples. Outside the samples it
+/// reads zero.
+#[must_use]
+pub fn integrate(samples: &[Complex<f32>], from: f64, to: f64) -> Complex<f32> {
+    if !(from.is_finite() && to.is_finite()) || to <= from || to <= 0.0 {
+        return Complex::new(0.0, 0.0);
+    }
+    let first = from.max(0.0).floor() as usize;
+    let last = (to.ceil() as usize).min(samples.len());
+    let mut sum = Complex::new(0.0, 0.0);
+    for (k, &sample) in samples.iter().enumerate().take(last).skip(first) {
+        let overlap = to.min(k as f64 + 1.0) - from.max(k as f64);
+        sum += sample * overlap as f32;
+    }
+    sum
+}
+
 #[derive(Clone, Debug)]
 pub struct ChipTiming {
     offset: f64,
@@ -218,6 +236,18 @@ mod tests {
 
     fn chips(values: &[f32]) -> Vec<Complex<f32>> {
         values.iter().map(|&v| Complex::new(v, 0.0)).collect()
+    }
+
+    #[test]
+    fn integration_weighs_each_sample_by_its_overlap() {
+        let samples = chips(&[1.0, 2.0, 4.0, 8.0]);
+        let at = |from: f64, to: f64| integrate(&samples, from, to).re;
+        assert!((at(0.0, 4.0) - 15.0).abs() < 1e-6);
+        assert!((at(0.5, 2.25) - (0.5 + 2.0 + 1.0)).abs() < 1e-6);
+        assert!((at(1.2, 1.7) - 1.0).abs() < 1e-6);
+        assert!((at(-1.0, 0.5) - 0.5).abs() < 1e-6);
+        assert!((at(3.5, 9.0) - 4.0).abs() < 1e-6);
+        assert_eq!(at(2.0, 2.0), 0.0);
     }
 
     #[test]

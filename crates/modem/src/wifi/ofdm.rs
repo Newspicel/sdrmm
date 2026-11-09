@@ -66,13 +66,57 @@ impl Scratch {
     }
 }
 
-pub struct Ofdm {
-    history: Vec<Complex<f32>>,
+/// The short training detector: lag-16 autocorrelation against power over a sliding window.
+#[derive(Clone, Copy, Default)]
+struct Plateau {
     correlation: Complex<f32>,
     energy: f32,
     run: usize,
     holding: bool,
     primed: bool,
+}
+
+impl Plateau {
+    fn slide(&mut self, h: &[Complex<f32>], at: usize) {
+        let span = at
+            .checked_sub(1)
+            .and_then(|from| h[from..].first_chunk::<{ WINDOW + SHORT + 1 }>());
+        match span {
+            Some(span) if self.primed => {
+                let (leaving, entering) = (span[0], span[WINDOW]);
+                let (leaving_lag, entering_lag) = (span[SHORT], span[WINDOW + SHORT]);
+                self.correlation += entering * entering_lag.conj() - leaving * leaving_lag.conj();
+                self.energy += entering_lag.norm_sqr() - leaving_lag.norm_sqr();
+            }
+            _ => {
+                self.correlation = (0..WINDOW)
+                    .map(|k| h[at + k] * h[at + k + SHORT].conj())
+                    .sum();
+                self.energy = (0..WINDOW).map(|k| h[at + k + SHORT].norm_sqr()).sum();
+                self.primed = true;
+            }
+        }
+    }
+
+    fn step(&mut self) -> bool {
+        let on = self.energy > MIN_POWER * WINDOW as f32
+            && self.correlation.norm_sqr() > PLATEAU * PLATEAU * self.energy * self.energy;
+        if !on {
+            self.run = 0;
+            self.holding = false;
+            return false;
+        }
+        if self.holding {
+            return false;
+        }
+        self.run += 1;
+        self.run == PLATEAU_SAMPLES
+    }
+}
+
+pub struct Ofdm {
+    history: Vec<Complex<f32>>,
+    plateau: Plateau,
     consumed: u64,
     cursor: usize,
     ready_at: usize,
@@ -110,11 +154,7 @@ impl Ofdm {
         fft.inverse(&mut reference);
         Self {
             history: Vec::with_capacity(MAX_HISTORY),
-            correlation: Complex::new(0.0, 0.0),
-            energy: 0.0,
-            run: 0,
-            holding: false,
-            primed: false,
+            plateau: Plateau::default(),
             consumed: 0,
             cursor: 0,
             ready_at: 0,
@@ -142,9 +182,7 @@ impl Ofdm {
         self.cursor = 0;
         self.ready_at = 0;
         self.state = State::Search;
-        self.primed = false;
-        self.run = 0;
-        self.holding = false;
+        self.plateau = Plateau::default();
     }
 
     pub fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
@@ -185,51 +223,33 @@ impl Ofdm {
         self.ready_at = 0;
         if at > self.cursor {
             self.cursor = at;
-            self.primed = false;
+            self.plateau.primed = false;
         }
         self.state = State::Search;
-        self.run = 0;
-        self.holding = holding;
+        self.plateau.run = 0;
+        self.plateau.holding = holding;
     }
 
     fn search(&mut self) -> bool {
-        while self.cursor + LOOKAHEAD <= self.history.len() {
-            let at = self.cursor;
-            self.slide(at);
-            self.cursor += 1;
-            let plateau = self.energy > MIN_POWER * WINDOW as f32
-                && self.correlation.norm() > PLATEAU * self.energy;
-            if !plateau {
-                self.run = 0;
-                self.holding = false;
-                continue;
-            }
-            if self.holding {
-                continue;
-            }
-            self.run += 1;
-            if self.run == PLATEAU_SAMPLES {
-                self.state = State::Pending((at + 1).saturating_sub(PLATEAU_SAMPLES));
-                return true;
+        let mut plateau = self.plateau;
+        let mut cursor = self.cursor;
+        let mut found = None;
+        while cursor + LOOKAHEAD <= self.history.len() {
+            let at = cursor;
+            plateau.slide(&self.history, at);
+            cursor += 1;
+            if plateau.step() {
+                found = Some((at + 1).saturating_sub(PLATEAU_SAMPLES));
+                break;
             }
         }
-        false
-    }
-
-    fn slide(&mut self, at: usize) {
-        let h = &self.history;
-        if self.primed {
-            let (leaving, entering) = (at - 1, at + WINDOW - 1);
-            self.correlation +=
-                h[entering] * h[entering + SHORT].conj() - h[leaving] * h[leaving + SHORT].conj();
-            self.energy += h[entering + SHORT].norm_sqr() - h[leaving + SHORT].norm_sqr();
-        } else {
-            self.correlation = (0..WINDOW)
-                .map(|k| h[at + k] * h[at + k + SHORT].conj())
-                .sum();
-            self.energy = (0..WINDOW).map(|k| h[at + k + SHORT].norm_sqr()).sum();
-            self.primed = true;
-        }
+        self.plateau = plateau;
+        self.cursor = cursor;
+        let Some(start) = found else {
+            return false;
+        };
+        self.state = State::Pending(start);
+        true
     }
 
     fn sample(&self, origin: usize, cfo: f32, at: usize) -> Complex<f32> {

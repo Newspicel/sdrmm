@@ -24,6 +24,7 @@ pub mod iq_notch;
 pub mod level;
 pub mod linalg;
 pub mod manifold;
+pub mod moving;
 pub mod nco;
 pub mod noise;
 pub mod ofdm;
@@ -89,6 +90,7 @@ pub use iir::{
 pub use interp::{CubicInterpolator, RealInterpolator};
 pub use iq_notch::IqNotch;
 pub use level::{LEVEL_FLOOR_DB, LevelMeter, power_db};
+pub use moving::MovingSum;
 pub use nco::Nco;
 pub use noise::{AutoNotch, ClickRemover, NoiseBlanker, SpectralDenoiser};
 pub use ofdm::{CyclicPrefix, CyclicPrefixSearch};

@@ -1,4 +1,5 @@
 use num_complex::Complex;
+use sdrmm_modem_test_support::ber::rng::Rng;
 
 use super::{Frame, Receiver, Sink, WifiPhy, append_fcs, fcs_ok, transmit};
 
@@ -81,4 +82,68 @@ fn the_frame_check_sequence_is_the_ieee_crc() {
     broken[3] ^= 1;
     assert!(!fcs_ok(&broken));
     assert!(!fcs_ok(&[1, 2]));
+}
+
+/// The wave with a carrier offset, a sample clock off by `ppm` and white noise of `sigma` per
+/// component. A unit chip over `sigma` 0.95 is 0 dB chip SNR.
+fn impaired(
+    wave: &[Complex<f32>],
+    cfo_hz: f64,
+    ppm: f64,
+    sigma: f32,
+    seed: u64,
+) -> Vec<Complex<f32>> {
+    let mut rng = Rng::new(seed);
+    let step = 1.0 + ppm * 1e-6;
+    let len = ((wave.len() - 1) as f64 / step) as usize;
+    (0..len)
+        .map(|n| {
+            let t = n as f64 * step;
+            let index = t.floor() as usize;
+            let weight = (t - index as f64) as f32;
+            let sample = wave[index] * (1.0 - weight) + wave[index + 1] * weight;
+            let turn = std::f64::consts::TAU * cfo_hz * n as f64 / super::RATE_HZ;
+            let (a, b) = rng.normal_pair();
+            sample * Complex::from_polar(1.0, turn as f32)
+                + Complex::new(a as f32, b as f32) * sigma
+        })
+        .collect()
+}
+
+#[test]
+fn a_long_cck_frame_survives_carrier_and_clock_offset() {
+    let frame = mpdu(0x80, 1_500);
+    for phy in [WifiPhy::Cck5m5, WifiPhy::Cck11m] {
+        let clean = transmit::dsss(&frame, phy, false).unwrap();
+        for (cfo_hz, ppm) in [(200_000.0, 100.0), (-200_000.0, -100.0)] {
+            let mut sink = Collect::default();
+            receive(&impaired(&clean, cfo_hz, ppm, 0.1, 7), &mut sink);
+            assert_eq!(
+                sink.frames,
+                vec![(frame.clone(), phy)],
+                "{phy:?} {cfo_hz} Hz {ppm} ppm"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_rate_decodes_near_its_noise_floor() {
+    let frame = mpdu(0x80, 100);
+    for (phy, sigma) in [
+        (WifiPhy::Dsss1m, 0.95),
+        (WifiPhy::Dsss2m, 0.6),
+        (WifiPhy::Cck5m5, 0.6),
+        (WifiPhy::Cck11m, 0.4),
+    ] {
+        let clean = transmit::dsss(&frame, phy, false).unwrap();
+        let decoded = (0..10)
+            .filter(|&seed| {
+                let mut sink = Collect::default();
+                receive(&impaired(&clean, 30_000.0, 20.0, sigma, seed), &mut sink);
+                sink.frames == vec![(frame.clone(), phy)]
+            })
+            .count();
+        assert!(decoded >= 8, "{phy:?}: {decoded} of 10");
+    }
 }
