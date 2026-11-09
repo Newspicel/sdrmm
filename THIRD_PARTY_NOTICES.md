@@ -259,9 +259,9 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [itertools](https://github.com/rust-itertools/itertools) | 0.13.0 | MIT OR Apache-2.0 |
 | [itertools](https://github.com/rust-itertools/itertools) | 0.14.0 | MIT OR Apache-2.0 |
 | [itoa](https://github.com/dtolnay/itoa) | 1.0.18 | MIT OR Apache-2.0 |
-| [jiff](https://github.com/BurntSushi/jiff) | 0.2.38 | Unlicense OR MIT |
-| [jiff-core](https://github.com/BurntSushi/jiff) | 0.1.1 | Unlicense OR MIT |
-| [jiff-static](https://github.com/BurntSushi/jiff) | 0.2.38 | Unlicense OR MIT |
+| [jiff](https://github.com/BurntSushi/jiff) | 0.2.39 | Unlicense OR MIT |
+| [jiff-core](https://github.com/BurntSushi/jiff) | 0.1.2 | Unlicense OR MIT |
+| [jiff-static](https://github.com/BurntSushi/jiff) | 0.2.39 | Unlicense OR MIT |
 | [jiff-tzdb](https://github.com/BurntSushi/jiff) | 0.1.9 | Unlicense OR MIT |
 | [jiff-tzdb-platform](https://github.com/BurntSushi/jiff) | 0.1.3 | Unlicense OR MIT |
 | [jni](https://github.com/jni-rs/jni-rs) | 0.22.4 | MIT OR Apache-2.0 |
@@ -298,7 +298,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [matchers](https://github.com/hawkw/matchers) | 0.2.0 | MIT |
 | [matchit](https://github.com/ibraheemdev/matchit) | 0.8.4 | MIT AND BSD-3-Clause |
 | [md-5](https://github.com/RustCrypto/hashes) | 0.11.0 | MIT OR Apache-2.0 |
-| [mdns-sd](https://github.com/keepsimple1/mdns-sd) | 0.21.6 | Apache-2.0 OR MIT |
+| [mdns-sd](https://github.com/keepsimple1/mdns-sd) | 0.21.7 | Apache-2.0 OR MIT |
 | [memchr](https://github.com/BurntSushi/memchr) | 2.8.3 | Unlicense OR MIT |
 | [memfd](https://github.com/lucab/memfd-rs) | 0.6.6 | MIT OR Apache-2.0 |
 | [memoffset](https://github.com/Gilnaa/memoffset) | 0.9.1 | MIT |
@@ -431,8 +431,8 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [reqwest](https://github.com/seanmonstar/reqwest) | 0.13.5 | MIT OR Apache-2.0 |
 | [rfd](https://github.com/PolyMeilex/rfd) | 0.17.2 | MIT |
 | [ring](https://github.com/briansmith/ring) | 0.17.14 | Apache-2.0 AND ISC |
-| [rmcp](https://github.com/modelcontextprotocol/rust-sdk/) | 3.8.0 | Apache-2.0 |
-| [rmcp-macros](https://github.com/modelcontextprotocol/rust-sdk/) | 3.8.0 | Apache-2.0 |
+| [rmcp](https://github.com/modelcontextprotocol/rust-sdk/) | 3.9.0 | Apache-2.0 |
+| [rmcp-macros](https://github.com/modelcontextprotocol/rust-sdk/) | 3.9.0 | Apache-2.0 |
 | [route_manager](https://github.com/tun-rs/route_manager) | 0.2.17 | Apache-2.0 |
 | [rsqlite-vfs](https://github.com/Spxg/sqlite-wasm-rs) | 0.2.0 | MIT |
 | [rtrb](https://github.com/mgeier/rtrb) | 0.4.1 | MIT OR Apache-2.0 |
@@ -557,7 +557,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [tracing-subscriber](https://github.com/tokio-rs/tracing) | 0.3.23 | MIT |
 | [transpose](https://github.com/ejmahler/transpose) | 0.2.3 | MIT OR Apache-2.0 |
 | [try-lock](https://github.com/seanmonstar/try-lock) | 0.2.5 | MIT |
-| [tun-rs](https://github.com/tun-rs/tun-rs) | 2.8.16 | Apache-2.0 |
+| [tun-rs](https://github.com/tun-rs/tun-rs) | 2.8.18 | Apache-2.0 |
 | [tungstenite](https://github.com/snapview/tungstenite-rs) | 0.29.0 | MIT OR Apache-2.0 |
 | [tungstenite](https://github.com/snapview/tungstenite-rs) | 0.30.0 | MIT OR Apache-2.0 |
 | [typenum](https://github.com/paholg/typenum) | 1.20.1 | MIT OR Apache-2.0 |
@@ -734,8 +734,8 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [@maplibre/mlt](https://github.com/maplibre/maplibre-tile-spec/#readme) | 1.3.0 | (MIT OR Apache-2.0) |
 | [@maplibre/vt-pbf](https://github.com/maplibre/vt-pbf#readme) | 4.3.3 | MIT |
 | [@scarf/scarf](https://github.com/scarf-sh/scarf-js) | 1.4.0 | Apache-2.0 |
-| [@tanstack/query-core](https://tanstack.com/query) | 5.105.0 | MIT |
-| [@tanstack/react-query](https://tanstack.com/query) | 5.105.0 | MIT |
+| @tanstack/query-core | 5.105.3 | Unknown |
+| @tanstack/react-query | 5.105.3 | Unknown |
 | [@types/d3-color](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-color) | 3.1.3 | MIT |
 | [@types/d3-drag](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-drag) | 3.0.7 | MIT |
 | [@types/d3-interpolate](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-interpolate) | 3.0.4 | MIT |
@@ -744,8 +744,8 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [@types/d3-zoom](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-zoom) | 3.0.9 | MIT |
 | [@types/geojson](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/geojson) | 7946.0.16 | MIT |
 | [@wasm-audio-decoders/common](https://github.com/eshaz/wasm-audio-decoders/tree/master/src/common) | 9.0.7 | MIT |
-| [@xyflow/react](https://reactflow.dev) | 12.12.0 | MIT |
-| [@xyflow/system](https://github.com/xyflow/xyflow#readme) | 0.0.83 | MIT |
+| @xyflow/react | 12.12.1 | Unknown |
+| @xyflow/system | 0.0.84 | Unknown |
 | [bidi-js](https://github.com/lojjic/bidi-js#readme) | 1.1.0 | MIT |
 | [classcat](https://github.com/jorgebucaran/classcat#readme) | 5.0.5 | MIT |
 | [d3-color](https://d3js.org/d3-color/) | 3.1.0 | ISC |
@@ -761,7 +761,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [gl-matrix](http://glmatrix.net) | 3.4.4 | MIT |
 | [json-stringify-pretty-compact](https://github.com/lydell/json-stringify-pretty-compact#readme) | 4.0.0 | MIT |
 | [kdbush](https://github.com/mourner/kdbush#readme) | 4.1.0 | ISC |
-| [lucide-react](https://lucide.dev) | 1.63.0 | ISC |
+| lucide-react | 1.67.0 | Unknown |
 | [maplibre-gl](https://maplibre.org/) | 6.16.0 | BSD-3-Clause |
 | [minimist](https://github.com/minimistjs/minimist) | 1.2.8 | MIT |
 | [murmurhash-js](https://github.com/mikolalysenko/murmurhash-js#readme) | 1.0.0 | MIT |
@@ -779,7 +779,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [resolve-protobuf-schema](https://github.com/mafintosh/resolve-protobuf-schema) | 2.1.0 | MIT |
 | [scheduler](https://react.dev/) | 0.28.0 | MIT |
 | [simple-yenc](https://github.com/eshaz/simple-yenc#readme) | 1.0.4 | MIT |
-| [swagger-ui-dist](https://github.com/swagger-api/swagger-ui#readme) | 5.34.0 | Apache-2.0 |
+| swagger-ui-dist | 5.34.1 | Unknown |
 | [tinyqueue](https://github.com/mourner/tinyqueue) | 3.0.0 | ISC |
 | [uqr](https://github.com/unjs/uqr#readme) | 0.1.3 | MIT |
 | [use-sync-external-store](https://github.com/react/react#readme) | 1.7.0 | MIT |
