@@ -579,6 +579,8 @@ fn seed_sample_rates(
     Ok(())
 }
 
+/// Every channel gets a rate written, even one that already reports a rate: some drivers
+/// (SoapyLMS7) report the hardware clock but refuse to stream until `setSampleRate` ran.
 fn seed_channel_rates(
     channels: &[ChannelCapabilities],
     read: impl Fn(usize) -> Result<f64, soapy::Error>,
@@ -586,8 +588,15 @@ fn seed_channel_rates(
 ) -> Result<(), DeviceError> {
     for channel in channels {
         let index = channel.channel as usize;
-        if read(index).is_ok_and(caps::rate_is_set) {
-            continue;
+        if let Some(current) = read(index).ok().filter(|rate| caps::rate_is_set(*rate)) {
+            match write(index, current) {
+                Ok(()) => continue,
+                Err(error) => tracing::warn!(
+                    channel = index,
+                    rate_hz = current,
+                    "soapy: radio refused its own sample rate, using default: {error}"
+                ),
+            }
         }
         let Some(rate) = caps::default_sample_rate(channel) else {
             continue;
@@ -1355,7 +1364,7 @@ mod tests {
     }
 
     #[test]
-    fn a_channel_without_a_rate_is_given_one_before_it_streams() {
+    fn every_channel_has_a_rate_written_before_it_streams() {
         let channel = |index: u32| ChannelCapabilities {
             channel: index,
             sample_rate_ranges: vec![sdrmm_wire::Range {
@@ -1376,7 +1385,30 @@ mod tests {
             },
         )
         .expect("seeded");
-        assert_eq!(written, vec![(0, 2_048_000.0)]);
+        assert_eq!(written, vec![(0, 2_048_000.0), (1, 8e6)]);
+    }
+
+    #[test]
+    fn a_reported_rate_the_radio_refuses_falls_back_to_the_default() {
+        let channel = ChannelCapabilities {
+            sample_rates: vec![2.4e6],
+            ..ChannelCapabilities::default()
+        };
+        let mut written = Vec::new();
+        seed_channel_rates(
+            &[channel],
+            |_| Ok(30.72e6),
+            |index, rate| {
+                written.push((index, rate));
+                if rate == 30.72e6 {
+                    Err(error(ErrorCode::Other))
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .expect("seeded");
+        assert_eq!(written, vec![(0, 30.72e6), (0, 2.4e6)]);
     }
 
     #[test]
