@@ -11,6 +11,10 @@ const SYNC_SPACING: f64 = 8.0;
 const REFINEMENTS: usize = 3;
 const PAYLOAD_DELAY_SYMBOLS: f64 = 2.25;
 const LOOKAHEAD_CHIPS: f64 = 2.0;
+const PLAUSIBLE_MARGIN: f32 = 2.5;
+const MAX_STEP_BINS: f64 = 3.0;
+/// A refinement that moves the grid by less than this, in chips and in bins, ends the search.
+const SETTLED: f64 = 0.05;
 
 pub(crate) struct Candidate {
     pub up_bins: f64,
@@ -34,31 +38,37 @@ struct Grid {
 struct Reading {
     bins: f64,
     ratio: f32,
+    spread: f32,
     energy: f32,
     noise: f32,
 }
 
-fn read(
-    tools: &mut Tools,
-    ring: &Ring,
-    settings: &Settings,
-    start_chip: f64,
-    cfo_bins: f64,
-    slope: Slope,
-) -> Reading {
+fn extract(tools: &mut Tools, ring: &Ring, settings: &Settings, start_chip: f64, cfo_bins: f64) {
     let window = Window {
         start_chip,
         cfo_bins,
         inverted: settings.inverted,
     };
     tools.extractor.extract(ring, window, &mut tools.samples);
+}
+
+fn dechirped(tools: &mut Tools, slope: Slope) -> Reading {
     tools.dechirper.transform(&tools.samples, slope);
-    let peak = tools.dechirper.peak();
+    let dechirper = &tools.dechirper;
+    let peak = dechirper.peak();
+    let energies = dechirper.energies();
+    let n = energies.len();
+    let around = energies[(peak.bin + n - 1) % n] + peak.energy + energies[(peak.bin + 1) % n];
     Reading {
-        bins: peak.bin as f64 + tools.dechirper.fraction(peak.bin),
+        bins: peak.bin as f64 + dechirper.fraction(peak.bin),
         ratio: peak.ratio(),
+        spread: if peak.mean > 0.0 {
+            around / peak.mean
+        } else {
+            0.0
+        },
         energy: peak.energy,
-        noise: tools.dechirper.median_noise(),
+        noise: dechirper.noise(peak.bin),
     }
 }
 
@@ -68,38 +78,67 @@ struct Sfd {
     down: [Reading; 2],
 }
 
-fn readings(tools: &mut Tools, ring: &Ring, settings: &Settings, grid: Grid) -> Sfd {
+fn at_offset(
+    tools: &mut Tools,
+    ring: &Ring,
+    settings: &Settings,
+    grid: Grid,
+    offset: f64,
+    slope: Slope,
+) -> Reading {
     let n = (1u64 << settings.spreading_factor) as f64;
-    let mut at = |offset: f64, slope| {
-        read(
-            tools,
-            ring,
-            settings,
-            grid.sfd + offset * n,
-            grid.cfo_bins,
-            slope,
-        )
-    };
-    Sfd {
-        preamble: [at(-4.0, Slope::Up), at(-3.0, Slope::Up)],
-        sync: [at(-2.0, Slope::Up), at(-1.0, Slope::Up)],
-        down: [at(0.0, Slope::Down), at(1.0, Slope::Down)],
+    extract(tools, ring, settings, grid.sfd + offset * n, grid.cfo_bins);
+    dechirped(tools, slope)
+}
+
+const AROUND: usize = 5;
+
+/// Both slopes read on the five symbols around the coarse SFD, from two before it to two after.
+struct Boundary {
+    up: [Reading; AROUND],
+    down: [Reading; AROUND],
+}
+
+impl Boundary {
+    fn read(tools: &mut Tools, ring: &Ring, settings: &Settings, grid: Grid) -> Self {
+        let n = (1u64 << settings.spreading_factor) as f64;
+        let mut up = [Reading::default(); AROUND];
+        let mut down = [Reading::default(); AROUND];
+        for (k, (up, down)) in up.iter_mut().zip(&mut down).enumerate() {
+            let offset = k as f64 - (AROUND / 2) as f64;
+            extract(tools, ring, settings, grid.sfd + offset * n, grid.cfo_bins);
+            *up = dechirped(tools, Slope::Up);
+            *down = dechirped(tools, Slope::Down);
+        }
+        Self { up, down }
+    }
+
+    /// How well an SFD at symbol `at` explains the readings: the last sync symbol rises, both
+    /// downchirps fall, and each of the three reads weak the other way. A neighbouring guess
+    /// swaps a strong reading for a weak one on both sides of the sum.
+    fn evidence(&self, at: usize) -> f32 {
+        let rising = self.up[at - 1].spread - self.down[at - 1].spread;
+        let falling = |k: usize| self.down[k].spread - self.up[k].spread;
+        rising + falling(at) + falling(at + 1)
     }
 }
 
 impl Sfd {
     fn score(&self) -> f32 {
-        self.preamble
-            .iter()
-            .chain(&self.sync)
-            .chain(&self.down)
-            .map(|r| r.ratio)
-            .sum()
+        self.readings().map(|r| r.ratio).sum()
     }
 
+    /// Moves the grid so preamble and downchirps land on bin zero. A reading whose peak sits
+    /// far from zero is a noise peak at low SNR, not an offset, and is left out.
     fn refine(&self, grid: Grid, n: f64) -> Grid {
-        let mean =
-            |readings: &[Reading; 2]| readings.iter().map(|r| wrap(r.bins, n)).sum::<f64>() / 2.0;
+        let mean = |readings: &[Reading; 2]| {
+            let (sum, count) = readings
+                .iter()
+                .map(|r| wrap(r.bins, n))
+                .filter(|bins| bins.abs() <= MAX_STEP_BINS)
+                .fold((0.0, 0.0), |(sum, count), bins| (sum + bins, count + 1.0));
+            if count > 0.0 { sum / count } else { 0.0 }
+        };
         let up = mean(&self.preamble);
         let down = mean(&self.down);
         Grid {
@@ -124,13 +163,22 @@ impl Sfd {
         }
     }
 
-    fn valid(&self, chips: usize) -> bool {
+    fn readings(&self) -> impl Iterator<Item = &Reading> {
+        self.preamble.iter().chain(&self.sync).chain(&self.down)
+    }
+
+    /// Every reading stands clear of the noise on its own.
+    fn confident(&self, chips: usize) -> bool {
         let limit = threshold(chips);
-        self.preamble
-            .iter()
-            .chain(&self.sync)
-            .chain(&self.down)
-            .all(|r| r.ratio >= limit)
+        self.readings().all(|r| r.ratio >= limit)
+    }
+
+    /// Together the readings stand clear of what noise alone scores, though some may not; such a
+    /// lock is kept only if its CRC holds.
+    fn plausible(&self, chips: usize) -> bool {
+        let ln = (chips as f32).ln();
+        let floor = ln + ln.ln() + PLAUSIBLE_MARGIN;
+        self.score() >= floor * self.readings().count() as f32
     }
 }
 
@@ -160,24 +208,49 @@ pub(crate) fn lock(
     if latest.last_wide_index(chips) >= ring.end() {
         return Outcome::Waiting;
     }
-    let Some((mut grid, mut sfd)) = [-1.0, 0.0, 1.0]
-        .into_iter()
-        .map(|shift| {
-            let grid = Grid {
-                sfd: boundary.sfd + shift * n,
-                ..boundary
-            };
-            (grid, readings(tools, ring, settings, grid))
-        })
-        .max_by(|a, b| a.1.score().total_cmp(&b.1.score()))
+    let around = Boundary::read(tools, ring, settings, boundary);
+    let Some(at) =
+        (1..AROUND - 1).max_by(|&a, &b| around.evidence(a).total_cmp(&around.evidence(b)))
     else {
         return Outcome::Rejected;
     };
+    let mut grid = Grid {
+        sfd: boundary.sfd + (at as f64 - (AROUND / 2) as f64) * n,
+        ..boundary
+    };
+    let mut sfd = Sfd {
+        preamble: [
+            at_offset(tools, ring, settings, grid, -4.0, Slope::Up),
+            at_offset(tools, ring, settings, grid, -3.0, Slope::Up),
+        ],
+        sync: [
+            at_offset(tools, ring, settings, grid, -2.0, Slope::Up),
+            around.up[at - 1],
+        ],
+        down: [around.down[at], around.down[at + 1]],
+    };
     for _ in 0..REFINEMENTS {
-        grid = sfd.refine(grid, n);
-        sfd = readings(tools, ring, settings, grid);
+        let next = sfd.refine(grid, n);
+        let settled = (next.sfd - grid.sfd).abs() < SETTLED
+            && (next.cfo_bins - grid.cfo_bins).abs() < SETTLED;
+        grid = next;
+        if settled {
+            break;
+        }
+        sfd.preamble = [
+            at_offset(tools, ring, settings, grid, -4.0, Slope::Up),
+            at_offset(tools, ring, settings, grid, -3.0, Slope::Up),
+        ];
+        sfd.down = [
+            at_offset(tools, ring, settings, grid, 0.0, Slope::Down),
+            at_offset(tools, ring, settings, grid, 1.0, Slope::Down),
+        ];
     }
-    if !sfd.valid(chips) {
+    sfd.sync = [
+        at_offset(tools, ring, settings, grid, -2.0, Slope::Up),
+        at_offset(tools, ring, settings, grid, -1.0, Slope::Up),
+    ];
+    if !sfd.plausible(chips) {
         return Outcome::Rejected;
     }
     let statistics = sfd.statistics();
@@ -189,5 +262,6 @@ pub(crate) fn lock(
         sfd.sync_word(n),
         statistics,
         10.0 * snr.max(f32::MIN_POSITIVE).log10(),
+        sfd.confident(chips),
     )))
 }

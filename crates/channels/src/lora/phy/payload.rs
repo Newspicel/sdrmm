@@ -5,8 +5,8 @@ use super::{
     Frame,
     chirp::Slope,
     code::{
-        HEADER_NIBBLES, HEADER_PARITY_BITS, HEADER_SYMBOLS, Header, Shape, dewhiten, diagonal,
-        low_data_rate, payload_crc, received_crc,
+        HEADER_NIBBLES, HEADER_PARITY_BITS, HEADER_SYMBOLS, Header, Shape, block_symbol, dewhiten,
+        diagonal, hamming_encode, low_data_rate, payload_crc, received_crc,
     },
     filter::Window,
     receiver::{Settings, Tools},
@@ -16,6 +16,13 @@ use super::{
 
 const TRACK_RATIO: f32 = 10.0;
 const CFO_GAIN: f64 = 0.05;
+const TIMING_GAIN: f64 = 0.3;
+const RATE_GAIN: f64 = 0.02;
+/// Neither side of the wrap may be shorter than this share of the symbol for its phase to count.
+const WRAP_MARGIN: usize = 8;
+const ABSENT_SHARE: f32 = 0.25;
+const ABSENT_LIMIT: usize = 2;
+pub(crate) const MAX_COLUMNS: usize = 8;
 
 #[must_use]
 pub(crate) fn max_symbols(spreading_factor: u8) -> usize {
@@ -31,6 +38,7 @@ pub(crate) fn max_symbols(spreading_factor: u8) -> usize {
 struct Timing {
     offset: f64,
     drift: f64,
+    rate: f64,
 }
 
 impl Timing {
@@ -41,11 +49,22 @@ impl Timing {
         } else {
             0.0
         };
-        Self { offset: 0.0, drift }
+        Self {
+            offset: 0.0,
+            drift,
+            rate: 0.0,
+        }
     }
 
     fn advance(&mut self) {
-        self.offset -= self.drift;
+        self.offset += self.rate - self.drift;
+    }
+
+    /// A second-order loop on the measured lateness in chips: the rate term follows a sample
+    /// clock that differs from the sender's, so a long frame keeps its windows on the symbols.
+    fn observe(&mut self, late: f64) {
+        self.offset += TIMING_GAIN * late;
+        self.rate += RATE_GAIN * late;
     }
 }
 
@@ -67,6 +86,7 @@ pub(crate) struct Lock {
     plan: Option<Plan>,
     timing: Timing,
     corrected: u32,
+    confident: bool,
 }
 
 pub(crate) struct Finished {
@@ -102,6 +122,7 @@ impl Lock {
         sync_word: u8,
         statistics: Statistics,
         snr_db: f32,
+        confident: bool,
     ) -> Self {
         let low_data_rate = low_data_rate(settings.spreading_factor, settings.bandwidth_hz);
         Self {
@@ -115,7 +136,15 @@ impl Lock {
             plan: implicit_plan(settings, low_data_rate),
             timing: Timing::from_clock(settings, cfo_bins),
             corrected: 0,
+            confident,
         }
+    }
+
+    /// Whether the SFD stood clear in every reading. A lock that only cleared the noise in sum
+    /// reports its frame only when the CRC confirms it.
+    #[must_use]
+    pub(crate) fn confident(&self) -> bool {
+        self.confident
     }
 
     fn chips(settings: &Settings) -> usize {
@@ -185,9 +214,19 @@ impl Lock {
             reduced,
             &mut tools.llrs[start..start + bits],
         );
+        self.keep_tail(tools);
         self.timing.advance();
         if peak.energy > TRACK_RATIO * noise {
-            self.cfo_bins += CFO_GAIN * tools.dechirper.fraction(peak.bin);
+            let fraction = tools.dechirper.fraction(peak.bin);
+            self.cfo_bins += CFO_GAIN * fraction;
+            let chips = Self::chips(settings);
+            let split = (chips - peak.bin) % chips;
+            let margin = chips / WRAP_MARGIN;
+            if (margin..chips - margin).contains(&split) {
+                let tone = peak.bin as f64 + fraction;
+                let late = tools.dechirper.lateness(&tools.samples, tone, split);
+                self.timing.observe(late);
+            }
         }
     }
 
@@ -243,25 +282,86 @@ impl Lock {
             self.decode_block(&tools.llrs, symbol, plan.shape.rows(), parity, &mut nibbles);
             symbol += plan.shape.columns();
         }
-        if settings.implicit_header.is_none() {
-            nibbles.drain(..HEADER_NIBBLES.min(nibbles.len()));
-        }
         nibbles
     }
 
     fn finish(&mut self, settings: &Settings, tools: &Tools, plan: Plan) -> Finished {
-        let nibbles = self.nibbles(settings, tools, plan);
+        let decoded = self.nibbles(settings, tools, plan);
+        let skip = if settings.implicit_header.is_none() {
+            HEADER_NIBBLES.min(decoded.len())
+        } else {
+            0
+        };
+        let nibbles = &decoded[skip..];
         let length = usize::from(plan.header.length);
-        let payload = dewhiten(&nibbles, length);
+        let payload = dewhiten(nibbles, length);
         let integrity = if !plan.header.crc {
             LoraIntegrity::NoCrc
-        } else if received_crc(&nibbles, length) == Some(payload_crc(&payload)) {
+        } else if received_crc(nibbles, length) == Some(payload_crc(&payload))
+            && self.tail_holds(settings, tools, plan, &decoded)
+        {
             LoraIntegrity::CrcOk
         } else {
             LoraIntegrity::CrcFailed
         };
         let frame = self.frame(settings, plan.header.coding_rate, integrity, payload);
         self.finished(settings, frame)
+    }
+
+    fn tail_start(plan: Plan) -> Option<usize> {
+        (plan.total > HEADER_SYMBOLS).then(|| plan.total - plan.shape.columns())
+    }
+
+    fn keep_tail(&self, tools: &mut Tools) {
+        let Some(start) = self.plan.and_then(Self::tail_start) else {
+            return;
+        };
+        let Some(column) = self.symbol.checked_sub(start) else {
+            return;
+        };
+        let energies = tools.dechirper.energies();
+        let chips = energies.len();
+        if let Some(slot) = tools.tail.get_mut(column * chips..(column + 1) * chips) {
+            slot.copy_from_slice(energies);
+        }
+    }
+
+    /// Whether the last block, encoded again from what was decoded, lands on symbols that hold
+    /// signal energy. The CRC only XORs the last two payload bytes into itself and they share
+    /// this block with it, so two symbol errors here pass the CRC far more often than 1 in 65536.
+    fn tail_holds(&self, settings: &Settings, tools: &Tools, plan: Plan, decoded: &[u8]) -> bool {
+        let rows = plan.shape.rows();
+        let columns = plan.shape.columns();
+        let (Some(_), Some(first)) = (Self::tail_start(plan), decoded.len().checked_sub(rows))
+        else {
+            return true;
+        };
+        let parity = plan.shape.coding_rate.parity_bits();
+        let mut codewords = [0u8; MAX_BITS];
+        for (codeword, &nibble) in codewords.iter_mut().zip(&decoded[first..]) {
+            *codeword = hamming_encode(nibble, parity);
+        }
+        let chips = Self::chips(settings);
+        let floor = ABSENT_SHARE * self.statistics.amplitude * self.statistics.amplitude;
+        let reduced = plan.shape.low_data_rate;
+        let absent = (0..columns)
+            .filter(|&column| {
+                let bin = usize::from(block_symbol(
+                    &codewords[..rows],
+                    columns,
+                    column,
+                    reduced,
+                    settings.spreading_factor,
+                ));
+                let energies = &tools.tail[column * chips..(column + 1) * chips];
+                let reach = if reduced { 1 } else { 0 };
+                let energy = (bin + chips - reach..=bin + chips + reach)
+                    .map(|k| energies[k % chips])
+                    .fold(0.0, f32::max);
+                energy < floor
+            })
+            .count();
+        absent < ABSENT_LIMIT
     }
 
     fn failed(&self, settings: &Settings) -> Finished {

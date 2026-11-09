@@ -1,4 +1,5 @@
 use sdrmm_dsp::crc16_msb;
+use sdrmm_modem::constellation::tables::gray_inverse;
 
 use crate::lora::LoraCodingRate;
 
@@ -174,13 +175,32 @@ pub(crate) fn received_crc(nibbles: &[u8], length: usize) -> Option<u16> {
     )
 }
 
+/// The symbol, as its FFT bin, that column `symbol` of an interleaved block of `codewords`
+/// becomes.
+#[must_use]
+pub(crate) fn block_symbol(
+    codewords: &[u8],
+    columns: usize,
+    symbol: usize,
+    reduced: bool,
+    sf: u8,
+) -> u16 {
+    let rows = codewords.len();
+    let value = (0..rows).fold(0u16, |acc, j| {
+        let codeword = codewords[diagonal(j, symbol, rows)];
+        let set = codeword_bit(codeword, columns, symbol);
+        acc | (u16::from(set) << (rows - 1 - j))
+    });
+    let symbol = gray_inverse(u32::from(value)) as u16;
+    let shifted = if reduced { symbol << 2 } else { symbol };
+    (shifted + 1) & ((1u16 << sf) - 1)
+}
+
 #[cfg(any(test, feature = "synth"))]
 pub(crate) mod encode {
-    use sdrmm_modem::constellation::tables::gray_inverse;
-
     use super::{
-        CRC_NIBBLES, HEADER_PARITY_BITS, Header, Shape, WHITENING, codeword_bit, codeword_len,
-        diagonal, hamming_encode, payload_crc,
+        CRC_NIBBLES, HEADER_PARITY_BITS, Header, Shape, WHITENING, block_symbol, codeword_len,
+        hamming_encode, payload_crc,
     };
 
     #[must_use]
@@ -206,16 +226,7 @@ pub(crate) mod encode {
         sf: u8,
     ) -> Vec<u16> {
         (0..columns)
-            .map(|symbol| {
-                let value = (0..rows).fold(0u16, |acc, j| {
-                    let codeword = codewords[diagonal(j, symbol, rows)];
-                    let set = codeword_bit(codeword, columns, symbol);
-                    acc | (u16::from(set) << (rows - 1 - j))
-                });
-                let symbol = gray_inverse(u32::from(value)) as u16;
-                let shifted = if reduced { symbol << 2 } else { symbol };
-                (shifted + 1) & ((1u16 << sf) - 1)
-            })
+            .map(|symbol| block_symbol(&codewords[..rows], columns, symbol, reduced, sf))
             .collect()
     }
 

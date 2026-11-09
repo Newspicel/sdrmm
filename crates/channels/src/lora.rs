@@ -170,7 +170,6 @@ use crate::{
 };
 
 pub(crate) const OVERSAMPLING: f64 = 2.0;
-const PASSBAND: f64 = 0.75;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
     let bandwidth = LoraParams::default().bandwidth.hz();
@@ -207,8 +206,10 @@ pub(crate) fn occupied_band(params: &LoraParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &LoraParams) -> ChannelFilter {
-    datalink::channel_filter(input_rate(params), params.bandwidth.hz() * PASSBAND)
+/// None: the decoder band-limits both of its streams itself, a half-band for the search and a
+/// windowed sinc for every symbol it reads, so a filter here would only cost time.
+pub(crate) fn channel_filter(_params: &LoraParams) -> ChannelFilter {
+    ChannelFilter::Passthrough
 }
 
 fn layout(params: &LoraParams) -> Layout {

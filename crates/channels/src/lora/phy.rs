@@ -1,6 +1,7 @@
 mod align;
 mod chirp;
 pub(crate) mod code;
+mod detect;
 mod filter;
 mod payload;
 mod receiver;
@@ -18,13 +19,14 @@ use crate::lora::LoraIq;
 use num_complex::Complex;
 
 use self::{
-    filter::{HALF_TAPS, Prototype},
+    filter::HALF_TAPS,
     receiver::{Receiver, Settings},
     ring::Front,
 };
 
 const WIDE_SYMBOLS: usize = 16;
-const NARROW_SYMBOLS: usize = 4;
+/// Symbols the narrow stream keeps: enough to search again from an SFD whose header failed.
+const NARROW_SYMBOLS: usize = 16;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Layout {
@@ -87,7 +89,6 @@ impl Decoder {
             front: Front::new(
                 WIDE_SYMBOLS * 2 * chips + 2 * chunk + 4 * HALF_TAPS,
                 NARROW_SYMBOLS * chips + chunk,
-                &Prototype::new(),
             ),
             receivers,
             chunk,

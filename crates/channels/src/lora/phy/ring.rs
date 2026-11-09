@@ -1,6 +1,10 @@
 use num_complex::Complex;
+use sdrmm_dsp::{Decimator, design_halfband};
 
-use super::filter::{HALF_TAPS, Prototype};
+const ZERO: Complex<f32> = Complex::new(0.0, 0.0);
+const HALFBAND_TAPS: usize = 47;
+const HALFBAND_ATTENUATION_DB: f64 = 60.0;
+const HALFBAND_REACH: usize = HALFBAND_TAPS / 2;
 
 pub(crate) struct Ring {
     samples: Vec<Complex<f32>>,
@@ -13,7 +17,7 @@ impl Ring {
     pub(crate) fn new(capacity: usize) -> Self {
         let capacity = capacity.next_power_of_two();
         Self {
-            samples: vec![Complex::new(0.0, 0.0); capacity],
+            samples: vec![ZERO; capacity],
             mask: capacity - 1,
             end: 0,
         }
@@ -29,40 +33,69 @@ impl Ring {
         self.end.saturating_sub(self.samples.len() as u64)
     }
 
-    pub(crate) fn push(&mut self, sample: Complex<f32>) {
-        self.samples[self.end as usize & self.mask] = sample;
-        self.end += 1;
+    pub(crate) fn extend(&mut self, chunk: &[Complex<f32>]) {
+        let keep = chunk.len().min(self.samples.len());
+        let skipped = chunk.len() - keep;
+        let at = (self.end as usize + skipped) & self.mask;
+        let (first, second) = chunk[skipped..].split_at(keep.min(self.samples.len() - at));
+        self.samples[at..at + first.len()].copy_from_slice(first);
+        self.samples[..second.len()].copy_from_slice(second);
+        self.end += chunk.len() as u64;
     }
 
+    #[cfg(test)]
     #[must_use]
     pub(crate) fn at(&self, index: i64) -> Complex<f32> {
-        if index < 0 || (index as u64) < self.start() || index as u64 >= self.end {
-            Complex::new(0.0, 0.0)
-        } else {
-            self.samples[index as usize & self.mask]
-        }
+        let mut sample = [ZERO];
+        self.copy(index, &mut sample);
+        sample[0]
     }
 
-    pub(crate) fn copy(&self, start: u64, out: &mut [Complex<f32>]) {
-        for (k, sample) in out.iter_mut().enumerate() {
-            *sample = self.at((start + k as u64) as i64);
+    /// Copies the samples from `start` on, with zeros where the ring holds none.
+    pub(crate) fn copy(&self, start: i64, out: &mut [Complex<f32>]) {
+        let end = start.saturating_add(out.len() as i64);
+        let from = start.max(self.start() as i64);
+        let to = end.min(self.end as i64);
+        if from >= to {
+            out.fill(ZERO);
+            return;
         }
+        let (head, rest) = out.split_at_mut((from - start) as usize);
+        let (body, tail) = rest.split_at_mut((to - from) as usize);
+        head.fill(ZERO);
+        tail.fill(ZERO);
+        let at = from as usize & self.mask;
+        let (first, second) = body.split_at_mut(body.len().min(self.samples.len() - at));
+        first.copy_from_slice(&self.samples[at..at + first.len()]);
+        second.copy_from_slice(&self.samples[..second.len()]);
     }
 }
 
+/// The wide stream at two samples per chip and a half-band copy at one sample per chip, aligned
+/// so that narrow sample `j` is centred on wide sample `2j`.
 pub(crate) struct Front {
     wide: Ring,
     narrow: Ring,
-    taps: Vec<f32>,
+    halfband: Decimator,
+    decimated: Vec<Complex<f32>>,
+    unborn: usize,
 }
 
 impl Front {
+    /// The half-band's centre trails its newest input by an odd count, so one leading zero puts
+    /// every output on an even wide sample; the outputs centred before wide sample 0 are dropped.
     #[must_use]
-    pub(crate) fn new(wide: usize, narrow: usize, prototype: &Prototype) -> Self {
+    pub(crate) fn new(wide: usize, narrow: usize) -> Self {
+        let mut halfband =
+            Decimator::new(&design_halfband(HALFBAND_TAPS, HALFBAND_ATTENUATION_DB), 2);
+        let mut decimated = Vec::new();
+        halfband.process(&[ZERO], &mut decimated);
         Self {
             wide: Ring::new(wide),
             narrow: Ring::new(narrow),
-            taps: prototype.centred(),
+            halfband,
+            unborn: HALFBAND_REACH.div_ceil(2) - decimated.len(),
+            decimated,
         }
     }
 
@@ -77,20 +110,11 @@ impl Front {
     }
 
     pub(crate) fn push(&mut self, chunk: &[Complex<f32>]) {
-        for &sample in chunk {
-            self.wide.push(sample);
-        }
-        while 2 * self.narrow.end() + HALF_TAPS as u64 <= self.wide.end().saturating_sub(1) {
-            let centre = 2 * self.narrow.end() as i64;
-            let value = self
-                .taps
-                .iter()
-                .enumerate()
-                .fold(Complex::new(0.0, 0.0), |acc, (k, &tap)| {
-                    acc + self.wide.at(centre + k as i64 - HALF_TAPS as i64) * tap
-                });
-            self.narrow.push(value);
-        }
+        self.wide.extend(chunk);
+        self.halfband.process(chunk, &mut self.decimated);
+        let skip = self.unborn.min(self.decimated.len());
+        self.unborn -= skip;
+        self.narrow.extend(&self.decimated[skip..]);
     }
 }
 
@@ -102,7 +126,7 @@ mod tests {
     fn a_ring_keeps_its_latest_samples_and_zeroes_the_rest() {
         let mut ring = Ring::new(4);
         for k in 0..6 {
-            ring.push(Complex::new(k as f32, 0.0));
+            ring.extend(&[Complex::new(k as f32, 0.0)]);
         }
         assert_eq!(ring.start(), 2);
         assert_eq!(ring.at(1), Complex::new(0.0, 0.0));
@@ -111,14 +135,38 @@ mod tests {
     }
 
     #[test]
+    fn a_copy_across_the_wrap_matches_sample_by_sample_reads() {
+        let mut ring = Ring::new(8);
+        let data: Vec<_> = (0..13).map(|k| Complex::new(k as f32, -k as f32)).collect();
+        ring.extend(&data[..3]);
+        ring.extend(&data[3..]);
+        let mut out = [ZERO; 12];
+        ring.copy(2, &mut out);
+        for (k, sample) in out.iter().enumerate() {
+            let index = 2 + k;
+            let expected = if (5..13).contains(&index) {
+                data[index]
+            } else {
+                ZERO
+            };
+            assert_eq!(*sample, expected, "{index}");
+        }
+        ring.extend(&data);
+        assert_eq!(ring.at(25), data[12]);
+        assert_eq!(ring.at(17), Complex::new(0.0, 0.0));
+    }
+
+    #[test]
     fn the_narrow_stream_takes_every_other_sample_of_a_slow_tone() {
-        let mut front = Front::new(1024, 512, &Prototype::new());
+        let mut front = Front::new(1024, 512);
         let tone: Vec<_> = (0..800)
             .map(|k| Complex::from_polar(1.0, 0.05 * k as f32))
             .collect();
-        front.push(&tone);
+        for piece in tone.chunks(37) {
+            front.push(piece);
+        }
         let narrow = front.narrow();
-        assert!(narrow.end() > 300);
+        assert_eq!(narrow.end(), (800 - 1 - HALFBAND_REACH as u64) / 2 + 1);
         for j in 50..300 {
             let expected = tone[2 * j];
             assert!((narrow.at(j as i64) - expected).norm() < 0.01, "{j}");

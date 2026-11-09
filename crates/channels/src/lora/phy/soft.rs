@@ -27,7 +27,6 @@ fn ln_i0(x: f32) -> f32 {
 }
 
 pub(crate) struct Demapper {
-    likelihoods: Vec<f32>,
     values: Vec<f32>,
 }
 
@@ -41,11 +40,13 @@ impl Demapper {
     #[must_use]
     pub(crate) fn new(chips: usize) -> Self {
         Self {
-            likelihoods: vec![0.0; chips],
             values: vec![0.0; chips],
         }
     }
 
+    /// Max-log bit LLRs from one symbol's bin energies. The likelihood `ln I0` of a bin grows
+    /// with its energy, so the strongest energy on each side of a bit decides it and only those
+    /// few winners need the logarithm.
     pub(crate) fn llrs(
         &mut self,
         energies: &[f32],
@@ -54,30 +55,29 @@ impl Demapper {
         out: &mut [f32],
     ) {
         let n = energies.len();
-        let gain = 2.0 * statistics.amplitude / statistics.noise;
-        for (likelihood, &energy) in self.likelihoods.iter_mut().zip(energies) {
-            *likelihood = ln_i0(gain * energy.sqrt());
-        }
         let count = if reduced { n / 4 } else { n };
         for (m, value) in self.values[..count].iter_mut().enumerate() {
             *value = if reduced {
                 let centre = 4 * m + 1;
-                self.likelihoods[(centre + n - 1) % n]
-                    .max(self.likelihoods[centre % n])
-                    .max(self.likelihoods[(centre + 1) % n])
+                energies[(centre + n - 1) % n]
+                    .max(energies[centre % n])
+                    .max(energies[(centre + 1) % n])
             } else {
-                self.likelihoods[(m + 1) % n]
+                energies[(m + 1) % n]
             };
         }
-        bit_llrs(&self.values[..count], out);
+        let gain = 2.0 * statistics.amplitude / statistics.noise;
+        bit_llrs(&self.values[..count], out, |energy| {
+            ln_i0(gain * energy.sqrt())
+        });
     }
 }
 
-fn bit_llrs(values: &[f32], out: &mut [f32]) {
+fn bit_llrs(energies: &[f32], out: &mut [f32], likelihood: impl Fn(f32) -> f32) {
     let bits = out.len();
     let mut ones = [f32::MIN; MAX_BITS];
     let mut zeros = [f32::MIN; MAX_BITS];
-    for (m, &value) in values.iter().enumerate() {
+    for (m, &energy) in energies.iter().enumerate() {
         let data = gray(m as u32);
         for b in 0..bits {
             let slot = if (data >> b) & 1 == 1 {
@@ -85,12 +85,12 @@ fn bit_llrs(values: &[f32], out: &mut [f32]) {
             } else {
                 &mut zeros[b]
             };
-            *slot = slot.max(value);
+            *slot = slot.max(energy);
         }
     }
     for (j, llr) in out.iter_mut().enumerate() {
         let b = bits - 1 - j;
-        *llr = ones[b] - zeros[b];
+        *llr = likelihood(ones[b].max(0.0)) - likelihood(zeros[b].max(0.0));
     }
 }
 

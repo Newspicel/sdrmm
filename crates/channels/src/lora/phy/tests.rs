@@ -275,7 +275,7 @@ fn inverted_iq_needs_the_inverted_receiver() {
 }
 
 #[test]
-fn a_long_slow_frame_rides_out_clock_drift() {
+fn a_long_slow_frame_rides_out_clock_drift_with_or_without_the_carrier() {
     let waveform = LoraWaveform {
         coding_rate: LoraCodingRate::Cr48,
         ..waveform(12, 125_000.0)
@@ -291,15 +291,12 @@ fn a_long_slow_frame_rides_out_clock_drift() {
     scene.add(&drifted, &payload, 0.0, carrier_hz * crystal);
     scene.pause(0.1);
     let noisy = scene.noise(-10.0, 5);
-    assert!(
-        decode(&layout(125_000.0, 12..=12), &noisy.iq)
-            .iter()
-            .all(|f| f.payload != payload)
-    );
-    let frames = decode_at(&layout(125_000.0, 12..=12), carrier_hz, &noisy.iq);
-    assert_eq!(frames.len(), 1);
-    assert_eq!(frames[0].payload, payload);
-    assert_eq!(frames[0].integrity, LoraIntegrity::CrcOk);
+    for carrier in [0.0, carrier_hz] {
+        let frames = decode_at(&layout(125_000.0, 12..=12), carrier, &noisy.iq);
+        assert_eq!(frames.len(), 1, "carrier {carrier}");
+        assert_eq!(frames[0].payload, payload);
+        assert_eq!(frames[0].integrity, LoraIntegrity::CrcOk);
+    }
 }
 
 #[test]

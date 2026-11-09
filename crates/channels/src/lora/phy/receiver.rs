@@ -1,19 +1,24 @@
-use crate::lora::LoraImplicitHeader;
+use crate::lora::{LoraImplicitHeader, LoraIntegrity};
 use num_complex::Complex;
 
 use super::{
     Frame,
     align::{self, Candidate},
-    chirp::{Dechirper, Slope, circular_distance, wrap},
+    chirp::{Dechirper, Slope, wrap},
+    detect::{Accumulator, DETECT_WINDOWS, DownHistory, Levels, STEADY_WINDOWS, Sighting},
     filter::Extractor,
-    payload::{Lock, max_symbols},
+    payload::{Lock, MAX_COLUMNS, max_symbols},
     ring::Front,
     soft::{Demapper, MAX_BITS},
 };
 
-const DETECT_RUN: u32 = 4;
-const MAX_MISSES: u32 = 3;
 const MAX_UPCHIRPS: u32 = 256;
+/// Windows without preamble energy after which the SFD must have passed: the partial window,
+/// both sync symbols and the two and a quarter downchirps.
+const QUIET_WINDOWS: u32 = 5;
+/// Quiet windows after which the preamble cannot resume: both sync symbols have passed, so the
+/// bin lighting up again is a payload symbol or noise.
+const PREAMBLE_OVER: u32 = 2;
 const MARGIN: f32 = 4.0;
 
 #[must_use]
@@ -25,33 +30,15 @@ pub(crate) fn threshold(chips: usize) -> f32 {
 struct Preamble {
     bin: usize,
     previous: Complex<f32>,
+    previous_start: u64,
     progression: Complex<f64>,
     interpolated: f64,
     upchirps: u32,
-    misses: u32,
+    quiet: u32,
     downchirp: Option<Sighting>,
 }
 
-#[derive(Clone, Copy)]
-struct Sighting {
-    bins: f64,
-    ratio: f32,
-    window_start: u64,
-}
-
 impl Preamble {
-    fn placeholder() -> Self {
-        Self {
-            bin: 0,
-            previous: Complex::new(0.0, 0.0),
-            progression: Complex::new(0.0, 0.0),
-            interpolated: 0.0,
-            upchirps: 0,
-            misses: 0,
-            downchirp: None,
-        }
-    }
-
     fn up_bins(&self) -> f64 {
         if self.progression.norm() == 0.0 {
             return self.bin as f64 + self.interpolated;
@@ -59,13 +46,20 @@ impl Preamble {
         let fraction = self.progression.arg() / std::f64::consts::TAU;
         self.bin as f64 + 0.5 + wrap(fraction - 0.5, 1.0)
     }
+
+    fn pair_level(&self, dechirper: &Dechirper) -> f32 {
+        let energies = dechirper.energies();
+        let mean = dechirper.mean();
+        let pair = energies[self.bin] + energies[(self.bin + 1) % energies.len()];
+        if mean > 0.0 { pair / mean } else { 0.0 }
+    }
 }
 
 enum Stage {
-    Search { run: u32, bin: usize },
+    Search,
     Preamble(Preamble),
     Align(Candidate),
-    Payload(Box<Lock>),
+    Payload { lock: Box<Lock>, rewind: u64 },
 }
 
 pub(crate) struct Settings {
@@ -78,14 +72,18 @@ pub(crate) struct Settings {
 
 pub(crate) struct Tools {
     pub dechirper: Dechirper,
+    pub accumulator: Accumulator,
+    pub downs: DownHistory,
     pub extractor: Extractor,
     pub demapper: Demapper,
     pub samples: Vec<Complex<f32>>,
     pub llrs: Vec<f32>,
+    pub tail: Vec<f32>,
 }
 
 pub(crate) struct Receiver {
     settings: Settings,
+    levels: Levels,
     tools: Tools,
     cursor: u64,
     stage: Stage,
@@ -101,16 +99,20 @@ impl Receiver {
     pub(crate) fn new(settings: Settings) -> Self {
         let chips = 1usize << settings.spreading_factor;
         Self {
+            levels: Levels::new(chips),
             tools: Tools {
                 dechirper: Dechirper::new(chips),
-                extractor: Extractor::new(),
+                accumulator: Accumulator::new(chips),
+                downs: DownHistory::new(chips),
+                extractor: Extractor::new(chips),
                 demapper: Demapper::new(chips),
                 samples: vec![Complex::new(0.0, 0.0); chips],
                 llrs: vec![0.0; max_symbols(settings.spreading_factor) * MAX_BITS],
+                tail: vec![0.0; MAX_COLUMNS * chips],
             },
             settings,
             cursor: 0,
-            stage: Stage::Search { run: 0, bin: 0 },
+            stage: Stage::Search,
         }
     }
 
@@ -127,11 +129,11 @@ impl Receiver {
     }
 
     fn step(&mut self, front: &Front, frames: &mut Vec<Frame>) -> Step {
-        match std::mem::replace(&mut self.stage, Stage::Search { run: 0, bin: 0 }) {
-            Stage::Search { run, bin } => self.search(front, run, bin),
+        match std::mem::replace(&mut self.stage, Stage::Search) {
+            Stage::Search => self.search(front),
             Stage::Preamble(preamble) => self.preamble(front, preamble),
             Stage::Align(candidate) => self.align(front, candidate),
-            Stage::Payload(lock) => self.payload(front, lock, frames),
+            Stage::Payload { lock, rewind } => self.payload(front, lock, rewind, frames),
         }
     }
 
@@ -142,7 +144,7 @@ impl Receiver {
         if self.cursor + chips > narrow.end() {
             return false;
         }
-        narrow.copy(self.cursor, &mut self.tools.samples);
+        narrow.copy(self.cursor as i64, &mut self.tools.samples);
         if self.settings.inverted {
             for sample in &mut self.tools.samples {
                 *sample = sample.conj();
@@ -151,36 +153,36 @@ impl Receiver {
         true
     }
 
-    fn search(&mut self, front: &Front, run: u32, bin: usize) -> Step {
+    fn search(&mut self, front: &Front) -> Step {
         if !self.load_window(front) {
-            self.stage = Stage::Search { run, bin };
+            self.stage = Stage::Search;
             return Step::Blocked;
         }
-        let chips = self.chips();
-        self.tools
-            .dechirper
-            .transform(&self.tools.samples, Slope::Up);
-        let peak = self.tools.dechirper.pair_peak();
-        let run = if 2.0 * peak.ratio() < threshold(chips) {
-            0
-        } else if run > 0 && circular_distance(peak.bin, bin, chips) <= 1 {
-            run + 1
-        } else {
-            1
-        };
-        self.cursor += chips as u64;
-        self.stage = if run >= DETECT_RUN {
-            Stage::Preamble(Preamble {
-                bin: peak.bin,
-                previous: self.tools.dechirper.bins()[peak.bin],
-                progression: Complex::new(0.0, 0.0),
-                interpolated: self.tools.dechirper.fraction(peak.bin),
-                upchirps: run,
-                misses: 0,
-                downchirp: None,
-            })
-        } else {
-            Stage::Search { run, bin: peak.bin }
+        let start = self.cursor;
+        self.cursor += self.chips() as u64;
+        let dechirper = &mut self.tools.dechirper;
+        dechirper.transform(&self.tools.samples, Slope::Up);
+        let detection = self.tools.accumulator.add(
+            start,
+            dechirper.energies(),
+            dechirper.mean(),
+            self.levels.steady,
+        );
+        self.stage = match detection {
+            Some(found) if found.level >= self.levels.detect && found.steady >= STEADY_WINDOWS => {
+                self.tools.accumulator.reset();
+                Stage::Preamble(Preamble {
+                    bin: found.bin,
+                    previous: dechirper.bins()[found.bin],
+                    previous_start: start,
+                    progression: Complex::new(0.0, 0.0),
+                    interpolated: dechirper.fraction(found.bin),
+                    upchirps: DETECT_WINDOWS as u32,
+                    quiet: 0,
+                    downchirp: None,
+                })
+            }
+            _ => Stage::Search,
         };
         Step::Advanced
     }
@@ -190,24 +192,17 @@ impl Receiver {
             self.stage = Stage::Preamble(preamble);
             return Step::Blocked;
         }
-        let chips = self.chips();
+        let chips = self.chips() as u64;
         let start = self.cursor;
-        self.cursor += chips as u64;
+        self.cursor += chips;
         self.tools
             .dechirper
             .transform(&self.tools.samples, Slope::Up);
-        let up = self.tools.dechirper.pair_peak();
-        let still_up = 2.0 * up.ratio() >= threshold(chips)
-            && circular_distance(up.bin, preamble.bin, chips) <= 1;
-        if still_up && preamble.misses == 0 {
-            let current = self.tools.dechirper.bins()[preamble.bin];
-            let step = current * preamble.previous.conj();
-            preamble.progression += Complex::new(f64::from(step.re), f64::from(step.im));
-            preamble.previous = current;
-            preamble.interpolated = self.tools.dechirper.fraction(preamble.bin);
-            preamble.upchirps += 1;
+        let rising = preamble.pair_level(&self.tools.dechirper) >= self.levels.carry_on;
+        if rising && preamble.quiet < PREAMBLE_OVER {
+            self.carry_on(&mut preamble, start);
             self.stage = if preamble.upchirps > MAX_UPCHIRPS {
-                Stage::Search { run: 0, bin: 0 }
+                Stage::Search
             } else {
                 Stage::Preamble(preamble)
             };
@@ -216,43 +211,39 @@ impl Receiver {
         self.tools
             .dechirper
             .transform(&self.tools.samples, Slope::Down);
-        let down = self.tools.dechirper.peak();
-        let sighting = (down.ratio() >= threshold(chips)).then(|| Sighting {
-            bins: down.bin as f64 + self.tools.dechirper.fraction(down.bin),
-            ratio: down.ratio(),
-            window_start: start,
-        });
-        if let Some(stage) = Self::settle_downchirp(&mut preamble, sighting) {
-            self.stage = stage;
-            return Step::Advanced;
+        let sighting = self.tools.downs.sighting(start, &self.tools.dechirper);
+        if preamble
+            .downchirp
+            .is_none_or(|best| sighting.level > best.level)
+        {
+            preamble.downchirp = Some(sighting);
         }
-        preamble.misses += 1;
-        self.stage = if preamble.misses > MAX_MISSES {
-            Stage::Search { run: 0, bin: 0 }
-        } else {
-            Stage::Preamble(preamble)
+        preamble.quiet += 1;
+        self.stage = match preamble.downchirp {
+            Some(best) if preamble.quiet >= QUIET_WINDOWS => Stage::Align(Candidate {
+                up_bins: preamble.up_bins(),
+                down_bins: best.bins,
+                window_start: best.window_start,
+            }),
+            _ => Stage::Preamble(preamble),
         };
         Step::Advanced
     }
 
-    fn settle_downchirp(preamble: &mut Preamble, sighting: Option<Sighting>) -> Option<Stage> {
-        let best = match (preamble.downchirp, sighting) {
-            (None, Some(first)) => {
-                preamble.downchirp = Some(first);
-                return Some(Stage::Preamble(std::mem::replace(
-                    preamble,
-                    Preamble::placeholder(),
-                )));
-            }
-            (Some(first), Some(second)) if second.ratio > first.ratio => second,
-            (Some(first), _) => first,
-            (None, None) => return None,
-        };
-        Some(Stage::Align(Candidate {
-            up_bins: preamble.up_bins(),
-            down_bins: best.bins,
-            window_start: best.window_start,
-        }))
+    /// One more upchirp on the preamble's bin: its phase step from the last one refines the
+    /// fractional bin.
+    fn carry_on(&self, preamble: &mut Preamble, start: u64) {
+        let dechirper = &self.tools.dechirper;
+        let current = dechirper.bins()[preamble.bin];
+        if preamble.previous_start + self.chips() as u64 == start {
+            let step = current * preamble.previous.conj();
+            preamble.progression += Complex::new(f64::from(step.re), f64::from(step.im));
+        }
+        preamble.previous = current;
+        preamble.previous_start = start;
+        preamble.interpolated = dechirper.fraction(preamble.bin);
+        preamble.upchirps += 1;
+        preamble.quiet = 0;
     }
 
     fn align(&mut self, front: &Front, candidate: Candidate) -> Step {
@@ -264,30 +255,48 @@ impl Receiver {
             }
             align::Outcome::Rejected => {
                 self.cursor = candidate.window_start + chips as u64;
-                self.stage = Stage::Search { run: 0, bin: 0 };
+                self.stage = Stage::Search;
                 Step::Advanced
             }
             align::Outcome::Locked(lock) => {
-                self.stage = Stage::Payload(lock);
+                self.stage = Stage::Payload {
+                    lock,
+                    rewind: candidate.window_start + chips as u64,
+                };
                 Step::Advanced
             }
         }
     }
 
-    fn payload(&mut self, front: &Front, mut lock: Box<Lock>, frames: &mut Vec<Frame>) -> Step {
+    /// A lock that was never confident and whose header fails was likely no frame, so the search
+    /// goes back to just after its SFD rather than losing the symbols the header took.
+    fn payload(
+        &mut self,
+        front: &Front,
+        mut lock: Box<Lock>,
+        rewind: u64,
+        frames: &mut Vec<Frame>,
+    ) -> Step {
         match lock.advance(&self.settings, &mut self.tools, front.wide()) {
             None => {
-                self.stage = Stage::Payload(lock);
+                self.stage = Stage::Payload { lock, rewind };
                 Step::Blocked
             }
             Some(None) => {
-                self.stage = Stage::Payload(lock);
+                self.stage = Stage::Payload { lock, rewind };
                 Step::Advanced
             }
             Some(Some(finished)) => {
-                self.cursor = finished.resume_chip;
-                frames.push(finished.frame);
-                self.stage = Stage::Search { run: 0, bin: 0 };
+                let integrity = finished.frame.integrity;
+                self.cursor = if !lock.confident() && integrity == LoraIntegrity::HeaderFailed {
+                    rewind
+                } else {
+                    finished.resume_chip
+                };
+                if lock.confident() || integrity == LoraIntegrity::CrcOk {
+                    frames.push(finished.frame);
+                }
+                self.stage = Stage::Search;
                 Step::Advanced
             }
         }

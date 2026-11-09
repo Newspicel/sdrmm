@@ -21,13 +21,15 @@ pub(crate) enum Slope {
     Down,
 }
 
+const ENERGY_LANES: usize = 8;
+
 pub(crate) struct Dechirper {
     up: Vec<Complex<f32>>,
     down: Vec<Complex<f32>>,
     fft: Transform,
     bins: Vec<Complex<f32>>,
     energies: Vec<f32>,
-    sorted: Vec<f32>,
+    total: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -60,7 +62,7 @@ impl Dechirper {
             fft: Transform::forward(chips),
             bins: vec![zero; chips],
             energies: vec![0.0; chips],
-            sorted: vec![0.0; chips],
+            total: 0.0,
         }
     }
 
@@ -73,9 +75,56 @@ impl Dechirper {
             *bin = sample * chirp;
         }
         self.fft.process(&mut self.bins);
-        for (energy, bin) in self.energies.iter_mut().zip(&self.bins) {
-            *energy = bin.norm_sqr();
+        let mut lanes = [0.0f32; ENERGY_LANES];
+        let energies = self.energies.as_chunks_mut::<ENERGY_LANES>().0.iter_mut();
+        for (energies, bins) in energies.zip(self.bins.as_chunks::<ENERGY_LANES>().0) {
+            for ((energy, bin), lane) in energies.iter_mut().zip(bins).zip(&mut lanes) {
+                *energy = bin.norm_sqr();
+                *lane += *energy;
+            }
         }
+        self.total = lanes.iter().sum();
+    }
+
+    /// How late, in chips, an upchirp whose wrap falls on chip `split` arrived, from its
+    /// dechirped samples with the tone near `tone` bins. Lateness turns the part after the wrap
+    /// by that fraction of a cycle while a frequency error turns both parts evenly, so the
+    /// phase drift inside each part is measured and taken out of the step across the wrap.
+    #[must_use]
+    pub(crate) fn lateness(&self, samples: &[Complex<f32>], tone: f64, split: usize) -> f64 {
+        let n = self.down.len();
+        let bounds = [0, split / 2, split, split + (n - split) / 2, n];
+        let step = Complex::<f32>::from_polar(1.0, (-TAU * tone / n as f64) as f32);
+        let mut parts = [Complex::<f64>::new(0.0, 0.0); 4];
+        for (part, ends) in parts.iter_mut().zip(bounds.windows(2)) {
+            let turns = -tone * ends[0] as f64 / n as f64;
+            let mut rotation = Complex::<f32>::from_polar(1.0, (TAU * turns.fract()) as f32);
+            let mut sum = Complex::<f32>::new(0.0, 0.0);
+            let range = ends[0]..ends[1];
+            for (&sample, &chirp) in samples[range.clone()].iter().zip(&self.down[range]) {
+                sum += sample * chirp * rotation;
+                rotation *= step;
+            }
+            *part = Complex::new(f64::from(sum.re), f64::from(sum.im));
+        }
+        let drift = |first: Complex<f64>, second: Complex<f64>, length: usize| {
+            let turn = second * first.conj();
+            let spacing = length as f64 / 2.0 / n as f64;
+            (
+                turn.arg() / TAU / spacing.max(f64::MIN_POSITIVE),
+                turn.norm(),
+            )
+        };
+        let (before, weight_before) = drift(parts[0], parts[1], split);
+        let (after, weight_after) = drift(parts[2], parts[3], n - split);
+        let total = weight_before + weight_after;
+        let offset = if total > 0.0 {
+            (before * weight_before + after * weight_after) / total
+        } else {
+            0.0
+        };
+        let jump = ((parts[2] + parts[3]) * (parts[0] + parts[1]).conj()).arg() / TAU;
+        jump - offset / 2.0
     }
 
     #[must_use]
@@ -90,7 +139,7 @@ impl Dechirper {
 
     #[must_use]
     pub(crate) fn mean(&self) -> f32 {
-        self.energies.iter().sum::<f32>() / self.energies.len() as f32
+        self.total / self.energies.len() as f32
     }
 
     #[must_use]
@@ -109,62 +158,37 @@ impl Dechirper {
     }
 
     #[must_use]
-    pub(crate) fn pair_peak(&self) -> Peak {
-        let n = self.energies.len();
-        let mut best = (0, f32::MIN);
-        for k in 0..n {
-            let pair = self.energies[k] + self.energies[(k + 1) % n];
-            if pair > best.1 {
-                best = (k, pair);
-            }
-        }
-        Peak {
-            bin: best.0,
-            energy: best.1 / 2.0,
-            mean: self.mean(),
-        }
-    }
-
-    #[must_use]
     pub(crate) fn fraction(&self, bin: usize) -> f64 {
-        let n = self.bins.len();
-        let left = self.bins[(bin + n - 1) % n];
-        let centre = self.bins[bin];
-        let right = self.bins[(bin + 1) % n];
-        let denominator = centre * 2.0 - left - right;
-        if denominator.norm_sqr() <= f32::EPSILON * centre.norm_sqr().max(f32::MIN_POSITIVE) {
-            return 0.0;
-        }
-        f64::from(((left - right) / denominator).re).clamp(-0.5, 0.5)
-    }
-
-    #[must_use]
-    pub(crate) fn median_noise(&mut self) -> f32 {
-        self.sorted.copy_from_slice(&self.energies);
-        let middle = self.sorted.len() / 2;
-        let (_, median, _) = self.sorted.select_nth_unstable_by(middle, f32::total_cmp);
-        (*median / std::f32::consts::LN_2).max(f32::MIN_POSITIVE)
+        fraction_of(&self.bins, bin)
     }
 
     #[must_use]
     pub(crate) fn noise(&self, bin: usize) -> f32 {
         let n = self.energies.len();
-        let total: f32 = self.energies.iter().sum();
+        let total = self.total;
         let near =
             self.energies[bin] + self.energies[(bin + 1) % n] + self.energies[(bin + n - 1) % n];
         ((total - near) / (n - 3) as f32).max(f32::MIN_POSITIVE)
     }
 }
 
+/// Where between its neighbours the tone at `bin` sits, from -0.5 to 0.5 bins.
 #[must_use]
-pub(crate) fn wrap(value: f64, period: f64) -> f64 {
-    value - (value / period).round() * period
+pub(crate) fn fraction_of(bins: &[Complex<f32>], bin: usize) -> f64 {
+    let n = bins.len();
+    let left = bins[(bin + n - 1) % n];
+    let centre = bins[bin];
+    let right = bins[(bin + 1) % n];
+    let denominator = centre * 2.0 - left - right;
+    if denominator.norm_sqr() <= f32::EPSILON * centre.norm_sqr().max(f32::MIN_POSITIVE) {
+        return 0.0;
+    }
+    f64::from(((left - right) / denominator).re).clamp(-0.5, 0.5)
 }
 
 #[must_use]
-pub(crate) fn circular_distance(a: usize, b: usize, n: usize) -> usize {
-    let d = (a + n - b) % n;
-    d.min(n - d)
+pub(crate) fn wrap(value: f64, period: f64) -> f64 {
+    value - (value / period).round() * period
 }
 
 #[cfg(test)]
@@ -205,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn the_median_noise_ignores_a_strong_tone() {
+    fn the_noise_floor_ignores_a_strong_tone() {
         let mut dechirper = Dechirper::new(256);
         let mut state = 0x1234_5678u32;
         let noise: Vec<Complex<f32>> = (0..256)
@@ -218,12 +242,35 @@ mod tests {
             })
             .collect();
         dechirper.transform(&noise, Slope::Up);
-        let floor = dechirper.median_noise();
+        let floor = dechirper.noise(dechirper.peak().bin);
         let expected = 256.0 * 0.01;
         assert!(
             (floor / expected - 1.0).abs() < 0.5,
             "{floor} vs {expected}"
         );
+    }
+
+    #[test]
+    fn a_late_symbol_turns_after_its_wrap() {
+        let chips = 256;
+        let value = 70;
+        let mut dechirper = Dechirper::new(chips);
+        for late in [-0.3, 0.0, 0.2] {
+            let delayed: Vec<Complex<f32>> = (0..chips)
+                .map(|k| {
+                    let t = k as f64 - late;
+                    let n = chips as f64;
+                    let turns = t * t / (2.0 * n) + (value as f64 / n - 0.5) * t
+                        - (t - (n - value as f64)).max(0.0);
+                    Complex::from_polar(1.0, (TAU * turns) as f32)
+                })
+                .collect();
+            dechirper.transform(&delayed, Slope::Up);
+            let bin = dechirper.peak().bin;
+            let tone = bin as f64 + dechirper.fraction(bin);
+            let read = dechirper.lateness(&delayed, tone, chips - value);
+            assert!((read - late).abs() < 0.02, "{late} read {read}");
+        }
     }
 
     #[test]
