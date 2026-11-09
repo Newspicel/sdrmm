@@ -54,34 +54,92 @@ fn prefix_sum(
     (correlation, energy)
 }
 
-#[must_use]
-pub fn coherence(mode: Mode, samples: &[Complex<f32>], at: usize, drift: f64) -> f32 {
-    let (correlation, energy) = prefix_sum(mode, samples, at, ALIGN_SYMBOLS, drift, 0);
-    2.0 * correlation.norm() / energy.max(1e-20)
+/// Cyclic-prefix coherence over [`ALIGN_SYMBOLS`] symbols for every candidate start, from
+/// running sums of the lag products, so a candidate costs a few subtractions instead of a
+/// pass over every guard interval.
+#[derive(Default)]
+pub struct Aligner {
+    lags: Vec<Complex<f64>>,
+    power: Vec<f64>,
+    offsets: [usize; ALIGN_SYMBOLS],
+    low: usize,
+    width: usize,
 }
 
-#[must_use]
-pub fn align(
-    mode: Mode,
-    samples: &[Complex<f32>],
-    from: usize,
-    span: usize,
-    drift: f64,
-) -> (f32, usize) {
-    let mut best = (0.0f32, from);
-    for at in (from..=from + span).step_by(SEARCH_STRIDE) {
-        let value = coherence(mode, samples, at, drift);
-        if value > best.0 {
-            best = (value, at);
+impl Aligner {
+    #[must_use]
+    pub fn align(
+        &mut self,
+        mode: Mode,
+        samples: &[Complex<f32>],
+        from: usize,
+        span: usize,
+        drift: f64,
+    ) -> (f32, usize) {
+        self.prepare(mode, samples, from, span, drift);
+        let mut best = (0.0f32, from);
+        for at in (from..=from + span).step_by(SEARCH_STRIDE) {
+            let value = self.coherence(mode, samples.len(), at);
+            if value > best.0 {
+                best = (value, at);
+            }
+        }
+        for at in best.1.saturating_sub(SEARCH_STRIDE)..=best.1 + SEARCH_STRIDE {
+            let value = self.coherence(mode, samples.len(), at);
+            if value > best.0 {
+                best = (value, at);
+            }
+        }
+        best
+    }
+
+    fn prepare(
+        &mut self,
+        mode: Mode,
+        samples: &[Complex<f32>],
+        from: usize,
+        span: usize,
+        drift: f64,
+    ) {
+        self.low = from.saturating_sub(SEARCH_STRIDE);
+        self.width = from + span + SEARCH_STRIDE - self.low + mode.guard;
+        self.lags.clear();
+        self.power.clear();
+        for (index, offset) in self.offsets.iter_mut().enumerate() {
+            *offset = symbol_start(mode, 0.0, index, drift).round() as usize;
+            let mut lag = Complex::new(0.0f64, 0.0);
+            let mut power = 0.0f64;
+            self.lags.push(lag);
+            self.power.push(power);
+            for at in self.low + *offset..self.low + *offset + self.width {
+                if let (Some(&prefix), Some(&tail)) =
+                    (samples.get(at), samples.get(at + mode.useful))
+                {
+                    let product = prefix * tail.conj();
+                    lag += Complex::new(f64::from(product.re), f64::from(product.im));
+                    power += f64::from(prefix.norm_sqr() + tail.norm_sqr());
+                }
+                self.lags.push(lag);
+                self.power.push(power);
+            }
         }
     }
-    for at in best.1.saturating_sub(SEARCH_STRIDE)..=best.1 + SEARCH_STRIDE {
-        let value = coherence(mode, samples, at, drift);
-        if value > best.0 {
-            best = (value, at);
+
+    fn coherence(&self, mode: Mode, len: usize, at: usize) -> f32 {
+        let mut correlation = Complex::new(0.0f64, 0.0);
+        let mut energy = 0.0f64;
+        let stride = self.width + 1;
+        for (index, &offset) in self.offsets.iter().enumerate() {
+            if at + offset + mode.symbol() > len {
+                break;
+            }
+            let first = index * stride + at - self.low;
+            let last = first + mode.guard;
+            correlation += self.lags[last] - self.lags[first];
+            energy += self.power[last] - self.power[first];
         }
+        (2.0 * correlation.norm() / energy.max(1e-20)) as f32
     }
-    best
 }
 
 #[must_use]
@@ -95,10 +153,17 @@ pub fn detect_span() -> usize {
 }
 
 #[must_use]
-pub fn detect(samples: &[Complex<f32>], from: usize, span: usize) -> Option<DabTransmissionMode> {
+pub fn detect(
+    aligner: &mut Aligner,
+    samples: &[Complex<f32>],
+    from: usize,
+    span: usize,
+) -> Option<DabTransmissionMode> {
     let mut ranked = TRANSMISSION_MODES.map(|candidate| {
         (
-            align(Mode::new(candidate), samples, from, span, 0.0).0,
+            aligner
+                .align(Mode::new(candidate), samples, from, span, 0.0)
+                .0,
             candidate,
         )
     });
@@ -208,7 +273,8 @@ mod tests {
             let mode = Mode::new(transmission);
             let shift = 0.3 / mode.useful as f64;
             let iq = turned(&synth::dab::ensemble_for_mode(transmission, 2), shift);
-            let (value, at) = align(mode, &iq, mode.null - SEARCH, 2 * SEARCH, 0.0);
+            let (value, at) =
+                Aligner::default().align(mode, &iq, mode.null - SEARCH, 2 * SEARCH, 0.0);
             assert!(value > 0.9, "{transmission:?}: coherence {value}");
             assert_eq!(at, mode.null, "{transmission:?}");
             let estimate = Tracker::default().refined(mode, prefix_phase(mode, &iq, at, 0.0));
@@ -226,12 +292,12 @@ mod tests {
             let iq =
                 crate::testutil::at_snr(&synth::dab::ensemble_for_mode(transmission, 4), 6.0, 3);
             assert_eq!(
-                detect(&iq, mode.null - SEARCH, 2 * SEARCH),
+                detect(&mut Aligner::default(), &iq, mode.null - SEARCH, 2 * SEARCH),
                 Some(transmission)
             );
         }
         let noise = crate::testutil::complex_noise(9, 1.0, 4 * detect_span());
-        assert_eq!(detect(&noise, 0, 2 * SEARCH), None);
+        assert_eq!(detect(&mut Aligner::default(), &noise, 0, 2 * SEARCH), None);
     }
 
     #[test]

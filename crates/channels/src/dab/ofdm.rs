@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 
 use crate::dab::DabTransmissionMode;
 use num_complex::Complex;
-use sdrmm_dsp::{CONFIDENT, Soft, fft::Transform};
+use sdrmm_dsp::{CONFIDENT, Nco, Soft, fft::Transform};
 
 use super::mode::Mode;
 
@@ -230,6 +230,8 @@ pub struct SymbolDemod {
     scratch: Vec<Complex<f32>>,
     previous: Vec<Complex<f32>>,
     current: Vec<Complex<f32>>,
+    differentials: Vec<Complex<f32>>,
+    rotation: Nco,
     have_reference: bool,
     levels: Vec<f32>,
     have_levels: bool,
@@ -253,6 +255,8 @@ impl SymbolDemod {
             scratch: vec![Complex::new(0.0, 0.0); mode.useful],
             previous: vec![Complex::new(0.0, 0.0); mode.useful],
             current: vec![Complex::new(0.0, 0.0); mode.useful],
+            differentials: vec![Complex::new(0.0, 0.0); mode.carriers()],
+            rotation: Nco::new(0.0, 1.0),
             have_reference: false,
             levels: vec![0.0; mode.carriers()],
             have_levels: false,
@@ -280,15 +284,17 @@ impl SymbolDemod {
         std::mem::swap(&mut self.previous, &mut self.current);
         self.scratch.copy_from_slice(useful);
         self.fft.process(&mut self.scratch);
-        let half = self.mode.carriers() as i16 / 2;
-        let turn = 2.0 * PI * fraction / self.mode.useful as f32;
-        let step = Complex::from_polar(1.0, turn);
-        let mut rotation = Complex::from_polar(1.0, -turn * f32::from(half));
-        for carrier in -half..=half {
-            let bin = self.mode.carrier_bin(carrier);
-            self.current[bin] = self.scratch[bin] * rotation;
-            rotation *= step;
-        }
+        let half = self.mode.carriers() / 2;
+        let useful = self.mode.useful;
+        let turns = f64::from(fraction) / useful as f64;
+        self.rotation.set_turns(turns);
+        self.rotation.set_phase(-turns * half as f64);
+        self.rotation.mix_into(
+            &self.scratch[useful - half..],
+            &mut self.current[useful - half..],
+        );
+        self.rotation
+            .mix_into(&self.scratch[..=half], &mut self.current[..=half]);
     }
 
     pub fn demodulate(
@@ -305,33 +311,112 @@ impl SymbolDemod {
             self.have_reference = true;
             return false;
         }
-        let mut power = 0.0f32;
-        for &bin in &self.bins {
-            power += self.current[bin].norm_sqr() + self.previous[bin].norm_sqr();
-        }
+        let power = self.differentiate();
         let mean = (power / (2 * self.bins.len()) as f32).max(1e-20);
         let scale = std::f32::consts::SQRT_2 / mean;
+        let carriers = self.mode.carriers();
         let start = out.len();
         out.resize(start + self.mode.symbol_bits(), 0);
-        for (index, &bin) in self.bins.iter().enumerate() {
-            let differential = self.current[bin] * self.previous[bin].conj();
-            let level = &mut self.levels[index];
-            if self.have_levels {
-                *level += LEVEL_RATE * (differential.norm() - *level);
-            } else {
-                *level = differential.norm();
-            }
-            let equalized = differential * (std::f32::consts::SQRT_2 / level.max(1e-20));
-            let ideal = Complex::new(equalized.re.signum(), equalized.im.signum());
-            self.signal += f64::from(ideal.norm_sqr());
-            self.noise += f64::from((equalized - ideal).norm_sqr());
-            let product = differential * scale;
-            out[start + index] = clamp(-product.re);
-            out[start + self.mode.carriers() + index] = clamp(-product.im);
-        }
+        let (real, imaginary) = out[start..].split_at_mut(carriers);
+        let noise = soft_decisions(
+            &self.differentials,
+            &mut self.levels,
+            self.have_levels,
+            scale,
+            real,
+            imaginary,
+        );
+        self.signal += 2.0 * carriers as f64;
+        self.noise += f64::from(noise);
         self.have_levels = true;
         true
     }
+
+    /// Gathers each carrier's differential `current * conj(previous)` in interleaved order and
+    /// returns the power of both symbols over the data carriers.
+    fn differentiate(&mut self) -> f32 {
+        let mut power = 0.0f32;
+        for (differential, &bin) in self.differentials.iter_mut().zip(&self.bins) {
+            let current = self.current[bin];
+            let previous = self.previous[bin];
+            *differential = current * previous.conj();
+            power += current.norm_sqr() + previous.norm_sqr();
+        }
+        power
+    }
+}
+
+const LANES: usize = 8;
+
+/// Turns the differentials into soft bits scaled by the mean carrier power, tracks each
+/// carrier's level and returns the squared distance of the level-equalized points from the
+/// nearest QPSK corner. Works in blocks of `LANES` carriers with independent partial sums so
+/// the loop vectorizes.
+fn soft_decisions(
+    differentials: &[Complex<f32>],
+    levels: &mut [f32],
+    tracking: bool,
+    scale: f32,
+    real: &mut [Soft],
+    imaginary: &mut [Soft],
+) -> f32 {
+    let mut noise = [0.0f32; LANES];
+    let blocks = differentials
+        .as_chunks::<LANES>()
+        .0
+        .iter()
+        .zip(levels.as_chunks_mut::<LANES>().0)
+        .zip(real.as_chunks_mut::<LANES>().0)
+        .zip(imaginary.as_chunks_mut::<LANES>().0);
+    for (((differential, level), re), im) in blocks {
+        for lane in 0..LANES {
+            noise[lane] += decide(
+                differential[lane],
+                &mut level[lane],
+                tracking,
+                scale,
+                &mut re[lane],
+                &mut im[lane],
+            );
+        }
+    }
+    let whole = differentials.len() / LANES * LANES;
+    for index in whole..differentials.len() {
+        noise[0] += decide(
+            differentials[index],
+            &mut levels[index],
+            tracking,
+            scale,
+            &mut real[index],
+            &mut imaginary[index],
+        );
+    }
+    noise.iter().sum()
+}
+
+#[inline(always)]
+fn decide(
+    differential: Complex<f32>,
+    level: &mut f32,
+    tracking: bool,
+    scale: f32,
+    re: &mut Soft,
+    im: &mut Soft,
+) -> f32 {
+    let magnitude = differential.norm_sqr().sqrt();
+    *level = if tracking {
+        *level + LEVEL_RATE * (magnitude - *level)
+    } else {
+        magnitude
+    };
+    let equalized = differential * (std::f32::consts::SQRT_2 / level.max(1e-20));
+    let error = Complex::new(
+        equalized.re - equalized.re.signum(),
+        equalized.im - equalized.im.signum(),
+    );
+    *re = clamp(-differential.re * scale);
+    *im = clamp(-differential.im * scale);
+    error.norm_sqr()
 }
 
 impl Default for SymbolDemod {
@@ -425,28 +510,52 @@ impl FrameSync {
     }
 
     pub fn push(&mut self, sample: Complex<f32>) -> Option<usize> {
-        let power = sample.norm_sqr();
-        self.sum += f64::from(power) - f64::from(self.window[self.at]);
-        self.window[self.at] = power;
-        self.at = (self.at + 1) % NULL_WINDOW;
-        if self.filled < NULL_WINDOW {
-            self.filled += 1;
-            return None;
+        self.scan(std::slice::from_ref(&sample))
+            .map(|(_, window)| window)
+    }
+
+    /// Feeds samples until one ends a null and returns its index with the detector window.
+    /// The running state lives in locals for the scan so it stays in registers.
+    pub fn scan(&mut self, samples: &[Complex<f32>]) -> Option<(usize, usize)> {
+        let mut sum = self.sum;
+        let mut average = self.average;
+        let mut quiet = self.quiet;
+        let mut started = self.started;
+        let mut at = self.at;
+        let mut found = None;
+        for (index, sample) in samples.iter().enumerate() {
+            let power = sample.norm_sqr();
+            sum += f64::from(power) - f64::from(self.window[at]);
+            self.window[at] = power;
+            at = (at + 1) % NULL_WINDOW;
+            if self.filled < NULL_WINDOW {
+                self.filled += 1;
+                continue;
+            }
+            let smoothed = (sum.max(0.0) / NULL_WINDOW as f64) as f32;
+            if average == 0.0 {
+                average = smoothed.max(1e-12);
+            }
+            if smoothed < average * NULL_POWER_RATIO {
+                quiet += 1;
+                started = true;
+                continue;
+            }
+            average = average.mul_add(1.0 - CARRIER_AVERAGE_RATE, CARRIER_AVERAGE_RATE * smoothed);
+            let ended = started && (self.shortest..self.longest).contains(&quiet);
+            quiet = 0;
+            started = true;
+            if ended {
+                found = Some((index, NULL_WINDOW));
+                break;
+            }
         }
-        let smoothed = (self.sum.max(0.0) / NULL_WINDOW as f64) as f32;
-        if self.average == 0.0 {
-            self.average = smoothed.max(1e-12);
-        }
-        if smoothed < self.average * NULL_POWER_RATIO {
-            self.quiet += 1;
-            self.started = true;
-            return None;
-        }
-        self.average += CARRIER_AVERAGE_RATE * (smoothed - self.average);
-        let ended = self.started && (self.shortest..self.longest).contains(&self.quiet);
-        self.quiet = 0;
-        self.started = true;
-        ended.then_some(NULL_WINDOW)
+        self.sum = sum;
+        self.average = average;
+        self.quiet = quiet;
+        self.started = started;
+        self.at = at;
+        found
     }
 }
 

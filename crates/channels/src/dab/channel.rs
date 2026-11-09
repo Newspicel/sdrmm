@@ -1,4 +1,4 @@
-use std::{f64::consts::TAU, sync::LazyLock};
+use std::sync::LazyLock;
 
 use crate::broadcast_media::BroadcastService;
 use crate::broadcast_media::BroadcastServiceKind;
@@ -8,7 +8,7 @@ use crate::dab::DabMode;
 use crate::dab::DabParams;
 use crate::dab::DabTransmissionMode;
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, Soft, design_lowpass};
+use sdrmm_dsp::{Decimator, Nco, Soft, design_lowpass};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelSettings, ClickProfile, DecoderFamily, EventContract, EventKind,
 };
@@ -22,7 +22,7 @@ use super::{
     pacer::Pacer,
     prs::PrsProbe,
     superframe::{AccessUnits, CIF_AUDIO_FRAMES, Superframe, SuperframeAssembler},
-    sync::{self, MIN_COHERENCE, SEARCH, Tracker},
+    sync::{self, Aligner, MIN_COHERENCE, SEARCH, Tracker},
 };
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
@@ -114,6 +114,8 @@ pub struct DabChannel {
     origin: u64,
     search: Option<(usize, usize)>,
     window: Vec<Complex<f32>>,
+    mixer: Nco,
+    aligner: Aligner,
     symbols: Vec<Soft>,
     fibs: Vec<[u8; FIB_BYTES]>,
     logical: Vec<u8>,
@@ -134,17 +136,15 @@ pub struct DabChannel {
 }
 
 fn derotate(
+    mixer: &mut Nco,
     source: &[Complex<f32>],
     target: &mut [Complex<f32>],
     offset: f64,
     cycles_per_sample: f64,
 ) {
-    let mut phase = Complex::<f64>::from_polar(1.0, -TAU * cycles_per_sample * offset);
-    let step = Complex::<f64>::from_polar(1.0, -TAU * cycles_per_sample);
-    for (out, &sample) in target.iter_mut().zip(source) {
-        *out = sample * Complex::new(phase.re as f32, phase.im as f32);
-        phase *= step;
-    }
+    mixer.set_turns(-cycles_per_sample);
+    mixer.set_phase(-cycles_per_sample * offset);
+    mixer.mix_into(source, target);
 }
 
 impl DabChannel {
@@ -233,7 +233,7 @@ impl DabChannel {
         if self.pending.len() < from + span + sync::detect_span() {
             return false;
         }
-        match sync::detect(&self.pending, from, span) {
+        match sync::detect(&mut self.aligner, &self.pending, from, span) {
             Some(found) => {
                 self.adopt(found);
                 self.take_frame()
@@ -270,7 +270,9 @@ impl DabChannel {
 
     fn acquire(&mut self, from: usize, span: usize) -> Option<usize> {
         let drift = self.tracker.drift;
-        let (coherence, at) = sync::align(self.mode, &self.pending, from, span, drift);
+        let (coherence, at) = self
+            .aligner
+            .align(self.mode, &self.pending, from, span, drift);
         if coherence < MIN_COHERENCE {
             return None;
         }
@@ -278,7 +280,7 @@ impl DabChannel {
         let frequency = self.tracker.refined(self.mode, phase);
         let start = at + self.mode.guard - self.mode.backoff();
         let source = self.pending.get(start..start + self.mode.useful)?;
-        derotate(source, &mut self.window, 0.0, frequency);
+        derotate(&mut self.mixer, source, &mut self.window, 0.0, frequency);
         let shifts = sync::shifts(self.mode, frequency, MAX_OFFSET_HZ / INPUT_RATE_HZ);
         let probe = self.probe.probe(&self.window, shifts)?;
         let useful = usize::try_from(start as i64 + i64::from(probe.first_path)).ok()?;
@@ -309,6 +311,7 @@ impl DabChannel {
                 return false;
             };
             derotate(
+                &mut self.mixer,
                 source,
                 &mut self.window,
                 whole - useful as f64,
@@ -467,6 +470,69 @@ impl DabChannel {
                 }
             }
         }
+    }
+
+    fn step(&mut self, sample: Complex<f32>, out: &mut ChannelOutputs) {
+        self.samples_without_frame = self.samples_without_frame.saturating_add(1);
+        if self.samples_without_frame >= 3 * self.mode.frame() && self.locked {
+            self.lose_signal(out);
+        }
+        self.pending.push(sample);
+        let null = self.sync.push(sample);
+        self.settle(null, out);
+    }
+
+    fn settle(&mut self, null: Option<usize>, out: &mut ChannelOutputs) {
+        if self.search.is_none() {
+            self.search = self.next_search(null);
+        }
+        if self.search.is_none() && self.pending.len() > 2 * self.mode.frame() {
+            self.discard(self.mode.frame());
+        }
+        if self.take_frame() {
+            self.decode_frame(out);
+        }
+    }
+
+    /// How many samples [`Self::step`] would only buffer and feed to the null detector: no
+    /// signal loss, no frame due, no discard, and no search waiting on anything but a null.
+    fn quiet_samples(&self) -> usize {
+        let mut run = usize::MAX;
+        if self.locked {
+            run = (3 * self.mode.frame()).saturating_sub(self.samples_without_frame + 1);
+        }
+        let due = match self.search {
+            None if self.tracker.next().is_some() => return 0,
+            None => 2 * self.mode.frame() + 1,
+            Some((from, span)) if self.transmission.is_none() => from + span + sync::detect_span(),
+            Some((from, span)) => from + span + self.mode.frame_samples() + self.mode.symbol(),
+        };
+        run.min(due.saturating_sub(self.pending.len() + 1))
+    }
+
+    /// Buffers a quiet run in one go; when no frame is being searched for, a null ends the run
+    /// early and is handled exactly as a single [`Self::step`] would.
+    fn absorb(&mut self, run: &[Complex<f32>], out: &mut ChannelOutputs) -> usize {
+        let watching = self.search.is_none();
+        let mut used = 0;
+        let mut null = None;
+        while used < run.len() {
+            let Some((index, window)) = self.sync.scan(&run[used..]) else {
+                used = run.len();
+                break;
+            };
+            used += index + 1;
+            if watching {
+                null = Some(window);
+                break;
+            }
+        }
+        self.pending.extend_from_slice(&run[..used]);
+        self.samples_without_frame = self.samples_without_frame.saturating_add(used);
+        if null.is_some() {
+            self.settle(null, out);
+        }
+        used
     }
 
     fn system(&self) -> BroadcastSystem {
@@ -636,6 +702,8 @@ impl NativeChannel for DabChannel {
             origin: 0,
             search: None,
             window: vec![Complex::new(0.0, 0.0); mode.useful],
+            mixer: Nco::new(0.0, 1.0),
+            aligner: Aligner::default(),
             symbols: Vec::with_capacity(mode.symbols * mode.symbol_bits()),
             fibs: Vec::new(),
             logical: Vec::new(),
@@ -684,21 +752,14 @@ impl ChannelRx for DabChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
-        for &sample in iq {
-            self.samples_without_frame = self.samples_without_frame.saturating_add(1);
-            if self.samples_without_frame >= 3 * self.mode.frame() && self.locked {
-                self.lose_signal(out);
-            }
-            self.pending.push(sample);
-            let null = self.sync.push(sample);
-            if self.search.is_none() {
-                self.search = self.next_search(null);
-            }
-            if self.search.is_none() && self.pending.len() > 2 * self.mode.frame() {
-                self.discard(self.mode.frame());
-            }
-            if self.take_frame() {
-                self.decode_frame(out);
+        let mut at = 0;
+        while let Some(&sample) = iq.get(at) {
+            let quiet = self.quiet_samples().min(iq.len() - at);
+            if quiet > 0 {
+                at += self.absorb(&iq[at..at + quiet], out);
+            } else {
+                self.step(sample, out);
+                at += 1;
             }
         }
         self.collect_audio(out);
@@ -718,7 +779,11 @@ mod tests {
 
     use crate::broadcast_media::latest_status;
 
-    use crate::{dab::ofdm::FRAME, synth, testutil::realtime_budget};
+    use crate::{
+        dab::{ofdm::FRAME, superframe::FRAMES},
+        synth,
+        testutil::realtime_budget,
+    };
 
     fn dab_params(service_id: Option<u32>) -> DabParams {
         DabParams {
@@ -859,6 +924,21 @@ mod tests {
             channel.media.data_error
         );
         assert!(out.audio_pcm.iter().any(|sample| sample.abs() > 0.01));
+    }
+
+    #[test]
+    fn zero_padded_superframes_decode_from_every_joining_phase() {
+        let iq = synth::dab::ensemble_zero_padded(36);
+        for skip in 0..FRAMES {
+            let mut channel = channel(Some(synth::dab::MUSIC_SERVICE));
+            run(&mut channel, &iq[skip * FRAME..]);
+            assert!(
+                channel.superframes as usize >= (36 - skip) * 4 / FRAMES - 6,
+                "joined {skip} frames in: {} superframes",
+                channel.superframes
+            );
+            assert_eq!(channel.units, 6 * channel.superframes);
+        }
     }
 
     #[test]

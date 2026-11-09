@@ -129,6 +129,15 @@ fn unit_offsets(superframe: &[u8], format: AudioFormat) -> Option<Vec<usize>> {
         .then_some(starts)
 }
 
+/// An all-zero head passes the Fire code (`firecode(0) == 0`) but is the padding of a last
+/// access unit, never a real header, whose offsets are always nonzero.
+fn header_ok(superframe: &[u8]) -> bool {
+    superframe.get(..2 + HEADER_SPAN).is_some_and(|head| {
+        head.iter().any(|&byte| byte != 0)
+            && firecode(&head[2..]) == u16::from_be_bytes([head[0], head[1]])
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Superframe {
     Pending,
@@ -144,13 +153,21 @@ pub struct AccessUnits {
     pub dropped: u32,
 }
 
+/// Collects logical frames into a five-frame window and only accepts a window whose header
+/// survives Reed-Solomon repair and the Fire code. A window that fails slides by one logical
+/// frame and keeps the other four, so a zero-padded tail (whose Fire code is trivially zero)
+/// cannot hold the assembler on the wrong phase.
 pub struct SuperframeAssembler {
     reed_solomon: ReedSolomon,
     frame_bytes: usize,
-    raw: Vec<u8>,
-    frames: usize,
-    synced: bool,
+    window: Vec<u8>,
+    repaired: Vec<u8>,
     packet: Vec<u8>,
+}
+
+struct Repair {
+    corrected: u32,
+    decoded_lanes: usize,
 }
 
 impl SuperframeAssembler {
@@ -159,9 +176,8 @@ impl SuperframeAssembler {
         (frame_bytes > 0 && (FRAMES * frame_bytes).is_multiple_of(CODEWORD)).then(|| Self {
             reed_solomon: ReedSolomon::new(DVB_PRIMITIVE, 0, CODEWORD - DATA),
             frame_bytes,
-            raw: Vec::with_capacity(FRAMES * frame_bytes),
-            frames: 0,
-            synced: false,
+            window: Vec::with_capacity(FRAMES * frame_bytes),
+            repaired: Vec::with_capacity(FRAMES * frame_bytes),
             packet: vec![0; CODEWORD],
         })
     }
@@ -170,63 +186,53 @@ impl SuperframeAssembler {
         if logical.len() != self.frame_bytes {
             return Superframe::Lost(1);
         }
-        if !self.synced {
-            let Some(header) = logical.get(2..2 + HEADER_SPAN) else {
-                return Superframe::Lost(1);
-            };
-            if firecode(header) != u16::from_be_bytes([logical[0], logical[1]]) {
-                return Superframe::Lost(1);
-            }
-            self.synced = true;
-            self.raw.clear();
-            self.frames = 0;
-        }
-        self.raw.extend_from_slice(logical);
-        self.frames += 1;
-        if self.frames < FRAMES {
+        self.window.extend_from_slice(logical);
+        if self.window.len() < FRAMES * self.frame_bytes {
             return Superframe::Pending;
         }
-        let result = self.finish();
-        self.raw.clear();
-        self.frames = 0;
-        match result {
-            Some(units) => Superframe::Ready(units),
-            None => {
-                self.synced = false;
-                Superframe::Lost(FRAMES)
-            }
+        if let Some(units) = self.finish() {
+            self.window.clear();
+            return Superframe::Ready(units);
         }
+        self.window.copy_within(self.frame_bytes.., 0);
+        self.window.truncate((FRAMES - 1) * self.frame_bytes);
+        Superframe::Lost(1)
     }
 
     fn finish(&mut self) -> Option<AccessUnits> {
-        let mut superframe = std::mem::take(&mut self.raw);
-        let corrected = self.repair(&mut superframe);
-        let ok = firecode(superframe.get(2..2 + HEADER_SPAN)?)
-            == u16::from_be_bytes([superframe[0], superframe[1]]);
-        let result = ok.then(|| self.split(&superframe, corrected)).flatten();
+        let mut superframe = std::mem::take(&mut self.repaired);
         superframe.clear();
-        self.raw = superframe;
+        superframe.extend_from_slice(&self.window);
+        let repair = self.repair(&mut superframe);
+        let result = (repair.decoded_lanes > 0 && header_ok(&superframe))
+            .then(|| self.split(&superframe, repair.corrected))
+            .flatten();
+        self.repaired = superframe;
         result
     }
 
-    fn repair(&mut self, superframe: &mut [u8]) -> u32 {
+    fn repair(&mut self, superframe: &mut [u8]) -> Repair {
         let codewords = superframe.len() / CODEWORD;
-        let mut corrected = 0u32;
+        let mut repair = Repair {
+            corrected: 0,
+            decoded_lanes: 0,
+        };
         for lane in 0..codewords {
             for position in 0..CODEWORD {
                 self.packet[position] = superframe[position * codewords + lane];
             }
             match self.reed_solomon.decode(&mut self.packet) {
                 Some(count) => {
-                    corrected += count;
+                    repair.corrected += count;
+                    repair.decoded_lanes += 1;
                     for position in 0..CODEWORD {
                         superframe[position * codewords + lane] = self.packet[position];
                     }
                 }
-                None => corrected += u32::from(u8::MAX),
+                None => repair.corrected += u32::from(u8::MAX),
             }
         }
-        corrected
+        repair
     }
 
     fn split(&self, superframe: &[u8], corrected: u32) -> Option<AccessUnits> {
@@ -468,10 +474,11 @@ mod tests {
     fn a_frame_that_is_not_a_superframe_head_is_reported_lost() {
         let frame_bytes = 24 * 96 / 8;
         let mut assembler = SuperframeAssembler::new(frame_bytes).expect("96 kbit/s assembles");
-        assert_eq!(
-            assembler.frame(&vec![0x5Au8; frame_bytes]),
-            Superframe::Lost(1)
-        );
+        let noise = vec![0x5Au8; frame_bytes];
+        for _ in 1..FRAMES {
+            assert_eq!(assembler.frame(&noise), Superframe::Pending);
+        }
+        assert_eq!(assembler.frame(&noise), Superframe::Lost(1));
     }
 
     #[test]
@@ -493,14 +500,64 @@ mod tests {
             .iter()
             .map(Vec::as_slice)
             .chain(damaged.chunks_exact(frame_bytes))
+            .chain(good.iter().map(Vec::as_slice))
             .map(|frame| assembler.frame(frame))
             .collect();
+        let ready = seen
+            .iter()
+            .filter(|state| matches!(state, Superframe::Ready(_)))
+            .count();
+        let lost: usize = seen
+            .iter()
+            .map(|state| match state {
+                Superframe::Lost(frames) => *frames,
+                _ => 0,
+            })
+            .sum();
         assert!(matches!(seen[FRAMES - 1], Superframe::Ready(_)), "{seen:?}");
-        assert_eq!(seen.last(), Some(&Superframe::Lost(FRAMES)));
+        assert_eq!((ready, lost), (2, FRAMES), "{seen:?}");
         assert_eq!(
             FRAMES * CIF_AUDIO_FRAMES,
             format().access_units() * format().unit_audio_frames()
         );
+    }
+
+    fn zero_padded_stream(frame_bytes: usize, superframes: usize) -> Vec<Vec<u8>> {
+        let builder = SuperframeBuilder::new(frame_bytes).expect("96 kbit/s builds superframes");
+        (0..superframes)
+            .flat_map(|index| {
+                let mut units = payloads(3, 60);
+                units[0][0] = index as u8;
+                builder.build(format(), &units).expect("the units fit")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_zero_padded_tail_does_not_hold_the_assembler_on_the_wrong_phase() {
+        let frame_bytes = 24 * 96 / 8;
+        let stream = zero_padded_stream(frame_bytes, 8);
+        assert!(
+            stream[FRAMES - 1][..2 + HEADER_SPAN]
+                .iter()
+                .all(|&byte| byte == 0)
+        );
+        for skip in 1..FRAMES {
+            let mut assembler = SuperframeAssembler::new(frame_bytes).expect("96 kbit/s assembles");
+            let ready = stream[skip..]
+                .iter()
+                .filter(|frame| matches!(assembler.frame(frame), Superframe::Ready(_)))
+                .count();
+            assert_eq!(ready, 7, "joined {skip} frames in");
+        }
+    }
+
+    #[test]
+    fn silence_never_passes_for_a_superframe() {
+        let frame_bytes = 24 * 96 / 8;
+        let mut assembler = SuperframeAssembler::new(frame_bytes).expect("96 kbit/s assembles");
+        let zero = vec![0u8; frame_bytes];
+        assert!((0..4 * FRAMES).all(|_| !matches!(assembler.frame(&zero), Superframe::Ready(_))));
     }
 
     #[test]

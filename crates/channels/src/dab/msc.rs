@@ -1,4 +1,4 @@
-use sdrmm_dsp::{ConvCode, DAB_DISPERSAL, Prbs, Soft, ViterbiK7, pack_msb};
+use sdrmm_dsp::{ConvCode, DAB_DISPERSAL, Prbs, Soft, ViterbiK7, pack_msb_into};
 
 use super::{fic::GENERATORS, protection::Protection};
 
@@ -135,8 +135,7 @@ impl SubChannelDecoder {
         self.viterbi.decode_tailed(&self.mother, &mut self.bits);
         self.bits.truncate(self.protection.frame_bits());
         Prbs::new(DAB_DISPERSAL).apply_bits(&mut self.bits);
-        out.clear();
-        out.extend_from_slice(&pack_msb(&self.bits));
+        pack_msb_into(&self.bits, out);
         Fragment::Ready
     }
 }

@@ -22,11 +22,16 @@ pub struct PrsProbe {
     fft: Transform,
     inverse: Transform,
     reference: Vec<Complex<f32>>,
-    pairs: Vec<(i16, Complex<f32>)>,
+    steps: Vec<Complex<f32>>,
+    counted: Vec<f32>,
     expected: Complex<f32>,
     spectrum: Vec<Complex<f32>>,
+    neighbours: Vec<Complex<f32>>,
+    magnitudes: Vec<f32>,
     response: Vec<Complex<f32>>,
 }
+
+const LANES: usize = 8;
 
 impl PrsProbe {
     #[must_use]
@@ -34,25 +39,35 @@ impl PrsProbe {
         let mode = Mode::new(transmission_mode);
         let reference = reference_symbol_for_mode(transmission_mode);
         let half = mode.carriers() as i16 / 2;
-        let pairs = (-half..half)
-            .filter(|&carrier| carrier != 0 && carrier != -1)
+        let pair = |carrier: i16| carrier != 0 && carrier != -1;
+        let steps = (-half..half)
             .map(|carrier| {
-                let step = reference[mode.carrier_bin(carrier + 1)]
-                    * reference[mode.carrier_bin(carrier)].conj();
-                (carrier, step.conj())
+                if pair(carrier) {
+                    (reference[mode.carrier_bin(carrier + 1)]
+                        * reference[mode.carrier_bin(carrier)].conj())
+                    .conj()
+                } else {
+                    Complex::new(0.0, 0.0)
+                }
             })
+            .collect();
+        let counted = (-half..half)
+            .map(|carrier| if pair(carrier) { 1.0 } else { 0.0 })
             .collect();
         Self {
             mode,
             fft: Transform::forward(mode.useful),
             inverse: Transform::inverse(mode.useful),
             reference,
-            pairs,
+            steps,
+            counted,
             expected: Complex::from_polar(
                 1.0,
                 std::f32::consts::TAU * mode.backoff() as f32 / mode.useful as f32,
             ),
             spectrum: vec![Complex::new(0.0, 0.0); mode.useful],
+            neighbours: vec![Complex::new(0.0, 0.0); 2 * mode.useful],
+            magnitudes: vec![0.0; 2 * mode.useful],
             response: vec![Complex::new(0.0, 0.0); mode.useful],
         }
     }
@@ -63,6 +78,7 @@ impl PrsProbe {
         }
         self.spectrum.copy_from_slice(window);
         self.fft.process(&mut self.spectrum);
+        self.pair_neighbours();
         let (shift, slope) = self.best_shift(shifts)?;
         let first_path = self.first_path(shift);
         (first_path.unsigned_abs() as usize <= self.mode.guard).then_some(Probe {
@@ -76,17 +92,47 @@ impl PrsProbe {
         (i32::from(carrier) + shift).rem_euclid(self.mode.useful as i32) as usize
     }
 
-    fn differential(&self, shift: i32) -> (Complex<f32>, f32) {
-        let mut sum = Complex::new(0.0f32, 0.0);
-        let mut norm = 0.0f32;
-        for &(carrier, reference) in &self.pairs {
-            let low = self.spectrum[self.bin(carrier, shift)];
-            let high = self.spectrum[self.bin(carrier + 1, shift)];
-            let product = high * low.conj();
-            sum += product * reference;
-            norm += product.norm();
+    /// Products of each bin with its lower neighbour, laid out twice so every shifted carrier
+    /// range is one contiguous slice.
+    fn pair_neighbours(&mut self) {
+        let useful = self.mode.useful;
+        for bin in 0..useful {
+            let product = self.spectrum[(bin + 1) % useful] * self.spectrum[bin].conj();
+            let magnitude = product.norm_sqr().sqrt();
+            for index in [bin, bin + useful] {
+                self.neighbours[index] = product;
+                self.magnitudes[index] = magnitude;
+            }
         }
-        (sum, norm)
+    }
+
+    fn differential(&self, shift: i32) -> (Complex<f32>, f32) {
+        let carriers = self.steps.len();
+        let start = self.bin(-(carriers as i16 / 2), shift);
+        let products = &self.neighbours[start..start + carriers];
+        let magnitudes = &self.magnitudes[start..start + carriers];
+        let mut re = [0.0f32; LANES];
+        let mut im = [0.0f32; LANES];
+        let mut norm = [0.0f32; LANES];
+        let lanes = products
+            .as_chunks::<LANES>()
+            .0
+            .iter()
+            .zip(magnitudes.as_chunks::<LANES>().0)
+            .zip(self.steps.as_chunks::<LANES>().0)
+            .zip(self.counted.as_chunks::<LANES>().0);
+        for (((products, magnitudes), steps), counted) in lanes {
+            for lane in 0..LANES {
+                let term = products[lane] * steps[lane];
+                re[lane] += term.re;
+                im[lane] += term.im;
+                norm[lane] += magnitudes[lane] * counted[lane];
+            }
+        }
+        (
+            Complex::new(re.iter().sum(), im.iter().sum()),
+            norm.iter().sum(),
+        )
     }
 
     fn best_shift(&self, shifts: RangeInclusive<i32>) -> Option<(i32, Complex<f32>)> {

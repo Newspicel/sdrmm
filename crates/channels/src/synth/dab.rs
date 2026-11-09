@@ -118,16 +118,52 @@ fn service_information() -> Vec<[u8; FIB_BYTES]> {
     ]
 }
 
-fn recorded_access_units() -> Vec<Vec<u8>> {
-    let mut bytes =
-        include_bytes!("../../../../fixtures/broadcast_audio/dab_he_stereo_48k.aus").as_slice();
+fn recorded_access_units(mut bytes: &[u8]) -> Vec<&[u8]> {
     let mut units = Vec::new();
     while bytes.len() >= 2 {
         let length = usize::from(u16::from_be_bytes([bytes[0], bytes[1]]));
-        units.push(super::dab_pad::prepend(&bytes[2..2 + length], units.len()));
+        units.push(&bytes[2..2 + length]);
         bytes = &bytes[2 + length..];
     }
     units
+}
+
+/// What the music service carries: HE-AAC stereo with PAD, or short AAC-LC mono units whose
+/// superframes end in a long run of zero padding.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Programme {
+    HeStereo,
+    ShortLcMono,
+}
+
+impl Programme {
+    const fn format(self) -> AudioFormat {
+        AudioFormat {
+            sample_rate_hz: 48_000,
+            spectral_band_replication: matches!(self, Self::HeStereo),
+            parametric_stereo: false,
+            stereo_core: matches!(self, Self::HeStereo),
+            surround: 0,
+        }
+    }
+
+    fn access_units(self) -> Vec<Vec<u8>> {
+        match self {
+            Self::HeStereo => recorded_access_units(include_bytes!(
+                "../../../../fixtures/broadcast_audio/dab_he_stereo_48k.aus"
+            ))
+            .into_iter()
+            .enumerate()
+            .map(|(index, unit)| super::dab_pad::prepend(unit, index))
+            .collect(),
+            Self::ShortLcMono => recorded_access_units(include_bytes!(
+                "../../../../fixtures/broadcast_audio/dab_lc_mono_48k.aus"
+            ))
+            .into_iter()
+            .map(<[u8]>::to_vec)
+            .collect(),
+        }
+    }
 }
 
 struct Music {
@@ -140,23 +176,17 @@ struct Music {
 }
 
 impl Music {
-    fn new() -> Self {
+    fn new(programme: Programme) -> Self {
         let protection =
             Protection::eep(MUSIC_BITRATE_KBPS, Eep::A, 3).expect("EEP-A 3 at 96 kbit/s");
         let frame_bytes = protection.frame_bits() / 8;
         Self {
             encoder: SubChannelEncoder::new(protection),
             builder: SuperframeBuilder::new(frame_bytes).expect("96 kbit/s builds superframes"),
-            format: AudioFormat {
-                sample_rate_hz: 48_000,
-                spectral_band_replication: true,
-                parametric_stereo: false,
-                stereo_core: true,
-                surround: 0,
-            },
+            format: programme.format(),
             queued: Vec::new(),
             counter: 0,
-            access_units: recorded_access_units(),
+            access_units: programme.access_units(),
         }
     }
 
@@ -273,25 +303,38 @@ pub fn ensemble_for_mode(
     transmission_mode: DabTransmissionMode,
     frames: usize,
 ) -> Vec<Complex<f32>> {
-    generate(transmission_mode, frames, false)
+    generate(transmission_mode, frames, false, Programme::HeStereo)
 }
 
 pub fn ensemble_with_data(
     transmission_mode: DabTransmissionMode,
     frames: usize,
 ) -> Vec<Complex<f32>> {
-    generate(transmission_mode, frames, true)
+    generate(transmission_mode, frames, true, Programme::HeStereo)
+}
+
+/// Mode I with a music service whose superframes end in zero padding, so a whole logical
+/// frame of zeros (a valid Fire code) precedes every superframe head.
+#[must_use]
+pub fn ensemble_zero_padded(frames: usize) -> Vec<Complex<f32>> {
+    generate(
+        DabTransmissionMode::I,
+        frames,
+        false,
+        Programme::ShortLcMono,
+    )
 }
 
 fn generate(
     transmission_mode: DabTransmissionMode,
     frames: usize,
     with_data: bool,
+    programme: Programme,
 ) -> Vec<Complex<f32>> {
     let mode = Mode::new(transmission_mode);
     let mut modulator = Modulator::new(transmission_mode);
     let mut fic = FicEncoder::for_mode(transmission_mode);
-    let mut music = Music::new();
+    let mut music = Music::new(programme);
     let mut talk = Talk::new();
     let mut information = service_information();
     let mut data = super::dab_packet::Data::new();
