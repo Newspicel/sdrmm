@@ -303,8 +303,7 @@ strip = "debuginfo"
 debug = false
 codegen-units = 16
 
-# Our fork's `combined` branch: RadixN in the NEON, SSE and Wasm SIMD planners, radix 8 layers
-# for large NEON powers of two, and a Stockham FFT for powers of two on AMD. Pinned until it
-# lands upstream.
+# Our fork's `combined` branch: RadixN in the NEON, SSE and Wasm SIMD planners, and Stockham
+# FFTs for powers of two on NEON, Wasm SIMD and AMD. Pinned until it lands upstream.
 [patch.crates-io]
-rustfft = { git = "https://github.com/Newspicel/RustFFT", rev = "3873aa6553a7109b9d56118a9440b90f0186aabb" }
+rustfft = { git = "https://github.com/Newspicel/RustFFT", rev = "fe4c666ebbc2a0231a5da801f8f023c5ac7182a9" }
