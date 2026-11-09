@@ -31,6 +31,7 @@ pub mod ofdm;
 pub mod pll;
 pub mod polar;
 pub mod radar;
+pub mod real_resamp;
 pub mod realiq;
 pub mod resamp;
 pub mod scene;
@@ -95,6 +96,7 @@ pub use nco::Nco;
 pub use noise::{AutoNotch, ClickRemover, NoiseBlanker, SpectralDenoiser};
 pub use ofdm::{CyclicPrefix, CyclicPrefixSearch};
 pub use pll::{Costas, LoopFilter, Pll};
+pub use real_resamp::RealResampler;
 pub use realiq::RealToIq;
 pub use resamp::FracResampler;
 pub use spectrum::{

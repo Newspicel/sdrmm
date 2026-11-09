@@ -54,8 +54,8 @@ impl AtvStandard {
     }
 }
 
-fn default_atv_bandwidth_hz() -> f64 {
-    1_500_000.0
+fn default_atv_rate_hz() -> f64 {
+    20_000_000.0
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -64,8 +64,12 @@ pub struct AtvParams {
     pub modulation: AtvModulation,
     #[serde(default)]
     pub standard: AtvStandard,
-    #[serde(default = "default_atv_bandwidth_hz")]
-    pub bandwidth_hz: f64,
+    /// Channel sample rate, wide enough for the whole FM swing plus any tuning error.
+    #[serde(default = "default_atv_rate_hz")]
+    pub rate_hz: f64,
+    /// Luma bandwidth; unset follows the noise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bandwidth_hz: Option<f64>,
     #[serde(default)]
     pub invert: bool,
     #[serde(default = "default_true")]
@@ -81,7 +85,8 @@ impl Default for AtvParams {
         Self {
             modulation: AtvModulation::default(),
             standard: AtvStandard::default(),
-            bandwidth_hz: default_atv_bandwidth_hz(),
+            rate_hz: default_atv_rate_hz(),
+            bandwidth_hz: None,
             invert: false,
             interlace: true,
             color: AtvColor::default(),

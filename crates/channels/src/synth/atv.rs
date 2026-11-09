@@ -8,10 +8,15 @@ use num_complex::Complex;
 
 const SYNC: f32 = 0.0;
 const BLANKING: f32 = 0.3;
+const NTSC_BLANKING: f32 = 40.0 / 140.0;
+const NTSC_BLACK: f32 = 47.5 / 140.0;
+const PAL_BURST: f32 = 0.15;
+const NTSC_BURST: f32 = 20.0 / 140.0;
 
 const AM_DEPTH: f64 = 0.875;
 
-const FM_DEVIATION_HZ: f64 = 150_000.0;
+/// FM swing, sync tip to peak white, as a share of the sample rate.
+const FM_SWING: f64 = 0.3;
 const SOUND_DEVIATION_HZ: f64 = 50_000.0;
 const SOUND_LEVEL: f64 = 0.12;
 const EMBEDDED_SOUND_LEVEL: f64 = 0.01;
@@ -19,21 +24,21 @@ const PAL_SUBCARRIER_HZ: f64 = 4_433_618.75;
 const NTSC_SUBCARRIER_HZ: f64 = 3_579_545.0;
 
 pub const BAR_LEVELS: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
+/// 75 % bars, so an AM carrier is never driven past zero.
 pub const COLOR_BARS: [[f32; 3]; 8] = [
-    [1.0, 1.0, 1.0],
-    [1.0, 1.0, 0.0],
-    [0.0, 1.0, 1.0],
-    [0.0, 1.0, 0.0],
-    [1.0, 0.0, 1.0],
-    [1.0, 0.0, 0.0],
-    [0.0, 0.0, 1.0],
+    [0.75, 0.75, 0.75],
+    [0.75, 0.75, 0.0],
+    [0.0, 0.75, 0.75],
+    [0.0, 0.75, 0.0],
+    [0.75, 0.0, 0.75],
+    [0.75, 0.0, 0.0],
+    [0.0, 0.0, 0.75],
     [0.0, 0.0, 0.0],
 ];
 
 #[derive(Clone, Copy, Debug)]
 struct Layout {
     line_s: f64,
-    front_porch_s: f64,
     sync_s: f64,
     back_porch_s: f64,
     active_s: f64,
@@ -43,19 +48,26 @@ struct Layout {
     field_half_lines: u16,
     blank_after_group: u16,
     active_lines: u16,
+    blanking: f32,
+    black: f32,
+    burst: (f64, f64),
 }
 
 fn layout(standard: AtvStandard) -> Layout {
     let (sync_us, back_us, active_us, pre_eq, broad, post_eq, blank_after_group, active_lines) =
         match standard {
-            AtvStandard::Ccir625 => (4.7, 5.8, 51.95, 5, 5, 5, 15, 288),
-            AtvStandard::Eia525 => (4.7, 4.5, 52.6, 6, 6, 6, 11, 240),
+            AtvStandard::Ccir625 => (4.7, 5.8, 52.0, 5, 5, 5, 17, 288),
+            AtvStandard::Eia525 => (4.7, 4.7, 52.6, 6, 6, 6, 12, 240),
             AtvStandard::SystemA405 => (9.0, 5.8, 82.2, 0, 8, 0, 10, 188),
         };
+    let (blanking, black, burst) = match standard {
+        AtvStandard::Eia525 => (NTSC_BLANKING, NTSC_BLACK, (5.3e-6, 7.8e-6)),
+        AtvStandard::Ccir625 => (BLANKING, BLANKING, (5.6e-6, 7.85e-6)),
+        AtvStandard::SystemA405 => (BLANKING, BLANKING, (9.9e-6, 12.15e-6)),
+    };
     let line_s = 1.0 / standard.line_rate_hz();
     Layout {
         line_s,
-        front_porch_s: line_s - (sync_us + back_us + active_us) * 1e-6,
         sync_s: sync_us * 1e-6,
         back_porch_s: back_us * 1e-6,
         active_s: active_us * 1e-6,
@@ -65,6 +77,9 @@ fn layout(standard: AtvStandard) -> Layout {
         field_half_lines: standard.lines(),
         blank_after_group,
         active_lines,
+        blanking,
+        black,
+        burst,
     }
 }
 
@@ -85,6 +100,7 @@ pub struct AtvSource {
     interlace: bool,
     color: AtvColor,
     sound_subcarrier_hz: Option<f64>,
+    swing_hz: f64,
 }
 
 impl AtvSource {
@@ -98,14 +114,27 @@ impl AtvSource {
             interlace: params.interlace,
             color: params.color,
             sound_subcarrier_hz: params.sound_subcarrier_hz,
+            swing_hz: FM_SWING * rate,
         }
+    }
+
+    /// FM with `hz` from sync tip to peak white.
+    #[must_use]
+    pub fn with_swing(mut self, hz: f64) -> Self {
+        self.swing_hz = hz;
+        self
     }
 
     fn field(&self, second: bool) -> Vec<Seg> {
         let l = self.layout;
         let group = usize::from(l.pre_eq + l.broad + l.post_eq);
         let lead = usize::from(second && l.field_half_lines % 2 == 1);
-        let rest = usize::from(l.field_half_lines) - group - lead;
+        let half_lines = if self.interlace {
+            l.field_half_lines
+        } else {
+            l.field_half_lines & !1
+        };
+        let rest = usize::from(half_lines) - group - lead;
         let mut segs = Vec::new();
         segs.extend(std::iter::repeat_n(Seg::Equalizing, usize::from(l.pre_eq)));
         segs.extend(std::iter::repeat_n(Seg::Broad, usize::from(l.broad)));
@@ -123,7 +152,9 @@ impl AtvSource {
         segs
     }
 
-    fn level(&self, seg: Seg, u: f64, line: u64, pixel: &dyn Fn(f64) -> [f32; 3]) -> f32 {
+    /// The composite level `u` seconds into `seg`, `t` seconds since the start, so the
+    /// subcarrier runs on unbroken as it does on air.
+    fn level(&self, seg: Seg, u: f64, t: f64, line: u64, pixel: &dyn Fn(f64) -> [f32; 3]) -> f32 {
         let l = self.layout;
         let half = l.line_s / 2.0;
         match seg {
@@ -131,53 +162,67 @@ impl AtvSource {
                 if u < l.sync_s / 2.0 {
                     SYNC
                 } else {
-                    BLANKING
+                    l.blanking
                 }
             }
             Seg::Broad => {
                 if u < half - l.sync_s {
                     SYNC
                 } else {
-                    BLANKING
+                    l.blanking
                 }
             }
-            Seg::HalfBlank => BLANKING,
-            Seg::HalfLine => self.level(Seg::Line { picture: false }, u, line, pixel),
+            Seg::HalfBlank => l.blanking,
+            Seg::HalfLine => self.level(Seg::Line { picture: false }, u, t, line, pixel),
             Seg::Line { picture } => {
-                let sync_end = l.front_porch_s + l.sync_s;
-                let active_start = sync_end + l.back_porch_s;
-                if u < l.front_porch_s || u >= active_start {
-                    if u >= active_start && picture {
-                        let x = (u - active_start) / l.active_s;
-                        let [r, g, b] = pixel(x.clamp(0.0, 1.0));
-                        let y = 0.299 * r + 0.587 * g + 0.114 * b;
-                        let mut composite = BLANKING + (1.0 - BLANKING) * y;
-                        if let Some(carrier) = color_carrier(self.color) {
-                            let chroma_u = 0.492 * (b - y);
-                            let mut chroma_v = 0.877 * (r - y);
-                            if self.color == AtvColor::Pal && line % 2 == 1 {
-                                chroma_v = -chroma_v;
-                            }
-                            let phase = TAU * carrier * (u - l.front_porch_s);
-                            composite += 0.35
-                                * (chroma_u * phase.cos() as f32 + chroma_v * phase.sin() as f32);
-                        }
-                        return composite;
-                    }
-                    BLANKING
-                } else if u < sync_end {
+                let active_start = l.sync_s + l.back_porch_s;
+                if picture && (active_start..active_start + l.active_s).contains(&u) {
+                    let x = (u - active_start) / l.active_s;
+                    self.picture(pixel(x), t, line)
+                } else if u < l.sync_s {
                     SYNC
+                } else if (l.burst.0..l.burst.1).contains(&u) {
+                    l.blanking + self.burst(t, line)
                 } else {
-                    let since_sync = u - l.front_porch_s;
-                    if let Some(carrier) = color_carrier(self.color)
-                        && (5.5e-6..8.0e-6).contains(&since_sync)
-                    {
-                        BLANKING + 0.12 * (TAU * carrier * since_sync).cos() as f32
-                    } else {
-                        BLANKING
-                    }
+                    l.blanking
                 }
             }
+        }
+    }
+
+    /// Luma plus `U sin + V cos` of the subcarrier, V flipping on alternate PAL lines.
+    fn picture(&self, [r, g, b]: [f32; 3], t: f64, line: u64) -> f32 {
+        let l = self.layout;
+        let span = 1.0 - l.black;
+        let y = 0.299 * r + 0.587 * g + 0.114 * b;
+        let Some(carrier) = color_carrier(self.color) else {
+            return l.black + span * y;
+        };
+        let u = 0.493 * (b - y);
+        let v = 0.877 * (r - y) * self.v_sign(line);
+        let (sin, cos) = (TAU * carrier * t).sin_cos();
+        l.black + span * (y + u * sin as f32 + v * cos as f32)
+    }
+
+    /// The colour burst: on -U, swung 45 degrees toward the line's V sign for PAL.
+    fn burst(&self, t: f64, line: u64) -> f32 {
+        let Some(carrier) = color_carrier(self.color) else {
+            return 0.0;
+        };
+        let (sin, cos) = (TAU * carrier * t).sin_cos();
+        let (sin, cos) = (sin as f32, cos as f32);
+        if self.color == AtvColor::Pal {
+            PAL_BURST * std::f32::consts::FRAC_1_SQRT_2 * (-sin + self.v_sign(line) * cos)
+        } else {
+            -NTSC_BURST * sin
+        }
+    }
+
+    fn v_sign(&self, line: u64) -> f32 {
+        if self.color == AtvColor::Pal && line % 2 == 1 {
+            -1.0
+        } else {
+            1.0
         }
     }
 
@@ -220,7 +265,8 @@ impl AtvSource {
             let count = end.round() as usize - first;
             for k in 0..count {
                 let u = (first + k) as f64 - start;
-                out.push(self.level(seg, u / self.rate, line, pixel));
+                let t = (first + k) as f64 / self.rate;
+                out.push(self.level(seg, u / self.rate, t, line, pixel));
             }
             if matches!(seg, Seg::Line { .. }) {
                 line += 1;
@@ -252,7 +298,7 @@ impl AtvSource {
                         sample
                     }
                     AtvModulation::Fm => {
-                        phase += TAU * FM_DEVIATION_HZ * (2.0 * m - 1.0) / self.rate;
+                        phase += TAU * self.swing_hz * (m - 0.5) / self.rate;
                         Complex::from_polar(1.0, phase as f32)
                     }
                 }
@@ -387,11 +433,9 @@ mod tests {
         let at = |seconds: f64| video[(seconds * RATE) as usize];
         let group = f64::from(l.pre_eq + l.broad + l.post_eq) * l.line_s / 2.0;
         let line_start = group + 20.0 * l.line_s;
-        assert_eq!(
-            at(line_start + l.front_porch_s + l.sync_s + l.back_porch_s / 2.0),
-            BLANKING
-        );
-        assert_eq!(at(line_start + l.front_porch_s + l.sync_s / 2.0), SYNC);
+        assert_eq!(at(line_start + l.sync_s + 0.5e-6), BLANKING);
+        assert_eq!(at(line_start + l.sync_s / 2.0), SYNC);
+        assert_eq!(at(line_start + l.line_s - 0.5e-6), BLANKING);
     }
 
     #[test]

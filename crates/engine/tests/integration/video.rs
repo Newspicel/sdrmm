@@ -175,6 +175,7 @@ fn atv_params() -> AtvParams {
     AtvParams {
         modulation: AtvModulation::Am,
         standard: AtvStandard::Ccir625,
+        rate_hz: DEVICE_RATE,
         ..AtvParams::default()
     }
 }

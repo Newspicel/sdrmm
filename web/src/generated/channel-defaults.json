@@ -40,11 +40,11 @@
   "atv": {
     "type": "atv",
     "settings": {
-      "bandwidth_hz": 1500000.0,
       "color": "monochrome",
       "interlace": true,
       "invert": false,
       "modulation": "am",
+      "rate_hz": 20000000.0,
       "standard": "ccir625"
     }
   },
