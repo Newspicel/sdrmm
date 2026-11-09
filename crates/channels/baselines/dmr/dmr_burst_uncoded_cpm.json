@@ -3,68 +3,68 @@
   "points": [
     {
       "ebn0_db": 6.0,
-      "errors": 3573,
+      "errors": 3572,
       "trials": 15552
     },
     {
       "ebn0_db": 7.0,
-      "errors": 3516,
+      "errors": 3509,
       "trials": 12960
     },
     {
       "ebn0_db": 8.0,
-      "errors": 3136,
-      "trials": 15552
+      "errors": 3279,
+      "trials": 18144
     },
     {
       "ebn0_db": 9.0,
-      "errors": 3006,
-      "trials": 15552
+      "errors": 3017,
+      "trials": 59616
     },
     {
       "ebn0_db": 10.0,
-      "errors": 3358,
-      "trials": 18144
+      "errors": 3023,
+      "trials": 142560
     },
     {
       "ebn0_db": 11.0,
-      "errors": 3067,
-      "trials": 18144
+      "errors": 3007,
+      "trials": 321408
     },
     {
       "ebn0_db": 12.0,
-      "errors": 3008,
-      "trials": 404352
+      "errors": 3009,
+      "trials": 580608
     },
     {
       "ebn0_db": 13.0,
-      "errors": 3006,
-      "trials": 650592
+      "errors": 3007,
+      "trials": 886464
     },
     {
       "ebn0_db": 14.0,
-      "errors": 3009,
-      "trials": 847584
+      "errors": 3004,
+      "trials": 1137888
     },
     {
       "ebn0_db": 15.0,
-      "errors": 3005,
-      "trials": 1080864
+      "errors": 3000,
+      "trials": 1262304
     },
     {
       "ebn0_db": 16.0,
-      "errors": 3006,
-      "trials": 1194912
+      "errors": 3002,
+      "trials": 1272672
     },
     {
       "ebn0_db": 17.0,
-      "errors": 3005,
-      "trials": 1275264
+      "errors": 3000,
+      "trials": 1293408
     },
     {
       "ebn0_db": 18.0,
-      "errors": 3003,
-      "trials": 1296000
+      "errors": 3002,
+      "trials": 1303776
     }
   ]
 }

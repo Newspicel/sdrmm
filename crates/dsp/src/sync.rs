@@ -172,6 +172,29 @@ struct Acquisition {
     armed: bool,
 }
 
+/// How much of the envelope must sit on the symbol-rate line before an acquisition is trusted.
+/// Below it the opening symbols are too noisy to place, and the loop keeps its own timing.
+const MIN_LINE_SHARE: f64 = 0.0;
+
+/// Spreads of the mean data imbalance alone produces, below which the mean is not taken for an
+/// offset.
+const IMBALANCE_SPREADS: f32 = 1.0;
+
+/// The carrier offset under `window`: its mean, less the part a run of unbalanced symbols could
+/// produce on its own, so only an offset the data cannot explain moves the estimate.
+fn carrier_offset(window: &[Complex<f32>], symbols: f32) -> Complex<f32> {
+    let n = window.len().max(1) as f32;
+    let mean = window.iter().sum::<Complex<f32>>() / n;
+    let rms = (window.iter().map(|s| (s - mean).norm_sqr()).sum::<f32>() / n).sqrt();
+    let imbalance = IMBALANCE_SPREADS * rms / symbols.max(1.0).sqrt();
+    let size = mean.norm();
+    if size <= imbalance {
+        Complex::default()
+    } else {
+        mean * ((size - imbalance) / size)
+    }
+}
+
 impl SymbolSync {
     #[must_use]
     pub fn new(sps: f64, loop_bw: f64) -> Self {
@@ -310,12 +333,16 @@ impl SymbolSync {
         }
         let start = self.pos - self.consumed;
         let window = &self.buf[start..(start + span).min(self.buf.len())];
+        let offset = carrier_offset(window, window.len() as f32 / self.sps as f32);
         let line: Complex<f64> = window
             .iter()
             .enumerate()
-            .map(|(i, s)| Complex::from_polar(f64::from(s.norm()), -TAU * i as f64 / self.sps))
+            .map(|(i, s)| {
+                Complex::from_polar(f64::from((s - offset).norm()), -TAU * i as f64 / self.sps)
+            })
             .sum();
-        if !(line.norm() > 0.0 && line.arg().is_finite()) {
+        let total: f64 = window.iter().map(|s| f64::from((s - offset).norm())).sum();
+        if !(line.norm() > MIN_LINE_SHARE * total && line.arg().is_finite()) {
             return;
         }
         let peak = (-line.arg() / TAU).rem_euclid(1.0) * self.sps;
@@ -595,6 +622,27 @@ mod tests {
             let mut sync = SymbolSync::new(4.0, 0.02).with_acquisition(32);
             let mut out = Vec::new();
             sync.process(&signal, &mut out);
+            assert!(
+                alignment(&syms, &out, 8).is_some(),
+                "offset {eighth}/8: no alignment from the eighth symbol on"
+            );
+        }
+    }
+
+    #[test]
+    fn acquisition_ignores_a_carrier_offset_under_the_symbols() {
+        let syms = symbols(80, 0x1234_5678);
+        for eighth in 0..8 {
+            let mut signal = bpsk(&syms, 4.0, f64::from(eighth) / 8.0);
+            for sample in &mut signal {
+                *sample += Complex::new(0.7, 0.0);
+            }
+            let mut sync = SymbolSync::new(4.0, 0.02).with_acquisition(32);
+            let mut out = Vec::new();
+            sync.process(&signal, &mut out);
+            for symbol in &mut out {
+                *symbol -= Complex::new(0.7, 0.0);
+            }
             assert!(
                 alignment(&syms, &out, 8).is_some(),
                 "offset {eighth}/8: no alignment from the eighth symbol on"

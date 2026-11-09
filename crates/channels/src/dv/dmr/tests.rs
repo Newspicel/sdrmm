@@ -1585,3 +1585,67 @@ fn retuning_forgets_the_call_in_progress() {
         "an embedded link control was assembled across the retune: {frames:?}"
     );
 }
+
+#[test]
+fn a_call_two_decibels_over_the_noise_decodes_every_frame() {
+    let call = tx::Call::default();
+    let mut clean = vec![Complex::new(0.0f32, 0.0); (INPUT_RATE_HZ * 0.4) as usize];
+    clean.extend(tx::transmission(&call, INPUT_RATE_HZ));
+    for seed in [100, 102, 104, 106, 108, 110] {
+        let iq = crate::testutil::at_snr(&clean, 2.0, seed);
+        let mut decoder = channel(DmrSlots::Both);
+        let mut out = ChannelOutputs::default();
+        let mut frames = Vec::new();
+        for block in iq.chunks(4096) {
+            out.reset();
+            decoder.process(block, &mut out);
+            frames.extend(out.events.drain(..).filter_map(|e| e.read::<DvFrame>()));
+        }
+        for kind in [
+            DvFrameKind::Header,
+            DvFrameKind::Voice,
+            DvFrameKind::Terminator,
+        ] {
+            assert!(
+                frames.iter().any(|f| f.kind == kind
+                    && f.source == Some(call.source)
+                    && f.destination == Some(call.destination)),
+                "seed {seed}: no {kind:?} in {:?}",
+                frames.iter().map(|f| f.kind).collect::<Vec<_>>()
+            );
+        }
+    }
+}
+
+#[test]
+fn a_call_that_lifts_the_noise_floor_still_decodes_every_frame() {
+    let call = tx::Call::default();
+    let lead = (INPUT_RATE_HZ * 0.4) as usize;
+    let mut led = vec![Complex::new(0.0f32, 0.0); lead];
+    led.extend(tx::transmission(&call, INPUT_RATE_HZ));
+    for seed in [104, 106, 110, 114] {
+        let mut iq = crate::testutil::complex_noise(0x1157, 0.01, lead);
+        iq.extend_from_slice(&crate::testutil::at_snr(&led, 4.0, seed)[lead..]);
+        let mut decoder = channel(DmrSlots::Both);
+        let mut out = ChannelOutputs::default();
+        let mut frames = Vec::new();
+        for block in iq.chunks(4096) {
+            out.reset();
+            decoder.process(block, &mut out);
+            frames.extend(out.events.drain(..).filter_map(|e| e.read::<DvFrame>()));
+        }
+        for kind in [
+            DvFrameKind::Header,
+            DvFrameKind::Voice,
+            DvFrameKind::Terminator,
+        ] {
+            assert!(
+                frames
+                    .iter()
+                    .any(|f| f.kind == kind && f.source == Some(call.source)),
+                "seed {seed}: no {kind:?} in {:?}",
+                frames.iter().map(|f| f.kind).collect::<Vec<_>>()
+            );
+        }
+    }
+}

@@ -223,7 +223,7 @@ pub fn worst_penalty_db_vs_curve(
         if p.ebn0_db < db_lo || p.ebn0_db > db_hi || p.errors == 0 {
             continue;
         }
-        let Some(db_reference) = db_at_ber(reference, p.rate(), true) else {
+        let Some(db_reference) = db_at_ber_near(reference, p.rate(), p.ebn0_db) else {
             return f64::INFINITY;
         };
         let pen = p.ebn0_db - db_reference;
@@ -235,11 +235,8 @@ pub fn worst_penalty_db_vs_curve(
     worst
 }
 
-fn db_at_ber(curve: &Curve, ber: f64, extrapolate: bool) -> Option<f64> {
-    if ber <= 0.0 || !ber.is_finite() {
-        return None;
-    }
-    let pts: Vec<(f64, f64)> = curve
+fn log_points(curve: &Curve) -> Vec<(f64, f64)> {
+    curve
         .points
         .iter()
         .filter(|p| p.trials > 0)
@@ -251,17 +248,41 @@ fn db_at_ber(curve: &Curve, ber: f64, extrapolate: bool) -> Option<f64> {
             };
             (p.ebn0_db, rate.log10())
         })
-        .collect();
-    let target = ber.log10();
-    for pair in pts.windows(2) {
-        let (db_a, la) = pair[0];
-        let (db_b, lb) = pair[1];
-        if (la - target) * (lb - target) <= 0.0 {
-            if (la - lb).abs() < 1e-12 {
-                return Some(db_a);
-            }
-            return Some(db_a + (la - target) / (la - lb) * (db_b - db_a));
+        .collect()
+}
+
+fn crossings(pts: &[(f64, f64)], target: f64) -> impl Iterator<Item = f64> + '_ {
+    pts.windows(2).filter_map(move |pair| {
+        let ((db_a, la), (db_b, lb)) = (pair[0], pair[1]);
+        if (la - target) * (lb - target) > 0.0 {
+            return None;
         }
+        if (la - lb).abs() < 1e-12 {
+            return Some(db_a);
+        }
+        Some(db_a + (la - target) / (la - lb) * (db_b - db_a))
+    })
+}
+
+/// Where `curve` reaches `ber`, taking the crossing nearest `near_db` when a statistical
+/// plateau crosses it more than once, and extrapolating past the ends.
+fn db_at_ber_near(curve: &Curve, ber: f64, near_db: f64) -> Option<f64> {
+    if ber <= 0.0 || !ber.is_finite() {
+        return None;
+    }
+    crossings(&log_points(curve), ber.log10())
+        .min_by(|a, b| (a - near_db).abs().total_cmp(&(b - near_db).abs()))
+        .or_else(|| db_at_ber(curve, ber, true))
+}
+
+fn db_at_ber(curve: &Curve, ber: f64, extrapolate: bool) -> Option<f64> {
+    if ber <= 0.0 || !ber.is_finite() {
+        return None;
+    }
+    let pts = log_points(curve);
+    let target = ber.log10();
+    if let Some(db) = crossings(&pts, target).next() {
+        return Some(db);
     }
     if extrapolate && pts.len() >= 2 {
         let ((db_a, la), (db_b, lb)) = if target > pts[0].1 {
@@ -371,6 +392,18 @@ mod tests {
         assert!((penalty_db_vs_curve(&shifted, &exact, 1e-3) - 0.5).abs() < 0.03);
         let worst = worst_penalty_db_vs_curve(&shifted, &exact, 0.0, 10.0);
         assert!((worst - 0.5).abs() < 0.05, "worst vs curve {worst}");
+    }
+
+    #[test]
+    fn a_plateau_compares_each_point_with_the_crossing_beside_it() {
+        let plateau = curve_of(vec![
+            point(4.0, 265, 1_000),
+            point(5.0, 160, 1_000),
+            point(6.0, 187, 1_000),
+            point(7.0, 80, 1_000),
+        ]);
+        let worst = worst_penalty_db_vs_curve(&plateau, &plateau, 4.0, 7.0);
+        assert!(worst.abs() < 1e-9, "a curve drifts {worst} dB from itself");
     }
 
     #[test]

@@ -3,67 +3,67 @@
   "points": [
     {
       "ebn0_db": 14.0,
-      "errors": 2002,
-      "trials": 61440
+      "errors": 2001,
+      "trials": 65536
     },
     {
       "ebn0_db": 15.0,
-      "errors": 2015,
-      "trials": 69632
+      "errors": 2018,
+      "trials": 97280
     },
     {
       "ebn0_db": 16.0,
-      "errors": 2013,
-      "trials": 129024
+      "errors": 2009,
+      "trials": 136192
     },
     {
       "ebn0_db": 17.0,
-      "errors": 2012,
-      "trials": 207872
+      "errors": 2008,
+      "trials": 218112
     },
     {
       "ebn0_db": 18.0,
-      "errors": 2002,
-      "trials": 317440
+      "errors": 2400,
+      "trials": 320512
     },
     {
       "ebn0_db": 19.0,
       "errors": 2001,
-      "trials": 528384
+      "trials": 562176
     },
     {
       "ebn0_db": 20.0,
       "errors": 2001,
-      "trials": 973824
+      "trials": 1032192
     },
     {
       "ebn0_db": 21.0,
-      "errors": 2001,
-      "trials": 2074624
+      "errors": 2000,
+      "trials": 2247680
     },
     {
       "ebn0_db": 22.0,
-      "errors": 1734,
+      "errors": 1626,
       "trials": 4000768
     },
     {
       "ebn0_db": 23.0,
-      "errors": 698,
+      "errors": 642,
       "trials": 4000768
     },
     {
       "ebn0_db": 24.0,
-      "errors": 251,
+      "errors": 238,
       "trials": 4000768
     },
     {
       "ebn0_db": 25.0,
-      "errors": 89,
+      "errors": 81,
       "trials": 4000768
     },
     {
       "ebn0_db": 26.0,
-      "errors": 33,
+      "errors": 32,
       "trials": 4000768
     }
   ]

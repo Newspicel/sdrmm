@@ -297,6 +297,28 @@ fn gmsk_alternating_curves_still_reproduce_the_historical_baselines() {
 }
 
 #[test]
+#[ignore = "full sweep; run in release to (re)generate the alternating framing curves"]
+fn measure_gmsk_alternating_full() {
+    for (bt, seed, stem) in [
+        (0.3, gmsk::BT03_SEED, gmsk::BT03_AWGN_ALTERNATING),
+        (0.5, gmsk::BT05_SEED, gmsk::BT05_AWGN_ALTERNATING),
+    ] {
+        let committed = sweep::load_json(&baseline_path(stem)).unwrap();
+        let grid: Vec<f64> = committed.points.iter().map(|p| p.ebn0_db).collect();
+        let mut curve = sweep::sweep_ber(
+            &gmsk::alternating_link(bt),
+            &ChannelSpec::default(),
+            &grid,
+            seed,
+            FULL_ERRORS,
+            FULL_CAP,
+        );
+        curve.label = committed.label;
+        sweep::save_json(&curve, &baseline_path(stem)).unwrap();
+    }
+}
+
+#[test]
 fn gmsk_bt05_sits_near_msk_at_1e3() {
     let gmsk = sweep::load_json(&baseline_path(gmsk::BT05_AWGN)).unwrap();
     let msk = sweep::load_json(&baseline_path(msk::AWGN)).unwrap();

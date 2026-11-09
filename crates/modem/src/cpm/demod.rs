@@ -32,6 +32,31 @@ const CARRIER_RISE: f32 = 4.0;
 
 const STEADY_SPREAD: f32 = 0.25;
 
+/// How long the envelope must stay under the carrier threshold before the gate closes. Near
+/// the noise floor a burst's envelope dips under it for a sample or two; without a hangover each
+/// dip restarted the settle and cut the burst into pieces too short to time.
+const HANGOVER_SYMBOLS: f64 = 2.0;
+
+/// How far past the outer symbol level the discriminator must swing to count as wild. A carrier
+/// stays inside its deviation; noise of any strength throws the phase around and lands out here
+/// far more often, which power alone cannot tell from a weak carrier.
+const WILD_LEVELS: f32 = 2.0;
+/// The share of noise's own wild rate at which an open gate is taken to hold noise, and its floor
+/// follows so a noise floor that rose since it was learned closes the gate again. A carrier
+/// a few dB over the noise runs at under half of it.
+const NOISE_LIKENESS: f32 = 0.75;
+/// How far under the level it was keyed at the envelope must fall for a carrier to have ended.
+/// The gate then only keys again on something clearly over what is left, however much higher
+/// that is than the floor learned before.
+const CARRIER_DROP: f32 = 16.0;
+/// How much faster than usual the floor rises once an open gate is known to hold noise.
+const NOISE_FLOOR_SPEED: f32 = 8.0;
+/// How quickly an open gate's wild rate follows the input.
+const WILD_TAU_SYMBOLS: f64 = 16.0;
+/// How quickly the centre wild swings are measured from follows the discriminator, so a
+/// carrier offset the loops have not caught up with does not read as wild.
+const SWING_TAU_SYMBOLS: f64 = 4.0;
+
 const OFFSET_SYMBOLS: f32 = 64.0;
 const OFFSET_TRUST: f32 = 0.5;
 const INNER_RUN_SYMBOLS: usize = 16;
@@ -165,12 +190,21 @@ struct Gate {
     settle_samples: usize,
     keyed: usize,
     support: usize,
+    quiet: usize,
+    hangover: usize,
+    carrier_level: f32,
+    wild_rate: f32,
+    noise_wild: f32,
+    noise_heard: usize,
+    wild_alpha: f32,
     always_keyed: bool,
 }
 
 impl Gate {
+    /// `wild` says whether the discriminator swung past the signal's deviation on this sample,
+    /// when the front has a discriminator to ask.
     #[inline]
-    fn step(&mut self, power: f32) -> (bool, bool) {
+    fn step(&mut self, power: f32, wild: Option<bool>) -> (bool, bool) {
         if self.always_keyed {
             self.keyed = (self.keyed + 1).min(self.support);
             return (true, self.keyed == self.support);
@@ -181,13 +215,27 @@ impl Gate {
         self.settling = self.settling.saturating_sub(1);
         let spread = self.mean_square - self.mean * self.mean;
         let steady = spread < STEADY_SPREAD * self.mean * self.mean;
-        let keyed = self.settling == 0 && (steady || self.envelope > self.floor * CARRIER_RISE);
+        let carrier = self.settling == 0 && (steady || self.envelope > self.floor * CARRIER_RISE);
+        self.quiet = if carrier { 0 } else { self.quiet + 1 };
+        let keyed = carrier || (self.keyed > 0 && self.quiet <= self.hangover);
+        let noisy = wild.is_some_and(|wild| self.hears_noise(wild, keyed));
         if steady {
             self.steady_level = self.mean;
         }
+        self.carrier_level = if keyed && !noisy {
+            self.envelope
+                .max(self.carrier_level * (1.0 - self.floor_alpha))
+        } else {
+            0.0
+        };
         if self.steady_level > 0.0 && self.mean * CARRIER_RISE < self.steady_level {
             self.floor = self.mean;
             self.steady_level = 0.0;
+        } else if self.carrier_level > 0.0 && self.envelope * CARRIER_DROP < self.carrier_level {
+            self.floor = self.floor.max(self.envelope / CARRIER_RISE);
+            self.carrier_level = 0.0;
+        } else if noisy {
+            self.floor += NOISE_FLOOR_SPEED * self.floor_alpha * (self.envelope - self.floor);
         } else if !keyed && !steady {
             self.floor += self.floor_alpha * (self.envelope - self.floor);
         }
@@ -196,7 +244,20 @@ impl Gate {
         } else {
             0
         };
-        (keyed, self.keyed == self.support)
+        (keyed, self.keyed == self.support && !noisy)
+    }
+
+    /// Whether an open gate's input swings like noise, learning noise's wild rate while closed.
+    fn hears_noise(&mut self, wild: bool, keyed: bool) -> bool {
+        let wild = f32::from(u8::from(wild));
+        if !keyed {
+            self.noise_wild += self.floor_alpha * (wild - self.noise_wild);
+            self.noise_heard = self.noise_heard.saturating_add(1);
+            self.wild_rate = 0.0;
+            return false;
+        }
+        self.wild_rate += self.wild_alpha * (wild - self.wild_rate);
+        self.noise_heard >= self.settle_samples && self.wild_rate > NOISE_LIKENESS * self.noise_wild
     }
 
     fn reset(&mut self) {
@@ -207,6 +268,11 @@ impl Gate {
         self.mean_square = 0.0;
         self.settling = self.settle_samples;
         self.keyed = 0;
+        self.quiet = 0;
+        self.carrier_level = 0.0;
+        self.wild_rate = 0.0;
+        self.noise_wild = 0.0;
+        self.noise_heard = 0;
     }
 }
 
@@ -215,6 +281,8 @@ pub struct CpmDemod<F = IqFront> {
     matched: RealDecimator,
     sync: SymbolSync,
     level_max: f32,
+    swing_centre: f32,
+    swing_alpha: f32,
     centre: f32,
     centre_scale: f64,
     peak: f32,
@@ -274,7 +342,10 @@ impl CpmDemod<IqFront> {
     pub fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<f32>) {
         self.carrier_run.clear();
         self.settled_run.clear();
-        self.gate_run(iq.iter().map(Complex::norm_sqr));
+        let quadrature = matches!(self.front.0, IqKind::Quadrature(_));
+        if !quadrature {
+            self.gate_run(iq.iter().map(|s| (s.norm_sqr(), None)));
+        }
         match &mut self.front.0 {
             IqKind::Quadrature(demod) => demod.process(iq, &mut self.demod_buf),
             IqKind::Tones(tones) => {
@@ -291,6 +362,18 @@ impl CpmDemod<IqFront> {
                     difference
                 }));
             }
+        }
+        if quadrature {
+            let bound = WILD_LEVELS * self.level_max;
+            let (mut swing, alpha) = (self.swing_centre, self.swing_alpha);
+            let demod_buf = std::mem::take(&mut self.demod_buf);
+            self.gate_run(iq.iter().zip(&demod_buf).map(|(s, &f)| {
+                let wild = (f - swing).abs() > bound;
+                swing += alpha * (f.clamp(swing - bound, swing + bound) - swing);
+                (s.norm_sqr(), Some(wild))
+            }));
+            self.swing_centre = swing;
+            self.demod_buf = demod_buf;
         }
         self.finish(out);
     }
@@ -355,7 +438,7 @@ impl CpmDemod<RealFront> {
     pub fn process_real(&mut self, audio: &[f32], out: &mut Vec<f32>) {
         self.carrier_run.clear();
         self.settled_run.clear();
-        self.gate_run(audio.iter().map(|&sample| sample * sample));
+        self.gate_run(audio.iter().map(|&sample| (sample * sample, None)));
         match &mut self.front.0 {
             RealKind::Analytic(analytic) => {
                 let Analytic {
@@ -423,6 +506,8 @@ impl<F> CpmDemod<F> {
             front,
             matched: RealDecimator::new(receive_filter, 1),
             sync: timing_loop(params, sps, timing_bw),
+            swing_centre: 0.0,
+            swing_alpha: one_pole_coeff(sps, SWING_TAU_SYMBOLS),
             level_max,
             centre: 0.0,
             centre_scale: params.h() / (2.0 * sps),
@@ -447,6 +532,13 @@ impl<F> CpmDemod<F> {
                 settle_samples: settle,
                 keyed: 0,
                 support: receive_filter.len() + front_support,
+                quiet: 0,
+                hangover: (HANGOVER_SYMBOLS * sps).round() as usize,
+                carrier_level: 0.0,
+                wild_rate: 0.0,
+                noise_wild: 0.0,
+                noise_heard: 0,
+                wild_alpha: one_pole_coeff(sps, WILD_TAU_SYMBOLS),
                 always_keyed: false,
             },
             demod_buf: Vec::new(),
@@ -476,10 +568,10 @@ impl<F> CpmDemod<F> {
         f64::from(self.centre + self.offset) * self.centre_scale
     }
 
-    fn gate_run(&mut self, powers: impl Iterator<Item = f32>) {
+    fn gate_run(&mut self, powers: impl Iterator<Item = (f32, Option<bool>)>) {
         let mut gate = self.gate;
-        for power in powers {
-            let (keyed, settled) = gate.step(power);
+        for (power, wild) in powers {
+            let (keyed, settled) = gate.step(power, wild);
             self.carrier_run.push(keyed);
             self.settled_run.push(settled);
         }
@@ -526,7 +618,7 @@ impl<F> CpmDemod<F> {
             let value = symbol.re - self.offset;
             let magnitude = value.abs();
             if carrier {
-                if settled {
+                if settled && (self.levels.is_none() || magnitude <= WILD_LEVELS * self.level_max) {
                     self.since_outer += 1;
                     if magnitude > peak {
                         peak += PEAK_ATTACK * (magnitude - peak);
@@ -579,6 +671,7 @@ impl<F> CpmDemod<F> {
     fn clear(&mut self) {
         self.sync.reset();
         self.centre = 0.0;
+        self.swing_centre = 0.0;
         self.offset = 0.0;
         self.since_outer = 0;
         self.peak = self.level_max;
@@ -702,6 +795,35 @@ mod tests {
             opened < 600,
             "the gate took {opened} symbols to open on a live carrier"
         );
+    }
+
+    #[test]
+    fn a_dip_inside_a_burst_does_not_restart_the_gate() {
+        let params = four_level(1_944.0);
+        let mut demod = CpmDemod::new(&params, &rx_rrc(), TIMING_BW_BURST);
+        listening(&mut demod, 0x1157);
+        let threshold = demod.gate.floor * CARRIER_RISE;
+        let carrier = 3.0 * threshold;
+        for _ in 0..demod.gate.support * 2 {
+            demod.gate.step(carrier, None);
+        }
+        assert!(
+            demod.gate.step(carrier, None).1,
+            "a steady carrier settles the gate"
+        );
+        let mut dipped = 0;
+        while demod.gate.envelope >= threshold {
+            demod.gate.step(0.0, None);
+            dipped += 1;
+        }
+        let mut settled = true;
+        for _ in 0..2 {
+            settled &= demod.gate.step(0.0, None).1;
+        }
+        for _ in 0..20 {
+            settled &= demod.gate.step(carrier, None).1;
+        }
+        assert!(settled, "a {}-sample dip restarted the gate", dipped + 2);
     }
 
     #[test]
@@ -1276,5 +1398,45 @@ mod tests {
             demod.process_real(&audio, &mut soft);
         });
         assert!(!soft.is_empty(), "the measured call recovered no symbols");
+    }
+
+    #[test]
+    fn a_noise_floor_that_rises_with_a_burst_does_not_hold_the_gate_open() {
+        const ON: usize = 132;
+        const OFF: usize = 156;
+        let params = four_level(1_944.0);
+        for amplitude in [3.0 * NOISE, 10.0 * NOISE, 30.0 * NOISE] {
+            let mut keyed: Vec<Option<u8>> = Vec::new();
+            let mut sent = Vec::new();
+            for burst in 0..6u32 {
+                let syms = symbols(ON, 23 + burst, 4);
+                keyed.extend(syms.iter().copied().map(Some));
+                keyed.extend(vec![None; OFF]);
+                sent.push(syms);
+            }
+            let mut iq = CpmMod::new(params.clone()).keyed(&keyed);
+            let mut rng = Rng::new(7);
+            for s in &mut iq {
+                *s += Complex::new(
+                    (rng.uniform() as f32 * 2.0 - 1.0) * amplitude,
+                    (rng.uniform() as f32 * 2.0 - 1.0) * amplitude,
+                );
+            }
+            let mut demod = CpmDemod::new(&params, &rx_rrc(), TIMING_BW_BURST);
+            listening(&mut demod, 0x1157);
+            let mut soft = Vec::new();
+            demod.process(&iq, &mut soft);
+            let got: Vec<u8> = soft.iter().map(|&s| params.mapping().slice(s)).collect();
+            for (index, burst) in sent.iter().enumerate() {
+                let errors = (0..got.len().saturating_sub(ON))
+                    .map(|lag| (8..ON).filter(|&i| got[lag + i] != burst[i]).count())
+                    .min()
+                    .unwrap_or(ON);
+                assert_eq!(errors, 0, "noise {amplitude}: burst {index}");
+            }
+            let open = demod.settled().iter().filter(|&&s| s).count() as f32
+                / demod.settled().len() as f32;
+            assert!(open < 0.5, "noise {amplitude}: the gate stayed open {open}");
+        }
     }
 }
