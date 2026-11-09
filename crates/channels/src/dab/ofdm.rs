@@ -541,7 +541,11 @@ impl FrameSync {
                 started = true;
                 continue;
             }
-            average = average.mul_add(1.0 - CARRIER_AVERAGE_RATE, CARRIER_AVERAGE_RATE * smoothed);
+            average = sdrmm_dsp::madd(
+                average,
+                1.0 - CARRIER_AVERAGE_RATE,
+                CARRIER_AVERAGE_RATE * smoothed,
+            );
             let ended = started && (self.shortest..self.longest).contains(&quiet);
             quiet = 0;
             started = true;

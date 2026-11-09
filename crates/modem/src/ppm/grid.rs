@@ -142,7 +142,10 @@ impl SlotGrid {
 }
 
 pub fn magnitudes(iq: &[Complex<f32>], out: &mut Vec<f32>) {
-    out.extend(iq.iter().map(|s| s.re.mul_add(s.re, s.im * s.im).sqrt()));
+    out.extend(
+        iq.iter()
+            .map(|s| sdrmm_dsp::madd(s.re, s.re, s.im * s.im).sqrt()),
+    );
 }
 
 #[cfg(test)]

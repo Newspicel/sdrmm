@@ -65,7 +65,7 @@ impl Coding {
         if self.format.signed {
             sign_extend(value, self.format.bits) as f32 * self.scale
         } else {
-            (value as f32).mul_add(self.scale, -1.0)
+            sdrmm_dsp::madd(value as f32, self.scale, -1.0)
         }
     }
 

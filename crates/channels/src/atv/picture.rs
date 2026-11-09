@@ -81,7 +81,7 @@ impl Blur {
         out.fill(0.0);
         for (j, &tap) in self.row(frac).iter().enumerate() {
             for (o, &v) in out.iter_mut().zip(&x[j..]) {
-                *o = tap.mul_add(v, *o);
+                *o = sdrmm_dsp::madd(tap, v, *o);
             }
         }
     }

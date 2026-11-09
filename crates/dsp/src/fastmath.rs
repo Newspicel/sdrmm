@@ -15,6 +15,19 @@ const LOG2_SERIES: [f32; 6] = [
     -0.206_597_67,
 ];
 const DB_PER_OCTAVE: f32 = 10.0 * std::f32::consts::LOG10_2;
+const NATIVE_FMA: bool = cfg!(any(target_arch = "aarch64", target_feature = "fma"));
+
+/// `a * b + c`, fused only where the target has the instruction. Without it `mul_add` becomes a
+/// software routine that costs tens of nanoseconds per call on x86.
+#[must_use]
+#[inline(always)]
+pub fn madd(a: f32, b: f32, c: f32) -> f32 {
+    if NATIVE_FMA {
+        a.mul_add(b, c)
+    } else {
+        a * b + c
+    }
+}
 
 #[must_use]
 #[inline(always)]
@@ -158,6 +171,15 @@ mod tests {
     use super::*;
 
     const TOLERANCE: f64 = 1e-6;
+
+    #[test]
+    fn madd_matches_multiply_then_add_within_one_rounding() {
+        for (a, b, c) in [(1.5f32, -2.25, 0.75), (1e-3, 3e4, -29.9), (0.1, 0.1, -0.01)] {
+            let exact = f64::from(a) * f64::from(b) + f64::from(c);
+            let got = f64::from(madd(a, b, c));
+            assert!((got - exact).abs() <= exact.abs().max(1.0) * 2.0 * f64::from(f32::EPSILON));
+        }
+    }
 
     fn angle_error(fast: f32, exact: f64) -> f64 {
         let diff = (f64::from(fast) - exact).rem_euclid(std::f64::consts::TAU);

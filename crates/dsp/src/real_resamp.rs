@@ -64,7 +64,7 @@ impl RealResampler {
         let half = taps / 2 - 1;
         while (self.time as usize) + taps - half <= self.pending.len() {
             let whole = self.time as usize;
-            let phase = ((self.time - whole as f64) * PHASES as f64).round() as usize;
+            let phase = ((self.time - whole as f64) * PHASES as f64 + 0.5) as usize;
             let start = whole - half;
             out.push(dot(
                 &self.pending[start..start + taps],
@@ -89,7 +89,7 @@ fn dot(samples: &[f32], taps: &[f32]) -> f32 {
         .zip(taps.as_chunks::<LANES>().0)
     {
         for lane in 0..LANES {
-            sum[lane] = x[lane].mul_add(h[lane], sum[lane]);
+            sum[lane] = crate::madd(x[lane], h[lane], sum[lane]);
         }
     }
     (sum[0] + sum[1]) + (sum[2] + sum[3])

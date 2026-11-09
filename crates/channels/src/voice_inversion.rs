@@ -83,7 +83,7 @@ impl VoiceInverter {
             .zip(self.quadrature.iter())
         {
             let carrier = nco.next_sample();
-            *slot = i.mul_add(carrier.re, q * carrier.im);
+            *slot = sdrmm_dsp::madd(i, carrier.re, q * carrier.im);
         }
     }
 }
