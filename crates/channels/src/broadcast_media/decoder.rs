@@ -1,4 +1,4 @@
-use std::ptr::NonNull;
+use std::{ffi::c_uint, ptr::NonNull};
 
 use ffmpeg_the_third::{
     self as av, codec, ffi, frame, software,
@@ -7,6 +7,18 @@ use ffmpeg_the_third::{
 
 use super::{Kind, Payload};
 use crate::{AUDIO_RATE, VideoPicture};
+
+unsafe extern "C" {
+    /// FFmpeg 9 types the argument as `enum AVCodecID` where earlier releases take an `int`, so
+    /// the generated binding changes with the installed library. Both share one C ABI, and this
+    /// declaration builds against either.
+    fn av_parser_init(codec_id: c_uint) -> *mut ffi::AVCodecParserContext;
+}
+
+fn parser_for(id: codec::Id) -> Option<NonNull<ffi::AVCodecParserContext>> {
+    let raw: ffi::AVCodecID = id.into();
+    NonNull::new(unsafe { av_parser_init(raw.0) })
+}
 
 pub struct Decoder {
     kind: Kind,
@@ -32,8 +44,7 @@ fn silence_library_logging() {
 impl Decoder {
     pub fn recover(&mut self) -> Result<(), String> {
         if let Some(old) = self.parser {
-            let raw: ffi::AVCodecID = self.kind.id().into();
-            let parser = NonNull::new(unsafe { ffi::av_parser_init(raw) })
+            let parser = parser_for(self.kind.id())
                 .ok_or_else(|| "Could not reset broadcast parser".to_owned())?;
             unsafe {
                 ffi::av_parser_close(old.as_ptr());
@@ -54,9 +65,7 @@ impl Decoder {
         let codec =
             av::decoder::find(id).ok_or_else(|| format!("Decoder unavailable: {kind:?}"))?;
         let opened = open(codec, &[])?;
-        let raw: ffi::AVCodecID = id.into();
-        let parser = NonNull::new(unsafe { ffi::av_parser_init(raw) })
-            .ok_or_else(|| format!("Parser unavailable: {kind:?}"))?;
+        let parser = parser_for(id).ok_or_else(|| format!("Parser unavailable: {kind:?}"))?;
         Ok(Self::with(kind, Some(parser), opened))
     }
 
