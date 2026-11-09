@@ -210,6 +210,7 @@ fn buffered_pager_decodes_the_first_message_and_retains_its_origin() {
         function: 3,
         text: "MONITOR FIRST FRAME".to_owned(),
         numeric: false,
+        seal: None,
     }];
     let mut iq = synth::pocsag::transmission(&pages, 1200, 4500.0, RATE);
     synth::scale(&mut iq, 0.5);
@@ -242,6 +243,7 @@ fn a_disabled_protocol_is_neither_decoded_nor_reported() {
         function: 3,
         text: "MUTED".to_owned(),
         numeric: false,
+        seal: None,
     }];
     let mut iq = synth::pocsag::transmission(&pages, 1200, 4500.0, RATE);
     synth::scale(&mut iq, 0.5);
@@ -359,11 +361,13 @@ fn a_capture_gap_interrupts_instead_of_joining_unrelated_samples() {
             .iter()
             .any(|t| t.state == TransmissionState::Interrupted && t.error.is_some())
     );
-    assert!(
-        transmissions(&gap)
-            .iter()
-            .any(|t| t.state == TransmissionState::Problem)
-    );
+    let problems: Vec<_> = transmissions(&gap)
+        .into_iter()
+        .filter(|t| t.state == TransmissionState::Problem)
+        .collect();
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].error.as_deref(), Some("8192 IQ samples lost"));
+    assert_eq!(problems[0].summary(), "problem · 8192 IQ samples lost");
 }
 
 #[test]
@@ -518,6 +522,30 @@ fn continuous_audio_is_segmented_without_loss_or_buffer_overflow() {
 }
 
 #[test]
+fn a_long_transmission_without_audio_is_reported_once() {
+    let rate = 48_000.0;
+    let mut monitor = SpectrumMonitor::new(rate, CENTER, SpectrumMonitorNode::default()).unwrap();
+    let mut iq = crate::testutil::complex_noise(55, 0.002, 4800);
+    for (i, sample) in iq.iter_mut().enumerate() {
+        let t = i as f64 / rate;
+        let amplitude = 0.5 + 0.3 * (std::f64::consts::TAU * 900.0 * t).sin() as f32;
+        *sample += Complex::from_polar(
+            amplitude,
+            (std::f64::consts::TAU * 10_000.0 * t).rem_euclid(std::f64::consts::TAU) as f32,
+        );
+    }
+    let mut output = Vec::new();
+    for block in 0..650 {
+        output.extend(monitor.process(&iq, block * 4800));
+    }
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    let reported = transmissions(&output);
+    assert_eq!(reported.len(), 1, "{reported:?}");
+    assert_eq!(reported[0].state, TransmissionState::Completed);
+    assert_eq!(reported[0].duration_ms, 65_000);
+}
+
+#[test]
 fn an_unconfirmed_track_closes_when_confidence_falls() {
     let mut iq = noise(0.1, 82);
     for (i, sample) in iq.iter_mut().enumerate() {
@@ -601,4 +629,79 @@ fn a_clipping_front_end_is_reported_instead_of_its_spurs() {
         heard.iter().all(|t| t.state == TransmissionState::Problem),
         "{heard:?}"
     );
+}
+
+#[test]
+fn a_tetra_downlink_is_confirmed() {
+    let burst = synth::tetra::sample(synth::tetra::Cell::default()).modulate();
+    let mut iq = synth::resample(
+        &[burst.clone(), burst.clone(), burst].concat(),
+        synth::tetra::SAMPLE_RATE_HZ,
+        RATE,
+    );
+    synth::scale(&mut iq, 0.5);
+    synth::shift(&mut iq, 125_000.0, RATE);
+    synth::add_noise(&mut iq, 84, 0.02);
+    let mut monitor = SpectrumMonitor::new(RATE, 467_787_500.0, keeping()).unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    assert!(
+        output.iter().any(|out| out
+            .event
+            .read::<DvFrame>()
+            .is_some_and(|frame| frame.mode == "TETRA")),
+        "{:?}",
+        transmissions(&output)
+    );
+    assert!(
+        transmissions(&output)
+            .iter()
+            .any(|t| t.decoder.as_deref() == Some("tetra") && t.decoder_confirmed)
+    );
+}
+
+#[test]
+fn a_recorded_tetra_control_channel_is_confirmed() {
+    let recorded = crate::fixtures::ci16_le(include_bytes!(
+        "../../../../fixtures/tetra_weak_offair_144k.sigmf-data"
+    ));
+    let mut iq = synth::resample(&recorded, 144_000.0, RATE);
+    synth::shift(&mut iq, 125_900.0, RATE);
+    let mut monitor = SpectrumMonitor::new(RATE, 467_787_500.0, keeping()).unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    let tetra = transmissions(&output)
+        .into_iter()
+        .find(|t| t.decoder.as_deref() == Some("tetra"))
+        .unwrap_or_else(|| panic!("{:?}", transmissions(&output)));
+    assert!(tetra.decoder_confirmed);
+    assert_eq!(tetra.signal.modulation, Modulation::Psk4);
+    assert!((tetra.signal.frequency_hz - 467_912_500.0).abs() < 2_000.0);
+}
+
+#[test]
+fn drm_is_confirmed_in_every_robustness_mode_it_is_heard_in() {
+    use crate::drm::mode::Robustness;
+    for mode in [Robustness::B, Robustness::D] {
+        let mut iq = synth::resample(
+            &synth::drm::signal(synth::drm::defaults(mode), 3),
+            synth::drm::RATE_HZ,
+            RATE,
+        );
+        synth::scale(&mut iq, 0.5);
+        synth::shift(&mut iq, 125_000.0, RATE);
+        synth::add_noise(&mut iq, 84, 0.02);
+        let mut monitor = SpectrumMonitor::new(RATE, 9_500_000.0, keeping()).unwrap();
+        let mut output = run(&mut monitor, &iq, 0);
+        output.extend(monitor.finish(TransmissionState::Completed, None));
+        assert!(
+            transmissions(&output)
+                .iter()
+                .any(|t| t.signal.modulation == Modulation::Ofdm
+                    && t.decoder.as_deref() == Some("drm")
+                    && t.decoder_confirmed),
+            "{mode:?}: {:?}",
+            transmissions(&output)
+        );
+    }
 }

@@ -674,7 +674,7 @@ fn with_lead(iq: Vec<Complex<f32>>, rate: f64, seconds: f64) -> Vec<Complex<f32>
     led
 }
 
-fn ci16_le(bytes: &[u8]) -> Vec<Complex<f32>> {
+pub(crate) fn ci16_le(bytes: &[u8]) -> Vec<Complex<f32>> {
     bytes
         .as_chunks::<4>()
         .0

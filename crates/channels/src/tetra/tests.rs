@@ -177,18 +177,7 @@ fn a_status_message_carries_its_code() {
 }
 
 fn recording(bytes: &[u8], rate: f64, offset_hz: f64) -> Vec<Complex<f32>> {
-    let iq: Vec<Complex<f32>> = bytes
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|s| {
-            Complex::new(
-                f32::from(i16::from_le_bytes([s[0], s[1]])) / 32_768.0,
-                f32::from(i16::from_le_bytes([s[2], s[3]])) / 32_768.0,
-            )
-        })
-        .collect();
-    let iq = crate::synth::resample(&iq, rate, INPUT_RATE_HZ);
+    let iq = crate::synth::resample(&crate::fixtures::ci16_le(bytes), rate, INPUT_RATE_HZ);
     frequency_shift(&iq, -offset_hz, INPUT_RATE_HZ)
 }
 

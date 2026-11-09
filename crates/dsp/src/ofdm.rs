@@ -3,10 +3,10 @@ use num_complex::Complex;
 use crate::fft::FftPair;
 
 const MIN_STRENGTH: f32 = 0.05;
-const MAX_STRENGTH: f32 = 0.4;
+const MAX_STRENGTH: f32 = 0.5;
 const PROMINENCE: f32 = 4.0;
 const GUARD_WINDOW_FRACTION: usize = 8;
-const MAX_GUARD_FRACTION: f64 = 0.5;
+const MAX_GUARD_FRACTION: f64 = 0.8;
 const MIN_GUARD_FRACTION: usize = 32;
 const GUARD_SHOULDER_FRACTION: usize = 16;
 const MIN_GUARD_STRENGTH: f32 = 0.1;
@@ -246,6 +246,16 @@ mod tests {
         assert_eq!(found.useful, 1_024);
         let guard = found.guard.expect("the symbol period stands out");
         assert!((guard as i64 - 128).abs() <= 3, "guard {guard}");
+    }
+
+    #[test]
+    fn a_guard_most_of_a_useful_symbol_long_is_found() {
+        let iq = ofdm(256, 200, 96, 60, 0x5d);
+        let mut search = CyclicPrefixSearch::new(1 << 15);
+        let found = search.search(&iq, 16, 2_048).expect("found");
+        assert_eq!(found.useful, 256);
+        let guard = found.guard.expect("the symbol period stands out");
+        assert!((guard as i64 - 200).abs() <= 3, "guard {guard}");
     }
 
     #[test]

@@ -92,6 +92,12 @@ fn swings(band: &Band, waveform: &Waveform) -> bool {
     waveform.frequency_spread_hz > FM_SPREAD_HZ.max(band.bandwidth_hz * FM_SPREAD_FRACTION)
 }
 
+/// A four-phase line. A slotted PSK carrier such as TETRA also correlates at its slot length like
+/// a cyclic prefix, so without a measured guard this line outweighs the prefix.
+fn quadrature_line(waveform: &Waveform) -> bool {
+    waveform.quartic_line_db > PHASE_LINE_DB && waveform.quartic_line_db > waveform.square_line_db
+}
+
 pub(crate) fn classify(band: &Band, waveform: &Waveform) -> Verdict {
     let snr_db = band.snr_db.max(steady_snr_db(waveform));
     let quality = quality(snr_db);
@@ -103,8 +109,9 @@ pub(crate) fn classify(band: &Band, waveform: &Waveform) -> Verdict {
     let modulated = amplitude_modulation(waveform);
 
     if waveform.ofdm_symbol_us.is_some()
+        && (waveform.ofdm_guard_us.is_some() || !quadrature_line(waveform))
         && (OFDM_ENVELOPE..=OFDM_ENVELOPE_MAX).contains(&waveform.envelope_variation)
-        && waveform.duty >= OFDM_DUTY
+        && (waveform.duty >= OFDM_DUTY || waveform.ofdm_guard_us.is_some())
     {
         return settle(
             Modulation::Ofdm,
@@ -164,9 +171,7 @@ pub(crate) fn classify(band: &Band, waveform: &Waveform) -> Verdict {
         }
     }
 
-    if waveform.quartic_line_db > PHASE_LINE_DB
-        && waveform.quartic_line_db > waveform.square_line_db
-    {
+    if quadrature_line(waveform) {
         return settle(
             Modulation::Psk4,
             firmness(waveform.quartic_line_db, PHASE_LINE_DB, 15.0),
@@ -466,6 +471,35 @@ mod tests {
         let verdict = classify(&b, &w);
         assert_eq!(verdict.modulation, Modulation::Ofdm);
         assert!(verdict.confidence > 0.7, "{}", verdict.confidence);
+    }
+
+    #[test]
+    fn a_measured_guard_makes_it_ofdm_through_its_envelope_peaks() {
+        let w = Waveform {
+            envelope_variation: 0.26,
+            duty: 0.55,
+            ofdm_symbol_us: Some(21_333.0),
+            ofdm_guard_us: Some(5_333.0),
+            ofdm_strength: 0.2,
+            square_line_db: 12.8,
+            quartic_line_db: 6.9,
+            ..steady()
+        };
+        assert_eq!(classify(&band(11_000.0), &w).modulation, Modulation::Ofdm);
+    }
+
+    #[test]
+    fn a_slot_period_without_a_guard_does_not_hide_a_phase_line() {
+        let w = Waveform {
+            envelope_variation: 0.23,
+            symbol_rate_hz: Some(18_000.0),
+            ofdm_symbol_us: Some(14_167.0),
+            ofdm_strength: 0.2,
+            square_line_db: 20.0,
+            quartic_line_db: 30.0,
+            ..steady()
+        };
+        assert_eq!(classify(&band(24_000.0), &w).modulation, Modulation::Psk4);
     }
 
     #[test]

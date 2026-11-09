@@ -562,7 +562,9 @@ mod tests {
     #[test]
     fn only_protocols_the_identifier_recognizes_are_identifiable() {
         let identifiable = |kind: &str| descriptor(kind).is_some_and(|d| d.identifiable);
-        for kind in ["nfm", "am", "wfm", "ssb", "dmr", "pocsag", "adsb", "ft8"] {
+        for kind in [
+            "nfm", "am", "wfm", "ssb", "dmr", "tetra", "pocsag", "adsb", "ft8",
+        ] {
             assert!(identifiable(kind), "{kind}");
         }
         assert!(!identifiable("ident"));

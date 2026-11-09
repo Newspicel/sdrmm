@@ -10,6 +10,7 @@ mod classify;
 mod confirm;
 pub(crate) mod detect;
 mod features;
+pub(crate) use features::Meter;
 mod framing;
 
 use std::sync::LazyLock;
@@ -379,6 +380,7 @@ pub(crate) fn identify(
     band: &detect::Band,
     center: f64,
     catalog: &Catalog,
+    meter: &mut Meter,
 ) -> IdentSignal {
     let mut signal = IdentSignal {
         frequency_hz: center + band.center_hz,
@@ -390,7 +392,7 @@ pub(crate) fn identify(
     let Some(zoom) = features::zoom(iq, rate, band) else {
         return signal;
     };
-    let waveform = features::Meter::new().measure(&zoom, band);
+    let waveform = meter.measure(&zoom, band);
     let chirp = chirp::find(&zoom, band);
     let verdict = chirp.map_or_else(|| classify::classify(band, &waveform), chirp::verdict);
     signal.modulation = verdict.modulation;
@@ -729,6 +731,7 @@ mod tests {
             function: 3,
             text: "IDENT TEST".to_owned(),
             numeric: false,
+            seal: None,
         }];
         let iq = on_air(
             &synth::pocsag::transmission(&pages, 1_200, 4_500.0, INPUT_RATE_HZ),
@@ -768,6 +771,7 @@ mod tests {
             function: 3,
             text: "IDENT TEST".to_owned(),
             numeric: false,
+            seal: None,
         }];
         let iq = in_noise(
             &synth::pocsag::transmission(&pages, 1_200, 4_500.0, INPUT_RATE_HZ),
@@ -1011,6 +1015,7 @@ mod tests {
             function: 3,
             text: "SURVEY".to_owned(),
             numeric: false,
+            seal: None,
         }];
         let mut pager = in_noise(
             &synth::pocsag::transmission(&pages, 1_200, 4_500.0, INPUT_RATE_HZ),
@@ -1073,6 +1078,7 @@ mod tests {
             function: 3,
             text: "IDENT TEST".to_owned(),
             numeric: false,
+            seal: None,
         }];
         let iq = on_air(
             &synth::pocsag::transmission(&pages, 1_200, 4_500.0, INPUT_RATE_HZ),

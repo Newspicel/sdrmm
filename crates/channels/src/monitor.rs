@@ -14,11 +14,25 @@ use crate::{ChannelError, ident};
 const MAX_TRACKS: usize = 32;
 const MAX_HISTORY_SAMPLES: usize = 8 * 1024 * 1024;
 const HANG_SECONDS: f64 = 0.3;
+/// How long an audio clip runs before the transmission is cut and the clip handed over. A track
+/// without audio is not cut: its decoded events are the live view.
 const SEGMENT_SECONDS: f64 = 30.0;
 const IDENTIFY_SECONDS: f64 = 0.6;
+/// How often an unconfirmed track is identified again, at first and at most. The interval
+/// doubles while the answer stays the same: each look reads `IDENTIFY_SECONDS` of IQ.
+const REFRESH_SECONDS: f64 = 0.2;
+const MAX_REFRESH_SECONDS: f64 = 3.2;
 const REJECT_SECONDS: f64 = 1.0;
+/// How many times a spot's hold doubles while it keeps failing identification: a weak carrier
+/// or spur that never identifies is retried every 32 s, not every second.
+const MAX_STRIKES: u32 = 5;
+/// How long a spot that stopped failing keeps its strikes.
+const FORGET_SECONDS: f64 = 60.0;
 const RETRY_GAIN_DB: f32 = 6.0;
-const MAX_REJECTED: usize = 64;
+const MAX_REJECTED: usize = 512;
+/// How far, as a share of its bandwidth, a signal drifts before its decoders retune. Smaller
+/// steps are the estimate's own jitter, which breaks an OFDM decoder's frequency lock.
+const RETUNE_FRACTION: f64 = 0.05;
 
 pub struct MonitorOutput {
     pub transmission: u64,
@@ -36,7 +50,9 @@ struct Track {
     choices: VecDeque<String>,
     trial_at: u64,
     identified_at: u64,
+    refresh_seconds: f64,
     band: ident::detect::Band,
+    tuned_hz: f64,
     tried: Vec<String>,
     error: Option<String>,
 }
@@ -46,6 +62,7 @@ struct Rejected {
     bandwidth_hz: f64,
     snr_db: f32,
     until: u64,
+    strikes: u32,
 }
 
 fn same_signal(frequency_hz: f64, bandwidth_hz: f64, band_hz: f64, band_width_hz: f64) -> bool {
@@ -67,6 +84,7 @@ pub struct SpectrumMonitor {
     overloaded: bool,
     clipping: bool,
     catalog: ident::Catalog,
+    meter: ident::Meter,
 }
 
 impl SpectrumMonitor {
@@ -101,14 +119,20 @@ impl SpectrumMonitor {
             overloaded: false,
             clipping: false,
             catalog: ident::Catalog::registered(),
+            meter: ident::Meter::new(),
         })
     }
 
     pub fn process(&mut self, iq: &[Complex<f32>], start: u64) -> Vec<MonitorOutput> {
         let mut output = Vec::new();
-        if self.next.is_some_and(|next| next != start) {
+        if let Some(next) = self.next.filter(|&next| next != start) {
             output.extend(self.finish(TransmissionState::Interrupted, Some("IQ samples lost")));
-            output.push(self.problem("IQ samples lost", start));
+            let lost = if start > next {
+                format!("{} IQ samples lost", start - next)
+            } else {
+                "IQ samples out of order".to_owned()
+            };
+            output.push(self.problem(&lost, start));
             self.history.clear();
             self.window.clear();
         }
@@ -139,7 +163,9 @@ impl SpectrumMonitor {
     fn survey(&mut self, end: u64, output: &mut Vec<MonitorOutput>) {
         let bands = self.detector.measure(&self.window);
         let clipping = sdrmm_dsp::clip::clips(&self.window);
-        self.rejected.retain(|rejected| rejected.until > end);
+        let forget = (self.rate * FORGET_SECONDS) as u64;
+        self.rejected
+            .retain(|rejected| rejected.until.saturating_add(forget) > end);
         let mut overflow = false;
         let clear = bands.clear.into_iter().map(|band| (band, false));
         for (band, faint) in clear.chain(bands.faint.into_iter().map(|band| (band, true))) {
@@ -159,8 +185,11 @@ impl SpectrumMonitor {
                 track.signal.snr_db = band.snr_db;
                 if band.bandwidth_hz >= track.band.bandwidth_hz * 0.75 {
                     let offset = track.band.center_hz * 0.9 + band.center_hz * 0.1;
-                    for decoder in &mut track.decoders {
-                        decoder.retune(offset);
+                    if (offset - track.tuned_hz).abs() > track.band.bandwidth_hz * RETUNE_FRACTION {
+                        for decoder in &mut track.decoders {
+                            decoder.retune(offset);
+                        }
+                        track.tuned_hz = offset;
                     }
                     track.band = ident::detect::Band {
                         center_hz: offset,
@@ -172,13 +201,20 @@ impl SpectrumMonitor {
                 }
                 continue;
             }
-            if clipping || self.recently_rejected(frequency, &band) {
+            if clipping || self.recently_rejected(frequency, &band, end) {
                 continue;
             }
             let signal = if faint {
                 self.identify_retained(&band)
             } else {
-                ident::identify(&self.window, self.rate, &band, self.center, &self.catalog)
+                ident::identify(
+                    &self.window,
+                    self.rate,
+                    &band,
+                    self.center,
+                    &self.catalog,
+                    &mut self.meter,
+                )
             };
             if signal.confidence < self.settings.min_confidence
                 || !self.wanted(&signal)
@@ -201,6 +237,8 @@ impl SpectrumMonitor {
                 decoders: Vec::new(),
                 trial_at: end,
                 identified_at: end,
+                refresh_seconds: REFRESH_SECONDS,
+                tuned_hz: band.center_hz,
                 band,
                 tried: Vec::new(),
                 error: None,
@@ -239,7 +277,12 @@ impl SpectrumMonitor {
                 ));
                 continue;
             }
-            if end.saturating_sub(track.segment) as f64 >= self.rate * SEGMENT_SECONDS {
+            if end.saturating_sub(track.segment) as f64 >= self.rate * SEGMENT_SECONDS
+                && track
+                    .decoders
+                    .iter()
+                    .any(|decoder| !decoder.audio.is_empty())
+            {
                 output.push(transmission(
                     &mut track,
                     end,
@@ -258,7 +301,7 @@ impl SpectrumMonitor {
             return true;
         }
         if end == track.last_seen
-            && end.saturating_sub(track.identified_at) as f64 >= self.rate * 0.2
+            && end.saturating_sub(track.identified_at) as f64 >= self.rate * track.refresh_seconds
         {
             track.identified_at = end;
             let signal = self.identify_retained(&track.band);
@@ -287,6 +330,11 @@ impl SpectrumMonitor {
                     track.choices.push_back(kind);
                 }
             }
+            track.refresh_seconds = if same_identity(&signal, &track.signal) {
+                (track.refresh_seconds * 2.0).min(MAX_REFRESH_SECONDS)
+            } else {
+                REFRESH_SECONDS
+            };
             track.signal = signal;
         }
         if end.saturating_sub(track.trial_at) as f64 >= self.rate * 2.0 && !track.choices.is_empty()
@@ -326,12 +374,20 @@ impl SpectrumMonitor {
         let start = history
             .len()
             .saturating_sub((rate * IDENTIFY_SECONDS) as usize);
-        ident::identify(&history[start..], rate, band, center, &self.catalog)
+        ident::identify(
+            &history[start..],
+            rate,
+            band,
+            center,
+            &self.catalog,
+            &mut self.meter,
+        )
     }
 
-    fn recently_rejected(&self, frequency_hz: f64, band: &ident::detect::Band) -> bool {
+    fn recently_rejected(&self, frequency_hz: f64, band: &ident::detect::Band, end: u64) -> bool {
         self.rejected.iter().any(|rejected| {
-            band.snr_db < rejected.snr_db + RETRY_GAIN_DB
+            rejected.until > end
+                && band.snr_db < rejected.snr_db + RETRY_GAIN_DB
                 && same_signal(
                     rejected.frequency_hz,
                     rejected.bandwidth_hz,
@@ -342,14 +398,29 @@ impl SpectrumMonitor {
     }
 
     fn reject(&mut self, frequency_hz: f64, band: &ident::detect::Band, end: u64) {
-        if self.rejected.len() == MAX_REJECTED {
-            self.rejected.remove(0);
+        let known = self.rejected.iter().position(|rejected| {
+            same_signal(
+                rejected.frequency_hz,
+                rejected.bandwidth_hz,
+                frequency_hz,
+                band.bandwidth_hz,
+            )
+        });
+        let strikes = known.map_or(0, |index| {
+            (self.rejected.swap_remove(index).strikes + 1).min(MAX_STRIKES)
+        });
+        if self.rejected.len() == MAX_REJECTED
+            && let Some(oldest) = (0..self.rejected.len()).min_by_key(|&i| self.rejected[i].until)
+        {
+            self.rejected.swap_remove(oldest);
         }
+        let hold = self.rate * REJECT_SECONDS * f64::from(1u32 << strikes);
         self.rejected.push(Rejected {
             frequency_hz,
             bandwidth_hz: band.bandwidth_hz,
             snr_db: band.snr_db,
-            until: end + (self.rate * REJECT_SECONDS) as u64,
+            until: end + hold as u64,
+            strikes,
         });
     }
 
@@ -420,6 +491,16 @@ impl SpectrumMonitor {
             }),
         }
     }
+}
+
+fn same_identity(signal: &IdentSignal, previous: &IdentSignal) -> bool {
+    let best = |signal: &IdentSignal| {
+        signal
+            .candidates
+            .first()
+            .map(|candidate| (candidate.type_id.clone(), candidate.confirmed))
+    };
+    signal.modulation == previous.modulation && best(signal) == best(previous)
 }
 
 fn feed(

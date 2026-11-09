@@ -51,30 +51,32 @@ pub(crate) fn verdict(chirp: Chirp) -> Verdict {
 
 pub(crate) fn find(zoom: &Zoom, band: &Band) -> Option<Chirp> {
     let occupied_hz = band.bandwidth_hz;
-    let mut scored: Vec<Chirp> = LoraBandwidth::ALL
+    let mut scored: Vec<Chirp> = Vec::new();
+    for bandwidth_hz in LoraBandwidth::ALL
         .iter()
         .map(|bandwidth| bandwidth.hz())
         .filter(|&bandwidth| {
             (MIN_OCCUPANCY..=MAX_OCCUPANCY).contains(&(occupied_hz / bandwidth))
                 && bandwidth <= zoom.rate * NYQUIST_SHARE
         })
-        .flat_map(|bandwidth_hz| {
-            (LoraSpreadingFactor::MIN..=LoraSpreadingFactor::MAX).flat_map(
-                move |spreading_factor| {
-                    [false, true].map(|inverted| Chirp {
-                        bandwidth_hz,
-                        spreading_factor,
-                        inverted,
-                        gain: 0.0,
-                    })
-                },
-            )
-        })
-        .filter_map(|chirp| {
-            let gain = gain(zoom, &chirp)?;
-            Some(Chirp { gain, ..chirp })
-        })
-        .collect();
+    {
+        for spreading_factor in LoraSpreadingFactor::MIN..=LoraSpreadingFactor::MAX {
+            let up = Chirp {
+                bandwidth_hz,
+                spreading_factor,
+                inverted: false,
+                gain: 0.0,
+            };
+            if let Some((rising, falling)) = gains(zoom, &up) {
+                scored.push(Chirp { gain: rising, ..up });
+                scored.push(Chirp {
+                    inverted: true,
+                    gain: falling,
+                    ..up
+                });
+            }
+        }
+    }
     scored.sort_by(|a, b| b.gain.total_cmp(&a.gain));
     let best = *scored.first()?;
     let rival = scored
@@ -95,7 +97,9 @@ pub(crate) fn find(zoom: &Zoom, band: &Band) -> Option<Chirp> {
         .copied()
 }
 
-fn gain(zoom: &Zoom, chirp: &Chirp) -> Option<f32> {
+/// The dechirped concentration of `chirp` rising and falling. The falling reference is the
+/// rising one conjugated, so both share their windows, transform and reference.
+fn gains(zoom: &Zoom, chirp: &Chirp) -> Option<(f32, f32)> {
     let chips = f64::from(1u32 << chirp.spreading_factor);
     let duration = chips / chirp.bandwidth_hz;
     let len = (duration * zoom.rate).round() as usize;
@@ -104,26 +108,33 @@ fn gain(zoom: &Zoom, chirp: &Chirp) -> Option<f32> {
     }
     let reference = reference(chirp, len, zoom.rate);
     let mut transform = Transform::forward(len);
-    let mut buffer = vec![Complex::new(0.0, 0.0); len];
-    let mut best = 0.0f32;
+    let mut rising = vec![Complex::new(0.0, 0.0); len];
+    let mut falling = vec![Complex::new(0.0, 0.0); len];
+    let (mut best_rising, mut best_falling) = (0.0f32, 0.0f32);
     for offset in (0..OFFSETS).map(|k| k * len / OFFSETS) {
         let starts = loudest(&zoom.iq, offset, len);
-        let mut total = 0.0f32;
+        let (mut total_rising, mut total_falling) = (0.0f32, 0.0f32);
         for &start in &starts {
-            for ((slot, &sample), &chirp) in buffer
+            for (((up, down), &sample), &swept) in rising
                 .iter_mut()
+                .zip(falling.iter_mut())
                 .zip(&zoom.iq[start..start + len])
                 .zip(&reference)
             {
-                *slot = sample * chirp;
+                *up = sample * swept;
+                *down = sample * swept.conj();
             }
-            transform.process(&mut buffer);
-            total += concentration(&buffer);
+            transform.process(&mut rising);
+            transform.process(&mut falling);
+            total_rising += concentration(&rising);
+            total_falling += concentration(&falling);
         }
-        best = best.max(total / starts.len().max(1) as f32);
+        let count = starts.len().max(1) as f32;
+        best_rising = best_rising.max(total_rising / count);
+        best_falling = best_falling.max(total_falling / count);
     }
     let noise = (len as f32).ln() + 0.577;
-    Some(best / noise)
+    Some((best_rising / noise, best_falling / noise))
 }
 
 fn reference(chirp: &Chirp, len: usize, rate: f64) -> Vec<Complex<f32>> {
@@ -213,6 +224,7 @@ mod tests {
             &band,
             868_100_000.0,
             &crate::ident::Catalog::registered(),
+            &mut crate::ident::Meter::new(),
         );
         assert_eq!(signal.modulation, Modulation::Chirp);
         assert_eq!(signal.bandwidth_hz, 125_000.0);

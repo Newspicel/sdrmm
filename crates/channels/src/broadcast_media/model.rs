@@ -203,6 +203,7 @@ impl EventPayload for BroadcastStatus {
                     count(Some(f64::from(self.frames_bad))),
                 ),
             ]),
+            verified: Some(self.locked),
             ..Presentation::of(format!("{name} {state} {:.1} dB", self.snr_db))
         }
     }

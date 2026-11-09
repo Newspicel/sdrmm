@@ -121,13 +121,7 @@ impl Worker {
                 }
             }
         }
-        let dropped = self.dropped.swap(0, Ordering::Relaxed);
-        if dropped > 0 {
-            self.problem(
-                packet.start,
-                format!("monitor queue lost {dropped} IQ samples"),
-            );
-        }
+        self.dropped.store(0, Ordering::Relaxed);
         if let Some(monitor) = &mut self.monitor {
             let outputs = monitor.process(&packet.samples, packet.start);
             self.deliver(outputs);

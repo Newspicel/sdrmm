@@ -6,7 +6,7 @@ use crate::{
     decode::{
         CodeStyle, DvFrame, DvFrameKind, DvTrunkProtocol, EventKind, SiteNaming, modulation_label,
     },
-    monitor::Transmission,
+    monitor::{Transmission, TransmissionState},
     rest::VoiceCall,
     units::hertz,
 };
@@ -344,6 +344,9 @@ impl EventPayload for Transmission {
 }
 
 fn transmission_fields(t: &Transmission) -> Vec<Field> {
+    if t.state == TransmissionState::Problem {
+        return fields(&[("error", "Error", text(t.error.as_deref()))]);
+    }
     let decoder = t.decoder.as_deref().map(|decoder| {
         let how = if t.decoder_confirmed {
             "confirmed"

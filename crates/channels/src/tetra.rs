@@ -1,5 +1,5 @@
 use crate::registry::Native;
-use sdrmm_wire::{KindSpec, SettingField};
+use sdrmm_wire::{HzRange, KindSpec, Modulation, SettingField, SignalSignature, SignalTrial};
 mod model;
 pub use model::*;
 mod bits;
@@ -11,9 +11,36 @@ pub(crate) mod demod;
 mod llc;
 mod mac;
 mod sds;
+const TETRA_BANDS: &[HzRange] = &[
+    HzRange::mhz(380.0, 400.0),
+    HzRange::mhz(410.0, 430.0),
+    HzRange::mhz(450.0, 470.0),
+    HzRange::mhz(870.0, 876.0),
+    HzRange::mhz(915.0, 921.0),
+];
+
+fn tetra_signatures() -> Vec<SignalSignature> {
+    vec![
+        SignalSignature::new(
+            "TETRA",
+            &[Modulation::Psk4],
+            HzRange::new(18_000.0, 30_000.0),
+            "18 ksym/s pi/4-DQPSK in a 25 kHz channel on a TETRA band",
+        )
+        .symbol_rate(HzRange::about(SYMBOL_RATE, 0.03))
+        .on(TETRA_BANDS),
+    ]
+}
+
+fn tetra_trial() -> SignalTrial {
+    SignalTrial::proven_by(EventKind::DV)
+}
+
 pub(crate) fn tetra_decoder() -> Native<TetraParams> {
     Native::new::<TetraChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
+        .signatures(tetra_signatures)
+        .trial(tetra_trial)
         .form(tetra_form)
         .kinds(tetra_kinds)
 }

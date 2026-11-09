@@ -123,6 +123,9 @@ pub struct Transmission {
 impl Transmission {
     pub fn summary(&self) -> String {
         let state = self.state.label();
+        if self.state == TransmissionState::Problem {
+            return format!("{state} · {}", self.error.as_deref().unwrap_or("unknown"));
+        }
         let decoder = self
             .decoder
             .as_deref()
