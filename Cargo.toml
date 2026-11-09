@@ -303,7 +303,8 @@ strip = "debuginfo"
 debug = false
 codegen-units = 16
 
-# The NEON, SSE and Wasm SIMD planners send lengths with small factors to RadixN, two to four
-# times faster on sizes that aren't powers of two. Pinned until it lands upstream.
+# Our fork's `combined` branch: RadixN in the NEON, SSE and Wasm SIMD planners, radix 8 layers
+# for large NEON powers of two, and a Stockham FFT for powers of two on AMD. Pinned until it
+# lands upstream.
 [patch.crates-io]
-rustfft = { git = "https://github.com/Newspicel/RustFFT", rev = "dc767fc83047daa09825dc077d043157898e8844" }
+rustfft = { git = "https://github.com/Newspicel/RustFFT", rev = "3873aa6553a7109b9d56118a9440b90f0186aabb" }

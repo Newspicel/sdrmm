@@ -5038,7 +5038,7 @@ dependencies = [
 [[package]]
 name = "rustfft"
 version = "6.4.1"
-source = "git+https://github.com/Newspicel/RustFFT?rev=dc767fc83047daa09825dc077d043157898e8844#dc767fc83047daa09825dc077d043157898e8844"
+source = "git+https://github.com/Newspicel/RustFFT?rev=3873aa6553a7109b9d56118a9440b90f0186aabb#3873aa6553a7109b9d56118a9440b90f0186aabb"
 dependencies = [
  "num-complex",
  "num-integer",
