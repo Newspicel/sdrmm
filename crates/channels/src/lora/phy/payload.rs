@@ -34,30 +34,24 @@ pub(crate) fn max_symbols(spreading_factor: u8) -> usize {
     shape.symbols_for(HEADER_NIBBLES + 2 * super::code::MAX_PAYLOAD + super::code::CRC_NIBBLES)
 }
 
+/// Where the first payload symbol starts, in chips, its frequency offset in bins, and how many
+/// chips later each symbol arrives than the one before.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Start {
+    pub origin: f64,
+    pub cfo_bins: f64,
+    pub drift: f64,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct Timing {
     offset: f64,
-    drift: f64,
     rate: f64,
 }
 
 impl Timing {
-    fn from_clock(settings: &Settings, cfo_bins: f64) -> Self {
-        let sign = if settings.inverted { -1.0 } else { 1.0 };
-        let drift = if settings.carrier_hz > 0.0 {
-            sign * cfo_bins * settings.bandwidth_hz / settings.carrier_hz
-        } else {
-            0.0
-        };
-        Self {
-            offset: 0.0,
-            drift,
-            rate: 0.0,
-        }
-    }
-
     fn advance(&mut self) {
-        self.offset += self.rate - self.drift;
+        self.offset += self.rate;
     }
 
     /// A second-order loop on the measured lateness in chips: the rate term follows a sample
@@ -117,8 +111,7 @@ impl Lock {
     #[must_use]
     pub(crate) fn new(
         settings: &Settings,
-        origin: f64,
-        cfo_bins: f64,
+        start: Start,
         sync_word: u8,
         statistics: Statistics,
         snr_db: f32,
@@ -126,15 +119,18 @@ impl Lock {
     ) -> Self {
         let low_data_rate = low_data_rate(settings.spreading_factor, settings.bandwidth_hz);
         Self {
-            origin,
-            cfo_bins,
+            origin: start.origin,
+            cfo_bins: start.cfo_bins,
             sync_word,
             statistics,
             snr_db,
             symbol: 0,
             low_data_rate,
             plan: implicit_plan(settings, low_data_rate),
-            timing: Timing::from_clock(settings, cfo_bins),
+            timing: Timing {
+                offset: 0.0,
+                rate: start.drift,
+            },
             corrected: 0,
             confident,
         }

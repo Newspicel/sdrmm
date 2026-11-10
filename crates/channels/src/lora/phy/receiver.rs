@@ -47,11 +47,22 @@ impl Preamble {
         self.bin as f64 + 0.5 + wrap(fraction - 0.5, 1.0)
     }
 
-    fn pair_level(&self, dechirper: &Dechirper) -> f32 {
+    /// The strongest pair of adjacent bins at or next to the preamble's, and its level. A sender
+    /// whose chip clock is off walks the preamble across bins: at SF12 and 100 ppm by a bin every
+    /// two and a half upchirps.
+    fn pair_level(&self, dechirper: &Dechirper) -> (usize, f32) {
         let energies = dechirper.energies();
+        let n = energies.len();
         let mean = dechirper.mean();
-        let pair = energies[self.bin] + energies[(self.bin + 1) % energies.len()];
-        if mean > 0.0 { pair / mean } else { 0.0 }
+        let pair = |bin: usize| energies[bin] + energies[(bin + 1) % n];
+        let best = [(self.bin + n - 1) % n, (self.bin + 1) % n]
+            .into_iter()
+            .fold(
+                self.bin,
+                |best, bin| if pair(bin) > pair(best) { bin } else { best },
+            );
+        let level = if mean > 0.0 { pair(best) / mean } else { 0.0 };
+        (best, level)
     }
 }
 
@@ -198,9 +209,9 @@ impl Receiver {
         self.tools
             .dechirper
             .transform(&self.tools.samples, Slope::Up);
-        let rising = preamble.pair_level(&self.tools.dechirper) >= self.levels.carry_on;
-        if rising && preamble.quiet < PREAMBLE_OVER {
-            self.carry_on(&mut preamble, start);
+        let (bin, level) = preamble.pair_level(&self.tools.dechirper);
+        if level >= self.levels.carry_on && preamble.quiet < PREAMBLE_OVER {
+            self.carry_on(&mut preamble, bin, start);
             self.stage = if preamble.upchirps > MAX_UPCHIRPS {
                 Stage::Search
             } else {
@@ -231,14 +242,15 @@ impl Receiver {
     }
 
     /// One more upchirp on the preamble's bin: its phase step from the last one refines the
-    /// fractional bin.
-    fn carry_on(&self, preamble: &mut Preamble, start: u64) {
+    /// fractional bin. A step across two bins turns by more than the tone did, so it is left out.
+    fn carry_on(&self, preamble: &mut Preamble, bin: usize, start: u64) {
         let dechirper = &self.tools.dechirper;
-        let current = dechirper.bins()[preamble.bin];
-        if preamble.previous_start + self.chips() as u64 == start {
+        let current = dechirper.bins()[bin];
+        if preamble.previous_start + self.chips() as u64 == start && bin == preamble.bin {
             let step = current * preamble.previous.conj();
             preamble.progression += Complex::new(f64::from(step.re), f64::from(step.im));
         }
+        preamble.bin = bin;
         preamble.previous = current;
         preamble.previous_start = start;
         preamble.interpolated = dechirper.fraction(preamble.bin);
@@ -248,7 +260,7 @@ impl Receiver {
 
     fn align(&mut self, front: &Front, candidate: Candidate) -> Step {
         let chips = self.chips();
-        match align::lock(&candidate, &self.settings, &mut self.tools, front.wide()) {
+        match align::lock(&candidate, &self.settings, &mut self.tools, front) {
             align::Outcome::Waiting => {
                 self.stage = Stage::Align(candidate);
                 Step::Blocked

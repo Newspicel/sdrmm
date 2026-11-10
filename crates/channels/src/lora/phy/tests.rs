@@ -282,20 +282,57 @@ fn a_long_slow_frame_rides_out_clock_drift_with_or_without_the_carrier() {
     };
     let payload: Vec<u8> = (0..120u8).collect();
     let carrier_hz = 868_100_000.0;
-    let crystal = 20e-6;
-    let mut scene = Scene::new(125_000.0, 0.05);
-    let drifted = LoraWaveform {
-        bandwidth_hz: 125_000.0 * (1.0 + crystal),
-        ..waveform
-    };
-    scene.add(&drifted, &payload, 0.0, carrier_hz * crystal);
-    scene.pause(0.1);
-    let noisy = scene.noise(-10.0, 5);
-    for carrier in [0.0, carrier_hz] {
-        let frames = decode_at(&layout(125_000.0, 12..=12), carrier, &noisy.iq);
-        assert_eq!(frames.len(), 1, "carrier {carrier}");
-        assert_eq!(frames[0].payload, payload);
+    for crystal in [20e-6, -40e-6] {
+        let mut scene = Scene::new(125_000.0, 0.05);
+        let drifted = LoraWaveform {
+            bandwidth_hz: 125_000.0 * (1.0 + crystal),
+            ..waveform
+        };
+        scene.add(&drifted, &payload, 0.0, carrier_hz * crystal);
+        scene.pause(0.1);
+        let noisy = scene.noise(-10.0, 5);
+        for carrier in [0.0, carrier_hz] {
+            let frames = decode_at(&layout(125_000.0, 12..=12), carrier, &noisy.iq);
+            assert_eq!(frames.len(), 1, "crystal {crystal} carrier {carrier}");
+            assert_eq!(frames[0].payload, payload);
+            assert_eq!(frames[0].integrity, LoraIntegrity::CrcOk);
+        }
+    }
+}
+
+#[test]
+fn a_chip_clock_off_by_100_ppm_is_followed_through_the_frame() {
+    let payload: Vec<u8> = (0..40u8).collect();
+    for ppm in [100e-6, -100e-6] {
+        let drifted = LoraWaveform {
+            bandwidth_hz: 125_000.0 * (1.0 + ppm),
+            ..waveform(12, 125_000.0)
+        };
+        let mut scene = Scene::new(125_000.0, 0.05);
+        scene.add(&drifted, &payload, 0.0, 0.0);
+        scene.pause(0.1);
+        let frames = decode(&layout(125_000.0, 12..=12), &scene.noise(-15.0, 9).iq);
+        assert_eq!(frames.len(), 1, "{ppm}");
+        assert_eq!(frames[0].payload, payload, "{ppm}");
         assert_eq!(frames[0].integrity, LoraIntegrity::CrcOk);
+    }
+}
+
+#[test]
+fn an_offset_past_a_quarter_of_the_band_is_recovered() {
+    let waveform = waveform(7, 125_000.0);
+    for cfo_hz in [40_000.0, -42_000.0] {
+        let mut scene = Scene::new(125_000.0, 0.02);
+        scene.add(&waveform, b"far off", 0.0, cfo_hz);
+        scene.pause(0.03);
+        let frames = decode(&layout(125_000.0, 7..=7), &scene.iq);
+        assert_eq!(frames.len(), 1, "{cfo_hz}");
+        assert_eq!(frames[0].payload, b"far off");
+        assert!(
+            (f64::from(frames[0].frequency_error_hz) - cfo_hz).abs() < 50.0,
+            "{cfo_hz} read {}",
+            frames[0].frequency_error_hz
+        );
     }
 }
 

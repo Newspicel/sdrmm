@@ -1,5 +1,3 @@
-use sdrmm_modem::constellation::tables::gray;
-
 use super::code::{codeword_bit, codeword_len, hamming_encode};
 
 pub(crate) const MAX_BITS: usize = 12;
@@ -28,6 +26,7 @@ fn ln_i0(x: f32) -> f32 {
 
 pub(crate) struct Demapper {
     values: Vec<f32>,
+    spare: Vec<f32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -41,6 +40,7 @@ impl Demapper {
     pub(crate) fn new(chips: usize) -> Self {
         Self {
             values: vec![0.0; chips],
+            spare: vec![0.0; chips.div_ceil(2)],
         }
     }
 
@@ -67,31 +67,74 @@ impl Demapper {
             };
         }
         let gain = 2.0 * statistics.amplitude / statistics.noise;
-        bit_llrs(&self.values[..count], out, |energy| {
+        bit_llrs(&mut self.values[..count], &mut self.spare, out, |energy| {
             ln_i0(gain * energy.sqrt())
         });
     }
 }
 
-fn bit_llrs(energies: &[f32], out: &mut [f32], likelihood: impl Fn(f32) -> f32) {
+/// Max-log LLRs of every bit, using `values` and `spare` as scratch. Bit `b` of the Gray code of
+/// `m` is set where `m >> b` is 1 or 2 modulo 4, so once every block of `2^b` values is reduced
+/// to its maximum, each side of bit `b` takes every block once, and the same pass merges
+/// neighbours for the next bit. All bits together cost about two passes over the values.
+fn bit_llrs(
+    values: &mut [f32],
+    spare: &mut [f32],
+    out: &mut [f32],
+    likelihood: impl Fn(f32) -> f32,
+) {
     let bits = out.len();
-    let mut ones = [f32::MIN; MAX_BITS];
-    let mut zeros = [f32::MIN; MAX_BITS];
-    for (m, &energy) in energies.iter().enumerate() {
-        let data = gray(m as u32);
-        for b in 0..bits {
-            let slot = if (data >> b) & 1 == 1 {
-                &mut ones[b]
-            } else {
-                &mut zeros[b]
-            };
-            *slot = slot.max(energy);
+    let mut len = values.len();
+    let (mut blocks, mut merged) = (values, spare);
+    for b in 0..bits {
+        let next = len.div_ceil(2).min(merged.len());
+        let (ones, zeros) = level(&blocks[..len], &mut merged[..next]);
+        out[bits - 1 - b] = likelihood(ones.max(0.0)) - likelihood(zeros.max(0.0));
+        len = next;
+        std::mem::swap(&mut blocks, &mut merged);
+    }
+}
+
+fn larger(a: f32, b: f32) -> f32 {
+    if a > b { a } else { b }
+}
+
+const QUADS: usize = 8;
+
+/// The largest block whose index is 1 or 2 modulo 4 and the largest of the others, kept in
+/// independent lanes so the comparisons overlap, while neighbouring blocks merge into `merged`.
+fn level(blocks: &[f32], merged: &mut [f32]) -> (f32, f32) {
+    let mut ones = [f32::MIN; QUADS];
+    let mut zeros = [f32::MIN; QUADS];
+    let (groups, rest) = blocks.as_chunks::<{ 4 * QUADS }>();
+    let (whole, tail) = merged.split_at_mut((2 * QUADS * groups.len()).min(merged.len()));
+    for (group, pairs) in groups.iter().zip(whole.as_chunks_mut::<{ 2 * QUADS }>().0) {
+        let quads = group.as_chunks::<4>().0;
+        for (lane, (quad, pair)) in quads.iter().zip(pairs.as_chunks_mut::<2>().0).enumerate() {
+            ones[lane] = larger(ones[lane], larger(quad[1], quad[2]));
+            zeros[lane] = larger(zeros[lane], larger(quad[0], quad[3]));
+            *pair = [larger(quad[0], quad[1]), larger(quad[2], quad[3])];
         }
     }
-    for (j, llr) in out.iter_mut().enumerate() {
-        let b = bits - 1 - j;
-        *llr = likelihood(ones[b].max(0.0)) - likelihood(zeros[b].max(0.0));
+    for (k, &block) in rest.iter().enumerate() {
+        let side = if matches!(k % 4, 1 | 2) {
+            &mut ones[0]
+        } else {
+            &mut zeros[0]
+        };
+        *side = larger(*side, block);
+        if let Some(slot) = tail.get_mut(k / 2) {
+            *slot = if k % 2 == 0 {
+                block
+            } else {
+                larger(*slot, block)
+            };
+        }
     }
+    (
+        ones.into_iter().fold(f32::MIN, larger),
+        zeros.into_iter().fold(f32::MIN, larger),
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,6 +173,7 @@ pub(crate) fn decode_codeword(llrs: &[f32], parity_bits: u8) -> Decision {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sdrmm_modem::constellation::tables::gray;
 
     #[test]
     fn ln_i0_is_continuous_and_matches_known_values() {
@@ -178,6 +222,26 @@ mod tests {
                 .iter()
                 .fold(0u32, |acc, &l| (acc << 1) | u32::from(l > 0.0));
             assert_eq!(decided, gray(m as u32), "error {error}");
+        }
+    }
+
+    #[test]
+    fn each_bit_weighs_the_strongest_value_on_either_side_of_it() {
+        let energies: Vec<f32> = (0..256u32).map(|m| ((m * 37 + 11) % 257) as f32).collect();
+        let mut out = [0.0f32; 8];
+        let mut spare = vec![0.0f32; energies.len() / 2];
+        bit_llrs(&mut energies.clone(), &mut spare, &mut out, |energy| energy);
+        for (j, llr) in out.iter().enumerate() {
+            let bit = 7 - j;
+            let side = |set: bool| {
+                energies
+                    .iter()
+                    .enumerate()
+                    .filter(|&(m, _)| ((gray(m as u32) >> bit) & 1 == 1) == set)
+                    .map(|(_, &e)| e)
+                    .fold(f32::MIN, f32::max)
+            };
+            assert_eq!(*llr, side(true) - side(false), "bit {bit}");
         }
     }
 

@@ -2,6 +2,7 @@ mod align;
 mod chirp;
 pub(crate) mod code;
 mod detect;
+mod drift;
 mod filter;
 mod payload;
 mod receiver;

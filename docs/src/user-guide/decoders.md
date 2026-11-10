@@ -378,7 +378,8 @@ their CRC are counted as rejected.
 ## LoRa
 
 The LoRa channel reads LoRa packets and decodes LoRaWAN, Meshtastic and MeshCore inside them.
-Tune to the centre of the LoRa channel.
+Tune to the centre of the LoRa channel. A sender up to a third of the bandwidth off still
+decodes, and its clock drift is followed from the preamble.
 
 | Setting | Does |
 |---|---|
