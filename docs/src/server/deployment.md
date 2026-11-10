@@ -74,17 +74,11 @@ ipc: host
 
 ### Token
 
-The container listens on `0.0.0.0:8080`, so it needs a token or it refuses to start. Put it in a
-`.env` file kept out of version control:
+The container listens on `0.0.0.0:8080`, so Compose refuses to start without a token. Put it in a
+`.env` file beside `docker-compose.yml`, kept out of version control:
 
 ```text
 SDRMM_TOKEN=replace-with-a-long-random-secret
-```
-
-```yaml
-services:
-  sdrmm:
-    env_file: .env
 ```
 
 ### HTTPS

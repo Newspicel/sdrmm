@@ -118,14 +118,14 @@ On Linux:
 ```sh
 git clone https://github.com/Newspicel/sdrmm.git
 cd sdrmm
+echo "SDRMM_TOKEN=$(openssl rand -hex 32)" > .env
 docker compose pull
 docker compose up -d
 ```
 
 Without the pull, Compose builds the image from the checkout.
 
-The container listens on every interface, so set `SDRMM_TOKEN` first or it refuses to start.
-Then open <http://localhost:8080>. Data lives in the `sdrmm-data` volume. For USB radios, tokens,
+The container listens on every interface, so it needs the token in `.env`. Open <http://localhost:8080>. Data lives in the `sdrmm-data` volume. For USB radios, tokens,
 and HTTPS, see [Deployment](../server/deployment.md#docker-compose).
 
 ## Stable or nightly
