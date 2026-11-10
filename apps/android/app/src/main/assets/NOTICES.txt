@@ -16,7 +16,7 @@ ZXing 3.5.4
 Apache-2.0
 https://github.com/zxing/zxing
 
-MapLibre Native 13.6.1
+MapLibre Native 13.7.1
 BSD-2-Clause
 https://github.com/maplibre/maplibre-native
 
@@ -36,7 +36,7 @@ Material Symbols
 Apache-2.0
 https://github.com/google/material-design-icons
 
-Kotlin standard library 2.4.20
+Kotlin standard library 2.4.21
 Apache-2.0
 https://github.com/JetBrains/kotlin
 

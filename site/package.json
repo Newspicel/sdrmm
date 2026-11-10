@@ -3,7 +3,7 @@
   "private": true,
   "license": "AGPL-3.0-or-later",
   "type": "module",
-  "packageManager": "pnpm@12.8.0",
+  "packageManager": "pnpm@12.18.0",
   "scripts": {
     "dev": "astro dev",
     "build": "astro sync && tsc --noEmit && astro build",
@@ -13,21 +13,21 @@
     "typecheck": "astro sync && tsc --noEmit && wrangler types worker/worker-configuration.d.ts && tsc --noEmit -p worker && wrangler types -c downloads/wrangler.jsonc downloads/worker-configuration.d.ts && tsc --noEmit -p downloads"
   },
   "dependencies": {
-    "@astrojs/react": "^7.1.2",
+    "@astrojs/react": "^7.1.4",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
-    "astro": "^7.4.5",
+    "astro": "^7.4.7",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.4",
-    "@tailwindcss/vite": "4.3.4",
+    "@biomejs/biome": "2.6.6",
+    "@tailwindcss/vite": "4.3.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "oxc-transform-react": "^0.157.0",
-    "tailwindcss": "4.3.4",
+    "tailwindcss": "4.3.5",
     "typescript": "7.0.2",
     "vitest": "5.1.0",
-    "wrangler": "4.157.0"
+    "wrangler": "4.158.0"
   }
 }

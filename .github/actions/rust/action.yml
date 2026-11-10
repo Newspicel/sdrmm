@@ -59,10 +59,10 @@ runs:
       env:
         LLVM_ARCH: ${{ runner.arch == 'ARM64' && 'aarch64' || 'x86_64' }}
       run: |
-        version=23.1.4
+        version=23.1.5
         case "$LLVM_ARCH" in
-          aarch64) sha256=f0d2e32424850ffb9b6aef190587a8298353d858a8a7260f490c173fe98d6811 ;;
-          x86_64) sha256=854bffcfc84528e0ee92490ff5c178920abd358a79c3e98f053e41e3e8e4c6d2 ;;
+          aarch64) sha256=f06382f2c99c68a4e80f7044446df1fcf52bc3cc05158626bd0b966d51a5369a ;;
+          x86_64) sha256=62fdada7f6fa2b73856486dfbbdba3d2c1882991621615bcb55c60207611c6d4 ;;
           *) echo "no pinned libclang for $LLVM_ARCH" >&2; exit 1 ;;
         esac
         {

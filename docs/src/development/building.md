@@ -6,7 +6,7 @@ CI and local development run the same `cargo xtask` commands.
 
 | Tool | Version |
 |---|---|
-| Rust | 1.99.0, pinned in `rust-toolchain.toml`; rustup installs it |
+| Rust | 1.99.1, pinned in `rust-toolchain.toml`; rustup installs it |
 | Node | 26 |
 | pnpm | 12, exact version in `web/package.json` |
 | FFmpeg | 9, built by `scripts/build-media.py` |

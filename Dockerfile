@@ -1,7 +1,7 @@
 # --- web UI ------------------------------------------------------------------------------
-FROM node:26-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39 AS web
+FROM node:26-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS web
 WORKDIR /web
-RUN npm install -g pnpm@12.8.0
+RUN npm install -g pnpm@12.18.0
 
 # Manifests first: the install layer then survives every UI source edit.
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
@@ -13,7 +13,7 @@ RUN test -f dist/index.html
 
 
 # --- workspace skeleton ------------------------------------------------------------------
-FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS planner
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS planner
 WORKDIR /plan
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY .cargo .cargo
@@ -41,7 +41,7 @@ RUN find crates apps xtask -type f ! -name Cargo.toml -delete \
 
 
 # --- server binary -----------------------------------------------------------------------
-FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS builder
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS builder
 # cc + cmake: opusic-sys builds vendored libopus through the cmake crate. Nothing here needs
 # SoapySDR: the backend opens it at runtime and links nothing at build time.
 RUN apt-get update \
@@ -88,7 +88,7 @@ RUN test -f web/dist/index.html \
 
 
 # --- runtime -----------------------------------------------------------------------------
-FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS runtime
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS runtime
 LABEL org.opencontainers.image.url="https://sdrmm.com" \
       org.opencontainers.image.source="https://github.com/newspicel/sdrmm" \
       org.opencontainers.image.description="SDRmm: headless SDR server with embedded web UI" \

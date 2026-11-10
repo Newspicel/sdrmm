@@ -34,7 +34,7 @@ net-client = ["sdrmm-server/net-client", "sdrmm-engine/net-client"]
 gpu-fft = ["sdrmm-server/gpu-fft", "sdrmm-engine/gpu-fft"]
 
 [build-dependencies]
-winresource = "0.1.31"
+winresource = "0.1.34"
 
 [dependencies]
 sdrmm-server.workspace = true
@@ -42,12 +42,12 @@ sdrmm-engine.workspace = true
 sdrmm-plugins.workspace = true
 sdrmm-device-soapy = { workspace = true, optional = true }
 anyhow.workspace = true
-cef = { version = "156.3.0", default-features = false, features = ["sandbox"] }
+cef = { version = "156.4.0", default-features = false, features = ["sandbox"] }
 cargo-packager-updater = "0.2.3"
 dirs.workspace = true
-notify-rust = "4.18.2"
+notify-rust = "4.19.0"
 opener = { version = "0.9.0", features = ["reveal"] }
-rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal", "common-controls-v6"] }
+rfd = { version = "0.18.0", default-features = false, features = ["xdg-portal", "common-controls-v6"] }
 semver = "1"
 tokio = { workspace = true, features = ["rt-multi-thread", "net"] }
 tracing.workspace = true
