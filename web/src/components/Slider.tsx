@@ -90,7 +90,7 @@ export function SliderField({
   onChange: (value: number) => void;
 }) {
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-3">
+    <span className="flex min-w-0 grow basis-40 items-center gap-3">
       <Slider
         label={label}
         className="min-w-0 flex-1"
