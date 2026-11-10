@@ -81,7 +81,27 @@ pub struct Ddc {
 
 impl Ddc {
     pub fn new(input_rate: f64, output_rate: f64, offset_hz: f64) -> Result<Self, DdcError> {
-        Self::build(input_rate, output_rate, offset_hz, None)
+        Self::build(input_rate, output_rate, offset_hz, None, output_rate)
+    }
+
+    /// A converter for a filter that takes the output down to `band_rate` itself: the passband
+    /// and the alias protection cover only that band, so the last stage, which would otherwise
+    /// guard the whole output, stays short. Beyond half of `band_rate` the output may carry
+    /// aliases, and the filter that follows must stop them.
+    pub fn for_band(
+        input_rate: f64,
+        output_rate: f64,
+        band_rate: f64,
+        offset_hz: f64,
+    ) -> Result<Self, DdcError> {
+        if !band_rate.is_finite() || band_rate <= 0.0 || band_rate > output_rate {
+            return Err(DdcError::InvalidRates {
+                input: input_rate,
+                output: band_rate,
+            });
+        }
+        let keep = (band_rate < output_rate).then_some(band_rate / output_rate);
+        Self::build(input_rate, output_rate, offset_hz, keep, band_rate)
     }
 
     pub fn keeping(
@@ -95,6 +115,7 @@ impl Ddc {
             output_rate,
             offset_hz,
             Some(keep_hz / output_rate),
+            output_rate,
         )
     }
 
@@ -103,6 +124,7 @@ impl Ddc {
         output_rate: f64,
         offset_hz: f64,
         keep: Option<f64>,
+        band_rate: f64,
     ) -> Result<Self, DdcError> {
         if !input_rate.is_finite()
             || !output_rate.is_finite()
@@ -126,9 +148,9 @@ impl Ddc {
         let decimation: usize = factors.iter().product();
         let first_factor = factors.first().copied().unwrap_or(1);
         for &factor in &factors {
-            let taps = stage_filter(rate, factor, output_rate).taps();
+            let taps = stage_filter(rate, factor, band_rate).taps();
             span += (taps - 1) as f64 * input_rate / rate;
-            stages.push(stage(rate, factor, output_rate));
+            stages.push(stage(rate, factor, band_rate));
             rate /= factor as f64;
         }
         let ratio = output_rate / rate;
@@ -317,9 +339,9 @@ fn prime_factors_desc(mut n: usize) -> Vec<usize> {
     factors
 }
 
-fn stage(input_rate: f64, factor: usize, output_rate: f64) -> Decimator {
+fn stage(input_rate: f64, factor: usize, band_rate: f64) -> Decimator {
     Decimator::new(
-        &stage_filter(input_rate, factor, output_rate).design(),
+        &stage_filter(input_rate, factor, band_rate).design(),
         factor,
     )
 }
@@ -356,9 +378,9 @@ impl StageFilter {
 /// The cheaper of the stage's low-pass and, for a stage by two, a half-band that meets the same
 /// passband and protection edges at the same attenuation. Planning prices every stage as its
 /// low-pass, so a cheaper stage by two never changes the plan.
-fn stage_filter(input_rate: f64, factor: usize, output_rate: f64) -> StageFilter {
-    let lowpass = lowpass_stage(input_rate, factor, output_rate);
-    let (pass, stop) = stage_edges(input_rate, factor, output_rate);
+fn stage_filter(input_rate: f64, factor: usize, band_rate: f64) -> StageFilter {
+    let lowpass = lowpass_stage(input_rate, factor, band_rate);
+    let (pass, stop) = stage_edges(input_rate, factor, band_rate);
     let transition = 0.5 - 2.0 * pass.max(0.5 - stop);
     if factor != 2 || transition <= 0.0 {
         return lowpass;
@@ -373,8 +395,8 @@ fn stage_filter(input_rate: f64, factor: usize, output_rate: f64) -> StageFilter
     }
 }
 
-fn lowpass_stage(input_rate: f64, factor: usize, output_rate: f64) -> StageFilter {
-    let (pass, stop) = stage_edges(input_rate, factor, output_rate);
+fn lowpass_stage(input_rate: f64, factor: usize, band_rate: f64) -> StageFilter {
+    let (pass, stop) = stage_edges(input_rate, factor, band_rate);
     StageFilter::Lowpass {
         taps: kaiser_taps(stop - pass, STOPBAND_DB).max(MIN_STAGE_TAPS),
         cutoff: (pass + stop) / 2.0,
@@ -383,9 +405,9 @@ fn lowpass_stage(input_rate: f64, factor: usize, output_rate: f64) -> StageFilte
 
 /// The edge the passband must reach and the one beyond which nothing may fold into the
 /// protected band, as fractions of the stage's input rate.
-fn stage_edges(input_rate: f64, factor: usize, output_rate: f64) -> (f64, f64) {
-    let pass = PASSBAND_FRAC * output_rate / input_rate;
-    let stop = (input_rate / factor as f64 - PROTECT_FRAC * output_rate) / input_rate;
+fn stage_edges(input_rate: f64, factor: usize, band_rate: f64) -> (f64, f64) {
+    let pass = PASSBAND_FRAC * band_rate / input_rate;
+    let stop = (input_rate / factor as f64 - PROTECT_FRAC * band_rate) / input_rate;
     (pass, stop)
 }
 
@@ -672,6 +694,43 @@ mod tests {
             stage_filter(2_048_000.0, 3, 48_000.0),
             StageFilter::Lowpass { .. }
         ));
+    }
+
+    #[test]
+    fn a_band_converter_keeps_its_band_clean_with_a_shorter_last_stage() {
+        for (input_rate, band_rate) in [(1_920_000.0, 240_000.0), (19_200_000.0, 48_000.0)] {
+            let output_rate = 2.0 * band_rate;
+            let whole = Ddc::new(input_rate, band_rate, 0.0).expect("rates");
+            let banded = Ddc::for_band(input_rate, output_rate, band_rate, 0.0).expect("rates");
+            let settle_s = |ddc: &Ddc, rate: f64| ddc.settling() as f64 / rate;
+            assert!(settle_s(&banded, output_rate) < settle_s(&whole, band_rate));
+            for relative in [
+                0.0, 0.25, -0.4, 0.4, 0.6, -0.8, 1.2, 1.9, 2.2, -2.6, 4.1, 7.0,
+            ] {
+                let mut ddc =
+                    Ddc::for_band(input_rate, output_rate, band_rate, 0.0).expect("rates");
+                let input = tone_at_rate(relative * band_rate, input_rate, 400_000);
+                let output = run(&mut ddc, &input);
+                let settled = &output[ddc.settling()..];
+                let db = 20.0 * f64::from(rms_c(settled)).log10();
+                let folded = (relative * band_rate / output_rate + 0.5).rem_euclid(1.0) - 0.5;
+                let at = folded * output_rate / band_rate;
+                if relative.abs() <= 0.4 {
+                    assert!(db.abs() < 1e-3, "{input_rate} {relative}: passband {db} dB");
+                } else if at.abs() < 0.5 {
+                    assert!(
+                        db < -99.5,
+                        "{input_rate} {relative}: alias at {at} is {db} dB"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_band_converter_refuses_a_band_wider_than_its_output() {
+        assert!(Ddc::for_band(1_920_000.0, 240_000.0, 480_000.0, 0.0).is_err());
+        assert!(Ddc::for_band(1_920_000.0, 240_000.0, f64::NAN, 0.0).is_err());
     }
 
     #[test]

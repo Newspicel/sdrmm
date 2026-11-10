@@ -6,8 +6,7 @@ use std::{
 };
 
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs, channel_filter, create, input_rate};
-use sdrmm_dsp::Ddc;
+use sdrmm_channels::{ChannelCtx, ChannelFront, ChannelOutputs, create, input_rate};
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 const USAGE: &str = "usage: decode_iq <cf32_le file> <rate> <center Hz> <channel Hz> <type> \
@@ -75,25 +74,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
         &args.settings,
     )?;
-    let mut filter = channel_filter(&args.settings.params)?;
-    let mut ddc = Ddc::new(
+    let mut front = ChannelFront::new(
+        &args.settings.params,
         args.rate,
-        channel_rate,
         args.settings.frequency_hz - args.center,
     )?;
     let mut reader = BufReader::new(File::open(&args.path)?);
     reader.seek(SeekFrom::Start((args.start * args.rate) as u64 * 8))?;
     let mut remaining = (args.length * args.rate).min(u64::MAX as f64) as u64;
     let mut position = args.start;
-    let (mut tuned, mut filtered, mut samples) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut filtered, mut samples) = (Vec::new(), Vec::new());
     let mut out = ChannelOutputs::default();
     let mut bytes = vec![0u8; 1 << 20];
     while remaining > 0 && read_samples(&mut reader, &mut bytes, &mut samples)? > 0 {
         samples.truncate(remaining.min(samples.len() as u64) as usize);
         remaining -= samples.len() as u64;
         position += samples.len() as f64 / args.rate;
-        ddc.process(&samples, &mut tuned);
-        filter.process(&tuned, &mut filtered);
+        front.process(&samples, &mut filtered);
         out.reset();
         decoder.process(&filtered, &mut out);
         for event in &out.events {

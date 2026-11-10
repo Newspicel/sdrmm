@@ -81,10 +81,10 @@ use num_complex::Complex;
 use sdrmm_wire::{ChannelParams, ChannelSettings, DecoderEvent, EventKind};
 
 use crate::{
-    AprsTx, ChannelCtx, ChannelOutputs, ChannelRx, ChannelTx, Ft4Channel, Ft8Channel, NativeTx,
-    TxPayload, WsprChannel,
+    AprsTx, ChannelCtx, ChannelFront, ChannelOutputs, ChannelRx, ChannelTx, Ft4Channel, Ft8Channel,
+    NativeTx, TxPayload, WsprChannel,
     airtime::scene::Scene,
-    channel_filter, create, descriptors, input_rate, synth,
+    create, descriptors, input_rate, synth,
     synth::{dv, weak_signal},
     testutil::{cf32_le, complex_noise, settings},
 };
@@ -648,13 +648,13 @@ impl Fixture {
 
     fn heard(self) -> Heard {
         let rate = input_rate(&self.settings.params);
-        let mut filter = channel_filter(&self.settings.params).expect("filter");
+        let mut front = ChannelFront::new(&self.settings.params, rate, 0.0).expect("front");
         let mut channel = create(ChannelCtx { input_rate: rate }, &self.settings).expect("builds");
         let mut filtered = Vec::new();
         let mut out = ChannelOutputs::default();
         let mut heard = Heard::default();
         for block in self.iq.chunks(CHUNK) {
-            filter.process(block, &mut filtered);
+            front.process(block, &mut filtered);
             out.reset();
             channel.process(&filtered, &mut out);
             heard.take(&mut out);

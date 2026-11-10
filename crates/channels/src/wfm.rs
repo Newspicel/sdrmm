@@ -8,7 +8,10 @@ use std::sync::LazyLock;
 use stereo::StereoDemux;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, Deemphasis, RealDecimator, design_lowpass};
+use sdrmm_dsp::{
+    Decimator, Deemphasis, RealDecimator, ddc::STOPBAND_DB, design_lowpass,
+    fir::design_lowpass_kaiser,
+};
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily};
 
@@ -22,7 +25,8 @@ const DEVIATION_HZ: f64 = 75_000.0;
 const AUDIO_CUTOFF_HZ: f64 = 15_000.0;
 const DECIM_FACTOR: usize = 5;
 const DECIM_TAPS: usize = 199;
-const CHANNEL_TAPS: usize = 65;
+const CHANNEL_TAPS: usize = 147;
+const CHANNEL_DECIMATION: usize = 2;
 
 fn discriminator(rate: f64) -> AngleDemod {
     let params = AngleParams::new(
@@ -64,9 +68,14 @@ fn params(settings: &ChannelSettings) -> Result<WfmParams, ChannelError> {
     crate::settings_of::<WfmParams>(settings)
 }
 
+/// The channel filter also takes the last halving of the rate: the converter delivers twice
+/// [`DESCRIPTOR`]'s rate and guards only its band, and this one filter keeps the band and
+/// stops everything that would fold onto it as deep as the converter would have.
 pub(crate) fn channel_filter() -> ChannelFilter {
-    let cutoff = DESCRIPTOR.bandwidth_hz / 2.0 / DESCRIPTOR.input_rate_hz;
-    ChannelFilter::Symmetric(Decimator::new(&design_lowpass(CHANNEL_TAPS, cutoff), 1))
+    let rate = DESCRIPTOR.input_rate_hz * CHANNEL_DECIMATION as f64;
+    let cutoff = DESCRIPTOR.bandwidth_hz / 2.0 / rate;
+    let taps = design_lowpass_kaiser(CHANNEL_TAPS, cutoff, STOPBAND_DB);
+    ChannelFilter::Symmetric(Decimator::new(&taps, CHANNEL_DECIMATION))
 }
 
 fn deemphasis(p: &WfmParams) -> Result<Deemphasis, ChannelError> {

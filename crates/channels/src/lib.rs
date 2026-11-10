@@ -28,6 +28,7 @@ mod dv;
 mod eot;
 mod ermes;
 mod flex;
+mod front;
 mod gnss;
 mod gsm;
 mod hfdl;
@@ -128,6 +129,7 @@ pub use dv::{
 pub use eot::EotChannel;
 pub use ermes::ErmesChannel;
 pub use flex::FlexChannel;
+pub use front::ChannelFront;
 pub use gnss::GnssChannel;
 pub use gsm::GsmChannel;
 pub use hfdl::HfdlChannel;
@@ -340,6 +342,17 @@ pub enum ChannelFilter {
 }
 
 impl ChannelFilter {
+    /// How far the filter brings the rate down. A filter that decimates takes over the last
+    /// step of the downconversion: the converter feeding it runs at the decoder's rate times
+    /// this and guards only the decoder's band.
+    #[must_use]
+    pub fn decimation(&self) -> usize {
+        match self {
+            Self::Symmetric(filter) => filter.factor(),
+            Self::Sideband(_) | Self::Passthrough => 1,
+        }
+    }
+
     pub fn reset(&mut self) {
         match self {
             Self::Symmetric(filter) => filter.reset(),

@@ -5,6 +5,7 @@ use crate::fir::StreamFir;
 #[derive(Clone, Debug)]
 pub struct Decimator {
     core: StreamFir<Complex<f32>, f32>,
+    factor: usize,
 }
 
 impl Decimator {
@@ -12,7 +13,13 @@ impl Decimator {
     pub fn new(taps: &[f32], factor: usize) -> Self {
         Self {
             core: StreamFir::new(taps, factor),
+            factor,
         }
+    }
+
+    #[must_use]
+    pub fn factor(&self) -> usize {
+        self.factor
     }
 
     pub fn reset(&mut self) {

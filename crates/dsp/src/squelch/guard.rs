@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use num_complex::Complex;
 
-use crate::{ddc::flat_bandwidth_hz, fft::Transform, iir::one_pole_coeff, window::blackman_harris};
+use crate::{fft::Transform, iir::one_pole_coeff, window::blackman_harris};
 
 const LEN: usize = 128;
 const MAIN_LOBE_BINS: f64 = 4.0;
@@ -31,8 +31,14 @@ impl std::fmt::Debug for GuardMeter {
 }
 
 impl GuardMeter {
-    pub(super) fn new(rate: f64, band_low_hz: f64, band_high_hz: f64) -> Option<Self> {
-        let sides = guard_bins(rate, band_low_hz, band_high_hz);
+    /// Watches `rate` up to `edge_hz` either side, outside the band.
+    pub(super) fn new(
+        rate: f64,
+        edge_hz: f64,
+        band_low_hz: f64,
+        band_high_hz: f64,
+    ) -> Option<Self> {
+        let sides = guard_bins(rate, edge_hz, band_low_hz, band_high_hz);
         sides.iter().any(Option::is_some).then(|| Self {
             fft: Transform::forward(LEN),
             window: blackman_harris(LEN),
@@ -92,9 +98,14 @@ fn mean_power(spectrum: &[Complex<f32>], bins: Range<i64>) -> f32 {
         / count as f32
 }
 
-fn guard_bins(rate: f64, band_low_hz: f64, band_high_hz: f64) -> [Option<Range<i64>>; 2] {
+fn guard_bins(
+    rate: f64,
+    edge_hz: f64,
+    band_low_hz: f64,
+    band_high_hz: f64,
+) -> [Option<Range<i64>>; 2] {
     let bin_hz = rate / LEN as f64;
-    let edge = flat_bandwidth_hz(rate) / 2.0 / bin_hz - MAIN_LOBE_BINS;
+    let edge = edge_hz / bin_hz - MAIN_LOBE_BINS;
     let gap = MAIN_LOBE_BINS + GAP_FRACTION * (band_high_hz - band_low_hz) / bin_hz;
     let below = (-edge).ceil() as i64..(band_low_hz / bin_hz - gap).floor() as i64 + 1;
     let above = (band_high_hz / bin_hz + gap).ceil() as i64..edge.floor() as i64 + 1;

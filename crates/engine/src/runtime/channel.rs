@@ -212,9 +212,10 @@ impl ChannelHost {
         let input_rate = sdrmm_channels::input_rate(&settings.params);
         let offset_hz = settings.frequency_hz - center_hz;
         let (band_low_hz, band_high_hz) = sdrmm_channels::occupied_band(&settings.params);
-        let ddc = Downconverter::new(device_rate, input_rate, offset_hz)
-            .map_err(|e| ChannelError::InvalidSettings(e.to_string()))?;
         let filter = sdrmm_channels::channel_filter(&settings.params)?;
+        let wide_rate = input_rate * filter.decimation() as f64;
+        let ddc = Downconverter::new(device_rate, wide_rate, input_rate, offset_hz)
+            .map_err(|e| ChannelError::InvalidSettings(e.to_string()))?;
         let rx = sdrmm_channels::create(ChannelCtx { input_rate }, settings)?;
         let audio_channels = sdrmm_channels::audio_channels(&settings.params);
         let decodes = !descriptor.emits.is_empty();
@@ -225,7 +226,7 @@ impl ChannelHost {
             SQUELCH_HYSTERESIS_DB,
             SQUELCH_HOLD_S,
         )
-        .with_guard_band(band_low_hz, band_high_hz);
+        .with_guard_band_at(wide_rate, band_low_hz, band_high_hz);
         squelch.set_auto_margin_db(settings.squelch.auto_margin_db());
         let publisher =
             ChannelPublisher::new(input_rate, device_rate, settings, sinks.clone(), decoded)
@@ -233,6 +234,7 @@ impl ChannelHost {
                     ChannelError::InvalidSettings(format!("start publisher: {error}"))
                 })?;
         let block = iq_capacity(input_rate, device_rate);
+        let wide_block = iq_capacity(wide_rate, device_rate);
         Ok(Box::new(Self {
             ddc,
             filter,
@@ -242,15 +244,15 @@ impl ChannelHost {
             audio_rec: None,
             rx,
             blanker: (descriptor.has_audio && settings.blanker.enabled)
-                .then(|| NoiseBlanker::new(input_rate, settings.blanker.threshold)),
+                .then(|| NoiseBlanker::new(wide_rate, settings.blanker.threshold)),
             if_stage: IfStage::build(
                 &settings.if_filter,
-                input_rate,
+                wide_rate,
                 settings.frequency_hz,
-                block,
+                wide_block,
             )?,
             outputs: ChannelOutputs::default(),
-            scratch: Vec::with_capacity(block),
+            scratch: Vec::with_capacity(wide_block),
             filtered: Vec::with_capacity(block),
             pcm_per_input: f64::from(AUDIO_RATE) / input_rate,
             zero_carry: 0.0,
@@ -1305,6 +1307,87 @@ pub(crate) mod tests {
             expected += samples.len() as u64 / u64::from(block.channels);
         }
         assert_eq!(expected, (10 * BLOCK) as u64);
+    }
+
+    #[test]
+    fn a_decimating_channel_filter_runs_the_front_end_at_its_wide_rate() {
+        const DEVICE_RATE: f64 = 1_920_000.0;
+        const OFFSET_HZ: f64 = 150_000.0;
+        let settings = ChannelSettings {
+            frequency_hz: CENTER + OFFSET_HZ,
+            squelch: sdrmm_wire::Squelch::Auto { margin_db: 6.0 },
+            params: ChannelParams::new(
+                "wfm",
+                &WfmParams {
+                    stereo: false,
+                    ..WfmParams::default()
+                },
+            )
+            .expect("wfm settings"),
+            blanker: NoiseBlankerSettings {
+                enabled: true,
+                threshold: 4.0,
+            },
+            if_filter: IfFilter {
+                enabled: true,
+                low_hz: Some(-90_000.0),
+                high_hz: Some(90_000.0),
+                notches: Vec::new(),
+            },
+        };
+        let (pcm_tx, mut pcm_rx) = broadcast::channel::<PcmBlock>(4096);
+        let mut host = ChannelHost::build(
+            DEVICE_RATE,
+            CENTER,
+            &settings,
+            sinks(pcm_tx, Arc::new(AtomicU64::new(0))),
+            DecodedSink::null(),
+        )
+        .expect("host");
+        let wide = iq_capacity(2.0 * host.input_rate, DEVICE_RATE);
+        assert!(
+            host.scratch.capacity() >= wide,
+            "the wide buffer was sized for the decoder"
+        );
+        let mut phase = 0.0f64;
+        let iq: Vec<Complex<f32>> = (0..DEVICE_RATE as usize)
+            .map(|k| {
+                let audio = (TAU * 1_000.0 * k as f64 / DEVICE_RATE).sin();
+                phase += TAU * (OFFSET_HZ + 75_000.0 * 0.5 * audio) / DEVICE_RATE;
+                Complex::from_polar(0.5, phase.rem_euclid(TAU) as f32)
+            })
+            .collect();
+        let mut audio = Vec::new();
+        for block in iq.chunks(dsp_block_len(DEVICE_RATE)) {
+            host.process_and_flush(block, CENTER);
+            while let Ok(pcm) = pcm_rx.try_recv() {
+                if let PcmPayload::Samples(samples) = pcm.payload {
+                    audio.extend_from_slice(&samples);
+                }
+            }
+        }
+        let capacity = host.scratch.capacity();
+        host.process_and_flush(&iq[..dsp_block_len(DEVICE_RATE)], CENTER);
+        assert_eq!(
+            host.scratch.capacity(),
+            capacity,
+            "a full block regrew the wide buffer"
+        );
+        let settled = &audio[audio.len() / 2..];
+        let at = |hz: f64| {
+            let (re, im) = settled
+                .iter()
+                .enumerate()
+                .fold((0.0, 0.0), |(re, im), (k, &x)| {
+                    let p = TAU * hz * k as f64 / f64::from(AUDIO_RATE);
+                    (re + f64::from(x) * p.cos(), im + f64::from(x) * p.sin())
+                });
+            (re * re + im * im).sqrt()
+        };
+        assert!(
+            at(1_000.0) > 100.0 * at(1_500.0),
+            "the tone did not come through"
+        );
     }
 
     #[test]

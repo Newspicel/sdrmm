@@ -1,6 +1,6 @@
 use num_complex::Complex;
 
-use crate::iir::one_pole_coeff;
+use crate::{ddc::flat_bandwidth_hz, iir::one_pole_coeff};
 
 mod guard;
 
@@ -70,8 +70,21 @@ impl Squelch {
     }
 
     #[must_use]
-    pub fn with_guard_band(mut self, band_low_hz: f64, band_high_hz: f64) -> Self {
-        self.guard = GuardMeter::new(self.rate, band_low_hz, band_high_hz);
+    pub fn with_guard_band(self, band_low_hz: f64, band_high_hz: f64) -> Self {
+        let rate = self.rate;
+        self.with_guard_band_at(rate, band_low_hz, band_high_hz)
+    }
+
+    /// [`Self::with_guard_band`] for a wide signal at `wide_rate` that is clean only within this
+    /// squelch's own flat band, as a converter guarding a narrower band delivers it.
+    pub fn with_guard_band_at(
+        mut self,
+        wide_rate: f64,
+        band_low_hz: f64,
+        band_high_hz: f64,
+    ) -> Self {
+        let edge_hz = flat_bandwidth_hz(self.rate) / 2.0;
+        self.guard = GuardMeter::new(wide_rate, edge_hz, band_low_hz, band_high_hz);
         self
     }
 
@@ -534,8 +547,40 @@ mod tests {
     }
 
     #[test]
+    fn a_wide_guard_watches_only_the_band_its_squelch_keeps() {
+        let wide_rate = 2.0 * RATE;
+        let level = |tone_hz: f64| {
+            let mut guard =
+                GuardMeter::new(wide_rate, flat_bandwidth_hz(RATE) / 2.0, -BAND_HZ, BAND_HZ)
+                    .expect("guard");
+            let mut rng = XorShift32(0x5eed_0005);
+            for _ in 0..400 {
+                let mut block = noise_at_db(-70.0, 960, &mut rng);
+                let above = complex_tone(tone_hz / wide_rate, 960);
+                let below = complex_tone(-tone_hz / wide_rate, 960);
+                for ((x, a), b) in block.iter_mut().zip(above).zip(below) {
+                    *x += (a + b) * 0.03;
+                }
+                guard.process(&block);
+            }
+            10.0 * guard.level().log10()
+        };
+        let quiet = level(0.0);
+        let beyond = level(0.8 * RATE / 2.0 + RATE / 2.0);
+        let inside = level(0.3 * RATE);
+        assert!(
+            (beyond - quiet).abs() < 1.0,
+            "aliases moved the guard {quiet} to {beyond}"
+        );
+        assert!(
+            inside > quiet + 10.0,
+            "a neighbour in the guard band left it at {inside}"
+        );
+    }
+
+    #[test]
     fn a_band_that_fills_the_channel_has_no_guard() {
-        assert!(GuardMeter::new(240_000.0, -100_000.0, 100_000.0).is_none());
-        assert!(GuardMeter::new(RATE, -BAND_HZ, BAND_HZ).is_some());
+        assert!(GuardMeter::new(240_000.0, 96_000.0, -100_000.0, 100_000.0).is_none());
+        assert!(GuardMeter::new(RATE, flat_bandwidth_hz(RATE) / 2.0, -BAND_HZ, BAND_HZ).is_some());
     }
 }

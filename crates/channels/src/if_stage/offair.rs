@@ -3,12 +3,12 @@ use std::f64::consts::TAU;
 
 use crate::wfm::WfmParams;
 use num_complex::Complex;
-use sdrmm_dsp::{Ddc, FracResampler};
+use sdrmm_dsp::FracResampler;
 use sdrmm_wire::{ChannelParams, IfFilter, IfNotch};
 
 use super::IfStage;
 use crate::{
-    ChannelCtx, ChannelOutputs, ChannelRx, WfmChannel, channel_filter,
+    ChannelCtx, ChannelFront, ChannelOutputs, ChannelRx, WfmChannel,
     testutil::{cf32_le, settings},
 };
 
@@ -62,10 +62,14 @@ fn carrier(len: usize) -> Vec<Complex<f32>> {
 
 /// What a channel tuned to the wanted station hears, through the engine's own chain.
 fn listen(band: &[Complex<f32>], filter: &IfFilter) -> Vec<f32> {
-    let mut ddc = Ddc::new(MIX_RATE, RATE, 0.0).unwrap();
-    let mut stage = IfStage::build(filter, RATE, TUNED_HZ, BLOCK).unwrap();
     let params = wfm_mono();
-    let mut decoder_filter = channel_filter(&params).unwrap();
+    let ChannelFront {
+        mut ddc,
+        filter: mut decoder_filter,
+        wide_rate,
+        ..
+    } = ChannelFront::new(&params, MIX_RATE, 0.0).unwrap();
+    let mut stage = IfStage::build(filter, wide_rate, TUNED_HZ, BLOCK).unwrap();
     let mut wfm = WfmChannel::new(ChannelCtx { input_rate: RATE }, settings(params)).unwrap();
     let (mut baseband, mut filtered) = (Vec::new(), Vec::new());
     let mut out = ChannelOutputs::default();

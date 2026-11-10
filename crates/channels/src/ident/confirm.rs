@@ -1,11 +1,8 @@
 use num_complex::Complex;
-use sdrmm_dsp::Ddc;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, ProtocolMatch};
 
 use super::{Catalog, detect::Band};
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, channel_filter, create,
-};
+use crate::{ChannelCtx, ChannelError, ChannelFront, ChannelOutputs, ChannelRx, create};
 
 const MAX_TRIALS: usize = 3;
 
@@ -34,8 +31,7 @@ struct Live {
     type_id: String,
     center_hz: f64,
     bandwidth_hz: f64,
-    ddc: Ddc,
-    filter: ChannelFilter,
+    front: ChannelFront,
     channel: Box<dyn ChannelRx>,
     seen: bool,
 }
@@ -48,7 +44,6 @@ struct Refused {
 pub(crate) struct Confirmer {
     live: Vec<Live>,
     refused: Vec<Refused>,
-    tuned: Vec<Complex<f32>>,
     filtered: Vec<Complex<f32>>,
     out: ChannelOutputs,
 }
@@ -58,7 +53,6 @@ impl Confirmer {
         Self {
             live: Vec::new(),
             refused: Vec::new(),
-            tuned: Vec::new(),
             filtered: Vec::new(),
             out: ChannelOutputs::default(),
         }
@@ -214,8 +208,7 @@ impl Confirmer {
         live.seen = true;
         live.center_hz = band.center_hz;
         live.bandwidth_hz = band.bandwidth_hz;
-        live.ddc.process(iq, &mut self.tuned);
-        live.filter.process(&self.tuned, &mut self.filtered);
+        live.front.process(iq, &mut self.filtered);
         self.out.reset();
         live.channel.process(&self.filtered, &mut self.out);
         let Some(descriptor) = catalog.descriptor(&live.type_id) else {
@@ -271,9 +264,7 @@ fn start(
     rate: f64,
     band: &Band,
 ) -> Result<Live, ChannelError> {
-    let ddc = Ddc::new(rate, descriptor.input_rate_hz, band.center_hz)
-        .map_err(|e| ChannelError::InvalidSettings(e.to_string()))?;
-    let filter = channel_filter(&settings.params)?;
+    let front = ChannelFront::new(&settings.params, rate, band.center_hz)?;
     let channel = create(
         ChannelCtx {
             input_rate: descriptor.input_rate_hz,
@@ -284,8 +275,7 @@ fn start(
         type_id: descriptor.type_id.clone(),
         center_hz: band.center_hz,
         bandwidth_hz: band.bandwidth_hz,
-        ddc,
-        filter,
+        front,
         channel,
         seen: false,
     })
