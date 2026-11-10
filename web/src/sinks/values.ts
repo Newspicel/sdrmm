@@ -35,7 +35,7 @@ const TIGHT: ReadonlySet<Unit> = new Set<Unit>(["degrees", "percent"]);
 
 export function formatNumber(value: number, unit: Unit, digits: number): string {
   if (unit === "hz") {
-    return formatHz(value);
+    return formatHz(Number(value.toFixed(digits)));
   }
   const text = value.toFixed(digits);
   const suffix = SUFFIX[unit];

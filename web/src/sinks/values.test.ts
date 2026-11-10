@@ -9,6 +9,12 @@ describe("field values", () => {
     expect(formatNumber(145_800_000, "hz", 0)).toBe("145.8 MHz");
   });
 
+  it("rounds frequencies to the field's digits before scaling", () => {
+    expect(formatNumber(699.196838379, "hz", 1)).toBe("699.2 Hz");
+    expect(formatNumber(2110.887695, "hz", 1)).toBe("2.1109 kHz");
+    expect(formatNumber(1_500.4, "hz", 0)).toBe("1.5 kHz");
+  });
+
   it("formats every value type", () => {
     expect(formatValue({ type: "text", value: "DLH123" })).toBe("DLH123");
     expect(formatValue({ type: "flag", value: true })).toBe("Yes");
