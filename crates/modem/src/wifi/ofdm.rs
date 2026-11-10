@@ -17,6 +17,8 @@ pub use self::demap::map as map_point;
 const WINDOW: usize = 48;
 const PLATEAU: f32 = 0.7;
 const PLATEAU_SAMPLES: usize = 24;
+const PROBE: usize = WINDOW / 2;
+const _: () = assert!(PROBE <= PLATEAU_SAMPLES && 2 * PROBE == WINDOW);
 const MIN_POWER: f32 = 1e-10;
 const LTF_SEARCH: usize = 320;
 const BACKOFF: usize = 3;
@@ -99,9 +101,7 @@ impl Plateau {
     }
 
     fn step(&mut self) -> bool {
-        let on = self.energy > MIN_POWER * WINDOW as f32
-            && self.correlation.norm_sqr() > PLATEAU * PLATEAU * self.energy * self.energy;
-        if !on {
+        if !on_plateau(self.correlation, self.energy) {
             self.run = 0;
             self.holding = false;
             return false;
@@ -114,9 +114,79 @@ impl Plateau {
     }
 }
 
+fn on_plateau(correlation: Complex<f32>, energy: f32) -> bool {
+    energy > MIN_POWER * WINDOW as f32
+        && correlation.norm_sqr() > PLATEAU * PLATEAU * energy * energy
+}
+
+/// Plateau probes on a fixed grid of `PROBE` samples. A window spans two grid blocks, so each
+/// block is summed once and serves two probes.
+#[derive(Clone, Copy, Default)]
+struct Probe {
+    block: Option<u64>,
+    correlation: Complex<f32>,
+    energy: f32,
+}
+
+impl Probe {
+    /// Whether the window at `at`, the grid point `absolute`, sits on the plateau.
+    fn on(&mut self, h: &[Complex<f32>], at: usize, absolute: u64) -> bool {
+        let block = absolute / PROBE as u64;
+        let (correlation, energy) = match self.block {
+            Some(cached) if cached == block => (self.correlation, self.energy),
+            _ => block_sums(h, at),
+        };
+        let (next_correlation, next_energy) = block_sums(h, at + PROBE);
+        *self = Self {
+            block: Some(block + 1),
+            correlation: next_correlation,
+            energy: next_energy,
+        };
+        on_plateau(correlation + next_correlation, energy + next_energy)
+    }
+}
+
+/// The lag-`SHORT` correlation and energy of the `PROBE` samples from `at`. The samples are
+/// read as interleaved floats, so every sum is a plain lane-wise multiply-add.
+fn block_sums(h: &[Complex<f32>], at: usize) -> (Complex<f32>, f32) {
+    const LANES: usize = 8;
+    const SIGNS: [f32; LANES] = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
+    let (Some(early), Some(late)) = (
+        h.get(at..).and_then(|h| h.first_chunk::<PROBE>()),
+        h.get(at + SHORT..).and_then(|h| h.first_chunk::<PROBE>()),
+    ) else {
+        return (Complex::default(), 0.0);
+    };
+    let (early, late) = (floats(early), floats(late));
+    let (mut re, mut im, mut energy) = ([0.0f32; LANES], [0.0f32; LANES], [0.0f32; LANES]);
+    for (x, y) in early
+        .as_chunks::<LANES>()
+        .0
+        .iter()
+        .zip(late.as_chunks::<LANES>().0)
+    {
+        for lane in 0..LANES {
+            re[lane] += x[lane] * y[lane];
+            im[lane] += x[lane ^ 1] * y[lane] * SIGNS[lane];
+            energy[lane] += y[lane] * y[lane];
+        }
+    }
+    let sum = |lanes: [f32; LANES]| lanes.iter().sum::<f32>();
+    (Complex::new(sum(re), sum(im)), sum(energy))
+}
+
+fn floats(z: &[Complex<f32>; PROBE]) -> [f32; 2 * PROBE] {
+    let mut out = [0.0; 2 * PROBE];
+    for (pair, z) in out.as_chunks_mut::<2>().0.iter_mut().zip(z) {
+        *pair = [z.re, z.im];
+    }
+    out
+}
+
 pub struct Ofdm {
     history: Vec<Complex<f32>>,
     plateau: Plateau,
+    probe: Probe,
     consumed: u64,
     cursor: usize,
     ready_at: usize,
@@ -155,6 +225,7 @@ impl Ofdm {
         Self {
             history: Vec::with_capacity(MAX_HISTORY),
             plateau: Plateau::default(),
+            probe: Probe::default(),
             consumed: 0,
             cursor: 0,
             ready_at: 0,
@@ -183,6 +254,7 @@ impl Ofdm {
         self.ready_at = 0;
         self.state = State::Search;
         self.plateau = Plateau::default();
+        self.probe = Probe::default();
     }
 
     pub fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
@@ -230,11 +302,24 @@ impl Ofdm {
         self.plateau.holding = holding;
     }
 
+    /// Slides the plateau detector on. A fresh run has to pass every sample of its first
+    /// `PLATEAU_SAMPLES`, so one failing grid probe among them lets the search jump past it.
     fn search(&mut self) -> bool {
         let mut plateau = self.plateau;
         let mut cursor = self.cursor;
         let mut found = None;
         while cursor + LOOKAHEAD <= self.history.len() {
+            if plateau.run == 0 {
+                let absolute = self.consumed + cursor as u64;
+                let grid = absolute.next_multiple_of(PROBE as u64);
+                let probe = cursor + (grid - absolute) as usize;
+                if !self.probe.on(&self.history, probe, grid) {
+                    cursor = probe + 1;
+                    plateau.primed = false;
+                    plateau.holding = false;
+                    continue;
+                }
+            }
             let at = cursor;
             plateau.slide(&self.history, at);
             cursor += 1;

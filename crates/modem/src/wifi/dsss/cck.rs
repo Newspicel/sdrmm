@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     linear::PhaseTracker,
-    spread::{CckMode, Codebook, integrate},
+    spread::{CckMode, Codebook, integrate_chips},
     wifi::Sink,
 };
 
@@ -78,10 +78,11 @@ fn chips(
     start: f64,
     derotators: &[Complex<f32>; CHIPS],
 ) -> [Complex<f32>; CHIPS] {
-    std::array::from_fn(|chip| {
-        let from = start + chip as f64 * CHIP_SAMPLES;
-        integrate(history, from, from + CHIP_SAMPLES) * derotators[chip]
-    })
+    let mut chips = integrate_chips::<CHIPS>(history, start, CHIP_SAMPLES);
+    for (chip, turn) in chips.iter_mut().zip(derotators) {
+        *chip *= turn;
+    }
+    chips
 }
 
 /// One phasor per chip, the tracked carrier at that chip's centre relative to the symbol's.
@@ -114,7 +115,8 @@ fn energy(chips: &[Complex<f32>; CHIPS], word: &[Complex<f32>; CHIPS]) -> f32 {
         .zip(word)
         .map(|(&y, &w)| y * w.conj())
         .sum::<Complex<f32>>()
-        .norm()
+        .norm_sqr()
+        .sqrt()
 }
 
 impl Cck {

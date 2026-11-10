@@ -272,7 +272,7 @@ impl<'a> SymbolReader<'a> {
         let energy = |at: usize| -> f32 {
             (0..PHASE_SYMBOLS)
                 .filter_map(|symbol| self.correlation(at + symbol * SYMBOL))
-                .map(|c| c.norm())
+                .map(|c| c.norm_sqr().sqrt())
                 .sum()
         };
         (start.saturating_sub(PHASE_SEARCH)..=start + PHASE_SEARCH)
@@ -293,9 +293,8 @@ impl<'a> SymbolReader<'a> {
     }
 
     fn at(&self, position: f64) -> Option<Complex<f32>> {
-        let index = position.floor();
-        let weight = (position - index) as f32;
-        let index = index as usize;
+        let index = position as usize;
+        let weight = (position - index as f64) as f32;
         Some(self.correlation(index)? * (1.0 - weight) + self.correlation(index + 1)? * weight)
     }
 
@@ -311,9 +310,9 @@ impl<'a> SymbolReader<'a> {
     fn locate(&mut self) -> Option<Complex<f32>> {
         let centre = self.at(self.position)?;
         let nearest = self.position.round() as usize;
-        let early = self.correlation(nearest.checked_sub(1)?)?.norm();
-        let middle = self.correlation(nearest)?.norm();
-        let late = self.correlation(nearest + 1)?.norm();
+        let early = self.correlation(nearest.checked_sub(1)?)?.norm_sqr().sqrt();
+        let middle = self.correlation(nearest)?.norm_sqr().sqrt();
+        let late = self.correlation(nearest + 1)?.norm_sqr().sqrt();
         let curvature = early - 2.0 * middle + late;
         if curvature < 0.0 {
             let peak = nearest as f64 + f64::from(0.5 * (early - late) / curvature);
