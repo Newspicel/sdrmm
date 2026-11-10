@@ -335,7 +335,7 @@ impl Candidate {
     }
 
     /// The page as sent, or `None` when it must be dropped: damaged, or on an IDEA RIC
-    /// without the header the cipher needs.
+    /// without the header the cipher needs or with one that fails the pager's check.
     fn message(&self, pending: &Pending, vault: &Vault) -> Option<(PocsagPayload, String, bool)> {
         if pending.poisoned {
             return None;
@@ -356,7 +356,7 @@ impl Candidate {
             vault.now(),
             &header,
             &alpha_bytes(sealed),
-        );
+        )?;
         Some((PocsagPayload::Alpha, render_alpha(&opened), true))
     }
 }

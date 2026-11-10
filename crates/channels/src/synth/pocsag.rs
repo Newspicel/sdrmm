@@ -136,12 +136,11 @@ fn message_codewords(page: &Page) -> Vec<u32> {
 }
 
 fn seal_text(bits: &mut Vec<bool>, text: &str, seal: &IdeaSeal) {
-    let header = Header::sealing(seal.mask, &seal.key, seal.sent.minute);
+    let header = Header::sealing(seal.mask, seal.sent.minute);
     bits.extend(header.bits());
-    let seed = header.seed(&seal.key, seal.org_code, seal.sent);
-    let mut stream = idea::Keystream::new(&seal.key, seed);
-    for byte in text.chars().map(ascii7).chain(std::iter::once(0)) {
-        push_lsb_first(bits, byte ^ stream.mask(), ALPHA_BITS);
+    let plain: Vec<u8> = text.chars().map(ascii7).chain(std::iter::once(0)).collect();
+    for byte in idea::seal(&seal.key, seal.org_code, seal.sent, &header, &plain) {
+        push_lsb_first(bits, byte, ALPHA_BITS);
     }
 }
 
@@ -250,8 +249,11 @@ mod tests {
             })
             .collect();
         let (header, rest) = Header::parse(&bits).unwrap();
+        let sum = header
+            .pager_sum()
+            .expect("a sealed header passes the check");
         assert_eq!(
-            header.minute_nibble(&seal.key),
+            header.minute_nibble(sum),
             3,
             "17 minutes past is the fourth step"
         );
@@ -267,8 +269,8 @@ mod tests {
             })
             .collect();
         assert_eq!(
-            idea::decrypt(&seal.key, seal.org_code, seal.sent, &header, &sealed),
-            b"ALARM 42"
+            idea::decrypt(&seal.key, seal.org_code, seal.sent, &header, &sealed).as_deref(),
+            Some(&b"ALARM 42"[..])
         );
     }
 

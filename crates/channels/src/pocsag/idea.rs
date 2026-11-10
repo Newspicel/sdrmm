@@ -19,6 +19,12 @@ const MINUTE_STEP: u8 = 5;
 const LATE_MINUTE: u8 = 20;
 const BACKWARD_SLACK: u8 = 21;
 const FORWARD_SLACK: u8 = 40;
+/// The byte sums a pager folds into the second header word: that of its built-in key once it
+/// has loaded its programming, zero before. They set the check bits and mask the minute nibble;
+/// no operator key takes part.
+const PAGER_SUMS: [u8; 2] = [0x4B, 0];
+#[cfg(any(test, feature = "synth"))]
+const SEALING_SUM: u8 = PAGER_SUMS[0];
 
 fn mul(a: u16, b: u16) -> u16 {
     let product = u32::from(a) * u32::from(b);
@@ -197,8 +203,11 @@ impl Civil {
     }
 }
 
-pub(crate) fn key_sum(key: &[u8; KEY_BYTES]) -> u8 {
-    key.iter().fold(0, |acc, &byte| acc.wrapping_add(byte))
+/// The two bytes a pager with `sum` expects behind the day and hour masks.
+fn check_bytes(sum: u8) -> (u8, u8) {
+    let mid = sum.wrapping_mul(2).wrapping_add(3);
+    let low = mid.wrapping_mul(2).wrapping_add(3) & 0xF;
+    (mid, low)
 }
 
 /// The two 20-bit codewords that open an encrypted message. They mask the seed and carry the
@@ -229,23 +238,40 @@ impl Header {
             .collect()
     }
 
-    /// A header that names `minute` under `key`, with `mask` as its first word.
+    /// A header that names `minute`, with `mask` as its first word, as a programmed pager
+    /// checks it.
     #[cfg(any(test, feature = "synth"))]
-    pub(crate) fn sealing(mask: u32, key: &[u8; KEY_BYTES], minute: u8) -> Self {
+    pub(crate) fn sealing(mask: u32, minute: u8) -> Self {
         let first = mask & WORD_MASK;
         let nibble = minute / MINUTE_STEP;
+        let [top, mid, low] = Self::fields(first);
+        let (check_mid, check_low) = check_bytes(SEALING_SUM);
         Self {
             first,
-            second: u32::from(Self::masks(first)[0] ^ key_sum(key) ^ nibble) << 12,
+            second: u32::from(top ^ SEALING_SUM ^ nibble) << 12
+                | u32::from(mid ^ check_mid) << 4
+                | u32::from(low ^ check_low),
         }
     }
 
-    fn masks(word: u32) -> [u8; 3] {
-        [(word >> 12) as u8, (word >> 4) as u8, (word as u8) << 4]
+    /// Bits 12-19, 4-11 and 0-3 of a word.
+    fn fields(word: u32) -> [u8; 3] {
+        [(word >> 12) as u8, (word >> 4) as u8, (word & 0xF) as u8]
     }
 
-    pub(crate) fn minute_nibble(&self, key: &[u8; KEY_BYTES]) -> u8 {
-        (Self::masks(self.first)[0] ^ Self::masks(self.second)[0] ^ key_sum(key)) & 0xF
+    /// The pager sum whose check bits this header carries, if any.
+    pub(crate) fn pager_sum(&self) -> Option<u8> {
+        PAGER_SUMS.into_iter().find(|&sum| self.passes(sum))
+    }
+
+    fn passes(&self, sum: u8) -> bool {
+        let [_, day_mask, hour_mask] = Self::fields(self.first);
+        let [_, mid, low] = Self::fields(self.second);
+        (mid ^ day_mask, low ^ hour_mask) == check_bytes(sum)
+    }
+
+    pub(crate) fn minute_nibble(&self, sum: u8) -> u8 {
+        (Self::fields(self.first)[0] ^ Self::fields(self.second)[0] ^ sum) & 0xF
     }
 
     fn sent_at(nibble: u8, clock: Civil) -> Civil {
@@ -269,35 +295,50 @@ impl Header {
         clock
     }
 
-    pub(crate) fn seed(&self, key: &[u8; KEY_BYTES], org_code: u16, clock: Civil) -> [u8; 4] {
-        let nibble = self.minute_nibble(key);
-        let [year_mask, day_mask, hour_mask] = Self::masks(self.first);
+    pub(crate) fn seed(&self, sum: u8, org_code: u16, clock: Civil) -> [u8; 4] {
+        let nibble = self.minute_nibble(sum);
+        let [year_mask, day_mask, hour_mask] = Self::fields(self.first);
         let [org_low, org_high] = org_code.to_le_bytes();
         let sent = Self::sent_at(nibble, clock);
         [
             sent.year.wrapping_sub(YEAR_OFFSET) ^ year_mask,
             sent.day ^ day_mask,
-            sent.hour ^ (hour_mask | org_high),
+            sent.hour ^ (hour_mask << 4 | org_high),
             (sent.month << 4 | nibble) ^ org_low,
         ]
     }
 }
 
-/// The characters of a message up to its terminator. A wrong key gives noise, never an error:
-/// the air format carries nothing a receiver could check without the pager's own tables.
+/// The characters of a message up to its terminator, or `None` when the header fails the
+/// pager's check. The check involves no key, so a wrong key gives noise, never an error.
 pub(crate) fn decrypt(
     key: &[u8; KEY_BYTES],
     org_code: u16,
     clock: Civil,
     header: &Header,
     sealed: &[u8],
-) -> Vec<u8> {
-    let mut stream = Keystream::new(key, header.seed(key, org_code, clock));
-    sealed
+) -> Option<Vec<u8>> {
+    let sum = header.pager_sum()?;
+    let mut stream = Keystream::new(key, header.seed(sum, org_code, clock));
+    let text = sealed
         .iter()
         .map(|&byte| byte ^ stream.mask())
         .take_while(|&byte| byte != 0)
-        .collect()
+        .collect();
+    Some(text)
+}
+
+/// `text`, terminator included, under the keystream of a header made by `Header::sealing`.
+#[cfg(any(test, feature = "synth"))]
+pub(crate) fn seal(
+    key: &[u8; KEY_BYTES],
+    org_code: u16,
+    clock: Civil,
+    header: &Header,
+    text: &[u8],
+) -> Vec<u8> {
+    let mut stream = Keystream::new(key, header.seed(SEALING_SUM, org_code, clock));
+    text.iter().map(|&byte| byte ^ stream.mask()).collect()
 }
 
 #[cfg(test)]
@@ -350,19 +391,49 @@ mod tests {
         minute: 17,
     };
 
+    const MASK: u32 = 0x12345;
+
     fn header(nibble: u8) -> Header {
-        let sum = key_sum(&key());
-        Header {
-            first: 0x12345,
-            second: u32::from(0x12 ^ sum ^ nibble) << 12,
-        }
+        Header::sealing(MASK, nibble * MINUTE_STEP)
+    }
+
+    #[test]
+    fn a_sealed_header_carries_the_check_bits_of_the_pager_firmware() {
+        let second = header(3).second;
+        assert_eq!(
+            second >> 12,
+            0x12 ^ 0x4B ^ 3,
+            "top byte: year mask, sum, minute"
+        );
+        assert_eq!(
+            second >> 4 & 0xFF,
+            0x34 ^ 0x99,
+            "mid byte: day mask, 2 * sum + 3"
+        );
+        assert_eq!(second & 0xF, 5 ^ 5, "low nibble: hour mask, 4 * sum + 9");
+    }
+
+    #[test]
+    fn a_header_names_the_pager_sum_its_check_bits_hold() {
+        assert_eq!(header(3).pager_sum(), Some(0x4B));
+        let fresh_pager = Header {
+            first: MASK,
+            second: (0x12 ^ 3) << 12 | (0x34 ^ 0x03) << 4 | (5 ^ 9),
+        };
+        assert_eq!(fresh_pager.pager_sum(), Some(0));
+        assert_eq!(fresh_pager.minute_nibble(0), 3);
+        let flipped = Header {
+            second: header(3).second ^ 1 << 7,
+            ..header(3)
+        };
+        assert_eq!(flipped.pager_sum(), None);
     }
 
     #[test]
     fn seed_mixes_date_hour_and_header_masks() {
-        assert_eq!(header(3).minute_nibble(&key()), 3);
+        assert_eq!(header(3).minute_nibble(0x4B), 3);
         assert_eq!(
-            header(3).seed(&key(), 0x4af5, CLOCK),
+            header(3).seed(0x4B, 0x4af5, CLOCK),
             [0xC0 ^ 0x12, 9 ^ 0x34, 13 ^ (0x50 | 0x4a), 0xA3 ^ 0xF5]
         );
     }
@@ -370,7 +441,7 @@ mod tests {
     #[test]
     fn minute_nibble_fifteen_zeroes_the_date() {
         assert_eq!(
-            header(15).seed(&key(), 0x4af5, CLOCK),
+            header(15).seed(0x4B, 0x4af5, CLOCK),
             [0u8.wrapping_sub(90) ^ 0x12, 0x34, 0x50 | 0x4a, 0x0F ^ 0xF5]
         );
     }
@@ -378,7 +449,7 @@ mod tests {
     #[test]
     fn the_hour_follows_the_minute_in_the_header_across_the_hour_mark() {
         let at = |minute| Civil { minute, ..CLOCK };
-        let hour = |nibble: u8, minute| header(nibble).seed(&key(), 0, at(minute))[2] ^ 0x50;
+        let hour = |nibble: u8, minute| header(nibble).seed(0x4B, 0, at(minute))[2] ^ 0x50;
         assert_eq!(hour(11, 10), 12, "sent at :55, received at :10");
         assert_eq!(hour(11, 40), 13, "sent at :55, received at :40");
         assert_eq!(hour(1, 50), 14, "sent at :05, received at :50");
@@ -413,14 +484,19 @@ mod tests {
 
     #[test]
     fn decrypt_stops_at_the_first_nul() {
-        let seed = header(3).seed(&key(), 0x4af5, CLOCK);
-        let mut stream = Keystream::new(&key(), seed);
-        let sealed: Vec<u8> = b"HELLO\0junk"
-            .iter()
-            .map(|&byte| byte ^ stream.mask())
-            .collect();
+        let sealed = seal(&key(), 0x4af5, CLOCK, &header(3), b"HELLO\0junk");
         let text = decrypt(&key(), 0x4af5, CLOCK, &header(3), &sealed);
-        assert_eq!(text, b"HELLO");
+        assert_eq!(text.as_deref(), Some(&b"HELLO"[..]));
+    }
+
+    #[test]
+    fn decrypt_rejects_a_header_that_fails_the_check() {
+        let sealed = seal(&key(), 0x4af5, CLOCK, &header(3), b"HELLO\0");
+        let damaged = Header {
+            second: header(3).second ^ 1,
+            ..header(3)
+        };
+        assert_eq!(decrypt(&key(), 0x4af5, CLOCK, &damaged, &sealed), None);
     }
 
     #[test]

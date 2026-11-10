@@ -97,7 +97,8 @@ Swissphone pagers can carry IDEA-encrypted text. Enter the message key of each R
 organisation code from the pager programming (PSW900) under the POCSAG settings, and those
 messages decode as text marked `IDEA`. The seed includes the local date and hour, so the
 host clock, or a recording's capture time, has to be within the hour of the transmission.
-A wrong key gives noise, not an error: the air format carries nothing a receiver can check.
+The pager checks twelve header bits that depend on no key; a page that fails them is dropped and
+counted as rejected. A wrong key gives noise, not an error.
 
 ## End-of-Train
 
