@@ -181,7 +181,7 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
     await row.focus();
     await page.keyboard.press("Enter");
     await expect(row).toHaveAttribute("aria-expanded", "true");
-    await expect(log.locator("audio")).toBeVisible();
+    await expect(log.locator(`audio[src^="${audioUrl}"]`)).toBeVisible();
     await page.screenshot({ path: "/tmp/spectrum-monitor.png", fullPage: true });
     expect(errors).toEqual([]);
   } finally {

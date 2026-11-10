@@ -251,6 +251,13 @@ impl Rig {
         self.next = end;
     }
 
+    /// Feeds one block and waits for the front stage alone, so a stalled CPI stage still sees
+    /// every CPI while a slow host never drops blocks into gaps that restart the window.
+    fn push_to_front(&mut self) {
+        self.push(BLOCK);
+        wait_for("the front stage", || self.worker.front_caught_up());
+    }
+
     fn settle(&mut self) {
         let deadline = Instant::now() + PATIENCE;
         loop {
@@ -385,7 +392,7 @@ fn blocked_worker(gate: &Gate) -> RadarWorker {
         assert!(next < SCENE, "no CPI reached the backend");
         push_at(&mut worker, next..next + BLOCK, CENTER_HZ);
         next += BLOCK;
-        std::thread::sleep(PACE);
+        wait_for("the front stage", || worker.front_caught_up());
     }
     worker
 }
@@ -494,8 +501,7 @@ fn a_retune_discards_in_flight_cpis_and_ends_tracks() {
     let closed = gate.close();
     while shared.dropped_cpis.load(Ordering::Acquire) == 0 {
         assert!(rig.next < SCENE, "no CPI waited behind the stalled one");
-        rig.push(BLOCK);
-        std::thread::sleep(PACE);
+        rig.push_to_front();
     }
     assert!(gate.entered() > entered);
     rig.center_hz = CENTER_HZ + 1e6;
@@ -847,8 +853,7 @@ fn settings_queued_behind_a_busy_cpi_are_kept_and_coalesced() {
     let closed = gate.close();
     while gate.entered() == entered {
         assert!(rig.next < SCENE, "no CPI reached the closed gate");
-        rig.push(BLOCK);
-        std::thread::sleep(PACE);
+        rig.push_to_front();
     }
     rig.worker
         .action(ProcessorAction::ClearTracks)
@@ -889,8 +894,7 @@ fn a_rebuild_carries_every_counter_over() {
             rig.next < SCENE,
             "no CPI was dropped behind the closed gate"
         );
-        rig.push(BLOCK);
-        std::thread::sleep(PACE);
+        rig.push_to_front();
     }
     let wrong = [&scene()[0][..BLOCK], &scene()[1][..BLOCK]];
     rig.worker.push(&block(&wrong, 0, &[CENTER_HZ; 2]));

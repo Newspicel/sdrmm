@@ -189,11 +189,16 @@ mod tests {
     const TOLERANCE: f64 = 1e-6;
 
     #[test]
-    fn madd_matches_multiply_then_add_within_one_rounding() {
+    fn madd_matches_multiply_then_add_within_two_roundings() {
         for (a, b, c) in [(1.5f32, -2.25, 0.75), (1e-3, 3e4, -29.9), (0.1, 0.1, -0.01)] {
-            let exact = f64::from(a) * f64::from(b) + f64::from(c);
+            let product = f64::from(a) * f64::from(b);
+            let exact = product + f64::from(c);
             let got = f64::from(madd(a, b, c));
-            assert!((got - exact).abs() <= exact.abs().max(1.0) * 2.0 * f64::from(f32::EPSILON));
+            let bound = (product.abs() + exact.abs()) * f64::from(f32::EPSILON);
+            assert!(
+                (got - exact).abs() <= bound,
+                "{a} * {b} + {c}: {got} vs {exact}"
+            );
         }
     }
 

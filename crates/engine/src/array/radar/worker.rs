@@ -751,9 +751,14 @@ impl RadarWorker {
     }
 
     #[cfg(test)]
+    pub(super) fn front_caught_up(&self) -> bool {
+        self.shared.blocks_done.load(Ordering::Acquire) == self.blocks_pushed
+    }
+
+    #[cfg(test)]
     pub(super) fn settled(&self) -> bool {
         let shared = &self.shared;
-        shared.blocks_done.load(Ordering::Acquire) == self.blocks_pushed
+        self.front_caught_up()
             && shared.jobs_in.load(Ordering::Acquire) == shared.jobs_out.load(Ordering::Acquire)
             && !self.outbox.pending()
     }

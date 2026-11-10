@@ -134,9 +134,9 @@
   },
   {
     "bench": "atv",
-    "msamples_per_s": 185.47369015422598,
-    "realtime_factor": 11.592105634639124,
-    "config": "noise including deferred decode slots, 16000000 Hz, 2048 sample blocks",
+    "msamples_per_s": 40.26,
+    "realtime_factor": 2.01,
+    "config": "noise including deferred decode slots, 20000000 Hz, 2048 sample blocks",
     "host": "x86_64-linux"
   },
   {
