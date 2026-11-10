@@ -106,9 +106,10 @@ const PTY_NAMES: [&str; 32] = [
 
 pub(crate) struct RdsDecoder {
     mpx_rate: f64,
-    nco: Nco,
-    pilot_decim: Decimator,
-    data_decim: Decimator,
+    pilot_nco: Nco,
+    data_nco: Nco,
+    pilot_decim: TwoStage,
+    data_decim: TwoStage,
     pilot_narrow: ComplexOnePole,
     pll: Pll,
     pilot_locked: bool,
@@ -132,12 +133,12 @@ impl RdsDecoder {
         let factor = decimation(mpx_rate);
         let baseband_rate = mpx_rate / factor as f64;
         let sps = baseband_rate / BIT_RATE;
-        let anti_alias = anti_alias(mpx_rate, baseband_rate, factor);
         Self {
             mpx_rate,
-            nco: Nco::new(PILOT_HZ as f32, mpx_rate as f32),
-            pilot_decim: Decimator::new(&anti_alias, factor),
-            data_decim: Decimator::new(&anti_alias, factor),
+            pilot_nco: Nco::new(-PILOT_HZ as f32, mpx_rate as f32),
+            data_nco: Nco::new(-3.0 * PILOT_HZ as f32, mpx_rate as f32),
+            pilot_decim: TwoStage::new(mpx_rate, factor),
+            data_decim: TwoStage::new(mpx_rate, factor),
             pilot_narrow: ComplexOnePole::new(baseband_rate, PILOT_CUTOFF_HZ, PILOT_STAGES),
             pll: Pll::new(
                 PILOT_LOOP_BW_HZ / baseband_rate,
@@ -163,14 +164,11 @@ impl RdsDecoder {
     }
 
     pub(crate) fn process(&mut self, mpx: &[f32], out: &mut Vec<DecoderEvent>) {
-        self.pilot_mix.clear();
-        self.data_mix.clear();
-        for &sample in mpx {
-            let pilot = self.nco.next_sample();
-            let subcarrier = pilot * pilot * pilot;
-            self.pilot_mix.push(pilot.conj() * sample);
-            self.data_mix.push(subcarrier.conj() * sample);
-        }
+        let zero = Complex::new(0.0, 0.0);
+        self.pilot_mix.resize(mpx.len(), zero);
+        self.data_mix.resize(mpx.len(), zero);
+        self.pilot_nco.mix_real_into(mpx, &mut self.pilot_mix);
+        self.data_nco.mix_real_into(mpx, &mut self.data_mix);
         self.pilot_decim
             .process(&self.pilot_mix, &mut self.pilot_bb);
         self.data_decim.process(&self.data_mix, &mut self.data_bb);
@@ -204,12 +202,65 @@ impl RdsDecoder {
     pub(crate) fn reset(&mut self) {
         *self = Self::new(self.mpx_rate);
     }
+
+    /// The pilot at baseband, decimated, from the last block.
+    pub(crate) fn pilot_baseband(&self) -> &[Complex<f32>] {
+        &self.pilot_bb
+    }
+
+    pub(crate) fn baseband_rate(&self) -> f64 {
+        self.mpx_rate / decimation(self.mpx_rate) as f64
+    }
+
+    /// The phase, in turns, at which the next sample meets the pilot mixer.
+    pub(crate) fn pilot_turns(&self) -> f64 {
+        self.pilot_nco.turns()
+    }
 }
 
 fn decimation(mpx_rate: f64) -> usize {
     let by_target = (mpx_rate / TARGET_BASEBAND_HZ).round();
     let ceiling = (mpx_rate / MIN_BASEBAND_HZ).floor();
     by_target.min(ceiling).max(1.0) as usize
+}
+
+/// Decimation in two steps of about the same factor: the first only has to keep what would fold
+/// onto the data band, so its filter is short, and the second runs at a fraction of the rate. A
+/// prime factor takes one step.
+struct TwoStage {
+    first: Option<Decimator>,
+    second: Decimator,
+    mid: Vec<Complex<f32>>,
+}
+
+impl TwoStage {
+    fn new(mpx_rate: f64, factor: usize) -> Self {
+        let first = (2..factor)
+            .filter(|d| factor.is_multiple_of(*d) && d * d <= factor)
+            .max()
+            .unwrap_or(1);
+        let mid_rate = mpx_rate / first as f64;
+        let second = factor / first;
+        Self {
+            first: (first > 1)
+                .then(|| Decimator::new(&anti_alias(mpx_rate, mid_rate, first), first)),
+            second: Decimator::new(
+                &anti_alias(mid_rate, mid_rate / second as f64, second),
+                second,
+            ),
+            mid: Vec::new(),
+        }
+    }
+
+    fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
+        match &mut self.first {
+            Some(first) => {
+                first.process(input, &mut self.mid);
+                self.second.process(&self.mid, out);
+            }
+            None => self.second.process(input, out),
+        }
+    }
 }
 
 fn anti_alias(mpx_rate: f64, baseband_rate: f64, factor: usize) -> Vec<f32> {
@@ -253,6 +304,9 @@ struct GroupDecoder {
     blocks_read: u64,
     block_errors: u64,
     reported_errors: u64,
+    /// Station data a partial group brought in before the first whole group, held back so an
+    /// update never reports a station no group has confirmed.
+    unreported: bool,
 }
 
 impl GroupDecoder {
@@ -343,8 +397,10 @@ impl GroupDecoder {
         if self.blocks.iter().all(Option::is_some) {
             self.groups = self.groups.saturating_add(1);
         }
-        let changed = self.station.apply(&self.blocks);
-        if changed || self.block_errors != self.reported_errors {
+        self.unreported |= self.station.apply(&self.blocks);
+        let decoded = self.groups > 0;
+        if decoded && (self.unreported || self.block_errors != self.reported_errors) {
+            self.unreported = false;
             self.reported_errors = self.block_errors;
             out.push(DecoderEvent::of(&self.station.update(
                 self.groups,
@@ -1118,6 +1174,23 @@ mod tests {
         assert!(blocks > 500, "only {blocks} blocks read");
         let lost = errors as f64 / blocks as f64;
         assert!(lost < 0.02, "lost {:.1}% of the blocks", 100.0 * lost);
+    }
+
+    #[test]
+    fn decimation_takes_one_step_for_a_prime_factor_and_two_otherwise() {
+        let composite = |len: usize| vec![Complex::new(1.0, 0.0); len];
+        let mut out = Vec::new();
+        for (rate, factor, steps) in [(240_000.0, 25, 2), (220_800.0, 23, 1)] {
+            let mut stages = TwoStage::new(rate, factor);
+            assert_eq!(1 + usize::from(stages.first.is_some()), steps, "{rate} Hz");
+            stages.process(&composite(factor * 400), &mut out);
+            assert_eq!(out.len(), 400, "{rate} Hz");
+            let settled = out[out.len() - 1];
+            assert!(
+                (settled.re - 1.0).abs() < 1e-3,
+                "{rate} Hz passes dc as {settled}"
+            );
+        }
     }
 
     #[test]

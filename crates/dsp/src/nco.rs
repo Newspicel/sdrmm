@@ -12,6 +12,7 @@ const FRACTION_MASK: u32 = (1 << INDEX_SHIFT) - 1;
 const DELTA_PER_STEP: f32 = std::f32::consts::TAU / TABLE_LEN as f32 / (1u32 << INDEX_SHIFT) as f32;
 const SIXTH: f32 = 1.0 / 6.0;
 const PHASE_SCALE: f64 = 18_446_744_073_709_551_616.0;
+const HALF_PHASE_SCALE: f64 = PHASE_SCALE / 2.0;
 const SILENT: Complex<f32> = Complex::new(f32::NAN, f32::NAN);
 
 type Table = [Complex<f32>; TABLE_LEN];
@@ -36,6 +37,15 @@ fn phasor(table: &Table, phase: u64) -> Complex<f32> {
         first.re * cos - first.im * sin,
         first.im * cos + first.re * sin,
     )
+}
+
+/// The unit phasor at `turns` of a cycle, from the oscillator's table. The whole turns go by a
+/// truncating cast rather than a library remainder, and the rest wraps into the phase word.
+#[must_use]
+pub fn unit_phasor(turns: f64) -> Complex<f32> {
+    let fraction = turns - turns as i64 as f64;
+    let phase = ((fraction * HALF_PHASE_SCALE) as i64 as u64).wrapping_shl(1);
+    phasor(&PHASORS, phase)
 }
 
 #[derive(Clone)]
@@ -110,6 +120,12 @@ impl Nco {
         self.realign();
     }
 
+    /// The phase of the next sample, in turns.
+    #[must_use]
+    pub fn turns(&self) -> f64 {
+        self.phase as f64 / PHASE_SCALE
+    }
+
     #[must_use]
     pub const fn is_identity(&self) -> bool {
         self.valid && self.step == 0 && self.phase == 0
@@ -133,6 +149,18 @@ impl Nco {
             return;
         }
         lanes::mix_into(self, input, out);
+    }
+
+    /// Mixes a real signal: each sample scales the oscillator.
+    pub fn mix_real_into(&mut self, input: &[f32], out: &mut [Complex<f32>]) {
+        debug_assert_eq!(input.len(), out.len());
+        let len = input.len().min(out.len());
+        let (input, out) = (&input[..len], &mut out[..len]);
+        if !self.valid {
+            out.fill(SILENT);
+            return;
+        }
+        lanes::mix_real_into(self, input, out);
     }
 
     pub fn mix(&mut self, samples: &mut [Complex<f32>]) {
@@ -293,6 +321,43 @@ mod tests {
                 assert_eq!(samples, expected, "{frequency} Hz, {len} samples in place");
                 assert_eq!(copied.phase, single.phase);
                 assert_eq!(in_place.phase, single.phase);
+            }
+        }
+    }
+
+    #[test]
+    fn unit_phasors_wrap_whole_turns_in_either_direction() {
+        for turns in [
+            0.0,
+            0.25,
+            -0.25,
+            0.999_999,
+            -0.999_999,
+            3.125,
+            -7.875,
+            1e6 + 0.5,
+        ] {
+            let got = unit_phasor(turns);
+            let want = reference(turns);
+            assert!((got - want).norm() < 1e-6, "{turns} turns: {got} vs {want}");
+        }
+    }
+
+    #[test]
+    fn real_mixing_matches_mixing_the_same_samples_as_complex() {
+        let input: Vec<f32> = noise(301).iter().map(|sample| sample.re).collect();
+        for frequency in [0.0, 187_501.25, -731_251.0, -10_000_000.0] {
+            for lead in [0, 1, 3, 130] {
+                let mut complex = started(frequency, lead);
+                let mut expected: Vec<_> = input.iter().map(|&x| Complex::new(x, 0.0)).collect();
+                complex.mix(&mut expected);
+                let mut real = started(frequency, lead);
+                let mut got = vec![Complex::new(0.0, 0.0); input.len()];
+                for (source, target) in input.chunks(37).zip(got.chunks_mut(37)) {
+                    real.mix_real_into(source, target);
+                }
+                assert_eq!(got, expected, "{frequency} Hz after {lead}");
+                assert_eq!(real.phase, complex.phase);
             }
         }
     }

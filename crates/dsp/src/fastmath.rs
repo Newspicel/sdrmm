@@ -2,6 +2,9 @@ use std::f32::consts::{FRAC_PI_2, PI};
 
 use num_complex::Complex;
 
+#[cfg(target_arch = "x86_64")]
+mod avx;
+
 const SQRT_HALF_BITS: u32 = 0x3F35_04F3;
 const MANTISSA_BITS: u32 = 23;
 const SUBNORMAL_SCALE: f32 = 16_777_216.0;
@@ -172,14 +175,31 @@ fn phase_diff_body(iq: &[Complex<f32>], prev: &mut Complex<f32>, scale: f32, out
     let (Some(&first), Some(&last)) = (iq.first(), iq.last()) else {
         return;
     };
-    out.push(fast_arg(first * prev.conj()) * scale);
-    out.extend(
-        iq.iter()
-            .skip(1)
-            .zip(iq)
-            .map(|(&now, &before)| fast_arg(now * before.conj()) * scale),
-    );
+    out.resize(iq.len(), 0.0);
+    out[0] = fast_arg(first * prev.conj()) * scale;
+    let done = vector_phase_diffs(iq, scale, &mut out[1..]);
+    for ((slot, &now), &before) in out[1 + done..]
+        .iter_mut()
+        .zip(&iq[1 + done..])
+        .zip(&iq[done..])
+    {
+        *slot = fast_arg(now * before.conj()) * scale;
+    }
     *prev = last;
+}
+
+#[cfg(target_arch = "x86_64")]
+fn vector_phase_diffs(iq: &[Complex<f32>], scale: f32, out: &mut [f32]) -> usize {
+    if std::arch::is_x86_feature_detected!("avx2") {
+        unsafe { avx::phase_diffs(iq, scale, out) }
+    } else {
+        0
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn vector_phase_diffs(_: &[Complex<f32>], _: f32, _: &mut [f32]) -> usize {
+    0
 }
 
 #[cfg(test)]
@@ -248,6 +268,34 @@ mod tests {
             }
         }
         assert!(worst < TOLERANCE, "worst error {worst}");
+    }
+
+    #[test]
+    fn phase_differences_match_the_scalar_formula_bit_for_bit() {
+        let mut iq: Vec<Complex<f32>> = (0..203)
+            .map(|k| {
+                let k = k as f32;
+                Complex::new((k * 0.37).sin() * (1.0 + k), (k * 0.91).cos() - 0.5)
+            })
+            .collect();
+        iq[17] = Complex::new(0.0, 0.0);
+        iq[40] = Complex::new(-2.0, 2.0);
+        iq[41] = Complex::new(3.0, -0.0);
+        let scale = 0.731;
+        let mut prev = Complex::new(0.25, -1.0);
+        let mut out = Vec::new();
+        phase_diff_into(&iq, &mut prev, scale, &mut out);
+        let mut before = Complex::new(0.25, -1.0);
+        for (k, (&now, &got)) in iq.iter().zip(&out).enumerate() {
+            let expected = fast_arg(now * before.conj()) * scale;
+            assert_eq!(
+                got.to_bits(),
+                expected.to_bits(),
+                "sample {k}: {got} vs {expected}"
+            );
+            before = now;
+        }
+        assert_eq!(prev, iq[iq.len() - 1]);
     }
 
     #[test]

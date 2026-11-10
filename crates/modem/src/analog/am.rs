@@ -187,7 +187,9 @@ impl AmDemod {
         };
         self.detected.clear();
         match &mut self.carrier {
-            Carrier::Envelope => self.detected.extend(input.iter().map(|z| z.norm())),
+            Carrier::Envelope => self
+                .detected
+                .extend(input.iter().map(|z| z.norm_sqr().sqrt())),
             Carrier::Pll(pll) => self.detected.extend(input.iter().map(|&x| {
                 let reference = pll.process(x);
                 (x * reference.conj()).re

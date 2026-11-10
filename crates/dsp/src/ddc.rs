@@ -10,6 +10,8 @@ const PASSBAND_FRAC: f64 = 0.4;
 const PROTECT_FRAC: f64 = 0.5;
 pub const STOPBAND_DB: f64 = 100.0;
 const CHUNK: usize = 2048;
+/// Outputs the later stages yield per pass, enough to fill whole kernel groups.
+const BATCH_OUTPUTS: usize = 128;
 const CUBIC_SPAN: f64 = 4.0;
 const MIN_FILTERED_UPSAMPLING: f64 = 2.0;
 const MIN_STAGE_TAPS: usize = 11;
@@ -72,6 +74,8 @@ pub struct Ddc {
     mixed: Vec<Complex<f32>>,
     work_in: Vec<Complex<f32>>,
     work_out: Vec<Complex<f32>>,
+    staged: Vec<Complex<f32>>,
+    batch: usize,
     settling: usize,
 }
 
@@ -114,13 +118,18 @@ impl Ddc {
         let mut stages = Vec::new();
         let mut rate = input_rate;
         let mut span = 0.0;
-        if output_rate < input_rate {
-            for factor in prime_factors_desc(integer_decimation(input_rate / output_rate)) {
-                let taps = stage_filter(rate, factor, output_rate).taps();
-                span += (taps - 1) as f64 * input_rate / rate;
-                stages.push(stage(rate, factor, output_rate));
-                rate /= factor as f64;
-            }
+        let factors = if output_rate < input_rate {
+            prime_factors_desc(integer_decimation(input_rate / output_rate))
+        } else {
+            Vec::new()
+        };
+        let decimation: usize = factors.iter().product();
+        let first_factor = factors.first().copied().unwrap_or(1);
+        for &factor in &factors {
+            let taps = stage_filter(rate, factor, output_rate).taps();
+            span += (taps - 1) as f64 * input_rate / rate;
+            stages.push(stage(rate, factor, output_rate));
+            rate /= factor as f64;
         }
         let ratio = output_rate / rate;
         if (1.0 + 1e-12..MIN_FILTERED_UPSAMPLING).contains(&ratio) {
@@ -138,6 +147,8 @@ impl Ddc {
             mixed: Vec::new(),
             work_in: Vec::new(),
             work_out: Vec::new(),
+            staged: Vec::new(),
+            batch: decimation / first_factor * BATCH_OUTPUTS,
         })
     }
 
@@ -162,23 +173,56 @@ impl Ddc {
             .set_freq((-offset_hz) as f32, self.input_rate as f32);
     }
 
+    /// Mixes and runs the first stage chunk by chunk, and the later stages as soon as their
+    /// input yields a batch of outputs, so each stage reads what the one before it just wrote
+    /// while it is still in cache.
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
+        out.clear();
         let Some((first, rest)) = self.stages.split_first_mut() else {
             let mixed = mix(&mut self.nco, input, &mut self.mixed);
             self.fraction.process(mixed, out);
             return;
         };
-        self.work_in.clear();
+        let mut tail = Tail {
+            stages: rest,
+            fraction: &mut self.fraction,
+            work_in: &mut self.work_in,
+            work_out: &mut self.work_out,
+            staged: &mut self.staged,
+        };
+        tail.work_in.clear();
         for chunk in input.chunks(CHUNK) {
             let mixed = mix(&mut self.nco, chunk, &mut self.mixed);
-            first.process(mixed, &mut self.work_out);
-            self.work_in.extend_from_slice(&self.work_out);
+            first.process(mixed, tail.work_out);
+            tail.work_in.extend_from_slice(tail.work_out);
+            if tail.work_in.len() >= self.batch {
+                tail.flush(out);
+            }
         }
-        for stage in rest {
-            stage.process(&self.work_in, &mut self.work_out);
-            std::mem::swap(&mut self.work_in, &mut self.work_out);
+        if !tail.work_in.is_empty() {
+            tail.flush(out);
         }
-        self.fraction.process(&self.work_in, out);
+    }
+}
+
+/// The stages after the first, with the buffers they pass samples through.
+struct Tail<'a> {
+    stages: &'a mut [Decimator],
+    fraction: &'a mut Fraction,
+    work_in: &'a mut Vec<Complex<f32>>,
+    work_out: &'a mut Vec<Complex<f32>>,
+    staged: &'a mut Vec<Complex<f32>>,
+}
+
+impl Tail<'_> {
+    fn flush(&mut self, out: &mut Vec<Complex<f32>>) {
+        for stage in self.stages.iter_mut() {
+            stage.process(self.work_in, self.work_out);
+            std::mem::swap(self.work_in, self.work_out);
+        }
+        self.fraction.process(self.work_in, self.staged);
+        out.extend_from_slice(self.staged);
+        self.work_in.clear();
     }
 }
 

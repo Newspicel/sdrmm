@@ -2,16 +2,13 @@ use crate::registry::Native;
 use sdrmm_wire::{Control, EventContract, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+mod stereo;
 pub use model::*;
-use std::{
-    f64::consts::{FRAC_1_SQRT_2, TAU},
-    sync::LazyLock,
-};
+use std::sync::LazyLock;
+use stereo::StereoDemux;
 
 use num_complex::Complex;
-use sdrmm_dsp::{
-    ComplexOnePole, Decimator, Deemphasis, Nco, Pll, RealDecimator, design_lowpass, one_pole_coeff,
-};
+use sdrmm_dsp::{Decimator, Deemphasis, RealDecimator, design_lowpass};
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily};
 
@@ -26,16 +23,6 @@ const AUDIO_CUTOFF_HZ: f64 = 15_000.0;
 const DECIM_FACTOR: usize = 5;
 const DECIM_TAPS: usize = 199;
 const CHANNEL_TAPS: usize = 65;
-
-const PILOT_HZ: f64 = 19_000.0;
-const PILOT_CUTOFF_HZ: f64 = 400.0;
-const PILOT_STAGES: usize = 3;
-const PILOT_LOOP_BW_HZ: f64 = 30.0;
-const PILOT_RANGE_HZ: f64 = 120.0;
-const PILOT_DECIM: usize = 8;
-const LOCK_ON: f32 = 0.6;
-const LOCK_OFF: f32 = 0.4;
-const BLEND_TAU_S: f64 = 0.05;
 
 fn discriminator(rate: f64) -> AngleDemod {
     let params = AngleParams::new(
@@ -73,20 +60,6 @@ pub struct WfmChannel {
     rds: RdsDecoder,
 }
 
-struct StereoDemux {
-    pilot: Nco,
-    filter: ComplexOnePole,
-    pll: Pll,
-    tracking: PilotTracking,
-    difference: Vec<f32>,
-    side: Vec<f32>,
-    decim: RealDecimator,
-    deemphasis: Deemphasis,
-    blend: f32,
-    blend_coeff: f32,
-    target: f32,
-}
-
 fn params(settings: &ChannelSettings) -> Result<WfmParams, ChannelError> {
     crate::settings_of::<WfmParams>(settings)
 }
@@ -106,105 +79,24 @@ fn deemphasis(p: &WfmParams) -> Result<Deemphasis, ChannelError> {
     Ok(Deemphasis::new(f64::from(AUDIO_RATE), p.deemphasis_us))
 }
 
+fn audio_taps(rate: f64) -> Vec<f32> {
+    design_lowpass(DECIM_TAPS, AUDIO_CUTOFF_HZ / rate)
+}
+
 fn audio_decimator(rate: f64) -> RealDecimator {
-    RealDecimator::new(
-        &design_lowpass(DECIM_TAPS, AUDIO_CUTOFF_HZ / rate),
+    RealDecimator::new(&audio_taps(rate), DECIM_FACTOR)
+}
+
+fn stereo_demux(rate: f64, rds: &RdsDecoder, deemphasis: Deemphasis) -> StereoDemux {
+    let mut demux = StereoDemux::new(
+        rate,
+        rds.baseband_rate(),
+        &audio_taps(rate),
         DECIM_FACTOR,
-    )
-}
-
-impl StereoDemux {
-    fn new(rate: f64, deemphasis: Deemphasis) -> Self {
-        Self {
-            pilot: Nco::new(PILOT_HZ as f32, rate as f32),
-            filter: ComplexOnePole::new(rate, PILOT_CUTOFF_HZ, PILOT_STAGES),
-            pll: Pll::new(
-                PILOT_LOOP_BW_HZ * PILOT_DECIM as f64 / rate,
-                FRAC_1_SQRT_2,
-                0.0,
-                PILOT_RANGE_HZ * PILOT_DECIM as f64 / rate,
-            ),
-            tracking: PilotTracking::default(),
-            difference: Vec::new(),
-            side: Vec::new(),
-            decim: audio_decimator(rate),
-            deemphasis,
-            blend: 0.0,
-            blend_coeff: one_pole_coeff(f64::from(AUDIO_RATE), BLEND_TAU_S),
-            target: 0.0,
-        }
-    }
-
-    fn process(&mut self, composite: &[f32], sum: &[f32], out: &mut Vec<f32>) {
-        self.demodulate(composite);
-        self.decim.process(&self.difference, &mut self.side);
-        self.deemphasis.process(&mut self.side);
-
-        let lock = self.pll.lock();
-        if lock > LOCK_ON {
-            self.target = 1.0;
-        } else if lock < LOCK_OFF {
-            self.target = 0.0;
-        }
-        debug_assert_eq!(sum.len(), self.side.len(), "stereo paths drifted apart");
-        out.clear();
-        out.reserve(2 * sum.len());
-        for (&mid, &side) in sum.iter().zip(&self.side) {
-            self.blend += self.blend_coeff * (self.target - self.blend);
-            let side = side * self.blend;
-            out.push(mid + side);
-            out.push(mid - side);
-        }
-    }
-
-    fn demodulate(&mut self, composite: &[f32]) {
-        self.difference.clear();
-        self.difference.reserve(composite.len());
-        for &sample in composite {
-            let carrier = self.pilot.next_sample();
-            let baseband = self
-                .filter
-                .process(Complex::new(sample, 0.0) * carrier.conj());
-            let reference = self.tracking.next(&mut self.pll, baseband);
-            let analytic = carrier * reference;
-            let subcarrier = analytic * analytic;
-            self.difference.push(-2.0 * subcarrier.im * sample);
-        }
-    }
-}
-
-/// The pilot loop is 30 Hz wide, so it updates once every [`PILOT_DECIM`] samples and the
-/// reference turns by the loop's own increment in between. That keeps the full-rate subcarrier
-/// phase continuous while the costly phase detector runs at an eighth of the rate.
-struct PilotTracking {
-    reference: Complex<f32>,
-    step: Complex<f32>,
-    until_update: usize,
-}
-
-impl Default for PilotTracking {
-    fn default() -> Self {
-        Self {
-            reference: Complex::new(1.0, 0.0),
-            step: Complex::new(1.0, 0.0),
-            until_update: 0,
-        }
-    }
-}
-
-impl PilotTracking {
-    fn next(&mut self, pll: &mut Pll, baseband: Complex<f32>) -> Complex<f32> {
-        if self.until_update == 0 {
-            self.until_update = PILOT_DECIM;
-            self.reference = pll.process(baseband);
-            let turn = TAU * pll.increment_norm() / PILOT_DECIM as f64;
-            self.step = Complex::from_polar(1.0, turn as f32);
-        } else {
-            self.reference *= self.step;
-        }
-        self.until_update -= 1;
-        self.reference
-    }
+        deemphasis,
+    );
+    demux.align(rds.pilot_turns());
+    demux
 }
 
 impl NativeChannel for WfmChannel {
@@ -215,6 +107,7 @@ impl NativeChannel for WfmChannel {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
         let deemphasis = deemphasis(&p)?;
+        let rds = RdsDecoder::new(ctx.input_rate);
         Ok(Self {
             demod: discriminator(ctx.input_rate),
             decim: audio_decimator(ctx.input_rate),
@@ -222,9 +115,9 @@ impl NativeChannel for WfmChannel {
             sum: Vec::new(),
             stereo: p
                 .stereo
-                .then(|| StereoDemux::new(ctx.input_rate, deemphasis.clone())),
+                .then(|| stereo_demux(ctx.input_rate, &rds, deemphasis.clone())),
             deemphasis,
-            rds: RdsDecoder::new(ctx.input_rate),
+            rds,
         })
     }
 }
@@ -237,7 +130,7 @@ impl ChannelRx for WfmChannel {
         let rate = DESCRIPTOR.input_rate_hz;
         if p.stereo != self.stereo.is_some() {
             self.decim = audio_decimator(rate);
-            self.stereo = p.stereo.then(|| StereoDemux::new(rate, deemphasis));
+            self.stereo = p.stereo.then(|| stereo_demux(rate, &self.rds, deemphasis));
         } else if let Some(stereo) = &mut self.stereo {
             stereo.deemphasis = deemphasis;
         }
@@ -246,6 +139,9 @@ impl ChannelRx for WfmChannel {
 
     fn retuned(&mut self) {
         self.rds.reset();
+        if let Some(stereo) = &mut self.stereo {
+            stereo.align(self.rds.pilot_turns());
+        }
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
@@ -259,7 +155,8 @@ impl ChannelRx for WfmChannel {
             Some(stereo) => {
                 self.decim.process(&self.demod_buf, &mut self.sum);
                 self.deemphasis.process(&mut self.sum);
-                stereo.process(&self.demod_buf, &self.sum, &mut out.audio_pcm);
+                let pilot = self.rds.pilot_baseband();
+                stereo.process(&self.demod_buf, pilot, &self.sum, &mut out.audio_pcm);
             }
         }
         clamp_full_scale(&mut out.audio_pcm);
@@ -559,22 +456,6 @@ mod tests {
     }
 
     #[test]
-    fn pilot_reference_follows_an_offset_pilot_between_loop_updates() {
-        let offset_hz = 60.0;
-        let mut demux = StereoDemux::new(RATE, Deemphasis::new(f64::from(AUDIO_RATE), 50.0));
-        let mut worst = 0.0f32;
-        for n in 0..RUN_SAMPLES {
-            let phase = TAU * offset_hz * n as f64 / RATE;
-            let pilot = Complex::from_polar(1.0, phase as f32);
-            let reference = demux.tracking.next(&mut demux.pll, pilot);
-            if n > RUN_SAMPLES / 2 {
-                worst = worst.max((pilot * reference.conj()).arg().abs());
-            }
-        }
-        assert!(worst < 0.01, "reference strays {worst} rad from the pilot");
-    }
-
-    #[test]
     fn stereo_output_is_two_interleaved_channels() {
         let mut chan = stereo_channel();
         let iq = two_tone_station(true);
@@ -634,7 +515,7 @@ mod tests {
         let mut chan = channel(50.0);
         let audio = run_ragged(&mut chan, &two_tone_station(true));
         let settled = &audio[audio.len() / 2..];
-        let pilot = tone_power(settled, PILOT_HZ, f64::from(AUDIO_RATE));
+        let pilot = tone_power(settled, 19_000.0, f64::from(AUDIO_RATE));
         assert!(pilot < 1e-6, "pilot share of the mono audio {pilot}");
     }
 

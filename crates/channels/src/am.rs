@@ -3,10 +3,10 @@ use sdrmm_wire::{ClickProfile, Control, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
 pub use model::*;
-use std::sync::LazyLock;
+use std::{f64::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
-use sdrmm_dsp::{Agc, Decimator, RealDecimator, design_lowpass};
+use sdrmm_dsp::{Agc, Decimator, Deemphasis, RealDecimator, design_lowpass};
 use sdrmm_modem::analog::{AmDemod, AmDetector, AmMode, AmParams as AmWaveform, AmRx};
 use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily};
 
@@ -20,6 +20,7 @@ use crate::{
 const AUDIO_TAPS: usize = 129;
 const CHANNEL_TAPS: usize = 129;
 const SYNC_LOOP_BW: f64 = 1e-3;
+const ROLLOFF_HZ: f64 = 2_500.0;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "am".to_owned(),
@@ -38,7 +39,14 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 
 pub struct AmChannel {
     demod: AmDemod,
+    rolloff: Deemphasis,
     leveller: Agc,
+}
+
+/// A detector's RC load: one pole at [`ROLLOFF_HZ`]. The channel's noise is white and speech
+/// is not, so tilting the treble down takes more hiss than voice.
+fn rolloff() -> Deemphasis {
+    Deemphasis::new(f64::from(AUDIO_RATE), (1e6 / (TAU * ROLLOFF_HZ)) as f32)
 }
 
 fn params(settings: &ChannelSettings) -> Result<AmParams, ChannelError> {
@@ -110,6 +118,7 @@ impl NativeChannel for AmChannel {
         let p = params(&settings)?;
         Ok(Self {
             demod: demodulator(&p)?,
+            rolloff: rolloff(),
             leveller: voice_leveller(),
         })
     }
@@ -124,6 +133,7 @@ impl ChannelRx for AmChannel {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.demod.process(iq, &mut out.audio_pcm);
+        self.rolloff.process(&mut out.audio_pcm);
         self.leveller.process(&mut out.audio_pcm);
         clamp_full_scale(&mut out.audio_pcm);
         if !out.audio_pcm.is_empty() {

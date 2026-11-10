@@ -7,7 +7,7 @@ use std::arch::x86_64::{
 use num_complex::Complex;
 
 use crate::fir::{
-    kernel::{BLOCK_FLOATS, Plan, reach_of},
+    kernel::{BLOCK_FLOATS, GROUP_BLOCKS, Plan, reach_of},
     run::Run,
 };
 
@@ -41,26 +41,59 @@ unsafe fn samples<const FOLD: bool>(floats: *const f32, run: &Run, at: usize) ->
     }
 }
 
+/// Blocks computed side by side, each coefficient broadcast once for all of them. Every block
+/// spreads its taps over [`SETS`] sums by their place in the run and adds those in a fixed
+/// order, so an output does not depend on how the input was split or grouped.
 #[target_feature(enable = "avx512f")]
-unsafe fn real_sum<const FOLD: bool>(floats: *const f32, plan: &Plan<f32>) -> __m512 {
-    let mut sets = [_mm512_setzero_ps(); SETS];
+unsafe fn real_group<const FOLD: bool>(
+    floats: *const f32,
+    plan: &Plan<f32>,
+) -> [__m512; GROUP_BLOCKS] {
+    let mut sets = [[_mm512_setzero_ps(); SETS]; GROUP_BLOCKS];
     for run in &plan.runs {
         let (groups, rest) = plan.values[run.range()].as_chunks::<SETS>();
-        for (index, group) in groups.iter().enumerate() {
-            for (lane, (set, &value)) in sets.iter_mut().zip(group).enumerate() {
-                let samples = unsafe { samples::<FOLD>(floats, run, SETS * index + lane) };
-                *set = add_product(*set, samples, value);
+        for (index, &[a, b, c, d]) in groups.iter().enumerate() {
+            let at = SETS * index;
+            unsafe {
+                add_tap::<FOLD, 0>(&mut sets, floats, run, at, a);
+                add_tap::<FOLD, 1>(&mut sets, floats, run, at + 1, b);
+                add_tap::<FOLD, 2>(&mut sets, floats, run, at + 2, c);
+                add_tap::<FOLD, 3>(&mut sets, floats, run, at + 3, d);
             }
         }
-        for (lane, (set, &value)) in sets.iter_mut().zip(rest).enumerate() {
-            let samples = unsafe { samples::<FOLD>(floats, run, SETS * groups.len() + lane) };
-            *set = add_product(*set, samples, value);
+        let at = SETS * groups.len();
+        unsafe {
+            match *rest {
+                [a] => add_tap::<FOLD, 0>(&mut sets, floats, run, at, a),
+                [a, b] => {
+                    add_tap::<FOLD, 0>(&mut sets, floats, run, at, a);
+                    add_tap::<FOLD, 1>(&mut sets, floats, run, at + 1, b);
+                }
+                [a, b, c] => {
+                    add_tap::<FOLD, 0>(&mut sets, floats, run, at, a);
+                    add_tap::<FOLD, 1>(&mut sets, floats, run, at + 1, b);
+                    add_tap::<FOLD, 2>(&mut sets, floats, run, at + 2, c);
+                }
+                _ => {}
+            }
         }
     }
-    _mm512_add_ps(
-        _mm512_add_ps(sets[0], sets[1]),
-        _mm512_add_ps(sets[2], sets[3]),
-    )
+    sets.map(|[a, b, c, d]| _mm512_add_ps(_mm512_add_ps(a, b), _mm512_add_ps(c, d)))
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn add_tap<const FOLD: bool, const LANE: usize>(
+    sets: &mut [[__m512; SETS]; GROUP_BLOCKS],
+    floats: *const f32,
+    run: &Run,
+    at: usize,
+    value: f32,
+) {
+    let tap = _mm512_set1_ps(value);
+    for (block, sets) in sets.iter_mut().enumerate() {
+        let samples = unsafe { samples::<FOLD>(floats.add(block * BLOCK_FLOATS), run, at) };
+        sets[LANE] = _mm512_fmadd_ps(samples, tap, sets[LANE]);
+    }
 }
 
 #[target_feature(enable = "avx512f")]
@@ -69,13 +102,17 @@ pub(super) fn real_blocks<const FOLD: bool>(floats: &[f32], plan: &Plan<f32>, ou
         return;
     };
     let base = floats.as_ptr();
-    for (index, lanes) in out.as_chunks_mut::<BLOCK_FLOATS>().0.iter_mut().enumerate() {
-        unsafe {
-            store(
-                real_sum::<FOLD>(base.add(index * BLOCK_FLOATS), plan),
-                lanes,
-            )
-        };
+    debug_assert!(out.len().is_multiple_of(GROUP_BLOCKS * BLOCK_FLOATS));
+    let groups = out.as_chunks_mut::<{ GROUP_BLOCKS * BLOCK_FLOATS }>().0;
+    for (index, lanes) in groups.iter_mut().enumerate() {
+        let sums =
+            unsafe { real_group::<FOLD>(base.add(index * GROUP_BLOCKS * BLOCK_FLOATS), plan) };
+        for (sum, lanes) in sums
+            .into_iter()
+            .zip(lanes.as_chunks_mut::<BLOCK_FLOATS>().0)
+        {
+            unsafe { store(sum, lanes) };
+        }
     }
 }
 

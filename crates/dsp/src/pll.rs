@@ -2,6 +2,8 @@ use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
 use num_complex::Complex;
 
+use crate::{fastmath::fast_arg, nco::unit_phasor};
+
 #[derive(Clone, Debug)]
 pub struct LoopFilter {
     alpha: f64,
@@ -68,16 +70,16 @@ impl Pll {
     #[must_use]
     pub fn process(&mut self, sample: Complex<f32>) -> Complex<f32> {
         self.phase = step_phase(self.phase, self.inc);
-        let reference = Complex::from_polar(1.0, self.phase);
-        let error = phase_error(to_c64(sample) * reference.conj());
+        let reference = phasor(self.phase);
+        let error = phase_error(sample * reference.conj());
         self.lock.update(error);
         self.inc = wrap_pi(self.center + self.filter.advance(error.unwrap_or(0.0)));
-        to_c32(reference)
+        reference
     }
 
     #[must_use]
     pub fn harmonic(&self, n: f64) -> Complex<f32> {
-        to_c32(Complex::from_polar(1.0, wrap_pi(n * self.phase)))
+        phasor(n * self.phase)
     }
 
     #[must_use]
@@ -120,12 +122,11 @@ impl Costas {
     #[must_use]
     pub fn process(&mut self, sample: Complex<f32>) -> Complex<f32> {
         self.phase = step_phase(self.phase, self.inc);
-        let reference = Complex::from_polar(1.0, self.phase);
-        let derotated = to_c64(sample) * reference.conj();
+        let derotated = sample * phasor(self.phase).conj();
         let error = bpsk_error(derotated);
         self.lock.update(error);
         self.inc = wrap_pi(self.center + self.filter.advance(error.unwrap_or(0.0)));
-        to_c32(derotated)
+        derotated
     }
 
     #[must_use]
@@ -165,11 +166,17 @@ impl LockDetector {
     }
 }
 
-fn phase_error(derotated: Complex<f64>) -> Option<f64> {
-    (derotated.is_finite() && derotated.norm_sqr() > 0.0).then(|| derotated.arg())
+/// The unit phasor at `phase` radians, from the oscillator's table rather than a library sine:
+/// a loop turns it once per sample, and the table is accurate to a few parts in ten million.
+fn phasor(phase: f64) -> Complex<f32> {
+    unit_phasor(phase / TAU)
 }
 
-fn bpsk_error(derotated: Complex<f64>) -> Option<f64> {
+fn phase_error(derotated: Complex<f32>) -> Option<f64> {
+    (derotated.is_finite() && derotated.norm_sqr() > 0.0).then(|| f64::from(fast_arg(derotated)))
+}
+
+fn bpsk_error(derotated: Complex<f32>) -> Option<f64> {
     let symbol = if derotated.re < 0.0 { -1.0 } else { 1.0 };
     phase_error(derotated * symbol)
 }
@@ -185,16 +192,14 @@ fn step_phase(phase: f64, inc: f64) -> f64 {
     }
 }
 
+/// A loop's increment is almost always in range already, so the library remainder only runs
+/// when it is not.
 fn wrap_pi(x: f64) -> f64 {
-    (x + PI).rem_euclid(TAU) - PI
-}
-
-fn to_c64(x: Complex<f32>) -> Complex<f64> {
-    Complex::new(f64::from(x.re), f64::from(x.im))
-}
-
-fn to_c32(x: Complex<f64>) -> Complex<f32> {
-    Complex::new(x.re as f32, x.im as f32)
+    if (-PI..PI).contains(&x) {
+        x
+    } else {
+        (x + PI).rem_euclid(TAU) - PI
+    }
 }
 
 #[cfg(test)]
@@ -208,6 +213,14 @@ mod tests {
     const PILOT: f64 = 19_000.0 / 240_000.0;
     const RANGE: f64 = 300.0 / 240_000.0;
     const PILOT_BW: f64 = 0.005;
+
+    fn to_c64(x: Complex<f32>) -> Complex<f64> {
+        Complex::new(f64::from(x.re), f64::from(x.im))
+    }
+
+    fn to_c32(x: Complex<f64>) -> Complex<f32> {
+        Complex::new(x.re as f32, x.im as f32)
+    }
 
     fn pilot_pll() -> Pll {
         Pll::new(PILOT_BW, DAMPING, PILOT, RANGE)

@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use num_complex::Complex;
 
 use super::Nco;
@@ -12,6 +14,8 @@ type Quad = [f32; LANES];
 pub(super) struct Steps {
     re: [Quad; GROUP / LANES],
     im: [Quad; GROUP / LANES],
+    #[cfg(target_arch = "x86_64")]
+    pairs: [Block; GROUP / LANES],
 }
 
 impl Steps {
@@ -23,10 +27,17 @@ impl Steps {
         let mut steps = Self {
             re: [[0.0; LANES]; GROUP / LANES],
             im: [[0.0; LANES]; GROUP / LANES],
+            #[cfg(target_arch = "x86_64")]
+            pairs: [[Complex::new(0.0, 0.0); LANES]; GROUP / LANES],
         };
         for lane in 0..GROUP {
             steps.re[lane / LANES][lane % LANES] = wave.re as f32;
             steps.im[lane / LANES][lane % LANES] = wave.im as f32;
+            #[cfg(target_arch = "x86_64")]
+            {
+                steps.pairs[lane / LANES][lane % LANES] =
+                    Complex::new(wave.re as f32, wave.im as f32);
+            }
             wave *= turn;
         }
         steps
@@ -53,6 +64,61 @@ pub(super) fn product(x: Complex<f32>, w: Complex<f32>) -> Complex<f32> {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
+fn wide() -> bool {
+    std::arch::is_x86_feature_detected!("avx")
+}
+
+fn rotate_into(
+    anchor: Complex<f32>,
+    steps: &Steps,
+    span: Range<usize>,
+    sources: &[Block],
+    targets: &mut [Block],
+) {
+    #[cfg(target_arch = "x86_64")]
+    if wide() {
+        unsafe { avx::rotate_into(anchor, &steps.pairs[span], sources, targets) };
+        return;
+    }
+    let steps = steps.re[span.clone()].iter().zip(&steps.im[span]);
+    for ((source, target), (re, im)) in sources.iter().zip(targets).zip(steps) {
+        *target = rotate(anchor, re, im, source);
+    }
+}
+
+fn scale_into(
+    anchor: Complex<f32>,
+    steps: &Steps,
+    span: Range<usize>,
+    sources: &[Quad],
+    targets: &mut [Block],
+) {
+    #[cfg(target_arch = "x86_64")]
+    if wide() {
+        unsafe { avx::scale_into(anchor, &steps.pairs[span], sources, targets) };
+        return;
+    }
+    const ONES: Block = [Complex::new(1.0, 0.0); LANES];
+    let steps = steps.re[span.clone()].iter().zip(&steps.im[span]);
+    for ((source, target), (re, im)) in sources.iter().zip(targets).zip(steps) {
+        let wave = rotate(anchor, re, im, &ONES);
+        *target = std::array::from_fn(|lane| scaled(source[lane], wave[lane]));
+    }
+}
+
+fn rotate_in_place(anchor: Complex<f32>, steps: &Steps, span: Range<usize>, blocks: &mut [Block]) {
+    #[cfg(target_arch = "x86_64")]
+    if wide() {
+        unsafe { avx::rotate_in_place(anchor, &steps.pairs[span], blocks) };
+        return;
+    }
+    let steps = steps.re[span.clone()].iter().zip(&steps.im[span]);
+    for (block, (re, im)) in blocks.iter_mut().zip(steps) {
+        *block = rotate(anchor, re, im, block);
+    }
+}
+
 fn lead(nco: &Nco, len: usize) -> usize {
     ((LANES - nco.lane % LANES) % LANES).min(len)
 }
@@ -60,19 +126,13 @@ fn lead(nco: &Nco, len: usize) -> usize {
 fn segments(
     nco: &mut Nco,
     blocks: usize,
-    mut each: impl FnMut(usize, &[Quad], &[Quad], Complex<f32>),
+    mut each: impl FnMut(usize, &Steps, Range<usize>, Complex<f32>),
 ) {
     let mut done = 0;
     while done < blocks {
         let first = nco.lane / LANES;
         let count = (GROUP / LANES - first).min(blocks - done);
-        let span = first..first + count;
-        each(
-            done,
-            &nco.steps.re[span.clone()],
-            &nco.steps.im[span],
-            nco.anchor,
-        );
+        each(done, &nco.steps, first..first + count, nco.anchor);
         nco.advance(count * LANES);
         done += count;
     }
@@ -86,14 +146,46 @@ pub(super) fn mix_into(nco: &mut Nco, input: &[Complex<f32>], out: &mut [Complex
     }
     let (sources, source_tail) = input.as_chunks::<LANES>();
     let (targets, target_tail) = out.as_chunks_mut::<LANES>();
-    segments(nco, sources.len(), |at, re, im, anchor| {
-        let sources = sources[at..].iter().zip(&mut targets[at..]);
-        for ((source, target), (re, im)) in sources.zip(re.iter().zip(im)) {
-            *target = rotate(anchor, re, im, source);
-        }
+    segments(nco, sources.len(), |at, steps, span, anchor| {
+        let end = at + span.len();
+        rotate_into(
+            anchor,
+            steps,
+            span,
+            &sources[at..end],
+            &mut targets[at..end],
+        );
     });
     for (target, source) in target_tail.iter_mut().zip(source_tail) {
         *target = product(*source, nco.wave());
+    }
+}
+
+#[inline(always)]
+pub(super) fn scaled(x: f32, w: Complex<f32>) -> Complex<f32> {
+    Complex::new(x * w.re, x * w.im)
+}
+
+pub(super) fn mix_real_into(nco: &mut Nco, input: &[f32], out: &mut [Complex<f32>]) {
+    let (head, input) = input.split_at(lead(nco, input.len()));
+    let (head_out, out) = out.split_at_mut(head.len());
+    for (target, &source) in head_out.iter_mut().zip(head) {
+        *target = scaled(source, nco.wave());
+    }
+    let (sources, source_tail) = input.as_chunks::<LANES>();
+    let (targets, target_tail) = out.as_chunks_mut::<LANES>();
+    segments(nco, sources.len(), |at, steps, span, anchor| {
+        let end = at + span.len();
+        scale_into(
+            anchor,
+            steps,
+            span,
+            &sources[at..end],
+            &mut targets[at..end],
+        );
+    });
+    for (target, &source) in target_tail.iter_mut().zip(source_tail) {
+        *target = scaled(source, nco.wave());
     }
 }
 
@@ -103,10 +195,9 @@ pub(super) fn mix(nco: &mut Nco, samples: &mut [Complex<f32>]) {
         *sample = product(*sample, nco.wave());
     }
     let (blocks, tail) = samples.as_chunks_mut::<LANES>();
-    segments(nco, blocks.len(), |at, re, im, anchor| {
-        for (block, (re, im)) in blocks[at..].iter_mut().zip(re.iter().zip(im)) {
-            *block = rotate(anchor, re, im, block);
-        }
+    segments(nco, blocks.len(), |at, steps, span, anchor| {
+        let end = at + span.len();
+        rotate_in_place(anchor, steps, span, &mut blocks[at..end]);
     });
     for sample in tail {
         *sample = product(*sample, nco.wave());
@@ -164,4 +255,92 @@ fn rotate(anchor: Complex<f32>, step_re: &Quad, step_im: &Quad, source: &Block) 
 #[inline(always)]
 fn rotate(anchor: Complex<f32>, step_re: &Quad, step_im: &Quad, source: &Block) -> Block {
     std::array::from_fn(|lane| source[lane] * (anchor * Complex::new(step_re[lane], step_im[lane])))
+}
+
+/// Eight floats per step instead of four. Multiplies and add-subtracts without fusing, so a
+/// block rounds exactly like [`product`] and a sample mixes the same alone or in a block.
+#[cfg(target_arch = "x86_64")]
+mod avx {
+    use std::arch::x86_64::{
+        __m256, _mm_loadu_ps, _mm_unpackhi_ps, _mm_unpacklo_ps, _mm256_addsub_ps, _mm256_loadu_ps,
+        _mm256_movehdup_ps, _mm256_moveldup_ps, _mm256_mul_ps, _mm256_permute_ps, _mm256_set_m128,
+        _mm256_set1_ps, _mm256_storeu_ps,
+    };
+
+    use num_complex::Complex;
+
+    use super::{Block, Quad};
+
+    #[target_feature(enable = "avx")]
+    fn times(x: __m256, w: __m256) -> __m256 {
+        let swapped = _mm256_permute_ps::<0xB1>(x);
+        _mm256_addsub_ps(
+            _mm256_mul_ps(x, _mm256_moveldup_ps(w)),
+            _mm256_mul_ps(swapped, _mm256_movehdup_ps(w)),
+        )
+    }
+
+    #[target_feature(enable = "avx")]
+    unsafe fn wave(anchor: [__m256; 2], step: &Block) -> __m256 {
+        let step = unsafe { _mm256_loadu_ps(step.as_ptr().cast()) };
+        _mm256_addsub_ps(
+            _mm256_mul_ps(step, anchor[0]),
+            _mm256_mul_ps(_mm256_permute_ps::<0xB1>(step), anchor[1]),
+        )
+    }
+
+    #[target_feature(enable = "avx")]
+    unsafe fn turned(anchor: [__m256; 2], step: &Block, source: &Block) -> __m256 {
+        let wave = unsafe { wave(anchor, step) };
+        times(unsafe { _mm256_loadu_ps(source.as_ptr().cast()) }, wave)
+    }
+
+    #[target_feature(enable = "avx")]
+    pub(super) unsafe fn scale_into(
+        anchor: Complex<f32>,
+        steps: &[Block],
+        sources: &[Quad],
+        targets: &mut [Block],
+    ) {
+        let anchor = broadcast(anchor);
+        for ((step, source), target) in steps.iter().zip(sources).zip(targets) {
+            unsafe {
+                let x = _mm_loadu_ps(source.as_ptr());
+                let pairs = _mm256_set_m128(_mm_unpackhi_ps(x, x), _mm_unpacklo_ps(x, x));
+                let scaled = _mm256_mul_ps(pairs, wave(anchor, step));
+                _mm256_storeu_ps(target.as_mut_ptr().cast(), scaled);
+            }
+        }
+    }
+
+    #[target_feature(enable = "avx")]
+    fn broadcast(anchor: Complex<f32>) -> [__m256; 2] {
+        [_mm256_set1_ps(anchor.re), _mm256_set1_ps(anchor.im)]
+    }
+
+    #[target_feature(enable = "avx")]
+    pub(super) unsafe fn rotate_into(
+        anchor: Complex<f32>,
+        steps: &[Block],
+        sources: &[Block],
+        targets: &mut [Block],
+    ) {
+        let anchor = broadcast(anchor);
+        for ((step, source), target) in steps.iter().zip(sources).zip(targets) {
+            unsafe { _mm256_storeu_ps(target.as_mut_ptr().cast(), turned(anchor, step, source)) };
+        }
+    }
+
+    #[target_feature(enable = "avx")]
+    pub(super) unsafe fn rotate_in_place(
+        anchor: Complex<f32>,
+        steps: &[Block],
+        blocks: &mut [Block],
+    ) {
+        let anchor = broadcast(anchor);
+        for (step, block) in steps.iter().zip(blocks) {
+            let turned = unsafe { turned(anchor, step, block) };
+            unsafe { _mm256_storeu_ps(block.as_mut_ptr().cast(), turned) };
+        }
+    }
 }
