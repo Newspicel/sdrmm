@@ -136,6 +136,9 @@ pub struct DvFrame {
     pub key_id: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_indicator: Option<String>,
+    /// The cipher the receiver is undoing on the voice, once it can.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cipher: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub talker_alias: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -23,12 +23,22 @@ impl DmrSlots {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// An enhanced privacy key as the radios are programmed with it: the PI header's key ID and the key
+/// in hex, 10 digits for ARC4, 32 or 64 for AES.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DmrKey {
+    pub key_id: u8,
+    pub key: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DmrParams {
     #[serde(default)]
     pub slots: DmrSlots,
     #[serde(default)]
     pub ignore_crc: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<DmrKey>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

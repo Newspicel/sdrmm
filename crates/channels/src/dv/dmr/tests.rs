@@ -4,7 +4,10 @@ use sdrmm_wire::SymbolPlane;
 use super::*;
 use crate::{
     AUDIO_RATE, ChannelOutputs,
-    dv::{testutil::decode, vocoder::testutil::half_rate_frames},
+    dv::{
+        testutil::decode,
+        vocoder::testutil::{half_rate_frames, natural_half_rate_frames},
+    },
     synth::dv::dmr as tx,
     testutil::settings,
 };
@@ -21,6 +24,7 @@ fn channel(slots: DmrSlots) -> DmrChannel {
                 &DmrParams {
                     slots,
                     ignore_crc: false,
+                    ..DmrParams::default()
                 },
             )
             .expect("dmr settings"),
@@ -596,7 +600,10 @@ fn encoded_tone_sockets() -> [[bool; 216]; 6] {
 }
 
 fn decode_audio(iq: &[Complex<f32>]) -> (Vec<DvFrame>, Vec<f32>) {
-    let mut chan = channel(DmrSlots::Both);
+    decode_audio_with(channel(DmrSlots::Both), iq)
+}
+
+fn decode_audio_with(mut chan: DmrChannel, iq: &[Complex<f32>]) -> (Vec<DvFrame>, Vec<f32>) {
     let mut out = ChannelOutputs::default();
     let mut frames = Vec::new();
     let mut audio = Vec::new();
@@ -865,6 +872,7 @@ fn tolerant_channel() -> DmrChannel {
                 &DmrParams {
                     slots: DmrSlots::Both,
                     ignore_crc: true,
+                    ..DmrParams::default()
                 },
             )
             .expect("dmr settings"),
@@ -920,6 +928,7 @@ fn decodes_a_recorded_tier_three_control_channel() {
                 &DmrParams {
                     slots: DmrSlots::Both,
                     ignore_crc: true,
+                    ..DmrParams::default()
                 },
             )
             .expect("dmr settings"),
@@ -1648,4 +1657,149 @@ fn a_call_that_lifts_the_noise_floor_still_decodes_every_frame() {
             );
         }
     }
+}
+
+fn keyed_channel(keys: Vec<crate::dv::DmrKey>) -> Result<DmrChannel, ChannelError> {
+    DmrChannel::new(
+        ChannelCtx {
+            input_rate: INPUT_RATE_HZ,
+        },
+        settings(
+            ChannelParams::new(
+                "dmr",
+                &DmrParams {
+                    keys,
+                    ..DmrParams::default()
+                },
+            )
+            .expect("dmr settings"),
+        ),
+    )
+}
+
+/// Three superframes that open on silence, then speak a tone.
+fn spoken_frames() -> Vec<[u8; privacy::FRAME_BYTES]> {
+    let tone = natural_half_rate_frames(51).into_iter().map(|bits| {
+        let mut packed = [0u8; privacy::FRAME_BYTES];
+        for (i, bit) in bits.into_iter().enumerate() {
+            packed[i / 8] |= u8::from(bit) << (7 - i % 8);
+        }
+        packed
+    });
+    std::iter::repeat_n(privacy::SILENCE, 3)
+        .chain(tone)
+        .collect()
+}
+
+fn clear_tone() -> (f64, f32) {
+    let mut decoder = crate::dv::vocoder::MbeDecoder::half_rate();
+    let mut out = ChannelOutputs::default();
+    for frame in spoken_frames() {
+        let info = blip25_vocoder::halfrate::frame::unpack_natural(&frame);
+        let frame = crate::dv::vocoder::HalfRateFrame {
+            info,
+            errors: [0; 4],
+        };
+        decoder.play_half(&frame, &mut out);
+    }
+    let tail = &out.audio_pcm[out.audio_pcm.len() / 3..];
+    let (frequency, _) = crate::testutil::dominant_tone(tail, f64::from(AUDIO_RATE));
+    (frequency, crate::testutil::rms(tail))
+}
+
+fn assert_sounds_clear(audio: &[f32]) {
+    let (clear_frequency, clear_rms) = clear_tone();
+    let rms = crate::testutil::rms(audio);
+    let (frequency, _) = crate::testutil::dominant_tone(audio, f64::from(AUDIO_RATE));
+    assert!(
+        (rms - clear_rms).abs() < clear_rms / 4.0,
+        "deciphered voice at rms {rms}, the clear call at {clear_rms}"
+    );
+    assert!(
+        (frequency - clear_frequency).abs() < 1.0,
+        "deciphered voice at {frequency} Hz, the clear call at {clear_frequency} Hz"
+    );
+}
+
+const ARC4_KEY: &str = "3c9107e25a";
+const AES_256_KEY: &str = "0000000189bfc7516484c74a89e612fffd9ca2db290e725ba437cf9ee85a8fa8";
+
+fn keyed_call(key: &str) -> Vec<Complex<f32>> {
+    tx::private_transmission(
+        &tx::Call::default(),
+        &tx::Privacy::Keyed {
+            key_id: 4,
+            key: key.to_owned(),
+            mi: 0x8BAD_F00D,
+        },
+        &spoken_frames(),
+        INPUT_RATE_HZ,
+    )
+}
+
+fn key_four(key: &str) -> Vec<crate::dv::DmrKey> {
+    vec![crate::dv::DmrKey {
+        key_id: 4,
+        key: key.to_owned(),
+    }]
+}
+
+#[test]
+fn motorola_basic_privacy_is_deciphered_without_a_key() {
+    let iq = tx::private_transmission(
+        &tx::Call::default(),
+        &tx::Privacy::MotorolaBasic(0x2503),
+        &spoken_frames(),
+        INPUT_RATE_HZ,
+    );
+    let (frames, audio) = decode_audio(&iq);
+    assert!(
+        frames
+            .iter()
+            .any(|frame| frame.cipher.as_deref() == Some("Basic Privacy 2503")),
+        "the recovered key was never reported: {frames:?}"
+    );
+    assert_sounds_clear(&audio[audio.len() / 3..]);
+}
+
+#[test]
+fn keyed_calls_decipher_every_superframe() {
+    for (key, name) in [(ARC4_KEY, "ARC4"), (AES_256_KEY, "AES-256")] {
+        let channel = keyed_channel(key_four(key)).expect("dmr channel");
+        let (frames, audio) = decode_audio_with(channel, &keyed_call(key));
+        assert!(
+            frames
+                .iter()
+                .any(|frame| frame.cipher.as_deref() == Some(name) && frame.key_id == Some(4)),
+            "{name} was never reported: {frames:?}"
+        );
+        assert_sounds_clear(&audio[2 * audio.len() / 3..]);
+    }
+}
+
+#[test]
+fn a_keyed_call_stays_muted_without_its_key() {
+    let keys = vec![crate::dv::DmrKey {
+        key_id: 5,
+        key: ARC4_KEY.to_owned(),
+    }];
+    let (frames, audio) = decode_audio_with(
+        keyed_channel(keys).expect("dmr channel"),
+        &keyed_call(ARC4_KEY),
+    );
+    assert!(frames.iter().all(|frame| frame.cipher.is_none()));
+    assert!(!audio.is_empty());
+    assert!(audio.iter().all(|&sample| sample == 0.0));
+}
+
+#[test]
+fn a_key_of_the_wrong_length_is_refused() {
+    let keys = vec![crate::dv::DmrKey {
+        key_id: 1,
+        key: "3c9107e2".to_owned(),
+    }];
+    assert!(matches!(
+        keyed_channel(keys),
+        Err(ChannelError::InvalidSettings(_))
+    ));
 }

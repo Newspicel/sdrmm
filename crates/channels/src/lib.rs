@@ -205,7 +205,7 @@ pub use dect::{
 pub use drm::{DrmMode, DrmParams};
 pub use dsc::DscParams;
 pub use dv::{
-    DmrParams, DmrSlots, DpmrParams, DstarParams, FreeDvMode, FreeDvParams, M17Params,
+    DmrKey, DmrParams, DmrSlots, DpmrParams, DstarParams, FreeDvMode, FreeDvParams, M17Params,
     NxdnBandwidth, NxdnParams, P25Params, YsfParams,
 };
 pub use eot::{

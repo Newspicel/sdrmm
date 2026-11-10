@@ -1396,6 +1396,7 @@ mod tests {
                 &DmrParams {
                     slots: DmrSlots::Two,
                     ignore_crc: false,
+                    ..DmrParams::default()
                 }
             )
             .expect("dmr settings")

@@ -57,6 +57,14 @@ Following runs on the server with no browser open. Voice channels must fit insid
 window; a grant outside it is reported. To save call audio, see
 [Record each call](recording.md#record-each-call).
 
+## DMR privacy
+
+Motorola Basic Privacy needs no key: the decoder reads it off the first silence frame and
+plays the call from there, marked `Basic Privacy` and the key. For ARC4 and AES, enter each
+key ID and its key under the DMR settings: 10 hex digits for ARC4, 32 for AES-128, 64 for
+AES-256. Calls joined without their PI header, other algorithms, and trunk-followed keyed
+calls stay muted.
+
 ## Tetrapol
 
 The Tetrapol channel reads 12.5 kHz Tetrapol PMR downlinks. Tune the carrier; the scrambling code

@@ -19,6 +19,12 @@ const OUTPUT_SAMPLES_PER_MBE_FRAME: usize = 960;
 
 pub(crate) const HALF_RATE_SOFT_BITS: usize = halfrate::frame::SOFT_BITS;
 
+pub(crate) type HalfRateFrame = halfrate::frame::Frame;
+
+pub(crate) fn half_soft_frame(soft: &[i8; HALF_RATE_SOFT_BITS]) -> HalfRateFrame {
+    decode_frame_soft(soft)
+}
+
 const PRESENTATION_GAIN_DB: f32 = 9.0;
 
 pub(crate) const AMBE_3600_INTERLEAVE: [[(u8, u8); 2]; 36] = [
@@ -156,7 +162,9 @@ impl MbeDecoder {
         }
     }
 
-    fn half_rate_frame(&mut self, frame: &halfrate::frame::Frame, out: &mut ChannelOutputs) {
+    /// Plays a half-rate frame that has already been through forward error correction, for a
+    /// caller that has to undo a cipher on the information bits first.
+    pub(crate) fn play_half(&mut self, frame: &HalfRateFrame, out: &mut ChannelOutputs) {
         let status = if frame.errors[0] == u8::MAX {
             FrameStatus::LOST
         } else {
@@ -172,23 +180,14 @@ impl MbeDecoder {
         out: &mut ChannelOutputs,
     ) {
         if encrypted {
-            PcmOutput::silence(1, out);
+            Self::mute(out);
             return;
         }
-        self.half_rate_frame(&decode_code_vectors(code), out);
+        self.play_half(&decode_code_vectors(code), out);
     }
 
-    pub(crate) fn decode_half_soft(
-        &mut self,
-        soft: &[i8; HALF_RATE_SOFT_BITS],
-        encrypted: bool,
-        out: &mut ChannelOutputs,
-    ) {
-        if encrypted {
-            PcmOutput::silence(1, out);
-            return;
-        }
-        self.half_rate_frame(&decode_frame_soft(soft), out);
+    pub(crate) fn mute(out: &mut ChannelOutputs) {
+        PcmOutput::silence(1, out);
     }
 
     pub(crate) fn decode_half_info(
@@ -198,7 +197,7 @@ impl MbeDecoder {
         out: &mut ChannelOutputs,
     ) {
         if encrypted {
-            PcmOutput::silence(1, out);
+            Self::mute(out);
             return;
         }
         let mut packed = [0u8; 7];
@@ -216,7 +215,7 @@ impl MbeDecoder {
         out: &mut ChannelOutputs,
     ) {
         if encrypted {
-            PcmOutput::silence(1, out);
+            Self::mute(out);
             return;
         }
         let frame = fullrate::frame::decode_frame(dibits);
@@ -472,7 +471,10 @@ mod tests {
         for _ in 0..2_000 {
             out.reset();
             decoder.decode_half_code_vectors(std::array::from_fn(|_| next()), false, &mut out);
-            decoder.decode_half_soft(&std::array::from_fn(|_| next() as i8), false, &mut out);
+            decoder.play_half(
+                &half_soft_frame(&std::array::from_fn(|_| next() as i8)),
+                &mut out,
+            );
             decoder.decode_half_info(&std::array::from_fn(|_| next() & 1 == 1), false, &mut out);
             assert_presentable(&out);
         }

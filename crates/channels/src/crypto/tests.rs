@@ -1,4 +1,4 @@
-use super::{Aes, cbc_decrypt, cmac, ctr, hex, hmac_sha256, increment_counter, sha256};
+use super::{Aes, Rc4, cbc_decrypt, cmac, ctr, hex, hmac_sha256, increment_counter, sha256};
 
 fn bytes(text: &str) -> Vec<u8> {
     hex(text).unwrap()
@@ -144,4 +144,38 @@ fn cbc_nist_sp800_38a_f22() {
         .unwrap();
     cbc_decrypt(&rfc4493_aes(), &iv, &mut data);
     assert_eq!(data, bytes(RFC4493_MESSAGE));
+}
+
+fn rc4_stream(key: &str, offset: usize) -> Vec<u8> {
+    let mut cipher = Rc4::new(&bytes(key));
+    cipher.skip(offset);
+    let mut block = vec![0u8; 16];
+    cipher.apply(&mut block);
+    block
+}
+
+#[test]
+fn rc4_rfc6229_forty_bit_key_at_offset_zero() {
+    assert_eq!(
+        rc4_stream("0102030405", 0),
+        bytes("b2396305f03dc027ccc3524a0a1118a8")
+    );
+}
+
+#[test]
+fn rc4_rfc6229_forty_bit_key_after_dropping_256_bytes() {
+    assert_eq!(
+        rc4_stream("0102030405", 256),
+        bytes("1cfcf62b03eddb641d77dfcf7f8d8c93")
+    );
+}
+
+#[test]
+fn rc4_rekeying_starts_the_keystream_over() {
+    let mut cipher = Rc4::new(&bytes("0102030405"));
+    cipher.skip(77);
+    cipher.rekey(&bytes("0102030405"));
+    let mut block = vec![0u8; 16];
+    cipher.apply(&mut block);
+    assert_eq!(block, bytes("b2396305f03dc027ccc3524a0a1118a8"));
 }

@@ -96,6 +96,7 @@ fn dv_fields(f: &DvFrame) -> Vec<Field> {
             "Message indicator",
             text(f.message_indicator.as_deref()),
         ),
+        ("cipher", "Deciphered", text(f.cipher.as_deref())),
         (
             "repaired",
             "Repaired",

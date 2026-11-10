@@ -2,6 +2,9 @@ use num_complex::Complex;
 use sdrmm_dsp::{Bptc128, Bptc196, CyclicCode, crc16_msb, pack_msb, rs129_parity};
 
 use super::{bits, dibits, filler};
+mod private;
+pub use private::{Privacy, private_transmission};
+
 use crate::dv::dmr::{
     RATE_ONE_CODED_BITS, RATE_ONE_DATA_BITS, RATE_ONE_PAD_AT, RATE_ONE_PAD_BITS, TRELLIS_DATA_BITS,
     TRELLIS_DIBITS, TRELLIS_MAP, TRELLIS_NEXT, trellis_slot,
@@ -14,6 +17,7 @@ const MS_DATA_SYNC: u64 = 0xD5D7_F77F_D757;
 const BS_VOICE_SYNC: u64 = 0x755F_D7DF_75F7;
 const BS_DATA_SYNC: u64 = 0xDFF5_7D75_DF5D;
 
+const DT_PI_HEADER: u8 = 0x0;
 const DT_VOICE_LC_HEADER: u8 = 0x1;
 const DT_TERMINATOR_WITH_LC: u8 = 0x2;
 const DT_CSBK: u8 = 0x3;
@@ -575,7 +579,10 @@ impl Noise {
 }
 
 fn lc_with_parity(call: &Call, mask: [u8; 3]) -> Vec<bool> {
-    let lc = call.link_control();
+    parity_lc(call.link_control(), mask)
+}
+
+fn parity_lc(lc: Vec<bool>, mask: [u8; 3]) -> Vec<bool> {
     let parity = rs129_parity(&pack_msb(&lc));
     let mut out = lc;
     for (byte, m) in parity.into_iter().zip(mask) {
@@ -585,8 +592,11 @@ fn lc_with_parity(call: &Call, mask: [u8; 3]) -> Vec<bool> {
 }
 
 fn embedded_block(call: &Call) -> [bool; Bptc128::DATA_BITS] {
-    let lc = call.link_control();
-    let checksum = pack_msb(&lc).iter().map(|&b| u32::from(b)).sum::<u32>() % 31;
+    embedded_lc(&call.link_control())
+}
+
+fn embedded_lc(lc: &[bool]) -> [bool; Bptc128::DATA_BITS] {
+    let checksum = pack_msb(lc).iter().map(|&b| u32::from(b)).sum::<u32>() % 31;
     let mut out = [false; Bptc128::DATA_BITS];
     let (mut read, mut check_bit) = (0, 0);
     for (i, slot) in out.iter_mut().enumerate() {

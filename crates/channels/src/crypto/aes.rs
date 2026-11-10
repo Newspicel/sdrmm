@@ -32,6 +32,7 @@ const fn invert_table(table: &[u8; 256]) -> [u8; 256] {
 const BLOCK: usize = 16;
 const MAX_ROUNDS: usize = 14;
 
+#[derive(Clone)]
 pub(crate) struct Aes {
     round_keys: [[u8; BLOCK]; MAX_ROUNDS + 1],
     rounds: usize,

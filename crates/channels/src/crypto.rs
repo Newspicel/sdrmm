@@ -1,5 +1,6 @@
 mod aes;
 mod ed25519;
+mod rc4;
 mod text;
 
 #[cfg(test)]
@@ -11,6 +12,7 @@ pub(crate) use aes::Aes;
 pub(crate) use ed25519::verify as ed25519_verify;
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use ed25519::{keypair as ed25519_keypair, sign as ed25519_sign};
+pub(crate) use rc4::Rc4;
 pub(crate) use text::{base64, hex};
 
 const AES_BLOCK: usize = 16;

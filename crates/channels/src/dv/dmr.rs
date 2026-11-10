@@ -1,7 +1,8 @@
 use crate::registry::Native;
-use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
 use std::sync::LazyLock;
 
+use crate::dv::DmrKey;
 use crate::dv::DmrParams;
 use crate::dv::DmrSlots;
 use num_complex::Complex;
@@ -17,12 +18,14 @@ use sdrmm_wire::{
 
 use super::{
     INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, tap_c4fm,
-    vocoder::{HALF_RATE_SOFT_BITS, MbeDecoder},
+    vocoder::{HALF_RATE_SOFT_BITS, MbeDecoder, half_soft_frame},
 };
+pub(crate) mod privacy;
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
     check_input_rate,
 };
+use privacy::{CipherKey, Privacy};
 
 pub(crate) const BAUD: f64 = 4_800.0;
 pub(crate) const DEVIATION_HZ: f64 = 1_944.0;
@@ -91,6 +94,8 @@ const DATA_HEADER_MASK: u16 = 0xCCCC;
 const LC_BITS: usize = 72;
 const VOCODER_FRAME_BITS: usize = HALF_RATE_SOFT_BITS;
 const VOCODER_FRAMES_PER_BURST: usize = 3;
+const VOICE_FOLLOWERS: u8 = 5;
+const MAX_KEY_DIGITS: usize = 64;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "dmr".to_owned(),
@@ -205,15 +210,15 @@ impl NativeChannel for DmrChannel {
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let params = params(&settings)?;
-        Self::with_options(ctx, params.slots, params.ignore_crc)
+        Self::with_params(ctx, params(&settings)?)
     }
 }
 
 impl ChannelRx for DmrChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
-        self.set_options(params.slots, params.ignore_crc);
+        self.decoder.keys = cipher_keys(&params.keys)?;
+        self.decoder.params = params;
         Ok(())
     }
 
@@ -237,21 +242,34 @@ impl ChannelRx for DmrChannel {
 }
 
 impl DmrChannel {
-    fn with_options(
-        ctx: ChannelCtx,
-        slots: DmrSlots,
-        ignore_crc: bool,
-    ) -> Result<Self, ChannelError> {
+    fn with_params(ctx: ChannelCtx, params: DmrParams) -> Result<Self, ChannelError> {
+        let keys = cipher_keys(&params.keys)?;
+        let mut decoder = Decoder::new(params);
+        decoder.keys = keys;
         Ok(Self {
             demod: c4fm_demod(&c4fm_params(ctx.input_rate, BAUD, DEVIATION_HZ, RRC_ALPHA)),
             symbols: Vec::new(),
-            decoder: Decoder::new(DmrParams { slots, ignore_crc }),
+            decoder,
         })
     }
+}
 
-    fn set_options(&mut self, slots: DmrSlots, ignore_crc: bool) {
-        self.decoder.params = DmrParams { slots, ignore_crc };
-    }
+type CipherKeys = Vec<(u8, CipherKey)>;
+
+fn cipher_keys(entries: &[DmrKey]) -> Result<CipherKeys, ChannelError> {
+    entries
+        .iter()
+        .map(|entry| {
+            CipherKey::parse(&entry.key)
+                .map(|key| (entry.key_id, key))
+                .ok_or_else(|| {
+                    ChannelError::InvalidSettings(format!(
+                        "a DMR key is 10 (ARC4), 32 or 64 (AES) hex digits, got {:?}",
+                        entry.key
+                    ))
+                })
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy)]
@@ -266,6 +284,7 @@ enum Pending {
 
 struct Decoder {
     params: DmrParams,
+    keys: CipherKeys,
     window: SymbolWindow,
     pending: Pending,
     countdown: usize,
@@ -298,6 +317,7 @@ struct SlotState {
     embedded: Vec<Soft>,
     embedded_errors: u32,
     encrypted: Option<bool>,
+    privacy: Privacy,
     talker_alias: TalkerAlias,
     voice: MbeDecoder,
 }
@@ -308,6 +328,7 @@ impl SlotState {
             embedded: Vec::with_capacity(Bptc128::CODED_BITS),
             embedded_errors: 0,
             encrypted: None,
+            privacy: Privacy::new(),
             talker_alias: TalkerAlias::default(),
             voice: MbeDecoder::half_rate(),
         }
@@ -317,6 +338,7 @@ impl SlotState {
         self.embedded.clear();
         self.embedded_errors = 0;
         self.encrypted = None;
+        self.privacy.reset();
         self.talker_alias.reset();
         self.voice.reset();
     }
@@ -326,6 +348,7 @@ impl Decoder {
     fn new(params: DmrParams) -> Self {
         Self {
             params,
+            keys: Vec::new(),
             window: SymbolWindow::new(SLOT_SYMBOLS),
             pending: Pending::None,
             countdown: 0,
@@ -453,8 +476,8 @@ impl Decoder {
         if voice {
             self.window.bits(0, BURST_SYMBOLS, &mut self.bits);
             let index = slot_index(slot).unwrap_or(0);
-            self.voice_payload(index, slot, out);
-            self.followers[index] = 5;
+            self.voice_payload(index, slot, 0, out);
+            self.followers[index] = VOICE_FOLLOWERS;
             self.follower_cach[index] = cach;
             self.follower_slot[index] = slot;
             self.schedule_follower(index);
@@ -466,18 +489,19 @@ impl Decoder {
         }
         self.window.bits(0, BURST_SYMBOLS, &mut self.bits);
         let index = slot_index(slot).unwrap_or(0);
-        let Some(frame) = self.data_burst(index, slot) else {
+        let Some(mut frame) = self.data_burst(index, slot) else {
             return;
         };
         match frame.kind {
             DvFrameKind::Header => {
-                if let Some(encrypted) = frame.encrypted {
-                    self.slots[index].encrypted = Some(encrypted);
-                }
+                self.track_encryption(index, &frame);
                 self.slots[index].voice.reset();
+                frame.cipher = self.slots[index].privacy.label();
             }
             DvFrameKind::Terminator => {
+                frame.cipher = self.slots[index].privacy.label();
                 self.slots[index].encrypted = None;
+                self.slots[index].privacy.reset();
                 self.slots[index].voice.reset();
                 if self.speaking == Some(index) {
                     self.speaking = None;
@@ -503,13 +527,13 @@ impl Decoder {
             self.cach_at(BURST_SYMBOLS, out);
         }
         self.window.bits(0, BURST_SYMBOLS, &mut self.bits);
-        if let Some(frame) = self.embedded_signalling(index, slot) {
-            if let Some(encrypted) = frame.encrypted {
-                self.slots[index].encrypted = Some(encrypted);
-            }
+        if let Some(mut frame) = self.embedded_signalling(index, slot) {
+            self.track_encryption(index, &frame);
+            frame.cipher = self.slots[index].privacy.label();
             self.emit(frame, out);
         }
-        self.voice_payload(index, slot, out);
+        let burst = usize::from(VOICE_FOLLOWERS - self.followers[index]);
+        self.voice_payload(index, slot, burst, out);
         self.schedule_follower(index);
     }
 
@@ -522,7 +546,21 @@ impl Decoder {
         true
     }
 
-    fn voice_payload(&mut self, index: usize, slot: Option<u8>, out: &mut ChannelOutputs) {
+    fn track_encryption(&mut self, index: usize, frame: &DvFrame) {
+        if let Some(encrypted) = frame.encrypted {
+            let state = &mut self.slots[index];
+            state.encrypted = Some(encrypted);
+            state.privacy.link_control(encrypted, frame.manufacturer_id);
+        }
+    }
+
+    fn voice_payload(
+        &mut self,
+        index: usize,
+        slot: Option<u8>,
+        burst: usize,
+        out: &mut ChannelOutputs,
+    ) {
         if slot.is_some_and(|slot| !self.params.slots.accepts(slot)) {
             return;
         }
@@ -534,11 +572,24 @@ impl Decoder {
         let mut payload = [0i8; VOCODER_FRAME_BITS * VOCODER_FRAMES_PER_BURST];
         payload[..HALF_PAYLOAD_BITS].copy_from_slice(&self.soft[..HALF_PAYLOAD_BITS]);
         payload[HALF_PAYLOAD_BITS..].copy_from_slice(&self.soft[156..]);
-        for frame in payload.as_chunks::<VOCODER_FRAME_BITS>().0 {
+        for (position, frame) in payload
+            .as_chunks::<VOCODER_FRAME_BITS>()
+            .0
+            .iter()
+            .enumerate()
+        {
             let state = &mut self.slots[index];
-            state
-                .voice
-                .decode_half_soft(frame, state.encrypted != Some(false), out);
+            let mut decoded = half_soft_frame(frame);
+            let playable = match state.encrypted {
+                Some(false) => true,
+                Some(true) => state.privacy.decipher(burst, position, &mut decoded),
+                None => false,
+            };
+            if playable {
+                state.voice.play_half(&decoded, out);
+            } else {
+                MbeDecoder::mute(out);
+            }
         }
     }
 
@@ -625,8 +676,14 @@ impl Decoder {
                 frame.algorithm_id = Some(bits_to_u32(&payload, 5, 3) as u8);
                 let fid = bits_to_u32(&payload, 8, 8) as u8;
                 set_dmr_vendor(&mut frame, fid);
-                frame.key_id = Some(bits_to_u32(&payload, 16, 8) as u16);
-                frame.message_indicator = Some(format!("{:08X}", bits_to_u32(&payload, 24, 32)));
+                let algorithm = bits_to_u32(&payload, 5, 3) as u8;
+                let key_id = bits_to_u32(&payload, 16, 8) as u8;
+                let mi = bits_to_u32(&payload, 24, 32);
+                self.slots[index]
+                    .privacy
+                    .pi_header(algorithm, key_id, mi, &self.keys);
+                frame.key_id = Some(u16::from(key_id));
+                frame.message_indicator = Some(format!("{mi:08X}"));
                 frame.destination = Some(bits_to_u32(&payload, 56, 24));
                 frame
             }
@@ -1838,6 +1895,7 @@ fn dmr_watch(ignore_crc: bool) -> Result<sdrmm_wire::ChannelParams, ChannelError
     sdrmm_wire::ChannelParams::of(&DmrParams {
         slots: DmrSlots::Both,
         ignore_crc,
+        ..DmrParams::default()
     })
     .map_err(ChannelError::InvalidSettings)
 }
@@ -1852,14 +1910,32 @@ fn dmr_follow(slot: u8, ignore_crc: bool) -> Result<sdrmm_wire::ChannelParams, C
             )));
         }
     };
-    sdrmm_wire::ChannelParams::of(&DmrParams { slots, ignore_crc })
-        .map_err(ChannelError::InvalidSettings)
+    sdrmm_wire::ChannelParams::of(&DmrParams {
+        slots,
+        ignore_crc,
+        ..DmrParams::default()
+    })
+    .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn dmr_form() -> Vec<SettingField> {
     vec![
         SettingField::new("slots", "Slot", Control::choice::<DmrSlots>()).title("Slot"),
         SettingField::new("ignore_crc", "Skip CRC", Control::Toggle).title("Ignore data CRC"),
+        SettingField::new("keys", "Keys", Control::list(key_form(), "none"))
+            .title("ARC4 or AES key per key ID. Basic Privacy needs no key.")
+            .quiet(Vec::<DmrKey>::new()),
+    ]
+}
+
+fn key_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("key_id", "Key ID", NumberSpec::new(0.0, 255.0, 1.0)),
+        SettingField::new(
+            "key",
+            "Key",
+            Control::bounded_text("10, 32 or 64 hex digits", MAX_KEY_DIGITS, true),
+        ),
     ]
 }
 
