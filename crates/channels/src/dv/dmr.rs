@@ -18,7 +18,9 @@ use sdrmm_wire::{
 };
 
 use super::{
-    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, tap_c4fm,
+    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params,
+    chip::{ChipRate, open_chip},
+    tap_c4fm,
     vocoder::{HALF_RATE_SOFT_BITS, MbeDecoder, half_soft_frame},
 };
 pub(crate) mod privacy;
@@ -234,6 +236,9 @@ impl ChannelRx for DmrChannel {
         for &symbol in &self.symbols {
             self.decoder.push(symbol, out);
         }
+        for slot in &mut self.decoder.slots {
+            slot.voice.drain(out);
+        }
     }
 
     fn rejected(&self) -> u32 {
@@ -244,8 +249,13 @@ impl ChannelRx for DmrChannel {
 impl DmrChannel {
     fn with_params(ctx: ChannelCtx, params: DmrParams) -> Result<Self, ChannelError> {
         let keys = cipher_keys(&params.keys)?;
+        let port = params.vocoder.clone();
         let mut decoder = Decoder::new(params);
         decoder.keys = keys;
+        for slot in &mut decoder.slots {
+            slot.voice =
+                MbeDecoder::half_rate().with_chip(open_chip(port.as_deref(), ChipRate::Half)?);
+        }
         Ok(Self {
             demod: c4fm_demod(&c4fm_params(ctx.input_rate, BAUD, DEVIATION_HZ, RRC_ALPHA)),
             symbols: Vec::new(),
@@ -596,7 +606,7 @@ impl Decoder {
             if playable {
                 state.voice.play_half(&decoded, out);
             } else {
-                MbeDecoder::mute(out);
+                state.voice.mute(out);
             }
         }
     }
@@ -1929,6 +1939,7 @@ fn dmr_trunk_spec() -> TrunkSpec {
                 kind: trunk.kind,
             })
             .collect(),
+        vocoder: super::chip::VOCODER_CHIPS,
     }
 }
 
@@ -1958,6 +1969,7 @@ fn dmr_follow(
     slot: u8,
     ignore_crc: bool,
     keys: &[VoiceKey],
+    vocoder: Option<&str>,
 ) -> Result<sdrmm_wire::ChannelParams, ChannelError> {
     cipher_keys(keys)?;
     let slots = match slot {
@@ -1973,12 +1985,13 @@ fn dmr_follow(
         slots,
         ignore_crc,
         keys: keys.to_vec(),
+        vocoder: vocoder.map(str::to_owned),
     })
     .map_err(ChannelError::InvalidSettings)
 }
 
 pub(crate) fn dmr_form() -> Vec<SettingField> {
-    vec![
+    super::with_vocoder(vec![
         SettingField::new("slots", "Slot", Control::choice::<DmrSlots>()).title("Slot"),
         SettingField::new("ignore_crc", "Skip CRC", Control::Toggle).title("Ignore data CRC"),
         super::keys_field(
@@ -1986,7 +1999,7 @@ pub(crate) fn dmr_form() -> Vec<SettingField> {
             u16::from(u8::MAX),
             "10, 32 or 64 hex digits",
         ),
-    ]
+    ])
 }
 
 fn dmr_kinds() -> Vec<KindSpec> {

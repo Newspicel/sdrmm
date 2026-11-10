@@ -33,6 +33,9 @@ pub struct DmrParams {
     pub ignore_crc: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keys: Vec<VoiceKey>,
+    /// The serial port of a DVSI vocoder chip that synthesizes the voice; unset is blip25.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocoder: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,22 +52,40 @@ pub struct NxdnParams {
     pub bandwidth: NxdnBandwidth,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keys: Vec<VoiceKey>,
+    /// The serial port of a DVSI vocoder chip that synthesizes the voice; unset is blip25.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocoder: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct DstarParams {}
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DstarParams {
+    /// The serial port of a DVSI vocoder chip that synthesizes the voice; unset is blip25.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocoder: Option<String>,
+}
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct YsfParams {}
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct YsfParams {
+    /// The serial port of a DVSI vocoder chip that synthesizes the voice; unset is blip25.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocoder: Option<String>,
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct P25Params {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keys: Vec<VoiceKey>,
+    /// The serial port of a DVSI vocoder chip that synthesizes the voice; unset is blip25.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocoder: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct DpmrParams {}
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DpmrParams {
+    /// The serial port of a DVSI vocoder chip that synthesizes the voice; unset is blip25.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocoder: Option<String>,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct M17Params {}

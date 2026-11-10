@@ -316,6 +316,7 @@ function filled(field: SettingField, value: unknown): boolean {
     case "list":
     case "preset":
     case "numbers":
+    case "serial_port":
       return true;
     case "choice":
     case "live":

@@ -1855,3 +1855,34 @@ fn a_key_of_the_wrong_length_is_refused() {
         Err(ChannelError::InvalidSettings(_))
     ));
 }
+
+#[test]
+fn a_followed_call_plays_through_the_trunks_vocoder_chip() {
+    let params: DmrParams = dmr_follow(2, false, &[], Some("/dev/ttyUSB0"))
+        .expect("follow")
+        .parse()
+        .expect("dmr params");
+    assert_eq!(params.vocoder.as_deref(), Some("/dev/ttyUSB0"));
+    assert_eq!(params.slots, DmrSlots::Two);
+}
+
+#[test]
+fn a_vocoder_chip_needs_chip_support_in_the_build() {
+    let settings = crate::default_settings("dmr").map(|mut settings| {
+        settings.params = ChannelParams::of(&DmrParams {
+            vocoder: Some("/dev/ttyUSB0".to_owned()),
+            ..DmrParams::default()
+        })
+        .expect("dmr params");
+        settings
+    });
+    let error = crate::create(
+        crate::ChannelCtx {
+            input_rate: crate::dv::INPUT_RATE_HZ,
+        },
+        &settings.expect("dmr settings"),
+    )
+    .err()
+    .expect("no chip support installed in tests");
+    assert!(matches!(error, ChannelError::Unsupported(_)), "{error}");
+}

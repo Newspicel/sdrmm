@@ -12,8 +12,9 @@ use sdrmm_wire::{
 };
 
 use super::{
-    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, invert_dibits, inverted,
-    tap_c4fm,
+    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params,
+    chip::{ChipRate, open_chip},
+    invert_dibits, inverted, tap_c4fm,
     vocoder::{AMBE_3600_INTERLEAVE, MbeDecoder, half_rate_code_vectors},
 };
 use crate::{
@@ -101,11 +102,11 @@ impl NativeChannel for DpmrChannel {
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        params(&settings)?;
+        let chip = open_chip(params(&settings)?.vocoder.as_deref(), ChipRate::Half)?;
         Ok(Self {
             demod: c4fm_demod(&c4fm_params(ctx.input_rate, BAUD, DEVIATION_HZ, RRC_ALPHA)),
             symbols: Vec::new(),
-            decoder: Decoder::new(),
+            decoder: Decoder::new(MbeDecoder::half_rate().with_chip(chip)),
         })
     }
 }
@@ -128,6 +129,7 @@ impl ChannelRx for DpmrChannel {
         for &symbol in &self.symbols {
             self.decoder.push(symbol, out);
         }
+        self.decoder.vocoder.drain(out);
     }
 
     fn rejected(&self) -> u32 {
@@ -154,7 +156,7 @@ enum Pending {
 }
 
 impl Decoder {
-    fn new() -> Self {
+    fn new(vocoder: MbeDecoder) -> Self {
         Self {
             window: SymbolWindow::new(SUPERFRAME_SYMBOLS),
             countdown: 0,
@@ -163,7 +165,7 @@ impl Decoder {
             in_call: false,
             voice_call: false,
             inverted: false,
-            vocoder: MbeDecoder::half_rate(),
+            vocoder,
             rejected: 0,
         }
     }
@@ -360,7 +362,7 @@ pub(crate) fn dpmr_decoder() -> Native<DpmrParams> {
 }
 
 pub(crate) fn dpmr_form() -> Vec<SettingField> {
-    Vec::new()
+    super::with_vocoder(Vec::new())
 }
 
 fn dpmr_kinds() -> Vec<KindSpec> {

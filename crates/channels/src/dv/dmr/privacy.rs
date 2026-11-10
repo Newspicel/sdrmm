@@ -538,14 +538,14 @@ mod tests {
                     std::array::from_fn(|i| frame.bytes[i / 8] >> (7 - i % 8) & 1 == 1);
                 let mut decoded = half_frame(half_rate_code_vectors(&bits, &AMBE_3600_INTERLEAVE));
                 let Some(start) = start else {
-                    MbeDecoder::mute(&mut out);
+                    vocoder.mute(&mut out);
                     continue;
                 };
                 let position = (index - start) % 18;
                 if privacy.decipher(position / 3, position % 3, &mut decoded, &keys) {
                     vocoder.play_half(&decoded, &mut out);
                 } else {
-                    MbeDecoder::mute(&mut out);
+                    vocoder.mute(&mut out);
                 }
             }
             correlation(sample, &out.audio_pcm, AUDIO_RATE as usize)

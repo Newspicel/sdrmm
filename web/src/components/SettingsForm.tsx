@@ -44,6 +44,7 @@ import { ListChip } from "./ListChip";
 import { NumberField } from "./NumberField";
 import { rowKeys } from "./rowKeys";
 import { Segmented } from "./Segmented";
+import { SerialPortChip } from "./SerialPortChip";
 
 const NO_READOUTS: readonly Field[] = [];
 
@@ -218,6 +219,8 @@ function FieldChip({ form, field, settings, choices, status, lanes, onSettings }
           onChange={commit}
         />
       );
+    case "serial_port":
+      return <SerialPortChip {...shared} empty={control.empty} value={value} onCommit={commit} />;
     case "live":
       return null;
   }

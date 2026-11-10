@@ -53,6 +53,8 @@ pub struct TrunkSystem {
     pub radio: Option<TrunkRadio>,
     pub talkgroups: TrunkTalkgroups,
     pub keys: Vec<VoiceKey>,
+    /// The serial port of the vocoder chip followed calls play through.
+    pub vocoder: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +90,7 @@ struct Carrier {
     freq_hz: u64,
     ignore_crc: bool,
     keys: Vec<VoiceKey>,
+    vocoder: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -290,6 +293,7 @@ impl Follower {
                     freq_hz: absolute.round() as u64,
                     ignore_crc: system.radio.is_some_and(|radio| radio.ignore_crc),
                     keys: system.keys.clone(),
+                    vocoder: system.vocoder.clone(),
                 },
             );
         }
@@ -919,8 +923,12 @@ impl Follower {
         if self.backing_off(&key, grant.freq_hz) {
             return;
         }
-        let params = match (carrier.trunking.follow)(grant.slot, carrier.ignore_crc, &carrier.keys)
-        {
+        let params = match (carrier.trunking.follow)(
+            grant.slot,
+            carrier.ignore_crc,
+            &carrier.keys,
+            carrier.vocoder.as_deref(),
+        ) {
             Ok(params) => params,
             Err(error) => {
                 self.fail(key, grant, error.to_string());
@@ -1460,6 +1468,7 @@ mod tests {
                 learned: Vec::new(),
                 talkgroups: TrunkTalkgroups::default(),
                 keys: Vec::new(),
+                vocoder: None,
                 radio: Some(TrunkRadio {
                     device_set: carrier.0,
                     stream: 0,
@@ -1878,6 +1887,7 @@ mod tests {
                 learned: Vec::new(),
                 talkgroups: TrunkTalkgroups::default(),
                 keys: Vec::new(),
+                vocoder: None,
                 radio: Some(TrunkRadio {
                     device_set,
                     stream: 0,
@@ -1955,6 +1965,7 @@ mod tests {
                 learned: Vec::new(),
                 talkgroups: TrunkTalkgroups::default(),
                 keys: Vec::new(),
+                vocoder: None,
                 radio: radio(center_hz as u64 + 12_500),
             }],
             carriers: HashMap::new(),
@@ -2006,6 +2017,7 @@ mod tests {
                 learned: Vec::new(),
                 talkgroups: TrunkTalkgroups::default(),
                 keys: Vec::new(),
+                vocoder: None,
                 radio: Some(TrunkRadio {
                     device_set,
                     stream: 0,

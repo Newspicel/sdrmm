@@ -509,6 +509,10 @@ impl Drop for ServerHandle {
 
 pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<ServerHandle> {
     refuse_phone_token(&config.options)?;
+    #[cfg(feature = "dvsi")]
+    if !sdrmm_channels::chip::install_vocoder_chips(Arc::new(sdrmm_dvsi::Chips::new())) {
+        tracing::debug!("vocoder chips already installed");
+    }
     engine.start_hotplug_prober(HOTPLUG_INTERVAL)?;
     engine.start_level_meter(LEVEL_INTERVAL)?;
     engine.start_occupancy_collector(HOTPLUG_INTERVAL)?;

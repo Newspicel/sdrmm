@@ -10,8 +10,15 @@ use blip25_vocoder::{
 use codec2::{Codec2, Codec2Mode};
 use num_complex::Complex;
 use sdrmm_dsp::FracResampler;
+use sdrmm_wire::{
+    ChannelStatus,
+    present::{Field, FieldValue},
+};
 
-use super::ambe::{AmbeDecoder, FRAME_SAMPLES as AMBE_FRAME_SAMPLES};
+use super::{
+    ambe::{AmbeDecoder, FRAME_SAMPLES as AMBE_FRAME_SAMPLES},
+    chip::{ChipFrame, ChipHealth, ChipLink, ChipRate, MAX_CHIP_FRAME_BYTES},
+};
 use crate::{AUDIO_RATE, ChannelOutputs, clamp_full_scale};
 
 const VOCODER_RATE_HZ: f64 = 8_000.0;
@@ -61,6 +68,11 @@ pub(crate) fn unpack_full(bytes: &[u8; FULL_RATE_INFO_BYTES]) -> [u16; 8] {
 }
 
 const PRESENTATION_GAIN_DB: f32 = 9.0;
+/// [`PRESENTATION_GAIN_DB`] as a factor, so a chip plays as loud as blip25.
+const PRESENTATION_GAIN: f32 = 2.818_383;
+/// IMBE frame repeat per TIA-102.BABA-A: a damaged first vector and a damaged frame.
+const IMBE_REPEAT_FIRST_ERRORS: u8 = 2;
+const IMBE_REPEAT_TOTAL_ERRORS: u16 = 10;
 
 pub(crate) const AMBE_3600_INTERLEAVE: [[(u8, u8); 2]; 36] = [
     [(0, 23), (0, 5)],
@@ -131,6 +143,15 @@ impl PcmOutput {
         self.append(out);
     }
 
+    fn append_scaled(&mut self, pcm: &[i16], gain: f32, out: &mut ChannelOutputs) {
+        self.pcm_8k.clear();
+        self.pcm_8k.extend(
+            pcm.iter()
+                .map(|&sample| Complex::new(gain * f32::from(sample) / 32_768.0, 0.0)),
+        );
+        self.append(out);
+    }
+
     fn append_f32(&mut self, pcm: &[f32], out: &mut ChannelOutputs) {
         self.pcm_8k.clear();
         self.pcm_8k.extend(
@@ -160,9 +181,108 @@ impl PcmOutput {
     }
 }
 
+/// A vocoder chip standing in for software synthesis, and what its readout last said.
+struct ChipVoice {
+    link: ChipLink,
+    gain: f32,
+    stalled: bool,
+    shown: Option<(ChipHealth, bool)>,
+}
+
+impl ChipVoice {
+    fn new(link: ChipLink, gain: f32) -> Self {
+        Self {
+            link,
+            gain,
+            stalled: false,
+            shown: None,
+        }
+    }
+
+    fn send(&mut self, frame: ChipFrame) -> bool {
+        self.stalled = !self.link.send(frame);
+        !self.stalled
+    }
+
+    /// Whether the chip will answer `bits`; when not, the caller plays them itself.
+    fn offer(&mut self, bits: [u8; MAX_CHIP_FRAME_BYTES]) -> bool {
+        let ready = self.link.health() == ChipHealth::Ready;
+        let sent = self.send(ChipFrame::Voice {
+            bits,
+            played: !ready,
+        });
+        ready && sent
+    }
+
+    fn mute(&mut self, out: &mut ChannelOutputs) {
+        if self.link.health() != ChipHealth::Ready || !self.send(ChipFrame::Silence) {
+            PcmOutput::silence(1, out);
+        }
+    }
+
+    fn reset(&mut self) {
+        self.send(ChipFrame::Reset);
+    }
+
+    fn drain(&mut self, output: &mut PcmOutput, out: &mut ChannelOutputs) {
+        while let Some(speech) = self.link.receive() {
+            output.append_scaled(&speech, self.gain, out);
+        }
+        self.report(out);
+    }
+
+    fn report(&mut self, out: &mut ChannelOutputs) {
+        let health = self.link.health();
+        if self.shown == Some((health, self.stalled)) {
+            return;
+        }
+        self.shown = Some((health, self.stalled));
+        let text = match (health, self.stalled) {
+            (ChipHealth::Lost, _) => "blip25, chip lost".to_owned(),
+            (_, true) => "blip25, chip stalled".to_owned(),
+            (ChipHealth::Busy, false) => "blip25, chip busy".to_owned(),
+            (ChipHealth::Ready, false) => self.link.name().to_owned(),
+        };
+        out.status = Some(ChannelStatus::readouts(vec![Field::new(
+            "vocoder",
+            "Vocoder",
+            FieldValue::Text(text),
+        )]));
+    }
+}
+
+fn info_rate(rate: Rate) -> Rate {
+    match rate {
+        Rate::HalfRate3600x2450 | Rate::HalfRate2450x2450 => Rate::HalfRate2450x2450,
+        Rate::FullRate7200x4400 | Rate::FullRate4400x4400 => Rate::FullRate4400x4400,
+    }
+}
+
+fn chip_bits(packed: &[u8]) -> [u8; MAX_CHIP_FRAME_BYTES] {
+    let mut bits = [0; MAX_CHIP_FRAME_BYTES];
+    let len = packed.len().min(MAX_CHIP_FRAME_BYTES);
+    bits[..len].copy_from_slice(&packed[..len]);
+    bits
+}
+
+/// The information bits of one frame as a chip takes them, MSB first.
+fn chip_info(rate: ChipRate, info: &[u16]) -> [u8; MAX_CHIP_FRAME_BYTES] {
+    match (rate, info) {
+        (ChipRate::Half, &[u0, u1, u2, u3, ..]) => {
+            chip_bits(&halfrate::pack_natural(&[u0, u1, u2, u3]))
+        }
+        (ChipRate::Full, &[u0, u1, u2, u3, u4, u5, u6, u7, ..]) => {
+            chip_bits(&pack_full(&[u0, u1, u2, u3, u4, u5, u6, u7]))
+        }
+        _ => [0; MAX_CHIP_FRAME_BYTES],
+    }
+}
+
 pub(crate) struct MbeDecoder {
     vocoder: Vocoder,
     output: PcmOutput,
+    chip: Option<ChipVoice>,
+    erasure: [u8; MAX_CHIP_FRAME_BYTES],
 }
 
 impl MbeDecoder {
@@ -183,15 +303,49 @@ impl MbeDecoder {
         Self {
             vocoder,
             output: PcmOutput::new(),
+            chip: None,
+            erasure: chip_bits(&info_rate(rate).erasure_frame()),
         }
+    }
+
+    /// Hands synthesis to `link`, when there is one.
+    pub(crate) fn with_chip(mut self, link: Option<ChipLink>) -> Self {
+        self.chip = link.map(|link| ChipVoice::new(link, PRESENTATION_GAIN));
+        self
     }
 
     pub(crate) fn reset(&mut self) {
         self.vocoder.reset();
         self.output.reset();
+        if let Some(chip) = &mut self.chip {
+            chip.reset();
+        }
     }
 
-    fn synthesize(&mut self, info: &[u16], status: FrameStatus, out: &mut ChannelOutputs) {
+    /// Plays whatever speech the chip has returned since; call once per processed block.
+    pub(crate) fn drain(&mut self, out: &mut ChannelOutputs) {
+        if let Some(chip) = &mut self.chip {
+            chip.drain(&mut self.output, out);
+        }
+    }
+
+    fn synthesize(
+        &mut self,
+        info: &[u16],
+        status: FrameStatus,
+        erased: bool,
+        out: &mut ChannelOutputs,
+    ) {
+        if let Some(chip) = &mut self.chip {
+            let bits = if erased {
+                self.erasure
+            } else {
+                chip_info(chip.link.rate(), info)
+            };
+            if chip.offer(bits) {
+                return;
+            }
+        }
         if let Ok(pcm) = self.vocoder.decode_info(info, status) {
             self.output.append_i16(&pcm, out);
         }
@@ -200,18 +354,22 @@ impl MbeDecoder {
     /// Plays a half-rate frame that has already been through forward error correction, for a
     /// caller that has to undo a cipher on the information bits first.
     pub(crate) fn play_half(&mut self, frame: &HalfRateFrame, out: &mut ChannelOutputs) {
-        let status = if frame.errors[0] == u8::MAX {
+        let lost = frame.errors[0] == u8::MAX;
+        let status = if lost {
             FrameStatus::LOST
         } else {
             FrameStatus::new(u32::from(frame.error_total()), false)
         };
-        self.synthesize(&frame.info, status, out);
+        self.synthesize(&frame.info, status, lost, out);
     }
 
     /// Plays a full-rate frame that has already been through forward error correction.
     pub(crate) fn play_full(&mut self, frame: &FullRateFrame, out: &mut ChannelOutputs) {
-        let status = FrameStatus::new(u32::from(frame.error_total()), false);
-        self.synthesize(&frame.info, status, out);
+        let total = frame.error_total();
+        let status = FrameStatus::new(u32::from(total), false);
+        let repeat =
+            frame.errors[0] >= IMBE_REPEAT_FIRST_ERRORS && total >= IMBE_REPEAT_TOTAL_ERRORS;
+        self.synthesize(&frame.info, status, repeat, out);
     }
 
     pub(crate) fn decode_half_code_vectors(
@@ -221,14 +379,17 @@ impl MbeDecoder {
         out: &mut ChannelOutputs,
     ) {
         if encrypted {
-            Self::mute(out);
+            self.mute(out);
             return;
         }
         self.play_half(&decode_code_vectors(code), out);
     }
 
-    pub(crate) fn mute(out: &mut ChannelOutputs) {
-        PcmOutput::silence(1, out);
+    pub(crate) fn mute(&mut self, out: &mut ChannelOutputs) {
+        match &mut self.chip {
+            Some(chip) => chip.mute(out),
+            None => PcmOutput::silence(1, out),
+        }
     }
 
     pub(crate) fn decode_half_info(
@@ -238,7 +399,7 @@ impl MbeDecoder {
         out: &mut ChannelOutputs,
     ) {
         if encrypted {
-            Self::mute(out);
+            self.mute(out);
             return;
         }
         let mut packed = [0u8; 7];
@@ -246,7 +407,7 @@ impl MbeDecoder {
             packed[i / 8] |= u8::from(bit) << (7 - i % 8);
         }
         let info = halfrate::unpack_natural(&packed);
-        self.synthesize(&info, FrameStatus::CLEAN, out);
+        self.synthesize(&info, FrameStatus::CLEAN, false, out);
     }
 
     pub(crate) fn decode_full_dibits(
@@ -256,7 +417,7 @@ impl MbeDecoder {
         out: &mut ChannelOutputs,
     ) {
         if encrypted {
-            Self::mute(out);
+            self.mute(out);
             return;
         }
         self.play_full(&full_frame(dibits), out);
@@ -273,10 +434,23 @@ impl MbeDecoder {
     }
 }
 
+/// The 72 D-STAR voice bits as bytes the way the air sends them, least significant bit first.
+fn dstar_bytes(bits: &[bool; 72]) -> [u8; MAX_CHIP_FRAME_BYTES] {
+    let mut bytes = [0u8; MAX_CHIP_FRAME_BYTES];
+    for (byte, chunk) in bytes.iter_mut().zip(bits.as_chunks::<8>().0) {
+        *byte = chunk
+            .iter()
+            .enumerate()
+            .fold(0, |acc, (index, &bit)| acc | u8::from(bit) << index);
+    }
+    bytes
+}
+
 pub(crate) struct DstarVocoder {
     decoder: AmbeDecoder,
     output: PcmOutput,
     pcm: [f32; AMBE_FRAME_SAMPLES],
+    chip: Option<ChipVoice>,
 }
 
 impl DstarVocoder {
@@ -285,16 +459,46 @@ impl DstarVocoder {
             decoder: AmbeDecoder::new(),
             output: PcmOutput::new(),
             pcm: [0.0; AMBE_FRAME_SAMPLES],
+            chip: None,
         }
+    }
+
+    /// Hands synthesis to `link`, when there is one.
+    pub(crate) fn with_chip(mut self, link: Option<ChipLink>) -> Self {
+        self.chip = link.map(|link| ChipVoice::new(link, 1.0));
+        self
+    }
+
+    /// Moves the chip to whichever of two decoders now plays.
+    pub(crate) fn swap_chip(&mut self, other: &mut Self) {
+        std::mem::swap(&mut self.chip, &mut other.chip);
     }
 
     pub(crate) fn reset(&mut self) {
         self.decoder.reset();
         self.output.reset();
+        if let Some(chip) = &mut self.chip {
+            chip.reset();
+        }
+    }
+
+    /// Plays whatever speech the chip has returned since; call once per processed block.
+    pub(crate) fn drain(&mut self, out: &mut ChannelOutputs) {
+        if let Some(chip) = &mut self.chip {
+            chip.drain(&mut self.output, out);
+        }
     }
 
     pub(crate) fn decode(&mut self, bits: &[bool; 72], encrypted: bool, out: &mut ChannelOutputs) {
-        if encrypted {
+        if let Some(chip) = &mut self.chip {
+            if encrypted {
+                chip.mute(out);
+                return;
+            }
+            if chip.offer(dstar_bytes(bits)) {
+                return;
+            }
+        } else if encrypted {
             PcmOutput::silence(1, out);
             return;
         }
@@ -476,7 +680,7 @@ mod tests {
         let mut out = ChannelOutputs::default();
         for frame in 0..200 {
             let info = encoder.encode_info(&voiced(frame)).expect("encode voice");
-            decoder.synthesize(&info, FrameStatus::CLEAN, &mut out);
+            decoder.synthesize(&info, FrameStatus::CLEAN, false, &mut out);
         }
         crate::testutil::rms(&out.audio_pcm[out.audio_pcm.len() / 4..])
     }
@@ -584,5 +788,137 @@ mod tests {
             );
             assert_presentable(&out);
         }
+    }
+
+    use crate::dv::chip::{CHIP_FRAME_SAMPLES, ChipEnd, chip_link};
+
+    fn chipped(rate: Rate) -> (MbeDecoder, ChipEnd) {
+        let (link, end) = chip_link(chip_rate_of(rate), "AMBE3000R");
+        (MbeDecoder::new(rate).with_chip(Some(link)), end)
+    }
+
+    fn chip_rate_of(rate: Rate) -> ChipRate {
+        match rate {
+            Rate::HalfRate3600x2450 | Rate::HalfRate2450x2450 => ChipRate::Half,
+            Rate::FullRate7200x4400 | Rate::FullRate4400x4400 => ChipRate::Full,
+        }
+    }
+
+    fn sent_voice(end: &mut ChipEnd) -> ([u8; MAX_CHIP_FRAME_BYTES], bool) {
+        match end.next_frame() {
+            Some(ChipFrame::Voice { bits, played }) => (bits, played),
+            other => panic!("expected a voice frame, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_ready_chip_gets_the_natural_half_rate_bits_and_plays_their_speech() {
+        let (mut decoder, mut end) = chipped(Rate::HalfRate3600x2450);
+        let mut encoder = Vocoder::new(Rate::HalfRate2450x2450);
+        let natural = encoder.encode_pcm(&voiced(0)).expect("encode voice");
+        let mut out = ChannelOutputs::default();
+        decoder.decode_half_info(
+            &std::array::from_fn(|bit| natural[bit / 8] >> (7 - bit % 8) & 1 == 1),
+            false,
+            &mut out,
+        );
+        assert!(
+            out.audio_pcm.is_empty(),
+            "software played a frame the chip took"
+        );
+        let (bits, played) = sent_voice(&mut end);
+        assert_eq!(bits[..7], natural[..]);
+        assert!(!played);
+        assert!(end.deliver([8_000; CHIP_FRAME_SAMPLES]));
+        decoder.drain(&mut out);
+        assert_eq!(out.audio_pcm.len(), OUTPUT_SAMPLES_PER_MBE_FRAME);
+        assert_eq!(out.audio_rate, AUDIO_RATE);
+        assert!(out.status.is_some(), "the vocoder readout names the chip");
+    }
+
+    #[test]
+    fn full_rate_information_reaches_the_chip_in_its_no_fec_layout() {
+        let (mut decoder, mut end) = chipped(Rate::FullRate7200x4400);
+        let mut fec = Vocoder::new(Rate::FullRate7200x4400);
+        let mut no_fec = Vocoder::new(Rate::FullRate4400x4400);
+        let frame = fec.encode_pcm(&voiced(3)).expect("encode voice");
+        let expected = no_fec.encode_pcm(&voiced(3)).expect("encode voice");
+        let dibits: [u8; 72] = std::array::from_fn(|i| frame[i / 4] >> (6 - 2 * (i % 4)) & 0b11);
+        decoder.decode_full_dibits(&dibits, false, &mut ChannelOutputs::default());
+        assert_eq!(sent_voice(&mut end).0[..], expected[..]);
+    }
+
+    #[test]
+    fn a_lost_half_rate_frame_reaches_the_chip_as_an_erasure() {
+        let (mut decoder, mut end) = chipped(Rate::HalfRate3600x2450);
+        let mut lost = half_frame([0; 4]);
+        lost.errors[0] = u8::MAX;
+        decoder.play_half(&lost, &mut ChannelOutputs::default());
+        assert_eq!(
+            sent_voice(&mut end).0[..7],
+            Rate::HalfRate2450x2450.erasure_frame()[..]
+        );
+    }
+
+    #[test]
+    fn a_busy_chip_leaves_the_frame_to_blip25_and_still_hears_it() {
+        let (mut decoder, mut end) = chipped(Rate::HalfRate3600x2450);
+        end.set_health(ChipHealth::Busy);
+        let mut out = ChannelOutputs::default();
+        decoder.decode_half_code_vectors([0x123, 0x456, 0x78, 0x9A], false, &mut out);
+        assert_eq!(out.audio_pcm.len(), OUTPUT_SAMPLES_PER_MBE_FRAME);
+        assert!(
+            sent_voice(&mut end).1,
+            "the chip was not told the frame already played"
+        );
+    }
+
+    #[test]
+    fn a_lost_chip_falls_back_to_blip25_and_says_so() {
+        let (mut decoder, end) = chipped(Rate::FullRate7200x4400);
+        drop(end);
+        let mut out = ChannelOutputs::default();
+        decoder.decode_full_code_vectors([0; 8], false, &mut out);
+        decoder.drain(&mut out);
+        assert_eq!(out.audio_pcm.len(), OUTPUT_SAMPLES_PER_MBE_FRAME);
+        let status = out.status.expect("a readout for the lost chip");
+        assert!(
+            matches!(&status.readouts[0].value, FieldValue::Text(text) if text.contains("lost"))
+        );
+    }
+
+    #[test]
+    fn muting_through_a_ready_chip_keeps_speech_in_order() {
+        let (mut decoder, mut end) = chipped(Rate::HalfRate3600x2450);
+        let mut out = ChannelOutputs::default();
+        decoder.decode_half_code_vectors([0; 4], true, &mut out);
+        assert!(out.audio_pcm.is_empty());
+        assert_eq!(end.next_frame(), Some(ChipFrame::Silence));
+    }
+
+    #[test]
+    fn dstar_bytes_carry_the_first_air_bit_least_significant() {
+        let mut bits = [false; 72];
+        bits[0] = true;
+        bits[9] = true;
+        bits[71] = true;
+        let bytes = dstar_bytes(&bits);
+        assert_eq!(bytes[..9], [0x01, 0x02, 0, 0, 0, 0, 0, 0, 0x80]);
+    }
+
+    #[test]
+    fn the_dstar_chip_follows_the_decoder_that_plays() {
+        let (link, mut end) = chip_link(ChipRate::Dstar, "AMBE3000R");
+        let mut live = DstarVocoder::new().with_chip(Some(link));
+        let mut shadow = DstarVocoder::new();
+        live.swap_chip(&mut shadow);
+        let mut out = ChannelOutputs::default();
+        live.decode(&[false; 72], false, &mut out);
+        assert_eq!(out.audio_pcm.len(), OUTPUT_SAMPLES_PER_MBE_FRAME);
+        assert_eq!(end.next_frame(), None);
+        out.reset();
+        shadow.decode(&[true; 72], false, &mut out);
+        assert!(out.audio_pcm.is_empty());
+        assert_eq!(sent_voice(&mut end).0[..9], [0xFF; 9]);
     }
 }

@@ -291,6 +291,9 @@ pub struct TrunkNode {
     /// Voice privacy keys the followed calls are deciphered with.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keys: Vec<crate::VoiceKey>,
+    /// The serial port of a DVSI vocoder chip the followed calls play through; unset is blip25.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocoder: Option<String>,
 }
 
 fn auto_protocol() -> String {
@@ -393,6 +396,7 @@ impl Default for TrunkNode {
             ignore_crc: false,
             talkgroups: crate::TrunkTalkgroups::default(),
             keys: Vec::new(),
+            vocoder: None,
         }
     }
 }

@@ -14,7 +14,12 @@ use sdrmm_wire::{
     DvFrame, DvFrameKind, EventKind,
 };
 
-use super::{INPUT_RATE_HZ, tap_symbols, vocoder::DstarVocoder};
+use super::{
+    INPUT_RATE_HZ,
+    chip::{ChipRate, open_chip},
+    tap_symbols,
+    vocoder::DstarVocoder,
+};
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
     check_input_rate,
@@ -123,7 +128,7 @@ impl NativeChannel for DstarChannel {
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        params(&settings)?;
+        let chip = open_chip(params(&settings)?.vocoder.as_deref(), ChipRate::Dstar)?;
         let sps = ctx.input_rate / BAUD;
         let cpm = cpm_params(sps);
         let coherent = CoherentCpmStream::new(&cpm, COHERENT_LOOP_BW, COHERENT_TIMING_BW)
@@ -136,7 +141,7 @@ impl NativeChannel for DstarChannel {
             ),
             coherent,
             slicer: cpm.mapping().clone(),
-            decoder: Decoder::new(),
+            decoder: Decoder::with_vocoder(DstarVocoder::new().with_chip(chip)),
             coherent_decoder: Decoder::new(),
             source: Source::Discriminator,
             unlocked: 0,
@@ -181,6 +186,10 @@ impl ChannelRx for DstarChannel {
             shadow,
         );
         self.tap(out);
+        match self.source {
+            Source::Discriminator => self.decoder.vocoder.drain(out),
+            Source::Coherent => self.coherent_decoder.vocoder.drain(out),
+        }
     }
 
     fn rejected(&self) -> u32 {
@@ -215,6 +224,9 @@ impl DstarChannel {
             Source::Coherent => self.coherent_decoder.adopt(&self.decoder),
             Source::Discriminator => self.decoder.adopt(&self.coherent_decoder),
         }
+        self.decoder
+            .vocoder
+            .swap_chip(&mut self.coherent_decoder.vocoder);
     }
 
     fn tap(&self, out: &mut ChannelOutputs) {
@@ -259,6 +271,10 @@ struct Decoder {
 
 impl Decoder {
     fn new() -> Self {
+        Self::with_vocoder(DstarVocoder::new())
+    }
+
+    fn with_vocoder(vocoder: DstarVocoder) -> Self {
         Self {
             register: 0,
             bit: 0,
@@ -274,7 +290,7 @@ impl Decoder {
             blocks: 0,
             reported: None,
             announced: None,
-            vocoder: DstarVocoder::new(),
+            vocoder,
             rejected: 0,
         }
     }
@@ -456,7 +472,7 @@ pub(crate) fn dstar_decoder() -> Native<DstarParams> {
 }
 
 pub(crate) fn dstar_form() -> Vec<SettingField> {
-    Vec::new()
+    super::with_vocoder(Vec::new())
 }
 
 fn dstar_kinds() -> Vec<KindSpec> {

@@ -10733,6 +10733,25 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A serial port of the server's machine, stored as its path. Unset means `empty`.",
+            "required": [
+              "empty",
+              "type"
+            ],
+            "properties": {
+              "empty": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "serial_port"
+                ]
+              }
+            }
           }
         ]
       },
@@ -27928,6 +27947,13 @@
           },
           "talkgroups": {
             "$ref": "#/components/schemas/TrunkTalkgroups"
+          },
+          "vocoder": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The serial port of a DVSI vocoder chip the followed calls play through; unset is blip25."
           }
         }
       },
@@ -28089,6 +28115,10 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "vocoder": {
+            "type": "boolean",
+            "description": "Followed calls can play through a vocoder chip."
           }
         }
       },

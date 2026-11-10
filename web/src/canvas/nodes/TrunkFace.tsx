@@ -3,6 +3,7 @@ import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { TextChip } from "../../components/face/TextChip";
 import { formatHz } from "../../components/format";
+import { SerialPortChip } from "../../components/SerialPortChip";
 import { useFeeds } from "../../lib/resolved";
 import type {
   ChannelDescriptor,
@@ -154,8 +155,10 @@ export function TrunkFace({ node }: { node: PatchNode }) {
         <CallChips
           talkgroups={talkgroups}
           keys={node.data.keys ?? []}
+          vocoder={spec?.vocoder === true ? (node.data.vocoder ?? null) : undefined}
           onChange={(next) => edit({ talkgroups: { ...talkgroups, ...next } })}
           onKeys={(keys) => edit({ keys })}
+          onVocoder={(vocoder) => edit({ vocoder })}
         />
         <TrunkActivity status={status} slots={slots} controlHz={node.data.control_hz} />
         {stalled && (
@@ -193,13 +196,17 @@ export function TrunkFace({ node }: { node: PatchNode }) {
 function CallChips({
   talkgroups,
   keys,
+  vocoder,
   onChange,
   onKeys,
+  onVocoder,
 }: {
   talkgroups: TrunkTalkgroups;
   keys: VoiceKey[];
+  vocoder: string | null | undefined;
   onChange: (next: Partial<TrunkTalkgroups>) => void;
   onKeys: (keys: VoiceKey[]) => void;
+  onVocoder: (vocoder: string | null) => void;
 }) {
   const priority = talkgroups.priority;
   return (
@@ -239,6 +246,16 @@ function CallChips({
         placeholder="137:58FFA35A8C"
         onCommit={(text) => onKeys(parseVoiceKeys(text))}
       />
+      {vocoder !== undefined && (
+        <SerialPortChip
+          label="Vocoder"
+          title="blip25 in software, or a DVSI AMBE-3000/3003 chip such as a ThumbDV or USB-3003"
+          quiet={false}
+          empty="blip25"
+          value={vocoder}
+          onCommit={onVocoder}
+        />
+      )}
     </Chips>
   );
 }

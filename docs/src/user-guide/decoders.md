@@ -78,6 +78,18 @@ own Keys, as `key ID:hex key`, for the calls it follows. A DMR call joined after
 header starts once two superframes have carried their late-entry MI, if exactly one key fits.
 Calls without their key stay muted.
 
+## Vocoder chip
+
+DMR, NXDN, dPMR, System Fusion, P25 Phase 1 and D-STAR voice plays through blip25 in software.
+Servers built with the `dvsi` feature (`cargo build --features dvsi`) can use a DVSI AMBE-3000
+or AMBE-3003 chip instead (ThumbDV, DV3000U, USB-3000, USB-3003): pick its serial port under
+**Vocoder**. A trunk node has its own **Vocoder** for the calls it follows.
+
+The server finds the chip at 460800 or 921600 baud and shows its product under **Vocoder**. Each
+call takes one chip channel while it lasts: one on an AMBE-3000, three on an AMBE-3003. A call
+that finds every channel busy, or a chip that stops answering, plays through blip25 and the
+readout says so.
+
 ## Tetrapol
 
 The Tetrapol channel reads 12.5 kHz Tetrapol PMR downlinks. Tune the carrier; the scrambling code

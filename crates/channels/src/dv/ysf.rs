@@ -12,7 +12,9 @@ use sdrmm_wire::{
 };
 
 use super::{
-    INPUT_RATE_HZ, SymbolWindow, c4fm_demod, c4fm_params, tap_c4fm,
+    INPUT_RATE_HZ, SymbolWindow, c4fm_demod, c4fm_params,
+    chip::{ChipRate, open_chip},
+    tap_c4fm,
     vocoder::{AMBE_3600_INTERLEAVE, MbeDecoder, half_rate_code_vectors},
 };
 use crate::{
@@ -98,11 +100,16 @@ impl NativeChannel for YsfChannel {
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        params(&settings)?;
+        let port = params(&settings)?.vocoder;
+        let mut decoder = Decoder::new();
+        decoder.half_vocoder =
+            MbeDecoder::half_rate().with_chip(open_chip(port.as_deref(), ChipRate::Half)?);
+        decoder.full_vocoder =
+            MbeDecoder::full_rate().with_chip(open_chip(port.as_deref(), ChipRate::Full)?);
         Ok(Self {
             demod: c4fm_demod(&c4fm_params(ctx.input_rate, BAUD, DEVIATION_HZ, RRC_ALPHA)),
             symbols: Vec::new(),
-            decoder: Decoder::new(),
+            decoder,
         })
     }
 }
@@ -125,6 +132,8 @@ impl ChannelRx for YsfChannel {
         for &symbol in &self.symbols {
             self.decoder.push(symbol, out);
         }
+        self.decoder.half_vocoder.drain(out);
+        self.decoder.full_vocoder.drain(out);
     }
 
     fn rejected(&self) -> u32 {
@@ -538,7 +547,7 @@ pub(crate) fn ysf_decoder() -> Native<YsfParams> {
 }
 
 pub(crate) fn ysf_form() -> Vec<SettingField> {
-    Vec::new()
+    super::with_vocoder(Vec::new())
 }
 
 fn ysf_kinds() -> Vec<KindSpec> {

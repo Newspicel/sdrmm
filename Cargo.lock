@@ -5584,6 +5584,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdrmm-dvsi"
+version = "0.0.0"
+dependencies = [
+ "sdrmm-channels",
+ "sdrmm-serial",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
 name = "sdrmm-engine"
 version = "0.0.0"
 dependencies = [
@@ -5789,6 +5799,7 @@ dependencies = [
  "sdrmm-device-recording",
  "sdrmm-device-virtual",
  "sdrmm-dsp",
+ "sdrmm-dvsi",
  "sdrmm-engine",
  "sdrmm-orbit",
  "sdrmm-recorder",

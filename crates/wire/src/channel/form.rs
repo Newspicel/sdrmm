@@ -3,6 +3,7 @@ use serde_json::Value;
 use utoipa::ToSchema;
 
 use super::choices::{ParamOption, SettingChoice, of, option};
+use crate::MAX_POSITION_ENDPOINT_LEN as MAX_SERIAL_PATH_LEN;
 
 /// One setting on a decoder's form, keyed by its field in the decoder's settings object. A
 /// dotted key (`header.length`) names a field of a nested object.
@@ -90,6 +91,10 @@ pub enum Control {
     Numbers {
         spec: NumberSpec,
         max_len: usize,
+    },
+    /// A serial port of the server's machine, stored as its path. Unset means `empty`.
+    SerialPort {
+        empty: String,
     },
 }
 
@@ -340,6 +345,13 @@ impl Control {
     }
 
     #[must_use]
+    pub fn serial_port(empty: &str) -> Self {
+        Self::SerialPort {
+            empty: empty.to_owned(),
+        }
+    }
+
+    #[must_use]
     pub const fn numbers(spec: NumberSpec, max_len: usize) -> Self {
         Self::Numbers { spec, max_len }
     }
@@ -481,11 +493,22 @@ fn check_control(type_id: &str, key: &str, control: &Control, value: &Value) -> 
             _ => Ok(()),
         },
         Control::Numbers { spec, max_len } => check_numbers(type_id, key, spec, *max_len, value),
+        Control::SerialPort { .. } => check_serial_port(type_id, key, value),
         Control::Choice { .. }
         | Control::Toggle
         | Control::Text { .. }
         | Control::Preset { .. }
         | Control::Lanes { .. } => Ok(()),
+    }
+}
+
+fn check_serial_port(type_id: &str, key: &str, value: &Value) -> Result<(), String> {
+    match value.as_str() {
+        Some(path) if path.chars().count() <= MAX_SERIAL_PATH_LEN => Ok(()),
+        Some(_) => Err(format!(
+            "{type_id} {key} is longer than {MAX_SERIAL_PATH_LEN} characters"
+        )),
+        None => Err(format!("{type_id} {key} is a serial port path")),
     }
 }
 

@@ -22,6 +22,7 @@ fn system(node: &str) -> trunking::TrunkSystem {
         learned: Vec::new(),
         talkgroups: Default::default(),
         keys: Vec::new(),
+        vocoder: None,
         radio: None,
     }
 }

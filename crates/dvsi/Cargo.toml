@@ -1,0 +1,19 @@
+[package]
+name = "sdrmm-dvsi"
+description = "DVSI AMBE-3000 and AMBE-3003 vocoder chips over USB serial"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+sdrmm-channels.workspace = true
+sdrmm-serial.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

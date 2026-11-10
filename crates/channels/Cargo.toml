@@ -16,6 +16,7 @@ synth = []
 fixtures = ["synth"]
 fuzzing = []
 probe = ["sdrmm-wire/probe"]
+vocoder-chip = []
 
 [dependencies]
 sdrmm-wire.workspace = true

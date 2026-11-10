@@ -32,6 +32,7 @@ espsdr = ["sdrmm-server/espsdr", "sdrmm-engine/espsdr"]
 ad936x = ["sdrmm-server/ad936x", "sdrmm-engine/ad936x"]
 net-client = ["sdrmm-server/net-client", "sdrmm-engine/net-client"]
 gpu-fft = ["sdrmm-server/gpu-fft", "sdrmm-engine/gpu-fft"]
+dvsi = ["sdrmm-server/dvsi"]
 
 [build-dependencies]
 winresource = "0.1.34"

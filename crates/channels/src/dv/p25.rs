@@ -10,7 +10,9 @@ use sdrmm_wire::{
 };
 
 use super::{
-    INPUT_RATE_HZ, SymbolWindow, VoiceKey, c4fm_demod, c4fm_params, tap_c4fm,
+    INPUT_RATE_HZ, SymbolWindow, VoiceKey, c4fm_demod, c4fm_params,
+    chip::{ChipRate, open_chip},
+    tap_c4fm,
     vocoder::{MbeDecoder, full_frame},
 };
 use crate::{
@@ -116,11 +118,14 @@ impl NativeChannel for P25Channel {
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        let keys = cipher_keys(&params(&settings)?.keys)?;
+        let params = params(&settings)?;
+        let keys = cipher_keys(&params.keys)?;
+        let vocoder = MbeDecoder::full_rate()
+            .with_chip(open_chip(params.vocoder.as_deref(), ChipRate::Full)?);
         Ok(Self {
             demod: c4fm_demod(&c4fm_params(ctx.input_rate, BAUD, DEVIATION_HZ, RRC_ALPHA)),
             symbols: Vec::new(),
-            decoder: Decoder::new(keys),
+            decoder: Decoder::new(keys, vocoder),
         })
     }
 }
@@ -143,6 +148,7 @@ impl ChannelRx for P25Channel {
         for &symbol in &self.symbols {
             self.decoder.push(symbol, out);
         }
+        self.decoder.vocoder.drain(out);
     }
 
     fn rejected(&self) -> u32 {
@@ -169,7 +175,7 @@ struct Decoder {
 }
 
 impl Decoder {
-    fn new(keys: CipherKeys) -> Self {
+    fn new(keys: CipherKeys, vocoder: MbeDecoder) -> Self {
         Self {
             window: SymbolWindow::new(MAX_FRAME_SYMBOLS),
             countdown: 0,
@@ -183,7 +189,7 @@ impl Decoder {
             encryption: None,
             keys,
             privacy: Privacy::new(),
-            vocoder: MbeDecoder::full_rate(),
+            vocoder,
             logical: Vec::with_capacity(MAX_FRAME_BITS),
             rejected: 0,
         }
@@ -329,7 +335,7 @@ impl Decoder {
         if playable {
             self.vocoder.play_full(&frame, out);
         } else {
-            MbeDecoder::mute(out);
+            self.vocoder.mute(out);
         }
     }
 
@@ -807,7 +813,16 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::new("p25", &P25Params { keys }).expect("p25 settings")),
+            settings(
+                ChannelParams::new(
+                    "p25",
+                    &P25Params {
+                        keys,
+                        vocoder: None,
+                    },
+                )
+                .expect("p25 settings"),
+            ),
         )
     }
 
@@ -1060,7 +1075,7 @@ mod tests {
                     word ^ SPEC_PARITY[15 - bit]
                 });
 
-            let mut decoder = Decoder::new(Vec::new());
+            let mut decoder = Decoder::new(Vec::new(), MbeDecoder::full_rate());
             let mut taken = 0;
             for symbol in 0..NID_SYMBOLS {
                 let dibit = if is_status(SYNC_BITS as usize + symbol * 2) {

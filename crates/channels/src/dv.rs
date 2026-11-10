@@ -5,6 +5,7 @@ use sdrmm_wire::{
 mod model;
 pub use model::*;
 mod ambe;
+pub mod chip;
 pub(crate) mod dmr;
 pub(crate) mod dpmr;
 pub(crate) mod dstar;
@@ -465,11 +466,24 @@ pub(crate) fn p25_decoder() -> Native<P25Params> {
 }
 
 pub(crate) fn p25_form() -> Vec<SettingField> {
-    vec![keys_field(
+    with_vocoder(vec![keys_field(
         "Key per key ID: 10 hex digits ADP, 16 DES, 32 or 64 AES",
         u16::MAX,
         "10, 16, 32 or 64 hex digits",
-    )]
+    )])
+}
+
+/// `form` with the pick of where voice is synthesized, when this build drives vocoder chips:
+/// blip25, or a DVSI chip on a serial port.
+pub(crate) fn with_vocoder(mut form: Vec<SettingField>) -> Vec<SettingField> {
+    if chip::VOCODER_CHIPS {
+        form.push(
+            SettingField::new("vocoder", "Vocoder", Control::serial_port("blip25")).title(
+                "blip25 in software, or a DVSI AMBE-3000/3003 chip such as a ThumbDV or USB-3003",
+            ),
+        );
+    }
+    form
 }
 
 const MAX_KEY_DIGITS: usize = 64;

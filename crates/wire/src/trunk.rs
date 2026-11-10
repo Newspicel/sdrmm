@@ -28,6 +28,9 @@ pub struct TrunkScheme {
 pub struct TrunkSpec {
     pub slots: u8,
     pub schemes: Vec<TrunkScheme>,
+    /// Followed calls can play through a vocoder chip.
+    #[serde(default)]
+    pub vocoder: bool,
 }
 
 impl TrunkSpec {

@@ -278,7 +278,7 @@ mod tests {
                 if privacy.decipher(index % FRAMES_PER_SUPERFRAME, &mut decoded, &keys) {
                     vocoder.play_full(&decoded, &mut out);
                 } else {
-                    MbeDecoder::mute(&mut out);
+                    vocoder.mute(&mut out);
                 }
             }
             correlation(sample, &out.audio_pcm, AUDIO_RATE as usize)

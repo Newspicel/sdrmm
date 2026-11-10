@@ -27,6 +27,7 @@ ad936x = ["sdrmm-engine/ad936x"]
 net-client = ["sdrmm-engine/net-client"]
 gpu-fft = ["sdrmm-engine/gpu-fft"]
 probe = ["sdrmm-engine/probe"]
+dvsi = ["dep:sdrmm-dvsi", "sdrmm-channels/vocoder-chip"]
 
 [dependencies]
 tun-rs.workspace = true
@@ -41,6 +42,7 @@ sdrmm-device.workspace = true
 sdrmm-cps.workspace = true
 sdrmm-recorder.workspace = true
 sdrmm-serial.workspace = true
+sdrmm-dvsi = { workspace = true, optional = true }
 sdrmm-tools.workspace = true
 
 # `macros` for the FromRequest/FromRequestParts derives that remap extractor rejections

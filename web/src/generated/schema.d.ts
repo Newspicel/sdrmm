@@ -3216,6 +3216,10 @@ export interface components {
             spec: components["schemas"]["NumberSpec"];
             /** @enum {string} */
             type: "numbers";
+        } | {
+            empty: string;
+            /** @enum {string} */
+            type: "serial_port";
         };
         ControlAck: {
             error?: string | null;
@@ -7898,6 +7902,8 @@ export interface components {
             /** @description A protocol id the decoder declares, or [`crate::AUTO_TRUNK_PROTOCOL`]. */
             protocol?: string;
             talkgroups?: components["schemas"]["TrunkTalkgroups"];
+            /** @description The serial port of a DVSI vocoder chip the followed calls play through; unset is blip25. */
+            vocoder?: string | null;
         };
         TrunkProbe: {
             /** Format: int32 */
@@ -7946,6 +7952,8 @@ export interface components {
             schemes: components["schemas"]["TrunkScheme"][];
             /** Format: int32 */
             slots: number;
+            /** @description Followed calls can play through a vocoder chip. */
+            vocoder?: boolean;
         };
         TrunkSystemStatus: {
             /**

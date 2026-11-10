@@ -120,6 +120,7 @@ pub use datv::{
 pub use dect::DectChannel;
 pub use drm::DrmChannel;
 pub use dsc::DscChannel;
+pub use dv::chip;
 pub use dv::{
     DmrChannel, DpmrChannel, DstarChannel, FreeDvChannel, M17Channel, NxdnChannel, P25Channel,
     YsfChannel,
@@ -706,7 +707,10 @@ mod tests {
                 Control::Number(spec) => spec.optional.is_some(),
                 Control::Text { optional, .. } => *optional,
                 Control::Choice { options } => options.iter().any(|option| option.value.is_null()),
-                Control::Live { .. } | Control::List { .. } | Control::Preset { .. } => true,
+                Control::Live { .. }
+                | Control::List { .. }
+                | Control::Preset { .. }
+                | Control::SerialPort { .. } => true,
                 Control::Toggle | Control::Lanes { .. } | Control::Numbers { .. } => false,
             }
     }

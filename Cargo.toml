@@ -26,6 +26,7 @@ members = [
     "crates/device-spyserver",
     "crates/usb-stream",
     "crates/serial",
+    "crates/dvsi",
     "crates/iqlink",
     "crates/channels",
     "crates/plugin-sdk",
@@ -71,6 +72,7 @@ default-members = [
     "crates/device-spyserver",
     "crates/usb-stream",
     "crates/serial",
+    "crates/dvsi",
     "crates/iqlink",
     "crates/channels",
     "crates/plugin-sdk",
@@ -125,6 +127,7 @@ sdrmm-device-rtltcp = { path = "crates/device-rtltcp" }
 sdrmm-device-spyserver = { path = "crates/device-spyserver" }
 sdrmm-usb-stream = { path = "crates/usb-stream" }
 sdrmm-serial = { path = "crates/serial" }
+sdrmm-dvsi = { path = "crates/dvsi" }
 sdrmm-iqlink = { path = "crates/iqlink" }
 sdrmm-channels = { path = "crates/channels" }
 sdrmm-plugin = { path = "crates/plugin-sdk" }

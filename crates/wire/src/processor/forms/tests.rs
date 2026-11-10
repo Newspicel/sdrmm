@@ -57,7 +57,7 @@ fn probe_value(field: &SettingField) -> Value {
             .map(|option| option.value.clone())
             .unwrap_or(Value::Null),
         Control::Toggle => json!(true),
-        Control::Text { .. } => json!("probe"),
+        Control::Text { .. } | Control::SerialPort { .. } => json!("probe"),
         Control::Lanes {
             pick: LanePick::One,
             ..

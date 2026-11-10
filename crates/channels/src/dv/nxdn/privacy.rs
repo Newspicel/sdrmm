@@ -301,7 +301,7 @@ mod tests {
                 if privacy.decipher(quarter * 4 + index % 4, &mut decoded) {
                     vocoder.play_half(&decoded, &mut out);
                 } else {
-                    MbeDecoder::mute(&mut out);
+                    vocoder.mute(&mut out);
                 }
             }
             tone_matches(sample, &out.audio_pcm, AUDIO_RATE as usize)

@@ -18,7 +18,9 @@ use sdrmm_wire::{
 };
 
 use super::{
-    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, inverted, tap_c4fm,
+    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params,
+    chip::{ChipRate, open_chip},
+    inverted, tap_c4fm,
     vocoder::{AMBE_3600_INTERLEAVE, MbeDecoder, half_frame, half_rate_code_vectors},
 };
 use crate::{
@@ -157,7 +159,10 @@ impl NativeChannel for NxdnChannel {
         Ok(Self {
             demod: c4fm_demod(&c4fm_params(ctx.input_rate, baud, deviation, RRC_ALPHA)),
             symbols: Vec::new(),
-            decoder: Decoder::new(cipher_keys(&p.keys)?),
+            decoder: Decoder::new(
+                cipher_keys(&p.keys)?,
+                MbeDecoder::half_rate().with_chip(open_chip(p.vocoder.as_deref(), ChipRate::Half)?),
+            ),
             bandwidth: p.bandwidth,
             input_rate: ctx.input_rate,
             baud,
@@ -191,6 +196,7 @@ impl ChannelRx for NxdnChannel {
         for &symbol in &self.symbols {
             self.decoder.push(symbol, out);
         }
+        self.decoder.vocoder.drain(out);
     }
 
     fn rejected(&self) -> u32 {
@@ -232,7 +238,7 @@ struct Held {
 }
 
 impl Decoder {
-    fn new(keys: CipherKeys) -> Self {
+    fn new(keys: CipherKeys, vocoder: MbeDecoder) -> Self {
         Self {
             window: SymbolWindow::new(POST_FSW_SYMBOLS.max(FSW_SYMBOLS)),
             countdown: 0,
@@ -242,7 +248,7 @@ impl Decoder {
             clock: 0,
             held: None,
             sync_at: 0,
-            vocoder: MbeDecoder::half_rate(),
+            vocoder,
             viterbi: Viterbi5::new(),
             soft: Vec::with_capacity(POST_FSW_SYMBOLS * 2),
             sacch: SacchAssembler::default(),
@@ -358,7 +364,7 @@ impl Decoder {
             if playable {
                 self.vocoder.play_half(&frame, out);
             } else {
-                MbeDecoder::mute(out);
+                self.vocoder.mute(out);
             }
         }
     }
@@ -714,14 +720,14 @@ pub(crate) fn nxdn_decoder() -> Native<NxdnParams> {
 }
 
 pub(crate) fn nxdn_form() -> Vec<SettingField> {
-    vec![
+    super::with_vocoder(vec![
         SettingField::new("bandwidth", "Width", Control::choice::<NxdnBandwidth>()).title("Width"),
         super::keys_field(
             "Key per key ID: up to 4 hex digits scrambler, 16 DES, 64 AES",
             MAX_KEY_ID,
             "4, 16 or 64 hex digits",
         ),
-    ]
+    ])
 }
 
 fn nxdn_kinds() -> Vec<KindSpec> {
@@ -1121,7 +1127,7 @@ mod tests {
             (0x7FD7, "traffic channel outbound"),
         ];
         for (scrambled, expected) in SPEC_LICH {
-            let mut decoder = Decoder::new(Vec::new());
+            let mut decoder = Decoder::new(Vec::new(), MbeDecoder::half_rate());
             for position in 0..POST_FSW_SYMBOLS {
                 let dibit = if position < LICH_SYMBOLS {
                     (scrambled >> (14 - position * 2)) as usize & 0b11

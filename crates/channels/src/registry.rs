@@ -82,17 +82,21 @@ pub trait Decoder: Send + Sync {
     }
 }
 
+/// A channel following one granted call in `slot`, deciphering with `keys` and playing through
+/// the vocoder chip on the named serial port, when there is one.
+pub type Follow = fn(
+    slot: u8,
+    ignore_crc: bool,
+    keys: &[sdrmm_wire::VoiceKey],
+    vocoder: Option<&str>,
+) -> Result<ChannelParams, ChannelError>;
+
 /// The settings a trunk system opens channels of its decoder with.
 #[derive(Clone, Copy, Debug)]
 pub struct Trunking {
     /// A channel hearing everything on a carrier: the control channel and channel-plan probes.
     pub watch: fn(ignore_crc: bool) -> Result<ChannelParams, ChannelError>,
-    /// A channel following one granted call in `slot`, deciphering with `keys`.
-    pub follow: fn(
-        slot: u8,
-        ignore_crc: bool,
-        keys: &[sdrmm_wire::VoiceKey],
-    ) -> Result<ChannelParams, ChannelError>,
+    pub follow: Follow,
     /// The protocols the decoder recognises and how many calls share one carrier.
     pub spec: fn() -> sdrmm_wire::TrunkSpec,
 }
