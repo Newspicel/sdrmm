@@ -24,6 +24,8 @@ fn call(freq_hz: f64, duration_ms: u64) -> DecoderEvent {
         emergency: false,
         audio: None,
         audio_error: None,
+        talker_alias: None,
+        key_id: None,
     })
 }
 

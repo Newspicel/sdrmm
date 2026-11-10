@@ -9512,9 +9512,16 @@
               }
             ]
           },
-          "trunks": {
-            "type": "boolean",
-            "description": "A trunk system can run on this decoder."
+          "trunking": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TrunkSpec",
+                "description": "How a trunk system runs on this decoder, when it can."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "type_id": {
             "type": "string"
@@ -13386,14 +13393,6 @@
           "tx_only",
           "half",
           "full"
-        ]
-      },
-      "DvTrunkProtocol": {
-        "type": "string",
-        "enum": [
-          "capacity_plus",
-          "hytera_xpt",
-          "tier_three"
         ]
       },
       "Entity": {
@@ -27833,6 +27832,15 @@
             "format": "int32",
             "minimum": 0
           },
+          "destination": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The talkgroup or radio the control channel last granted this channel to.",
+            "minimum": 0
+          },
           "device_set": {
             "type": "integer",
             "format": "int32",
@@ -27842,6 +27850,12 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "group_call": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "logical_channel": {
             "type": [
@@ -27855,8 +27869,24 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "source": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
           }
         }
+      },
+      "TrunkKind": {
+        "type": "string",
+        "description": "How a trunked protocol places its calls.",
+        "enum": [
+          "grants",
+          "distributed"
+        ]
       },
       "TrunkNode": {
         "type": "object",
@@ -27886,7 +27916,11 @@
             "type": "boolean"
           },
           "protocol": {
-            "$ref": "#/components/schemas/TrunkProtocol"
+            "type": "string",
+            "description": "A protocol id the decoder declares, or [`crate::AUTO_TRUNK_PROTOCOL`]."
+          },
+          "talkgroups": {
+            "$ref": "#/components/schemas/TrunkTalkgroups"
           }
         }
       },
@@ -27956,14 +27990,24 @@
           }
         }
       },
-      "TrunkProtocol": {
-        "type": "string",
-        "enum": [
-          "auto",
-          "capacity_plus",
-          "hytera_xpt",
-          "tier_three"
-        ]
+      "TrunkScheme": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TrunkKind"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
       },
       "TrunkSearchRange": {
         "type": "object",
@@ -27986,6 +28030,57 @@
           "step_hz": {
             "type": "integer",
             "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "TrunkSite": {
+        "type": "object",
+        "description": "The identity a site broadcasts on its control channel.",
+        "properties": {
+          "network_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "site_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "system_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "TrunkSpec": {
+        "type": "object",
+        "description": "How a decoder trunks: the protocols it recognises and how many calls share a carrier.",
+        "required": [
+          "slots",
+          "schemes"
+        ],
+        "properties": {
+          "schemes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrunkScheme"
+            }
+          },
+          "slots": {
+            "type": "integer",
+            "format": "int32",
             "minimum": 0
           }
         }
@@ -28035,14 +28130,16 @@
             ]
           },
           "detected": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/DvTrunkProtocol"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
+          },
+          "dropped": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Decoded frames the trunk follower fell too far behind to read.",
+            "minimum": 0
           },
           "followers": {
             "type": "array",
@@ -28078,6 +28175,38 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "site": {
+            "$ref": "#/components/schemas/TrunkSite"
+          }
+        }
+      },
+      "TrunkTalkgroups": {
+        "type": "object",
+        "description": "Which talkgroups a trunk node follows, and which win a traffic channel when all are busy.",
+        "properties": {
+          "listed_only": {
+            "type": "boolean",
+            "description": "Follow only the priority talkgroups.",
+            "default": false
+          },
+          "lockout": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "default": []
+          },
+          "priority": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "default": []
           }
         }
       },

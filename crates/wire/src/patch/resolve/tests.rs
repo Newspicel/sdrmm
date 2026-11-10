@@ -445,7 +445,6 @@ fn a_trunk_system_runs_on_its_control_and_follower_channels() {
     let mut state = live(Vec::new());
     state.trunk_systems.push(TrunkSystemStatus {
         node: "trunk".to_owned(),
-        detected: None,
         carriers: 1,
         control: Some(TrunkControl {
             device_set: 1,
@@ -458,14 +457,9 @@ fn a_trunk_system_runs_on_its_control_and_follower_channels() {
             logical_channel: None,
             slot: 1,
             freq_hz: 2,
+            ..TrunkFollower::default()
         }],
-        problems: Vec::new(),
-        channel_map: Vec::new(),
-        probes: Vec::new(),
-        searching: 0,
-        candidates: 0,
-        other_control_hz: Vec::new(),
-        color_code: None,
+        ..TrunkSystemStatus::default()
     });
     let (patch, _) = bound(&graph, &state);
     let control = ChannelAddr {

@@ -81,11 +81,12 @@ fn resolve(store: &Store, engine: &Engine, resolved: &Resolved) -> Vec<TrunkSyst
             NodeBody::Trunk(settings) => Some(TrunkSystem {
                 node: node.id.clone(),
                 decoder: settings.decoder.clone(),
-                protocol: settings.protocol,
+                protocol: settings.protocol.clone(),
                 discovery: settings.discovery.clone(),
                 channel_map: settings.channel_map.clone(),
                 learned: learned_for(&saved, &node.id, &live_trunks),
                 radio: own_radio(&resolved.patch, &node.id, settings),
+                talkgroups: settings.talkgroups.clone(),
             }),
             _ => None,
         })
@@ -131,8 +132,8 @@ mod tests {
 
     use sdrmm_device::DeviceRegistry;
     use sdrmm_wire::{
-        DeviceRef, PatchEdge, PatchNode, PortRef, Position, TrunkNode, TrunkProtocol,
-        UpdateWorkspaceRequest, WorkspaceSnapshot,
+        DeviceRef, PatchEdge, PatchNode, PortRef, Position, TrunkNode, UpdateWorkspaceRequest,
+        WorkspaceSnapshot,
     };
 
     use super::*;
@@ -148,7 +149,7 @@ mod tests {
         PatchNode {
             id: "trunk".to_owned(),
             body: NodeBody::Trunk(TrunkNode {
-                protocol: TrunkProtocol::TierThree,
+                protocol: "tier_three".to_owned(),
                 ..TrunkNode::default()
             }),
             position: Position { x: 0.0, y: 0.0 },
@@ -163,7 +164,7 @@ mod tests {
         snapshot.graph.nodes.push(PatchNode {
             id: "trunk".to_owned(),
             body: NodeBody::Trunk(TrunkNode {
-                protocol: TrunkProtocol::TierThree,
+                protocol: "tier_three".to_owned(),
                 control_hz,
                 ..TrunkNode::default()
             }),

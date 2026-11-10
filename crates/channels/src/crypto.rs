@@ -1,5 +1,7 @@
 mod aes;
+mod des;
 mod ed25519;
+mod ofb;
 mod rc4;
 mod text;
 
@@ -9,9 +11,11 @@ mod tests;
 use sha2::{Digest, Sha256};
 
 pub(crate) use aes::Aes;
+pub(crate) use des::Des;
 pub(crate) use ed25519::verify as ed25519_verify;
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use ed25519::{keypair as ed25519_keypair, sign as ed25519_sign};
+pub(crate) use ofb::{aes_iv, next_message_indicator, ofb};
 pub(crate) use rc4::Rc4;
 pub(crate) use text::{base64, hex};
 

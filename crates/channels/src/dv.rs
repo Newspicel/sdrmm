@@ -1,5 +1,7 @@
 use crate::registry::Native;
-use sdrmm_wire::{HzRange, KindSpec, Modulation, SettingField, SignalSignature};
+use sdrmm_wire::{
+    Control, HzRange, KindSpec, Modulation, NumberSpec, SettingField, SignalSignature,
+};
 mod model;
 pub use model::*;
 mod ambe;
@@ -8,6 +10,11 @@ pub(crate) mod dpmr;
 pub(crate) mod dstar;
 mod fdmdv;
 pub(crate) mod freedv;
+/// The known-key voice samples of github.com/tylerwatt12/known-key-mbe-samples: encrypted vocoder
+/// frames, their key and the audio they decode to. The ignored tests read a checkout named by
+/// `KNOWN_KEY_SAMPLES`.
+#[cfg(test)]
+mod known_keys;
 pub(crate) mod m17;
 pub(crate) mod nxdn;
 pub(crate) mod p25;
@@ -458,7 +465,32 @@ pub(crate) fn p25_decoder() -> Native<P25Params> {
 }
 
 pub(crate) fn p25_form() -> Vec<SettingField> {
-    Vec::new()
+    vec![keys_field(
+        "Key per key ID: 10 hex digits ADP, 16 DES, 32 or 64 AES",
+        u16::MAX,
+        "10, 16, 32 or 64 hex digits",
+    )]
+}
+
+const MAX_KEY_DIGITS: usize = 64;
+
+/// The voice privacy keys a decoder undoes calls with, one per key ID the calls name.
+pub(crate) fn keys_field(title: &str, max_key_id: u16, digits: &str) -> SettingField {
+    let entry = vec![
+        SettingField::new(
+            "key_id",
+            "Key ID",
+            NumberSpec::new(0.0, f64::from(max_key_id), 1.0),
+        ),
+        SettingField::new(
+            "key",
+            "Key",
+            Control::bounded_text(digits, MAX_KEY_DIGITS, true),
+        ),
+    ];
+    SettingField::new("keys", "Keys", Control::list(entry, "none"))
+        .title(title)
+        .quiet(Vec::<VoiceKey>::new())
 }
 
 fn p25_kinds() -> Vec<KindSpec> {

@@ -427,4 +427,66 @@ mod tests {
             assert_eq!(privacy.label(), None);
         }
     }
+
+    #[test]
+    #[ignore = "needs KNOWN_KEY_SAMPLES=<known-key-mbe-samples checkout>"]
+    fn known_key_samples_decipher() {
+        use crate::dv::known_keys::{MIN_HALF_RATE_CORRELATION, Sample, correlation, samples};
+        use crate::dv::vocoder::{
+            AMBE_3600_INTERLEAVE, MbeDecoder, half_frame, half_rate_code_vectors,
+        };
+        use crate::{AUDIO_RATE, ChannelOutputs};
+
+        /// Takes the first message indicator only, so every later superframe runs on the LFSR.
+        fn decode(sample: &Sample, key_text: &str) -> f64 {
+            let key_id = sample.key_id.expect("key id") as u8;
+            let keys = vec![(key_id, CipherKey::parse(key_text).expect("key"))];
+            let mut privacy = Privacy::new();
+            let mut vocoder = MbeDecoder::half_rate();
+            let mut out = ChannelOutputs::default();
+            let mut start = None;
+            for (index, frame) in sample.frames.iter().enumerate() {
+                if start.is_none()
+                    && let (Some(algorithm), Some(mi)) = (frame.algorithm, frame.mi)
+                {
+                    privacy.link_control(true, Some(MOTOROLA));
+                    privacy.pi_header(algorithm, key_id, mi as u32, &keys);
+                    start = Some(index);
+                }
+                let bits: [bool; 72] =
+                    std::array::from_fn(|i| frame.bytes[i / 8] >> (7 - i % 8) & 1 == 1);
+                let mut decoded = half_frame(half_rate_code_vectors(&bits, &AMBE_3600_INTERLEAVE));
+                let Some(start) = start else {
+                    MbeDecoder::mute(&mut out);
+                    continue;
+                };
+                let position = (index - start) % 18;
+                if privacy.decipher(position / 3, position % 3, &mut decoded) {
+                    vocoder.play_half(&decoded, &mut out);
+                } else {
+                    MbeDecoder::mute(&mut out);
+                }
+            }
+            correlation(sample, &out.audio_pcm, AUDIO_RATE as usize)
+        }
+
+        let all = samples("dmr_");
+        assert!(!all.is_empty(), "no dmr samples");
+        let mut failed = false;
+        for sample in &all {
+            let right = decode(sample, &sample.key);
+            let mut wrong = sample.key.clone();
+            wrong.replace_range(
+                wrong.len() - 1..,
+                if wrong.ends_with('0') { "1" } else { "0" },
+            );
+            let wrong = decode(sample, &wrong);
+            println!(
+                "{}: right key {right:.3}, wrong key {wrong:.3}",
+                sample.name
+            );
+            failed |= right <= MIN_HALF_RATE_CORRELATION;
+        }
+        assert!(!failed, "a sample did not decode");
+    }
 }

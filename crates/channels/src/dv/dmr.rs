@@ -1,10 +1,10 @@
 use crate::registry::Native;
-use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
+use sdrmm_wire::{Control, KindSpec, SettingField};
 use std::sync::LazyLock;
 
-use crate::dv::DmrKey;
 use crate::dv::DmrParams;
 use crate::dv::DmrSlots;
+use crate::dv::VoiceKey;
 use num_complex::Complex;
 use sdrmm_dsp::{
     Bptc128, Bptc196, CyclicCode, ParityCode, crc_msb_bits, crc16_msb, fec::conv::Soft,
@@ -13,7 +13,8 @@ use sdrmm_dsp::{
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, DecoderEvent, DecoderFamily,
-    DvChannelDefinition, DvFrame, DvFrameKind, DvSlotActivity, DvTrunkProtocol, EventKind, Vendor,
+    DvChannelDefinition, DvFrame, DvFrameKind, DvSlotActivity, EventKind, TrunkKind, TrunkScheme,
+    TrunkSpec, Vendor,
 };
 
 use super::{
@@ -95,7 +96,6 @@ const LC_BITS: usize = 72;
 const VOCODER_FRAME_BITS: usize = HALF_RATE_SOFT_BITS;
 const VOCODER_FRAMES_PER_BURST: usize = 3;
 const VOICE_FOLLOWERS: u8 = 5;
-const MAX_KEY_DIGITS: usize = 64;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "dmr".to_owned(),
@@ -256,12 +256,18 @@ impl DmrChannel {
 
 type CipherKeys = Vec<(u8, CipherKey)>;
 
-fn cipher_keys(entries: &[DmrKey]) -> Result<CipherKeys, ChannelError> {
+fn cipher_keys(entries: &[VoiceKey]) -> Result<CipherKeys, ChannelError> {
     entries
         .iter()
         .map(|entry| {
+            let key_id = u8::try_from(entry.key_id).map_err(|_| {
+                ChannelError::InvalidSettings(format!(
+                    "a DMR key ID is 0 to 255, got {}",
+                    entry.key_id
+                ))
+            })?;
             CipherKey::parse(&entry.key)
-                .map(|key| (entry.key_id, key))
+                .map(|key| (key_id, key))
                 .ok_or_else(|| {
                     ChannelError::InvalidSettings(format!(
                         "a DMR key is 10 (ARC4), 32 or 64 (AES) hex digits, got {:?}",
@@ -768,7 +774,7 @@ impl Decoder {
         }
         decode_vendor_csbk(&mut frame, fid, opcode, payload);
         decode_tier_three_csbk(&mut frame, fid, opcode, payload, self.tier_three);
-        self.tier_three |= frame.trunk_protocol == Some(DvTrunkProtocol::TierThree);
+        self.tier_three |= frame.trunk_protocol.as_deref() == Some(TIER_THREE.id);
         Some(frame)
     }
 
@@ -813,9 +819,9 @@ impl Decoder {
         frame.crc_verified = Some(verified && frame.crc_verified == Some(true));
         let color_code = is_tier_three_grant(opcode).then(|| bits_to_u32(payload, 12, 4) as u8);
         frame.channel_definition = decode_channel_definition(payload, color_code);
-        if let Some(definition) = &frame.channel_definition {
+        if let Some(definition) = frame.channel_definition.clone() {
             frame.channel = Some(definition.channel);
-            frame.trunk_protocol = Some(DvTrunkProtocol::TierThree);
+            TIER_THREE.mark(&mut frame);
             frame.data = Some(format!(
                 "TX {} Hz, RX {} Hz",
                 definition.tx_hz, definition.rx_hz
@@ -882,14 +888,14 @@ impl Decoder {
             }
             (0x10, 4 | 7) => {
                 frame.opcode = Some("Capacity Plus voice channel user".to_owned());
-                frame.trunk_protocol = Some(DvTrunkProtocol::CapacityPlus);
+                CAPACITY_PLUS.mark(&mut frame);
                 frame.group_call = Some(flco == 4);
                 frame.destination = Some(bits_to_u32(lc, 24, 24));
                 frame.source = Some(bits_to_u32(lc, 56, 16));
                 frame.rest_channel = Some(bits_to_u32(lc, 52, 4) as u16);
             }
             (0x68, 0 | 3 | 9) => {
-                frame.trunk_protocol = Some(DvTrunkProtocol::HyteraXpt);
+                HYTERA_XPT.mark(&mut frame);
                 frame.opcode = Some(
                     if flco == 9 {
                         "Hytera XPT call alert"
@@ -1101,7 +1107,7 @@ fn decode_short_lc(bits: &[bool]) -> DvFrame {
             } else {
                 "Tier III payload-channel system parameters".to_owned()
             });
-            frame.trunk_protocol = Some(DvTrunkProtocol::TierThree);
+            TIER_THREE.mark(&mut frame);
             frame.control_channel = Some(slco == 2);
             frame.system_id = Some(bits_to_u32(bits, 6, 12) as u16);
             frame.data = Some(format!(
@@ -1112,7 +1118,7 @@ fn decode_short_lc(bits: &[bool]) -> DvFrame {
         }
         8 => {
             frame.opcode = Some("Hytera XPT Short LC".to_owned());
-            frame.trunk_protocol = Some(DvTrunkProtocol::HyteraXpt);
+            HYTERA_XPT.mark(&mut frame);
             frame.vendor = Some(Vendor::Hytera);
             frame.manufacturer_id = Some(0x68);
             frame.channel = Some(bits_to_u32(bits, 12, 4) as u16);
@@ -1240,11 +1246,11 @@ fn set_dmr_vendor(frame: &mut DvFrame, fid: u8) {
 
 fn decode_vendor_csbk(frame: &mut DvFrame, fid: u8, opcode: u8, payload: &[bool]) {
     if fid == 0x10 && matches!(opcode, 0x3A | 0x3B | 0x3E) {
-        frame.trunk_protocol = Some(DvTrunkProtocol::CapacityPlus);
+        CAPACITY_PLUS.mark(frame);
     } else if fid == 0x68 && matches!(opcode, 0x0A | 0x0B) {
-        frame.trunk_protocol = Some(DvTrunkProtocol::HyteraXpt);
+        HYTERA_XPT.mark(frame);
     } else if fid == 0x10 && matches!(opcode, 25 | 33 | 34) {
-        frame.trunk_protocol = Some(DvTrunkProtocol::TierThree);
+        TIER_THREE.mark(frame);
     }
     match (fid, opcode) {
         (0x10, 25) => {
@@ -1414,7 +1420,7 @@ fn decode_tier_three_csbk(
         return;
     }
     if tier_three_opcode(opcode) {
-        frame.trunk_protocol = Some(DvTrunkProtocol::TierThree);
+        TIER_THREE.mark(frame);
     }
     match opcode {
         _ if is_tier_three_grant(opcode) => {
@@ -1879,6 +1885,51 @@ fn dmr_signatures() -> Vec<sdrmm_wire::SignalSignature> {
         .collect()
 }
 
+/// A trunking protocol DMR signalling announces.
+#[derive(Clone, Copy)]
+struct DmrTrunk {
+    id: &'static str,
+    label: &'static str,
+    kind: TrunkKind,
+}
+
+impl DmrTrunk {
+    fn mark(self, frame: &mut DvFrame) {
+        frame.trunk_protocol = Some(self.id.to_owned());
+        frame.trunk_label = Some(self.label.to_owned());
+    }
+}
+
+const CAPACITY_PLUS: DmrTrunk = DmrTrunk {
+    id: "capacity_plus",
+    label: "Capacity Plus",
+    kind: TrunkKind::Distributed,
+};
+const HYTERA_XPT: DmrTrunk = DmrTrunk {
+    id: "hytera_xpt",
+    label: "Hytera XPT",
+    kind: TrunkKind::Distributed,
+};
+const TIER_THREE: DmrTrunk = DmrTrunk {
+    id: "tier_three",
+    label: "Tier III",
+    kind: TrunkKind::Grants,
+};
+
+fn dmr_trunk_spec() -> TrunkSpec {
+    TrunkSpec {
+        slots: 2,
+        schemes: [CAPACITY_PLUS, HYTERA_XPT, TIER_THREE]
+            .into_iter()
+            .map(|trunk| TrunkScheme {
+                id: trunk.id.to_owned(),
+                label: trunk.label.to_owned(),
+                kind: trunk.kind,
+            })
+            .collect(),
+    }
+}
+
 pub(crate) fn dmr_decoder() -> Native<DmrParams> {
     Native::new::<DmrChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
@@ -1888,6 +1939,7 @@ pub(crate) fn dmr_decoder() -> Native<DmrParams> {
         .trunking(crate::Trunking {
             watch: dmr_watch,
             follow: dmr_follow,
+            spec: dmr_trunk_spec,
         })
 }
 
@@ -1922,19 +1974,10 @@ pub(crate) fn dmr_form() -> Vec<SettingField> {
     vec![
         SettingField::new("slots", "Slot", Control::choice::<DmrSlots>()).title("Slot"),
         SettingField::new("ignore_crc", "Skip CRC", Control::Toggle).title("Ignore data CRC"),
-        SettingField::new("keys", "Keys", Control::list(key_form(), "none"))
-            .title("ARC4 or AES key per key ID. Basic Privacy needs no key.")
-            .quiet(Vec::<DmrKey>::new()),
-    ]
-}
-
-fn key_form() -> Vec<SettingField> {
-    vec![
-        SettingField::new("key_id", "Key ID", NumberSpec::new(0.0, 255.0, 1.0)),
-        SettingField::new(
-            "key",
-            "Key",
-            Control::bounded_text("10, 32 or 64 hex digits", MAX_KEY_DIGITS, true),
+        super::keys_field(
+            "ARC4 or AES key per key ID. Basic Privacy needs no key.",
+            u16::from(u8::MAX),
+            "10, 32 or 64 hex digits",
         ),
     ]
 }

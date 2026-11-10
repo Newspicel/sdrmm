@@ -192,16 +192,6 @@ pub struct ChannelNode {
     pub tuning_locked: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum TrunkProtocol {
-    #[default]
-    Auto,
-    CapacityPlus,
-    HyteraXpt,
-    TierThree,
-}
-
 pub const MAX_TRUNK_SEARCH_RANGES: usize = 8;
 pub const MAX_TRUNK_SEARCH_CANDIDATES: usize = 512;
 pub const MIN_TRUNK_SEARCH_STEP_HZ: u64 = 1_250;
@@ -285,8 +275,9 @@ pub struct TrunkNode {
     /// registered decoder that can trunk.
     #[serde(default)]
     pub decoder: String,
-    #[serde(default)]
-    pub protocol: TrunkProtocol,
+    /// A protocol id the decoder declares, or [`crate::AUTO_TRUNK_PROTOCOL`].
+    #[serde(default = "auto_protocol")]
+    pub protocol: String,
     #[serde(default)]
     pub discovery: TrunkDiscovery,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -295,12 +286,19 @@ pub struct TrunkNode {
     pub control_hz: Option<u64>,
     #[serde(default)]
     pub ignore_crc: bool,
+    #[serde(default, skip_serializing_if = "crate::TrunkTalkgroups::is_empty")]
+    pub talkgroups: crate::TrunkTalkgroups,
+}
+
+fn auto_protocol() -> String {
+    crate::AUTO_TRUNK_PROTOCOL.to_owned()
 }
 
 impl TrunkNode {
     #[must_use]
     pub fn valid(&self) -> bool {
         self.discovery.valid()
+            && self.talkgroups.valid()
             && self.channel_map.len() <= MAX_TRUNK_CHANNEL_MAP
             && self
                 .channel_map
@@ -383,11 +381,12 @@ impl Default for TrunkNode {
     fn default() -> Self {
         Self {
             decoder: String::new(),
-            protocol: TrunkProtocol::Auto,
+            protocol: auto_protocol(),
             discovery: TrunkDiscovery::default(),
             channel_map: Vec::new(),
             control_hz: None,
             ignore_crc: false,
+            talkgroups: crate::TrunkTalkgroups::default(),
         }
     }
 }

@@ -91,14 +91,6 @@ pub struct DvChannelDefinition {
     pub color_code: Option<u8>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum DvTrunkProtocol {
-    CapacityPlus,
-    HyteraXpt,
-    TierThree,
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct DvFrame {
     /// The mode's display name, as its decoder states it.
@@ -152,7 +144,10 @@ pub struct DvFrame {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel_definition: Option<DvChannelDefinition>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trunk_protocol: Option<DvTrunkProtocol>,
+    /// The id of a trunking protocol the decoder declares in its [`crate::TrunkSpec`].
+    pub trunk_protocol: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trunk_label: Option<String>,
     /// Whether the burst came from a trunked site's control channel rather than one of its
     /// traffic channels, where the air interface says so outright.
     #[serde(default, skip_serializing_if = "Option::is_none")]

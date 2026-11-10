@@ -4,10 +4,12 @@ use std::sync::LazyLock;
 
 use crate::dv::NxdnBandwidth;
 use crate::dv::NxdnParams;
+use crate::dv::VoiceKey;
 use num_complex::Complex;
 use sdrmm_dsp::{
     Viterbi5, crc_msb_bits,
     fec::conv::{CONFIDENT, ERASURE},
+    word_msb,
 };
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
@@ -17,12 +19,14 @@ use sdrmm_wire::{
 
 use super::{
     INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, inverted, tap_c4fm,
-    vocoder::{AMBE_3600_INTERLEAVE, MbeDecoder, half_rate_code_vectors},
+    vocoder::{AMBE_3600_INTERLEAVE, MbeDecoder, half_frame, half_rate_code_vectors},
 };
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
     check_input_rate,
 };
+pub(crate) mod privacy;
+use privacy::{CipherKey, CipherKeys, Privacy};
 
 pub(crate) const FSW: u64 = 0x000C_DF59;
 pub(crate) const FSW_BITS: u32 = 20;
@@ -52,6 +56,9 @@ const FACCH_PUNCTURES: [usize; 48] = [
 ];
 
 const L3_VOICE_CALL: u32 = 0x01;
+const L3_VOICE_CALL_IV: u32 = 0x03;
+const MAX_KEY_ID: u16 = 63;
+const VOICE_PER_FRAME: usize = 4;
 const L3_TX_RELEASE: u32 = 0x08;
 const L3_PROPRIETARY: u32 = 0x3F;
 const KENWOOD_ALIAS: u32 = 0x68_8204;
@@ -104,6 +111,31 @@ fn params(settings: &ChannelSettings) -> Result<NxdnParams, ChannelError> {
         .map_err(ChannelError::InvalidSettings)
 }
 
+fn cipher_keys(entries: &[VoiceKey]) -> Result<CipherKeys, ChannelError> {
+    entries
+        .iter()
+        .map(|entry| {
+            let key_id = u8::try_from(entry.key_id)
+                .ok()
+                .filter(|&id| u16::from(id) <= MAX_KEY_ID)
+                .ok_or_else(|| {
+                    ChannelError::InvalidSettings(format!(
+                        "an NXDN key ID is 0 to {MAX_KEY_ID}, got {}",
+                        entry.key_id
+                    ))
+                })?;
+            CipherKey::parse(&entry.key)
+                .map(|key| (key_id, key))
+                .ok_or_else(|| {
+                    ChannelError::InvalidSettings(format!(
+                        "an NXDN key is up to 4 (scrambler), 16 (DES) or 64 (AES) hex digits, got {:?}",
+                        entry.key
+                    ))
+                })
+        })
+        .collect()
+}
+
 pub(crate) fn occupied_band(p: &NxdnParams) -> (f64, f64) {
     let (_, _, bandwidth) = shape(p.bandwidth);
     (-bandwidth / 2.0, bandwidth / 2.0)
@@ -125,7 +157,7 @@ impl NativeChannel for NxdnChannel {
         Ok(Self {
             demod: c4fm_demod(&c4fm_params(ctx.input_rate, baud, deviation, RRC_ALPHA)),
             symbols: Vec::new(),
-            decoder: Decoder::new(),
+            decoder: Decoder::new(cipher_keys(&p.keys)?),
             bandwidth: p.bandwidth,
             input_rate: ctx.input_rate,
             baud,
@@ -136,6 +168,7 @@ impl NativeChannel for NxdnChannel {
 impl ChannelRx for NxdnChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
+        self.decoder.keys = cipher_keys(&p.keys)?;
         if p.bandwidth != self.bandwidth {
             let (baud, deviation, _) = shape(p.bandwidth);
             self.demod = c4fm_demod(&c4fm_params(self.input_rate, baud, deviation, RRC_ALPHA));
@@ -179,20 +212,27 @@ struct Decoder {
     soft: Vec<i16>,
     sacch: SacchAssembler,
     alias: AliasAssembler,
+    keys: CipherKeys,
+    privacy: Privacy,
+    last_quarter: Option<usize>,
     inverted: bool,
     in_run: bool,
     rejected: u32,
 }
 
+/// A frame's voice: each vocoder frame's slot (0 to 3) and transmitted bits.
+type Voice = Vec<(usize, [bool; 72])>;
+
 struct Held {
     at: u64,
     frame: DvFrame,
-    voice: Vec<[bool; 72]>,
+    quarter: Option<usize>,
+    voice: Voice,
     confirmed: bool,
 }
 
 impl Decoder {
-    fn new() -> Self {
+    fn new(keys: CipherKeys) -> Self {
         Self {
             window: SymbolWindow::new(POST_FSW_SYMBOLS.max(FSW_SYMBOLS)),
             countdown: 0,
@@ -207,6 +247,9 @@ impl Decoder {
             soft: Vec::with_capacity(POST_FSW_SYMBOLS * 2),
             sacch: SacchAssembler::default(),
             alias: AliasAssembler::default(),
+            keys,
+            privacy: Privacy::new(),
+            last_quarter: None,
             inverted: false,
             in_run: false,
             rejected: 0,
@@ -228,6 +271,8 @@ impl Decoder {
         self.vocoder.reset();
         self.sacch.reset();
         self.alias = AliasAssembler::default();
+        self.privacy.reset();
+        self.last_quarter = None;
         self.inverted = false;
         self.in_run = false;
     }
@@ -239,9 +284,10 @@ impl Decoder {
             self.countdown -= 1;
             if self.countdown == 0 {
                 self.hunting = true;
-                self.held = self.frame().map(|(frame, voice)| Held {
+                self.held = self.frame().map(|(frame, quarter, voice)| Held {
                     at: self.sync_at,
                     frame,
+                    quarter,
                     voice,
                     confirmed: self.in_run,
                 });
@@ -291,12 +337,29 @@ impl Decoder {
             return;
         }
         self.emit(held.frame, out);
-        for frame in held.voice {
-            self.vocoder.decode_half_code_vectors(
-                half_rate_code_vectors(&frame, &AMBE_3600_INTERLEAVE),
-                false,
-                out,
-            );
+        if held.voice.is_empty() {
+            return;
+        }
+        if let Some(quarter) = held.quarter {
+            if self.last_quarter.is_none_or(|last| quarter <= last) {
+                self.privacy.superframe(&self.keys);
+            }
+            self.last_quarter = Some(quarter);
+        }
+        for (slot, bits) in held.voice {
+            let mut frame = half_frame(half_rate_code_vectors(&bits, &AMBE_3600_INTERLEAVE));
+            let playable = match (self.privacy.encrypted(), held.quarter) {
+                (None, _) => true,
+                (Some(_), Some(quarter)) => self
+                    .privacy
+                    .decipher(quarter * VOICE_PER_FRAME + slot, &mut frame),
+                (Some(_), None) => false,
+            };
+            if playable {
+                self.vocoder.play_half(&frame, out);
+            } else {
+                MbeDecoder::mute(out);
+            }
         }
     }
 
@@ -320,7 +383,7 @@ impl Decoder {
         out.events.push(DecoderEvent::of(&frame));
     }
 
-    fn frame(&mut self) -> Option<(DvFrame, Vec<[bool; 72]>)> {
+    fn frame(&mut self) -> Option<(DvFrame, Option<usize>, Voice)> {
         self.window.soft_bits(0, POST_FSW_SYMBOLS, &mut self.soft);
         let mut register = 0xE4u16;
         for symbol in 0..POST_FSW_SYMBOLS {
@@ -355,11 +418,13 @@ impl Decoder {
         ));
         let option = bits_to_u32(&information, 4, 2);
         let sacch_start = LICH_SYMBOLS * 2;
+        let mut quarter = None;
         if let Some(sacch) = decode_sacch(
             &self.soft[sacch_start..sacch_start + SACCH_BITS],
             &mut self.viterbi,
         ) {
             frame.color_code = Some(u16::from(sacch.ran));
+            quarter = Some(sacch.quarter());
             if let Some(layer3) = self.sacch.push(sacch) {
                 self.apply_layer3(&mut frame, &layer3);
             }
@@ -391,19 +456,40 @@ impl Decoder {
                 for frame_start in (start..end).step_by(36) {
                     let mut frame_bits = [false; 72];
                     frame_bits.copy_from_slice(&self.bits[frame_start * 2..frame_start * 2 + 72]);
-                    voice.push(frame_bits);
+                    voice.push(((frame_start - VOICE_START) / 36, frame_bits));
                 }
             }
         }
-        Some((frame, voice))
+        frame.cipher = self.privacy.label(&self.keys);
+        Some((frame, quarter, voice))
     }
 
     fn apply_layer3(&mut self, frame: &mut DvFrame, layer3: &[bool]) {
         if let Some(segment) = alias_segment(layer3) {
             frame.talker_alias = self.alias.push(segment);
-        } else {
-            apply_call(frame, layer3);
+            return;
         }
+        match bits_to_u32(layer3, 2, 6) {
+            L3_VOICE_CALL => {
+                let cipher = bits_to_u32(layer3, 56, 2) as u8;
+                let key_id = bits_to_u32(layer3, 58, 6) as u8;
+                self.privacy.call(cipher, key_id);
+                frame.encrypted = Some(cipher != privacy::CIPHER_CLEAR);
+                if cipher != privacy::CIPHER_CLEAR {
+                    frame.algorithm_id = Some(cipher);
+                    frame.key_id = Some(u16::from(key_id));
+                }
+            }
+            L3_VOICE_CALL_IV if layer3.len() >= 72 => {
+                let iv = word_msb(&layer3[8..72]);
+                self.privacy.iv(iv);
+                frame.message_indicator = Some(format!("{iv:016X}"));
+                frame.opcode = Some("voice call IV".to_owned());
+            }
+            L3_TX_RELEASE => self.privacy.reset(),
+            _ => {}
+        }
+        apply_call(frame, layer3);
     }
 }
 
@@ -419,6 +505,13 @@ struct Sacch {
     ran: u8,
     structure: u8,
     data: [bool; 18],
+}
+
+impl Sacch {
+    /// Which of the superframe's four frames this is, 0 the first.
+    fn quarter(&self) -> usize {
+        3usize.saturating_sub(usize::from(self.structure))
+    }
 }
 
 struct SacchAssembler {
@@ -442,7 +535,7 @@ impl SacchAssembler {
     }
 
     fn push(&mut self, sacch: Sacch) -> Option<[bool; 72]> {
-        let quarter = 3usize.saturating_sub(usize::from(sacch.structure));
+        let quarter = sacch.quarter();
         if quarter == 0 {
             self.received = 0;
         }
@@ -621,7 +714,14 @@ pub(crate) fn nxdn_decoder() -> Native<NxdnParams> {
 }
 
 pub(crate) fn nxdn_form() -> Vec<SettingField> {
-    vec![SettingField::new("bandwidth", "Width", Control::choice::<NxdnBandwidth>()).title("Width")]
+    vec![
+        SettingField::new("bandwidth", "Width", Control::choice::<NxdnBandwidth>()).title("Width"),
+        super::keys_field(
+            "Key per key ID: up to 4 hex digits scrambler, 16 DES, 64 AES",
+            MAX_KEY_ID,
+            "4, 16 or 64 hex digits",
+        ),
+    ]
 }
 
 fn nxdn_kinds() -> Vec<KindSpec> {
@@ -646,9 +746,113 @@ mod tests {
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::new("nxdn", &NxdnParams { bandwidth }).expect("nxdn settings")),
+            settings(
+                ChannelParams::new(
+                    "nxdn",
+                    &NxdnParams {
+                        bandwidth,
+                        ..NxdnParams::default()
+                    },
+                )
+                .expect("nxdn settings"),
+            ),
         )
         .expect("nxdn channel")
+    }
+
+    fn keyed_channel(keys: Vec<VoiceKey>) -> Result<NxdnChannel, ChannelError> {
+        NxdnChannel::new(
+            ChannelCtx {
+                input_rate: INPUT_RATE_HZ,
+            },
+            settings(
+                ChannelParams::new(
+                    "nxdn",
+                    &NxdnParams {
+                        keys,
+                        ..NxdnParams::default()
+                    },
+                )
+                .expect("nxdn settings"),
+            ),
+        )
+    }
+
+    const KEY_ID: u8 = 1;
+    const IV: u64 = 0xABCD_EF12_3456_7890;
+
+    fn key(key_id: u8, key: &str) -> Vec<VoiceKey> {
+        vec![VoiceKey {
+            key_id: u16::from(key_id),
+            key: key.to_owned(),
+        }]
+    }
+
+    #[test]
+    fn keyed_calls_decipher_every_superframe() {
+        let voice = half_rate_frames(64);
+        for (text, name) in [
+            ("0001", "Scrambler"),
+            ("ABCDEF0123456789", "DES-OFB"),
+            (
+                "ABCDEF0123456789CDEF0123456789ABEF0123456789ABCD0123456789ABCDEF",
+                "AES-256",
+            ),
+        ] {
+            let iq = tx::keyed_transmission(
+                &tx::Shape::default(),
+                1,
+                KEY_ID,
+                text,
+                IV,
+                &voice,
+                INPUT_RATE_HZ,
+            );
+            let mut channel = keyed_channel(key(KEY_ID, text)).expect("keyed channel");
+            let (frames, audio) = decode_with_audio(&mut channel, &iq);
+            assert_tone_audio(&audio, 64);
+            assert!(
+                frames
+                    .iter()
+                    .any(|frame| frame.cipher.as_deref() == Some(name)),
+                "{name} is not named"
+            );
+        }
+    }
+
+    #[test]
+    fn a_keyed_call_stays_muted_without_its_key() {
+        let voice = half_rate_frames(32);
+        let iq = tx::keyed_transmission(
+            &tx::Shape::default(),
+            1,
+            KEY_ID,
+            "ABCDEF0123456789",
+            IV,
+            &voice,
+            INPUT_RATE_HZ,
+        );
+        for keys in [
+            key(KEY_ID + 1, "ABCDEF0123456789"),
+            key(KEY_ID, "0001"),
+            Vec::new(),
+        ] {
+            let (frames, audio) =
+                decode_with_audio(&mut keyed_channel(keys).expect("channel"), &iq);
+            assert!(!audio.is_empty());
+            assert!(audio.iter().all(|&sample| sample == 0.0));
+            assert!(frames.iter().any(|frame| frame.encrypted == Some(true)));
+        }
+    }
+
+    #[test]
+    fn a_key_out_of_range_is_refused() {
+        for keys in [key(KEY_ID, "123456"), key(64, "0001")] {
+            assert!(matches!(
+                keyed_channel(keys),
+                Err(ChannelError::InvalidSettings(_))
+            ));
+        }
     }
 
     #[test]
@@ -917,7 +1121,7 @@ mod tests {
             (0x7FD7, "traffic channel outbound"),
         ];
         for (scrambled, expected) in SPEC_LICH {
-            let mut decoder = Decoder::new();
+            let mut decoder = Decoder::new(Vec::new());
             for position in 0..POST_FSW_SYMBOLS {
                 let dibit = if position < LICH_SYMBOLS {
                     (scrambled >> (14 - position * 2)) as usize & 0b11
@@ -926,7 +1130,7 @@ mod tests {
                 };
                 decoder.window.push(spec_symbol(dibit));
             }
-            let (frame, _) = decoder.frame().expect("conformant LICH");
+            let (frame, _, _) = decoder.frame().expect("conformant LICH");
             assert_eq!(frame.opcode.as_deref(), Some(expected), "{scrambled:#06X}");
         }
     }

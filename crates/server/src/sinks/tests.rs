@@ -95,6 +95,8 @@ fn call(node: &str) -> DecoderEvent {
             media_type: "audio/wav".to_owned(),
         }),
         audio_error: None,
+        talker_alias: None,
+        key_id: None,
     })
 }
 

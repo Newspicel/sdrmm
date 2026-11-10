@@ -12,6 +12,7 @@ import type {
   PatchGraph,
   PatchNode,
   ResolvedPatch,
+  TrunkSystemStatus,
 } from "../lib/types";
 import { SdrSocket } from "../lib/ws";
 import { CATALOG } from "./catalog";
@@ -27,6 +28,7 @@ export interface FaceHarness {
   resolved?: ResolvedPatch | null;
   problems?: readonly NodeProblem[];
   selected?: string | null;
+  trunks?: readonly TrunkSystemStatus[];
 }
 
 const NO_DEVICES: ReadonlyMap<string, DeviceSet> = new Map();
@@ -49,7 +51,7 @@ export function stubWorkspace(harness: FaceHarness): Workspace {
     resolved,
     problems: harness.problems ?? [],
     deviceSets: [...devices.values()],
-    trunks: [],
+    trunks: harness.trunks ?? [],
     devices,
     channels: harness.channels ?? new Map(),
     owners: harness.owners ?? new Map(),

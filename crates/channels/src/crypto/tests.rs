@@ -1,4 +1,7 @@
-use super::{Aes, Rc4, cbc_decrypt, cmac, ctr, hex, hmac_sha256, increment_counter, sha256};
+use super::{
+    Aes, Des, Rc4, aes_iv, cbc_decrypt, cmac, ctr, hex, hmac_sha256, increment_counter,
+    next_message_indicator, ofb, sha256,
+};
 
 fn bytes(text: &str) -> Vec<u8> {
     hex(text).unwrap()
@@ -178,4 +181,44 @@ fn rc4_rekeying_starts_the_keystream_over() {
     let mut block = vec![0u8; 16];
     cipher.apply(&mut block);
     assert_eq!(block, bytes("b2396305f03dc027ccc3524a0a1118a8"));
+}
+
+#[test]
+fn des_ofb_matches_openssl() {
+    let des = Des::new([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF]);
+    let mut stream = [0u8; 24];
+    ofb(
+        |block| des.encrypt(block),
+        [0x12, 0x34, 0x56, 0x78, 0x90, 0xAB, 0xCD, 0xEF],
+        &mut stream,
+    );
+    assert_eq!(
+        Some(stream.to_vec()),
+        hex("bd661569ae874e255d976a504786581f5b0229c3443694e3")
+    );
+}
+
+#[test]
+fn aes_256_ofb_matches_openssl() {
+    let key: Vec<u8> = (0..32).collect();
+    let aes = Aes::new(&key).expect("aes-256 key");
+    let iv: [u8; 16] = std::array::from_fn(|i| (i as u8) * 0x11);
+    let mut stream = [0u8; 32];
+    ofb(|block| aes.encrypt(block), iv, &mut stream);
+    assert_eq!(
+        Some(stream.to_vec()),
+        hex("8ea2b7ca516745bfeafc49904b496089664a3455d8e9dbdb03158b52b93c288a")
+    );
+}
+
+#[test]
+fn the_message_indicator_lfsr_steps_64_bits() {
+    assert_eq!(
+        next_message_indicator(0x0123_4567_89AB_CDEF),
+        0x20B1_25E7_79D0_F34E
+    );
+    assert_eq!(
+        aes_iv(0x0123_4567_89AB_CDEF),
+        0x0123_4567_89AB_CDEF_20B1_25E7_79D0_F34E_u128.to_be_bytes()
+    );
 }

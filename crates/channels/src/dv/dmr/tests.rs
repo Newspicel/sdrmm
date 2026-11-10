@@ -135,7 +135,7 @@ fn decodes_an_absolute_channel_definition_off_the_air() {
     assert_eq!(defined.channel, Some(811));
     assert_eq!(defined.color_code, Some(3));
     assert_eq!(defined.crc_verified, Some(true));
-    assert_eq!(defined.trunk_protocol, Some(DvTrunkProtocol::TierThree));
+    assert_eq!(defined.trunk_protocol.as_deref(), Some("tier_three"));
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn a_tier_three_csbk_names_its_protocol() {
         .iter()
         .find(|frame| frame.trunk_protocol.is_some())
         .expect("a tagged grant");
-    assert_eq!(grant.trunk_protocol, Some(DvTrunkProtocol::TierThree));
+    assert_eq!(grant.trunk_protocol.as_deref(), Some("tier_three"));
     assert_eq!(grant.crc_verified, Some(true));
 }
 
@@ -233,7 +233,7 @@ fn aloha_reads_its_parameters_where_the_standard_puts_them() {
     let mut frame = dv_frame(DvFrameKind::Control);
     decode_tier_three_csbk(&mut frame, 0, 25, &payload, false);
 
-    assert_eq!(frame.trunk_protocol, Some(DvTrunkProtocol::TierThree));
+    assert_eq!(frame.trunk_protocol.as_deref(), Some("tier_three"));
     assert_eq!(frame.destination, Some(4_001));
     assert_eq!(
         frame.data.as_deref(),
@@ -263,7 +263,7 @@ fn control_frame(fid: u8, opcode: u8, body: &[(usize, usize, u64)]) -> DvFrame {
 fn a_capacity_max_channel_update_survives_the_whole_chain() {
     let frame = control_frame(0x10, 33, &[(16, 12, 811), (32, 24, 9_001), (56, 24, 9_002)]);
 
-    assert_eq!(frame.trunk_protocol, Some(DvTrunkProtocol::TierThree));
+    assert_eq!(frame.trunk_protocol.as_deref(), Some("tier_three"));
     assert_eq!(frame.channel, Some(811));
     assert_eq!(frame.crc_verified, Some(true));
     assert_eq!(frame.slot_activity.len(), 2);
@@ -297,7 +297,7 @@ fn an_adjacent_site_announcement_survives_the_whole_chain() {
 fn a_data_channel_grant_reaches_the_trunk_follower_as_a_grant() {
     let frame = control_frame(0, 52, &[(16, 12, 37), (32, 24, 9_001), (56, 24, 4_001)]);
 
-    assert_eq!(frame.trunk_protocol, Some(DvTrunkProtocol::TierThree));
+    assert_eq!(frame.trunk_protocol.as_deref(), Some("tier_three"));
     assert_eq!(frame.channel, Some(37));
     assert_eq!(frame.slot, Some(1));
     assert_eq!(frame.destination, Some(9_001));
@@ -480,7 +480,7 @@ fn a_capacity_max_channel_update_reports_both_timeslots() {
     let mut frame = dv_frame(DvFrameKind::Control);
     decode_vendor_csbk(&mut frame, 0x10, 33, &payload);
 
-    assert_eq!(frame.trunk_protocol, Some(DvTrunkProtocol::TierThree));
+    assert_eq!(frame.trunk_protocol.as_deref(), Some("tier_three"));
     assert_eq!(frame.channel, Some(811));
     assert_eq!(frame.slot_activity.len(), 2);
     assert_eq!(frame.slot_activity[0].slot, 1);
@@ -944,7 +944,7 @@ fn decodes_a_recorded_tier_three_control_channel() {
         frames
             .iter()
             .any(|frame| frame.control_channel == Some(true)
-                && frame.trunk_protocol == Some(DvTrunkProtocol::TierThree)),
+                && frame.trunk_protocol.as_deref() == Some("tier_three")),
         "the CACH never named the site's control channel: {frames:?}"
     );
     assert!(
@@ -1175,7 +1175,7 @@ fn decodes_a_recorded_capacity_plus_rest_channel() {
     );
     for frame in &status {
         assert_eq!(frame.color_code, Some(5));
-        assert_eq!(frame.trunk_protocol, Some(DvTrunkProtocol::CapacityPlus));
+        assert_eq!(frame.trunk_protocol.as_deref(), Some("capacity_plus"));
         assert_eq!(frame.crc_verified, Some(true));
     }
 
@@ -1275,7 +1275,7 @@ fn a_hytera_xpt_csbk_names_its_protocol() {
         .iter()
         .find(|frame| frame.kind == DvFrameKind::Control)
         .expect("Hytera XPT CSBK");
-    assert_eq!(csbk.trunk_protocol, Some(DvTrunkProtocol::HyteraXpt));
+    assert_eq!(csbk.trunk_protocol.as_deref(), Some("hytera_xpt"));
     assert_eq!(csbk.crc_verified, Some(true));
 }
 
@@ -1659,7 +1659,7 @@ fn a_call_that_lifts_the_noise_floor_still_decodes_every_frame() {
     }
 }
 
-fn keyed_channel(keys: Vec<crate::dv::DmrKey>) -> Result<DmrChannel, ChannelError> {
+fn keyed_channel(keys: Vec<crate::dv::VoiceKey>) -> Result<DmrChannel, ChannelError> {
     DmrChannel::new(
         ChannelCtx {
             input_rate: INPUT_RATE_HZ,
@@ -1737,8 +1737,8 @@ fn keyed_call(key: &str) -> Vec<Complex<f32>> {
     )
 }
 
-fn key_four(key: &str) -> Vec<crate::dv::DmrKey> {
-    vec![crate::dv::DmrKey {
+fn key_four(key: &str) -> Vec<crate::dv::VoiceKey> {
+    vec![crate::dv::VoiceKey {
         key_id: 4,
         key: key.to_owned(),
     }]
@@ -1779,7 +1779,7 @@ fn keyed_calls_decipher_every_superframe() {
 
 #[test]
 fn a_keyed_call_stays_muted_without_its_key() {
-    let keys = vec![crate::dv::DmrKey {
+    let keys = vec![crate::dv::VoiceKey {
         key_id: 5,
         key: ARC4_KEY.to_owned(),
     }];
@@ -1794,7 +1794,7 @@ fn a_keyed_call_stays_muted_without_its_key() {
 
 #[test]
 fn a_key_of_the_wrong_length_is_refused() {
-    let keys = vec![crate::dv::DmrKey {
+    let keys = vec![crate::dv::VoiceKey {
         key_id: 1,
         key: "3c9107e2".to_owned(),
     }];

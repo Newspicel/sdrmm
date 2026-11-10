@@ -4,25 +4,39 @@ import { Readout, Readouts } from "../../components/face/Readouts";
 import { TextChip } from "../../components/face/TextChip";
 import { formatHz } from "../../components/format";
 import { useFeeds } from "../../lib/resolved";
-import type { ChannelDescriptor, PatchNode, TrunkSystemStatus } from "../../lib/types";
+import type {
+  ChannelDescriptor,
+  PatchNode,
+  TrunkSystemStatus,
+  TrunkTalkgroups,
+} from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { ChannelPlanTable } from "./ChannelPlanTable";
 import { FaceBody, NodeShell } from "./NodeShell";
 import {
+  AUTO_PROTOCOL,
+  activeScheme,
   adoptable,
   awaitingControlChannel,
   channelPlanRows,
   controlChannelStalled,
+  fallbackControl,
+  followerCall,
   formatSearchRanges,
+  formatTalkgroups,
   otherControlLabel,
   parseControlHz,
   parseSearchRanges,
+  parseTalkgroups,
   planLabel,
   searchSummary,
-  TRUNK_PROTOCOLS,
+  siteLabel,
+  slotLabel,
   trunkDecoders,
   trunkProtocolLabel,
+  trunkProtocols,
+  trunkSpec,
 } from "./trunk";
 
 export function TrunkFace({ node }: { node: PatchNode }) {
@@ -34,8 +48,17 @@ export function TrunkFace({ node }: { node: PatchNode }) {
   const status = workspace.trunks.find((system) => system.node === node.id);
   const awaiting = awaitingControlChannel(onIq, node.data.control_hz);
   const stalled = controlChannelStalled(onIq, node.data.control_hz, status?.carriers);
-  const protocol = node.data.protocol ?? "auto";
+  const protocol = node.data.protocol ?? AUTO_PROTOCOL;
   const detected = status?.detected ?? null;
+  const spec = trunkSpec(workspace.context.channelTypes, node.data.decoder ?? "");
+  const scheme = activeScheme(spec, protocol, detected);
+  const slots = spec?.slots ?? 1;
+  const talkgroups: TrunkTalkgroups = {
+    priority: [],
+    lockout: [],
+    listed_only: false,
+    ...node.data.talkgroups,
+  };
   const discovery = node.data.discovery ?? { enabled: false, ranges: [], max_probes: 0 };
   const channelMap = node.data.channel_map ?? [];
   const learned = status?.channel_map ?? [];
@@ -70,7 +93,7 @@ export function TrunkFace({ node }: { node: PatchNode }) {
           <span className="text-warn">no control channel</span>
         ) : onIq ? (
           [
-            protocol === "auto" ? trunkProtocolLabel(protocol, detected) : null,
+            protocol === AUTO_PROTOCOL ? trunkProtocolLabel(scheme) : null,
             `${followers.length} following`,
           ]
             .filter(Boolean)
@@ -89,8 +112,8 @@ export function TrunkFace({ node }: { node: PatchNode }) {
             label="Protocol"
             title="Trunking protocol"
             value={protocol}
-            options={TRUNK_PROTOCOLS}
-            quiet={protocol === "auto"}
+            options={trunkProtocols(spec)}
+            quiet={protocol === AUTO_PROTOCOL}
             onChange={(next) => edit({ protocol: next })}
           />
           <TextChip
@@ -125,7 +148,11 @@ export function TrunkFace({ node }: { node: PatchNode }) {
             />
           )}
         </Chips>
-        <TrunkActivity status={status} />
+        <TalkgroupChips
+          talkgroups={talkgroups}
+          onChange={(next) => edit({ talkgroups: { ...talkgroups, ...next } })}
+        />
+        <TrunkActivity status={status} slots={slots} controlHz={node.data.control_hz} />
         {stalled && (
           <FaceFault
             message="Control channel not running"
@@ -135,12 +162,18 @@ export function TrunkFace({ node }: { node: PatchNode }) {
         {status?.problems.map((problem) => (
           <FaceFault
             key={`${problem.freq_hz}-${problem.slot}`}
-            message={`Cannot follow ${formatHz(problem.freq_hz)} TS ${problem.slot}`}
+            message={`Cannot follow ${formatHz(problem.freq_hz)}${slots > 1 ? ` TS ${problem.slot}` : ""}`}
             detail={problem.reason}
           />
         ))}
+        {(status?.dropped ?? 0) > 0 && (
+          <FaceFault
+            message={`${status?.dropped} frames dropped`}
+            detail="The trunk follower fell behind the decoders."
+          />
+        )}
         <ChannelPlanTable
-          label={planLabel(protocol, detected)}
+          label={planLabel(scheme)}
           rows={channelPlanRows(learned, channelMap)}
           entries={channelMap}
           found={adoptable(learned, channelMap)}
@@ -152,19 +185,87 @@ export function TrunkFace({ node }: { node: PatchNode }) {
   );
 }
 
-function TrunkActivity({ status }: { status: TrunkSystemStatus | undefined }) {
+function TalkgroupChips({
+  talkgroups,
+  onChange,
+}: {
+  talkgroups: TrunkTalkgroups;
+  onChange: (next: Partial<TrunkTalkgroups>) => void;
+}) {
+  const priority = talkgroups.priority;
+  return (
+    <Chips>
+      <TextChip
+        label="Priority"
+        name="Priority talkgroups"
+        title="Talkgroups that take a receiver from other calls when all are busy"
+        value={formatTalkgroups(priority)}
+        shown={priority.length === 0 ? "none" : undefined}
+        placeholder="101, 102"
+        onCommit={(text) => onChange({ priority: parseTalkgroups(text) })}
+      />
+      <TextChip
+        label="Lockout"
+        name="Locked out talkgroups"
+        title="Talkgroups never followed"
+        value={formatTalkgroups(talkgroups.lockout)}
+        shown={talkgroups.lockout.length === 0 ? "none" : undefined}
+        placeholder="900"
+        onCommit={(text) => onChange({ lockout: parseTalkgroups(text) })}
+      />
+      {priority.length > 0 && (
+        <ToggleChip
+          label="Only these"
+          title="Follow only the priority talkgroups"
+          on={talkgroups.listed_only}
+          onChange={(next) => onChange({ listed_only: next })}
+        />
+      )}
+    </Chips>
+  );
+}
+
+function TrunkActivity({
+  status,
+  slots,
+  controlHz,
+}: {
+  status: TrunkSystemStatus | undefined;
+  slots: number;
+  controlHz: number | null | undefined;
+}) {
   const followers = status?.followers ?? [];
   const probes = status?.probes ?? [];
   const otherControl = status?.other_control_hz ?? [];
-  if (followers.length === 0 && probes.length === 0 && otherControl.length === 0) {
+  const site = siteLabel(status?.site);
+  const fallback = fallbackControl(status, controlHz);
+  if (
+    followers.length === 0 &&
+    probes.length === 0 &&
+    otherControl.length === 0 &&
+    site === null &&
+    fallback === null
+  ) {
     return null;
   }
   return (
     <Readouts>
+      {site !== null && (
+        <Readout label="Site" title="Identity the control channel broadcasts">
+          {site}
+        </Readout>
+      )}
+      {fallback !== null && (
+        <Readout label="Control" title="The set control channel went quiet">
+          {formatHz(fallback)}
+        </Readout>
+      )}
       {followers.map((follower) => (
-        <Readout key={`${follower.freq_hz}-${follower.slot}`} label={`TS ${follower.slot}`}>
-          {formatHz(follower.freq_hz)}
-          {follower.logical_channel == null ? "" : ` · LCN ${follower.logical_channel}`}
+        <Readout
+          key={`${follower.freq_hz}-${follower.slot}`}
+          label={slotLabel(follower.slot, slots)}
+        >
+          {followerCall(follower)}
         </Readout>
       ))}
       {probes.length > 0 && (

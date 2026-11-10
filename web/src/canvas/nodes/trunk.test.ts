@@ -1,71 +1,141 @@
 import { describe, expect, it } from "vitest";
-import type { ChannelDescriptor, TrunkChannel, TrunkSystemStatus } from "../../lib/types";
+import { formatHz } from "../../components/format";
+import type {
+  ChannelDescriptor,
+  TrunkChannel,
+  TrunkSpec,
+  TrunkSystemStatus,
+} from "../../lib/types";
 import {
+  activeScheme,
   adoptable,
   awaitingControlChannel,
   channelEntry,
   channelPlanRows,
   controlChannelStalled,
-  followsTierThree,
+  fallbackControl,
+  followerCall,
   formatSearchRanges,
+  formatTalkgroups,
   otherControlLabel,
   parseControlHz,
   parseSearchRanges,
+  parseTalkgroups,
   planLabel,
   planSummary,
   searchCandidates,
   searchSummary,
-  TRUNK_PROTOCOLS,
+  siteLabel,
+  slotLabel,
   trunkChannelRoles,
   trunkDecoders,
   trunkProtocolLabel,
+  trunkProtocols,
+  trunkSpec,
   usable,
   withChannel,
   withoutChannel,
 } from "./trunk";
 
+const DMR_TRUNKING: TrunkSpec = {
+  slots: 2,
+  schemes: [
+    { id: "capacity_plus", label: "Capacity Plus", kind: "distributed" },
+    { id: "tier_three", label: "Tier III", kind: "grants" },
+  ],
+};
+
+const NXDN_TRUNKING: TrunkSpec = {
+  slots: 1,
+  schemes: [{ id: "type_c", label: "Type-C", kind: "grants" }],
+};
+
 describe("trunk decoders", () => {
+  const types: ChannelDescriptor[] = [
+    { type_id: "dmr", name: "DMR", bandwidth_hz: 1, input_rate_hz: 1, trunking: DMR_TRUNKING },
+    { type_id: "plain", name: "Plain", bandwidth_hz: 1, input_rate_hz: 1 },
+    { type_id: "nxdn", name: "NXDN", bandwidth_hz: 1, input_rate_hz: 1, trunking: NXDN_TRUNKING },
+  ];
+
   it("offers only the descriptors that trunk, in registry order", () => {
-    const types: ChannelDescriptor[] = [
-      { type_id: "probe", name: "Probe", bandwidth_hz: 1, input_rate_hz: 1, trunks: true },
-      { type_id: "plain", name: "Plain", bandwidth_hz: 1, input_rate_hz: 1 },
-      { type_id: "other", name: "Other", bandwidth_hz: 1, input_rate_hz: 1, trunks: true },
-    ];
     expect(trunkDecoders(types)).toEqual([
-      { value: "probe", label: "Probe" },
-      { value: "other", label: "Other" },
+      { value: "dmr", label: "DMR" },
+      { value: "nxdn", label: "NXDN" },
+    ]);
+  });
+
+  it("takes the protocols from the decoder the node runs", () => {
+    expect(trunkSpec(types, "")).toBe(DMR_TRUNKING);
+    expect(trunkSpec(types, "nxdn")).toBe(NXDN_TRUNKING);
+    expect(trunkSpec(types, "plain")).toBeNull();
+    expect(trunkProtocols(trunkSpec(types, "nxdn"))).toEqual([
+      { value: "auto", label: "Auto-detect" },
+      { value: "type_c", label: "Type-C" },
     ]);
   });
 });
 
 describe("trunk protocols", () => {
-  it("offers Hytera XPT alongside the Motorola and Tier III systems", () => {
-    expect(TRUNK_PROTOCOLS).toEqual([
-      { value: "auto", label: "Auto-detect" },
-      { value: "capacity_plus", label: "Capacity Plus" },
-      { value: "hytera_xpt", label: "Hytera XPT" },
-      { value: "tier_three", label: "Tier III / Capacity Max" },
-    ]);
-  });
-
   it("names the protocol it settled on rather than the one that was picked", () => {
-    expect(trunkProtocolLabel("hytera_xpt")).toBe("Hytera XPT");
-    expect(trunkProtocolLabel("auto", "capacity_plus")).toBe("Capacity Plus");
-    expect(trunkProtocolLabel("auto", "tier_three")).toBe("Tier III");
-    expect(trunkProtocolLabel("auto")).toBe("Listening for signalling");
+    expect(trunkProtocolLabel(activeScheme(DMR_TRUNKING, "tier_three"))).toBe("Tier III");
+    expect(trunkProtocolLabel(activeScheme(DMR_TRUNKING, "auto", "capacity_plus"))).toBe(
+      "Capacity Plus",
+    );
+    expect(trunkProtocolLabel(activeScheme(DMR_TRUNKING, "auto"))).toBe("Listening for signalling");
   });
 
   it("calls the plan what it is for each kind of system", () => {
-    expect(planLabel("tier_three")).toBe("Channel plan");
-    expect(planLabel("auto", "tier_three")).toBe("Channel plan");
-    expect(planLabel("capacity_plus")).toBe("Repeater outputs");
+    expect(planLabel(activeScheme(DMR_TRUNKING, "tier_three"))).toBe("Channel plan");
+    expect(planLabel(activeScheme(DMR_TRUNKING, "auto", "tier_three"))).toBe("Channel plan");
+    expect(planLabel(activeScheme(DMR_TRUNKING, "capacity_plus"))).toBe("Repeater outputs");
   });
 
-  it("tells a system that grants channels apart from one whose repeaters are the plan", () => {
-    expect(followsTierThree("tier_three")).toBe(true);
-    expect(followsTierThree("auto", "tier_three")).toBe(true);
-    expect(followsTierThree("auto", "capacity_plus")).toBe(false);
-    expect(followsTierThree("capacity_plus")).toBe(false);
+  it("names a slot only where a carrier holds more than one call", () => {
+    expect(slotLabel(2, 2)).toBe("TS 2");
+    expect(slotLabel(1, 1)).toBe("Call");
+  });
+});
+
+describe("talkgroups", () => {
+  it("reads a list of talkgroups however it is separated", () => {
+    expect(parseTalkgroups("101, 102;103 101 x")).toEqual([101, 102, 103]);
+    expect(formatTalkgroups([101, 102])).toBe("101, 102");
+  });
+
+  it("names the call a traffic channel was granted to", () => {
+    expect(
+      followerCall({
+        device_set: 1,
+        channel: 2,
+        slot: 1,
+        freq_hz: 451_012_500,
+        logical_channel: 17,
+        destination: 91,
+        group_call: true,
+      }),
+    ).toBe(`${formatHz(451_012_500)} · LCN 17 · TG 91`);
+  });
+});
+
+function controlledAt(freq_hz: number): TrunkSystemStatus {
+  return {
+    node: "trunk",
+    carriers: 1,
+    control: { device_set: 1, channel: 1, freq_hz },
+    followers: [],
+    problems: [],
+  };
+}
+
+describe("site", () => {
+  it("names the site from whatever the control channel told", () => {
+    expect(siteLabel({ network_id: 12, site_id: 3 })).toBe("net 12 · site 3");
+    expect(siteLabel({})).toBeNull();
+  });
+
+  it("names a control channel only when the node had to leave the one set", () => {
+    expect(fallbackControl(controlledAt(451_000_000), 451_000_000)).toBeNull();
+    expect(fallbackControl(controlledAt(451_025_000), 451_000_000)).toBe(451_025_000);
   });
 });
 

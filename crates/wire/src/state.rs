@@ -3,7 +3,6 @@ use utoipa::ToSchema;
 
 use crate::{
     channel::ChannelInfo,
-    decode::DvTrunkProtocol,
     device::{AgcGain, Capabilities, DeviceInfo, DeviceSettings},
     hunt::HuntStatus,
     network::NetworkExportStatus,
@@ -135,7 +134,7 @@ pub struct LaneLevel {
     pub peak_db: f32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TrunkFollower {
     pub device_set: u32,
     pub channel: u32,
@@ -143,6 +142,13 @@ pub struct TrunkFollower {
     pub logical_channel: Option<u16>,
     pub slot: u8,
     pub freq_hz: u64,
+    /// The talkgroup or radio the control channel last granted this channel to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_call: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -187,11 +193,11 @@ pub struct TrunkControl {
     pub freq_hz: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TrunkSystemStatus {
     pub node: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detected: Option<DvTrunkProtocol>,
+    pub detected: Option<String>,
     pub carriers: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control: Option<TrunkControl>,
@@ -212,6 +218,15 @@ pub struct TrunkSystemStatus {
     pub other_control_hz: Vec<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color_code: Option<u8>,
+    #[serde(default, skip_serializing_if = "crate::TrunkSite::is_empty")]
+    pub site: crate::TrunkSite,
+    /// Decoded frames the trunk follower fell too far behind to read.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub dropped: u64,
+}
+
+const fn is_zero(value: &u64) -> bool {
+    *value == 0
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]

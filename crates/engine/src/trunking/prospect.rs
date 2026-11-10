@@ -4,8 +4,8 @@ use std::{
 };
 
 use sdrmm_wire::{
-    DvFrame, DvFrameKind, DvTrunkProtocol, TrunkChannel, TrunkChannelEntry, TrunkChannelSource,
-    TrunkDiscovery,
+    DvFrame, DvFrameKind, TrunkChannel, TrunkChannelEntry, TrunkChannelSource, TrunkDiscovery,
+    TrunkKind, TrunkScheme,
 };
 
 use super::Heard;
@@ -160,7 +160,7 @@ pub(crate) struct Prospector {
     probes: u8,
     enabled: bool,
     spanning: bool,
-    protocol: Option<DvTrunkProtocol>,
+    scheme: Option<TrunkScheme>,
     rest: Option<u16>,
     agreement: HashMap<u64, Agreement>,
     repeaters: HashSet<u64>,
@@ -186,7 +186,7 @@ impl Prospector {
             probes: 0,
             enabled: false,
             spanning: false,
-            protocol: None,
+            scheme: None,
             rest: None,
             agreement: HashMap::new(),
             repeaters: HashSet::new(),
@@ -270,11 +270,11 @@ impl Prospector {
         (lowest..=highest).contains(&freq_hz).then_some(freq_hz)
     }
 
-    pub(crate) fn set_protocol(&mut self, protocol: Option<DvTrunkProtocol>) {
-        if self.protocol == protocol {
+    pub(crate) fn set_scheme(&mut self, scheme: Option<TrunkScheme>) {
+        if self.scheme == scheme {
             return;
         }
-        self.protocol = protocol;
+        self.scheme = scheme;
         self.rest = None;
         self.agreement.clear();
         self.repeaters.clear();
@@ -283,10 +283,9 @@ impl Prospector {
     /// Whether every carrier the system runs is itself a traffic channel, so the search is looking
     /// for the system's other repeaters rather than for the frequency behind a granted channel.
     pub(crate) fn shares_traffic(&self) -> bool {
-        matches!(
-            self.protocol,
-            Some(DvTrunkProtocol::CapacityPlus | DvTrunkProtocol::HyteraXpt)
-        )
+        self.scheme
+            .as_ref()
+            .is_some_and(|scheme| scheme.kind == TrunkKind::Distributed)
     }
 
     /// The rest channel the carrier the operator named is announcing now.
@@ -304,11 +303,10 @@ impl Prospector {
         let (Some(rest), Some(heard)) = (self.rest, frame.rest_channel) else {
             return false;
         };
-        if frame.trunk_protocol.is_some_and(|protocol| {
-            !matches!(
-                protocol,
-                DvTrunkProtocol::CapacityPlus | DvTrunkProtocol::HyteraXpt
-            )
+        if frame.trunk_protocol.as_deref().is_some_and(|protocol| {
+            self.scheme
+                .as_ref()
+                .is_some_and(|scheme| scheme.id != protocol)
         }) {
             return false;
         }
@@ -812,7 +810,7 @@ fn identifies_a_call(frame: &DvFrame) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{DvTrunkProtocol, TrunkSearchRange};
+    use sdrmm_wire::TrunkSearchRange;
 
     use super::*;
 
@@ -831,20 +829,28 @@ mod tests {
         }
     }
 
+    fn scheme(id: &str, kind: TrunkKind) -> TrunkScheme {
+        TrunkScheme {
+            id: id.to_owned(),
+            label: id.to_owned(),
+            kind,
+        }
+    }
+
     fn prospector() -> Prospector {
         Prospector::new(&discovery(), &[])
     }
 
     fn capacity_plus() -> Prospector {
         let mut prospector = Prospector::new(&discovery(), &[]);
-        prospector.set_protocol(Some(DvTrunkProtocol::CapacityPlus));
+        prospector.set_scheme(Some(scheme("capacity_plus", TrunkKind::Distributed)));
         prospector
     }
 
     fn status(rest: u16) -> DvFrame {
         DvFrame {
             rest_channel: Some(rest),
-            trunk_protocol: Some(DvTrunkProtocol::CapacityPlus),
+            trunk_protocol: Some("capacity_plus".to_owned()),
             ..DvFrame::new("DMR", DvFrameKind::Control)
         }
     }
@@ -901,7 +907,7 @@ mod tests {
     #[test]
     fn a_system_that_grants_channels_is_not_searched_for_repeaters() {
         let mut prospector = prospector();
-        prospector.set_protocol(Some(DvTrunkProtocol::TierThree));
+        prospector.set_scheme(Some(scheme("tier_three", TrunkKind::Grants)));
         prospector.note_rest(Some(3));
         prospector.note_repeater(TRAFFIC_HZ, &status(3));
         prospector.note_rest(Some(4));
@@ -941,7 +947,7 @@ mod tests {
             slot: Some(1),
             destination: Some(destination),
             source: Some(source),
-            trunk_protocol: Some(DvTrunkProtocol::TierThree),
+            trunk_protocol: Some("tier_three".to_owned()),
             crc_verified: Some(true),
             ..DvFrame::new("DMR", DvFrameKind::Control)
         }
@@ -1128,7 +1134,7 @@ mod tests {
         let now = Instant::now();
         prospector.note_grant(LCN, 1, 91, Some(4001), now);
         let mut cach = DvFrame::new("DMR", DvFrameKind::Control);
-        cach.trunk_protocol = Some(DvTrunkProtocol::TierThree);
+        cach.trunk_protocol = Some("tier_three".to_owned());
         cach.control_channel = Some(false);
         prospector.note_probe(TRAFFIC_HZ, &cach, now);
 
@@ -1155,7 +1161,7 @@ mod tests {
         let now = Instant::now();
         prospector.note_grant(LCN, 1, 91, Some(4001), now);
         let mut cach = DvFrame::new("DMR", DvFrameKind::Control);
-        cach.trunk_protocol = Some(DvTrunkProtocol::TierThree);
+        cach.trunk_protocol = Some("tier_three".to_owned());
         cach.control_channel = Some(false);
         prospector.note_probe(TRAFFIC_HZ, &cach, now);
         let mut elsewhere = grant(LCN, 91, 4001);
@@ -1214,7 +1220,7 @@ mod tests {
         let now = Instant::now();
         prospector.note_grant(LCN, 1, 91, Some(4001), now);
         let mut payload = DvFrame::new("DMR", DvFrameKind::Control);
-        payload.trunk_protocol = Some(DvTrunkProtocol::TierThree);
+        payload.trunk_protocol = Some("tier_three".to_owned());
         payload.control_channel = Some(false);
 
         prospector.note_probe(TRAFFIC_HZ, &payload, now);
@@ -1230,7 +1236,7 @@ mod tests {
 
     fn control_channel_at(colour: u16) -> DvFrame {
         let mut frame = DvFrame::new("DMR", DvFrameKind::Control);
-        frame.trunk_protocol = Some(DvTrunkProtocol::TierThree);
+        frame.trunk_protocol = Some("tier_three".to_owned());
         frame.control_channel = Some(true);
         frame.color_code = Some(colour);
         frame
@@ -1272,7 +1278,7 @@ mod tests {
         let now = Instant::now();
         prospector.note_grant(LCN, 1, 91, Some(4001), now);
         let mut control = DvFrame::new("DMR", DvFrameKind::Control);
-        control.trunk_protocol = Some(DvTrunkProtocol::TierThree);
+        control.trunk_protocol = Some("tier_three".to_owned());
         control.control_channel = Some(true);
 
         prospector.note_probe(TRAFFIC_HZ, &control, now);

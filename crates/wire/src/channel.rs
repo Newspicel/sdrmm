@@ -91,9 +91,9 @@ pub struct ChannelDescriptor {
     /// One of the plain analog voice modes a channel cycles through when retyped by hotkey.
     #[serde(default)]
     pub analog_voice: bool,
-    /// A trunk system can run on this decoder.
-    #[serde(default)]
-    pub trunks: bool,
+    /// How a trunk system runs on this decoder, when it can.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trunking: Option<crate::TrunkSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ports: Vec<crate::patch::PortSpec>,
 }
@@ -149,7 +149,7 @@ impl Default for ChannelDescriptor {
             click: ClickProfile::default(),
             levels_audio: false,
             analog_voice: false,
-            trunks: false,
+            trunking: None,
             ports: Vec::new(),
         }
     }

@@ -153,6 +153,8 @@ impl Calls {
                 media_type: "audio/wav".to_owned(),
             }),
             audio_error: new.audio_error,
+            talker_alias: frame.talker_alias,
+            key_id: frame.key_id,
         };
         inner.audio_bytes += audio.as_ref().map_or(0, Bytes::len);
         inner.calls.push_back(StoredCall {

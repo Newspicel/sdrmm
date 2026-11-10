@@ -1086,7 +1086,8 @@ pub struct Engine {
     decoded_dropped: Arc<AtomicU64>,
     decoded_tx_out: broadcast::Sender<DecodedRecord>,
     image_tx: broadcast::Sender<ImageCapture>,
-    trunk_tx: mpsc::Sender<trunking::TrunkInput>,
+    trunk_tx: mpsc::SyncSender<trunking::TrunkInput>,
+    trunk_dropped: Arc<AtomicU64>,
     trunk_nodes: Mutex<HashSet<String>>,
     trunk_status: Arc<Mutex<Vec<TrunkSystemStatus>>>,
     occupancy: Mutex<occupancy::Occupancy>,
@@ -1112,7 +1113,8 @@ impl Engine {
         let (image_queue_tx, image_queue_rx) = mpsc::sync_channel(image::IMAGE_QUEUE_CAP);
         let (decoded_tx_out, _) = broadcast::channel(DECODED_CHANNEL_CAP);
         let (image_tx, _) = broadcast::channel(image::IMAGE_CHANNEL_CAP);
-        let (trunk_tx, trunk_rx) = mpsc::channel();
+        let (trunk_tx, trunk_rx) = mpsc::sync_channel(trunking::INPUT_DEPTH);
+        let trunk_dropped = Arc::new(AtomicU64::new(0));
         let trunk_status = Arc::new(Mutex::new(Vec::new()));
         let denoise_models = Arc::new(DenoiseModels::default());
         let engine = Arc::new(Self {
@@ -1128,6 +1130,7 @@ impl Engine {
             decoded_tx_out,
             image_tx,
             trunk_tx,
+            trunk_dropped: trunk_dropped.clone(),
             trunk_nodes: Mutex::new(HashSet::new()),
             trunk_status: trunk_status.clone(),
             occupancy: Mutex::new(occupancy::Occupancy::new()),
@@ -1140,7 +1143,13 @@ impl Engine {
         engine.spawn_fault_drainer(fault_rx);
         engine.spawn_decoded_pump(decoded_rx);
         engine.spawn_image_pump(image_queue_rx);
-        trunking::spawn(&engine, engine.trunk_tx.clone(), trunk_rx, trunk_status);
+        trunking::spawn(
+            &engine,
+            engine.trunk_tx.clone(),
+            trunk_rx,
+            trunk_status,
+            trunk_dropped,
+        );
         engine
     }
 
@@ -1208,10 +1217,12 @@ impl Engine {
             freq_hz: raw.freq_hz,
             event,
         };
-        if trunked {
-            let _ = self
+        if trunked
+            && let Err(mpsc::TrySendError::Full(_)) = self
                 .trunk_tx
-                .send(trunking::TrunkInput::Record(Box::new(record.clone())));
+                .try_send(trunking::TrunkInput::Record(Box::new(record.clone())))
+        {
+            self.trunk_dropped.fetch_add(1, Ordering::Relaxed);
         }
         let _ = self.decoded_tx_out.send(record);
     }

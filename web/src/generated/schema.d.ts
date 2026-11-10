@@ -2849,8 +2849,7 @@ export interface components {
             signatures?: components["schemas"]["SignalSignature"][];
             summary?: string;
             trial?: components["schemas"]["SignalTrial"] | null;
-            /** @description A trunk system can run on this decoder. */
-            trunks?: boolean;
+            trunking?: components["schemas"]["TrunkSpec"] | null;
             type_id: string;
         };
         /**
@@ -3955,8 +3954,6 @@ export interface components {
         };
         /** @enum {string} */
         Duplex: "rx_only" | "tx_only" | "half" | "full";
-        /** @enum {string} */
-        DvTrunkProtocol: "capacity_plus" | "hytera_xpt" | "tier_three";
         Entity: {
             event: components["schemas"]["DecoderEvent"];
             first_seen: string;
@@ -7863,15 +7860,28 @@ export interface components {
         TrunkFollower: {
             /** Format: int32 */
             channel: number;
+            /**
+             * Format: int32
+             * @description The talkgroup or radio the control channel last granted this channel to.
+             */
+            destination?: number | null;
             /** Format: int32 */
             device_set: number;
             /** Format: int64 */
             freq_hz: number;
+            group_call?: boolean | null;
             /** Format: int32 */
             logical_channel?: number | null;
             /** Format: int32 */
             slot: number;
+            /** Format: int32 */
+            source?: number | null;
         };
+        /**
+         * @description How a trunked protocol places its calls.
+         * @enum {string}
+         */
+        TrunkKind: "grants" | "distributed";
         TrunkNode: {
             channel_map?: components["schemas"]["TrunkChannelEntry"][];
             /** Format: int64 */
@@ -7883,7 +7893,9 @@ export interface components {
             decoder?: string;
             discovery?: components["schemas"]["TrunkDiscovery"];
             ignore_crc?: boolean;
-            protocol?: components["schemas"]["TrunkProtocol"];
+            /** @description A protocol id the decoder declares, or [`crate::AUTO_TRUNK_PROTOCOL`]. */
+            protocol?: string;
+            talkgroups?: components["schemas"]["TrunkTalkgroups"];
         };
         TrunkProbe: {
             /** Format: int32 */
@@ -7905,8 +7917,11 @@ export interface components {
             /** Format: int32 */
             slot: number;
         };
-        /** @enum {string} */
-        TrunkProtocol: "auto" | "capacity_plus" | "hytera_xpt" | "tier_three";
+        TrunkScheme: {
+            id: string;
+            kind: components["schemas"]["TrunkKind"];
+            label: string;
+        };
         TrunkSearchRange: {
             /** Format: int64 */
             end_hz: number;
@@ -7914,6 +7929,21 @@ export interface components {
             start_hz: number;
             /** Format: int64 */
             step_hz: number;
+        };
+        /** @description The identity a site broadcasts on its control channel. */
+        TrunkSite: {
+            /** Format: int32 */
+            network_id?: number | null;
+            /** Format: int32 */
+            site_id?: number | null;
+            /** Format: int32 */
+            system_id?: number | null;
+        };
+        /** @description How a decoder trunks: the protocols it recognises and how many calls share a carrier. */
+        TrunkSpec: {
+            schemes: components["schemas"]["TrunkScheme"][];
+            /** Format: int32 */
+            slots: number;
         };
         TrunkSystemStatus: {
             /**
@@ -7928,7 +7958,12 @@ export interface components {
             /** Format: int32 */
             color_code?: number | null;
             control?: components["schemas"]["TrunkControl"] | null;
-            detected?: components["schemas"]["DvTrunkProtocol"] | null;
+            detected?: string | null;
+            /**
+             * Format: int64
+             * @description Decoded frames the trunk follower fell too far behind to read.
+             */
+            dropped?: number;
             followers: components["schemas"]["TrunkFollower"][];
             node: string;
             /** @description Other frequencies the site runs a control channel on, found while searching. */
@@ -7937,6 +7972,19 @@ export interface components {
             problems: components["schemas"]["TrunkProblem"][];
             /** Format: int32 */
             searching?: number;
+            site?: components["schemas"]["TrunkSite"];
+        };
+        /** @description Which talkgroups a trunk node follows, and which win a traffic channel when all are busy. */
+        TrunkTalkgroups: {
+            /**
+             * @description Follow only the priority talkgroups.
+             * @default false
+             */
+            listed_only: boolean;
+            /** @default [] */
+            lockout: number[];
+            /** @default [] */
+            priority: number[];
         };
         /** @enum {string} */
         Tuning: "auto" | "manual";

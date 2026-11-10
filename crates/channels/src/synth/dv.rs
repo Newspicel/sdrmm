@@ -6,8 +6,28 @@ pub mod nxdn;
 pub mod p25;
 pub mod ysf;
 
+use blip25_vocoder::halfrate::frame::{encode_code_vectors, unpack_natural};
 use num_complex::Complex;
 use sdrmm_modem::cpm::CpmMod;
+
+use crate::dv::vocoder::AMBE_3600_INTERLEAVE;
+
+/// The 72 transmitted bits of a natural-order AMBE+2 frame, as DMR and NXDN carry them.
+pub(crate) fn half_rate_air(natural: &[u8; 7]) -> [bool; 72] {
+    let code = encode_code_vectors(&unpack_natural(natural));
+    let mut air = [false; 72];
+    for (dibit, places) in air
+        .as_chunks_mut::<2>()
+        .0
+        .iter_mut()
+        .zip(AMBE_3600_INTERLEAVE)
+    {
+        for (bit, (row, column)) in dibit.iter_mut().zip(places) {
+            *bit = code[usize::from(row)] >> column & 1 == 1;
+        }
+    }
+    air
+}
 
 use crate::dv::c4fm_params;
 

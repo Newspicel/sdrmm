@@ -53,17 +53,28 @@ first decoder that trunks (DMR) or the one picked under **Decoder**.
 
 **Range** narrows the search. Channels can also be entered in the plan table.
 
+**Priority** talkgroups take a receiver from other calls when all are busy, **Lockout**
+talkgroups are never followed, and **Only these** follows just the priority list. Each followed
+channel shows the talkgroup it was granted to. A control channel that goes quiet hands over to
+the site's other control channels the search found.
+
 Following runs on the server with no browser open. Voice channels must fit inside the Device's
 window; a grant outside it is reported. To save call audio, see
 [Record each call](recording.md#record-each-call).
 
-## DMR privacy
+## Voice privacy
 
-Motorola Basic Privacy needs no key: the decoder reads it off the first silence frame and
-plays the call from there, marked `Basic Privacy` and the key. For ARC4 and AES, enter each
-key ID and its key under the DMR settings: 10 hex digits for ARC4, 32 for AES-128, 64 for
-AES-256. Calls joined without their PI header, other algorithms, and trunk-followed keyed
-calls stay muted.
+Enter each key ID and its key under the decoder's Keys. The key's length picks the algorithm:
+
+| Decoder | Hex digits |
+|---|---|
+| DMR | 10 ARC4, 32 AES-128, 64 AES-256 |
+| P25 Phase 1 | 10 ADP, 16 DES-OFB, 32 AES-128, 64 AES-256 |
+| NXDN | up to 4 scrambler, 16 DES-OFB, 64 AES-256 |
+
+DMR Motorola Basic Privacy needs no key: the decoder reads it off the first silence frame,
+marked `Basic Privacy` and the key. A deciphered call names its cipher. Calls without their
+key, joined before their first message indicator, or followed by a trunk stay muted.
 
 ## Tetrapol
 

@@ -23,11 +23,11 @@ impl DmrSlots {
     }
 }
 
-/// An enhanced privacy key as the radios are programmed with it: the PI header's key ID and the key
-/// in hex, 10 digits for ARC4, 32 or 64 for AES.
+/// A voice privacy key as the radios are programmed with it: the key ID the call names and the key
+/// in hex. Its length picks the algorithm.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DmrKey {
-    pub key_id: u8,
+pub struct VoiceKey {
+    pub key_id: u16,
     pub key: String,
 }
 
@@ -38,7 +38,7 @@ pub struct DmrParams {
     #[serde(default)]
     pub ignore_crc: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub keys: Vec<DmrKey>,
+    pub keys: Vec<VoiceKey>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,10 +49,12 @@ pub enum NxdnBandwidth {
     Wide,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct NxdnParams {
     #[serde(default)]
     pub bandwidth: NxdnBandwidth,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<VoiceKey>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -61,8 +63,11 @@ pub struct DstarParams {}
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct YsfParams {}
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct P25Params {}
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct P25Params {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<VoiceKey>,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DpmrParams {}

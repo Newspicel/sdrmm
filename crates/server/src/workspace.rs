@@ -721,11 +721,7 @@ pub(crate) mod tests {
     ) -> TrunkSystemStatus {
         TrunkSystemStatus {
             node: node.to_owned(),
-            detected: None,
             carriers: 1,
-            control: None,
-            followers: Vec::new(),
-            problems: Vec::new(),
             channel_map: map
                 .iter()
                 .map(
@@ -737,11 +733,8 @@ pub(crate) mod tests {
                     },
                 )
                 .collect(),
-            probes: Vec::new(),
-            searching: 0,
-            candidates: 0,
-            other_control_hz: Vec::new(),
             color_code,
+            ..TrunkSystemStatus::default()
         }
     }
 

@@ -16,10 +16,11 @@ fn system(node: &str) -> trunking::TrunkSystem {
     trunking::TrunkSystem {
         node: node.to_owned(),
         decoder: String::new(),
-        protocol: Default::default(),
+        protocol: sdrmm_wire::AUTO_TRUNK_PROTOCOL.to_owned(),
         discovery: Default::default(),
         channel_map: Vec::new(),
         learned: Vec::new(),
+        talkgroups: Default::default(),
         radio: None,
     }
 }

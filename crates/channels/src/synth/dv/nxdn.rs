@@ -1,7 +1,17 @@
+use blip25_vocoder::halfrate::pack_natural;
 use num_complex::Complex;
 use sdrmm_dsp::{crc_msb_bits, fec::conv};
 
-use super::{bits, c4fm, dibits, filler};
+use super::{bits, c4fm, dibits, filler, half_rate_air};
+use crate::dv::nxdn::privacy::{CipherKey, FRAME_BITS, FRAMES_PER_SUPERFRAME, STREAM_BYTES};
+use crate::dv::vocoder::{AMBE_3600_INTERLEAVE, half_frame, half_rate_code_vectors};
+
+const VOICE_CALL: u8 = 0x01;
+const VOICE_CALL_IV: u8 = 0x03;
+const TX_RELEASE: u8 = 0x08;
+const SCRAMBLER: u8 = 1;
+const VOICE_PER_FRAME: usize = 4;
+const SUPERFRAMES_PER_IV: usize = 2;
 
 const RRC_ALPHA: f64 = 0.2;
 const FSW: u64 = 0x000C_DF59;
@@ -102,6 +112,99 @@ fn addressed_frame(
         post.extend_from_slice(&coded);
     } else {
         post.extend(dibits(&filler(288, 79 + u32::from(functional))));
+    }
+    finish_frame(out, post)
+}
+
+/// A group call enciphered with `key` (scrambler, DES-OFB or AES by its length) under `key_id`.
+/// DES and AES send a VCALL_IV ahead of every second superframe, the first one `iv`. `voice`
+/// holds the clear frames' transmitted bits, 16 per superframe.
+#[must_use]
+pub fn keyed_transmission(
+    shape: &Shape,
+    ran: u8,
+    key_id: u8,
+    key: &str,
+    iv: u64,
+    voice: &[[bool; 72]],
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    let cipher = CipherKey::parse(key).unwrap_or_else(|| panic!("{key:?} is no NXDN key"));
+    let mut call = layer3(VOICE_CALL, 1, 100, true);
+    put_bits(&mut call, 56, 2, u32::from(cipher.cipher()));
+    put_bits(&mut call, 58, 6, u32::from(key_id));
+    let mut symbols = dibits(&filler(400, 53));
+    symbols.extend(addressed_frame(0, ran, &call, None, true));
+    let mut stream = [0u8; STREAM_BYTES];
+    for (index, superframe) in voice
+        .as_chunks::<FRAMES_PER_SUPERFRAME>()
+        .0
+        .iter()
+        .enumerate()
+    {
+        let iv = iv.wrapping_add(index as u64);
+        let half = index % SUPERFRAMES_PER_IV;
+        if cipher.cipher() == SCRAMBLER || half == 0 {
+            cipher.stream(iv, &mut stream);
+        }
+        if cipher.cipher() != SCRAMBLER && half == 0 {
+            let mut message = [false; 80];
+            put_bits(&mut message, 2, 6, u32::from(VOICE_CALL_IV));
+            put_bits(&mut message, 8, 32, (iv >> 32) as u32);
+            put_bits(&mut message, 40, 32, iv as u32);
+            symbols.extend(addressed_frame(0, ran, &message, None, true));
+        }
+        let offset = if cipher.cipher() == SCRAMBLER {
+            0
+        } else {
+            half
+        };
+        for quarter in 0..4 {
+            let frames: [[bool; 72]; 4] = std::array::from_fn(|slot| {
+                let position = offset * FRAMES_PER_SUPERFRAME + quarter * VOICE_PER_FRAME + slot;
+                encipher(
+                    &superframe[quarter * VOICE_PER_FRAME + slot],
+                    &stream,
+                    position,
+                )
+            });
+            symbols.extend(voice_frame(ran, &call, quarter, &frames));
+        }
+    }
+    let release = layer3(TX_RELEASE, 1, 100, true);
+    symbols.extend(addressed_frame(0, ran, &release, None, true));
+    symbols.extend(frame(1, 1, true, None));
+    symbols.extend(dibits(&filler(200, 59)));
+    c4fm(&symbols, rate, shape.baud, shape.deviation_hz, RRC_ALPHA)
+}
+
+fn encipher(air: &[bool; 72], stream: &[u8; STREAM_BYTES], position: usize) -> [bool; 72] {
+    let frame = half_frame(half_rate_code_vectors(air, &AMBE_3600_INTERLEAVE));
+    let mut natural = pack_natural(&frame.info);
+    for bit in 0..FRAME_BITS {
+        let at = position * FRAME_BITS + bit;
+        natural[bit / 8] ^= (stream[at / 8] >> (7 - at % 8) & 1) << (7 - bit % 8);
+    }
+    half_rate_air(&natural)
+}
+
+/// A traffic frame of four voice frames and the SACCH quarter of `layer3`.
+fn voice_frame(ran: u8, layer3: &[bool; 80], quarter: usize, voice: &[[bool; 72]; 4]) -> Vec<u8> {
+    let mut lich = bits(1, 2);
+    lich.extend(bits(2, 2));
+    lich.extend(bits(3, 2));
+    lich.push(true);
+    lich.push(lich_parity(&lich));
+    let out = dibits(&bits(FSW, 20));
+    let mut post: Vec<u8> = lich.into_iter().map(|bit| u8::from(bit) << 1).collect();
+    let structure = 3 - quarter as u8;
+    post.extend(dibits(&encode_sacch(
+        structure,
+        ran,
+        &layer3[quarter * 18..quarter * 18 + 18],
+    )));
+    for frame in voice {
+        post.extend(dibits(frame));
     }
     finish_frame(out, post)
 }

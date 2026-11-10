@@ -3,9 +3,7 @@ use super::{
     fields, flag, joined, lat_lon, number, only_if, percent, position, text, text_of, trimmed,
 };
 use crate::{
-    decode::{
-        CodeStyle, DvFrame, DvFrameKind, DvTrunkProtocol, EventKind, SiteNaming, modulation_label,
-    },
+    decode::{CodeStyle, DvFrame, DvFrameKind, EventKind, SiteNaming, modulation_label},
     monitor::{Transmission, TransmissionState},
     rest::VoiceCall,
     units::hertz,
@@ -176,11 +174,7 @@ fn dv_vendor(f: &DvFrame) -> Option<FieldValue> {
 }
 
 fn dv_trunking(f: &DvFrame) -> String {
-    let system = f.trunk_protocol.map(|protocol| match protocol {
-        DvTrunkProtocol::CapacityPlus => "Capacity Plus",
-        DvTrunkProtocol::HyteraXpt => "Hytera XPT",
-        DvTrunkProtocol::TierThree => "Tier III",
-    });
+    let system = f.trunk_label.as_deref().or(f.trunk_protocol.as_deref());
     let role = f.control_channel.map(|control| {
         if control {
             "control channel"
@@ -280,6 +274,7 @@ fn call_fields(c: &VoiceCall) -> Vec<Field> {
         ("mode", "Mode", text_of(c.mode_label())),
         ("destination", "Destination", text(destination.as_deref())),
         ("source", "Source", c.source.and_then(text_of)),
+        ("talker_alias", "Alias", text(c.talker_alias.as_deref())),
         ("timeslot", "Timeslot", count(c.slot)),
         ("colour_code", "Colour code", count(c.color_code)),
         ("duration", "Duration", seconds(c.duration_ms, 1)),
@@ -290,6 +285,11 @@ fn call_fields(c: &VoiceCall) -> Vec<Field> {
         ),
         ("emergency", "Emergency", only_if(c.emergency)),
         ("encrypted", "Encrypted", only_if(c.encrypted)),
+        (
+            "key",
+            "Key ID",
+            c.key_id.and_then(|id| text_of(format!("{id:X}"))),
+        ),
         ("audio", "Audio", text(c.audio_error.as_deref())),
     ])
 }
@@ -448,7 +448,7 @@ mod tests {
     fn trunking_names_the_side_and_the_checksum() {
         let control = dv(serde_json::json!({
             "mode": "dmr", "kind": "control", "errors_corrected": 0,
-            "trunk_protocol": "tier_three", "control_channel": true, "crc_verified": true,
+            "trunk_protocol": "tier_three", "trunk_label": "Tier III", "control_channel": true, "crc_verified": true,
         }));
         assert_eq!(
             control.field("Trunking"),
@@ -457,7 +457,7 @@ mod tests {
         assert_eq!(control.field("Checksum"), text_of("verified").as_ref());
         let traffic = dv(serde_json::json!({
             "mode": "dmr", "kind": "control", "errors_corrected": 0,
-            "trunk_protocol": "tier_three", "control_channel": false, "crc_verified": false,
+            "trunk_protocol": "tier_three", "trunk_label": "Tier III", "control_channel": false, "crc_verified": false,
         }));
         assert_eq!(
             traffic.field("Trunking"),

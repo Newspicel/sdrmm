@@ -34,7 +34,7 @@ impl Drop for Watch {
 impl Watch {
     pub(crate) fn start(
         engine: &Arc<Engine>,
-        tx: mpsc::Sender<TrunkInput>,
+        tx: mpsc::SyncSender<TrunkInput>,
         device_set: u32,
         stream: u32,
     ) -> Option<Self> {
@@ -67,7 +67,7 @@ fn run(
     engine: &Weak<Engine>,
     stop: &Arc<AtomicBool>,
     mut rx: broadcast::Receiver<SpectrumSnapshot>,
-    tx: &mpsc::Sender<TrunkInput>,
+    tx: &mpsc::SyncSender<TrunkInput>,
     device_set: u32,
 ) {
     while !stop.load(Ordering::Relaxed) && engine.strong_count() > 0 {

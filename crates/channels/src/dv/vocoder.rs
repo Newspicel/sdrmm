@@ -25,6 +25,41 @@ pub(crate) fn half_soft_frame(soft: &[i8; HALF_RATE_SOFT_BITS]) -> HalfRateFrame
     decode_frame_soft(soft)
 }
 
+pub(crate) fn half_frame(code: [u32; 4]) -> HalfRateFrame {
+    decode_code_vectors(code)
+}
+
+pub(crate) type FullRateFrame = fullrate::frame::Frame;
+
+/// The 88 IMBE information bits, u0 to u7 most significant first, as the ciphers see them.
+pub(crate) const FULL_RATE_INFO_BYTES: usize = 11;
+const FULL_RATE_WIDTHS: [u32; 8] = [12, 12, 12, 12, 11, 11, 11, 7];
+
+pub(crate) fn full_frame(dibits: &[u8; 72]) -> FullRateFrame {
+    fullrate::frame::decode_frame(dibits)
+}
+
+pub(crate) fn pack_full(info: &[u16; 8]) -> [u8; FULL_RATE_INFO_BYTES] {
+    let mut bits = 0u128;
+    for (&vector, width) in info.iter().zip(FULL_RATE_WIDTHS) {
+        bits = bits << width | u128::from(vector) & ((1 << width) - 1);
+    }
+    let bytes = (bits << 40).to_be_bytes();
+    std::array::from_fn(|i| bytes[i])
+}
+
+pub(crate) fn unpack_full(bytes: &[u8; FULL_RATE_INFO_BYTES]) -> [u16; 8] {
+    let mut wide = [0u8; 16];
+    wide[..FULL_RATE_INFO_BYTES].copy_from_slice(bytes);
+    let mut bits = u128::from_be_bytes(wide) >> 40;
+    let mut info = [0u16; 8];
+    for (vector, width) in info.iter_mut().zip(FULL_RATE_WIDTHS).rev() {
+        *vector = (bits & ((1 << width) - 1)) as u16;
+        bits >>= width;
+    }
+    info
+}
+
 const PRESENTATION_GAIN_DB: f32 = 9.0;
 
 pub(crate) const AMBE_3600_INTERLEAVE: [[(u8, u8); 2]; 36] = [
@@ -173,6 +208,12 @@ impl MbeDecoder {
         self.synthesize(&frame.info, status, out);
     }
 
+    /// Plays a full-rate frame that has already been through forward error correction.
+    pub(crate) fn play_full(&mut self, frame: &FullRateFrame, out: &mut ChannelOutputs) {
+        let status = FrameStatus::new(u32::from(frame.error_total()), false);
+        self.synthesize(&frame.info, status, out);
+    }
+
     pub(crate) fn decode_half_code_vectors(
         &mut self,
         code: [u32; 4],
@@ -218,9 +259,7 @@ impl MbeDecoder {
             Self::mute(out);
             return;
         }
-        let frame = fullrate::frame::decode_frame(dibits);
-        let status = FrameStatus::new(u32::from(frame.error_total()), false);
-        self.synthesize(&frame.info, status, out);
+        self.play_full(&full_frame(dibits), out);
     }
 
     pub(crate) fn decode_full_code_vectors(
@@ -411,6 +450,15 @@ pub(crate) mod testutil {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_rate_information_packs_most_significant_first() {
+        let info = [0xABC, 0x123, 0xFFF, 0x000, 0x7FF, 0x001, 0x400, 0x7F];
+        let bytes = pack_full(&info);
+        assert_eq!(bytes[..3], [0xAB, 0xC1, 0x23]);
+        assert_eq!(bytes[10], 0x7F);
+        assert_eq!(unpack_full(&bytes), info);
+    }
 
     fn words(seed: u32) -> impl FnMut() -> u32 {
         let mut state = seed | 1;

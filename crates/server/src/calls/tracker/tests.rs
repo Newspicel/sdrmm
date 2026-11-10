@@ -301,3 +301,88 @@ fn unbinding_a_channel_completes_its_open_call() {
     assert_eq!(completed(&mut decoded).len(), 1);
     assert_eq!(analog.tracker.active(), 0);
 }
+
+fn trunk_with_follower(destination: Option<u32>) -> Vec<TrunkSystemStatus> {
+    vec![TrunkSystemStatus {
+        node: "dmr".to_owned(),
+        followers: vec![sdrmm_wire::TrunkFollower {
+            device_set: 1,
+            channel: 2,
+            slot: 1,
+            freq_hz: 451_125_000,
+            destination,
+            source: Some(4001),
+            group_call: Some(true),
+            ..sdrmm_wire::TrunkFollower::default()
+        }],
+        ..TrunkSystemStatus::default()
+    }]
+}
+
+fn anonymous_voice(slot: u8) -> DvFrame {
+    DvFrame {
+        slot: Some(slot),
+        ..DvFrame::new("DMR", DvFrameKind::Voice)
+    }
+}
+
+#[test]
+fn a_late_entry_takes_the_call_its_channel_was_granted_to() {
+    let record = record(DvFrameKind::Voice, 1);
+    let named = granted(
+        &trunk_with_follower(Some(91)),
+        "dmr",
+        &record,
+        &anonymous_voice(1),
+    )
+    .expect("named by the grant");
+    assert_eq!(named.destination, Some(91));
+    assert_eq!(named.source, Some(4001));
+    assert_eq!(named.group_call, Some(true));
+}
+
+#[test]
+fn a_grant_never_renames_a_frame_that_names_itself_or_another_slot() {
+    let record = record(DvFrameKind::Voice, 1);
+    let systems = trunk_with_follower(Some(91));
+    let named = DvFrame {
+        destination: Some(77),
+        ..anonymous_voice(1)
+    };
+    assert!(granted(&systems, "dmr", &record, &named).is_none());
+    assert!(granted(&systems, "dmr", &record, &anonymous_voice(2)).is_none());
+    assert!(granted(&systems, "other", &record, &anonymous_voice(1)).is_none());
+    assert!(
+        granted(
+            &trunk_with_follower(None),
+            "dmr",
+            &record,
+            &anonymous_voice(1)
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn a_key_and_alias_heard_mid_call_stay_with_the_call() {
+    let mut current = DvFrame {
+        slot: Some(1),
+        destination: Some(91),
+        ..DvFrame::new("DMR", DvFrameKind::Header)
+    };
+    merge_frame(
+        &mut current,
+        &DvFrame {
+            encrypted: Some(true),
+            algorithm_id: Some(0x21),
+            key_id: Some(0x1A),
+            talker_alias: Some("Engine 7".to_owned()),
+            ..DvFrame::new("DMR", DvFrameKind::Voice)
+        },
+    );
+    merge_frame(&mut current, &DvFrame::new("DMR", DvFrameKind::Voice));
+    assert_eq!(current.encrypted, Some(true));
+    assert_eq!(current.algorithm_id, Some(0x21));
+    assert_eq!(current.key_id, Some(0x1A));
+    assert_eq!(current.talker_alias.as_deref(), Some("Engine 7"));
+}

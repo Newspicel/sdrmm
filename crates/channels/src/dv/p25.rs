@@ -9,11 +9,16 @@ use sdrmm_wire::{
     DecoderFamily, DvFrame, DvFrameKind, EventKind, Vendor,
 };
 
-use super::{INPUT_RATE_HZ, SymbolWindow, c4fm_demod, c4fm_params, tap_c4fm, vocoder::MbeDecoder};
+use super::{
+    INPUT_RATE_HZ, SymbolWindow, VoiceKey, c4fm_demod, c4fm_params, tap_c4fm,
+    vocoder::{MbeDecoder, full_frame},
+};
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
     check_input_rate,
 };
+pub(crate) mod privacy;
+use privacy::{ALGORITHM_CLEAR, CipherKey, CipherKeys, Privacy};
 
 pub(crate) const BAUD: f64 = 4_800.0;
 pub(crate) const DEVIATION_HZ: f64 = 1_944.0;
@@ -34,6 +39,7 @@ const MAX_FRAME_BITS: usize = 1_728;
 const MAX_FRAME_SYMBOLS: usize = MAX_FRAME_BITS / 2;
 
 const IMBE_OFFSETS: [usize; 9] = [0, 72, 164, 256, 348, 440, 532, 624, 712];
+const IMBE_PER_LDU: usize = IMBE_OFFSETS.len();
 const IMBE_BITS: usize = 144;
 const BODY_START: usize = SYNC_BITS as usize + NID_BITS;
 const IMBE_SPANS: [(usize, usize); 9] = imbe_spans();
@@ -80,6 +86,22 @@ fn params(settings: &ChannelSettings) -> Result<P25Params, ChannelError> {
         .map_err(ChannelError::InvalidSettings)
 }
 
+fn cipher_keys(entries: &[VoiceKey]) -> Result<CipherKeys, ChannelError> {
+    entries
+        .iter()
+        .map(|entry| {
+            CipherKey::parse(&entry.key)
+                .map(|key| (entry.key_id, key))
+                .ok_or_else(|| {
+                    ChannelError::InvalidSettings(format!(
+                        "a P25 key is 10 (ADP), 16 (DES), 32 or 64 (AES) hex digits, got {:?}",
+                        entry.key
+                    ))
+                })
+        })
+        .collect()
+}
+
 pub(crate) fn occupied_band() -> (f64, f64) {
     (-BANDWIDTH_HZ / 2.0, BANDWIDTH_HZ / 2.0)
 }
@@ -94,18 +116,18 @@ impl NativeChannel for P25Channel {
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
-        params(&settings)?;
+        let keys = cipher_keys(&params(&settings)?.keys)?;
         Ok(Self {
             demod: c4fm_demod(&c4fm_params(ctx.input_rate, BAUD, DEVIATION_HZ, RRC_ALPHA)),
             symbols: Vec::new(),
-            decoder: Decoder::new(),
+            decoder: Decoder::new(keys),
         })
     }
 }
 
 impl ChannelRx for P25Channel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        params(&settings)?;
+        self.decoder.keys = cipher_keys(&params(&settings)?.keys)?;
         Ok(())
     }
 
@@ -139,13 +161,15 @@ struct Decoder {
     pending_errors: u32,
     next_imbe: usize,
     encryption: Option<bool>,
+    keys: CipherKeys,
+    privacy: Privacy,
     vocoder: MbeDecoder,
     logical: Vec<bool>,
     rejected: u32,
 }
 
 impl Decoder {
-    fn new() -> Self {
+    fn new(keys: CipherKeys) -> Self {
         Self {
             window: SymbolWindow::new(MAX_FRAME_SYMBOLS),
             countdown: 0,
@@ -157,6 +181,8 @@ impl Decoder {
             pending_errors: 0,
             next_imbe: 0,
             encryption: None,
+            keys,
+            privacy: Privacy::new(),
             vocoder: MbeDecoder::full_rate(),
             logical: Vec::with_capacity(MAX_FRAME_BITS),
             rejected: 0,
@@ -177,6 +203,7 @@ impl Decoder {
         self.pending_errors = 0;
         self.next_imbe = 0;
         self.encryption = None;
+        self.privacy.reset();
         self.vocoder.reset();
     }
 
@@ -194,6 +221,7 @@ impl Decoder {
                     }
                     if matches!(duid, DUID_TERMINATOR | DUID_TERMINATOR_LC) {
                         self.encryption = None;
+                        self.privacy.reset();
                     }
                     self.hunting = true;
                 } else if let Some((duid, frame)) = self.nid() {
@@ -290,8 +318,19 @@ impl Decoder {
         for slot in &mut dibits {
             *slot = info.next().unwrap_or(0) << 1 | info.next().unwrap_or(0);
         }
-        self.vocoder
-            .decode_full_dibits(&dibits, self.encryption != Some(false), out);
+        let mut frame = full_frame(&dibits);
+        let ldu = usize::from(duid == DUID_LDU2);
+        let index = ldu * IMBE_PER_LDU + self.next_imbe - 1;
+        let playable = match self.encryption {
+            Some(false) => true,
+            Some(true) => self.privacy.decipher(index, &mut frame, &self.keys),
+            None => false,
+        };
+        if playable {
+            self.vocoder.play_full(&frame, out);
+        } else {
+            MbeDecoder::mute(out);
+        }
     }
 
     fn logical_frame(&mut self, duid: u8) {
@@ -353,16 +392,17 @@ impl Decoder {
         if frame.encrypted.is_some() {
             self.encryption = frame.encrypted;
         }
+        frame.cipher = self.privacy.label(&self.keys);
         Some(frame)
     }
 
     fn ldu_encryption_sync(&mut self) -> Option<DvFrame> {
-        let Some((symbols, hamming_errors)) = self.signalling_symbols() else {
+        let decoded = self
+            .signalling_symbols()
+            .and_then(|(symbols, hamming)| Some((rs64_decode(&symbols, 16)?, hamming)));
+        let Some(((data, rs_errors), hamming_errors)) = decoded else {
             self.reject();
-            return None;
-        };
-        let Some((data, rs_errors)) = rs64_decode(&symbols, 16) else {
-            self.reject();
+            self.privacy.sync_lost();
             return None;
         };
         let bits = symbols_to_bits(&data);
@@ -370,8 +410,21 @@ impl Decoder {
         frame.opcode = Some("encryption synchronization".to_owned());
         decode_encryption(&mut frame, &bits, 0);
         self.encryption = frame.encrypted;
+        self.sync_privacy(&frame, &bits);
+        frame.cipher = self.privacy.label(&self.keys);
         self.finish_metadata(&mut frame, hamming_errors + rs_errors);
         (frame.encrypted == Some(true)).then_some(frame)
+    }
+
+    /// Hands an encryption sync's algorithm, key ID and the 64 bits of MI the ciphers use on to the
+    /// superframe after it.
+    fn sync_privacy(&mut self, frame: &DvFrame, bits: &[bool]) {
+        match (frame.algorithm_id, frame.key_id) {
+            (Some(algorithm), Some(key_id)) if algorithm != ALGORITHM_CLEAR => {
+                self.privacy.sync(algorithm, key_id, word_msb(&bits[..64]));
+            }
+            _ => self.privacy.reset(),
+        }
     }
 
     fn header_data_unit(&mut self) -> Option<DvFrame> {
@@ -398,6 +451,7 @@ impl Decoder {
         frame.destination = Some(bits_value(&bits[104..120]));
         frame.group_call = Some(true);
         self.encryption = frame.encrypted;
+        self.sync_privacy(&frame, &bits);
         self.finish_metadata(&mut frame, golay_errors + rs_errors);
         Some(frame)
     }
@@ -745,13 +799,75 @@ mod tests {
     use sdrmm_wire::ChannelParams;
 
     fn channel() -> P25Channel {
+        keyed_channel(Vec::new()).expect("p25 channel")
+    }
+
+    fn keyed_channel(keys: Vec<VoiceKey>) -> Result<P25Channel, ChannelError> {
         P25Channel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::new("p25", &P25Params::default()).expect("p25 settings")),
+            settings(ChannelParams::new("p25", &P25Params { keys }).expect("p25 settings")),
         )
-        .expect("p25 channel")
+    }
+
+    const KEY_ID: u16 = 0x4099;
+    const MI: u64 = 0x0123_4567_89AB_CDEF;
+
+    fn key(key: &str) -> Vec<VoiceKey> {
+        vec![VoiceKey {
+            key_id: KEY_ID,
+            key: key.to_owned(),
+        }]
+    }
+
+    #[test]
+    fn keyed_calls_decipher_every_superframe() {
+        let voice = full_rate_frames(36);
+        for (text, name) in [
+            ("deadbeef69", "ADP"),
+            ("465BA1A7F83D10C2", "DES-OFB"),
+            ("000102030405060708090A0B0C0D0E0F", "AES-128"),
+            (
+                "D59DA7112B0D0AF44544C055F381F2D3900896D1C4456078E8ABCD33B1CBADE0",
+                "AES-256",
+            ),
+        ] {
+            let iq = tx::keyed_transmission(0x293, KEY_ID, text, MI, &voice, INPUT_RATE_HZ);
+            let mut channel = keyed_channel(key(text)).expect("keyed channel");
+            let (frames, audio) = decode_with_audio(&mut channel, &iq);
+            assert_tone_audio(&audio, 36);
+            assert!(
+                frames
+                    .iter()
+                    .any(|frame| frame.cipher.as_deref() == Some(name)),
+                "{name} is not named"
+            );
+        }
+    }
+
+    #[test]
+    fn a_keyed_call_stays_muted_without_its_key() {
+        let voice = full_rate_frames(36);
+        let iq = tx::keyed_transmission(0x293, KEY_ID, "deadbeef69", MI, &voice, INPUT_RATE_HZ);
+        let other_id = vec![VoiceKey {
+            key_id: KEY_ID + 1,
+            key: "deadbeef69".to_owned(),
+        }];
+        for keys in [other_id, key("465BA1A7F83D10C2"), Vec::new()] {
+            let mut channel = keyed_channel(keys).expect("channel");
+            let (_, audio) = decode_with_audio(&mut channel, &iq);
+            assert!(!audio.is_empty());
+            assert!(audio.iter().all(|&sample| sample == 0.0));
+        }
+    }
+
+    #[test]
+    fn a_key_of_the_wrong_length_is_refused() {
+        assert!(matches!(
+            keyed_channel(key("123456")),
+            Err(ChannelError::InvalidSettings(_))
+        ));
     }
 
     #[test]
@@ -944,7 +1060,7 @@ mod tests {
                     word ^ SPEC_PARITY[15 - bit]
                 });
 
-            let mut decoder = Decoder::new();
+            let mut decoder = Decoder::new(Vec::new());
             let mut taken = 0;
             for symbol in 0..NID_SYMBOLS {
                 let dibit = if is_status(SYNC_BITS as usize + symbol * 2) {

@@ -6,7 +6,9 @@ use std::{
 
 use sdrmm_dsp::{decim::RealDecimator, fir::design_lowpass};
 use sdrmm_engine::{Engine, PcmBlock, PcmPayload};
-use sdrmm_wire::{DecodedRecord, DecoderEvent, DvFrame, DvFrameKind, EventOrigin};
+use sdrmm_wire::{
+    DecodedRecord, DecoderEvent, DvFrame, DvFrameKind, EventOrigin, TrunkSystemStatus,
+};
 
 use super::CallBinding;
 use super::{Calls, DECIMATION, MAX_CALL_SAMPLES, NewCall, RETENTION, wav};
@@ -237,6 +239,8 @@ impl Tracker {
             .filter(|binding| binding.gate == CallGate::Frames && binding.node == origin.node)
             .map(|binding| CallKey::of(binding, frame.slot))
             .collect();
+        let named = self.named_by_grant(&keys, &origin.node, record, frame);
+        let frame = named.as_ref().unwrap_or(frame);
         for key in keys {
             match frame.kind {
                 DvFrameKind::Header | DvFrameKind::Voice
@@ -248,6 +252,23 @@ impl Tracker {
                 _ => {}
             }
         }
+    }
+
+    fn named_by_grant(
+        &self,
+        keys: &[CallKey],
+        node: &str,
+        record: &DecodedRecord,
+        frame: &DvFrame,
+    ) -> Option<DvFrame> {
+        let opening = keys.iter().any(|key| !self.active.contains_key(key));
+        let speaking = matches!(frame.kind, DvFrameKind::Header | DvFrameKind::Voice);
+        let anonymous = frame.source.is_none() && frame.destination.is_none();
+        if !(opening && speaking && anonymous) {
+            return None;
+        }
+        let engine = self.engine.upgrade()?;
+        granted(&engine.trunk_systems(), node, record, frame)
     }
 
     fn frame(&mut self, key: CallKey, record: &DecodedRecord, frame: &DvFrame) {
@@ -463,6 +484,41 @@ fn merge_frame(current: &mut DvFrame, incoming: &DvFrame) {
     current.group_call = incoming.group_call.or(current.group_call);
     current.encrypted = incoming.encrypted.or(current.encrypted);
     current.emergency = incoming.emergency.or(current.emergency);
+    current.algorithm_id = incoming.algorithm_id.or(current.algorithm_id);
+    current.key_id = incoming.key_id.or(current.key_id);
+    if incoming.talker_alias.is_some() {
+        current.talker_alias.clone_from(&incoming.talker_alias);
+    }
+}
+
+/// `frame` named after the call the trunk granted its traffic channel to, when the frame
+/// carries no identity of its own: a late entry whose link control never decoded.
+pub(super) fn granted(
+    systems: &[TrunkSystemStatus],
+    node: &str,
+    record: &DecodedRecord,
+    frame: &DvFrame,
+) -> Option<DvFrame> {
+    if frame.source.is_some() || frame.destination.is_some() {
+        return None;
+    }
+    let follower = systems
+        .iter()
+        .find(|system| system.node == node)?
+        .followers
+        .iter()
+        .find(|follower| {
+            follower.device_set == record.device_set
+                && follower.channel == record.channel
+                && frame.slot.is_none_or(|slot| slot == follower.slot)
+        })?;
+    Some(DvFrame {
+        slot: frame.slot.or(Some(follower.slot)),
+        destination: Some(follower.destination?),
+        source: follower.source,
+        group_call: follower.group_call.or(frame.group_call),
+        ..frame.clone()
+    })
 }
 
 #[cfg(test)]

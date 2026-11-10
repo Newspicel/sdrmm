@@ -47,6 +47,11 @@ pub mod sink;
 pub mod state;
 pub mod survey;
 pub mod tools;
+pub mod trunk;
+pub use trunk::{
+    AUTO_TRUNK_PROTOCOL, MAX_TRUNK_TALKGROUPS, TrunkKind, TrunkScheme, TrunkSite, TrunkSpec,
+    TrunkTalkgroups,
+};
 pub mod units;
 pub mod workspace;
 pub mod workspace_state;
@@ -99,12 +104,11 @@ pub use cps::{
 };
 pub use decode::{
     ANY_MODULATION, BroadcastData, Capability, CodeStyle, DecodedRecord, DecoderEvent,
-    DvChannelDefinition, DvFrame, DvFrameKind, DvSlotActivity, DvTrunkProtocol, EventCatalog,
-    EventContract, EventKind, EventKindEntry, FeedEncoder, FeedEntry, FeedSpec, HzRange,
-    IdentFeatures, IdentReport, IdentSignal, KindCodec, KindSet, KindSpec, KindView, Lifetime,
-    Modulation, NO_CHANNEL, ProtocolMatch, Sideband, SignalMeasure, SignalSignature, SignalTrial,
-    SiteNaming, SortKey, Symbol, Vendor, catalog, install_catalog, modulation_label,
-    platform_kinds,
+    DvChannelDefinition, DvFrame, DvFrameKind, DvSlotActivity, EventCatalog, EventContract,
+    EventKind, EventKindEntry, FeedEncoder, FeedEntry, FeedSpec, HzRange, IdentFeatures,
+    IdentReport, IdentSignal, KindCodec, KindSet, KindSpec, KindView, Lifetime, Modulation,
+    NO_CHANNEL, ProtocolMatch, Sideband, SignalMeasure, SignalSignature, SignalTrial, SiteNaming,
+    SortKey, Symbol, Vendor, catalog, install_catalog, modulation_label, platform_kinds,
 };
 pub use device::{
     Agc, AgcGain, AgcReach, AgcSetting, ArgumentInfo, ArgumentOption, ArgumentType, BackendEntry,
@@ -168,9 +172,9 @@ pub use patch::{
     RackSlot, Reach, RecorderNode, Refusal, RefusedEdge, ResolveCtx, ResolvedEdge, ResolvedNode,
     ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs, STEER_PORT, STITCH_WIDE_PORT,
     ScannerNode, SignalMapNode, Size, SpatialSpectrumNode, SpeakerNode, StitchNode, Tap,
-    TriangulationNode, TrunkChannelEntry, TrunkDiscovery, TrunkNode, TrunkProtocol,
-    TrunkSearchRange, UnboundReason, VIDEO_PORT, channel_ports, generator_key, port_index,
-    port_lane, port_stream, stream_port,
+    TriangulationNode, TrunkChannelEntry, TrunkDiscovery, TrunkNode, TrunkSearchRange,
+    UnboundReason, VIDEO_PORT, channel_ports, generator_key, port_index, port_lane, port_stream,
+    stream_port,
 };
 #[cfg(feature = "pin")]
 pub use phone::PinError;

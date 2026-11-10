@@ -238,6 +238,8 @@ mod tests {
             emergency: false,
             audio: None,
             audio_error: None,
+            talker_alias: None,
+            key_id: None,
         }
     }
 

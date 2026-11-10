@@ -1,12 +1,14 @@
 import { formatHz } from "../../components/format";
 import type {
   ChannelDescriptor,
-  DvTrunkProtocol,
   TrunkChannel,
   TrunkChannelEntry,
   TrunkChannelSource,
-  TrunkProtocol,
+  TrunkFollower,
+  TrunkScheme,
   TrunkSearchRange,
+  TrunkSite,
+  TrunkSpec,
   TrunkSystemStatus,
 } from "../../lib/types";
 
@@ -15,51 +17,96 @@ export const MAX_SEARCH_CANDIDATES = 512;
 export const MIN_SEARCH_STEP_HZ = 1_250;
 export const MAX_CHANNEL_MAP = 512;
 export const MAX_LOGICAL_CHANNEL = 4095;
-
-export const TRUNK_PROTOCOLS: readonly { value: TrunkProtocol; label: string }[] = [
-  { value: "auto", label: "Auto-detect" },
-  { value: "capacity_plus", label: "Capacity Plus" },
-  { value: "hytera_xpt", label: "Hytera XPT" },
-  { value: "tier_three", label: "Tier III / Capacity Max" },
-];
+export const MAX_TALKGROUPS = 256;
+export const AUTO_PROTOCOL = "auto";
 
 /** The decoders a trunk system can run on, in registry order. */
 export function trunkDecoders(
   types: readonly ChannelDescriptor[],
 ): { value: string; label: string }[] {
   return types
-    .filter((type) => type.trunks === true)
+    .filter((type) => type.trunking != null)
     .map((type) => ({ value: type.type_id, label: type.name }));
 }
 
-export function trunkProtocolLabel(
-  protocol: TrunkProtocol,
-  detected: DvTrunkProtocol | null = null,
-): string {
-  switch (protocol === "auto" ? detected : protocol) {
-    case "capacity_plus":
-      return "Capacity Plus";
-    case "hytera_xpt":
-      return "Hytera XPT";
-    case "tier_three":
-      return "Tier III";
-    default:
-      return "Listening for signalling";
+/** How the node's decoder trunks: its own pick, or the first decoder that can. */
+export function trunkSpec(types: readonly ChannelDescriptor[], decoder: string): TrunkSpec | null {
+  const found = types.find(
+    (type) => type.trunking != null && (decoder === "" || type.type_id === decoder),
+  );
+  return found?.trunking ?? null;
+}
+
+export function trunkProtocols(spec: TrunkSpec | null): { value: string; label: string }[] {
+  return [
+    { value: AUTO_PROTOCOL, label: "Auto-detect" },
+    ...(spec?.schemes ?? []).map((scheme) => ({ value: scheme.id, label: scheme.label })),
+  ];
+}
+
+/** The protocol the node runs: the one picked, or the one the signalling named. */
+export function activeScheme(
+  spec: TrunkSpec | null,
+  protocol: string,
+  detected: string | null = null,
+): TrunkScheme | null {
+  const id = protocol === AUTO_PROTOCOL ? detected : protocol;
+  return spec?.schemes.find((scheme) => scheme.id === id) ?? null;
+}
+
+export function trunkProtocolLabel(scheme: TrunkScheme | null): string {
+  return scheme?.label ?? "Listening for signalling";
+}
+
+export function planLabel(scheme: TrunkScheme | null): string {
+  return scheme?.kind === "grants" ? "Channel plan" : "Repeater outputs";
+}
+
+export function parseTalkgroups(text: string): number[] {
+  const ids = text
+    .split(/[\s,;]+/)
+    .filter((part) => /^\d+$/.test(part))
+    .map(Number)
+    .filter((id) => Number.isSafeInteger(id) && id <= 0xffff_ffff);
+  return [...new Set(ids)].slice(0, MAX_TALKGROUPS);
+}
+
+export function formatTalkgroups(ids: readonly number[] | undefined): string {
+  return (ids ?? []).join(", ");
+}
+
+/** Where a call runs: the slot only when a carrier holds more than one call. */
+export function slotLabel(slot: number, slots: number): string {
+  return slots > 1 ? `TS ${slot}` : "Call";
+}
+
+export function followerCall(follower: TrunkFollower): string {
+  const parts = [formatHz(follower.freq_hz)];
+  if (follower.logical_channel != null) {
+    parts.push(`LCN ${follower.logical_channel}`);
   }
+  if (follower.destination != null) {
+    parts.push(`${follower.group_call === false ? "ID" : "TG"} ${follower.destination}`);
+  }
+  return parts.join(" · ");
 }
 
-export function planLabel(
-  protocol: TrunkProtocol,
-  detected: DvTrunkProtocol | null = null,
-): string {
-  return followsTierThree(protocol, detected) ? "Channel plan" : "Repeater outputs";
+export function siteLabel(site: TrunkSite | undefined): string | null {
+  const parts = [
+    site?.network_id == null ? null : `net ${site.network_id}`,
+    site?.site_id == null ? null : `site ${site.site_id}`,
+    site?.system_id == null ? null : `sys ${site.system_id}`,
+  ].filter((part): part is string => part !== null);
+  return parts.length === 0 ? null : parts.join(" · ");
 }
 
-export function followsTierThree(
-  protocol: TrunkProtocol,
-  detected: DvTrunkProtocol | null = null,
-): boolean {
-  return protocol === "tier_three" || (protocol === "auto" && detected === "tier_three");
+/** The control frequency the node is listening on, when it had to leave the one set. */
+export function fallbackControl(
+  status: TrunkSystemStatus | undefined,
+  controlHz: number | null | undefined,
+): number | null {
+  const tuned = status?.control?.freq_hz;
+  return tuned != null && controlHz != null && tuned !== controlHz ? tuned : null;
 }
 
 function megahertz(value: number): string {

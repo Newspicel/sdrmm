@@ -205,8 +205,8 @@ pub use dect::{
 pub use drm::{DrmMode, DrmParams};
 pub use dsc::DscParams;
 pub use dv::{
-    DmrKey, DmrParams, DmrSlots, DpmrParams, DstarParams, FreeDvMode, FreeDvParams, M17Params,
-    NxdnBandwidth, NxdnParams, P25Params, YsfParams,
+    DmrParams, DmrSlots, DpmrParams, DstarParams, FreeDvMode, FreeDvParams, M17Params,
+    NxdnBandwidth, NxdnParams, P25Params, VoiceKey, YsfParams,
 };
 pub use eot::{
     EotArming, EotBattery, EotMessage, EotParams, EotReport, EotStatus, HotCommand, HotRequest,

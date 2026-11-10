@@ -40,6 +40,10 @@ pub struct VoiceCall {
     pub audio: Option<EventAudio>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub talker_alias: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_id: Option<u16>,
 }
 
 impl VoiceCall {

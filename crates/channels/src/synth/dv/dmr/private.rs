@@ -1,4 +1,3 @@
-use blip25_vocoder::halfrate::frame::{encode_code_vectors, unpack_natural};
 use num_complex::Complex;
 use sdrmm_dsp::{Bptc128, crc16_msb, pack_msb};
 
@@ -7,7 +6,7 @@ use super::{
     embedded_lc, parity_lc, voice_burst,
 };
 use crate::dv::dmr::privacy::{CipherKey, FRAME_BYTES, Keystream, SILENCE, basic_keystream};
-use crate::dv::vocoder::AMBE_3600_INTERLEAVE;
+use crate::synth::dv::half_rate_air;
 
 const FRAMES_PER_SUPERFRAME: usize = 18;
 const FRAME_AIR_BITS: usize = 72;
@@ -130,23 +129,7 @@ fn sockets(superframe: &[[u8; FRAME_BYTES]]) -> [[bool; 216]; 6] {
     let mut sockets = [[false; 216]; 6];
     for (index, frame) in superframe.iter().enumerate() {
         let at = index % 3 * FRAME_AIR_BITS;
-        sockets[index / 3][at..at + FRAME_AIR_BITS].copy_from_slice(&air(frame));
+        sockets[index / 3][at..at + FRAME_AIR_BITS].copy_from_slice(&half_rate_air(frame));
     }
     sockets
-}
-
-fn air(natural: &[u8; FRAME_BYTES]) -> [bool; FRAME_AIR_BITS] {
-    let code = encode_code_vectors(&unpack_natural(natural));
-    let mut air = [false; FRAME_AIR_BITS];
-    for (dibit, places) in air
-        .as_chunks_mut::<2>()
-        .0
-        .iter_mut()
-        .zip(AMBE_3600_INTERLEAVE)
-    {
-        for (bit, (row, column)) in dibit.iter_mut().zip(places) {
-            *bit = code[usize::from(row)] >> column & 1 == 1;
-        }
-    }
-    air
 }

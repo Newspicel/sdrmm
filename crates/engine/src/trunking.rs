@@ -3,16 +3,21 @@ mod prospect;
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex, Weak, mpsc},
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
     time::{Duration, Instant},
 };
 
 use prospect::Prospector;
 use sdrmm_channels::Trunking;
 use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecodedRecord, DvFrame, DvFrameKind, DvTrunkProtocol,
+    AUTO_TRUNK_PROTOCOL, ChannelParams, ChannelSettings, DecodedRecord, DvFrame, DvFrameKind,
     StateScope, TrunkChannel, TrunkChannelEntry, TrunkChannelSource, TrunkControl, TrunkDiscovery,
-    TrunkFollower, TrunkProbe, TrunkProblem, TrunkProtocol, TrunkSystemStatus,
+    TrunkFollower, TrunkKind, TrunkProbe, TrunkProblem, TrunkScheme, TrunkSite, TrunkSpec,
+    TrunkSystemStatus, TrunkTalkgroups,
 };
 
 use crate::Engine;
@@ -24,16 +29,29 @@ const MAX_FOLLOWERS_PER_SYSTEM: usize = 16;
 const RETRY_BASE: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(300);
 
+/// How long a granted traffic channel stays its call's after the last grant naming it, before
+/// another call may take its receiver.
+const GRANT_HOLD: Duration = Duration::from_secs(3);
+
+/// How long a control channel may go without a control burst before the follower tries the
+/// site's other control channels.
+const CONTROL_SILENCE: Duration = Duration::from_secs(10);
+
+/// Decoded frames queued for the trunk follower before new ones are dropped.
+pub(crate) const INPUT_DEPTH: usize = 4096;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrunkSystem {
     pub node: String,
     /// The decoder the node asked for; empty takes the first one that trunks.
     pub decoder: String,
-    pub protocol: TrunkProtocol,
+    /// A protocol id the decoder declares, or [`AUTO_TRUNK_PROTOCOL`].
+    pub protocol: String,
     pub discovery: TrunkDiscovery,
     pub channel_map: Vec<TrunkChannelEntry>,
     pub learned: Vec<TrunkChannelEntry>,
     pub radio: Option<TrunkRadio>,
+    pub talkgroups: TrunkTalkgroups,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,7 +78,8 @@ pub(crate) struct Heard {
 struct Carrier {
     system_node: String,
     trunking: Trunking,
-    protocol: TrunkProtocol,
+    spec: TrunkSpec,
+    protocol: String,
     device_set: u32,
     stream: u32,
     center_hz: f64,
@@ -76,7 +95,7 @@ enum FollowerKey {
         freq_hz: u64,
         slot: u8,
     },
-    TierThree {
+    Granted {
         system_node: String,
         logical_channel: u16,
         slot: u8,
@@ -86,7 +105,7 @@ enum FollowerKey {
 impl FollowerKey {
     fn system_node(&self) -> &str {
         match self {
-            Self::KnownCarrier { system_node, .. } | Self::TierThree { system_node, .. } => {
+            Self::KnownCarrier { system_node, .. } | Self::Granted { system_node, .. } => {
                 system_node
             }
         }
@@ -94,14 +113,14 @@ impl FollowerKey {
 
     fn slot(&self) -> u8 {
         match self {
-            Self::KnownCarrier { slot, .. } | Self::TierThree { slot, .. } => *slot,
+            Self::KnownCarrier { slot, .. } | Self::Granted { slot, .. } => *slot,
         }
     }
 
     fn logical_channel(&self) -> Option<u16> {
         match self {
             Self::KnownCarrier { .. } => None,
-            Self::TierThree {
+            Self::Granted {
                 logical_channel, ..
             } => Some(*logical_channel),
         }
@@ -112,6 +131,23 @@ struct FollowerChannel {
     device_set: u32,
     channel: u32,
     freq_hz: u64,
+    call: Option<GrantedCall>,
+    granted: Instant,
+}
+
+impl FollowerChannel {
+    fn idle(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.granted) >= GRANT_HOLD
+    }
+}
+
+/// The control channel a system listens to, and when it last heard the site on it.
+struct ControlChannel {
+    device_set: u32,
+    channel: u32,
+    freq_hz: u64,
+    configured_hz: u64,
+    heard: Instant,
 }
 
 struct Problem {
@@ -126,17 +162,22 @@ struct Problem {
 struct Grant {
     slot: u8,
     freq_hz: u64,
+    call: Option<GrantedCall>,
 }
 
 pub(crate) fn spawn(
     engine: &Arc<Engine>,
-    tx: mpsc::Sender<TrunkInput>,
+    tx: mpsc::SyncSender<TrunkInput>,
     rx: mpsc::Receiver<TrunkInput>,
     status: Arc<Mutex<Vec<TrunkSystemStatus>>>,
+    dropped: Arc<AtomicU64>,
 ) {
     let follower = Follower {
         engine: Arc::downgrade(engine),
         status,
+        dropped,
+        sites: HashMap::new(),
+
         systems: Vec::new(),
         carriers: HashMap::new(),
         definitions: HashMap::new(),
@@ -166,18 +207,20 @@ struct Probe {
 struct Follower {
     engine: Weak<Engine>,
     status: Arc<Mutex<Vec<TrunkSystemStatus>>>,
+    dropped: Arc<AtomicU64>,
     systems: Vec<TrunkSystem>,
     carriers: HashMap<(u32, u32), Carrier>,
     definitions: HashMap<(String, u16), u64>,
     followers: HashMap<FollowerKey, FollowerChannel>,
     problems: HashMap<FollowerKey, Problem>,
-    detected: HashMap<String, DvTrunkProtocol>,
+    detected: HashMap<String, String>,
+    sites: HashMap<String, TrunkSite>,
     prospectors: HashMap<String, Prospector>,
     probes: HashMap<(u32, u32), Probe>,
-    controls: HashMap<String, FollowerChannel>,
+    controls: HashMap<String, ControlChannel>,
     unreachable: HashSet<(u32, u32)>,
     watching: Vec<carriers::Watch>,
-    tx: mpsc::Sender<TrunkInput>,
+    tx: mpsc::SyncSender<TrunkInput>,
 }
 
 impl Follower {
@@ -236,7 +279,8 @@ impl Follower {
                 Carrier {
                     system_node: system.node.clone(),
                     trunking,
-                    protocol: system.protocol,
+                    spec: (trunking.spec)(),
+                    protocol: system.protocol.clone(),
                     device_set,
                     stream: info.stream,
                     center_hz,
@@ -249,13 +293,24 @@ impl Follower {
         carriers
     }
 
-    fn protocol_of(&self, system_node: &str, configured: TrunkProtocol) -> Option<DvTrunkProtocol> {
-        match configured {
-            TrunkProtocol::CapacityPlus => Some(DvTrunkProtocol::CapacityPlus),
-            TrunkProtocol::HyteraXpt => Some(DvTrunkProtocol::HyteraXpt),
-            TrunkProtocol::TierThree => Some(DvTrunkProtocol::TierThree),
-            TrunkProtocol::Auto => self.detected.get(system_node).copied(),
-        }
+    fn scheme_of<'a>(&'a self, carrier: &'a Carrier) -> Option<&'a TrunkScheme> {
+        let id = if carrier.protocol == AUTO_TRUNK_PROTOCOL {
+            self.detected.get(&carrier.system_node)?
+        } else {
+            &carrier.protocol
+        };
+        carrier.spec.scheme(id)
+    }
+
+    fn kind_of(&self, carrier: &Carrier) -> Option<TrunkKind> {
+        self.scheme_of(carrier).map(|scheme| scheme.kind)
+    }
+
+    fn talkgroups_of(&self, system_node: &str) -> Option<&TrunkTalkgroups> {
+        self.systems
+            .iter()
+            .find(|system| system.node == system_node)
+            .map(|system| &system.talkgroups)
     }
 
     fn observe(&mut self, record: &DecodedRecord) -> bool {
@@ -277,29 +332,51 @@ impl Follower {
         else {
             return false;
         };
-        if let Some(protocol) = frame.trunk_protocol {
-            self.note_detection(&carrier.system_node, protocol);
+        if let Some(protocol) = &frame.trunk_protocol {
+            self.note_detection(&carrier, protocol);
         }
-        match self.protocol_of(&carrier.system_node, carrier.protocol) {
-            Some(DvTrunkProtocol::CapacityPlus | DvTrunkProtocol::HyteraXpt) => {
+        if frame.kind == DvFrameKind::Control {
+            self.note_control(&carrier, frame);
+        }
+        match self.kind_of(&carrier) {
+            Some(TrunkKind::Distributed) => {
                 if let Some(prospector) = self.prospectors.get_mut(&carrier.system_node) {
                     prospector.note_rest(frame.rest_channel);
                 }
                 self.provision_known_carrier(&engine, &carrier);
                 false
             }
-            Some(DvTrunkProtocol::TierThree) => self.observe_tier_three(&engine, &carrier, frame),
+            Some(TrunkKind::Grants) => self.observe_grants(&engine, &carrier, frame),
             None => false,
         }
     }
 
-    fn note_detection(&mut self, system_node: &str, protocol: DvTrunkProtocol) {
-        if self.detected.get(system_node) == Some(&protocol) {
+    fn note_detection(&mut self, carrier: &Carrier, protocol: &str) {
+        let system_node = carrier.system_node.as_str();
+        if self.detected.get(system_node).map(String::as_str) == Some(protocol)
+            || carrier.spec.scheme(protocol).is_none()
+        {
             return;
         }
-        self.detected.insert(system_node.to_owned(), protocol);
-        tracing::info!(node = system_node, ?protocol, "trunk system identified");
+        self.detected
+            .insert(system_node.to_owned(), protocol.to_owned());
+        tracing::info!(node = system_node, protocol, "trunk system identified");
         self.publish();
+    }
+
+    /// A control burst from the site: the control channel is alive, and it may name the site.
+    fn note_control(&mut self, carrier: &Carrier, frame: &DvFrame) {
+        if let Some(control) = self.controls.get_mut(&carrier.system_node) {
+            control.heard = Instant::now();
+        }
+        let site = self.sites.entry(carrier.system_node.clone()).or_default();
+        let before = *site;
+        site.system_id = frame.system_id.or(site.system_id);
+        site.network_id = frame.network_id.or(site.network_id);
+        site.site_id = frame.site_id.or(site.site_id);
+        if *site != before {
+            self.publish();
+        }
     }
 
     fn prospect(
@@ -348,7 +425,7 @@ impl Follower {
             self.ensure_follower(
                 engine,
                 &carrier,
-                FollowerKey::TierThree {
+                FollowerKey::Granted {
                     system_node: system_node.to_owned(),
                     logical_channel: found.logical_channel,
                     slot: found.slot,
@@ -356,6 +433,7 @@ impl Follower {
                 Grant {
                     slot: found.slot,
                     freq_hz: found.freq_hz,
+                    call: None,
                 },
             );
         }
@@ -463,7 +541,7 @@ impl Follower {
             if self
                 .controls
                 .get(&node)
-                .is_some_and(|control| control.freq_hz == radio.control_hz)
+                .is_some_and(|control| control.configured_hz == radio.control_hz)
             {
                 continue;
             }
@@ -493,10 +571,12 @@ impl Follower {
                 Ok(channel) => {
                     self.controls.insert(
                         node,
-                        FollowerChannel {
+                        ControlChannel {
                             device_set: radio.device_set,
                             channel,
                             freq_hz: radio.control_hz,
+                            configured_hz: radio.control_hz,
+                            heard: Instant::now(),
                         },
                     );
                 }
@@ -507,6 +587,47 @@ impl Follower {
                     "could not open the trunk control channel"
                 ),
             }
+        }
+    }
+
+    /// Moves a control channel that has gone quiet to the next one the site is known to run,
+    /// back round to the operator's own once the others have had their turn.
+    fn fail_over_silent_controls(&mut self) {
+        let now = Instant::now();
+        let silent: Vec<String> = self
+            .controls
+            .iter()
+            .filter(|(_, control)| now.saturating_duration_since(control.heard) >= CONTROL_SILENCE)
+            .map(|(node, _)| node.clone())
+            .collect();
+        for node in silent {
+            let grants = self
+                .carriers
+                .values()
+                .find(|carrier| carrier.system_node == node)
+                .is_some_and(|carrier| self.kind_of(carrier) == Some(TrunkKind::Grants));
+            let others = self
+                .prospectors
+                .get(&node)
+                .map(Prospector::other_control_hz)
+                .unwrap_or_default();
+            let Some(control) = self.controls.get_mut(&node) else {
+                continue;
+            };
+            control.heard = now;
+            if !grants {
+                continue;
+            }
+            let Some(next) = next_control(control.configured_hz, control.freq_hz, &others) else {
+                continue;
+            };
+            tracing::info!(
+                node,
+                from_hz = control.freq_hz,
+                to_hz = next,
+                "control channel went quiet, trying another of the site's"
+            );
+            control.freq_hz = next;
         }
     }
 
@@ -572,13 +693,13 @@ impl Follower {
             else {
                 continue;
             };
-            let Some(protocol) = self.protocol_of(&system.node, carrier.protocol) else {
+            let Some(scheme) = self.scheme_of(carrier).cloned() else {
                 continue;
             };
             let Some(prospector) = self.prospectors.get_mut(&system.node) else {
                 continue;
             };
-            prospector.set_protocol(Some(protocol));
+            prospector.set_scheme(Some(scheme));
             let Some(reach) = probe_reach(carrier) else {
                 continue;
             };
@@ -662,7 +783,7 @@ impl Follower {
         }
     }
 
-    fn observe_tier_three(&mut self, engine: &Engine, carrier: &Carrier, frame: &DvFrame) -> bool {
+    fn observe_grants(&mut self, engine: &Engine, carrier: &Carrier, frame: &DvFrame) -> bool {
         if let Some(color_code) = frame.color_code
             && let Ok(color_code) = u8::try_from(color_code)
             && let Some(prospector) = self.prospectors.get_mut(&carrier.system_node)
@@ -686,6 +807,13 @@ impl Follower {
     }
 
     fn follow_granted(&mut self, engine: &Engine, carrier: &Carrier, call: GrantedCall) -> bool {
+        if call.group_call != Some(false)
+            && self
+                .talkgroups_of(&carrier.system_node)
+                .is_some_and(|talkgroups| !talkgroups.follows(call.destination))
+        {
+            return false;
+        }
         let announced = self
             .definitions
             .get(&(carrier.system_node.clone(), call.logical_channel))
@@ -711,7 +839,7 @@ impl Follower {
         self.ensure_follower(
             engine,
             carrier,
-            FollowerKey::TierThree {
+            FollowerKey::Granted {
                 system_node: carrier.system_node.clone(),
                 logical_channel: call.logical_channel,
                 slot: call.slot,
@@ -719,6 +847,7 @@ impl Follower {
             Grant {
                 slot: call.slot,
                 freq_hz,
+                call: Some(call),
             },
         );
         false
@@ -726,7 +855,7 @@ impl Follower {
 
     fn provision_known_carrier(&mut self, engine: &Engine, carrier: &Carrier) {
         for freq_hz in self.repeaters_of(carrier) {
-            for slot in [1, 2] {
+            for slot in 1..=carrier.spec.slots.max(1) {
                 self.ensure_follower(
                     engine,
                     carrier,
@@ -735,7 +864,11 @@ impl Follower {
                         freq_hz,
                         slot,
                     },
-                    Grant { slot, freq_hz },
+                    Grant {
+                        slot,
+                        freq_hz,
+                        call: None,
+                    },
                 );
             }
         }
@@ -770,22 +903,17 @@ impl Follower {
         key: FollowerKey,
         grant: Grant,
     ) {
-        if self
-            .followers
-            .get(&key)
-            .is_some_and(|follower| follower.freq_hz == grant.freq_hz)
+        if let Some(follower) = self.followers.get_mut(&key)
+            && follower.freq_hz == grant.freq_hz
         {
+            follower.granted = Instant::now();
+            if grant.call.is_some() && follower.call != grant.call {
+                follower.call = grant.call;
+                self.publish();
+            }
             return;
         }
         if self.backing_off(&key, grant.freq_hz) {
-            return;
-        }
-        if !self.followers.contains_key(&key) && self.at_limit(key.system_node()) {
-            self.fail(
-                key,
-                grant,
-                format!("the system already holds {MAX_FOLLOWERS_PER_SYSTEM} traffic channels"),
-            );
             return;
         }
         let params = match (carrier.trunking.follow)(grant.slot, carrier.ignore_crc) {
@@ -817,6 +945,17 @@ impl Follower {
             }
             return;
         }
+        if !self.followers.contains_key(&key)
+            && self.at_limit(key.system_node())
+            && !self.make_room(&key, grant)
+        {
+            self.fail(
+                key,
+                grant,
+                format!("the system already holds {MAX_FOLLOWERS_PER_SYSTEM} traffic channels"),
+            );
+            return;
+        }
         let result = match self.followers.get(&key) {
             Some(follower) => engine
                 .patch_channel(carrier.device_set, follower.channel, settings)
@@ -837,6 +976,8 @@ impl Follower {
                         device_set: carrier.device_set,
                         channel,
                         freq_hz: grant.freq_hz,
+                        call: grant.call,
+                        granted: Instant::now(),
                     },
                 );
                 self.publish();
@@ -852,6 +993,37 @@ impl Follower {
                 }
             }
         }
+    }
+
+    /// Hands `key` the receiver of a granted channel no call needs any more, or, for a priority
+    /// talkgroup, the one held longest by a call that is not.
+    fn make_room(&mut self, key: &FollowerKey, grant: Grant) -> bool {
+        let now = Instant::now();
+        let node = key.system_node();
+        let talkgroups = self.talkgroups_of(node).cloned().unwrap_or_default();
+        let priority = |call: Option<GrantedCall>| {
+            call.is_some_and(|call| {
+                call.group_call != Some(false) && talkgroups.priority(call.destination)
+            })
+        };
+        let urgent = priority(grant.call);
+        let victim = self
+            .followers
+            .iter()
+            .filter(|(candidate, _)| {
+                candidate.system_node() == node && matches!(candidate, FollowerKey::Granted { .. })
+            })
+            .filter(|(_, follower)| follower.idle(now) || (urgent && !priority(follower.call)))
+            .min_by_key(|(_, follower)| (!follower.idle(now), follower.granted))
+            .map(|(candidate, _)| candidate.clone());
+        let Some(victim) = victim else {
+            return false;
+        };
+        let Some(follower) = self.followers.remove(&victim) else {
+            return false;
+        };
+        self.followers.insert(key.clone(), follower);
+        true
     }
 
     fn at_limit(&self, system_node: &str) -> bool {
@@ -921,8 +1093,9 @@ impl Follower {
             return;
         };
         self.tune_control_channels(&engine);
-        self.retune_drifted(&engine);
         self.carriers = self.resolve_carriers(&engine);
+        self.fail_over_silent_controls();
+        self.retune_drifted(&engine);
         let live: Vec<Carrier> = self.carriers.values().cloned().collect();
         let known: Vec<(FollowerKey, u32, u32)> = self
             .followers
@@ -952,6 +1125,7 @@ impl Follower {
             .retain(|(node, _), _| nodes.contains(&node.as_str()));
         self.detected
             .retain(|node, _| nodes.contains(&node.as_str()));
+        self.sites.retain(|node, _| nodes.contains(&node.as_str()));
         let settled: Vec<FollowerKey> = self
             .problems
             .keys()
@@ -974,10 +1148,7 @@ impl Follower {
             }
         }
         for carrier in &live {
-            if matches!(
-                self.protocol_of(&carrier.system_node, carrier.protocol),
-                Some(DvTrunkProtocol::CapacityPlus | DvTrunkProtocol::HyteraXpt)
-            ) {
+            if self.kind_of(carrier) == Some(TrunkKind::Distributed) {
                 self.provision_known_carrier(&engine, carrier);
             }
         }
@@ -1000,16 +1171,12 @@ impl Follower {
                 ..
             } => live.iter().any(|source| {
                 source.system_node == *system_node
-                    && matches!(
-                        self.protocol_of(system_node, source.protocol),
-                        Some(DvTrunkProtocol::CapacityPlus | DvTrunkProtocol::HyteraXpt)
-                    )
+                    && self.kind_of(source) == Some(TrunkKind::Distributed)
                     && self.repeaters_of(source).contains(freq_hz)
             }),
-            FollowerKey::TierThree { system_node, .. } => live.iter().any(|source| {
+            FollowerKey::Granted { system_node, .. } => live.iter().any(|source| {
                 source.system_node == *system_node
-                    && self.protocol_of(system_node, source.protocol)
-                        == Some(DvTrunkProtocol::TierThree)
+                    && self.kind_of(source) == Some(TrunkKind::Grants)
             }),
         }
     }
@@ -1029,7 +1196,7 @@ impl Follower {
     fn status_of(&self, system: &TrunkSystem) -> TrunkSystemStatus {
         let mut status = TrunkSystemStatus {
             node: system.node.clone(),
-            detected: self.detected.get(&system.node).copied(),
+            detected: self.detected.get(&system.node).cloned(),
             carriers: self
                 .carriers
                 .values()
@@ -1050,6 +1217,9 @@ impl Follower {
                     logical_channel: key.logical_channel(),
                     slot: key.slot(),
                     freq_hz: follower.freq_hz,
+                    destination: follower.call.map(|call| call.destination),
+                    source: follower.call.and_then(|call| call.source),
+                    group_call: follower.call.and_then(|call| call.group_call),
                 })
                 .collect(),
             problems: self
@@ -1093,6 +1263,8 @@ impl Follower {
                 .prospectors
                 .get(&system.node)
                 .and_then(Prospector::color_code),
+            site: self.sites.get(&system.node).copied().unwrap_or_default(),
+            dropped: self.dropped.load(Ordering::Relaxed),
         };
         status
             .followers
@@ -1128,12 +1300,13 @@ impl Follower {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct GrantedCall {
     logical_channel: u16,
     slot: u8,
     destination: u32,
     source: Option<u32>,
+    group_call: Option<bool>,
 }
 
 fn granted_calls(frame: &DvFrame) -> Vec<GrantedCall> {
@@ -1146,6 +1319,7 @@ fn granted_calls(frame: &DvFrame) -> Vec<GrantedCall> {
                 slot: activity.slot,
                 destination: activity.destination?,
                 source: None,
+                group_call: None,
             })
         })
         .collect();
@@ -1158,9 +1332,21 @@ fn granted_calls(frame: &DvFrame) -> Vec<GrantedCall> {
             slot,
             destination,
             source: frame.source,
+            group_call: frame.group_call,
         }],
         _ => Vec::new(),
     }
+}
+
+/// The control channel after `current_hz` in the ring of the operator's own and the site's others.
+fn next_control(configured_hz: u64, current_hz: u64, others: &[u64]) -> Option<u64> {
+    let mut ring = vec![configured_hz];
+    ring.extend(others.iter().copied().filter(|hz| *hz != configured_hz));
+    if ring.len() < 2 {
+        return None;
+    }
+    let at = ring.iter().position(|hz| *hz == current_hz).unwrap_or(0);
+    ring.get((at + 1) % ring.len()).copied()
 }
 
 fn device_sets(live: &[Carrier]) -> Vec<u32> {
@@ -1232,7 +1418,7 @@ mod tests {
         (device_set, channel, center_hz)
     }
 
-    fn follower(engine: &Arc<Engine>, protocol: TrunkProtocol, carrier: (u32, u32)) -> Follower {
+    fn follower(engine: &Arc<Engine>, protocol: &str, carrier: (u32, u32)) -> Follower {
         searching_follower(
             engine,
             protocol,
@@ -1244,7 +1430,7 @@ mod tests {
 
     fn searching_follower(
         engine: &Arc<Engine>,
-        protocol: TrunkProtocol,
+        protocol: &str,
         carrier: (u32, u32),
         discovery: TrunkDiscovery,
         channel_map: Vec<TrunkChannelEntry>,
@@ -1259,13 +1445,16 @@ mod tests {
         let mut follower = Follower {
             engine: Arc::downgrade(engine),
             status: Arc::new(Mutex::new(Vec::new())),
+            dropped: Arc::new(AtomicU64::new(0)),
+            sites: HashMap::new(),
             systems: vec![TrunkSystem {
                 node: "trunk".to_owned(),
                 decoder: String::new(),
-                protocol,
+                protocol: protocol.to_owned(),
                 discovery,
                 channel_map,
                 learned: Vec::new(),
+                talkgroups: TrunkTalkgroups::default(),
                 radio: Some(TrunkRadio {
                     device_set: carrier.0,
                     stream: 0,
@@ -1275,10 +1464,12 @@ mod tests {
             }],
             controls: HashMap::from([(
                 "trunk".to_owned(),
-                FollowerChannel {
+                ControlChannel {
                     device_set: carrier.0,
                     channel: carrier.1,
                     freq_hz: control_hz,
+                    configured_hz: control_hz,
+                    heard: Instant::now(),
                 },
             )]),
             carriers: HashMap::new(),
@@ -1290,7 +1481,7 @@ mod tests {
             probes: HashMap::new(),
             unreachable: HashSet::new(),
             watching: Vec::new(),
-            tx: mpsc::channel().0,
+            tx: mpsc::sync_channel(1).0,
         };
         follower.reconcile();
         follower
@@ -1312,7 +1503,7 @@ mod tests {
 
     fn definition(rx_hz: u64) -> DvFrame {
         DvFrame {
-            trunk_protocol: Some(DvTrunkProtocol::TierThree),
+            trunk_protocol: Some("tier_three".to_owned()),
             crc_verified: Some(true),
             channel_definition: Some(DvChannelDefinition {
                 channel: LOGICAL_CHANNEL,
@@ -1326,7 +1517,7 @@ mod tests {
 
     fn grant(slot: u8) -> DvFrame {
         DvFrame {
-            trunk_protocol: Some(DvTrunkProtocol::TierThree),
+            trunk_protocol: Some("tier_three".to_owned()),
             crc_verified: Some(true),
             channel: Some(LOGICAL_CHANNEL),
             slot: Some(slot),
@@ -1378,7 +1569,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, center_hz) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, TrunkProtocol::TierThree, carrier);
+        let mut follower = follower(&engine, "tier_three", carrier);
         let traffic = center_hz as u64 + 125_000;
 
         follower.observe(&record(carrier, definition(traffic)));
@@ -1413,7 +1604,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, _) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, TrunkProtocol::TierThree, carrier);
+        let mut follower = follower(&engine, "tier_three", carrier);
 
         follower.observe(&record(carrier, grant(1)));
 
@@ -1426,7 +1617,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, center_hz) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, TrunkProtocol::TierThree, carrier);
+        let mut follower = follower(&engine, "tier_three", carrier);
         let traffic = center_hz as u64 + 125_000;
 
         follower.observe(&record(carrier, definition(traffic)));
@@ -1444,7 +1635,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, _) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, TrunkProtocol::Auto, carrier);
+        let mut follower = follower(&engine, AUTO_TRUNK_PROTOCOL, carrier);
         assert!(
             follower.followers.is_empty(),
             "auto followed before it knew"
@@ -1453,7 +1644,7 @@ mod tests {
         follower.observe(&record(
             carrier,
             DvFrame {
-                trunk_protocol: Some(DvTrunkProtocol::CapacityPlus),
+                trunk_protocol: Some("capacity_plus".to_owned()),
                 crc_verified: Some(true),
                 ..DvFrame::new("DMR", DvFrameKind::Control)
             },
@@ -1462,7 +1653,7 @@ mod tests {
         let set = engine.snapshot().device_sets.remove(0);
         assert_eq!(set.channels.len(), 3, "both slots were not provisioned");
         let status = status(&follower);
-        assert_eq!(status.detected, Some(DvTrunkProtocol::CapacityPlus));
+        assert_eq!(status.detected, Some("capacity_plus".to_owned()));
         assert_eq!(status.followers.len(), 2);
         assert_eq!(status.followers[0].slot, 1);
         assert_eq!(status.followers[1].slot, 2);
@@ -1476,7 +1667,7 @@ mod tests {
         let second = center_hz as u64 + 25_000;
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::CapacityPlus,
+            "capacity_plus",
             carrier,
             TrunkDiscovery::default(),
             vec![TrunkChannelEntry {
@@ -1488,7 +1679,7 @@ mod tests {
         follower.observe(&record(
             carrier,
             DvFrame {
-                trunk_protocol: Some(DvTrunkProtocol::CapacityPlus),
+                trunk_protocol: Some("capacity_plus".to_owned()),
                 crc_verified: Some(true),
                 ..DvFrame::new("DMR", DvFrameKind::Control)
             },
@@ -1523,7 +1714,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, _) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, TrunkProtocol::Auto, carrier);
+        let mut follower = follower(&engine, AUTO_TRUNK_PROTOCOL, carrier);
         assert!(
             follower.followers.is_empty(),
             "auto followed before it knew"
@@ -1532,7 +1723,7 @@ mod tests {
         follower.observe(&record(
             carrier,
             DvFrame {
-                trunk_protocol: Some(DvTrunkProtocol::HyteraXpt),
+                trunk_protocol: Some("hytera_xpt".to_owned()),
                 crc_verified: Some(true),
                 ..DvFrame::new("DMR", DvFrameKind::Control)
             },
@@ -1557,7 +1748,7 @@ mod tests {
                     .is_ok_and(|params| params.slots == DmrSlots::Two)
         }));
         let status = status(&follower);
-        assert_eq!(status.detected, Some(DvTrunkProtocol::HyteraXpt));
+        assert_eq!(status.detected, Some("hytera_xpt".to_owned()));
         assert_eq!(status.followers.len(), 2);
         assert_eq!(status.followers[0].slot, 1);
         assert_eq!(status.followers[1].slot, 2);
@@ -1568,7 +1759,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, center_hz) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, TrunkProtocol::TierThree, carrier);
+        let mut follower = follower(&engine, "tier_three", carrier);
         let far = center_hz as u64 + 10_000_000;
 
         follower.observe(&record(carrier, definition(far)));
@@ -1588,7 +1779,7 @@ mod tests {
         let engine = engine();
         let (device_set, channel, center_hz) = control_channel(&engine);
         let carrier = (device_set, channel);
-        let mut follower = follower(&engine, TrunkProtocol::TierThree, carrier);
+        let mut follower = follower(&engine, "tier_three", carrier);
         follower.observe(&record(carrier, definition(center_hz as u64 + 125_000)));
         follower.observe(&record(carrier, grant(1)));
         assert_eq!(engine.snapshot().device_sets[0].channels.len(), 2);
@@ -1625,13 +1816,16 @@ mod tests {
         let mut follower = Follower {
             engine: Arc::downgrade(&engine),
             status: Arc::new(Mutex::new(Vec::new())),
+            dropped: Arc::new(AtomicU64::new(0)),
+            sites: HashMap::new(),
             systems: vec![TrunkSystem {
                 node: "trunk".to_owned(),
                 decoder: String::new(),
-                protocol: TrunkProtocol::TierThree,
+                protocol: "tier_three".to_owned(),
                 discovery: TrunkDiscovery::default(),
                 channel_map: Vec::new(),
                 learned: Vec::new(),
+                talkgroups: TrunkTalkgroups::default(),
                 radio: Some(TrunkRadio {
                     device_set,
                     stream: 0,
@@ -1649,7 +1843,7 @@ mod tests {
             controls: HashMap::new(),
             unreachable: HashSet::new(),
             watching: Vec::new(),
-            tx: mpsc::channel().0,
+            tx: mpsc::sync_channel(1).0,
         };
 
         follower.reconcile();
@@ -1698,13 +1892,16 @@ mod tests {
         let mut follower = Follower {
             engine: Arc::downgrade(&engine),
             status: Arc::new(Mutex::new(Vec::new())),
+            dropped: Arc::new(AtomicU64::new(0)),
+            sites: HashMap::new(),
             systems: vec![TrunkSystem {
                 node: "trunk".to_owned(),
                 decoder: String::new(),
-                protocol: TrunkProtocol::TierThree,
+                protocol: "tier_three".to_owned(),
                 discovery: TrunkDiscovery::default(),
                 channel_map: Vec::new(),
                 learned: Vec::new(),
+                talkgroups: TrunkTalkgroups::default(),
                 radio: radio(center_hz as u64 + 12_500),
             }],
             carriers: HashMap::new(),
@@ -1717,7 +1914,7 @@ mod tests {
             controls: HashMap::new(),
             unreachable: HashSet::new(),
             watching: Vec::new(),
-            tx: mpsc::channel().0,
+            tx: mpsc::sync_channel(1).0,
         };
         follower.reconcile();
         let opened = engine.snapshot().device_sets[0].channels[0].id;
@@ -1745,13 +1942,16 @@ mod tests {
         let mut follower = Follower {
             engine: Arc::downgrade(&engine),
             status: Arc::new(Mutex::new(Vec::new())),
+            dropped: Arc::new(AtomicU64::new(0)),
+            sites: HashMap::new(),
             systems: vec![TrunkSystem {
                 node: "trunk".to_owned(),
                 decoder: String::new(),
-                protocol: TrunkProtocol::TierThree,
+                protocol: "tier_three".to_owned(),
                 discovery: TrunkDiscovery::default(),
                 channel_map: Vec::new(),
                 learned: Vec::new(),
+                talkgroups: TrunkTalkgroups::default(),
                 radio: Some(TrunkRadio {
                     device_set,
                     stream: 0,
@@ -1769,7 +1969,7 @@ mod tests {
             controls: HashMap::new(),
             unreachable: HashSet::new(),
             watching: Vec::new(),
-            tx: mpsc::channel().0,
+            tx: mpsc::sync_channel(1).0,
         };
         follower.reconcile();
         let opened = engine.snapshot().device_sets[0].channels[0].id;
@@ -1802,7 +2002,7 @@ mod tests {
         let traffic_hz = center_hz as u64 + 25_000;
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::TierThree,
+            "tier_three",
             carrier,
             TrunkDiscovery::default(),
             vec![TrunkChannelEntry {
@@ -1814,7 +2014,7 @@ mod tests {
         follower.observe(&record(
             carrier,
             DvFrame {
-                trunk_protocol: Some(DvTrunkProtocol::TierThree),
+                trunk_protocol: Some("tier_three".to_owned()),
                 crc_verified: Some(true),
                 channel: Some(LOGICAL_CHANNEL),
                 slot: Some(1),
@@ -1838,7 +2038,7 @@ mod tests {
         let traffic_hz = center_hz as u64 + 25_000;
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::TierThree,
+            "tier_three",
             carrier,
             TrunkDiscovery::default(),
             vec![TrunkChannelEntry {
@@ -1850,7 +2050,7 @@ mod tests {
         follower.observe(&record(
             carrier,
             DvFrame {
-                trunk_protocol: Some(DvTrunkProtocol::TierThree),
+                trunk_protocol: Some("tier_three".to_owned()),
                 crc_verified: Some(true),
                 channel: Some(LOGICAL_CHANNEL),
                 slot_activity: vec![
@@ -1892,7 +2092,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::TierThree,
+            "tier_three",
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -1901,7 +2101,7 @@ mod tests {
         follower.observe(&record(
             carrier,
             DvFrame {
-                trunk_protocol: Some(DvTrunkProtocol::TierThree),
+                trunk_protocol: Some("tier_three".to_owned()),
                 crc_verified: Some(true),
                 channel: Some(LOGICAL_CHANNEL),
                 slot_activity: vec![sdrmm_wire::DvSlotActivity {
@@ -1927,7 +2127,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::TierThree,
+            "tier_three",
             carrier,
             TrunkDiscovery {
                 enabled: true,
@@ -1955,7 +2155,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::TierThree,
+            "tier_three",
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -1995,7 +2195,7 @@ mod tests {
         let device_set = engine
             .create_device_set("virtual:band")
             .expect("virtual device");
-        let mut follower = follower(&engine, TrunkProtocol::TierThree, (device_set, u32::MAX));
+        let mut follower = follower(&engine, "tier_three", (device_set, u32::MAX));
         follower.controls.clear();
         follower.reconcile();
 
@@ -2011,7 +2211,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::TierThree,
+            "tier_three",
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -2052,7 +2252,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::TierThree,
+            "tier_three",
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -2089,7 +2289,7 @@ mod tests {
         let traffic_hz = center_hz as u64 + 25_000;
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::TierThree,
+            "tier_three",
             carrier,
             search_over(center_hz),
             vec![TrunkChannelEntry {
@@ -2115,7 +2315,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::TierThree,
+            "tier_three",
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -2139,7 +2339,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::TierThree,
+            "tier_three",
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -2166,7 +2366,7 @@ mod tests {
         let carrier = (device_set, channel);
         let mut follower = searching_follower(
             &engine,
-            TrunkProtocol::TierThree,
+            "tier_three",
             carrier,
             search_over(center_hz),
             Vec::new(),
@@ -2191,5 +2391,254 @@ mod tests {
                 .any(|open| open.freq_hz == probe.freq_hz),
             "a known control channel stayed in the search"
         );
+    }
+
+    fn ruled_follower(
+        engine: &Arc<Engine>,
+        carrier: (u32, u32),
+        talkgroups: TrunkTalkgroups,
+    ) -> Follower {
+        let mut follower = follower(engine, "tier_three", carrier);
+        follower.systems[0].talkgroups = talkgroups;
+        follower
+    }
+
+    fn grant_to(logical_channel: u16, slot: u8, destination: u32) -> DvFrame {
+        DvFrame {
+            channel: Some(logical_channel),
+            destination: Some(destination),
+            group_call: Some(true),
+            ..grant(slot)
+        }
+    }
+
+    fn define(follower: &mut Follower, carrier: (u32, u32), logical_channel: u16, rx_hz: u64) {
+        let mut frame = definition(rx_hz);
+        if let Some(definition) = &mut frame.channel_definition {
+            definition.channel = logical_channel;
+        }
+        follower.observe(&record(carrier, frame));
+    }
+
+    /// Fills every receiver the system may hold with a call on its own channel and slot.
+    fn fill(follower: &mut Follower, carrier: (u32, u32), center_hz: f64) {
+        for logical_channel in 1..=(MAX_FOLLOWERS_PER_SYSTEM / 2) as u16 {
+            let rx_hz = center_hz as u64 + u64::from(logical_channel) * 12_500;
+            define(follower, carrier, logical_channel, rx_hz);
+            for slot in [1, 2] {
+                let destination = 100 + u32::from(logical_channel) * 2 + u32::from(slot);
+                follower.observe(&record(
+                    carrier,
+                    grant_to(logical_channel, slot, destination),
+                ));
+            }
+        }
+        assert_eq!(follower.followers.len(), MAX_FOLLOWERS_PER_SYSTEM);
+    }
+
+    fn age_every_grant(follower: &mut Follower) {
+        let past = Instant::now()
+            .checked_sub(GRANT_HOLD)
+            .expect("a clock older than the grant hold");
+        for open in follower.followers.values_mut() {
+            open.granted = past;
+        }
+    }
+
+    #[test]
+    fn a_locked_out_talkgroup_is_never_followed() {
+        let engine = engine();
+        let (device_set, channel, center_hz) = control_channel(&engine);
+        let carrier = (device_set, channel);
+        let mut follower = ruled_follower(
+            &engine,
+            carrier,
+            TrunkTalkgroups {
+                lockout: vec![91],
+                ..TrunkTalkgroups::default()
+            },
+        );
+
+        follower.observe(&record(carrier, definition(center_hz as u64 + 125_000)));
+        follower.observe(&record(carrier, grant(1)));
+
+        assert!(follower.followers.is_empty());
+    }
+
+    #[test]
+    fn listed_only_follows_just_the_priority_talkgroups() {
+        let engine = engine();
+        let (device_set, channel, center_hz) = control_channel(&engine);
+        let carrier = (device_set, channel);
+        let mut follower = ruled_follower(
+            &engine,
+            carrier,
+            TrunkTalkgroups {
+                priority: vec![92],
+                listed_only: true,
+                ..TrunkTalkgroups::default()
+            },
+        );
+
+        follower.observe(&record(carrier, definition(center_hz as u64 + 125_000)));
+        follower.observe(&record(carrier, grant_to(LOGICAL_CHANNEL, 1, 91)));
+        follower.observe(&record(carrier, grant_to(LOGICAL_CHANNEL, 2, 92)));
+
+        let status = status(&follower);
+        assert_eq!(status.followers.len(), 1);
+        assert_eq!(status.followers[0].destination, Some(92));
+    }
+
+    #[test]
+    fn a_follower_names_the_call_its_channel_was_granted_to() {
+        let engine = engine();
+        let (device_set, channel, center_hz) = control_channel(&engine);
+        let carrier = (device_set, channel);
+        let mut follower = follower(&engine, "tier_three", carrier);
+
+        follower.observe(&record(carrier, definition(center_hz as u64 + 125_000)));
+        follower.observe(&record(carrier, identified_grant(1)));
+        follower.observe(&record(carrier, grant_to(LOGICAL_CHANNEL, 1, 93)));
+
+        let status = status(&follower);
+        assert_eq!(status.followers.len(), 1);
+        assert_eq!(status.followers[0].destination, Some(93));
+        assert_eq!(status.followers[0].group_call, Some(true));
+    }
+
+    #[test]
+    fn a_full_system_hands_an_idle_receiver_to_a_new_call() {
+        let engine = engine();
+        let (device_set, channel, center_hz) = control_channel(&engine);
+        let carrier = (device_set, channel);
+        let mut follower = follower(&engine, "tier_three", carrier);
+        fill(&mut follower, carrier, center_hz);
+        age_every_grant(&mut follower);
+
+        define(&mut follower, carrier, 40, center_hz as u64 + 125_000);
+        follower.observe(&record(carrier, grant_to(40, 1, 7)));
+
+        let status = status(&follower);
+        assert_eq!(status.followers.len(), MAX_FOLLOWERS_PER_SYSTEM);
+        assert!(
+            status
+                .followers
+                .iter()
+                .any(|open| open.destination == Some(7))
+        );
+        assert!(status.problems.is_empty());
+    }
+
+    #[test]
+    fn a_priority_call_takes_a_busy_receiver_from_an_ordinary_one() {
+        let engine = engine();
+        let (device_set, channel, center_hz) = control_channel(&engine);
+        let carrier = (device_set, channel);
+        let mut follower = ruled_follower(
+            &engine,
+            carrier,
+            TrunkTalkgroups {
+                priority: vec![7],
+                ..TrunkTalkgroups::default()
+            },
+        );
+        fill(&mut follower, carrier, center_hz);
+        define(&mut follower, carrier, 40, center_hz as u64 + 125_000);
+        define(&mut follower, carrier, 41, center_hz as u64 + 137_500);
+
+        follower.observe(&record(carrier, grant_to(41, 1, 8)));
+        follower.observe(&record(carrier, grant_to(40, 1, 7)));
+
+        let status = status(&follower);
+        assert_eq!(status.followers.len(), MAX_FOLLOWERS_PER_SYSTEM);
+        assert!(
+            status
+                .followers
+                .iter()
+                .any(|open| open.destination == Some(7))
+        );
+        assert!(
+            !status
+                .followers
+                .iter()
+                .any(|open| open.destination == Some(8))
+        );
+        assert_eq!(
+            status.problems.len(),
+            1,
+            "the ordinary call was not reported"
+        );
+    }
+
+    #[test]
+    fn a_control_burst_names_the_site() {
+        let engine = engine();
+        let (device_set, channel, _) = control_channel(&engine);
+        let carrier = (device_set, channel);
+        let mut follower = follower(&engine, "tier_three", carrier);
+
+        follower.observe(&record(
+            carrier,
+            DvFrame {
+                system_id: Some(0x1234),
+                network_id: Some(12),
+                site_id: Some(3),
+                ..grant(1)
+            },
+        ));
+
+        let site = status(&follower).site;
+        assert_eq!(site.system_id, Some(0x1234));
+        assert_eq!(site.network_id, Some(12));
+        assert_eq!(site.site_id, Some(3));
+    }
+
+    #[test]
+    fn a_protocol_the_decoder_never_declared_is_not_taken_for_the_system() {
+        let engine = engine();
+        let (device_set, channel, _) = control_channel(&engine);
+        let carrier = (device_set, channel);
+        let mut follower = follower(&engine, AUTO_TRUNK_PROTOCOL, carrier);
+
+        follower.observe(&record(
+            carrier,
+            DvFrame {
+                trunk_protocol: Some("phase_two".to_owned()),
+                ..DvFrame::new("DMR", DvFrameKind::Control)
+            },
+        ));
+
+        assert_eq!(status(&follower).detected, None);
+    }
+
+    #[test]
+    fn a_quiet_control_channel_with_nowhere_else_to_go_stays_put() {
+        let engine = engine();
+        let (device_set, channel, _) = control_channel(&engine);
+        let carrier = (device_set, channel);
+        let mut follower = follower(&engine, "tier_three", carrier);
+        let configured = follower.systems[0].radio.map(|radio| radio.control_hz);
+        let silent = Instant::now()
+            .checked_sub(CONTROL_SILENCE)
+            .expect("a clock older than the silence");
+        if let Some(control) = follower.controls.get_mut("trunk") {
+            control.heard = silent;
+        }
+
+        follower.reconcile();
+
+        assert_eq!(
+            status(&follower).control.map(|control| control.freq_hz),
+            configured
+        );
+    }
+
+    #[test]
+    fn a_silent_control_channel_steps_round_the_sites_others() {
+        assert_eq!(next_control(10, 10, &[20, 30]), Some(20));
+        assert_eq!(next_control(10, 20, &[20, 30]), Some(30));
+        assert_eq!(next_control(10, 30, &[20, 30]), Some(10));
+        assert_eq!(next_control(10, 10, &[10]), None);
+        assert_eq!(next_control(10, 10, &[]), None);
     }
 }

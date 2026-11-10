@@ -89,6 +89,8 @@ pub struct Trunking {
     pub watch: fn(ignore_crc: bool) -> Result<ChannelParams, ChannelError>,
     /// A channel following one granted call in `slot`.
     pub follow: fn(slot: u8, ignore_crc: bool) -> Result<ChannelParams, ChannelError>,
+    /// The protocols the decoder recognises and how many calls share one carrier.
+    pub spec: fn() -> sdrmm_wire::TrunkSpec,
 }
 
 type CreateRx = fn(ChannelCtx, ChannelSettings) -> Result<Box<dyn ChannelRx>, ChannelError>;
@@ -269,7 +271,7 @@ where
     fn completed(&self) -> ChannelDescriptor {
         let mut descriptor = (self.base)().clone();
         descriptor.can_transmit = self.tx.is_some();
-        descriptor.trunks = self.trunking.is_some();
+        descriptor.trunking = self.trunking.map(|trunking| (trunking.spec)());
         descriptor.settings = (self.form)();
         descriptor.defaults = ChannelParams::new(&descriptor.type_id, &S::default())
             .ok()
