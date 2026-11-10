@@ -451,6 +451,47 @@ pub(crate) mod testutil {
 mod tests {
     use super::*;
 
+    /// A harmonic voice with two formants and a slow swell, 8 kHz.
+    fn voiced(frame: usize) -> [i16; 160] {
+        std::array::from_fn(|i| {
+            let t = (frame * 160 + i) as f64 / 8_000.0;
+            let swell = 0.6 + 0.4 * (std::f64::consts::TAU * 3.0 * t).sin();
+            let sample: f64 = (1..30)
+                .map(|harmonic| 120.0 * f64::from(harmonic))
+                .filter(|&f| f < 3_600.0)
+                .enumerate()
+                .map(|(index, f)| {
+                    let formants = 1.0 / (1.0 + ((f - 500.0) / 300.0).powi(2))
+                        + 0.5 / (1.0 + ((f - 1_500.0) / 400.0).powi(2));
+                    formants * (std::f64::consts::TAU * f * t).sin() / (index + 1) as f64
+                })
+                .sum();
+            (4_000.0 * swell * sample) as i16
+        })
+    }
+
+    fn decoded_level(rate: Rate) -> f32 {
+        let mut encoder = Vocoder::new(rate);
+        let mut decoder = MbeDecoder::new(rate);
+        let mut out = ChannelOutputs::default();
+        for frame in 0..200 {
+            let info = encoder.encode_info(&voiced(frame)).expect("encode voice");
+            decoder.synthesize(&info, FrameStatus::CLEAN, &mut out);
+        }
+        crate::testutil::rms(&out.audio_pcm[out.audio_pcm.len() / 4..])
+    }
+
+    #[test]
+    fn half_and_full_rate_play_one_voice_equally_loud() {
+        let full = decoded_level(Rate::FullRate7200x4400);
+        let half = decoded_level(Rate::HalfRate3600x2450);
+        let difference_db = 20.0 * (half / full).log10();
+        assert!(
+            difference_db.abs() < 1.0,
+            "half rate {difference_db:.1} dB from full rate"
+        );
+    }
+
     #[test]
     fn full_rate_information_packs_most_significant_first() {
         let info = [0xABC, 0x123, 0xFFF, 0x000, 0x7FF, 0x001, 0x400, 0x7F];
