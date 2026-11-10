@@ -120,6 +120,15 @@ impl Nco {
         self.realign();
     }
 
+    /// Moves on by `samples` without producing them, exactly as if they had been mixed.
+    pub fn skip(&mut self, samples: usize) {
+        self.phase = self
+            .phase
+            .wrapping_add(self.step.wrapping_mul(samples as u64));
+        self.lane = (self.lane + samples) % lanes::GROUP;
+        self.realign();
+    }
+
     /// The phase of the next sample, in turns.
     #[must_use]
     pub fn turns(&self) -> f64 {
@@ -322,6 +331,22 @@ mod tests {
                 assert_eq!(copied.phase, single.phase);
                 assert_eq!(in_place.phase, single.phase);
             }
+        }
+    }
+
+    #[test]
+    fn skipping_samples_matches_mixing_them() {
+        let input = noise(700);
+        for skipped in [0, 1, 5, 127, 128, 300] {
+            let mut mixed = started(-731_251.0, 3);
+            let mut expected = input.clone();
+            mixed.mix(&mut expected);
+            let mut skipping = started(-731_251.0, 3);
+            skipping.skip(skipped);
+            let mut got = input[skipped..].to_vec();
+            skipping.mix(&mut got);
+            assert_eq!(got, expected[skipped..], "after skipping {skipped}");
+            assert_eq!(skipping.phase, mixed.phase);
         }
     }
 

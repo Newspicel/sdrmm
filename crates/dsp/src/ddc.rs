@@ -191,7 +191,8 @@ impl Ddc {
             staged: &mut self.staged,
         };
         tail.work_in.clear();
-        for chunk in input.chunks(CHUNK) {
+        for (index, chunk) in input.chunks(CHUNK).enumerate() {
+            prefetch(input.get((index + 1) * CHUNK..).unwrap_or_default());
             let mixed = mix(&mut self.nco, chunk, &mut self.mixed);
             first.process(mixed, tail.work_out);
             tail.work_in.extend_from_slice(tail.work_out);
@@ -224,6 +225,22 @@ impl Tail<'_> {
         out.extend_from_slice(self.staged);
         self.work_in.clear();
     }
+}
+
+/// Asks for the next chunk while this one runs through the stages, so mixing it does not wait on
+/// memory: the stages never touch the input, so the hardware stream would stall in between.
+fn prefetch(next: &[Complex<f32>]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        use std::arch::x86_64::{_MM_HINT_T1, _mm_prefetch};
+        const LINE_SAMPLES: usize = 64 / std::mem::size_of::<Complex<f32>>();
+        let next = &next[..next.len().min(CHUNK)];
+        for line in next.chunks(LINE_SAMPLES) {
+            unsafe { _mm_prefetch::<_MM_HINT_T1>(line.as_ptr().cast()) };
+        }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    let _ = next;
 }
 
 fn mix<'a>(

@@ -146,7 +146,8 @@ impl ChannelRx for WfmChannel {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.demod.process(iq, &mut self.demod_buf);
-        self.rds.process(&self.demod_buf, &mut out.events);
+        let stereo = self.stereo.is_some();
+        self.rds.process(&self.demod_buf, stereo, &mut out.events);
         match &mut self.stereo {
             None => {
                 self.decim.process(&self.demod_buf, &mut out.audio_pcm);
