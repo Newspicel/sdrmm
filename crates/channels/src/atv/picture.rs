@@ -35,6 +35,8 @@ const PHASE_GAIN: f32 = 0.2;
 const DRIFT_GAIN: f32 = 0.01;
 const AMPLITUDE_TRACK: f32 = 0.05;
 const IDENT_TRACK: f32 = 0.3;
+const NOTCH: [f32; 5] = [0.25, 0.0, 0.5, 0.0, 0.25];
+const NOTCH_REACH: usize = 2;
 
 /// Gaussian low-passes for luma, each cut into fractional-delay phases.
 #[derive(Clone, Debug)]
@@ -71,6 +73,29 @@ impl Blur {
         }
     }
 
+    /// This blur after the 4x subcarrier notch `[1 0 2 0 1] / 4`, as one kernel: what is
+    /// left of a composite line once the chroma the triangle low-pass finds is taken out.
+    fn notched(&self) -> Self {
+        let taps = self.taps + 2 * NOTCH_REACH;
+        let mut table = vec![0.0f32; PHASES * taps];
+        for (row, plain) in table
+            .chunks_exact_mut(taps)
+            .zip(self.table.chunks_exact(self.taps))
+        {
+            for (k, &w) in plain.iter().enumerate() {
+                for (offset, &n) in NOTCH.iter().enumerate() {
+                    row[k + offset] += w * n;
+                }
+            }
+        }
+        Self {
+            sigma: self.sigma,
+            half: self.half + NOTCH_REACH,
+            taps,
+            table,
+        }
+    }
+
     fn row(&self, frac: f64) -> &[f32] {
         let phase = ((frac * PHASES as f64) as usize).min(PHASES - 1);
         &self.table[phase * self.taps..(phase + 1) * self.taps]
@@ -78,19 +103,44 @@ impl Blur {
 
     /// `out[k]` is the blurred signal at `x[k + half - 1 + frac]`.
     fn apply(&self, x: &[f32], frac: f64, out: &mut [f32]) {
-        out.fill(0.0);
-        for (j, &tap) in self.row(frac).iter().enumerate() {
-            for (o, &v) in out.iter_mut().zip(&x[j..]) {
-                *o = sdrmm_dsp::madd(tap, v, *o);
-            }
+        let row = self.row(frac);
+        let (blocks, tail) = out.as_chunks_mut::<BLUR_BLOCK>();
+        for (k, block) in blocks.iter_mut().enumerate() {
+            *block = blur_block(row, &x[k * BLUR_BLOCK..]);
+        }
+        let done = blocks.len() * BLUR_BLOCK;
+        for (k, o) in tail.iter_mut().enumerate() {
+            *o = row
+                .iter()
+                .zip(&x[done + k..])
+                .fold(0.0, |sum, (&tap, &v)| sdrmm_dsp::madd(tap, v, sum));
         }
     }
+}
+
+const BLUR_BLOCK: usize = 16;
+
+/// `BLUR_BLOCK` neighbouring outputs, held in registers while every tap passes over them.
+#[inline(always)]
+fn blur_block(row: &[f32], x: &[f32]) -> [f32; BLUR_BLOCK] {
+    let mut sums = [0.0f32; BLUR_BLOCK];
+    for (j, &tap) in row.iter().enumerate() {
+        let Some(window) = x.get(j..).and_then(<[f32]>::first_chunk::<BLUR_BLOCK>) else {
+            break;
+        };
+        for (sum, &v) in sums.iter_mut().zip(window) {
+            *sum = sdrmm_dsp::madd(tap, v, *sum);
+        }
+    }
+    sums
 }
 
 /// Picks the luma blur: fixed, or the sharpest whose noise stays under target.
 #[derive(Clone, Debug)]
 struct Sharpness {
     blurs: Vec<Blur>,
+    /// What each blur draws with: itself, or folded with the chroma notch for colour.
+    drawn: Vec<Blur>,
     noise: Vec<f32>,
     chosen: usize,
     auto: bool,
@@ -98,7 +148,7 @@ struct Sharpness {
 }
 
 impl Sharpness {
-    fn new(rate: f64, bandwidth_hz: Option<f64>, sound_hz: Option<f64>) -> Self {
+    fn new(rate: f64, bandwidth_hz: Option<f64>, sound_hz: Option<f64>, notch: bool) -> Self {
         let floor = sound_hz.map_or(0.0, |hz| SOUND_TRAP / hz);
         let sigmas: Vec<f64> = match bandwidth_hz {
             Some(hz) => vec![(SIGMA_PER_HZ / hz).max(floor)],
@@ -113,9 +163,14 @@ impl Sharpness {
             .iter()
             .map(|s| Blur::new((s * rate).max(0.35)))
             .collect();
+        let drawn = blurs
+            .iter()
+            .map(|b| if notch { b.notched() } else { b.clone() })
+            .collect();
         Self {
             noise: vec![0.0; blurs.len()],
             blurs,
+            drawn,
             chosen: 0,
             auto: bandwidth_hz.is_none(),
             count: 0,
@@ -123,7 +178,7 @@ impl Sharpness {
     }
 
     fn blur(&self) -> &Blur {
-        &self.blurs[self.chosen]
+        &self.drawn[self.chosen]
     }
 
     /// Luma noise under the chosen blur, as a share of black to white.
@@ -132,7 +187,7 @@ impl Sharpness {
     }
 
     fn widest(&self) -> usize {
-        self.blurs.iter().map(|b| b.taps).max().unwrap_or(2)
+        self.drawn.iter().map(|b| b.taps).max().unwrap_or(2)
     }
 
     /// Measures luma noise on a flat stretch of the line under every candidate blur.
@@ -255,11 +310,10 @@ pub(super) struct Picture {
     rgb: Vec<u8>,
     written: u32,
     fresh: bool,
-    raw: Vec<f32>,
     carrier: Vec<f32>,
     even: Vec<f32>,
     odd: Vec<f32>,
-    plain: Vec<f32>,
+    blurred: Vec<f32>,
     out: Vec<f32>,
     last_u: Vec<f32>,
     last_v: Vec<f32>,
@@ -280,7 +334,12 @@ impl Picture {
         Self {
             g,
             color,
-            sharpness: Sharpness::new(g.rate, bandwidth_hz, sound_hz),
+            sharpness: Sharpness::new(
+                g.rate,
+                bandwidth_hz,
+                sound_hz,
+                color != AtvColor::Monochrome,
+            ),
             burst: Burst::new(color == AtvColor::Pal),
             luma: vec![0; pixels],
             rgb: if color == AtvColor::Monochrome {
@@ -290,16 +349,15 @@ impl Picture {
             },
             written: 0,
             fresh: true,
-            raw: Vec::new(),
             carrier: Vec::new(),
             even: Vec::new(),
             odd: Vec::new(),
-            plain: Vec::new(),
+            blurred: Vec::new(),
             out: vec![0.0; width],
             last_u: vec![0.0; width],
             last_v: vec![0.0; width],
-            u: Vec::new(),
-            v: Vec::new(),
+            u: vec![0.0; width],
+            v: vec![0.0; width],
             scratch: Vec::new(),
         }
     }
@@ -352,9 +410,9 @@ impl Picture {
         self.scratch.clear();
         self.scratch.extend(tip.iter().map(|v| v / span));
         let flat = std::mem::take(&mut self.scratch);
-        let mut work = std::mem::take(&mut self.plain);
+        let mut work = std::mem::take(&mut self.blurred);
         self.sharpness.sample_noise(&flat, &mut work);
-        self.plain = work;
+        self.blurred = work;
         self.scratch = flat;
         if self.color == AtvColor::Monochrome {
             return;
@@ -373,9 +431,7 @@ impl Picture {
         if raw.len() < 8 {
             return Complex::new(0.0, 0.0);
         }
-        self.raw.clear();
-        self.raw.extend_from_slice(raw);
-        modulate(&self.raw, from_with, &mut self.carrier);
+        modulate(raw, from_with, &mut self.carrier);
         split(&self.carrier, &mut self.even, &mut self.odd);
         let mut sum = Complex::new(0.0, 0.0);
         for k in 3..self.carrier.len() - 3 {
@@ -402,26 +458,14 @@ impl Picture {
         if raw.len() < (to - from) as usize {
             return;
         }
-        self.raw.clear();
-        self.raw.extend_from_slice(raw);
         let skip = (first - from) as usize + 1 - blur_half;
         let (black, span) = Self::span(levels, &g);
         let colour = self.color != AtvColor::Monochrome;
         if colour {
-            modulate(&self.raw, from, &mut self.carrier);
-            split(&self.carrier, &mut self.even, &mut self.odd);
-            modulate(&self.even, from, &mut self.plain);
-            for (p, &r) in self.plain.iter_mut().zip(&self.raw) {
-                *p = r - 2.0 * *p;
-            }
-        } else {
-            self.plain.clear();
-            self.plain.extend_from_slice(&self.raw);
+            modulate(raw, from, &mut self.carrier);
         }
         let mut out = std::mem::take(&mut self.out);
-        self.sharpness
-            .blur()
-            .apply(&self.plain[skip..], frac, &mut out);
+        self.sharpness.blur().apply(&raw[skip..], frac, &mut out);
         let noise = self.sharpness.noise();
         if noise > REPAIR_NOISE {
             let reach = (REPAIR_REACH * self.sharpness.blur().sigma)
@@ -448,56 +492,90 @@ impl Picture {
     fn draw_colour(&mut self, from: u64, first: u64, span: f32, luma: &[f32], row: usize) {
         let width = usize::from(self.g.width);
         let offset = (first - from) as usize;
-        let (even, odd) = (&self.even[offset..], &self.odd[offset..]);
-        let (u, v) = (&mut self.u, &mut self.v);
-        u.resize(width, 0.0);
-        v.resize(width, 0.0);
-        let (same, other) = if first & 1 == 0 {
-            (even, odd)
-        } else {
-            (odd, even)
-        };
-        for (k, (ui, vq)) in u.iter_mut().zip(v.iter_mut()).enumerate() {
-            let parity = k & 1 == 0;
-            *ui = 2.0 * if parity { same[k] } else { other[k] };
-            *vq = 2.0 * if parity { other[k] } else { same[k] };
-        }
         let rotation = self.burst.rotation() / span;
-        let (on, sign) = (self.burst.on, self.burst.sign);
-        let scale = if on { 1.0 } else { 0.0 };
-        for (i, q) in u.iter_mut().zip(v.iter_mut()) {
-            let (re, im) = (
-                *i * rotation.re - *q * rotation.im,
-                *i * rotation.im + *q * rotation.re,
-            );
-            (*i, *q) = (-im * scale, re * sign * scale);
-        }
+        let scale = if self.burst.on { 1.0 } else { 0.0 };
+        let turn = Turn {
+            u: rotation * -scale,
+            v: rotation * (self.burst.sign * scale),
+        };
         let average = self.burst.pal && !std::mem::replace(&mut self.fresh, false);
-        for (((ui, vi), lu), lv) in u
-            .iter_mut()
-            .zip(v.iter_mut())
-            .zip(self.last_u.iter_mut())
-            .zip(self.last_v.iter_mut())
-        {
-            let (now_u, now_v) = (*ui, *vi);
-            if average {
-                (*ui, *vi) = (0.5 * (now_u + *lu), 0.5 * (now_v + *lv));
-            }
-            (*lu, *lv) = (now_u, now_v);
+        let carrier = &self.carrier[offset - 3..];
+        let (u, v) = (&mut self.u[..width], &mut self.v[..width]);
+        if average {
+            demodulate_line::<true>(
+                carrier,
+                first,
+                turn,
+                (u, v),
+                (&mut self.last_u, &mut self.last_v),
+            );
+        } else {
+            demodulate_line::<false>(
+                carrier,
+                first,
+                turn,
+                (u, v),
+                (&mut self.last_u, &mut self.last_v),
+            );
         }
         let base = row * width * 3;
-        for (((pixel, &y), &ui), &vi) in self.rgb[base..base + 3 * width]
-            .as_chunks_mut::<3>()
-            .0
-            .iter_mut()
-            .zip(luma)
-            .zip(u.iter())
-            .zip(v.iter())
-        {
-            pixel[0] = byte(y + 1.140 * vi);
-            pixel[1] = byte(y - 0.395 * ui - 0.581 * vi);
-            pixel[2] = byte(y + 2.032 * ui);
+        let pixels = self.rgb[base..base + 3 * width].as_chunks_mut::<3>().0;
+        for (((pixel, &y), &u), &v) in pixels.iter_mut().zip(luma).zip(&self.u).zip(&self.v) {
+            pixel[0] = byte(y + 1.140 * v);
+            pixel[1] = byte(y - 0.395 * u - 0.581 * v);
+            pixel[2] = byte(y + 2.032 * u);
         }
+    }
+}
+
+/// The burst rotation, scaled to U and V and by the colour killer and PAL switch.
+#[derive(Clone, Copy)]
+struct Turn {
+    u: Complex<f32>,
+    v: Complex<f32>,
+}
+
+/// U and V of one line from the carrier-signed samples, `carrier[k + 3]` under pixel `k`;
+/// `AVERAGE` blends them with the line before to cancel PAL phase errors.
+fn demodulate_line<const AVERAGE: bool>(
+    carrier: &[f32],
+    first: u64,
+    turn: Turn,
+    (u, v): (&mut [f32], &mut [f32]),
+    (last_u, last_v): (&mut [f32], &mut [f32]),
+) {
+    let taps = (
+        carrier
+            .iter()
+            .zip(&carrier[1..])
+            .zip(&carrier[2..])
+            .zip(&carrier[3..]),
+        carrier[4..].iter().zip(&carrier[5..]).zip(&carrier[6..]),
+    );
+    let sums = taps
+        .0
+        .zip(taps.1)
+        .map(|((((&c0, &c1), &c2), &c3), ((&c4, &c5), &c6))| {
+            (
+                0.25 * (c1 + 2.0 * c3 + c5),
+                0.125 * (c0 + 3.0 * (c2 + c4) + c6),
+            )
+        });
+    let lines = u
+        .iter_mut()
+        .zip(v.iter_mut())
+        .zip(last_u.iter_mut().zip(last_v.iter_mut()));
+    for (k, (((u, v), (last_u, last_v)), (same, other))) in lines.zip(sums).enumerate() {
+        let odd = (first + k as u64) & 1 == 1;
+        let (i, q) = if odd { (other, same) } else { (same, other) };
+        let now_u = i * turn.u.im + q * turn.u.re;
+        let now_v = i * turn.v.re - q * turn.v.im;
+        (*u, *v) = if AVERAGE {
+            (0.5 * (now_u + *last_u), 0.5 * (now_v + *last_v))
+        } else {
+            (now_u, now_v)
+        };
+        (*last_u, *last_v) = (now_u, now_v);
     }
 }
 
@@ -598,4 +676,82 @@ pub(super) fn repair_clicks(luma: &mut [f32], reach: usize, limit: f32, original
 
 fn byte(value: f32) -> u8 {
     (value * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(len: usize) -> Vec<f32> {
+        (0..len)
+            .map(|k| ((k * 7919) % 101) as f32 / 50.0 - 1.0)
+            .collect()
+    }
+
+    fn close(a: &[f32], b: &[f32]) {
+        for (k, (x, y)) in a.iter().zip(b).enumerate() {
+            assert!((x - y).abs() < 1e-5, "sample {k}: {x} vs {y}");
+        }
+    }
+
+    #[test]
+    fn the_notched_blur_is_the_chroma_split_then_the_blur() {
+        let raw = line(200);
+        let from = 13;
+        let (mut carrier, mut even, mut odd, mut chroma) = (vec![], vec![], vec![], vec![]);
+        modulate(&raw, from, &mut carrier);
+        split(&carrier, &mut even, &mut odd);
+        modulate(&even, from, &mut chroma);
+        let luma: Vec<f32> = raw.iter().zip(&chroma).map(|(r, c)| r - 2.0 * c).collect();
+        let blur = Blur::new(1.7);
+        let notched = blur.notched();
+        for frac in [0.0, 0.3, 0.9] {
+            let (mut want, mut got) = (vec![0.0; 150], vec![0.0; 150]);
+            blur.apply(&luma[10..], frac, &mut want);
+            notched.apply(&raw[8..], frac, &mut got);
+            close(&got, &want);
+        }
+    }
+
+    #[test]
+    fn a_blur_block_matches_the_plain_convolution() {
+        let x = line(80);
+        let blur = Blur::new(2.4);
+        let mut got = vec![0.0; 37];
+        blur.apply(&x, 0.5, &mut got);
+        let row = blur.row(0.5);
+        let want: Vec<f32> = (0..37)
+            .map(|k| row.iter().zip(&x[k..]).map(|(t, v)| t * v).sum())
+            .collect();
+        close(&got, &want);
+    }
+
+    #[test]
+    fn line_demodulation_reads_the_split_halves_by_sample_parity() {
+        let raw = line(120);
+        let (from, first, width) = (5u64, 12u64, 90usize);
+        let (mut carrier, mut even, mut odd) = (vec![], vec![], vec![]);
+        modulate(&raw, from, &mut carrier);
+        split(&carrier, &mut even, &mut odd);
+        let offset = (first - from) as usize;
+        let identity = Turn {
+            u: Complex::new(0.0, 1.0),
+            v: Complex::new(0.0, -1.0),
+        };
+        let (mut u, mut v) = (vec![0.0; width], vec![0.0; width]);
+        let (mut last_u, mut last_v) = (vec![0.0; width], vec![0.0; width]);
+        demodulate_line::<false>(
+            &carrier[offset - 3..],
+            first,
+            identity,
+            (&mut u, &mut v),
+            (&mut last_u, &mut last_v),
+        );
+        let want: Vec<Complex<f32>> = (0..width)
+            .map(|k| phasor(first + k as u64, even[offset + k], odd[offset + k]))
+            .collect();
+        close(&u, &want.iter().map(|z| z.re).collect::<Vec<_>>());
+        close(&v, &want.iter().map(|z| z.im).collect::<Vec<_>>());
+        close(&last_u, &u);
+    }
 }

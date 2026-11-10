@@ -1,7 +1,40 @@
+mod dots;
+
+use dots::{BATCH, Dots, dot};
+
 use crate::fir::{design_lowpass_kaiser, kaiser_taps};
 
 const PHASES: usize = 512;
 const LANES: usize = 4;
+const FRACTION_BITS: u32 = 32;
+const ONE: u64 = 1 << FRACTION_BITS;
+const PHASE_SHIFT: u32 = FRACTION_BITS - PHASES.ilog2();
+const PHASE_ROUND: u64 = 1 << (PHASE_SHIFT - 1);
+
+/// The read position: input samples per output and the next output's place, in 32.32
+/// fixed point so the per-output work stays in integers.
+#[derive(Clone, Copy, Debug)]
+struct Clock {
+    time: u64,
+    step: u64,
+    half: usize,
+}
+
+impl Clock {
+    /// The next output's first input and nearest branch.
+    #[inline(always)]
+    fn next(&mut self) -> (usize, usize) {
+        let whole = (self.time >> FRACTION_BITS) as usize;
+        let phase = (((self.time & (ONE - 1)) + PHASE_ROUND) >> PHASE_SHIFT) as usize;
+        self.time += self.step;
+        (whole - self.half, phase)
+    }
+
+    /// The first input of the output `ahead` places on, without moving.
+    fn start_after(&self, ahead: u64) -> usize {
+        ((self.time + ahead * self.step) >> FRACTION_BITS) as usize - self.half
+    }
+}
 
 /// Resamples a real stream by any ratio. Each output is one short dot product with the
 /// nearest of a fine table of polyphase branches, so a wide transition band costs few taps.
@@ -9,9 +42,9 @@ const LANES: usize = 4;
 pub struct RealResampler {
     rows: Vec<f32>,
     taps: usize,
-    step: f64,
-    time: f64,
+    clock: Clock,
     pending: Vec<f32>,
+    dots: Dots,
 }
 
 impl RealResampler {
@@ -37,13 +70,19 @@ impl RealResampler {
                 *value /= sum;
             }
         }
-        Self {
+        let mut resampler = Self {
             rows,
             taps,
-            step: ratio.recip(),
-            time: (taps / 2 - 1) as f64,
+            clock: Clock {
+                time: 0,
+                step: (ONE as f64 / ratio).round().max(1.0) as u64,
+                half: taps / 2 - 1,
+            },
             pending: Vec::new(),
-        }
+            dots: Dots::detect(),
+        };
+        resampler.reset();
+        resampler
     }
 
     /// Input samples between an input and the output it lands in.
@@ -54,45 +93,71 @@ impl RealResampler {
 
     pub fn reset(&mut self) {
         self.pending.clear();
-        self.time = self.delay();
+        self.clock.time = (self.clock.half as u64) << FRACTION_BITS;
     }
 
     pub fn process(&mut self, input: &[f32], out: &mut Vec<f32>) {
         out.clear();
         self.pending.extend_from_slice(input);
-        let taps = self.taps;
-        let half = taps / 2 - 1;
-        while (self.time as usize) + taps - half <= self.pending.len() {
-            let whole = self.time as usize;
-            let phase = ((self.time - whole as f64) * PHASES as f64 + 0.5) as usize;
-            let start = whole - half;
-            out.push(dot(
-                &self.pending[start..start + taps],
-                &self.rows[phase * taps..(phase + 1) * taps],
-            ));
-            self.time += self.step;
+        match self.taps {
+            8 => self.emit::<8>(out),
+            12 => self.emit::<12>(out),
+            16 => self.emit::<16>(out),
+            20 => self.emit::<20>(out),
+            24 => self.emit::<24>(out),
+            28 => self.emit::<28>(out),
+            32 => self.emit::<32>(out),
+            _ => self.emit_any(out),
         }
-        let done = (self.time as usize)
-            .saturating_sub(half)
+        let done = ((self.clock.time >> FRACTION_BITS) as usize)
+            .saturating_sub(self.clock.half)
             .min(self.pending.len());
         self.pending.drain(..done);
-        self.time -= done as f64;
+        self.clock.time -= (done as u64) << FRACTION_BITS;
     }
-}
 
-fn dot(samples: &[f32], taps: &[f32]) -> f32 {
-    let mut sum = [0.0f32; LANES];
-    for (x, h) in samples
-        .as_chunks::<LANES>()
-        .0
-        .iter()
-        .zip(taps.as_chunks::<LANES>().0)
-    {
-        for lane in 0..LANES {
-            sum[lane] = crate::madd(x[lane], h[lane], sum[lane]);
+    /// Outputs whose window lies wholly inside the pending input.
+    fn count(&self) -> usize {
+        let Some(last) = (self.pending.len() + self.clock.half).checked_sub(self.taps) else {
+            return 0;
+        };
+        let end = ((last as u64) + 1) << FRACTION_BITS;
+        end.saturating_sub(self.clock.time)
+            .div_ceil(self.clock.step) as usize
+    }
+
+    fn emit<const N: usize>(&mut self, out: &mut Vec<f32>) {
+        let count = self.count();
+        out.resize(count, 0.0);
+        let batched = count - count % BATCH;
+        let inside = batched == 0
+            || (self.clock.start_after(batched as u64 - 1) + N <= self.pending.len()
+                && (PHASES + 1) * N <= self.rows.len());
+        let (batches, rest) = out.split_at_mut(if inside { batched } else { 0 });
+        unsafe {
+            self.dots
+                .fill::<N>(&self.pending, &self.rows, &mut self.clock, batches);
+        }
+        for slot in rest {
+            let (start, phase) = self.clock.next();
+            *slot = dot(
+                &self.pending[start..start + N],
+                &self.rows[phase * N..(phase + 1) * N],
+            );
         }
     }
-    (sum[0] + sum[1]) + (sum[2] + sum[3])
+
+    fn emit_any(&mut self, out: &mut Vec<f32>) {
+        let count = self.count();
+        let taps = self.taps;
+        out.extend((0..count).map(|_| {
+            let (start, phase) = self.clock.next();
+            dot(
+                &self.pending[start..start + taps],
+                &self.rows[phase * taps..(phase + 1) * taps],
+            )
+        }));
+    }
 }
 
 #[cfg(test)]

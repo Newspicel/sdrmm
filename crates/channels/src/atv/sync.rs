@@ -47,8 +47,19 @@ impl Levels {
         self.blank - self.tip
     }
 
-    fn normalized(&self, v: f32) -> f32 {
-        ((v - self.tip) / self.sync()).clamp(-0.5, 1.5)
+    /// The sum of `span` on the tip-to-blanking scale, each sample clamped so a click
+    /// cannot outweigh the rest; in lanes so it vectorizes.
+    fn area(&self, span: &[f32]) -> f32 {
+        let (tip, inv) = (self.tip, self.sync().recip());
+        let level = |v: f32| ((v - tip) * inv).clamp(-0.5, 1.5);
+        let (blocks, tail) = span.as_chunks::<AREA_LANES>();
+        let mut lanes = [0.0f32; AREA_LANES];
+        for block in blocks {
+            for (sum, &v) in lanes.iter_mut().zip(block) {
+                *sum += level(v);
+            }
+        }
+        lanes.iter().sum::<f32>() + tail.iter().map(|&v| level(v)).sum::<f32>()
     }
 }
 
@@ -72,6 +83,7 @@ pub(super) struct Line {
 }
 
 const ACQUIRE_LINES: u8 = 4;
+const AREA_LANES: usize = 8;
 const LINE_TOLERANCE: f64 = 0.03;
 const PULSE_WIDTH: (f64, f64) = (0.5, 1.6);
 const TIP_ATTACK: f32 = 0.1;
@@ -264,7 +276,7 @@ impl LineSync {
         if span.is_empty() {
             return 1.0;
         }
-        span.iter().map(|&v| self.levels.normalized(v)).sum::<f32>() / span.len() as f32
+        self.levels.area(span) / span.len() as f32
     }
 
     fn mean_raw(samples: &Samples, from: f64, to: f64) -> Option<(f32, usize)> {
@@ -286,7 +298,7 @@ impl LineSync {
                 cycles
             };
         let span = samples.span(index(start), index(stop));
-        let area: f32 = span.iter().map(|&v| self.levels.normalized(v)).sum();
+        let area = self.levels.area(span);
         let edge = if falling {
             start + f64::from(area) - 0.5
         } else {

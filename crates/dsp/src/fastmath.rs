@@ -152,6 +152,22 @@ pub fn phase_diff_into(
     scale: f32,
     out: &mut Vec<f32>,
 ) {
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx2") {
+        return unsafe { phase_diff_avx2(iq, prev, scale, out) };
+    }
+    phase_diff_body(iq, prev, scale, out);
+}
+
+/// The same loop compiled eight lanes wide.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+fn phase_diff_avx2(iq: &[Complex<f32>], prev: &mut Complex<f32>, scale: f32, out: &mut Vec<f32>) {
+    phase_diff_body(iq, prev, scale, out);
+}
+
+#[inline(always)]
+fn phase_diff_body(iq: &[Complex<f32>], prev: &mut Complex<f32>, scale: f32, out: &mut Vec<f32>) {
     out.clear();
     let (Some(&first), Some(&last)) = (iq.first(), iq.last()) else {
         return;
