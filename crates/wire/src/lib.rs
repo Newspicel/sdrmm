@@ -106,9 +106,10 @@ pub use decode::{
     ANY_MODULATION, BroadcastData, Capability, CodeStyle, DecodedRecord, DecoderEvent,
     DvChannelDefinition, DvFrame, DvFrameKind, DvSlotActivity, EventCatalog, EventContract,
     EventKind, EventKindEntry, FeedEncoder, FeedEntry, FeedSpec, HzRange, IdentFeatures,
-    IdentReport, IdentSignal, KindCodec, KindSet, KindSpec, KindView, Lifetime, Modulation,
-    NO_CHANNEL, ProtocolMatch, Sideband, SignalMeasure, SignalSignature, SignalTrial, SiteNaming,
-    SortKey, Symbol, Vendor, catalog, install_catalog, modulation_label, platform_kinds,
+    IdentReport, IdentSignal, KindCodec, KindSet, KindSpec, KindView, Lifetime,
+    MAX_VOICE_KEY_DIGITS, MAX_VOICE_KEYS, Modulation, NO_CHANNEL, ProtocolMatch, Sideband,
+    SignalMeasure, SignalSignature, SignalTrial, SiteNaming, SortKey, Symbol, Vendor, VoiceKey,
+    catalog, install_catalog, modulation_label, platform_kinds,
 };
 pub use device::{
     Agc, AgcGain, AgcReach, AgcSetting, ArgumentInfo, ArgumentOption, ArgumentType, BackendEntry,

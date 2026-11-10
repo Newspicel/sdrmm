@@ -17,10 +17,12 @@ import {
   followerCall,
   formatSearchRanges,
   formatTalkgroups,
+  formatVoiceKeys,
   otherControlLabel,
   parseControlHz,
   parseSearchRanges,
   parseTalkgroups,
+  parseVoiceKeys,
   planLabel,
   planSummary,
   searchCandidates,
@@ -93,6 +95,20 @@ describe("trunk protocols", () => {
   it("names a slot only where a carrier holds more than one call", () => {
     expect(slotLabel(2, 2)).toBe("TS 2");
     expect(slotLabel(1, 1)).toBe("Call");
+  });
+});
+
+describe("voice keys", () => {
+  it("reads key ID:hex pairs, the last entry for an ID winning", () => {
+    expect(parseVoiceKeys("137:58ffa35a8c, 1:00, 137:aa x 70000:11 2:zz")).toEqual([
+      { key_id: 137, key: "AA" },
+      { key_id: 1, key: "00" },
+    ]);
+  });
+
+  it("writes them back the way they are typed", () => {
+    expect(formatVoiceKeys([{ key_id: 137, key: "58FFA35A8C" }])).toBe("137:58FFA35A8C");
+    expect(formatVoiceKeys(undefined)).toBe("");
   });
 });
 

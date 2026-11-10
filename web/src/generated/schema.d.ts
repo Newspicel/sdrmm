@@ -7893,6 +7893,8 @@ export interface components {
             decoder?: string;
             discovery?: components["schemas"]["TrunkDiscovery"];
             ignore_crc?: boolean;
+            /** @description Voice privacy keys the followed calls are deciphered with. */
+            keys?: components["schemas"]["VoiceKey"][];
             /** @description A protocol id the decoder declares, or [`crate::AUTO_TRUNK_PROTOCOL`]. */
             protocol?: string;
             talkgroups?: components["schemas"]["TrunkTalkgroups"];
@@ -8027,6 +8029,15 @@ export interface components {
             encrypted?: boolean | null;
             /** Format: int32 */
             source?: number | null;
+        };
+        /**
+         * @description A voice privacy key as the radios are programmed with it: the key ID a call names and the key
+         *     in hex. The decoder reads the algorithm off its length.
+         */
+        VoiceKey: {
+            key: string;
+            /** Format: int32 */
+            key_id: number;
         };
         /** @enum {string} */
         WebhookFormat: "json" | "discord";

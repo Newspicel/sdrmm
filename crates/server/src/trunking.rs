@@ -87,6 +87,7 @@ fn resolve(store: &Store, engine: &Engine, resolved: &Resolved) -> Vec<TrunkSyst
                 learned: learned_for(&saved, &node.id, &live_trunks),
                 radio: own_radio(&resolved.patch, &node.id, settings),
                 talkgroups: settings.talkgroups.clone(),
+                keys: settings.keys.clone(),
             }),
             _ => None,
         })

@@ -86,6 +86,7 @@ async fn one_probe_follows_the_band_to_the_channel_a_grant_points_at() {
         channel_map: Vec::new(),
         learned: Vec::new(),
         talkgroups: Default::default(),
+        keys: Vec::new(),
         radio: Some(TrunkRadio {
             device_set,
             stream: 0,
@@ -167,6 +168,7 @@ async fn the_search_finds_the_other_repeater_of_a_capacity_plus_system() {
         channel_map: Vec::new(),
         learned: Vec::new(),
         talkgroups: Default::default(),
+        keys: Vec::new(),
         radio: Some(TrunkRadio {
             device_set,
             stream: 0,

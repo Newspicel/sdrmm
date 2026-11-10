@@ -1,3 +1,7 @@
+mod late_entry;
+use late_entry::LateEntry;
+pub(crate) use late_entry::{fragments as late_entry_fragments, with_fragment};
+
 use blip25_vocoder::halfrate::frame::{Frame, pack_natural, unpack_natural};
 
 use crate::crypto::{Aes, Rc4};
@@ -152,6 +156,11 @@ impl Keystream {
         self.key.superframe(self.mi, &mut self.stream);
     }
 
+    /// The message indicator of the superframe after this one.
+    pub(crate) fn next_message_indicator(&self) -> u32 {
+        self.key.next_message_indicator(self.mi)
+    }
+
     /// The keystream of the `index`th vocoder frame of the current superframe.
     pub(crate) fn frame(&self, index: usize) -> [u8; FRAME_BYTES] {
         let at = index.min(FRAMES_PER_SUPERFRAME - 1) * FRAME_BYTES;
@@ -170,6 +179,8 @@ enum Cipher {
     Basic(Option<u16>),
     Keyed,
     Locked,
+    /// The PI header named a key the operator has not entered.
+    Keyless,
 }
 
 /// What a slot knows about how its current call is enciphered, and the state to undo it.
@@ -177,6 +188,10 @@ pub(super) struct Privacy {
     cipher: Cipher,
     keystream: Option<Keystream>,
     last_position: Option<usize>,
+    late: LateEntry,
+    late_mi: Option<u32>,
+    /// The keystream already stands on the next superframe's MI, so its start must not step it.
+    fresh: bool,
 }
 
 impl Privacy {
@@ -185,12 +200,18 @@ impl Privacy {
             cipher: Cipher::Unknown,
             keystream: None,
             last_position: None,
+            late: LateEntry::default(),
+            late_mi: None,
+            fresh: false,
         }
     }
 
     pub(super) fn reset(&mut self) {
         self.cipher = Cipher::Unknown;
         self.last_position = None;
+        self.late = LateEntry::default();
+        self.late_mi = None;
+        self.fresh = false;
     }
 
     /// Link control without a PI header: Motorola's encrypted voice user is Basic Privacy.
@@ -222,17 +243,66 @@ impl Privacy {
         self.cipher = if self.keystream.is_some() {
             Cipher::Keyed
         } else {
-            Cipher::Locked
+            Cipher::Keyless
         };
         self.last_position = None;
+        self.fresh = false;
+    }
+
+    /// A superframe's late-entry MI names the next one. A keyed call that drifted takes it; a call
+    /// joined without its PI header starts once two in a row show the LFSR of exactly one key.
+    fn late_entry(&mut self, mi: u32, keys: &[(u8, CipherKey)]) {
+        let previous = self.late_mi.replace(mi);
+        match (&self.cipher, &mut self.keystream) {
+            (Cipher::Keyed, Some(keystream)) => {
+                if keystream.key.next_message_indicator(keystream.mi) != mi {
+                    *keystream = Keystream::new(keystream.key.clone(), mi);
+                    self.fresh = true;
+                }
+            }
+            (Cipher::Basic(None) | Cipher::Locked, _) => {
+                let Some(previous) = previous else {
+                    return;
+                };
+                let mut fitting = keys
+                    .iter()
+                    .filter(|(_, key)| key.next_message_indicator(previous) == mi);
+                if let (Some((_, key)), None) = (fitting.next(), fitting.next()) {
+                    self.keystream = Some(Keystream::new(key.clone(), mi));
+                    self.cipher = Cipher::Keyed;
+                    self.fresh = true;
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Undoes the cipher on one vocoder frame, `frame` of burst `burst` in its superframe.
     /// Returns whether the frame is fit to play.
-    pub(super) fn decipher(&mut self, burst: usize, frame: usize, decoded: &mut Frame) -> bool {
+    pub(super) fn decipher(
+        &mut self,
+        burst: usize,
+        frame: usize,
+        decoded: &mut Frame,
+        keys: &[(u8, CipherKey)],
+    ) -> bool {
         let position = burst * FRAMES_PER_BURST + frame;
         let new_superframe = self.last_position.is_some_and(|last| position <= last);
         self.last_position = Some(position);
+        let lost = decoded.errors[0] == u8::MAX;
+        if !lost {
+            self.late.push(burst, frame, decoded.info[3]);
+        }
+        let playable = self.undo(position, new_superframe, decoded);
+        if position == FRAMES_PER_SUPERFRAME - 1
+            && let Some(mi) = self.late.take()
+        {
+            self.late_entry(mi, keys);
+        }
+        playable || lost
+    }
+
+    fn undo(&mut self, position: usize, new_superframe: bool, decoded: &mut Frame) -> bool {
         let lost = decoded.errors[0] == u8::MAX;
         let mut bytes = pack_natural(&decoded.info);
         let playable = match &mut self.cipher {
@@ -252,7 +322,7 @@ impl Privacy {
                 let Some(keystream) = &mut self.keystream else {
                     return false;
                 };
-                if new_superframe {
+                if new_superframe && !std::mem::take(&mut self.fresh) {
                     keystream.next_superframe();
                 }
                 if bytes != SILENCE {
@@ -260,10 +330,10 @@ impl Privacy {
                 }
                 decoded.error_total() <= MAX_KEYED_REPAIRS
             }
-            Cipher::Unknown | Cipher::Locked => false,
+            Cipher::Unknown | Cipher::Locked | Cipher::Keyless => false,
         };
         decoded.info = unpack_natural(&bytes);
-        playable || lost
+        playable
     }
 
     /// Names the cipher once the slot is undoing it.
@@ -309,7 +379,7 @@ mod tests {
         let mut privacy = Privacy::new();
         privacy.link_control(true, Some(MOTOROLA));
         let mut frame = masked(SILENCE, basic_keystream(0xE300));
-        assert!(privacy.decipher(0, 0, &mut frame));
+        assert!(privacy.decipher(0, 0, &mut frame, &[]));
         assert_eq!(pack_natural(&frame.info), SILENCE);
         assert_eq!(privacy.label().as_deref(), Some("Basic Privacy E300"));
     }
@@ -320,7 +390,7 @@ mod tests {
         privacy.link_control(true, Some(MOTOROLA));
         let speech = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0x80];
         let mut frame = masked(speech, basic_keystream(0x2503));
-        assert!(!privacy.decipher(0, 0, &mut frame));
+        assert!(!privacy.decipher(0, 0, &mut frame, &[]));
         assert_eq!(privacy.label(), None);
     }
 
@@ -334,7 +404,7 @@ mod tests {
         let mut privacy = Privacy::new();
         privacy.link_control(true, Some(0x68));
         let mut frame = masked(SILENCE, basic_keystream(0xE300));
-        assert!(!privacy.decipher(0, 0, &mut frame));
+        assert!(!privacy.decipher(0, 0, &mut frame, &[]));
     }
 
     #[test]
@@ -412,7 +482,7 @@ mod tests {
         let mut privacy = Privacy::new();
         privacy.pi_header(0x21, 7, 0x0102_0304, &[(7, key("0102030405"))]);
         let mut frame = clean(SILENCE);
-        assert!(privacy.decipher(0, 0, &mut frame));
+        assert!(privacy.decipher(0, 0, &mut frame, &[]));
         assert_eq!(pack_natural(&frame.info), SILENCE);
         assert_eq!(privacy.label().as_deref(), Some("ARC4"));
     }
@@ -423,7 +493,7 @@ mod tests {
             let mut privacy = Privacy::new();
             privacy.pi_header(algorithm, key_id, 0x0102_0304, &[(7, key("0102030405"))]);
             let mut frame = clean(SILENCE);
-            assert!(!privacy.decipher(0, 0, &mut frame));
+            assert!(!privacy.decipher(0, 0, &mut frame, &[]));
             assert_eq!(privacy.label(), None);
         }
     }
@@ -438,15 +508,26 @@ mod tests {
         use crate::{AUDIO_RATE, ChannelOutputs};
 
         /// Takes the first message indicator only, so every later superframe runs on the LFSR.
-        fn decode(sample: &Sample, key_text: &str) -> f64 {
+        /// `late` leaves out the PI header too, so the call starts from its late-entry MIs.
+        fn decode(sample: &Sample, key_text: &str, late: bool) -> f64 {
             let key_id = sample.key_id.expect("key id") as u8;
             let keys = vec![(key_id, CipherKey::parse(key_text).expect("key"))];
             let mut privacy = Privacy::new();
             let mut vocoder = MbeDecoder::half_rate();
             let mut out = ChannelOutputs::default();
+            let first = sample
+                .frames
+                .iter()
+                .position(|frame| frame.mi.is_some())
+                .expect("a message indicator");
             let mut start = None;
             for (index, frame) in sample.frames.iter().enumerate() {
-                if start.is_none()
+                if late && start.is_none() && index % 18 == first % 18 {
+                    privacy.link_control(true, Some(MOTOROLA));
+                    start = Some(index);
+                }
+                if !late
+                    && start.is_none()
                     && let (Some(algorithm), Some(mi)) = (frame.algorithm, frame.mi)
                 {
                     privacy.link_control(true, Some(MOTOROLA));
@@ -461,7 +542,7 @@ mod tests {
                     continue;
                 };
                 let position = (index - start) % 18;
-                if privacy.decipher(position / 3, position % 3, &mut decoded) {
+                if privacy.decipher(position / 3, position % 3, &mut decoded, &keys) {
                     vocoder.play_half(&decoded, &mut out);
                 } else {
                     MbeDecoder::mute(&mut out);
@@ -470,22 +551,26 @@ mod tests {
             correlation(sample, &out.audio_pcm, AUDIO_RATE as usize)
         }
 
+        /// A call joined late stays muted for the two superframes its first MIs take.
+        const MIN_LATE_CORRELATION: f64 = 0.45;
+
         let all = samples("dmr_");
         assert!(!all.is_empty(), "no dmr samples");
         let mut failed = false;
         for sample in &all {
-            let right = decode(sample, &sample.key);
+            let right = decode(sample, &sample.key, false);
+            let late = decode(sample, &sample.key, true);
             let mut wrong = sample.key.clone();
             wrong.replace_range(
                 wrong.len() - 1..,
                 if wrong.ends_with('0') { "1" } else { "0" },
             );
-            let wrong = decode(sample, &wrong);
+            let wrong = decode(sample, &wrong, false);
             println!(
-                "{}: right key {right:.3}, wrong key {wrong:.3}",
+                "{}: right key {right:.3}, joined late {late:.3}, wrong key {wrong:.3}",
                 sample.name
             );
-            failed |= right <= MIN_HALF_RATE_CORRELATION;
+            failed |= right <= MIN_HALF_RATE_CORRELATION || late <= MIN_LATE_CORRELATION;
         }
         assert!(!failed, "a sample did not decode");
     }

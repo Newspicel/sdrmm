@@ -73,8 +73,10 @@ Enter each key ID and its key under the decoder's Keys. The key's length picks t
 | NXDN | up to 4 scrambler, 16 DES-OFB, 64 AES-256 |
 
 DMR Motorola Basic Privacy needs no key: the decoder reads it off the first silence frame,
-marked `Basic Privacy` and the key. A deciphered call names its cipher. Calls without their
-key, joined before their first message indicator, or followed by a trunk stay muted.
+marked `Basic Privacy` and the key. A deciphered call names its cipher. A trunk node takes its
+own Keys, as `key ID:hex key`, for the calls it follows. A DMR call joined after its PI
+header starts once two superframes have carried their late-entry MI, if exactly one key fits.
+Calls without their key stay muted.
 
 ## Tetrapol
 

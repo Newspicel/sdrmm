@@ -1,3 +1,4 @@
+use blip25_vocoder::halfrate::{pack_natural, unpack_natural};
 use num_complex::Complex;
 use sdrmm_dsp::{Bptc128, crc16_msb, pack_msb};
 
@@ -5,7 +6,10 @@ use super::{
     Call, DT_PI_HEADER, DT_TERMINATOR_WITH_LC, DT_VOICE_LC_HEADER, Keyed, bits, data_burst,
     embedded_lc, parity_lc, voice_burst,
 };
-use crate::dv::dmr::privacy::{CipherKey, FRAME_BYTES, Keystream, SILENCE, basic_keystream};
+use crate::dv::dmr::privacy::{
+    CipherKey, FRAME_BYTES, Keystream, SILENCE, basic_keystream, late_entry_fragments,
+    with_fragment,
+};
 use crate::synth::dv::half_rate_air;
 
 const FRAMES_PER_SUPERFRAME: usize = 18;
@@ -17,11 +21,13 @@ const PI_HEADER_MASK: u16 = 0x6969;
 /// How a synthesized call hides its voice.
 pub enum Privacy {
     MotorolaBasic(u16),
-    /// ARC4 or AES, as the key's length says.
+    /// ARC4 or AES, as the key's length says. Each superframe carries the next one's MI for late
+    /// entry; `pi_header` false leaves the header out, so that is all a receiver gets.
     Keyed {
         key_id: u8,
         key: String,
         mi: u32,
+        pi_header: bool,
     },
 }
 
@@ -48,7 +54,13 @@ pub fn private_transmission(
         DT_VOICE_LC_HEADER,
         &parity_lc(lc.clone(), [0x96, 0x96, 0x96]),
     ));
-    if let Privacy::Keyed { key_id, key, mi } = privacy {
+    if let Privacy::Keyed {
+        key_id,
+        key,
+        mi,
+        pi_header: true,
+    } = privacy
+    {
         let algorithm = DMRA | cipher_key(key).algorithm();
         tx.burst(&data_burst(
             &call,
@@ -113,12 +125,17 @@ fn encipher(privacy: &Privacy, frames: &[[u8; FRAME_BYTES]]) -> Vec<[u8; FRAME_B
                 if index > 0 && position == 0 {
                     keystream.next_superframe();
                 }
+                if *frame == SILENCE {
+                    out.push(*frame);
+                    continue;
+                }
                 let stream = keystream.frame(position);
-                out.push(if *frame == SILENCE {
-                    *frame
-                } else {
-                    std::array::from_fn(|i| frame[i] ^ stream[i])
-                });
+                let enciphered: [u8; FRAME_BYTES] = std::array::from_fn(|i| frame[i] ^ stream[i]);
+                let fragment = late_entry_fragments(keystream.next_message_indicator())
+                    [position / 3][position % 3];
+                let mut info = unpack_natural(&enciphered);
+                info[3] = with_fragment(info[3], fragment);
+                out.push(pack_natural(&info));
             }
             out
         }

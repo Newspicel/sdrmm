@@ -21,6 +21,7 @@ fn system(node: &str) -> trunking::TrunkSystem {
         channel_map: Vec::new(),
         learned: Vec::new(),
         talkgroups: Default::default(),
+        keys: Vec::new(),
         radio: None,
     }
 }

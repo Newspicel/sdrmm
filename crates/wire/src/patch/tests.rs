@@ -389,6 +389,35 @@ fn a_dmr_trunk_system_refuses_a_channel_search_it_cannot_run() {
 }
 
 #[test]
+fn a_trunk_system_refuses_a_voice_key_that_is_not_hex() {
+    let keyed = |key: &str| {
+        PatchGraph {
+            nodes: vec![node(
+                "system",
+                NodeBody::Trunk(TrunkNode {
+                    keys: vec![crate::VoiceKey {
+                        key_id: 137,
+                        key: key.to_owned(),
+                    }],
+                    ..TrunkNode::default()
+                }),
+            )],
+            edges: Vec::new(),
+        }
+        .validate()
+    };
+
+    keyed("58FFA35A8C").expect("a hex key");
+    for refused in ["", "58FFA35A8G", &"A".repeat(65)] {
+        assert_eq!(
+            keyed(refused),
+            Err(PatchError::NodeSettings("system".to_owned())),
+            "{refused:?} was accepted"
+        );
+    }
+}
+
+#[test]
 fn a_dmr_trunk_system_refuses_a_channel_plan_it_cannot_use() {
     let planned = |channel_map: Vec<TrunkChannelEntry>| {
         PatchGraph {

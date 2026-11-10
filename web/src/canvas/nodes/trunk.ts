@@ -10,6 +10,7 @@ import type {
   TrunkSite,
   TrunkSpec,
   TrunkSystemStatus,
+  VoiceKey,
 } from "../../lib/types";
 
 export const MAX_SEARCH_RANGES = 8;
@@ -18,6 +19,7 @@ export const MIN_SEARCH_STEP_HZ = 1_250;
 export const MAX_CHANNEL_MAP = 512;
 export const MAX_LOGICAL_CHANNEL = 4095;
 export const MAX_TALKGROUPS = 256;
+export const MAX_VOICE_KEYS = 256;
 export const AUTO_PROTOCOL = "auto";
 
 /** The decoders a trunk system can run on, in registry order. */
@@ -73,6 +75,23 @@ export function parseTalkgroups(text: string): number[] {
 
 export function formatTalkgroups(ids: readonly number[] | undefined): string {
   return (ids ?? []).join(", ");
+}
+
+/** Voice keys typed as `key ID:hex key`, comma separated; a later entry for an ID wins. */
+export function parseVoiceKeys(text: string): VoiceKey[] {
+  const keys = new Map<number, string>();
+  for (const part of text.split(/[\s,;]+/)) {
+    const [, digits, key] = /^(\d+):([0-9a-fA-F]{1,64})$/.exec(part) ?? [];
+    const id = Number(digits);
+    if (key !== undefined && Number.isSafeInteger(id) && id <= 0xffff) {
+      keys.set(id, key.toUpperCase());
+    }
+  }
+  return [...keys].map(([key_id, key]) => ({ key_id, key })).slice(0, MAX_VOICE_KEYS);
+}
+
+export function formatVoiceKeys(keys: readonly VoiceKey[] | undefined): string {
+  return (keys ?? []).map((entry) => `${entry.key_id}:${entry.key}`).join(", ");
 }
 
 /** Where a call runs: the slot only when a carrier holds more than one call. */

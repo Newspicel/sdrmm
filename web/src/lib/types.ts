@@ -42,6 +42,7 @@ export type TrunkDiscovery = components["schemas"]["TrunkDiscovery"];
 export type TrunkSearchRange = components["schemas"]["TrunkSearchRange"];
 export type TrunkChannelEntry = components["schemas"]["TrunkChannelEntry"];
 export type TrunkNode = components["schemas"]["TrunkNode"];
+export type VoiceKey = components["schemas"]["VoiceKey"];
 export type TrackTruth = components["schemas"]["TrackTruth"];
 export type TrackMatch = components["schemas"]["TrackMatch"];
 export type ChannelStatus = components["schemas"]["ChannelStatus"];

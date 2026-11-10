@@ -17,7 +17,7 @@ use sdrmm_wire::{
     AUTO_TRUNK_PROTOCOL, ChannelParams, ChannelSettings, DecodedRecord, DvFrame, DvFrameKind,
     StateScope, TrunkChannel, TrunkChannelEntry, TrunkChannelSource, TrunkControl, TrunkDiscovery,
     TrunkFollower, TrunkKind, TrunkProbe, TrunkProblem, TrunkScheme, TrunkSite, TrunkSpec,
-    TrunkSystemStatus, TrunkTalkgroups,
+    TrunkSystemStatus, TrunkTalkgroups, VoiceKey,
 };
 
 use crate::Engine;
@@ -52,6 +52,7 @@ pub struct TrunkSystem {
     pub learned: Vec<TrunkChannelEntry>,
     pub radio: Option<TrunkRadio>,
     pub talkgroups: TrunkTalkgroups,
+    pub keys: Vec<VoiceKey>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +87,7 @@ struct Carrier {
     sample_rate: f64,
     freq_hz: u64,
     ignore_crc: bool,
+    keys: Vec<VoiceKey>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -287,6 +289,7 @@ impl Follower {
                     sample_rate: crate::sample_rate_of(&set.settings),
                     freq_hz: absolute.round() as u64,
                     ignore_crc: system.radio.is_some_and(|radio| radio.ignore_crc),
+                    keys: system.keys.clone(),
                 },
             );
         }
@@ -916,7 +919,8 @@ impl Follower {
         if self.backing_off(&key, grant.freq_hz) {
             return;
         }
-        let params = match (carrier.trunking.follow)(grant.slot, carrier.ignore_crc) {
+        let params = match (carrier.trunking.follow)(grant.slot, carrier.ignore_crc, &carrier.keys)
+        {
             Ok(params) => params,
             Err(error) => {
                 self.fail(key, grant, error.to_string());
@@ -1455,6 +1459,7 @@ mod tests {
                 channel_map,
                 learned: Vec::new(),
                 talkgroups: TrunkTalkgroups::default(),
+                keys: Vec::new(),
                 radio: Some(TrunkRadio {
                     device_set: carrier.0,
                     stream: 0,
@@ -1597,6 +1602,52 @@ mod tests {
         assert_eq!(status.followers[0].freq_hz, traffic);
         assert_eq!(status.followers[0].logical_channel, Some(LOGICAL_CHANNEL));
         assert!(status.problems.is_empty());
+    }
+
+    #[test]
+    fn a_followed_call_is_deciphered_with_the_systems_keys() {
+        let engine = engine();
+        let (device_set, channel, center_hz) = control_channel(&engine);
+        let carrier = (device_set, channel);
+        let mut follower = follower(&engine, "tier_three", carrier);
+        let keys = vec![VoiceKey {
+            key_id: 137,
+            key: "58FFA35A8C".to_owned(),
+        }];
+        follower.systems[0].keys = keys.clone();
+        follower.reconcile();
+        let traffic = center_hz as u64 + 125_000;
+
+        follower.observe(&record(carrier, definition(traffic)));
+        follower.observe(&record(carrier, grant(2)));
+
+        let set = engine.snapshot().device_sets.remove(0);
+        let params = set.channels[1]
+            .settings
+            .params
+            .parse::<DmrParams>()
+            .expect("dmr settings");
+        assert_eq!(params.keys, keys);
+    }
+
+    #[test]
+    fn a_key_the_decoder_refuses_is_reported_as_a_problem() {
+        let engine = engine();
+        let (device_set, channel, center_hz) = control_channel(&engine);
+        let carrier = (device_set, channel);
+        let mut follower = follower(&engine, "tier_three", carrier);
+        follower.systems[0].keys = vec![VoiceKey {
+            key_id: 1,
+            key: "123456".to_owned(),
+        }];
+        follower.reconcile();
+        let traffic = center_hz as u64 + 125_000;
+
+        follower.observe(&record(carrier, definition(traffic)));
+        follower.observe(&record(carrier, grant(2)));
+
+        assert_eq!(engine.snapshot().device_sets[0].channels.len(), 1);
+        assert_eq!(status(&follower).problems.len(), 1);
     }
 
     #[test]
@@ -1826,6 +1877,7 @@ mod tests {
                 channel_map: Vec::new(),
                 learned: Vec::new(),
                 talkgroups: TrunkTalkgroups::default(),
+                keys: Vec::new(),
                 radio: Some(TrunkRadio {
                     device_set,
                     stream: 0,
@@ -1902,6 +1954,7 @@ mod tests {
                 channel_map: Vec::new(),
                 learned: Vec::new(),
                 talkgroups: TrunkTalkgroups::default(),
+                keys: Vec::new(),
                 radio: radio(center_hz as u64 + 12_500),
             }],
             carriers: HashMap::new(),
@@ -1952,6 +2005,7 @@ mod tests {
                 channel_map: Vec::new(),
                 learned: Vec::new(),
                 talkgroups: TrunkTalkgroups::default(),
+                keys: Vec::new(),
                 radio: Some(TrunkRadio {
                     device_set,
                     stream: 0,

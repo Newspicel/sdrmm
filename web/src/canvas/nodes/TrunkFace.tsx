@@ -9,6 +9,7 @@ import type {
   PatchNode,
   TrunkSystemStatus,
   TrunkTalkgroups,
+  VoiceKey,
 } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
@@ -25,10 +26,12 @@ import {
   followerCall,
   formatSearchRanges,
   formatTalkgroups,
+  formatVoiceKeys,
   otherControlLabel,
   parseControlHz,
   parseSearchRanges,
   parseTalkgroups,
+  parseVoiceKeys,
   planLabel,
   searchSummary,
   siteLabel,
@@ -148,9 +151,11 @@ export function TrunkFace({ node }: { node: PatchNode }) {
             />
           )}
         </Chips>
-        <TalkgroupChips
+        <CallChips
           talkgroups={talkgroups}
+          keys={node.data.keys ?? []}
           onChange={(next) => edit({ talkgroups: { ...talkgroups, ...next } })}
+          onKeys={(keys) => edit({ keys })}
         />
         <TrunkActivity status={status} slots={slots} controlHz={node.data.control_hz} />
         {stalled && (
@@ -185,12 +190,16 @@ export function TrunkFace({ node }: { node: PatchNode }) {
   );
 }
 
-function TalkgroupChips({
+function CallChips({
   talkgroups,
+  keys,
   onChange,
+  onKeys,
 }: {
   talkgroups: TrunkTalkgroups;
+  keys: VoiceKey[];
   onChange: (next: Partial<TrunkTalkgroups>) => void;
+  onKeys: (keys: VoiceKey[]) => void;
 }) {
   const priority = talkgroups.priority;
   return (
@@ -221,6 +230,15 @@ function TalkgroupChips({
           onChange={(next) => onChange({ listed_only: next })}
         />
       )}
+      <TextChip
+        label="Keys"
+        name="Voice keys"
+        title="Key ID:hex key per key the calls name, for ARC4 and AES"
+        value={formatVoiceKeys(keys)}
+        shown={keys.length === 0 ? "none" : undefined}
+        placeholder="137:58FFA35A8C"
+        onCommit={(text) => onKeys(parseVoiceKeys(text))}
+      />
     </Chips>
   );
 }

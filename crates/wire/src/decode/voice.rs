@@ -91,6 +91,25 @@ pub struct DvChannelDefinition {
     pub color_code: Option<u8>,
 }
 
+pub const MAX_VOICE_KEYS: usize = 256;
+pub const MAX_VOICE_KEY_DIGITS: usize = 64;
+
+/// A voice privacy key as the radios are programmed with it: the key ID a call names and the key
+/// in hex. The decoder reads the algorithm off its length.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct VoiceKey {
+    pub key_id: u16,
+    pub key: String,
+}
+
+impl VoiceKey {
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        (1..=MAX_VOICE_KEY_DIGITS).contains(&self.key.len())
+            && self.key.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct DvFrame {
     /// The mode's display name, as its decoder states it.

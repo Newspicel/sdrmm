@@ -23,13 +23,7 @@ impl DmrSlots {
     }
 }
 
-/// A voice privacy key as the radios are programmed with it: the key ID the call names and the key
-/// in hex. Its length picks the algorithm.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct VoiceKey {
-    pub key_id: u16,
-    pub key: String,
-}
+pub use sdrmm_wire::VoiceKey;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DmrParams {

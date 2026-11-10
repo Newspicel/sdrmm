@@ -1731,6 +1731,7 @@ fn keyed_call(key: &str) -> Vec<Complex<f32>> {
             key_id: 4,
             key: key.to_owned(),
             mi: 0x8BAD_F00D,
+            pi_header: true,
         },
         &spoken_frames(),
         INPUT_RATE_HZ,
@@ -1775,6 +1776,57 @@ fn keyed_calls_decipher_every_superframe() {
         );
         assert_sounds_clear(&audio[2 * audio.len() / 3..]);
     }
+}
+
+#[test]
+fn a_call_joined_without_its_pi_header_starts_from_late_entry() {
+    let frames: Vec<_> = spoken_frames().repeat(2);
+    for (key, name) in [(ARC4_KEY, "ARC4"), (AES_256_KEY, "AES-256")] {
+        let iq = tx::private_transmission(
+            &tx::Call::default(),
+            &tx::Privacy::Keyed {
+                key_id: 4,
+                key: key.to_owned(),
+                mi: 0x8BAD_F00D,
+                pi_header: false,
+            },
+            &frames,
+            INPUT_RATE_HZ,
+        );
+        let channel = keyed_channel(key_four(key)).expect("dmr channel");
+        let (decoded, audio) = decode_audio_with(channel, &iq);
+        assert!(
+            decoded
+                .iter()
+                .any(|frame| frame.cipher.as_deref() == Some(name)),
+            "{name} was never taken up: {decoded:?}"
+        );
+        assert!(audio[..audio.len() / 6].iter().all(|&sample| sample == 0.0));
+        assert_sounds_clear(&audio[2 * audio.len() / 3..]);
+    }
+}
+
+#[test]
+fn late_entry_waits_when_two_keys_fit() {
+    let iq = tx::private_transmission(
+        &tx::Call::default(),
+        &tx::Privacy::Keyed {
+            key_id: 4,
+            key: ARC4_KEY.to_owned(),
+            mi: 0x8BAD_F00D,
+            pi_header: false,
+        },
+        &spoken_frames().repeat(2),
+        INPUT_RATE_HZ,
+    );
+    let mut keys = key_four(ARC4_KEY);
+    keys.push(crate::dv::VoiceKey {
+        key_id: 5,
+        key: "0102030405".to_owned(),
+    });
+    let channel = keyed_channel(keys).expect("dmr channel");
+    let (_, audio) = decode_audio_with(channel, &iq);
+    assert!(audio.iter().all(|&sample| sample == 0.0));
 }
 
 #[test]

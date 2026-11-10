@@ -27915,6 +27915,13 @@
           "ignore_crc": {
             "type": "boolean"
           },
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VoiceKey"
+            },
+            "description": "Voice privacy keys the followed calls are deciphered with."
+          },
           "protocol": {
             "type": "string",
             "description": "A protocol id the decoder declares, or [`crate::AUTO_TRUNK_PROTOCOL`]."
@@ -28391,6 +28398,24 @@
               "integer",
               "null"
             ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "VoiceKey": {
+        "type": "object",
+        "description": "A voice privacy key as the radios are programmed with it: the key ID a call names and the key\nin hex. The decoder reads the algorithm off its length.",
+        "required": [
+          "key_id",
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "key_id": {
+            "type": "integer",
             "format": "int32",
             "minimum": 0
           }

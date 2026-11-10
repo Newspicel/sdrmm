@@ -87,8 +87,12 @@ pub trait Decoder: Send + Sync {
 pub struct Trunking {
     /// A channel hearing everything on a carrier: the control channel and channel-plan probes.
     pub watch: fn(ignore_crc: bool) -> Result<ChannelParams, ChannelError>,
-    /// A channel following one granted call in `slot`.
-    pub follow: fn(slot: u8, ignore_crc: bool) -> Result<ChannelParams, ChannelError>,
+    /// A channel following one granted call in `slot`, deciphering with `keys`.
+    pub follow: fn(
+        slot: u8,
+        ignore_crc: bool,
+        keys: &[sdrmm_wire::VoiceKey],
+    ) -> Result<ChannelParams, ChannelError>,
     /// The protocols the decoder recognises and how many calls share one carrier.
     pub spec: fn() -> sdrmm_wire::TrunkSpec,
 }

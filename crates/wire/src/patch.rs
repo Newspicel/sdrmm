@@ -288,6 +288,9 @@ pub struct TrunkNode {
     pub ignore_crc: bool,
     #[serde(default, skip_serializing_if = "crate::TrunkTalkgroups::is_empty")]
     pub talkgroups: crate::TrunkTalkgroups,
+    /// Voice privacy keys the followed calls are deciphered with.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<crate::VoiceKey>,
 }
 
 fn auto_protocol() -> String {
@@ -299,6 +302,8 @@ impl TrunkNode {
     pub fn valid(&self) -> bool {
         self.discovery.valid()
             && self.talkgroups.valid()
+            && self.keys.len() <= crate::MAX_VOICE_KEYS
+            && self.keys.iter().all(crate::VoiceKey::valid)
             && self.channel_map.len() <= MAX_TRUNK_CHANNEL_MAP
             && self
                 .channel_map
@@ -387,6 +392,7 @@ impl Default for TrunkNode {
             control_hz: None,
             ignore_crc: false,
             talkgroups: crate::TrunkTalkgroups::default(),
+            keys: Vec::new(),
         }
     }
 }

@@ -588,7 +588,9 @@ impl Decoder {
             let mut decoded = half_soft_frame(frame);
             let playable = match state.encrypted {
                 Some(false) => true,
-                Some(true) => state.privacy.decipher(burst, position, &mut decoded),
+                Some(true) => state
+                    .privacy
+                    .decipher(burst, position, &mut decoded, &self.keys),
                 None => false,
             };
             if playable {
@@ -1952,7 +1954,12 @@ fn dmr_watch(ignore_crc: bool) -> Result<sdrmm_wire::ChannelParams, ChannelError
     .map_err(ChannelError::InvalidSettings)
 }
 
-fn dmr_follow(slot: u8, ignore_crc: bool) -> Result<sdrmm_wire::ChannelParams, ChannelError> {
+fn dmr_follow(
+    slot: u8,
+    ignore_crc: bool,
+    keys: &[VoiceKey],
+) -> Result<sdrmm_wire::ChannelParams, ChannelError> {
+    cipher_keys(keys)?;
     let slots = match slot {
         1 => DmrSlots::One,
         2 => DmrSlots::Two,
@@ -1965,7 +1972,7 @@ fn dmr_follow(slot: u8, ignore_crc: bool) -> Result<sdrmm_wire::ChannelParams, C
     sdrmm_wire::ChannelParams::of(&DmrParams {
         slots,
         ignore_crc,
-        ..DmrParams::default()
+        keys: keys.to_vec(),
     })
     .map_err(ChannelError::InvalidSettings)
 }
