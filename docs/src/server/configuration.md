@@ -2,17 +2,18 @@
 
 `sdrmm` runs the interface, the receiver, and the REST, WebSocket, and MCP APIs in one process.
 Out of the box it listens on `127.0.0.1:8080` with **no authentication**, so only this machine
-reaches it. A bind other machines can reach needs `--token`, or startup is refused.
+reaches it. A bind other machines can reach always needs a [token](#token).
 
 ## Options
 
 | Option | Default | Sets |
 |---|---|---|
-| `--bind <ADDRESS>` | `127.0.0.1:8080` | Listen address; a non-loopback one needs `--token` |
+| `--bind <ADDRESS>` | `127.0.0.1:8080` | Listen address; a non-loopback one gets a token |
 | `--db <PATH>` | `sdrmm/sdrmm.db` in the platform data folder | SQLite database |
 | `--recordings-dir <PATH>` | `sdrmm/recordings` in the platform data folder | Recording folder |
 | `--plugins-dir <PATH>` | `sdrmm/plugins` in the platform data folder | [Decoder plugins](../development/plugins.md) |
-| `--token <TOKEN>` | None | Shared access token |
+| `--token <TOKEN>` | Generated on a network bind | Shared access token |
+| `--no-auth` | Off | Run a network bind without a token |
 | `--tls-cert <PATH>`, `--tls-key <PATH>` | None | HTTPS certificate chain and key, PEM; always together |
 | `--tls-self-signed` | Off | HTTPS with a self-signed certificate |
 | `--tls-name <NAME>` | Found addresses | Name the self-signed certificate must cover; repeatable or comma-separated |
@@ -20,7 +21,7 @@ reaches it. A bind other machines can reach needs `--token`, or startup is refus
 | `--doctor` | | Print diagnostics and exit |
 | `--doctor-rates` | | Probe connected radios' sample rates and exit |
 
-`SDRMM_TOKEN` and `SDRMM_TLS_NAMES` set `--token` and `--tls-name`. The platform data folder is
+`SDRMM_TOKEN`, `SDRMM_NO_AUTH` and `SDRMM_TLS_NAMES` set `--token`, `--no-auth` and `--tls-name`. The platform data folder is
 `~/.local/share` on Linux,
 `~/Library/Application Support` on macOS and `%APPDATA%` on Windows. For a service, use absolute
 paths for `--db` and `--recordings-dir`.
@@ -54,8 +55,10 @@ export SDRMM_TOKEN='replace-with-a-long-random-secret'
 sdrmm
 ```
 
-The environment variable keeps the token out of the process list; `--token` works too. The
-browser asks for it once and remembers it. API clients send `Authorization: Bearer <token>`.
+The environment variable keeps the token out of the process list; `--token` works too. A network
+bind without one makes a token on first start, keeps it in `access-token` beside the database and
+logs a sign-in link. `--no-auth` runs it open instead, for a port only trusted machines reach. The
+browser asks for the token once and remembers it. API clients send `Authorization: Bearer <token>`.
 WebSocket and download URLs can use `?token=...`.
 
 Everything needs the token except the page itself, `/api/auth`, `/api/status`, `/api/about`,

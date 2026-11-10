@@ -74,8 +74,16 @@ ipc: host
 
 ### Token
 
-The container listens on `0.0.0.0:8080`, so Compose refuses to start without a token. Put it in a
-`.env` file beside `docker-compose.yml`, kept out of version control:
+The container listens on `0.0.0.0:8080`. Without a token it makes one on first start, keeps it in
+`/data/access-token` and logs a sign-in link:
+
+```sh
+docker compose logs sdrmm | grep token
+docker compose exec sdrmm cat /data/access-token
+```
+
+To choose your own, put it in a `.env` file beside `docker-compose.yml`, kept out of version
+control:
 
 ```text
 SDRMM_TOKEN=replace-with-a-long-random-secret
@@ -124,7 +132,7 @@ Run the portable server under its own user with USB access and fixed paths:
 ```
 
 Stop it with a normal termination signal so recordings can finish. A bind other machines can
-reach needs `SDRMM_TOKEN`; add [HTTPS](configuration.md#https) too.
+reach gets a [token](configuration.md#token); add [HTTPS](configuration.md#https) too.
 
 ## Before leaving it unattended
 

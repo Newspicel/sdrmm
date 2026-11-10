@@ -10,6 +10,7 @@ use sdrmm_engine::Engine;
 use sdrmm_server::{Config, ServerOptions, serve, tls::Tls};
 
 mod phone;
+mod token;
 
 #[derive(Parser, Debug)]
 #[command(name = "sdrmm", version, about)]
@@ -30,6 +31,8 @@ struct Args {
     playback_speed: f64,
     #[arg(long, env = "SDRMM_TOKEN", hide_env_values = true)]
     token: Option<String>,
+    #[arg(long, env = "SDRMM_NO_AUTH", value_parser = clap::builder::BoolishValueParser::new())]
+    no_auth: bool,
     #[arg(long, requires = "tls_key", conflicts_with = "tls_self_signed")]
     tls_cert: Option<PathBuf>,
     #[arg(long, requires = "tls_cert", conflicts_with = "tls_self_signed")]
@@ -94,16 +97,6 @@ fn resolve_tls(args: &Args, db_path: &Path) -> anyhow::Result<Option<Tls>> {
         (None, None) => Ok(None),
         _ => anyhow::bail!("--tls-cert and --tls-key must be given together"),
     }
-}
-
-fn guard_open_bind(bind: SocketAddr, token: Option<&str>) -> anyhow::Result<()> {
-    if bind.ip().is_loopback() || token.is_some_and(|token| !token.is_empty()) {
-        return Ok(());
-    }
-    anyhow::bail!(
-        "{bind} is reachable from the network without a token. Pass --token or set SDRMM_TOKEN, or --bind 127.0.0.1:{} to stay local.",
-        bind.port()
-    )
 }
 
 fn parse_playback_speed(raw: &str) -> Result<f64, String> {
@@ -175,12 +168,19 @@ fn run(mut args: Args) -> anyhow::Result<()> {
         );
         return Ok(());
     }
-    guard_open_bind(args.bind, args.token.as_deref())?;
     let tls = resolve_tls(&args, &db_path)?;
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("cannot create {}", parent.display()))?;
     }
+    let data_dir = db_path.parent().unwrap_or(Path::new("."));
+    let token = token::resolve(
+        args.bind,
+        args.token.take(),
+        args.no_auth,
+        tls.is_some(),
+        data_dir,
+    )?;
     let engine = Engine::with_registry(
         sdrmm_engine::builtin_registry_accelerated(
             Some(recordings_dir.clone()),
@@ -202,7 +202,7 @@ fn run(mut args: Args) -> anyhow::Result<()> {
         tls,
         options: ServerOptions {
             dev_cors: args.dev_cors,
-            token: args.token,
+            token,
             shell: None,
         },
     };
@@ -398,19 +398,9 @@ mod tests {
     }
 
     #[test]
-    fn a_network_bind_without_a_token_is_refused() {
-        let open = "0.0.0.0:8080".parse::<SocketAddr>().expect("addr");
-        let error = guard_open_bind(open, None).expect_err("refused");
-        assert!(error.to_string().contains("--token"), "{error}");
-        assert!(error.to_string().contains("SDRMM_TOKEN"), "{error}");
-        assert!(guard_open_bind(open, Some("")).is_err());
-        assert!(
-            guard_open_bind("192.168.1.20:8080".parse().expect("addr"), None).is_err(),
-            "a LAN address is open too"
-        );
-        guard_open_bind(open, Some("s3cret")).expect("a token opens it");
-        guard_open_bind("127.0.0.1:8080".parse().expect("addr"), None).expect("loopback is local");
-        guard_open_bind("[::1]:8080".parse().expect("addr"), None).expect("loopback is local");
+    fn no_auth_is_off_by_default() {
+        assert!(!Args::parse_from(["sdrmm"]).no_auth);
+        assert!(Args::parse_from(["sdrmm", "--no-auth"]).no_auth);
     }
 
     #[test]

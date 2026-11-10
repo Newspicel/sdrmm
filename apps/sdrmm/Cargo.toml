@@ -41,6 +41,10 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal"] }
 clap.workspace = true
 qrcodegen.workspace = true
 anyhow.workspace = true
+getrandom.workspace = true
 dirs.workspace = true
 tracing.workspace = true
 url.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -9,9 +9,11 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Read from the shell or a .env file beside this one. The container binds 0.0.0.0, which
-      # the server refuses without a token, so Compose stops here instead of a restart loop.
-      SDRMM_TOKEN: ${SDRMM_TOKEN:?set SDRMM_TOKEN in the shell or .env to a long random secret}
+      # Optional, from the shell or a .env file beside this one. Without it the server mints a
+      # token on first start, keeps it in /data/access-token and logs a sign-in link.
+      SDRMM_TOKEN: ${SDRMM_TOKEN:-}
+    # HTTPS with a self-signed certificate kept in /data/tls. Name the host clients use.
+    # command: ["--bind", "0.0.0.0:8080", "--tls-self-signed", "--tls-name", "radio.example"]
     volumes:
       # Database, SigMF recordings, and any self-signed TLS material; the image passes
       # --db/--recordings-dir under /data and keeps a certificate beside them.
