@@ -1,14 +1,41 @@
+---
+const setups = [
+  {
+    title: "On your desk",
+    text: "The radio plugs into this computer. Install the app.",
+    chain: [{ unit: "Radio" }, { link: "usb", unit: "Computer" }],
+  },
+  {
+    title: "By the antenna",
+    text: "A Pi in the loft runs the server. Open it from any browser at home.",
+    chain: [{ unit: "Radio" }, { link: "usb", unit: "Pi" }, { link: "net", unit: "Browser" }],
+  },
+];
+
+const links: Record<string, string> = { usb: "USB", net: "Network" };
+---
+
 <ul class="setups">
-  <li>
-    <h3>On your desk</h3>
-    <p>The radio plugs into this computer. Install the app.</p>
-    <p class="cost"><span class="free">Free</span></p>
-  </li>
-  <li>
-    <h3>By the antenna</h3>
-    <p>A Pi in the loft runs the server. Open it from any browser at home.</p>
-    <p class="cost"><span class="free">Free</span></p>
-  </li>
+  {
+    setups.map((setup) => (
+      <li>
+        <div class="chain" aria-hidden="true">
+          {setup.chain.map((step) => (
+            <>
+              {step.link && (
+                <span class:list={["link", step.link]}>
+                  <span>{links[step.link]}</span>
+                </span>
+              )}
+              <span class="unit">{step.unit}</span>
+            </>
+          ))}
+        </div>
+        <h3>{setup.title}</h3>
+        <p>{setup.text}</p>
+      </li>
+    ))
+  }
 </ul>
 
 <style>
@@ -16,18 +43,61 @@
     margin: 0;
     padding: 0;
     list-style: none;
-    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+    gap: 16px;
   }
   li {
-    display: grid;
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.6fr) minmax(0, 1fr);
-    gap: 6px 40px;
-    align-items: baseline;
-    padding-block: 24px;
-    border-bottom: 1px solid var(--line);
+    padding: 22px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--panel);
+    box-shadow: var(--shadow-face);
+  }
+  .chain {
+    display: flex;
+    align-items: center;
+    min-height: 112px;
+    margin-bottom: 22px;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background:
+      radial-gradient(circle, var(--line) 1px, transparent 1px) 0 0 / 16px 16px,
+      var(--well);
+    font: 12px var(--mono);
+  }
+  .unit {
+    padding: 9px 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--panel-2);
+    box-shadow: var(--shadow-raised);
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .link {
+    position: relative;
+    flex: 1;
+    min-width: 28px;
+    height: 2px;
+    background: var(--wire);
+  }
+  .link span {
+    position: absolute;
+    left: 50%;
+    bottom: 8px;
+    translate: -50%;
+    font-size: 10px;
+    color: var(--ink-faint);
+  }
+  .usb { --wire: var(--iq); }
+  .net {
+    --wire: var(--accent);
+    background: repeating-linear-gradient(90deg, var(--wire) 0 6px, transparent 6px 11px);
   }
   h3 {
-    margin: 0;
+    margin: 0 0 6px;
     font-size: 1.15rem;
     font-weight: 600;
     letter-spacing: -0.01em;
@@ -37,24 +107,9 @@
     color: var(--ink-dim);
     font-size: 15px;
   }
-  .cost {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 14px;
-  }
-  .free {
-    color: var(--audio);
-    font-weight: 600;
-  }
 
-  @media (max-width: 800px) {
-    li {
-      grid-template-columns: minmax(0, 1fr);
-      padding-block: 20px;
-    }
-    .cost {
-      margin-top: 6px;
-    }
+  @media (max-width: 420px) {
+    .chain { padding: 14px; }
+    .unit { padding: 8px; }
   }
 </style>

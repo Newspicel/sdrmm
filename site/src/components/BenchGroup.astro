@@ -1,11 +1,13 @@
 ---
-import { amount, type Group, ours, ranked, width } from "../bench";
+import { amount, best, type Group, kind, margin, ours, ranked, width } from "../bench";
 
 interface Props {
   group: Group;
 }
 
 const { group } = Astro.props;
+const gap = margin(group, kind(group.unit, [group]));
+const rival = best(group)?.tool;
 ---
 
 <figure>
@@ -15,6 +17,14 @@ const { group } = Astro.props;
       {group.unit} {group.better === "higher" ? "↑" : "↓"}
     </span>
   </figcaption>
+  {
+    gap && rival && (
+      <p class="gap">
+        <strong>{gap}</strong>
+        <span>vs {rival}</span>
+      </p>
+    )
+  }
   <ol>
     {
       ranked(group).map((entry) => (
@@ -34,7 +44,7 @@ const { group } = Astro.props;
 <style>
   figure {
     margin: 0;
-    padding: 16px 18px;
+    padding: 20px 22px;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
@@ -48,6 +58,13 @@ const { group } = Astro.props;
     font-weight: 600;
   }
   figcaption span { font: 12px var(--mono); color: var(--ink-faint); white-space: nowrap; }
+  .gap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0 0 18px; }
+  .gap strong {
+    font: 600 clamp(2rem, 4.4vw, 3rem) / 1 var(--mono);
+    letter-spacing: -0.05em;
+    color: var(--accent);
+  }
+  .gap span { font: 13px var(--mono); color: var(--ink-faint); }
   ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
   li {
     display: grid;

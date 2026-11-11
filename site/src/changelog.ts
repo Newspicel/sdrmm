@@ -75,6 +75,13 @@ export function parseNotes(body: string): Group[] {
     .filter((group) => group.items.length > 0);
 }
 
+const COMMIT = / \(<a href="[^"]+\/commit\/[^"]+">[0-9a-f]+<\/a>\)/g;
+
+export function headline(item: string): string {
+  const first = item.match(/^<p>(.*?)<\/p>/)?.[1] ?? item;
+  return first.replace(COMMIT, "");
+}
+
 export function fromPublished(all: readonly PublishedRelease[]): Release[] {
   return all.flatMap((release) => {
     const version = release.tag.match(/^v(\d+\.\d+\.\d+)$/)?.[1];

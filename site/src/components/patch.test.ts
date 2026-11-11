@@ -14,10 +14,10 @@ describe("route", () => {
 });
 
 describe("patchLayout", () => {
-  it("keeps the wide layout as drawn before", () => {
+  it("spreads the wide layout across the page", () => {
     const wide = patchLayout(false);
-    expect(wide.viewBox).toBe("-8 24 576 340");
-    expect(wide.wires.find((wire) => wire.id === "tune")?.d).toBe("M150 172 H210");
+    expect(wide.viewBox).toBe("-8 24 676 340");
+    expect(wide.wires.find((wire) => wire.id === "tune")?.d).toBe("M150 172 H260");
   });
 
   it("fits a phone without shrinking the text", () => {

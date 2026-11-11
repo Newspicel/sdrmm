@@ -143,7 +143,7 @@ h1 {
 }
 
 section {
-  padding-block: clamp(56px, 8vw, 96px);
+  padding-block: clamp(44px, 6vw, 72px);
 }
 
 h2 {
@@ -160,7 +160,7 @@ h2 {
   color: var(--ink-dim);
   font-size: 1.1rem;
   max-width: var(--measure);
-  margin: 0 0 44px;
+  margin: 0 0 36px;
   text-wrap: pretty;
 }
 

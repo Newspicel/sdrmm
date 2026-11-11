@@ -18,7 +18,7 @@ interface Column {
 }
 
 const GRID = {
-  wide: { widths: [150, 150, 140], gap: 60 },
+  wide: { widths: [150, 150, 140], gap: 110 },
   narrow: { widths: [100, 100, 100], gap: 22 },
 };
 

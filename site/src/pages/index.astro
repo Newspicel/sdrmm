@@ -1,6 +1,6 @@
 ---
 import { highlights, SECTIONS } from "../bench";
-import { newest, releases } from "../changelog";
+import { headline, newest, releases } from "../changelog";
 import BenchGroup from "../components/BenchGroup.astro";
 import Patch from "../components/Patch.astro";
 import Setups from "../components/Setups.astro";
@@ -245,6 +245,8 @@ const copies = [0, 1, 2, 3];
 const latest = newest(await releases(), 3);
 
 const fastest = highlights(SECTIONS);
+
+const news = latest?.groups.flatMap((group) => group.items).map(headline) ?? [];
 ---
 
 <Page
@@ -299,14 +301,16 @@ const fastest = highlights(SECTIONS);
     </div>
   </div>
 
-  <section class="wrap wiring">
-    <div>
+  <section class="band wiring">
+    <div class="wrap">
       <h2>Every flow is a wire</h2>
       <p class="section-lede">A Device node feeds channels. Channels feed speakers, maps, logs and
         recorders. Nothing happens behind your back.</p>
+      <div class="canvas">
+        <Patch />
+        <Patch narrow />
+      </div>
     </div>
-    <Patch />
-    <Patch narrow />
   </section>
 
   <section class="wrap">
@@ -318,12 +322,10 @@ const fastest = highlights(SECTIONS);
         outputs.map((output) => (
           <li class={output.port}>
             <p class="port">{output.name}</p>
-            <div>
-              <h3>{output.title}</h3>
-              <ul class="modes">
-                {output.modes.map((mode) => <li>{mode}</li>)}
-              </ul>
-            </div>
+            <h3>{output.title}</h3>
+            <ul class="modes">
+              {output.modes.map((mode) => <li>{mode}</li>)}
+            </ul>
           </li>
         ))
       }
@@ -346,15 +348,17 @@ const fastest = highlights(SECTIONS);
 
   {
     fastest.length > 0 && (
-      <section class="wrap bench">
-        <h2>Measured against the rest</h2>
-        <p class="section-lede">Same machine, same input, release builds.</p>
-        <div class="groups">
-          {fastest.map((group) => (
-            <BenchGroup group={group} />
-          ))}
+      <section class="band bench">
+        <div class="wrap">
+          <h2>Measured against the rest</h2>
+          <p class="section-lede">Same machine, same input, release builds.</p>
+          <div class="groups">
+            {fastest.map((group) => (
+              <BenchGroup group={group} />
+            ))}
+          </div>
+          <a class="more" href="/benchmarks">All benchmarks</a>
         </div>
-        <a class="more" href="/benchmarks">All benchmarks</a>
       </section>
     )
   }
@@ -364,22 +368,6 @@ const fastest = highlights(SECTIONS);
     <p class="section-lede">The same software on the desk and by the antenna. All of it free.</p>
     <Setups />
   </section>
-
-  {
-    latest && (
-      <section class="wrap news">
-        <h2>What's new</h2>
-        <p class="version">
-          {latest.version}
-          <time datetime={latest.date}>{latest.date}</time>
-        </p>
-        <ul>
-          {latest.groups.flatMap((group) => group.items).map((item) => <li set:html={item} />)}
-        </ul>
-        <a class="more" href="/changelog">Changelog</a>
-      </section>
-    )
-  }
 
   <section class="voices">
     <div class="wrap">
@@ -409,6 +397,20 @@ const fastest = highlights(SECTIONS);
       }
     </div>
   </section>
+
+  {
+    latest && (
+      <section class="wrap news">
+        <a class="version" href="/changelog">
+          {latest.version}
+          <time datetime={latest.date}>{latest.date}</time>
+        </a>
+        <ul>
+          {news.map((item) => <li set:html={item} />)}
+        </ul>
+      </section>
+    )
+  }
 
   <section class="closing">
     <div class="wrap">
@@ -469,8 +471,8 @@ const fastest = highlights(SECTIONS);
     flex-direction: column;
     align-items: center;
     text-align: center;
-    padding-top: clamp(64px, 11vw, 136px);
-    padding-bottom: clamp(48px, 7vw, 80px);
+    padding-top: clamp(48px, 8vw, 96px);
+    padding-bottom: clamp(36px, 5vw, 56px);
   }
   .intro .lede { margin-inline: auto; }
   .intro .actions { justify-content: center; }
@@ -509,54 +511,69 @@ const fastest = highlights(SECTIONS);
   }
   .bench .more { font: 13px var(--mono); }
 
+  .band {
+    border-block: 1px solid var(--line);
+    background:
+      radial-gradient(circle, var(--line) 1px, transparent 1px) 0 0 / 20px 20px,
+      var(--well);
+  }
+
+  .wiring .canvas { max-width: 940px; margin-inline: auto; }
+
+  .news {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 10px 32px;
+    padding-block: 0 clamp(24px, 4vw, 40px);
+  }
   .news .version {
     display: flex;
-    gap: 14px;
+    gap: 12px;
     align-items: baseline;
-    margin: 0 0 16px;
-    font: 14px var(--mono);
-    color: var(--ink);
+    font: 500 14px var(--mono);
+    color: var(--accent);
+    text-decoration: none;
   }
-  .news time { font-size: 13px; color: var(--ink-faint); }
+  .news .version:hover { text-decoration: underline; }
+  .news time { font-size: 12px; color: var(--ink-faint); }
   .news ul {
-    margin: 0 0 20px;
-    padding-left: 20px;
-    max-width: var(--measure);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 10px 28px;
+    font-size: 14px;
+    line-height: 1.45;
     color: var(--ink-dim);
   }
-  .news li + li { margin-top: 10px; }
-  .news li :global(p) { margin: 0; }
-  .news li :global(p + p) { display: none; }
-  .news .more { font: 13px var(--mono); }
-
-  .wiring {
-    display: grid;
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-    align-items: center;
-    gap: clamp(32px, 6vw, 88px);
-  }
-  .wiring .section-lede { margin-bottom: 0; }
+  .news li { padding-left: 12px; border-left: 1px solid var(--line); }
 
   .outputs {
     margin: 0;
     padding: 0;
     list-style: none;
-    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
   }
   .outputs > li {
-    display: grid;
-    grid-template-columns: 160px minmax(0, 1fr);
-    gap: 8px 32px;
-    align-items: start;
-    padding-block: 24px;
-    border-bottom: 1px solid var(--line);
+    padding: 20px 22px 22px;
+    border: 1px solid var(--line);
+    border-top: 2px solid var(--port);
+    border-radius: var(--radius-lg);
+    background:
+      linear-gradient(color-mix(in oklab, var(--port) 7%, transparent), transparent 96px),
+      var(--panel);
+    box-shadow: var(--shadow-face);
   }
   .outputs .port {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 0;
-    font: 500 14px/28px var(--mono);
+    margin: 0 0 10px;
+    font: 500 13px var(--mono);
     color: var(--port);
   }
   .outputs .port::before {
@@ -565,9 +582,10 @@ const fastest = highlights(SECTIONS);
     height: 8px;
     border-radius: 50%;
     background: var(--port);
+    box-shadow: 0 0 12px var(--port);
   }
-  .outputs h3 { margin: 0 0 14px; font-size: 1.2rem; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; }
-  .modes { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px; }
+  .outputs h3 { margin: 0 0 16px; font-size: 1.3rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.01em; }
+  .modes { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 5px; }
   .modes li {
     font: 12px/1 var(--mono);
     padding: 6px 8px;
@@ -582,7 +600,7 @@ const fastest = highlights(SECTIONS);
   .outputs .iq { --port: var(--iq); }
 
   .tools {
-    margin-top: 56px;
+    margin-top: 40px;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 28px 40px;
@@ -687,7 +705,6 @@ const fastest = highlights(SECTIONS);
   .closing .work { margin: 16px 0 0; text-align: center; font-size: 15px; color: var(--ink-faint); }
 
   @media (max-width: 900px) {
-    .wiring { grid-template-columns: minmax(0, 1fr); }
     .scenes { display: none; }
     .window { aspect-ratio: auto; max-height: none; }
     .window iframe { display: none; }
@@ -695,7 +712,8 @@ const fastest = highlights(SECTIONS);
   }
 
   @media (max-width: 720px) {
-    .outputs > li { grid-template-columns: minmax(0, 1fr); gap: 2px; padding-block: 18px 22px; }
+    .outputs { grid-template-columns: minmax(0, 1fr); }
+    .news { grid-template-columns: minmax(0, 1fr); }
     .voice { width: 260px; }
   }
 </style>

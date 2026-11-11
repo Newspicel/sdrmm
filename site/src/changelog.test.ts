@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   fromPublished,
+  headline,
   newest,
   type PublishedRelease,
   parseNotes,
@@ -45,6 +46,18 @@ describe("parseNotes", () => {
 
   it("stops at text GitHub adds after the notes", () => {
     expect(parseNotes(NOTES)[1]?.items[1]).toBe("<p>Airspy: <code>bias tee</code> sticks</p>");
+  });
+});
+
+describe("headline", () => {
+  it("keeps the first paragraph without its commit link", () => {
+    expect(headline(parseNotes(NOTES)[0]?.items[0] ?? "")).toBe("Faster DSP");
+  });
+
+  it("leaves inline markup alone", () => {
+    expect(headline("<p>Airspy: <code>bias tee</code> sticks</p>")).toBe(
+      "Airspy: <code>bias tee</code> sticks",
+    );
   });
 });
 
