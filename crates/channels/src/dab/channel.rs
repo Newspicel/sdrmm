@@ -464,7 +464,7 @@ impl DabChannel {
                     }
                     for unit in &units.units {
                         self.media
-                            .push(MediaKind::Latm, unit, None, Some(units.format));
+                            .push(MediaKind::DabPlus, unit, None, Some(units.format));
                     }
                     self.last_format = Some(units);
                 }

@@ -69,12 +69,14 @@ impl Decoder {
         Ok(Self::with(kind, Some(parser), opened))
     }
 
-    pub fn usac(config: &[u8]) -> Result<Self, String> {
+    /// FFmpeg's own parametric stereo assumes 32 QMF slots, so the 30-slot frames of DAB+
+    /// and DRM HE-AAC v2 come out robotic. FDK takes raw blocks plus their config.
+    pub fn fdk(kind: Kind, config: &[u8]) -> Result<Self, String> {
         silence_library_logging();
         let codec = av::decoder::find_by_name("libfdk_aac")
-            .ok_or_else(|| "Decoder unavailable: xHE-AAC".to_owned())?;
+            .ok_or_else(|| "Decoder unavailable: FDK AAC".to_owned())?;
         let opened = open(codec, config)?;
-        Ok(Self::with(Kind::DrmXhe, None, opened))
+        Ok(Self::with(kind, None, opened))
     }
 
     fn with(

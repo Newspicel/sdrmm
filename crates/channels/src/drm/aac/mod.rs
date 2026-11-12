@@ -84,17 +84,17 @@ impl AudioConfig {
     }
 }
 
-pub fn latm(frame: &[u8], config: &AudioConfig) -> Result<Vec<u8>, String> {
+pub fn raw_frame(frame: &[u8], config: &AudioConfig) -> Result<Vec<u8>, String> {
     if config.coding == Coding::Xhe {
-        return Err("xHE-AAC does not travel in LATM".to_owned());
+        return Err("xHE-AAC has no AAC raw data block".to_owned());
     }
-    let block = standard(frame, config).map_err(str::to_owned)?;
-    let asc = aac_config(config).ok_or("Unsupported DRM AAC sampling rate")?;
-    Ok(crate::broadcast_media::latm::mux(
-        &block,
-        asc.bytes(),
-        asc.bit_len(),
-    ))
+    standard(frame, config).map_err(str::to_owned)
+}
+
+pub fn aac_specific_config(config: &AudioConfig) -> Result<Vec<u8>, &'static str> {
+    aac_config(config)
+        .map(BitWriter::into_bytes)
+        .ok_or("Unsupported DRM AAC sampling rate")
 }
 
 pub fn usac_config(config: &AudioConfig) -> Result<Vec<u8>, &'static str> {

@@ -28,8 +28,8 @@ use crate::{
 };
 
 mod clock;
+pub(crate) mod dab_plus;
 mod decoder;
-pub(crate) mod latm;
 
 #[cfg(test)]
 mod tests;
@@ -116,6 +116,7 @@ pub enum Kind {
     DabPacket,
     Aac,
     Latm,
+    DabPlus,
     DrmAudio,
     DrmXhe,
     Ac3,
@@ -131,8 +132,8 @@ impl Kind {
             Self::Mp2 => Id::MP2,
             Self::Eac3 => Id::EAC3,
             Self::DabPad | Self::DabPacket | Self::Silence => Id::None,
-            Self::Aac | Self::DrmXhe => Id::AAC,
-            Self::Latm | Self::DrmAudio => Id::AAC_LATM,
+            Self::Aac | Self::DabPlus | Self::DrmAudio | Self::DrmXhe => Id::AAC,
+            Self::Latm => Id::AAC_LATM,
             Self::Ac3 => Id::AC3,
             Self::Mpeg2 => Id::MPEG2VIDEO,
             Self::H264 => Id::H264,
@@ -259,12 +260,27 @@ fn publish(output: &mut Producer<Output>, resident: &AtomicUsize, mut value: Out
     true
 }
 
-fn open_decoder(key: (Kind, Option<DrmAudio>)) -> Result<decoder::Decoder, String> {
-    match key {
-        (Kind::DrmXhe, Some(config)) => {
-            decoder::Decoder::usac(&crate::drm::aac::usac_config(&config)?)
+type DecoderKey = (Kind, Option<AudioFormat>, Option<DrmAudio>);
+
+fn open_decoder(key: DecoderKey) -> Result<decoder::Decoder, String> {
+    let config = match key {
+        (Kind::DabPlus, Some(format), _) => dab_plus::audio_specific_config(format)?,
+        (Kind::DrmAudio, _, Some(config)) => crate::drm::aac::aac_specific_config(&config)?,
+        (Kind::DrmXhe, _, Some(config)) => crate::drm::aac::usac_config(&config)?,
+        (kind, ..) => return decoder::Decoder::new(kind),
+    };
+    decoder::Decoder::fdk(key.0, &config)
+}
+
+fn raw_unit<'a>(item: &'a Input, scratch: &'a mut Vec<u8>) -> Result<&'a [u8], String> {
+    let bytes = &item.bytes[..item.length];
+    match (item.kind, item.drm) {
+        (Kind::DabPlus, _) => dab_plus::access_unit(bytes).map_err(str::to_owned),
+        (Kind::DrmAudio, Some(config)) => {
+            *scratch = crate::drm::aac::raw_frame(bytes, &config)?;
+            Ok(scratch)
         }
-        (kind, _) => decoder::Decoder::new(kind),
+        _ => Ok(bytes),
     }
 }
 
@@ -372,9 +388,8 @@ fn run(mut input: Consumer<Input>, mut output: Producer<Output>, resident: Arc<A
         if matches!(item.kind, Kind::DabPad | Kind::DabPacket) {
             continue;
         }
-        let key = (item.kind, item.drm.filter(|_| item.kind == Kind::DrmXhe));
-        let state: &mut Option<((Kind, Option<DrmAudio>), decoder::Decoder)> = if item.kind.video()
-        {
+        let key = (item.kind, item.format, item.drm);
+        let state: &mut Option<(DecoderKey, decoder::Decoder)> = if item.kind.video() {
             &mut video
         } else {
             &mut audio
@@ -386,20 +401,8 @@ fn run(mut input: Consumer<Input>, mut output: Producer<Output>, resident: Arc<A
             let Some((_, decoder)) = state else {
                 return Err("Broadcast decoder missing".to_owned());
             };
-            let bytes = &item.bytes[..item.length];
-            let latm;
-            let encoded = if item.kind == Kind::DrmXhe {
-                bytes
-            } else if let Some(format) = item.format {
-                latm = latm::wrap(bytes, format).map_err(str::to_owned)?;
-                &latm
-            } else if let Some(config) = &item.drm {
-                latm = crate::drm::aac::latm(bytes, config)?;
-                &latm
-            } else {
-                bytes
-            };
-            decoder.push(encoded, item.pts, &mut frames)
+            let mut scratch = Vec::new();
+            decoder.push(raw_unit(&item, &mut scratch)?, item.pts, &mut frames)
         })()
         .map_err(|message| match item.drm {
             Some(config) if config.coding == DrmCoding::Xhe => format!("xHE-AAC: {message}"),

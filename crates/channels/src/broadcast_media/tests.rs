@@ -46,12 +46,14 @@ fn dab_lc_he_aac_and_parametric_stereo_decode_960_sample_access_units() {
             stereo_core: stereo,
             surround: 0,
         };
-        let packets: Vec<u8> = access_units(source)
-            .into_iter()
-            .flat_map(|unit| latm::wrap(unit, format).expect("LATM"))
-            .collect();
-        let decoded = decode(Kind::Latm, &packets, 97);
-        assert_eq!(decoded.len(), 30, "{format:?}");
+        let decoded = decode_units(
+            Kind::DabPlus,
+            &dab_plus::audio_specific_config(format).expect("config"),
+            access_units(source)
+                .into_iter()
+                .map(|unit| dab_plus::access_unit(unit).expect("unit").to_vec()),
+        );
+        assert!((30..=31).contains(&decoded.len()), "{format:?}");
         let pcm: Vec<f32> = decoded
             .into_iter()
             .flat_map(|(_, p)| match p {
@@ -97,6 +99,20 @@ fn dab_lc_he_aac_and_parametric_stereo_decode_960_sample_access_units() {
             "{format:?}: relative error {best:?}"
         );
     }
+}
+
+fn decode_units(
+    kind: Kind,
+    config: &[u8],
+    units: impl IntoIterator<Item = Vec<u8>>,
+) -> Vec<(Option<i64>, Payload)> {
+    let mut decoder = decoder::Decoder::fdk(kind, config).expect("decoder");
+    let mut out = Vec::new();
+    for unit in units {
+        decoder.push(&unit, None, &mut out).expect("decode");
+    }
+    decoder.finish(&mut out).expect("flush");
+    out
 }
 
 fn decode(kind: Kind, data: &[u8], chunk: usize) -> Vec<(Option<i64>, Payload)> {
@@ -220,7 +236,7 @@ fn dab_media_pcm(units: &[&[u8]], format: AudioFormat, gap_before: Option<usize>
                 "DAB+ access-unit CRC failure",
             );
         }
-        media.push(Kind::Latm, unit, None, Some(format));
+        media.push(Kind::DabPlus, unit, None, Some(format));
     }
     let mut out = ChannelOutputs::default();
     for _ in 0..2000 {
@@ -307,17 +323,19 @@ fn drm_config(sbr: bool, rate_hz: u32) -> DrmAudio {
 }
 
 fn drm_pcm(frames: &[u8], config: &DrmAudio) -> Vec<f32> {
-    let packets: Vec<u8> = access_units(frames)
-        .into_iter()
-        .flat_map(|frame| crate::drm::aac::latm(frame, config).expect("LATM"))
-        .collect();
-    decode(Kind::Latm, &packets, 61)
-        .into_iter()
-        .flat_map(|(_, payload)| match payload {
-            Payload::Audio(pcm) => pcm,
-            _ => panic!("audio"),
-        })
-        .collect()
+    decode_units(
+        Kind::DrmAudio,
+        &crate::drm::aac::aac_specific_config(config).expect("config"),
+        access_units(frames)
+            .into_iter()
+            .map(|frame| crate::drm::aac::raw_frame(frame, config).expect("frame")),
+    )
+    .into_iter()
+    .flat_map(|(_, payload)| match payload {
+        Payload::Audio(pcm) => pcm,
+        _ => panic!("audio"),
+    })
+    .collect()
 }
 
 #[test]
@@ -438,9 +456,10 @@ fn xhe_aac_frames_at_an_odd_rate_decode_to_audio() {
 
 #[test]
 fn xhe_aac_with_four_to_one_sbr_and_pvc_matches_the_reference_decoder() {
-    let mut decoder = decoder::Decoder::usac(include_bytes!(
-        "../../../../fixtures/drm/xhe_4to1_pvc_38k.asc"
-    ))
+    let mut decoder = decoder::Decoder::fdk(
+        Kind::DrmXhe,
+        include_bytes!("../../../../fixtures/drm/xhe_4to1_pvc_38k.asc"),
+    )
     .expect("decoder");
     let mut out = Vec::new();
     for unit in access_units(include_bytes!(
@@ -666,4 +685,52 @@ fn no_services_found_offers_no_auto_either() {
     publish_status(&mut out, BroadcastStatus::default(), "service_id");
     let face = out.status.expect("a channel status");
     assert!(face.choices[0].options.is_empty());
+}
+
+fn tone_residual_db(pcm: &[f32], channel: usize, frequency: f64) -> f64 {
+    let samples: Vec<f64> = pcm
+        .iter()
+        .skip(channel)
+        .step_by(2)
+        .map(|&v| v.into())
+        .collect();
+    let (mut residual, mut power) = (0.0, 0.0);
+    for window in samples[9600..samples.len() - 4800].as_chunks::<960>().0 {
+        let basis: Vec<(f64, f64)> = (0..window.len())
+            .map(|i| {
+                (std::f64::consts::TAU * frequency * i as f64 / f64::from(AUDIO_RATE)).sin_cos()
+            })
+            .collect();
+        let (mut ss, mut sc, mut cc, mut xs, mut xc) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for (&x, &(s, c)) in window.iter().zip(&basis) {
+            (ss, sc, cc, xs, xc) = (ss + s * s, sc + s * c, cc + c * c, xs + x * s, xc + x * c);
+        }
+        let det = ss * cc - sc * sc;
+        let (a, b) = ((xs * cc - xc * sc) / det, (xc * ss - xs * sc) / det);
+        for (&x, &(s, c)) in window.iter().zip(&basis) {
+            let fit = a * s + b * c;
+            residual += (x - fit).powi(2);
+            power += fit.powi(2);
+        }
+    }
+    10.0 * (residual / power).log10()
+}
+
+#[test]
+fn parametric_stereo_on_960_sample_frames_keeps_both_tones_clean() {
+    let format = AudioFormat {
+        sample_rate_hz: 32_000,
+        spectral_band_replication: true,
+        parametric_stereo: true,
+        stereo_core: false,
+        surround: 0,
+    };
+    let units = access_units(include_bytes!(
+        "../../../../fixtures/broadcast_audio/dab_he_ps_32k.aus"
+    ));
+    let pcm = dab_media_pcm(&units, format, None);
+    for (channel, frequency) in [(0, 700.0), (1, 1300.0)] {
+        let residual = tone_residual_db(&pcm, channel, frequency);
+        assert!(residual < -40.0, "channel {channel}: {residual:.1} dB");
+    }
 }
