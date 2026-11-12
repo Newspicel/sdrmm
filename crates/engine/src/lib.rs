@@ -102,6 +102,7 @@ const SOAPY_PRIORITY: u8 = 20;
 const SDRPLAY_PRIORITY: u8 = 25;
 #[cfg(any(
     feature = "cr8",
+    feature = "aaronia",
     feature = "rtlsdr",
     feature = "hackrf",
     feature = "airspy",
@@ -139,6 +140,8 @@ pub fn native_backends() -> Vec<DeviceBackend> {
     [
         #[cfg(feature = "cr8")]
         DeviceBackend::Cr8,
+        #[cfg(feature = "aaronia")]
+        DeviceBackend::Aaronia,
         #[cfg(feature = "rtlsdr")]
         DeviceBackend::Rtlsdr,
         #[cfg(feature = "hackrf")]
@@ -203,6 +206,11 @@ pub fn builtin_registry_accelerated(
     registry.register(
         NATIVE_PRIORITY,
         Box::new(sdrmm_device_cr8::Cr8Driver::new()),
+    );
+    #[cfg(feature = "aaronia")]
+    registry.register(
+        NATIVE_PRIORITY,
+        Box::new(sdrmm_device_aaronia::AaroniaDriver::new()),
     );
     #[cfg(feature = "rtlsdr")]
     registry.register(

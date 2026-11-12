@@ -66,8 +66,8 @@ the toolchain. xtask retries Cargo up to three times on Windows, since the
 
 ## Feature flags
 
-The server enables `soapy`, `sdrplay`, `cr8`, `rtlsdr`, `hackrf`, `airspy`, `airspyhf`, `espsdr`,
-`ad936x`, `net-client`, and `gpu-fft` by default. Packaged releases leave out `cr8`.
+The server enables `soapy`, `sdrplay`, `aaronia`, `cr8`, `rtlsdr`, `hackrf`, `airspy`, `airspyhf`,
+`espsdr`, `ad936x`, `net-client`, and `gpu-fft` by default. Packaged releases leave out `cr8`.
 
 ```sh
 cargo run -p sdrmm --no-default-features                        # no radio drivers

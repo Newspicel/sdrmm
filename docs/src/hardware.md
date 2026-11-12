@@ -19,6 +19,7 @@ Packaged builds include every driver here except CR-8:
 | [ADALM-Pluto, other AD936x boards](#plutosdr-and-other-ad936x-boards) | USB or Ethernet | Nothing |
 | [SDRplay RSP1, RSP1A, RSP1B, RSP2, RSPduo, RSPdx, RSPdx-R2](#sdrplay) | USB | SDRplay API 3.15+ |
 | [SDRplay on another machine](#sdrconnect) | Network | SDRconnect there |
+| [Aaronia SPECTRAN V6, V6 ECO](#aaronia-spectran-v6) | USB | RTSA-Suite PRO, Windows or Linux |
 | [KiwiSDR](#kiwisdr) | Network | Nothing |
 | [Dragon Labs CR-8](#dragon-labs-cr-8) | USB | Vendor library, a build with `cr8` |
 | bladeRF, LimeSDR, USRP, others | USB | A [SoapySDR module](#soapysdr) |
@@ -43,6 +44,8 @@ Making a radio? Write to [hi@jhaag.me](mailto:hi@jhaag.me) to get it supported a
 | SDRplay RSP1, RSP2 | 10 kHz to 2 GHz | 10.66 MS/s | 8 MHz | 12 | 1 | 0 | Corrected |
 | SDRplay RSP1A, RSP1B, RSPdx, RSPdx-R2 | 1 kHz to 2 GHz | 10.66 MS/s | 8 MHz | 14 | 1 | 0 | Corrected |
 | SDRplay RSPduo | 1 kHz to 2 GHz | 10.66 MS/s | 8 MHz | 14 | 2 | 0 | Corrected |
+| Aaronia SPECTRAN V6 | Per model | Per model and clock | Rate / 1.5 | 16 | 1 | 1 | Unknown |
+| Aaronia SPECTRAN V6 ECO | Per model | 61.44 MS/s | 40 MHz | 16 | 1 | 1 | Unknown |
 | KiwiSDR | 0 to 30 MHz | 20 kS/s | 20 kHz | 14 | 1 | 0 | No |
 | Dragon Labs CR-8 | 24 MHz to 1.766 GHz | 12.5 MS/s | 8 MHz | 12 | 8 | 0 | Unknown |
 | bladeRF 2.0 micro | 70 MHz to 6 GHz | 61.44 MS/s | 56 MHz | 12 | 2 | 2 | Yes |
@@ -387,6 +390,27 @@ SDRmm receives raw IQ and does its own demodulation. Settings:
 
 The driver follows the public [SDRplay API specification](https://www.sdrplay.com/api/). No vendor
 code is included.
+
+## Aaronia SPECTRAN V6
+
+Install the [RTSA-Suite PRO](https://aaronia.com/en/support/downloads). SDRmm loads its RTSA API at
+runtime; nothing else is needed. Aaronia ships no macOS version. On Linux, run the suite's
+`setup_udev.sh` once. Set `SDRMM_AARONIA_DIR` to the suite's folder if it is not in the default
+place, and check it with `sdrmm --doctor`. Close the RTSA-Suite before opening the radio here.
+
+| Control | Sets |
+|---|---|
+| GAIN | The reference level, reversed: 20 dB gain is a -20 dBm reference, which reads as full scale |
+| Antenna | Rx1 or Rx2, V6 only |
+| Amplifier, RX filter, USB compression | As the radio lists them |
+
+The rate is the span times 1.5, so the clean part is two thirds of the rate. The slowest receiver
+clock that carries the rate is picked for you.
+
+Transmit is half duplex: the radio reopens as a transmitter and back. Full scale sends 0 dBm before
+the TX gain.
+
+The driver follows the public RTSA API interface. No vendor code is included.
 
 ## KiwiSDR
 

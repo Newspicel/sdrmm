@@ -17,10 +17,11 @@ workspace = true
 
 # Passthrough so specialized builds may deliberately omit local hardware support.
 [features]
-default = ["soapy", "sdrplay", "cr8", "rtlsdr", "hackrf", "airspy", "airspyhf", "funcube", "espsdr", "ad936x", "net-client", "gpu-fft"]
+default = ["soapy", "sdrplay", "aaronia", "cr8", "rtlsdr", "hackrf", "airspy", "airspyhf", "funcube", "espsdr", "ad936x", "net-client", "gpu-fft"]
 soapy = ["sdrmm-server/soapy", "sdrmm-engine/soapy", "dep:sdrmm-device-soapy"]
 sdrplay = ["sdrmm-server/sdrplay", "sdrmm-engine/sdrplay"]
 cr8 = ["sdrmm-server/cr8", "sdrmm-engine/cr8"]
+aaronia = ["sdrmm-server/aaronia", "sdrmm-engine/aaronia"]
 rtlsdr = ["sdrmm-server/rtlsdr", "sdrmm-engine/rtlsdr"]
 hackrf = ["sdrmm-server/hackrf", "sdrmm-engine/hackrf"]
 airspy = ["sdrmm-server/airspy", "sdrmm-engine/airspy"]
