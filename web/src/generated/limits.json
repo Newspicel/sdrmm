@@ -401,6 +401,10 @@
       "min": 360.0,
       "max": 540.0
     },
+    "heading_deg": {
+      "min": 0.0,
+      "max": 360.0
+    },
     "level_elevation_deg": 90.0,
     "flip_elevation_deg": 180.0,
     "gs232_baud": 9600,

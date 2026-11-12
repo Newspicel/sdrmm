@@ -27,6 +27,8 @@ pub(super) enum LinkError {
     Refused(i32),
     #[error("unreadable reply \"{0}\"")]
     Garbled(String),
+    #[error("rotator ignored \"{0}\"")]
+    Ignored(String),
     #[error("{0} resolves to nothing")]
     Unresolved(String),
 }

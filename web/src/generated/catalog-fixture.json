@@ -1942,6 +1942,7 @@
           "axes": "azimuth_elevation",
           "azimuth_max_deg": 360.0,
           "flip": false,
+          "heading_deg": 0.0,
           "mode": "track",
           "manual": {
             "azimuth_deg": 0.0,

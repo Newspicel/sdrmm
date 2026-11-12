@@ -23322,6 +23322,11 @@
           "flip": {
             "type": "boolean"
           },
+          "heading_deg": {
+            "type": "number",
+            "format": "double",
+            "description": "Compass bearing the mount's 0° azimuth faces."
+          },
           "link": {
             "oneOf": [
               {

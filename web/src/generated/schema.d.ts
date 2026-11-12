@@ -6602,6 +6602,11 @@ export interface components {
             /** Format: double */
             azimuth_max_deg?: number;
             flip?: boolean;
+            /**
+             * Format: double
+             * @description Compass bearing the mount's 0° azimuth faces.
+             */
+            heading_deg?: number;
             link?: components["schemas"]["RotatorLink"] | null;
             manual?: components["schemas"]["SkyPoint"];
             mode?: components["schemas"]["RotatorMode"];

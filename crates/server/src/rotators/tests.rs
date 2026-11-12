@@ -62,6 +62,7 @@ const PLAIN: Mount = Mount {
     azimuth_max_deg: 360.0,
     elevation_max_deg: 90.0,
     flips: false,
+    heading_deg: 0.0,
 };
 
 #[test]

@@ -104,11 +104,12 @@ impl Driver {
         loop {
             let position = link.position()?;
             let follow = locked(&self.follow).clone();
-            let aim = self.steer(link, &follow, position)?;
+            let mount = Mount::of(&follow.settings);
+            let aim = self.steer(link, &follow, mount, position)?;
             self.publish(RotatorStatus {
                 node: self.node.clone(),
-                position: Some(position),
-                target: aim.map(|aim| aim.target),
+                position: Some(mount.bearing(position)),
+                target: aim.map(|aim| mount.bearing(aim.target)),
                 awaiting_pass: aim.is_some_and(|aim| aim.awaiting_pass),
                 flipped: aim.is_some_and(|aim| aim.flipped),
                 error: (follow.settings.mode == RotatorMode::Track && !follow.wired)
@@ -124,9 +125,9 @@ impl Driver {
         &mut self,
         link: &mut dyn Link,
         follow: &Follow,
+        mount: Mount,
         position: SkyPoint,
     ) -> Result<Option<Aim>, LinkError> {
-        let mount = Mount::of(&follow.settings);
         let aim = match follow.settings.mode {
             RotatorMode::Stop => {
                 if !self.stopped {
@@ -136,8 +137,10 @@ impl Driver {
                 self.sent = None;
                 return Ok(None);
             }
-            RotatorMode::Manual => Some(Aim::fixed(mount.reach(follow.settings.manual))),
-            RotatorMode::Park => Some(Aim::fixed(mount.reach(follow.settings.park))),
+            RotatorMode::Manual => Some(Aim::fixed(
+                mount.reach(mount.facing(follow.settings.manual)),
+            )),
+            RotatorMode::Park => Some(Aim::fixed(mount.reach(mount.facing(follow.settings.park)))),
             RotatorMode::Track => self.track(follow, mount, position),
         };
         self.stopped = false;

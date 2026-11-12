@@ -4,6 +4,7 @@ const PLAIN: Mount = Mount {
     azimuth_max_deg: 360.0,
     elevation_max_deg: 90.0,
     flips: false,
+    heading_deg: 0.0,
 };
 
 const OVERLAP: Mount = Mount {
@@ -124,4 +125,33 @@ fn targets_stay_inside_the_mount() {
         ..PLAIN
     };
     assert_eq!(level.reach(sky(400.0, 45.0)), sky(360.0, 0.0));
+}
+
+#[test]
+fn a_mount_facing_east_turns_bearings_into_its_own_azimuth() {
+    let east = Mount {
+        heading_deg: 90.0,
+        ..PLAIN
+    };
+    let (target, _) = steer(sky(100.0, 20.0), 0, None, east, 0.0);
+    assert_eq!(target, sky(10.0, 20.0));
+    let (target, _) = steer(sky(45.0, 20.0), 0, None, east, 0.0);
+    assert_eq!(target, sky(315.0, 20.0));
+    assert_eq!(east.facing(sky(45.0, 5.0)), sky(315.0, 5.0));
+    assert_eq!(east.bearing(sky(315.0, 5.0)), sky(45.0, 5.0));
+    assert_eq!(east.bearing(sky(10.0, 5.0)), sky(100.0, 5.0));
+    assert_eq!(OVERLAP.bearing(sky(400.0, 5.0)), sky(400.0, 5.0));
+}
+
+#[test]
+fn a_pass_is_planned_in_the_mount_azimuth() {
+    let south = Mount {
+        heading_deg: 180.0,
+        ..PLAIN
+    };
+    let track = pass(&[(350.0, 0.0), (0.0, 40.0), (10.0, 0.0)]);
+    assert!(plan(&track, 60, PLAIN, 0.0).is_none());
+    let plan = plan(&track, 60, south, 0.0).expect("plans");
+    let (target, _) = steer(sky(0.0, 40.0), 60, Some(&plan), south, 0.0);
+    assert_eq!(target, sky(180.0, 40.0));
 }

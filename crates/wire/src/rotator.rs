@@ -16,6 +16,7 @@ pub const MIN_ROTATOR_TOLERANCE_DEG: f64 = 0.5;
 pub const MAX_ROTATOR_TOLERANCE_DEG: f64 = 20.0;
 pub const MIN_ROTATOR_AZIMUTH_DEG: f64 = 360.0;
 pub const MAX_ROTATOR_AZIMUTH_DEG: f64 = 540.0;
+pub const MAX_ROTATOR_HEADING_DEG: f64 = 360.0;
 pub const LEVEL_ELEVATION_DEG: f64 = 90.0;
 pub const FLIP_ELEVATION_DEG: f64 = 180.0;
 
@@ -106,6 +107,9 @@ pub struct RotatorNode {
     pub azimuth_max_deg: f64,
     #[serde(default)]
     pub flip: bool,
+    /// Compass bearing the mount's 0° azimuth faces.
+    #[serde(default)]
+    pub heading_deg: f64,
     #[serde(default)]
     pub mode: RotatorMode,
     #[serde(default = "home")]
@@ -122,6 +126,7 @@ impl Default for RotatorNode {
             axes: RotatorAxes::default(),
             azimuth_max_deg: MIN_ROTATOR_AZIMUTH_DEG,
             flip: false,
+            heading_deg: 0.0,
             mode: RotatorMode::default(),
             manual: HOME,
             park: HOME,
@@ -134,6 +139,7 @@ impl RotatorNode {
     pub fn valid(&self) -> bool {
         (MIN_ROTATOR_TOLERANCE_DEG..=MAX_ROTATOR_TOLERANCE_DEG).contains(&self.tolerance_deg)
             && (MIN_ROTATOR_AZIMUTH_DEG..=MAX_ROTATOR_AZIMUTH_DEG).contains(&self.azimuth_max_deg)
+            && (0.0..MAX_ROTATOR_HEADING_DEG).contains(&self.heading_deg)
             && self.reachable(self.manual)
             && self.reachable(self.park)
             && self.link.as_ref().is_none_or(RotatorLink::valid)
@@ -222,6 +228,14 @@ mod tests {
             },
             RotatorNode {
                 park: unreachable,
+                ..RotatorNode::default()
+            },
+            RotatorNode {
+                heading_deg: MAX_ROTATOR_HEADING_DEG,
+                ..RotatorNode::default()
+            },
+            RotatorNode {
+                heading_deg: -1.0,
                 ..RotatorNode::default()
             },
             RotatorNode {

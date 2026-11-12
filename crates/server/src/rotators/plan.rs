@@ -11,6 +11,7 @@ pub(super) struct Mount {
     pub(super) azimuth_max_deg: f64,
     pub(super) elevation_max_deg: f64,
     pub(super) flips: bool,
+    pub(super) heading_deg: f64,
 }
 
 impl Mount {
@@ -19,6 +20,30 @@ impl Mount {
             azimuth_max_deg: node.azimuth_reach_deg(),
             elevation_max_deg: node.elevation_max_deg(),
             flips: node.flips(),
+            heading_deg: node.heading_deg,
+        }
+    }
+
+    /// Mount azimuth that faces a compass bearing typed by the operator.
+    pub(super) fn facing(self, bearing: SkyPoint) -> SkyPoint {
+        let azimuth = bearing.azimuth_deg - self.heading_deg;
+        SkyPoint {
+            azimuth_deg: if azimuth < 0.0 {
+                azimuth + TURN
+            } else {
+                azimuth
+            },
+            elevation_deg: bearing.elevation_deg,
+        }
+    }
+
+    /// Compass bearing of a mount azimuth, kept within the turn of the mount it is on.
+    pub(super) fn bearing(self, point: SkyPoint) -> SkyPoint {
+        let azimuth = point.azimuth_deg + self.heading_deg;
+        let turned = (azimuth / TURN).floor() > (point.azimuth_deg / TURN).floor();
+        SkyPoint {
+            azimuth_deg: if turned { azimuth - TURN } else { azimuth },
+            elevation_deg: point.elevation_deg,
         }
     }
 
@@ -109,7 +134,7 @@ impl Swing {
         let mut path: Vec<(i64, f64)> = Vec::with_capacity(track.len());
         let mut travel = 0.0;
         for point in track {
-            let raw = point.azimuth_deg
+            let raw = point.azimuth_deg - mount.heading_deg
                 + if self.flipped(point.at) {
                     HALF_TURN
                 } else {
@@ -178,10 +203,11 @@ pub(super) fn steer(
     from_deg: f64,
 ) -> (SkyPoint, bool) {
     let flipped = plan.is_some_and(|plan| plan.flipped(at));
+    let facing = sky.azimuth_deg - mount.heading_deg;
     let (azimuth, elevation) = if flipped {
-        (sky.azimuth_deg + HALF_TURN, HALF_TURN - sky.elevation_deg)
+        (facing + HALF_TURN, HALF_TURN - sky.elevation_deg)
     } else {
-        (sky.azimuth_deg, sky.elevation_deg)
+        (facing, sky.elevation_deg)
     };
     let reference = plan
         .and_then(|plan| plan.azimuth_near(at))

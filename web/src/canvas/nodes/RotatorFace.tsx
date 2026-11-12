@@ -195,6 +195,16 @@ function MountChips({ data, onEdit }: { data: RotatorNode; onEdit: Edit }) {
         options={AZIMUTH_RANGES}
         onChange={(azimuth_max_deg) => onEdit(withRange(data, azimuth_max_deg))}
       />
+      <NumberChip
+        label="Heading"
+        title="Compass bearing the mount's 0° azimuth faces"
+        value={data.heading_deg ?? 0}
+        unit="°"
+        min={ROTATOR_LIMITS.heading_deg.min}
+        max={ROTATOR_LIMITS.heading_deg.max - 1}
+        step={1}
+        onCommit={(heading_deg) => onEdit({ heading_deg })}
+      />
       {axes === "azimuth_elevation" && flipsOver(data.link) && (
         <ChoiceChip
           label="Flip"
