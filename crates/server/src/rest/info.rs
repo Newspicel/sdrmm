@@ -157,6 +157,21 @@ pub(super) async fn get_auth(State(state): State<AppState>) -> Json<AuthInfo> {
 }
 
 #[utoipa::path(
+    get, path = "/api/transport",
+    responses((
+        status = 200,
+        description = "What a browser can connect over besides the WebSocket. Read it before \
+                       every WebTransport connection: the certificate to pin rotates",
+        body = TransportInfo,
+    )),
+)]
+pub(super) async fn get_transport(State(state): State<AppState>) -> Json<TransportInfo> {
+    Json(TransportInfo {
+        webtransport: state.webtransport.current(),
+    })
+}
+
+#[utoipa::path(
     get, path = "/api/status",
     responses((
         status = 200,

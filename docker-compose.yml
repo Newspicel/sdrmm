@@ -1,5 +1,5 @@
 # Single-service deployment of the SDRmm image (: Pi/NAS with USB passthrough).
-#   docker compose up -d   → http://<host>:8080
+#   docker compose up -d   → https://<host>:8080
 services:
   sdrmm:
     image: ghcr.io/newspicel/sdrmm:latest
@@ -8,12 +8,15 @@ services:
     build: .
     ports:
       - "8080:8080"
+      # WebTransport, which Chromium browsers prefer over the WebSocket.
+      - "8080:8080/udp"
     environment:
       # Optional, from the shell or a .env file beside this one. Without it the server mints a
       # token on first start, keeps it in /data/access-token and logs a sign-in link.
       SDRMM_TOKEN: ${SDRMM_TOKEN:-}
-    # HTTPS with a self-signed certificate kept in /data/tls. Name the host clients use.
-    # command: ["--bind", "0.0.0.0:8080", "--tls-self-signed", "--tls-name", "radio.example"]
+    # HTTPS uses a self-signed certificate kept in /data/tls. Name the host phones use, or set
+    # SDRMM_NO_TLS=1 behind a tunnel or proxy that adds HTTPS.
+    # command: ["--bind", "0.0.0.0:8080", "--tls-name", "radio.example"]
     volumes:
       # Database, SigMF recordings, and any self-signed TLS material; the image passes
       # --db/--recordings-dir under /data and keeps a certificate beside them.

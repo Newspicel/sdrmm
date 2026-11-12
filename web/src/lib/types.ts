@@ -125,6 +125,7 @@ export type ClientCommand = components["schemas"]["ClientCommand"];
 export type ApiError = components["schemas"]["ApiError"];
 export type ErrorCode = components["schemas"]["ErrorCode"];
 export type AuthInfo = components["schemas"]["AuthInfo"];
+export type WebTransportInfo = components["schemas"]["WebTransportInfo"];
 export type ClientsResponse = components["schemas"]["ClientsResponse"];
 export type TemplateInfo = components["schemas"]["TemplateInfo"];
 export type TemplatesResponse = components["schemas"]["TemplatesResponse"];

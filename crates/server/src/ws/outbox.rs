@@ -268,6 +268,14 @@ impl Outbox {
 }
 
 impl Output {
+    pub(super) fn dropped(&self, count: u64) {
+        self.0
+            .queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .dropped += count;
+    }
+
     pub(super) async fn recv(&mut self) -> Option<Message> {
         loop {
             let ready = self.0.ready.notified();
@@ -437,7 +445,7 @@ mod tests {
         let mut queue = Queue::default();
         for id in 0..32 {
             let mut bytes = vec![0; FRAME_LIMIT];
-            bytes[..4].copy_from_slice(&[1, FrameKind::VideoRgb as u8, id, 0]);
+            bytes[..4].copy_from_slice(&[1, FrameKind::VideoJpeg as u8, id, 0]);
             queue
                 .push(packet(Message::Binary(bytes.into())))
                 .expect("nonblocking");

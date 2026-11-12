@@ -43,9 +43,16 @@ struct Args {
         long = "tls-name",
         env = "SDRMM_TLS_NAMES",
         value_delimiter = ',',
-        requires = "tls_self_signed"
+        conflicts_with = "tls_cert"
     )]
     tls_names: Vec<String>,
+    #[arg(
+        long,
+        env = "SDRMM_NO_TLS",
+        value_parser = clap::builder::BoolishValueParser::new(),
+        conflicts_with_all = ["tls_cert", "tls_self_signed", "tls_names"]
+    )]
+    no_tls: bool,
     #[arg(long)]
     doctor: bool,
     #[arg(long)]
@@ -85,7 +92,7 @@ fn resolve_tls(args: &Args, db_path: &Path) -> anyhow::Result<Option<Tls>> {
             cert: cert.clone(),
             key: key.clone(),
         })),
-        (None, None) if args.tls_self_signed => {
+        (None, None) if self_signs(args) => {
             let dir = db_path
                 .parent()
                 .context("no directory to keep the self-signed certificate in")?;
@@ -97,6 +104,13 @@ fn resolve_tls(args: &Args, db_path: &Path) -> anyhow::Result<Option<Tls>> {
         (None, None) => Ok(None),
         _ => anyhow::bail!("--tls-cert and --tls-key must be given together"),
     }
+}
+
+/// Loopback is a secure context in every browser without a certificate. Any other address is
+/// not, so it gets HTTPS unless `--no-tls` leaves that to a proxy in front.
+fn self_signs(args: &Args) -> bool {
+    !args.no_tls
+        && (args.tls_self_signed || !args.tls_names.is_empty() || !args.bind.ip().is_loopback())
 }
 
 fn parse_playback_speed(raw: &str) -> Result<f64, String> {
@@ -300,12 +314,51 @@ mod tests {
     }
 
     #[test]
-    fn tls_is_off_unless_asked_for() {
+    fn loopback_stays_on_plain_http() {
         let args = Args::parse_from(["sdrmm"]);
         assert_eq!(
             resolve_tls(&args, Path::new("/data/sdrmm.db")).expect("resolve"),
             None
         );
+    }
+
+    #[test]
+    fn a_network_bind_serves_https_with_a_self_signed_certificate() {
+        let args = Args::parse_from(["sdrmm", "--bind", "0.0.0.0:8080"]);
+        assert_eq!(
+            resolve_tls(&args, Path::new("/data/sdrmm.db")).expect("resolve"),
+            Some(Tls::SelfSigned {
+                dir: PathBuf::from("/data"),
+                names: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn no_tls_leaves_a_network_bind_on_plain_http() {
+        let args = Args::parse_from(["sdrmm", "--bind", "0.0.0.0:8080", "--no-tls"]);
+        assert_eq!(
+            resolve_tls(&args, Path::new("/data/sdrmm.db")).expect("resolve"),
+            None
+        );
+    }
+
+    #[test]
+    fn no_tls_contradicts_every_way_of_asking_for_a_certificate() {
+        for asked in [
+            vec!["sdrmm", "--no-tls", "--tls-self-signed"],
+            vec!["sdrmm", "--no-tls", "--tls-name", "radio.example"],
+            vec![
+                "sdrmm",
+                "--no-tls",
+                "--tls-cert",
+                "a.pem",
+                "--tls-key",
+                "a.key",
+            ],
+        ] {
+            assert!(Args::try_parse_from(&asked).is_err(), "accepted {asked:?}");
+        }
     }
 
     #[test]
@@ -356,10 +409,27 @@ mod tests {
     }
 
     #[test]
-    fn a_name_without_a_self_signed_certificate_is_rejected() {
+    fn a_name_asks_for_a_self_signed_certificate() {
+        let args = Args::parse_from(["sdrmm", "--tls-name", "radio.example"]);
+        assert_eq!(
+            resolve_tls(&args, Path::new("/data/sdrmm.db")).expect("resolve"),
+            Some(Tls::SelfSigned {
+                dir: PathBuf::from("/data"),
+                names: vec!["radio.example".to_owned()],
+            })
+        );
         assert!(
-            Args::try_parse_from(["sdrmm", "--tls-name", "radio.example"]).is_err(),
-            "a name was accepted with nothing to put it on"
+            Args::try_parse_from([
+                "sdrmm",
+                "--tls-name",
+                "radio.example",
+                "--tls-cert",
+                "a.pem",
+                "--tls-key",
+                "a.key",
+            ])
+            .is_err(),
+            "a name was accepted beside a certificate that already has its own"
         );
     }
 

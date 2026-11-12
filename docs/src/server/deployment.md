@@ -74,7 +74,7 @@ ipc: host
 
 ### Token
 
-The container listens on `0.0.0.0:8080`. Without a token it makes one on first start, keeps it in
+The container listens on `https://<host>:8080`. Without a token it makes one on first start, keeps it in
 `/data/access-token` and logs a sign-in link:
 
 ```sh
@@ -91,7 +91,8 @@ SDRMM_TOKEN=replace-with-a-long-random-secret
 
 ### HTTPS
 
-A [tunnel](tunnels.md) needs no certificate. To use your own, mount it read-only:
+The container serves HTTPS with a self-signed certificate kept in `/data/tls`. A
+[tunnel](tunnels.md) needs none: set `SDRMM_NO_TLS=1`. To use your own, mount it read-only:
 
 ```yaml
 volumes:
@@ -101,10 +102,18 @@ command: ["--bind", "0.0.0.0:8080", "--tls-cert", "/certs/fullchain.pem", "--tls
 ```
 
 The container runs as UID `10001` and must be able to read both files, including symlink
-targets. For a self-signed certificate, name the host clients use:
+targets. Phones need the self-signed certificate to name the host clients use:
 
 ```yaml
-command: ["--bind", "0.0.0.0:8080", "--tls-self-signed", "--tls-name", "radio.example"]
+command: ["--bind", "0.0.0.0:8080", "--tls-name", "radio.example"]
+```
+
+Publish the UDP port as well for [WebTransport](configuration.md#webtransport):
+
+```yaml
+ports:
+  - "8080:8080"
+  - "8080:8080/udp"
 ```
 
 ### Phones
@@ -132,7 +141,7 @@ Run the portable server under its own user with USB access and fixed paths:
 ```
 
 Stop it with a normal termination signal so recordings can finish. A bind other machines can
-reach gets a [token](configuration.md#token); add [HTTPS](configuration.md#https) too.
+reach gets a [token](configuration.md#token) and [HTTPS](configuration.md#https).
 
 ## Before leaving it unattended
 

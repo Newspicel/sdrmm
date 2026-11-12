@@ -86,6 +86,7 @@ import type {
   ToolsResponse,
   TransmittersResponse,
   UpdateNanoVnaMeasurementRequest,
+  WebTransportInfo,
   WireVerdict,
   WorkspaceDetail,
   WorkspaceExport,
@@ -488,6 +489,10 @@ export function authQuery() {
     queryFn: async (): Promise<AuthInfo> => unwrap(await client.GET("/api/auth")),
     staleTime: Number.POSITIVE_INFINITY,
   });
+}
+
+export async function webTransportOffer(): Promise<WebTransportInfo | null> {
+  return unwrap(await client.GET("/api/transport")).webtransport ?? null;
 }
 
 export async function serverReachable(): Promise<boolean> {

@@ -10,6 +10,9 @@ use crate::{
 pub const WS_SUBPROTOCOL: &str = "sdrmm";
 pub const WS_BEARER_PROTOCOL_PREFIX: &str = "sdrmm.bearer.";
 pub const WS_CLOSE_REVOKED: u16 = 4003;
+pub const WEBTRANSPORT_PATH: &str = "/api/wt";
+/// Every message on a WebTransport stream follows its own length, a little-endian `u32`.
+pub const WEBTRANSPORT_LENGTH_BYTES: usize = 4;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "scope", content = "id", rename_all = "snake_case")]
@@ -128,6 +131,8 @@ pub enum ServerEvent {
     PipelineHealth {
         queues: Vec<crate::PipelineQueue>,
         websocket: crate::QueueHealth,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        link: Option<crate::LinkHealth>,
     },
     DeviceReadouts {
         device_set: u32,

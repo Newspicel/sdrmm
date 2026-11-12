@@ -208,6 +208,8 @@ fn socket_constants_match_the_contract() {
     assert_eq!(WS_SUBPROTOCOL, "sdrmm");
     assert_eq!(WS_BEARER_PROTOCOL_PREFIX, "sdrmm.bearer.");
     assert_eq!(WS_CLOSE_REVOKED, 4003);
+    assert_eq!(WEBTRANSPORT_PATH, "/api/wt");
+    assert_eq!(WEBTRANSPORT_LENGTH_BYTES, 4);
 }
 
 #[test]

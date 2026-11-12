@@ -19,7 +19,7 @@ pub mod frame;
 pub mod fusion;
 pub mod geo;
 mod pipeline;
-pub use pipeline::{PipelineQueue, PipelineStage, QueueHealth};
+pub use pipeline::{LinkHealth, PipelineQueue, PipelineStage, QueueHealth};
 pub mod hunt;
 pub mod labels;
 pub mod limits;
@@ -134,10 +134,10 @@ pub use filter::{
 };
 pub use frame::{
     AudioFrame, FrameError, FrameHeader, FrameKind, FusionGridFrame, FusionGridOwned, HEADER_LEN,
-    IqFrame, PROTOCOL_VERSION, RangeDopplerFrame, RangeDopplerOwned, SPECTRUM_SIGNAL_MARGIN_DB,
-    SpatialSpectrumFrame, SpatialSpectrumOwned, SpectrumFrame, SurfaceFrame, SymbolFrame,
-    SymbolPlane, VideoData, VideoFrame, VisibilityFrame, VisibilityOwned, peek_header,
-    typescript_frames,
+    IQ_FULL_SCALE, IqFrame, PROTOCOL_VERSION, RangeDopplerFrame, RangeDopplerOwned,
+    SPECTRUM_SIGNAL_MARGIN_DB, SpatialSpectrumFrame, SpatialSpectrumOwned, SpectrumFrame,
+    SurfaceFrame, SymbolFrame, SymbolPlane, VIDEO_GRAY, VIDEO_RGB, VideoFrame, VisibilityFrame,
+    VisibilityOwned, peek_header, typescript_frames,
 };
 pub use fusion::{
     BearingFix, BearingSource, DfBearing, DfEstimate, DfFusionState, DfFusionView, DfOtherPeak,
@@ -239,8 +239,8 @@ pub use rest::{
     PRESET_SNAPSHOT_VERSION, PatchChannelRequest, PlaybackAction, PlaybackRequest, PresetDevice,
     PresetInfo, PresetSnapshot, RecordingAnnotation, RecordingDownloadQuery, RecordingFormat,
     RecordingInfo, RecordingUpload, RecordingsResponse, SaveRadioRequest, SavedRadio, ServerStatus,
-    TemplateInfo, TemplatesResponse, VoiceCall, WriteSerialRequest, WrittenSerial, device_claims,
-    kinds_in,
+    TemplateInfo, TemplatesResponse, TransportInfo, VoiceCall, WebTransportInfo,
+    WriteSerialRequest, WrittenSerial, device_claims, kinds_in,
 };
 pub use rotator::{
     DEFAULT_GS232_BAUD, DEFAULT_ROTATOR_TOLERANCE_DEG, DEFAULT_ROTCTLD_ADDRESS,
@@ -308,7 +308,8 @@ pub use workspace_state::{
 };
 pub use ws::{
     ClientCommand, PortActivity, ServerEvent, StateScope, StreamKind, StreamParams, SurfaceFit,
-    SurfaceRefusal, WS_BEARER_PROTOCOL_PREFIX, WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
+    SurfaceRefusal, WEBTRANSPORT_LENGTH_BYTES, WEBTRANSPORT_PATH, WS_BEARER_PROTOCOL_PREFIX,
+    WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
 };
 
 #[cfg(test)]

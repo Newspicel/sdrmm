@@ -55,14 +55,14 @@ export class VideoHub {
     }
     const due = Date.now() + mediaLatencyMs(producerOf(key));
     watched.pending.push({ frame, due });
-    watched.pendingBytes += frame.pixels.byteLength;
+    watched.pendingBytes += frame.jpeg.byteLength;
     let dropped = 0;
     while (watched.pending.length > PENDING_FRAMES || watched.pendingBytes > PENDING_BYTES) {
       const oldest = watched.pending.shift();
       if (oldest === undefined) {
         break;
       }
-      watched.pendingBytes -= oldest.frame.pixels.byteLength;
+      watched.pendingBytes -= oldest.frame.jpeg.byteLength;
       dropped += 1;
     }
     if (dropped > 0) {
@@ -90,7 +90,7 @@ export class VideoHub {
     while (watched.pending[0] && watched.pending[0].due <= Date.now()) {
       const next = watched.pending.shift();
       if (!next) break;
-      watched.pendingBytes -= next.frame.pixels.byteLength;
+      watched.pendingBytes -= next.frame.jpeg.byteLength;
       if (this.ports.streamOf(next.frame.streamId) === undefined) continue;
       watched.latest = next.frame;
       for (const listener of watched.listeners) listener(next.frame);

@@ -747,6 +747,20 @@ pub struct AuthInfo {
     pub token_required: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct TransportInfo {
+    pub webtransport: Option<WebTransportInfo>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct WebTransportInfo {
+    pub port: u16,
+    /// Hex SHA-256 of the session certificate, which a browser pins in
+    /// `serverCertificateHashes`. It changes as the certificate rotates, so read it before
+    /// every connection.
+    pub certificate_sha256: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ServerStatus {
     pub version: String,

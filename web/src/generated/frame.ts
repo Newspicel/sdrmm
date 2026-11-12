@@ -1,13 +1,18 @@
 export const PROTOCOL_VERSION = 1;
 const HEADER_LEN = 16;
 export const FUSION_FRAME_CELLS = 128;
+const IQ_FULL_SCALE = 32767;
+export const VIDEO_GRAY = 1;
+export const VIDEO_RGB = 3;
 export const WS_SUBPROTOCOL = "sdrmm";
 export const WS_BEARER_PROTOCOL_PREFIX = "sdrmm.bearer.";
+export const WS_CLOSE_REVOKED = 4003;
+export const WEBTRANSPORT_PATH = "/api/wt";
+export const WEBTRANSPORT_LENGTH_BYTES = 4;
 export const FRAME_KIND_SPECTRUM = 0;
 export const FRAME_KIND_AUDIO_OPUS = 1;
-export const FRAME_KIND_IQ_F32 = 2;
-export const FRAME_KIND_VIDEO_GRAY = 3;
-export const FRAME_KIND_VIDEO_RGB = 4;
+export const FRAME_KIND_IQ_I16 = 10;
+export const FRAME_KIND_VIDEO_JPEG = 11;
 export const FRAME_KIND_SYMBOLS = 5;
 export const FRAME_KIND_RANGE_DOPPLER = 6;
 export const FRAME_KIND_SPATIAL_SPECTRUM = 7;
@@ -52,6 +57,14 @@ class FrameReader {
   bytes(count = this.buffer.byteLength - this.at): Uint8Array {
     const at = this.take(count);
     return at < 0 ? new Uint8Array(0) : new Uint8Array(this.buffer, at, count);
+  }
+  scaled(scale: number, count = (this.buffer.byteLength - this.at) / 2): Float32Array {
+    const at = this.take(count * 2);
+    if (at < 0 || !Number.isSafeInteger(count)) { this.valid = false; return new Float32Array(0); }
+    const out = new Float32Array(count);
+    const step = scale / IQ_FULL_SCALE;
+    for (let index = 0; index < count; index++) out[index] = this.view.getInt16(at + index * 2, true) * step;
+    return out;
   }
   floats(count = (this.buffer.byteLength - this.at) / 4): Float32Array {
     const at = this.take(count * 4);
@@ -105,20 +118,22 @@ export interface IqFrame {
  streamId: number; seq: number; timestamp: bigint;
 centerHz: number;
 sampleRate: number;
+scale: number;
 samples: Float32Array;
 }
 export function decodeIq(buffer: ArrayBuffer): IqFrame | null {
-const reader = new FrameReader(buffer, [FRAME_KIND_IQ_F32]);
+const reader = new FrameReader(buffer, [FRAME_KIND_IQ_I16]);
 if (!reader.valid) return null;
 const streamId = reader.u16();
 const seq = reader.u32();
 const timestamp = reader.u64();
 const centerHz = reader.f64();
 const sampleRate = reader.f32();
-const samples = reader.floats();
+const scale = reader.f32();
+const samples = reader.scaled(scale);
 if (samples.length === 0 || samples.length % 2 !== 0) return null;
 if (!reader.complete) return null;
-return { streamId, seq, timestamp, centerHz, sampleRate, samples };
+return { streamId, seq, timestamp, centerHz, sampleRate, scale, samples };
 }
 export interface SymbolFrame {
  streamId: number; seq: number; timestamp: bigint;
@@ -185,21 +200,22 @@ export interface VideoFrame {
  streamId: number; seq: number; timestamp: bigint;
 width: number;
 height: number;
-format: "gray" | "rgb"; pixels: Uint8Array;
+channels: number;
+jpeg: Uint8Array;
 }
 export function decodeVideo(buffer: ArrayBuffer): VideoFrame | null {
-const reader = new FrameReader(buffer, [FRAME_KIND_VIDEO_GRAY, FRAME_KIND_VIDEO_RGB]);
+const reader = new FrameReader(buffer, [FRAME_KIND_VIDEO_JPEG]);
 if (!reader.valid) return null;
 const streamId = reader.u16();
 const seq = reader.u32();
 const timestamp = reader.u64();
 const width = reader.u16();
 const height = reader.u16();
-const format = frameKind(buffer) === FRAME_KIND_VIDEO_RGB ? "rgb" : "gray";
-const pixels = reader.bytes(width * height * (format === "rgb" ? 3 : 1));
-if (pixels.length === 0) return null;
+const channels = reader.u8();
+const jpeg = reader.bytes();
+if (jpeg.length === 0 || width === 0 || height === 0 || (channels !== VIDEO_GRAY && channels !== VIDEO_RGB)) return null;
 if (!reader.complete) return null;
-return { streamId, seq, timestamp, width, height, format, pixels };
+return { streamId, seq, timestamp, width, height, channels, jpeg };
 }
 export interface SpatialSpectrumFrame {
  streamId: number; seq: number; timestamp: bigint;

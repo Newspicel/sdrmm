@@ -37,9 +37,9 @@ then run it:
 On Windows, run `sdrmm.exe`. Open <http://localhost:8080> on the server. `--bind` picks another
 address or port.
 
-The server stays on this machine. To reach it from another computer, set
-[a token and HTTPS](../server/configuration.md) and start it with
-`--bind 0.0.0.0:8080`; without a token it refuses that bind.
+The server stays on this machine. To reach it from another computer, start it with
+`--bind 0.0.0.0:8080`. It then makes a [token](../server/configuration.md#token) and serves
+[HTTPS](../server/configuration.md#https) at `https://<server>:8080`.
 
 ## Homebrew
 

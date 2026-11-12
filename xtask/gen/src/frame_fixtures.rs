@@ -1,7 +1,9 @@
 use sdrmm_wire::{
-    AudioFrame, FrameError, IqFrame, RangeDopplerFrame, SpectrumFrame, SymbolFrame, SymbolPlane,
-    VideoData, VideoFrame,
+    AudioFrame, FrameError, IQ_FULL_SCALE, IqFrame, RangeDopplerFrame, SpectrumFrame, SymbolFrame,
+    SymbolPlane, VIDEO_GRAY, VIDEO_RGB, VideoFrame,
 };
+
+const JPEG: [u8; 4] = [0xff, 0xd8, 0xff, 0xd9];
 use sdrmm_wire::{frame::FusionGridFrame, frame::SpatialSpectrumFrame, frame::VisibilityFrame};
 
 pub(crate) fn frames() -> Result<Vec<(&'static str, Vec<u8>)>, FrameError> {
@@ -40,7 +42,8 @@ pub(crate) fn frames() -> Result<Vec<(&'static str, Vec<u8>)>, FrameError> {
                 timestamp: 3,
                 center_hz: 100.0,
                 sample_rate: 48_000.0,
-                samples: &[0.25, -0.5],
+                scale: 0.5,
+                samples: &[IQ_FULL_SCALE, -IQ_FULL_SCALE],
             }
             .encode()?,
         ),
@@ -88,7 +91,8 @@ pub(crate) fn frames() -> Result<Vec<(&'static str, Vec<u8>)>, FrameError> {
                 timestamp: 3,
                 width: 2,
                 height: 1,
-                data: VideoData::Gray(&[1, 2]),
+                channels: VIDEO_GRAY,
+                jpeg: &JPEG,
             }
             .encode()?,
         ),
@@ -100,7 +104,8 @@ pub(crate) fn frames() -> Result<Vec<(&'static str, Vec<u8>)>, FrameError> {
                 timestamp: 3,
                 width: 2,
                 height: 1,
-                data: VideoData::Rgb(&[1, 2, 3, 4, 5, 6]),
+                channels: VIDEO_RGB,
+                jpeg: &JPEG,
             }
             .encode()?,
         ),

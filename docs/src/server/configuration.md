@@ -2,7 +2,8 @@
 
 `sdrmm` runs the interface, the receiver, and the REST, WebSocket, and MCP APIs in one process.
 Out of the box it listens on `127.0.0.1:8080` with **no authentication**, so only this machine
-reaches it. A bind other machines can reach always needs a [token](#token).
+reaches it. A bind other machines can reach always needs a [token](#token) and serves
+[HTTPS](#https).
 
 ## Options
 
@@ -15,13 +16,15 @@ reaches it. A bind other machines can reach always needs a [token](#token).
 | `--token <TOKEN>` | Generated on a network bind | Shared access token |
 | `--no-auth` | Off | Run a network bind without a token |
 | `--tls-cert <PATH>`, `--tls-key <PATH>` | None | HTTPS certificate chain and key, PEM; always together |
-| `--tls-self-signed` | Off | HTTPS with a self-signed certificate |
+| `--tls-self-signed` | On a network bind | HTTPS with a self-signed certificate |
 | `--tls-name <NAME>` | Found addresses | Name the self-signed certificate must cover; repeatable or comma-separated |
+| `--no-tls` | Off | Plain HTTP on a network bind, for a proxy or tunnel that adds HTTPS |
 | `--dev-cors` | Off | Allow a separate frontend origin, for development only |
 | `--doctor` | | Print diagnostics and exit |
 | `--doctor-rates` | | Probe connected radios' sample rates and exit |
 
-`SDRMM_TOKEN`, `SDRMM_NO_AUTH` and `SDRMM_TLS_NAMES` set `--token`, `--no-auth` and `--tls-name`. The platform data folder is
+`SDRMM_TOKEN`, `SDRMM_NO_AUTH`, `SDRMM_TLS_NAMES` and `SDRMM_NO_TLS` set `--token`, `--no-auth`,
+`--tls-name` and `--no-tls`. The platform data folder is
 `~/.local/share` on Linux,
 `~/Library/Application Support` on macOS and `%APPDATA%` on Windows. For a service, use absolute
 paths for `--db` and `--recordings-dir`.
@@ -68,7 +71,10 @@ which only scopes undo and names who switched workspaces.
 
 ## HTTPS
 
-A [tunnel](tunnels.md) needs no certificate work.
+Loopback stays on plain HTTP. Any other bind serves HTTPS with a self-signed certificate, so the
+browser warns once and you accept it. A plain `http://` request to that port is sent on to
+`https://`. `--no-tls` keeps plain HTTP for a [tunnel](tunnels.md) or
+[reverse proxy](#reverse-proxy) that adds HTTPS itself.
 
 With your own certificate:
 
@@ -78,13 +84,7 @@ sdrmm --tls-cert /etc/sdrmm/fullchain.pem --tls-key /etc/sdrmm/privkey.pem
 
 Both files are PEM, leaf certificate first. A missing or mismatched file stops startup.
 
-Without a certificate authority:
-
-```sh
-sdrmm --tls-self-signed
-```
-
-The certificate covers `localhost`, `127.0.0.1`, `::1`, the server's LAN IPv4 addresses and
+The self-signed certificate covers `localhost`, `127.0.0.1`, `::1`, the server's LAN IPv4 addresses and
 `<host>.local`. It is stored in `tls` beside the database, valid for 397 days and renewed at
 startup after a year. Its key stays the same across renewals and name changes. Compare the
 SHA-256 fingerprint in the log the first time a client trusts it.
@@ -93,16 +93,23 @@ In containers, behind NAT, or with a DNS name, list the names clients use. They 
 addresses:
 
 ```sh
-sdrmm --tls-self-signed --tls-name radio.example --tls-name 192.168.1.20
+sdrmm --bind 0.0.0.0:8080 --tls-name radio.example --tls-name 192.168.1.20
 ```
 
 `SDRMM_TLS_NAMES` takes the same names, comma-separated. Changing the names creates a new
 certificate.
 
+## WebTransport
+
+A server that serves HTTPS itself also takes WebTransport on the UDP port with the same number.
+Chromium browsers use it and fall back to the WebSocket; other browsers, tunnels and proxies stay
+on the WebSocket. Let that UDP port through your firewall. Audio then survives packet loss, and a
+stalled picture no longer holds back the rest.
+
 ## Phones
 
 [Phones](../user-guide/phones.md#allow-phones) pin the server's key when they pair. A server with
-`--tls-self-signed` on a LAN address takes phones on its main port. Any other server needs
+a self-signed certificate on a LAN address takes phones on its main port. Any other server needs
 **Allow phones**, which opens a phone port, `8443` by default, with the self-signed key from
 `tls`. A server with its own certificate needs it too, because a renewed certificate would break
 every pin. The phone port takes paired phones only, and phones never get the shared token.
@@ -122,7 +129,7 @@ list it under **Nearby**. Let the phone port through your firewall.
 
 ## Reverse proxy
 
-- Bind SDRmm to loopback, or firewall its port.
+- Bind SDRmm to loopback, or pass `--no-tls` and firewall its port.
 - Set a token. Without one, the server answers only requests addressed to an IP literal, a
   `localhost` or `.local` name, or a `--tls-name`.
 - Serve it at the root of the origin.

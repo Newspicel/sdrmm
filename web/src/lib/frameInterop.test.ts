@@ -31,7 +31,7 @@ describe("Rust binary frames", () => {
       const buffer = new Uint8Array(values).buffer;
       const frame = decoders[name](buffer);
       expect(frame).toMatchObject({ streamId: 1, seq: 2, timestamp: 3n });
-      if (name === "iq") expect(decodeIq(buffer)?.samples).toEqual(new Float32Array([0.25, -0.5]));
+      if (name === "iq") expect(decodeIq(buffer)?.samples).toEqual(new Float32Array([0.5, -0.5]));
       if (name === "spectrum")
         expect(decodeSpectrum(buffer)?.bins).toEqual(new Uint8Array([0, 127, 255]));
       if (name === "symbols")
@@ -42,7 +42,7 @@ describe("Rust binary frames", () => {
   }
   it("rejects truncated IQ components and declared payloads", () => {
     for (const [name, values] of fixtures as [keyof typeof decoders, number[]][]) {
-      if (name === "audio") continue;
+      if (name === "audio" || name === "gray" || name === "rgb") continue;
       expect(decoders[name](new Uint8Array(values.slice(0, -1)).buffer)).toBeNull();
     }
   });

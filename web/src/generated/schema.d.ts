@@ -1492,6 +1492,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/transport": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_transport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspaces": {
         parameters: {
             query?: never;
@@ -4580,6 +4596,16 @@ export interface components {
         };
         /** @enum {string} */
         LineStyle: "track" | "forecast" | "route" | "footprint";
+        /** @description How the network path to one client fares, where the transport can tell. */
+        LinkHealth: {
+            /**
+             * Format: float
+             * @description Share of the packets sent since the last report that were lost, from 0 to 1.
+             */
+            loss: number;
+            /** Format: float */
+            rtt_ms: number;
+        };
         /**
          * @description What a grouped decoder log keeps one row for.
          * @enum {string}
@@ -6881,6 +6907,7 @@ export interface components {
             type: "EventOutputStatus";
         } | {
             data: {
+                link?: components["schemas"]["LinkHealth"] | null;
                 queues: components["schemas"]["PipelineQueue"][];
                 websocket: components["schemas"]["QueueHealth"];
             };
@@ -7795,6 +7822,9 @@ export interface components {
             source: string;
             transmitters: components["schemas"]["Transmitter"][];
         };
+        TransportInfo: {
+            webtransport?: components["schemas"]["WebTransportInfo"] | null;
+        };
         TriangulationMission: {
             position?: components["schemas"]["PositionLink"] | null;
             sources: string[];
@@ -8054,6 +8084,16 @@ export interface components {
         };
         /** @enum {string} */
         WebhookFormat: "json" | "discord";
+        WebTransportInfo: {
+            /**
+             * @description Hex SHA-256 of the session certificate, which a browser pins in
+             *     `serverCertificateHashes`. It changes as the certificate rotates, so read it before
+             *     every connection.
+             */
+            certificate_sha256: string;
+            /** Format: int32 */
+            port: number;
+        };
         /** @enum {string} */
         Weekday: "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
         /** @enum {string} */
@@ -12232,6 +12272,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    get_transport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What a browser can connect over besides the WebSocket. Read it before every WebTransport connection: the certificate to pin rotates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransportInfo"];
                 };
             };
         };

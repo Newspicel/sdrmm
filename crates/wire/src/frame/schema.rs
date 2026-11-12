@@ -25,12 +25,11 @@ fn camel(name: &str) -> String {
         .collect()
 }
 
-const KINDS: [(&str, FrameKind); 10] = [
+const KINDS: [(&str, FrameKind); 9] = [
     ("SPECTRUM", FrameKind::Spectrum),
     ("AUDIO_OPUS", FrameKind::AudioOpus),
-    ("IQ_F32", FrameKind::IqF32),
-    ("VIDEO_GRAY", FrameKind::VideoGray),
-    ("VIDEO_RGB", FrameKind::VideoRgb),
+    ("IQ_I16", FrameKind::IqI16),
+    ("VIDEO_JPEG", FrameKind::VideoJpeg),
     ("SYMBOLS", FrameKind::Symbols),
     ("RANGE_DOPPLER", FrameKind::RangeDoppler),
     ("SPATIAL_SPECTRUM", FrameKind::SpatialSpectrum),
@@ -56,7 +55,7 @@ fn emitted() -> [Emitted; 9] {
     [
         plain("Spectrum", "FRAME_KIND_SPECTRUM", SpectrumFrame::fields()),
         plain("Audio", "FRAME_KIND_AUDIO_OPUS", AudioFrame::fields()),
-        plain("Iq", "FRAME_KIND_IQ_F32", IqFrame::fields()),
+        plain("Iq", "FRAME_KIND_IQ_I16", IqFrame::fields()),
         plain("Symbols", "FRAME_KIND_SYMBOLS", SymbolFrame::fields()),
         shaped(
             "RangeDoppler",
@@ -64,11 +63,7 @@ fn emitted() -> [Emitted; 9] {
             RangeDopplerFrame::fields(),
             "ranges * dopplers",
         ),
-        plain(
-            "Video",
-            "FRAME_KIND_VIDEO_GRAY, FRAME_KIND_VIDEO_RGB",
-            VideoFrame::fields(),
-        ),
+        plain("Video", "FRAME_KIND_VIDEO_JPEG", VideoFrame::fields()),
         shaped(
             "SpatialSpectrum",
             "FRAME_KIND_SPATIAL_SPECTRUM",
@@ -96,12 +91,15 @@ fn emitted() -> [Emitted; 9] {
 #[must_use]
 pub fn typescript_frames() -> String {
     let mut out = format!(
-        "export const PROTOCOL_VERSION = {PROTOCOL_VERSION};\nconst HEADER_LEN = {HEADER_LEN};\nexport const FUSION_FRAME_CELLS = {FUSION_FRAME_CELLS};\n"
+        "export const PROTOCOL_VERSION = {PROTOCOL_VERSION};\nconst HEADER_LEN = {HEADER_LEN};\nexport const FUSION_FRAME_CELLS = {FUSION_FRAME_CELLS};\nconst IQ_FULL_SCALE = {IQ_FULL_SCALE};\nexport const VIDEO_GRAY = {VIDEO_GRAY};\nexport const VIDEO_RGB = {VIDEO_RGB};\n"
     );
     out.push_str(&format!(
-        "export const WS_SUBPROTOCOL = {:?};\nexport const WS_BEARER_PROTOCOL_PREFIX = {:?};\n",
+        "export const WS_SUBPROTOCOL = {:?};\nexport const WS_BEARER_PROTOCOL_PREFIX = {:?};\nexport const WS_CLOSE_REVOKED = {};\nexport const WEBTRANSPORT_PATH = {:?};\nexport const WEBTRANSPORT_LENGTH_BYTES = {};\n",
         crate::WS_SUBPROTOCOL,
-        crate::WS_BEARER_PROTOCOL_PREFIX
+        crate::WS_BEARER_PROTOCOL_PREFIX,
+        crate::WS_CLOSE_REVOKED,
+        crate::WEBTRANSPORT_PATH,
+        crate::WEBTRANSPORT_LENGTH_BYTES
     ));
     for (name, kind) in KINDS {
         out.push_str(&format!(
@@ -119,7 +117,7 @@ pub fn typescript_frames() -> String {
 fn ts_type(ty: &str) -> &'static str {
     match ty {
         "bytes" | "bytes16" => "Uint8Array",
-        "floats" | "floats16" => "Float32Array",
+        "floats" | "floats16" | "shorts" => "Float32Array",
         "plane" => "SymbolPlane",
         _ => "number",
     }
@@ -130,11 +128,7 @@ fn emit_interface(out: &mut String, interface: &str, frame: &Emitted) {
         "export interface {interface}Frame {{\n streamId: number; seq: number; timestamp: bigint;\n"
     ));
     for &(field, ty) in frame.fields {
-        if ty == "video" {
-            out.push_str("format: \"gray\" | \"rgb\"; pixels: Uint8Array;\n");
-        } else {
-            out.push_str(&format!("{}: {};\n", camel(field), ts_type(ty)));
-        }
+        out.push_str(&format!("{}: {};\n", camel(field), ts_type(ty)));
     }
     out.push_str("}\n");
 }
@@ -146,6 +140,7 @@ fn expression(ty: &str, cells: Option<&str>) -> String {
         ("bytes", Some(count)) => format!("reader.bytes({count})"),
         ("bytes", None) => "reader.bytes()".to_string(),
         ("floats", _) => "reader.floats()".to_string(),
+        ("shorts", _) => "reader.scaled(scale)".to_string(),
         ("plane", _) => "reader.plane()".to_string(),
         (scalar, _) => format!("reader.{scalar}()"),
     }
@@ -163,17 +158,15 @@ fn emit(out: &mut String, frame: &Emitted) {
     ];
     for &(field, ty) in frame.fields {
         let field = camel(field);
-        if ty == "video" {
-            out.push_str("const format = frameKind(buffer) === FRAME_KIND_VIDEO_RGB ? \"rgb\" : \"gray\";\nconst pixels = reader.bytes(width * height * (format === \"rgb\" ? 3 : 1));\nif (pixels.length === 0) return null;\n");
-            result.extend(["format".into(), "pixels".into()]);
-            continue;
-        }
         out.push_str(&format!(
             "const {field} = {};\n",
             expression(ty, frame.cells)
         ));
         if field == "samples" {
             out.push_str("if (samples.length === 0 || samples.length % 2 !== 0) return null;\n");
+        }
+        if field == "jpeg" {
+            out.push_str("if (jpeg.length === 0 || width === 0 || height === 0 || (channels !== VIDEO_GRAY && channels !== VIDEO_RGB)) return null;\n");
         }
         if let Some(count) = frame.cells
             && matches!(ty, "bytes" | "bytes16")

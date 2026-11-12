@@ -124,10 +124,12 @@ VOLUME ["/data"]
 USER sdrmm
 
 EXPOSE 8080
+EXPOSE 8080/udp
 # `/` is the SPA fallback, which auth::require_token is deliberately not layered over, so this
 # keeps working when --token is set. It serves 503 until the UI is embedded, so an image built
-# without web assets never reports healthy either. The HTTPS retry covers --tls-*: `-k` because
-# the certificate is the operator's business and this probe only asks whether the app answers.
+# without web assets never reports healthy either. The HTTP try covers --no-tls, the HTTPS one
+# the default: `-k` because the certificate is the operator's business and this probe only asks
+# whether the app answers.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -fs -o /dev/null http://127.0.0.1:8080/ \
         || curl -fsSk -o /dev/null https://127.0.0.1:8080/ \

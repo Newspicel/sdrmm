@@ -9,8 +9,7 @@ import {
   FRAME_KIND_RANGE_DOPPLER,
   FRAME_KIND_SPECTRUM,
   FRAME_KIND_SYMBOLS,
-  FRAME_KIND_VIDEO_GRAY,
-  FRAME_KIND_VIDEO_RGB,
+  FRAME_KIND_VIDEO_JPEG,
   frameKind,
   PROTOCOL_VERSION,
 } from "./frame";
@@ -46,17 +45,13 @@ function audioBuffer(opus: Uint8Array, chLayout = 1): ArrayBuffer {
   return buf;
 }
 
-function videoBuffer(
-  width: number,
-  height: number,
-  pixels: Uint8Array,
-  kind = FRAME_KIND_VIDEO_GRAY,
-): ArrayBuffer {
-  const buf = new ArrayBuffer(16 + 4 + pixels.length);
-  const view = header(buf, kind, 0x8001, 9, 2_000_000n);
+function videoBuffer(width: number, height: number, jpeg: Uint8Array, channels = 1): ArrayBuffer {
+  const buf = new ArrayBuffer(16 + 5 + jpeg.length);
+  const view = header(buf, FRAME_KIND_VIDEO_JPEG, 0x8001, 9, 2_000_000n);
   view.setUint16(16, width, true);
   view.setUint16(18, height, true);
-  new Uint8Array(buf, 20).set(pixels);
+  view.setUint8(20, channels);
+  new Uint8Array(buf, 21).set(jpeg);
   return buf;
 }
 
@@ -137,37 +132,32 @@ describe("decodeAudio", () => {
 });
 
 describe("decodeVideo", () => {
+  const jpeg = Uint8Array.of(0xff, 0xd8, 0xff, 0xd9);
+
   it("decodes every field exactly", () => {
-    const luma = Uint8Array.from({ length: 8 * 4 }, (_, i) => (i * 7) & 0xff);
-    const frame = decodeVideo(videoBuffer(8, 4, luma));
+    const frame = decodeVideo(videoBuffer(8, 4, jpeg, 3));
     expect(frame).not.toBeNull();
     expect(frame?.streamId).toBe(0x8001);
     expect(frame?.seq).toBe(9);
     expect(frame?.timestamp).toBe(2_000_000n);
     expect(frame?.width).toBe(8);
     expect(frame?.height).toBe(4);
-    expect(frame?.format).toBe("gray");
-    expect(Array.from(frame?.pixels ?? [])).toEqual(Array.from(luma));
+    expect(frame?.channels).toBe(3);
+    expect(Array.from(frame?.jpeg ?? [])).toEqual(Array.from(jpeg));
   });
 
-  it("decodes RGB pixels without changing their channel order", () => {
-    const rgb = Uint8Array.from({ length: 2 * 2 * 3 }, (_, i) => i * 17);
-    const frame = decodeVideo(videoBuffer(2, 2, rgb, FRAME_KIND_VIDEO_RGB));
-    expect(frame?.format).toBe("rgb");
-    expect(Array.from(frame?.pixels ?? [])).toEqual(Array.from(rgb));
-  });
-
-  it("rejects a payload that is shorter than its geometry, and an empty one", () => {
-    const luma = new Uint8Array(8 * 4);
-    expect(decodeVideo(videoBuffer(8, 4, luma).slice(0, 20 + 31))).toBeNull();
-    expect(decodeVideo(videoBuffer(0, 0, new Uint8Array(0)))).toBeNull();
+  it("rejects a frame without a picture, a size, or a channel count it knows", () => {
+    expect(decodeVideo(videoBuffer(8, 4, new Uint8Array(0)))).toBeNull();
+    expect(decodeVideo(videoBuffer(0, 4, jpeg))).toBeNull();
+    expect(decodeVideo(videoBuffer(8, 0, jpeg))).toBeNull();
+    expect(decodeVideo(videoBuffer(8, 4, jpeg, 2))).toBeNull();
   });
 
   it("rejects other kinds and wrong versions", () => {
     expect(decodeVideo(audioBuffer(new Uint8Array(8)))).toBeNull();
-    expect(decodeAudio(videoBuffer(2, 2, new Uint8Array(4)))).toBeNull();
+    expect(decodeAudio(videoBuffer(2, 2, jpeg))).toBeNull();
 
-    const wrongVersion = videoBuffer(2, 2, new Uint8Array(4));
+    const wrongVersion = videoBuffer(2, 2, jpeg);
     new DataView(wrongVersion).setUint8(0, PROTOCOL_VERSION + 1);
     expect(decodeVideo(wrongVersion)).toBeNull();
   });

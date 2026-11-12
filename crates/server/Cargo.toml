@@ -51,6 +51,7 @@ axum = { workspace = true, features = ["ws", "macros"] }
 axum-server.workspace = true
 rustls.workspace = true
 rcgen.workspace = true
+wtransport.workspace = true
 tower-http.workspace = true
 futures.workspace = true
 reqwest.workspace = true
@@ -104,3 +105,5 @@ sdrmm-dsp = { workspace = true, features = ["test-scene"] }
 tokio-tungstenite.workspace = true
 num-complex.workspace = true
 tempfile.workspace = true
+# An independent decoder to hold the JPEG encoder against.
+zune-jpeg = "0.5"

@@ -56,3 +56,38 @@ function summarize(queues: readonly Queue[]): QueueSummary | null {
       .join("\n"),
   };
 }
+
+export const LINK_SLOW_MS = 250;
+export const LINK_LOSSY = 0.02;
+
+export interface LinkTrouble {
+  label: string;
+  detail: string;
+}
+
+export function linkTrouble(health: Health | null): LinkTrouble | null {
+  if (health === null) return null;
+  const { link, websocket } = health;
+  const found: string[] = [];
+  if (link != null && link.loss >= LINK_LOSSY) found.push(`${(link.loss * 100).toFixed(0)}% loss`);
+  if (link != null && link.rtt_ms >= LINK_SLOW_MS) found.push(`${link.rtt_ms.toFixed(0)} ms`);
+  if (websocket.oldest_ms >= QUEUE_LAG_MS)
+    found.push(`${websocket.oldest_ms.toFixed(0)} ms behind`);
+  const label = found[0];
+  if (label === undefined) return null;
+  const path =
+    link == null
+      ? []
+      : [
+          `Round trip ${link.rtt_ms.toFixed(0)} ms`,
+          `${(link.loss * 100).toFixed(1)}% of packets lost`,
+        ];
+  return {
+    label,
+    detail: [
+      ...path,
+      `Sending ${websocket.oldest_ms.toFixed(0)} ms behind`,
+      `${websocket.dropped} frames dropped`,
+    ].join("\n"),
+  };
+}

@@ -27,9 +27,9 @@ use sdrmm_wire::{
     RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse, SatelliteCatalogQuery,
     SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScannerStatus, SerialDevicesResponse,
     ServerEvent, ServerStatus, StateScope, StateSnapshot, TemplateInfo, TemplatesResponse,
-    ToolRequest, ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest,
-    WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot, WorkspacesResponse, WriteSerialRequest,
-    WrittenSerial,
+    ToolRequest, ToolResponse, ToolsResponse, TransmittersResponse, TransportInfo,
+    UpdateWorkspaceRequest, WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot,
+    WorkspacesResponse, WriteSerialRequest, WrittenSerial,
 };
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -469,6 +469,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(get_occupancy))
         .routes(routes!(get_ionosonde))
         .routes(routes!(get_status))
+        .routes(routes!(get_transport))
         .routes(routes!(get_doctor))
         .routes(routes!(get_diagnostics))
         .routes(routes!(list_radio_models))

@@ -8,7 +8,9 @@ use tokio::task::JoinHandle;
 use super::{
     MEDIA_ID_BASE, SPECTRUM_ID_BASE, Session, SpectrumLane, alloc_stream_id,
     derived::{spawn_iq_spectrum, spawn_pcm_spectrum},
-    flatten_join, spawn_audio, spawn_iq, spawn_spectrum, spawn_symbols, spawn_video, text_event,
+    flatten_join, spawn_audio, spawn_iq, spawn_symbols, spawn_video,
+    spectrum::spawn_spectrum,
+    text_event,
 };
 
 const NO_NODE: &str = "No such node";
@@ -461,11 +463,11 @@ impl Session {
                 };
                 Ok(spawn_spectrum(
                     lane,
-                    params.fps,
-                    params.bins,
+                    params,
                     rx,
                     out,
                     self.engine.clone(),
+                    &self.state.spectra,
                 ))
             }
             Tapped::Audio(route) => {
@@ -528,7 +530,7 @@ impl Session {
                     })
                     .await,
                 )?;
-                Ok(spawn_video(id, rx, out))
+                Ok(spawn_video(id, rx, out, self.state.pictures.clone()))
             }
         }
     }

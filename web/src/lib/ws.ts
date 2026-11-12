@@ -1,5 +1,6 @@
 import { getToken } from "./auth";
 import { recordEvent } from "./diagnostics";
+import type { AudioFrame } from "./frame";
 import {
   decodeAudio,
   decodeFusionGrid,
@@ -12,19 +13,19 @@ import {
   decodeVisibility,
   FRAME_KIND_AUDIO_OPUS,
   FRAME_KIND_FUSION_GRID,
-  FRAME_KIND_IQ_F32,
+  FRAME_KIND_IQ_I16,
   FRAME_KIND_RANGE_DOPPLER,
   FRAME_KIND_SPATIAL_SPECTRUM,
   FRAME_KIND_SPECTRUM,
   FRAME_KIND_SYMBOLS,
-  FRAME_KIND_VIDEO_GRAY,
-  FRAME_KIND_VIDEO_RGB,
+  FRAME_KIND_VIDEO_JPEG,
   FRAME_KIND_VISIBILITY,
   frameKind,
   WS_BEARER_PROTOCOL_PREFIX,
   WS_SUBPROTOCOL,
 } from "./frame";
 import { hexUtf8 } from "./hex";
+import { type Closed, type Link, type LinkHandlers, openWebSocket } from "./link";
 import {
   type Listener,
   ListenerRegistry,
@@ -33,11 +34,33 @@ import {
   type Unsubscribe,
 } from "./listeners";
 import type { SurfaceFrame, SurfaceKind } from "./surface";
-import type { ClientCommand, ServerEvent } from "./types";
+import type { ClientCommand, ServerEvent, WebTransportInfo } from "./types";
+import { dialWebTransport, webTransportUsable } from "./wt";
 
 const RECONNECT_MS = 1000;
 const RECONNECT_MAX_MS = 30_000;
 const STABLE_MS = 10_000;
+const WEBTRANSPORT_RETRY_MS = 5 * 60_000;
+const REORDER_WINDOW_FRAMES = 48_000n;
+
+export type WebTransportOffer = () => Promise<WebTransportInfo | null>;
+
+export class LateAudio {
+  private readonly newest = new Map<number, bigint>();
+
+  isLate(frame: Pick<AudioFrame, "streamId" | "timestamp">): boolean {
+    const newest = this.newest.get(frame.streamId);
+    if (
+      newest !== undefined &&
+      frame.timestamp <= newest &&
+      newest - frame.timestamp < REORDER_WINDOW_FRAMES
+    ) {
+      return true;
+    }
+    this.newest.set(frame.streamId, frame.timestamp);
+    return false;
+  }
+}
 
 export function socketProtocols(token: string | null): string[] {
   return token === null
@@ -46,16 +69,25 @@ export function socketProtocols(token: string | null): string[] {
 }
 
 export class SdrSocket {
-  private ws: WebSocket | null = null;
+  private link: Link | null = null;
+  private dialing = 0;
   private reconnectTimer: number | null = null;
   private closed = false;
   private backoffMs = RECONNECT_MS;
   private openedAt = 0;
+  private webTransportAfter = 0;
+  private lateAudio = new LateAudio();
   private readonly path: string;
+  private readonly offer: WebTransportOffer | null;
   private readonly listeners = new ListenerRegistry();
 
-  constructor(path = "/api/ws") {
+  constructor(path = "/api/ws", offer: WebTransportOffer | null = null) {
     this.path = path;
+    this.offer = offer;
+  }
+
+  transport(): Link["transport"] | null {
+    return this.link?.isOpen() ? this.link.transport : null;
   }
 
   private url(): string {
@@ -74,13 +106,13 @@ export class SdrSocket {
   };
 
   send(command: ClientCommand): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(command));
+    if (this.link?.isOpen()) {
+      this.link.send(JSON.stringify(command));
     }
   }
 
   isConnected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN;
+    return this.link?.isOpen() ?? false;
   }
 
   on<K extends SocketEventKind>(kind: K, listener: Listener<K>): Unsubscribe {
@@ -98,49 +130,96 @@ export class SdrSocket {
   }
 
   private detach(): void {
-    const ws = this.ws;
-    this.ws = null;
-    if (ws === null) {
-      return;
-    }
-    ws.onopen = null;
-    ws.onerror = null;
-    ws.onclose = null;
-    ws.onmessage = null;
-    ws.close();
+    this.dialing += 1;
+    this.link?.close();
+    this.link = null;
   }
 
   private open(): void {
     this.detach();
-    const ws = new WebSocket(this.url(), socketProtocols(getToken()));
-    ws.binaryType = "arraybuffer";
-    ws.onopen = () => {
-      this.openedAt = Date.now();
-      this.listeners.emit("status", true);
-    };
-    ws.onerror = () => {
-      recordEvent("warn", "socket", "error");
-      ws.close();
-    };
-    ws.onclose = (event: CloseEvent) => {
-      if (this.openedAt !== 0) {
-        recordEvent("warn", "socket", describeClose(event, Date.now() - this.openedAt));
+    const dial = this.dialing;
+    const offer = this.offer;
+    if (offer === null || !webTransportUsable() || Date.now() < this.webTransportAfter) {
+      this.openWebSocket(dial);
+      return;
+    }
+    void this.openWebTransport(dial, offer);
+  }
+
+  private openWebSocket(dial: number): void {
+    this.link = openWebSocket(this.url(), socketProtocols(getToken()), this.handlers(dial));
+  }
+
+  private async openWebTransport(dial: number, offer: WebTransportOffer): Promise<void> {
+    const info = await offer().catch(() => null);
+    if (dial !== this.dialing) {
+      return;
+    }
+    if (info === null) {
+      this.openWebSocket(dial);
+      return;
+    }
+    try {
+      const dialed = await dialWebTransport(info, getToken());
+      if (dial !== this.dialing) {
+        dialed.abandon();
+        return;
       }
-      if (this.openedAt !== 0 && Date.now() - this.openedAt >= STABLE_MS) {
-        this.backoffMs = RECONNECT_MS;
+      const handlers = this.handlers(dial);
+      this.link = dialed.adopt(handlers);
+      handlers.onOpen();
+    } catch {
+      recordEvent("warn", "socket", "WebTransport failed, using WebSocket");
+      this.webTransportAfter = Date.now() + WEBTRANSPORT_RETRY_MS;
+      if (dial === this.dialing) {
+        this.openWebSocket(dial);
       }
-      this.openedAt = 0;
-      this.listeners.emit("status", false);
-      this.scheduleReconnect();
+    }
+  }
+
+  private handlers(dial: number): LinkHandlers {
+    const current = (): boolean => dial === this.dialing;
+    return {
+      onOpen: () => {
+        if (current()) {
+          this.openedAt = Date.now();
+          this.lateAudio = new LateAudio();
+          this.listeners.emit("status", true);
+        }
+      },
+      onText: (text) => {
+        if (current()) {
+          this.dispatchText(text);
+        }
+      },
+      onBinary: (buffer, ordered) => {
+        if (current()) {
+          this.dispatchBinary(buffer, ordered);
+        }
+      },
+      onError: () => {
+        if (current()) {
+          recordEvent("warn", "socket", "error");
+        }
+      },
+      onClose: (closed) => {
+        if (current()) {
+          this.handleClose(closed);
+        }
+      },
     };
-    ws.onmessage = (event: MessageEvent<string | ArrayBuffer>) => {
-      if (typeof event.data === "string") {
-        this.dispatchText(event.data);
-      } else {
-        this.dispatchBinary(event.data);
-      }
-    };
-    this.ws = ws;
+  }
+
+  private handleClose(closed: Closed): void {
+    if (this.openedAt !== 0) {
+      recordEvent("warn", "socket", describeClose(closed, Date.now() - this.openedAt));
+    }
+    if (this.openedAt !== 0 && Date.now() - this.openedAt >= STABLE_MS) {
+      this.backoffMs = RECONNECT_MS;
+    }
+    this.openedAt = 0;
+    this.listeners.emit("status", false);
+    this.scheduleReconnect();
   }
 
   private dispatchText(text: string): void {
@@ -154,23 +233,22 @@ export class SdrSocket {
     this.listeners.emit("event", event);
   }
 
-  private dispatchBinary(buffer: ArrayBuffer): void {
+  private dispatchBinary(buffer: ArrayBuffer, ordered: boolean): void {
     const kind = frameKind(buffer);
     switch (kind) {
       case FRAME_KIND_SPECTRUM:
         this.emitFrame("spectrum", decodeSpectrum(buffer), kind);
         break;
       case FRAME_KIND_AUDIO_OPUS:
-        this.emitFrame("audio", decodeAudio(buffer), kind);
+        this.emitAudio(decodeAudio(buffer), ordered);
         break;
-      case FRAME_KIND_IQ_F32:
+      case FRAME_KIND_IQ_I16:
         this.emitFrame("iq", decodeIq(buffer), kind);
         break;
       case FRAME_KIND_SYMBOLS:
         this.emitFrame("symbols", decodeSymbols(buffer), kind);
         break;
-      case FRAME_KIND_VIDEO_GRAY:
-      case FRAME_KIND_VIDEO_RGB:
+      case FRAME_KIND_VIDEO_JPEG:
         this.emitFrame("video", decodeVideo(buffer), kind);
         break;
       case FRAME_KIND_RANGE_DOPPLER:
@@ -189,6 +267,13 @@ export class SdrSocket {
         recordEvent("error", "socket", `unknown frame ${kind ?? "without header"}`);
         break;
     }
+  }
+
+  private emitAudio(frame: AudioFrame | null, ordered: boolean): void {
+    if (frame !== null && !ordered && this.lateAudio.isLate(frame)) {
+      return;
+    }
+    this.emitFrame("audio", frame, FRAME_KIND_AUDIO_OPUS);
   }
 
   private emitFrame<K extends SocketEventKind>(
@@ -231,16 +316,13 @@ export class SdrSocket {
       this.reconnectTimer = null;
     }
     this.backoffMs = RECONNECT_MS;
-    if (!this.closed && this.ws?.readyState !== WebSocket.OPEN) {
+    if (!this.closed && !this.isConnected()) {
       this.open();
     }
   }
 }
 
-export function describeClose(
-  event: Pick<CloseEvent, "code" | "reason" | "wasClean">,
-  openMs: number,
-): string {
+export function describeClose(event: Closed, openMs: number): string {
   const reason = event.reason.length > 0 ? ` ${event.reason}` : "";
   const clean = event.wasClean ? "" : ", unclean";
   const page = typeof document === "undefined" ? "" : `, page ${document.visibilityState}`;

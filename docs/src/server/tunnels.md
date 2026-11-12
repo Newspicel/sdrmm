@@ -33,8 +33,8 @@ services:
     env_file: .env
 ```
 
-Inside the container SDRmm stays on `0.0.0.0:8080`. Run the tunnel on the host, not in another
-container.
+Inside the container SDRmm stays on `0.0.0.0:8080`, so add `SDRMM_NO_TLS=1` to `.env` to keep it
+on plain HTTP. Run the tunnel on the host, not in another container.
 
 ## Tailscale
 

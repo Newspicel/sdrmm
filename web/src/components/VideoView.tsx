@@ -1,5 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
-import type { VideoFrame } from "../lib/frame";
+import { recordEvent } from "../lib/diagnostics";
+import { VIDEO_RGB, type VideoFrame } from "../lib/frame";
+import { latestOnly } from "../lib/latest";
 import { type VideoInput, videoHub } from "../lib/video";
 
 const DISPLAY_ASPECT = 4 / 3;
@@ -55,45 +57,39 @@ export function VideoView({
     if (ctx === null) {
       return;
     }
-    const shown: { image: ImageData | null; stale: number } = { image: null, stale: 0 };
+    const shown = { width: 0, height: 0, stale: 0, stopped: false };
 
-    const draw = (frame: VideoFrame): void => {
-      if (
-        shown.image === null ||
-        shown.image.width !== frame.width ||
-        shown.image.height !== frame.height
-      ) {
+    const paint = (frame: VideoFrame, picture: ImageBitmap): void => {
+      if (shown.width !== frame.width || shown.height !== frame.height) {
+        shown.width = frame.width;
+        shown.height = frame.height;
         canvas.width = frame.width;
         canvas.height = frame.height;
-        shown.image = ctx.createImageData(frame.width, frame.height);
         setGeometry({
           width: frame.width,
           height: frame.height,
-          aspect: frame.format === "rgb" ? frame.width / frame.height : DISPLAY_ASPECT,
+          aspect: frame.channels === VIDEO_RGB ? frame.width / frame.height : DISPLAY_ASPECT,
         });
       }
-      const { image } = shown;
-      const rgba = image.data;
-      const count = frame.width * frame.height;
-      for (let i = 0; i < count; i += 1) {
-        const at = i * 4;
-        if (frame.format === "rgb") {
-          rgba[at] = frame.pixels[i * 3] ?? 0;
-          rgba[at + 1] = frame.pixels[i * 3 + 1] ?? 0;
-          rgba[at + 2] = frame.pixels[i * 3 + 2] ?? 0;
-        } else {
-          const luma = frame.pixels[i] ?? 0;
-          rgba[at] = luma;
-          rgba[at + 1] = luma;
-          rgba[at + 2] = luma;
-        }
-        rgba[at + 3] = 255;
-      }
-      ctx.putImageData(image, 0, 0);
+      ctx.drawImage(picture, 0, 0, frame.width, frame.height);
       setLive(true);
       clearTimeout(shown.stale);
       shown.stale = window.setTimeout(() => setLive(false), STALE_MS);
     };
+
+    const draw = latestOnly(async (frame: VideoFrame): Promise<void> => {
+      try {
+        const picture = await createImageBitmap(
+          new Blob([frame.jpeg as Uint8Array<ArrayBuffer>], { type: "image/jpeg" }),
+        );
+        if (!shown.stopped) {
+          paint(frame, picture);
+        }
+        picture.close();
+      } catch {
+        recordEvent("error", "video", "unreadable picture");
+      }
+    });
 
     const input = { node, port, source };
     const held = videoHub.latest(input);
@@ -102,6 +98,7 @@ export function VideoView({
     }
     const stop = videoHub.subscribe(input, draw);
     return () => {
+      shown.stopped = true;
       stop();
       clearTimeout(shown.stale);
     };

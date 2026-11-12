@@ -121,6 +121,18 @@ impl AuthGate {
     }
 }
 
+impl AuthGate {
+    /// Admits a WebTransport session, which can only claim with the token in its URL: a
+    /// browser sets no headers on one.
+    pub(crate) fn admit_session(&self, request: &Request) -> Result<Identity, Refusal> {
+        self.admits(request)?;
+        match self.claim(request) {
+            Claim::Decided(decided) => decided,
+            Claim::Phone(_) => Err(forbidden("Not open to phones")),
+        }
+    }
+}
+
 fn host<'a>(headers: &'a HeaderMap, uri: &'a Uri) -> Option<&'a str> {
     headers
         .get(header::HOST)

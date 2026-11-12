@@ -249,7 +249,9 @@ async fn listen(mut socket: WsClient, channels: usize, ear: &Ear) {
                             assert!(audio.insert(stream_id, AudioClock::default()).is_none());
                             ear.ready.store(audio.len() == channels, Ordering::Release);
                         }
-                        ServerEvent::PipelineHealth { queues, websocket } => {
+                        ServerEvent::PipelineHealth {
+                            queues, websocket, ..
+                        } => {
                             diagnostics += 1;
                             reported = websocket.dropped;
                             let lossy: Vec<_> = queues

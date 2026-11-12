@@ -16,6 +16,7 @@ import {
   STATE_KEY,
   TEMPLATES_KEY,
   WORKSPACES_KEY,
+  webTransportOffer,
 } from "./api";
 import { useArrayStore } from "./arrays";
 import { audioEngine } from "./audio/useChannelAudio";
@@ -87,14 +88,14 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
   });
 
   useEffect(() => {
-    const s = new SdrSocket();
+    const s = new SdrSocket("/api/ws", webTransportOffer);
     s.on("event", (event) => onServerEventRef.current(event));
     let up = false;
     s.on("status", (now) => {
       if (up && !now) {
         pushToast("Lost the server: reconnecting");
       } else if (!up && now) {
-        recordEvent("info", "socket", "connected");
+        recordEvent("info", "socket", `connected over ${s.transport() ?? "nothing"}`);
       }
       if (now) {
         s.send({ type: "SubscribeDiagnostics", data: { enabled: true } });

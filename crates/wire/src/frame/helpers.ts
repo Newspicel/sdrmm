@@ -38,6 +38,14 @@ class FrameReader {
     const at = this.take(count);
     return at < 0 ? new Uint8Array(0) : new Uint8Array(this.buffer, at, count);
   }
+  scaled(scale: number, count = (this.buffer.byteLength - this.at) / 2): Float32Array {
+    const at = this.take(count * 2);
+    if (at < 0 || !Number.isSafeInteger(count)) { this.valid = false; return new Float32Array(0); }
+    const out = new Float32Array(count);
+    const step = scale / IQ_FULL_SCALE;
+    for (let index = 0; index < count; index++) out[index] = this.view.getInt16(at + index * 2, true) * step;
+    return out;
+  }
   floats(count = (this.buffer.byteLength - this.at) / 4): Float32Array {
     const at = this.take(count * 4);
     if (at < 0 || !Number.isSafeInteger(count)) { this.valid = false; return new Float32Array(0); }

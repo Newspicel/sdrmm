@@ -41,11 +41,22 @@ async fn a_self_signed_listener_answers_over_https() {
         .expect("request");
     assert_eq!(response.status(), reqwest::StatusCode::OK);
 
-    let plain = reqwest::Client::new()
-        .get(format!("http://{}/api/auth", handle.local_addr))
+    let plain = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("client")
+        .get(format!("http://{}/api/auth?x=1", handle.local_addr))
         .send()
-        .await;
-    assert!(plain.is_err(), "the listener answered plain HTTP");
+        .await
+        .expect("an answer to plain HTTP");
+    assert_eq!(plain.status(), reqwest::StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(
+        plain
+            .headers()
+            .get("location")
+            .and_then(|at| at.to_str().ok()),
+        Some(format!("https://{}/api/auth?x=1", handle.local_addr).as_str())
+    );
     engine.shutdown();
 }
 

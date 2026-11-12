@@ -15,6 +15,7 @@ import { usePeople } from "../lib/presence";
 import type { WorkspaceInfo } from "../lib/types";
 import { useWorkspaceContext } from "./context";
 import { Library } from "./Library";
+import { LinkQuality } from "./LinkQuality";
 import { NodePalette } from "./NodePalette";
 import { Peers } from "./Peers";
 import { useAddNode } from "./useAddNode";
@@ -153,6 +154,7 @@ export function WorkspaceBar({
       </Popover>
 
       <span className="ml-auto flex items-center gap-1">
+        <LinkQuality />
         <Peers />
         <Rule />
         <span className="flex items-center" role="group" aria-label="History">

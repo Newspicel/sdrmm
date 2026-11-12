@@ -16,7 +16,8 @@ It checks drivers, libraries, radio discovery, USB permissions, and storage path
   `--bind 0.0.0.0:8080` and a token; it stays on `127.0.0.1:8080` otherwise.
 - Check the firewall and any container port mapping.
 - Behind a reverse proxy, serve SDRmm at the root. Path prefixes do not work.
-- With TLS on, use `https://`.
+- A server on a network bind serves `https://` and sends `http://` there. Accept the
+  certificate warning once.
 
 ## The window is blank or the waterfall is missing
 

@@ -9,6 +9,14 @@ pub struct QueueHealth {
     pub dropped: u64,
 }
 
+/// How the network path to one client fares, where the transport can tell.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct LinkHealth {
+    pub rtt_ms: f32,
+    /// Share of the packets sent since the last report that were lost, from 0 to 1.
+    pub loss: f32,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PipelineQueue {
     pub device_set: u32,

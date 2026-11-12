@@ -7,17 +7,18 @@ pub const HEADER_LEN: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
+/// 2, 3 and 4 carried uncompressed IQ and video. They stay retired, so an old client never
+/// misreads a new frame.
 pub enum FrameKind {
     Spectrum = 0,
     AudioOpus = 1,
-    IqF32 = 2,
-    VideoGray = 3,
-    VideoRgb = 4,
     Symbols = 5,
     RangeDoppler = 6,
     SpatialSpectrum = 7,
     Visibility = 8,
     FusionGrid = 9,
+    IqI16 = 10,
+    VideoJpeg = 11,
 }
 
 impl FrameKind {
@@ -26,14 +27,13 @@ impl FrameKind {
         match v {
             0 => Some(Self::Spectrum),
             1 => Some(Self::AudioOpus),
-            2 => Some(Self::IqF32),
-            3 => Some(Self::VideoGray),
-            4 => Some(Self::VideoRgb),
             5 => Some(Self::Symbols),
             6 => Some(Self::RangeDoppler),
             7 => Some(Self::SpatialSpectrum),
             8 => Some(Self::Visibility),
             9 => Some(Self::FusionGrid),
+            10 => Some(Self::IqI16),
+            11 => Some(Self::VideoJpeg),
             _ => None,
         }
     }
@@ -92,34 +92,6 @@ impl SymbolPlane {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum VideoData<'a> {
-    Gray(&'a [u8]),
-    Rgb(&'a [u8]),
-}
-
-impl<'a> VideoData<'a> {
-    fn kind(self) -> FrameKind {
-        match self {
-            Self::Gray(_) => FrameKind::VideoGray,
-            Self::Rgb(_) => FrameKind::VideoRgb,
-        }
-    }
-
-    fn bytes(self) -> &'a [u8] {
-        match self {
-            Self::Gray(bytes) | Self::Rgb(bytes) => bytes,
-        }
-    }
-
-    const fn channels(self) -> usize {
-        match self {
-            Self::Gray(_) => 1,
-            Self::Rgb(_) => 3,
-        }
-    }
-}
-
 struct Reader<'a> {
     buf: &'a [u8],
     at: usize,
@@ -141,9 +113,9 @@ impl<'a> Reader<'a> {
         })
     }
 
-    fn accepting(buf: &'a [u8], accepts: &[FrameKind]) -> Result<Self, FrameError> {
+    fn accepting(buf: &'a [u8], accepts: FrameKind) -> Result<Self, FrameError> {
         let reader = Self::new(buf)?;
-        if accepts.iter().any(|kind| *kind as u8 == reader.kind) {
+        if accepts as u8 == reader.kind {
             Ok(reader)
         } else {
             Err(FrameError::Kind(reader.kind))
@@ -198,15 +170,6 @@ impl<'a> Reader<'a> {
         self.take(usize::from(len)).ok_or(FrameError::Length)
     }
 
-    fn video(&mut self) -> VideoData<'a> {
-        let bytes = self.rest();
-        if self.kind == FrameKind::VideoRgb as u8 {
-            VideoData::Rgb(bytes)
-        } else {
-            VideoData::Gray(bytes)
-        }
-    }
-
     fn finish(&self) -> Result<(), FrameError> {
         if self.at == self.buf.len() {
             Ok(())
@@ -232,13 +195,27 @@ mod schema;
 pub use schema::typescript_frames;
 
 macro_rules! field_type {
-    ($life:lifetime, bytes) => { &$life [u8] };
-    ($life:lifetime, bytes16) => { &$life [u8] };
-    ($life:lifetime, floats) => { &$life [f32] };
-    ($life:lifetime, floats16) => { &$life [f32] };
-    ($life:lifetime, plane) => { SymbolPlane };
-    ($life:lifetime, video) => { VideoData<$life> };
-    ($life:lifetime, $scalar:ty) => { $scalar };
+    ($life:lifetime, bytes) => {
+        &$life[u8]
+    };
+    ($life:lifetime, bytes16) => {
+        &$life[u8]
+    };
+    ($life:lifetime, floats) => {
+        &$life[f32]
+    };
+    ($life:lifetime, floats16) => {
+        &$life[f32]
+    };
+    ($life:lifetime, shorts) => {
+        &$life[i16]
+    };
+    ($life:lifetime, plane) => {
+        SymbolPlane
+    };
+    ($life:lifetime, $scalar:ty) => {
+        $scalar
+    };
 }
 
 macro_rules! owned_type {
@@ -278,11 +255,13 @@ macro_rules! write_field {
             $buf.extend_from_slice(&value.to_le_bytes());
         }
     }};
+    ($buf:ident, $value:expr, shorts) => {
+        for value in $value {
+            $buf.extend_from_slice(&value.to_le_bytes());
+        }
+    };
     ($buf:ident, $value:expr, plane) => {
         $buf.push($value as u8)
-    };
-    ($buf:ident, $value:expr, video) => {
-        $buf.extend_from_slice($value.bytes())
     };
     ($buf:ident, $value:expr, $scalar:ty) => {
         $buf.extend_from_slice(&$value.to_le_bytes())
@@ -295,9 +274,6 @@ macro_rules! read_field {
     };
     ($reader:ident, bytes16) => {
         $reader.prefixed()?
-    };
-    ($reader:ident, video) => {
-        $reader.video()
     };
     ($reader:ident, $scalar:ident) => {
         $reader.$scalar()?
@@ -317,32 +293,14 @@ macro_rules! field_len {
     ($value:expr, floats16) => {
         2 + $value.len() * 4
     };
+    ($value:expr, shorts) => {
+        $value.len() * 2
+    };
     ($value:expr, plane) => {
         1
     };
-    ($value:expr, video) => {
-        $value.bytes().len()
-    };
     ($value:expr, $scalar:ty) => {
         std::mem::size_of::<$scalar>()
-    };
-}
-
-macro_rules! frame_kind {
-    (Video, $frame:ident) => {
-        $frame.data.kind()
-    };
-    ($kind:ident, $frame:ident) => {
-        FrameKind::$kind
-    };
-}
-
-macro_rules! accepted_kinds {
-    (Video) => {
-        &[FrameKind::VideoGray, FrameKind::VideoRgb]
-    };
-    ($kind:ident) => {
-        &[FrameKind::$kind]
     };
 }
 
@@ -366,7 +324,7 @@ macro_rules! define_frame {
                 }
                 let mut buf = Vec::with_capacity(self.encoded_len());
                 buf.push(PROTOCOL_VERSION);
-                buf.push(frame_kind!($kind, self) as u8);
+                buf.push(FrameKind::$kind as u8);
                 buf.extend_from_slice(&self.stream_id.to_le_bytes());
                 buf.extend_from_slice(&self.seq.to_le_bytes());
                 buf.extend_from_slice(&self.timestamp.to_le_bytes());
@@ -382,7 +340,7 @@ macro_rules! define_frame {
         define_frame!($name, $kind, {$($field: $ty),*});
         impl<'a> $name<'a> {
             pub fn decode(buf: &'a [u8]) -> Result<Self, FrameError> {
-                let mut reader = Reader::accepting(buf, accepted_kinds!($kind))?;
+                let mut reader = Reader::accepting(buf, FrameKind::$kind)?;
                 let stream_id = reader.u16()?;
                 let seq = reader.u32()?;
                 let timestamp = reader.u64()?;
@@ -424,12 +382,18 @@ macro_rules! define_frame {
 }
 
 pub const SPECTRUM_SIGNAL_MARGIN_DB: f32 = 10.0;
+/// What an IQ sample of `i16::MAX` stands for is the frame's `scale`.
+pub const IQ_FULL_SCALE: i16 = i16::MAX;
+pub const VIDEO_GRAY: u8 = 1;
+pub const VIDEO_RGB: u8 = 3;
 
 define_frame!(SpectrumFrame, Spectrum, decode, {
     center_hz: f64, span_hz: f32, db_min: f32, db_max: f32, floor_db: f32, bins: bytes16,
 });
 define_frame!(AudioFrame, AudioOpus, decode, { ch_layout: u8, opus: bytes });
-define_frame!(IqFrame, IqF32, { center_hz: f64, sample_rate: f32, samples: floats });
+define_frame!(IqFrame, IqI16, {
+    center_hz: f64, sample_rate: f32, scale: f32, samples: shorts,
+});
 define_frame!(SymbolFrame, Symbols, {
     plane: plane, symbol_rate: f32, evm: f32, mer_db: f32, margin: f32,
     freq_error_hz: f32, reference: floats16, symbols: floats,
@@ -442,7 +406,9 @@ define_frame!(RangeDopplerFrame, RangeDoppler, decode, owned(RangeDopplerOwned),
     db_min: f32, db_max: f32,
     cells: bytes,
 });
-define_frame!(VideoFrame, Video, decode, { width: u16, height: u16, data: video });
+define_frame!(VideoFrame, VideoJpeg, decode, {
+    width: u16, height: u16, channels: u8, jpeg: bytes,
+});
 define_frame!(SpatialSpectrumFrame, SpatialSpectrum, decode, owned(SpatialSpectrumOwned), {
     center_hz: f64, span_hz: f32, bearings: u16, bins: u16, db_min: f32, db_max: f32, cells: bytes,
 });
@@ -480,8 +446,10 @@ impl Shaped for SymbolFrame<'_> {
 
 impl Shaped for VideoFrame<'_> {
     fn shape_holds(&self) -> bool {
-        let pixels = usize::from(self.width) * usize::from(self.height);
-        pixels > 0 && self.data.bytes().len() == pixels * self.data.channels()
+        self.width > 0
+            && self.height > 0
+            && matches!(self.channels, VIDEO_GRAY | VIDEO_RGB)
+            && !self.jpeg.is_empty()
     }
 }
 

@@ -4708,6 +4708,23 @@
         }
       }
     },
+    "/api/transport": {
+      "get": {
+        "operationId": "get_transport",
+        "responses": {
+          "200": {
+            "description": "What a browser can connect over besides the WebSocket. Read it before every WebTransport connection: the certificate to pin rotates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransportInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspaces": {
       "get": {
         "operationId": "list_workspaces",
@@ -15726,6 +15743,25 @@
           "footprint"
         ]
       },
+      "LinkHealth": {
+        "type": "object",
+        "description": "How the network path to one client fares, where the transport can tell.",
+        "required": [
+          "rtt_ms",
+          "loss"
+        ],
+        "properties": {
+          "loss": {
+            "type": "number",
+            "format": "float",
+            "description": "Share of the packets sent since the last report that were lost, from 0 to 1."
+          },
+          "rtt_ms": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
       "LogGroupKey": {
         "type": "string",
         "description": "What a grouped decoder log keeps one row for.",
@@ -24330,6 +24366,16 @@
                   "websocket"
                 ],
                 "properties": {
+                  "link": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/components/schemas/LinkHealth"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "queues": {
                     "type": "array",
                     "items": {
@@ -27659,6 +27705,21 @@
           }
         }
       },
+      "TransportInfo": {
+        "type": "object",
+        "properties": {
+          "webtransport": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WebTransportInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "TriangulationMission": {
         "type": "object",
         "required": [
@@ -28450,6 +28511,24 @@
             "type": "string"
           },
           "key_id": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "WebTransportInfo": {
+        "type": "object",
+        "required": [
+          "port",
+          "certificate_sha256"
+        ],
+        "properties": {
+          "certificate_sha256": {
+            "type": "string",
+            "description": "Hex SHA-256 of the session certificate, which a browser pins in\n`serverCertificateHashes`. It changes as the certificate rotates, so read it before\nevery connection."
+          },
+          "port": {
             "type": "integer",
             "format": "int32",
             "minimum": 0

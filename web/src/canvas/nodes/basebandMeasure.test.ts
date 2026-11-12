@@ -8,6 +8,7 @@ const burst: IqFrame = {
   timestamp: 0n,
   sampleRate: 48_000,
   centerHz: 145.8e6,
+  scale: 1,
   samples: Float32Array.from([1, 0]),
 };
 

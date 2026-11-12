@@ -88,8 +88,13 @@ Media and recording data leave DSP through preallocated single-producer, single-
 pools. Workers turn them into network payloads. A full queue never blocks DSP: lost media is
 reported and recordings fail loudly. Some decoders allocate for variable-size results.
 
-Spectrum, audio, and video travel as binary WebSocket frames; browser audio is Opus. Decoder
-events are typed JSON. After a WebSocket invalidation, clients fetch durable state over REST.
+Spectrum, audio, IQ and video travel as binary frames: audio is Opus, video is JPEG and IQ is
+16-bit against each block's peak. Clients that ask for the same spectrum size and rate share
+one reduction, and clients watching one picture share one encoding. Decoder events are
+typed JSON. Over WebTransport, events keep their order on one stream, audio goes in datagrams and
+every other stream of frames has a QUIC stream to itself, so one lost packet delays one picture.
+The WebSocket carries the same messages in one ordered queue. After an invalidation, clients
+fetch durable state over REST.
 
 `cargo xtask perf` measures DSP throughput, allocation, decoder searches, and publication.
 

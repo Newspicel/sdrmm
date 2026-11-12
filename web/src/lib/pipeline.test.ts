@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import {
   channelQueueSummary,
+  linkTrouble,
   QUEUE_LAG_MS,
   queueLagging,
   queueSummary,
@@ -98,4 +99,33 @@ it("calls a queue lagging only once it holds a noticeable delay", () => {
   expect(queueLagging(lagOf(0))).toBe(false);
   expect(queueLagging(lagOf(QUEUE_LAG_MS - 1))).toBe(false);
   expect(queueLagging(lagOf(QUEUE_LAG_MS))).toBe(true);
+});
+
+function linked(
+  link: { rtt_ms: number; loss: number } | null,
+  oldest_ms = 0,
+): Parameters<typeof linkTrouble>[0] {
+  return {
+    queues: [],
+    websocket: { queued: 0, capacity: 16777216, oldest_ms, dropped: 7 },
+    link,
+  };
+}
+
+it("says nothing about a link that is fine or not measured", () => {
+  expect(linkTrouble(null)).toBeNull();
+  expect(linkTrouble(linked(null))).toBeNull();
+  expect(linkTrouble(linked({ rtt_ms: 40, loss: 0.001 }))).toBeNull();
+});
+
+it("names the worst of loss, round trip and a sender that falls behind", () => {
+  expect(linkTrouble(linked({ rtt_ms: 400, loss: 0.125 }))).toEqual({
+    label: "13% loss",
+    detail: "Round trip 400 ms\n12.5% of packets lost\nSending 0 ms behind\n7 frames dropped",
+  });
+  expect(linkTrouble(linked({ rtt_ms: 400, loss: 0 }))?.label).toBe("400 ms");
+  expect(linkTrouble(linked(null, QUEUE_LAG_MS))).toEqual({
+    label: "100 ms behind",
+    detail: "Sending 100 ms behind\n7 frames dropped",
+  });
 });

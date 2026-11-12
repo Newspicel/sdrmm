@@ -15,6 +15,7 @@ mod phone;
 mod ports;
 mod presence;
 mod stress;
+mod webtransport;
 
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -307,7 +308,7 @@ async fn a_baseband_port_streams_iq_and_symbols_in_the_media_id_space() {
 
     loop {
         let (kind, stream_id) = next_frame_header(&mut ws).await;
-        if kind == sdrmm_wire::FrameKind::IqF32 as u8 {
+        if kind == sdrmm_wire::FrameKind::IqI16 as u8 {
             assert_eq!(stream_id, iq_id);
             break;
         }
@@ -1313,7 +1314,10 @@ async fn diagnostics_report_capture_and_connection_queues_only_when_subscribed()
     })
     .await
     .expect("diagnostics");
-    let ServerEvent::PipelineHealth { queues, websocket } = event else {
+    let ServerEvent::PipelineHealth {
+        queues, websocket, ..
+    } = event
+    else {
         panic!("health");
     };
     assert!(queues.iter().any(|queue| queue.device_set == ds
@@ -1400,4 +1404,91 @@ async fn a_stalled_socket_writer_expires_and_closes_its_output_queue() {
         .await
         .expect("writer must stop");
     assert!(out.send(Message::Text("after close".into())).await.is_err());
+}
+
+#[test]
+fn link_loss_is_the_share_of_packets_lost_since_the_last_report() {
+    let sample = |sent_packets, lost_packets| PathSample {
+        rtt: Duration::from_millis(40),
+        sent_packets,
+        lost_packets,
+    };
+    let health = link_health(sample(1000, 10), sample(1200, 15));
+    assert_eq!(health.rtt_ms, 40.0);
+    assert_eq!(health.loss, 0.025);
+    assert_eq!(link_health(sample(1200, 15), sample(1200, 15)).loss, 0.0);
+    assert_eq!(link_health(sample(10, 0), sample(11, 9)).loss, 1.0);
+}
+
+#[test]
+fn iq_keeps_its_level_through_sixteen_bits() {
+    use num_complex::Complex;
+
+    let block = [Complex::new(0.5, -0.25), Complex::new(-0.125, 0.0)];
+    let mut out = Vec::new();
+    assert_eq!(quantize_iq(&block, &mut out), 0.5);
+    assert_eq!(out, [32767, -16384, -8192, 0]);
+
+    assert_eq!(quantize_iq(&[Complex::new(0.0, 0.0)], &mut out), 1.0);
+    assert_eq!(out, [0, 0]);
+    assert_eq!(quantize_iq(&[Complex::new(f32::NAN, 2.0)], &mut out), 2.0);
+    assert_eq!(out, [0, 32767]);
+}
+
+async fn scope_bench() -> (std::net::SocketAddr, AppState) {
+    let (addr, state) = serve_ws(test_engine()).await;
+    workspace_on(
+        &state,
+        graph(
+            vec![radio("band"), of("scope", sdrmm_wire::NodeKind::Scope)],
+            vec![wire(("radio", "iq"), ("scope", "iq"))],
+        ),
+    )
+    .await;
+    (addr, state)
+}
+
+async fn watch_scope(addr: std::net::SocketAddr, bins: u16) -> WsClient {
+    let mut ws = dial(addr).await;
+    let params = sdrmm_wire::StreamParams {
+        fps: 30,
+        bins,
+        spectrum: false,
+    };
+    subscribe_with(&mut ws, "scope", "iq", params).await;
+    port_stream(&mut ws).await;
+    next_frame_header(&mut ws).await;
+    ws
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn clients_asking_for_the_same_spectrum_share_one_reduction() {
+    let (addr, state) = scope_bench().await;
+    let mut first = watch_scope(addr, 64).await;
+    let mut second = watch_scope(addr, 64).await;
+    assert_eq!(state.spectra.reductions(), 1);
+    next_frame_header(&mut first).await;
+    next_frame_header(&mut second).await;
+
+    let _other_size = watch_scope(addr, 128).await;
+    assert_eq!(state.spectra.reductions(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reduction_ends_with_its_last_client_and_starts_again_for_the_next() {
+    let (addr, state) = scope_bench().await;
+    let first = watch_scope(addr, 64).await;
+    let second = watch_scope(addr, 64).await;
+    drop(first);
+    drop(second);
+    let deadline = Instant::now() + WAIT;
+    while state.spectra.reductions() != 0 {
+        assert!(
+            Instant::now() < deadline,
+            "the reduction outlived its clients"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let _again = watch_scope(addr, 64).await;
+    assert_eq!(state.spectra.reductions(), 1);
 }

@@ -148,6 +148,7 @@ axum = { version = "0.8", features = ["ws", "multipart"] }
 axum-server = { version = "0.9", default-features = false, features = ["tls-rustls-no-provider"] }
 rustls = "0.23"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
+wtransport = { version = "0.7.2", default-features = false, features = ["aws-lc-rs", "quinn"] }
 tower = "0.5"
 tower-http = { version = "0.7", features = ["compression-gzip", "cors", "trace"] }
 futures = "0.3"

@@ -113,6 +113,9 @@ pub(crate) struct AppState {
     pub(crate) resolved: Arc<resolved::ResolvedHub>,
     pub(crate) problems: Arc<problems::ProblemBoard>,
     pub(crate) presence: Arc<presence::Presence>,
+    pub(crate) webtransport: Arc<ws::webtransport::Advert>,
+    pub(crate) pictures: Arc<ws::jpeg::Memo>,
+    pub(crate) spectra: Arc<ws::spectrum::SpectrumShare>,
     pub(crate) control: Arc<control::ControlBus>,
     pub(crate) runs: Arc<run_gate::RunGate>,
     pub(crate) satellites: Arc<satellites::SatelliteHub>,
@@ -163,6 +166,9 @@ impl AppState {
             resolved: Arc::new(resolved::ResolvedHub::default().gated_by(runs.clone())),
             problems: Arc::default(),
             presence: Arc::default(),
+            webtransport: Arc::default(),
+            pictures: Arc::default(),
+            spectra: Arc::default(),
             control: Arc::new(control::ControlBus::gated_by(runs.clone())),
             runs,
             satellites: Arc::new(satellites::SatelliteHub::default()),
@@ -555,13 +561,20 @@ pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<Serve
         .push(spawn_task("sdrmm-reference", move || reference.run()));
     let app = app(&state, auth::ListenerRole::Main, served.is_some());
     let scheme = if served.is_some() { "https" } else { "http" };
+    if served.is_some() {
+        match ws::webtransport::start(&state, local_addr) {
+            Ok(task) => background.tasks.push(BackgroundTask::Task(task)),
+            Err(error) => tracing::warn!(%error, "WebTransport is off"),
+        }
+    }
     tracing::info!(%local_addr, scheme, "SDRmm server listening");
     let task = match served {
         Some(served) => {
             let server = axum_server::from_tcp_rustls(
                 listener,
                 axum_server::tls_rustls::RustlsConfig::from_config(served.config),
-            )?;
+            )?
+            .map(tls::redirect::RedirectPlain::before);
             tokio::spawn(async move { server.serve(app.into_make_service()).await })
         }
         None => {

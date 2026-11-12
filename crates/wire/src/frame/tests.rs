@@ -176,20 +176,21 @@ fn a_level_plane_frame_needs_no_reference_pairs() {
 }
 
 #[test]
-fn iq_roundtrip() {
-    let samples: Vec<f32> = (0..32).map(|i| i as f32 * 0.03125 - 0.5).collect();
+fn iq_samples_travel_as_sixteen_bits_beside_their_scale() {
+    let samples: Vec<i16> = (0..32).map(|i| i * 1000 - 16_000).collect();
     let frame = IqFrame {
         stream_id: 0x8100,
         seq: 3,
         timestamp: 48_000,
         sample_rate: 24_000.0,
         center_hz: 145_800_000.0,
+        scale: 0.5,
         samples: &samples,
     };
     let buf = frame.encode().expect("encode");
     assert_eq!(buf.len(), frame.encoded_len());
     let header = peek_header(&buf).expect("header");
-    assert_eq!(header.kind, FrameKind::IqF32);
+    assert_eq!(header.kind, FrameKind::IqI16);
     assert_eq!(
         f64::from_le_bytes(buf[16..24].try_into().unwrap()),
         145_800_000.0
@@ -198,44 +199,48 @@ fn iq_roundtrip() {
         f32::from_le_bytes(buf[24..28].try_into().unwrap()),
         24_000.0
     );
-    let (chunks, _) = buf[28..].as_chunks::<4>();
-    let out: Vec<f32> = chunks.iter().copied().map(f32::from_le_bytes).collect();
+    assert_eq!(f32::from_le_bytes(buf[28..32].try_into().unwrap()), 0.5);
+    let (chunks, rest) = buf[32..].as_chunks::<2>();
+    assert!(rest.is_empty());
+    let out: Vec<i16> = chunks.iter().copied().map(i16::from_le_bytes).collect();
     assert_eq!(out, samples);
 }
 
-#[test]
-fn video_roundtrip() {
-    let luma: Vec<u8> = (0..(8u32 * 4)).map(|i| (i * 7) as u8).collect();
-    let frame = VideoFrame {
+fn video(channels: u8, jpeg: &[u8]) -> VideoFrame<'_> {
+    VideoFrame {
         stream_id: 0x8001,
         seq: 9,
         timestamp: 2_000_000,
         width: 8,
         height: 4,
-        data: VideoData::Gray(&luma),
-    };
-    let buf = frame.encode().expect("encode");
-    assert_eq!(buf.len(), frame.encoded_len());
-    assert_eq!(VideoFrame::decode(&buf), Ok(frame));
+        channels,
+        jpeg,
+    }
 }
 
 #[test]
-fn rgb_video_roundtrip() {
-    let rgb: Vec<u8> = (0..(3 * 3 * 2)).map(|i| (i * 11) as u8).collect();
-    let frame = VideoFrame {
-        stream_id: 12,
-        seq: 4,
-        timestamp: 99,
-        width: 3,
-        height: 2,
-        data: VideoData::Rgb(&rgb),
+fn video_roundtrip() {
+    for channels in [VIDEO_GRAY, VIDEO_RGB] {
+        let frame = video(channels, &[0xff, 0xd8, 0xff, 0xd9]);
+        let buf = frame.encode().expect("encode");
+        assert_eq!(buf.len(), frame.encoded_len());
+        assert_eq!(
+            peek_header(&buf).expect("header").kind,
+            FrameKind::VideoJpeg
+        );
+        assert_eq!(VideoFrame::decode(&buf), Ok(frame));
+    }
+}
+
+#[test]
+fn a_video_frame_without_a_picture_or_with_odd_channels_is_refused() {
+    assert_eq!(video(VIDEO_GRAY, &[]).encode(), Err(FrameError::Shape));
+    assert_eq!(video(2, &[0xff]).encode(), Err(FrameError::Shape));
+    let empty = VideoFrame {
+        width: 0,
+        ..video(VIDEO_RGB, &[0xff])
     };
-    let buf = frame.encode().expect("encode");
-    let decoded = VideoFrame::decode(&buf).expect("decode");
-    assert_eq!(decoded.data, VideoData::Rgb(&rgb));
-    let mut short = buf.clone();
-    short.pop();
-    assert_eq!(VideoFrame::decode(&short), Err(FrameError::Shape));
+    assert_eq!(empty.encode(), Err(FrameError::Shape));
 }
 
 #[test]
@@ -372,19 +377,6 @@ fn every_decodable_frame_round_trips() {
         AudioFrame::decode(&audio.encode().expect("encode")),
         Ok(audio)
     );
-    let pixels = [1u8, 2];
-    let video = VideoFrame {
-        stream_id: 1,
-        seq: 2,
-        timestamp: 3,
-        width: 2,
-        height: 1,
-        data: VideoData::Gray(&pixels),
-    };
-    assert_eq!(
-        VideoFrame::decode(&video.encode().expect("encode")),
-        Ok(video)
-    );
     for surface in surfaces() {
         let buf = surface.encode(31).expect("encode");
         let header = peek_header(&buf).expect("header");
@@ -509,19 +501,20 @@ fn every_frame_kind_survives_the_byte_it_is_written_as() {
     for (byte, kind) in [
         (0u8, FrameKind::Spectrum),
         (1, FrameKind::AudioOpus),
-        (2, FrameKind::IqF32),
-        (3, FrameKind::VideoGray),
-        (4, FrameKind::VideoRgb),
         (5, FrameKind::Symbols),
         (6, FrameKind::RangeDoppler),
         (7, FrameKind::SpatialSpectrum),
         (8, FrameKind::Visibility),
         (9, FrameKind::FusionGrid),
+        (10, FrameKind::IqI16),
+        (11, FrameKind::VideoJpeg),
     ] {
         assert_eq!(FrameKind::from_u8(byte), Some(kind));
         assert_eq!(kind as u8, byte);
     }
-    assert_eq!(FrameKind::from_u8(10), None);
+    for retired in [2, 3, 4, 12] {
+        assert_eq!(FrameKind::from_u8(retired), None);
+    }
 }
 
 #[test]

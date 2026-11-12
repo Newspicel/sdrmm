@@ -13,22 +13,24 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use futures::{SinkExt, StreamExt};
-use sdrmm_dsp::{DbWindowSmoother, SpanFloor, adaptive_db_window, decimate_signal, quantize_db};
-use sdrmm_engine::{AudioPacket, Engine, IqBlock, SpectrumSnapshot, SymbolBlock, VideoPacket};
+use sdrmm_engine::{AudioPacket, Engine, IqBlock, SymbolBlock, VideoPacket};
 use sdrmm_wire::{
-    API_PROTOCOL, AudioFrame, ClientCommand, IqFrame, PositionFix, SPECTRUM_SIGNAL_MARGIN_DB,
-    ServerEvent, SpectrumFrame, StateScope, StreamKind, SymbolFrame, VideoData, VideoFrame,
-    WS_CLOSE_REVOKED, WS_SUBPROTOCOL, phone::POSE_BURST, phone::POSE_RATE_HZ,
+    API_PROTOCOL, AudioFrame, ClientCommand, IqFrame, PositionFix, ServerEvent, StateScope,
+    StreamKind, SymbolFrame, VideoFrame, WS_CLOSE_REVOKED, WS_SUBPROTOCOL, phone::POSE_BURST,
+    phone::POSE_RATE_HZ,
 };
 use tokio::sync::{broadcast, watch};
 
 mod derived;
+pub(crate) mod jpeg;
 mod outbox;
 mod phone;
 mod ports;
 mod presence;
 mod sinks;
+pub(crate) mod spectrum;
 mod surfaces;
+pub(crate) mod webtransport;
 use outbox::Outbox;
 use phone::{PhoneLink, RateBudget, revoked};
 use ports::Ports;
@@ -94,6 +96,7 @@ struct Session {
     pose_budget: RateBudget,
     last_limit_error: Option<Instant>,
     peer: PeerLink,
+    path: Option<PathProbe>,
 }
 
 impl Session {
@@ -118,6 +121,7 @@ impl Session {
             pose_budget: RateBudget::new(f64::from(POSE_BURST), f64::from(POSE_RATE_HZ)),
             last_limit_error: None,
             peer,
+            path: None,
         }
     }
 
@@ -154,8 +158,11 @@ impl Session {
                     task.abort();
                 }
                 if enabled {
-                    self.diagnostics =
-                        Some(spawn_diagnostics(self.engine.clone(), self.out.clone()));
+                    self.diagnostics = Some(spawn_diagnostics(
+                        self.engine.clone(),
+                        self.out.clone(),
+                        self.path.clone(),
+                    ));
                 }
             }
             ClientCommand::SubscribeSurface { node, fit } => {
@@ -218,16 +225,79 @@ impl Session {
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity, fallback: String) {
+    let (ws_tx, ws_rx) = socket.split();
+    let (out_tx, out_rx) = outbox::channel();
+    let link = Link {
+        out: out_tx,
+        writer: tokio::spawn(write_output(ws_tx, out_rx)),
+        commands: Box::pin(socket_commands(ws_rx)),
+        path: None,
+    };
+    serve_session(link, state, identity, fallback).await;
+}
+
+fn socket_commands(
+    socket: impl futures::Stream<Item = Result<Message, axum::Error>>,
+) -> impl futures::Stream<Item = String> {
+    socket
+        .take_while(|message| {
+            std::future::ready(
+                matches!(message, Ok(message) if !matches!(message, Message::Close(_))),
+            )
+        })
+        .filter_map(|message| {
+            std::future::ready(match message {
+                Ok(Message::Text(text)) => Some(text.as_str().to_owned()),
+                _ => None,
+            })
+        })
+}
+
+/// One client's connection, whichever transport carries it: what the session writes goes into
+/// `out`, `writer` drains that to the wire, and `commands` ends when the client leaves.
+struct Link {
+    out: Outbox,
+    writer: tokio::task::JoinHandle<()>,
+    commands: std::pin::Pin<Box<dyn futures::Stream<Item = String> + Send>>,
+    path: Option<PathProbe>,
+}
+
+/// Reads the network path of a transport that measures it.
+type PathProbe = Arc<dyn Fn() -> PathSample + Send + Sync>;
+
+#[derive(Clone, Copy, Default)]
+struct PathSample {
+    rtt: Duration,
+    sent_packets: u64,
+    lost_packets: u64,
+}
+
+fn link_health(before: PathSample, now: PathSample) -> sdrmm_wire::LinkHealth {
+    let sent = now.sent_packets.saturating_sub(before.sent_packets);
+    let lost = now.lost_packets.saturating_sub(before.lost_packets);
+    sdrmm_wire::LinkHealth {
+        rtt_ms: now.rtt.as_secs_f32() * 1000.0,
+        loss: if sent == 0 {
+            0.0
+        } else {
+            (lost as f32 / sent as f32).min(1.0)
+        },
+    }
+}
+
+async fn serve_session(transport: Link, state: AppState, identity: Identity, fallback: String) {
+    let Link {
+        out: out_tx,
+        mut writer,
+        mut commands,
+        path,
+    } = transport;
     let engine = state.engine.clone();
     let live = state.clients.fetch_add(1, atomic::Ordering::Relaxed) + 1;
     tracing::debug!(clients = live, "client connected");
     engine.emit_scope(StateScope::Clients);
     let link = PhoneLink::join(&state, &identity).await;
     let for_phone = link.is_some();
-    let (ws_tx, mut ws_rx) = socket.split();
-    let (out_tx, out_rx) = outbox::channel();
-
-    let mut writer = tokio::spawn(write_output(ws_tx, out_rx));
 
     let event_rx = engine.subscribe_events();
     let position_rx = state.gps.subscribe();
@@ -244,12 +314,13 @@ async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity, f
         identity,
         PeerLink::new(peer, fallback),
     );
+    session.path = path;
     let mut revocation: Option<watch::Receiver<bool>> = link.as_ref().map(PhoneLink::revoked);
     let mut resolved = state.resolved.subscribe();
     let mut writer_done = false;
 
     let revoked_now = loop {
-        let msg = tokio::select! {
+        let command = tokio::select! {
             _ = &mut writer => {
                 writer_done = true;
                 break false;
@@ -259,16 +330,12 @@ async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity, f
                 session.sync_ports().await;
                 continue;
             }
-            message = ws_rx.next() => message,
+            command = commands.next() => command,
         };
-        let Some(Ok(msg)) = msg else {
+        let Some(command) = command else {
             break false;
         };
-        match msg {
-            Message::Text(text) => session.dispatch(&text).await,
-            Message::Close(_) => break false,
-            _ => {}
-        }
+        session.dispatch(&command).await;
     };
 
     if revoked_now {
@@ -464,85 +531,6 @@ struct SpectrumLane {
     stream: u32,
 }
 
-fn spawn_spectrum(
-    lane: SpectrumLane,
-    fps: u16,
-    bins: u16,
-    mut rx: broadcast::Receiver<SpectrumSnapshot>,
-    out_tx: Outbox,
-    engine: Arc<Engine>,
-) -> tokio::task::JoinHandle<()> {
-    let SpectrumLane {
-        stream_id,
-        device_set: ds,
-        stream,
-    } = lane;
-    let fps = fps.clamp(1, MAX_FPS);
-    let bins = (bins as usize).clamp(MIN_BINS, MAX_BINS);
-
-    tokio::spawn(async move {
-        let mut dec = vec![0f32; bins];
-        let mut quant = vec![0u8; bins];
-        let mut window = Vec::with_capacity(bins);
-        let mut smoother = DbWindowSmoother::default();
-        let mut span_floor = SpanFloor::default();
-        let mut throttle = FrameThrottle::new(fps);
-
-        loop {
-            match rx.recv().await {
-                Ok(mut snap) => {
-                    out_tx.dropped(newest(&mut rx, &mut snap));
-                    if !throttle.admit(snap.timestamp, snap.span_hz) {
-                        continue;
-                    }
-
-                    let floor_db = span_floor.read(&snap.db).unwrap_or(f32::NEG_INFINITY);
-                    decimate_signal(&snap.db, floor_db + SPECTRUM_SIGNAL_MARGIN_DB, &mut dec);
-                    let (db_min, db_max) = smoother.follow(adaptive_db_window(&dec, &mut window));
-                    quantize_db(&dec, db_min, db_max, &mut quant);
-
-                    let frame = SpectrumFrame {
-                        stream_id,
-                        seq: snap.seq,
-                        timestamp: snap.timestamp,
-                        center_hz: snap.center_hz,
-                        span_hz: snap.span_hz,
-                        db_min,
-                        db_max,
-                        floor_db,
-                        bins: &quant,
-                    }
-                    .encode();
-
-                    if out_tx.send_frame(frame).await.is_err() {
-                        break;
-                    }
-                }
-                Err(broadcast::error::RecvError::Lagged(count)) => {
-                    out_tx.dropped(count);
-                    continue;
-                }
-                Err(broadcast::error::RecvError::Closed) => {
-                    let engine = engine.clone();
-                    let resubscribed =
-                        tokio::task::spawn_blocking(move || engine.subscribe_spectrum(ds, stream))
-                            .await;
-                    if let Ok(Ok(fresh)) = resubscribed {
-                        rx = fresh;
-                        continue;
-                    }
-                    let stopped = ServerEvent::StreamStopped {
-                        stream_id,
-                        kind: StreamKind::Spectrum,
-                    };
-                    let _ = out_tx.send(text_event(&stopped)).await;
-                    break;
-                }
-            }
-        }
-    })
-}
-
 fn spawn_audio(
     stream_id: u16,
     mut rx: broadcast::Receiver<AudioPacket>,
@@ -634,30 +622,48 @@ fn spawn_symbols(
     })
 }
 
+/// Packs a block into sixteen bits a sample against its own peak, which the frame carries as
+/// its scale: the strongest sample keeps full resolution whatever the level of the block.
+fn quantize_iq(samples: &[num_complex::Complex<f32>], out: &mut Vec<i16>) -> f32 {
+    let peak = samples.iter().fold(0f32, |peak, sample| {
+        peak.max(sample.re.abs()).max(sample.im.abs())
+    });
+    let scale = if peak.is_finite() && peak > 0.0 {
+        peak
+    } else {
+        1.0
+    };
+    let gain = f32::from(sdrmm_wire::IQ_FULL_SCALE) / scale;
+    out.clear();
+    out.extend(samples.iter().flat_map(|sample| {
+        [
+            (sample.re * gain).round() as i16,
+            (sample.im * gain).round() as i16,
+        ]
+    }));
+    scale
+}
+
 fn spawn_iq(
     stream_id: u16,
     mut rx: broadcast::Receiver<IqBlock>,
     out_tx: Outbox,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let mut interleaved: Vec<f32> = Vec::new();
+        let mut samples: Vec<i16> = Vec::new();
         loop {
             match rx.recv().await {
                 Ok(mut block) => {
                     out_tx.dropped(newest(&mut rx, &mut block));
-                    interleaved.clear();
-                    interleaved.reserve(block.samples.len() * 2);
-                    for sample in block.samples.iter() {
-                        interleaved.push(sample.re);
-                        interleaved.push(sample.im);
-                    }
+                    let scale = quantize_iq(&block.samples, &mut samples);
                     let frame = IqFrame {
                         stream_id,
                         seq: block.seq,
                         timestamp: block.timestamp,
                         sample_rate: block.sample_rate,
                         center_hz: block.center_hz,
-                        samples: &interleaved,
+                        scale,
+                        samples: &samples,
                     }
                     .encode();
 
@@ -682,30 +688,49 @@ fn spawn_iq(
     })
 }
 
+async fn video_frame(
+    stream_id: u16,
+    packet: &VideoPacket,
+    pictures: &Arc<jpeg::Memo>,
+) -> Option<Result<Vec<u8>, sdrmm_wire::FrameError>> {
+    let (memo, picture) = (pictures.clone(), packet.picture.clone());
+    let jpeg = tokio::task::spawn_blocking(move || memo.encoded(&picture))
+        .await
+        .ok()??;
+    Some(
+        VideoFrame {
+            stream_id,
+            seq: packet.seq,
+            timestamp: packet.timestamp,
+            width: packet.picture.width,
+            height: packet.picture.height,
+            channels: if packet.picture.rgb.is_empty() {
+                sdrmm_wire::VIDEO_GRAY
+            } else {
+                sdrmm_wire::VIDEO_RGB
+            },
+            jpeg: &jpeg,
+        }
+        .encode(),
+    )
+}
+
 fn spawn_video(
     stream_id: u16,
     mut rx: broadcast::Receiver<VideoPacket>,
     out_tx: Outbox,
+    pictures: Arc<jpeg::Memo>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
                 Ok(mut packet) => {
                     out_tx.dropped(newest(&mut rx, &mut packet));
-                    let frame = VideoFrame {
-                        stream_id,
-                        seq: packet.seq,
-                        timestamp: packet.timestamp,
-                        width: packet.picture.width,
-                        height: packet.picture.height,
-                        data: if packet.picture.rgb.is_empty() {
-                            VideoData::Gray(&packet.picture.luma)
-                        } else {
-                            VideoData::Rgb(&packet.picture.rgb)
-                        },
-                    }
-                    .encode();
-
+                    let Some(frame) = video_frame(stream_id, &packet, &pictures).await else {
+                        tracing::warn!(stream_id, "a picture could not be encoded");
+                        out_tx.dropped(1);
+                        continue;
+                    };
                     if out_tx.send_frame(frame).await.is_err() {
                         break;
                     }
@@ -741,8 +766,13 @@ pub(crate) fn encode_event(ev: &ServerEvent) -> Utf8Bytes {
 #[cfg(test)]
 mod tests;
 
-fn spawn_diagnostics(engine: Arc<Engine>, out: Outbox) -> tokio::task::JoinHandle<()> {
+fn spawn_diagnostics(
+    engine: Arc<Engine>,
+    out: Outbox,
+    path: Option<PathProbe>,
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
+        let mut before = path.as_ref().map(|probe| probe());
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
@@ -752,9 +782,15 @@ fn spawn_diagnostics(engine: Arc<Engine>, out: Outbox) -> tokio::task::JoinHandl
             else {
                 break;
             };
+            let now = path.as_ref().map(|probe| probe());
+            let link = before
+                .zip(now)
+                .map(|(before, now)| link_health(before, now));
+            before = now;
             let event = ServerEvent::PipelineHealth {
                 queues,
                 websocket: out.health(),
+                link,
             };
             if out.send(text_event(&event)).await.is_err() {
                 break;

@@ -43,7 +43,24 @@ Clients subscribe to streams over `/api/ws`. The server sends decoded records, s
 progress, levels, node updates, state-change notices, and binary spectrum, audio, video, IQ,
 symbol and surface frames. When it says some state changed, fetch that state again through REST.
 Stream IDs belong to one connection. A client that sends `Present` joins the list of people
-here and can send `Point` to share its pointer, selection, and drags.
+here and can send `Point` to share its pointer, selection, and drags. `PipelineHealth` reports
+the queues and, over WebTransport, the round trip and packet loss of the client's own link.
+
+## WebTransport
+
+`GET /api/transport` names the UDP port and the SHA-256 of the session certificate when the server
+offers WebTransport. Connect to `https://<server>:<port>/api/wt` with that hash in
+`serverCertificateHashes`, and `?token=...` if a token is set. Read the hash before every
+connection; the certificate rotates.
+
+The session carries the same messages as the WebSocket. Each stream message follows its length
+as a little-endian `u32`:
+
+| Carrier | Holds |
+|---|---|
+| The bidirectional stream the client opens | `ClientCommand` up, `ServerEvent` down, as JSON |
+| Datagrams | Audio frames, one each; drop any that arrive behind a newer one |
+| Server streams | The binary frames of one stream ID each, newest first when the link is slow |
 
 A workspace `PUT` sent against an older revision is merged with what others wrote since. A channel
 `PATCH` with a `base` lands only the fields changed from it. Undo and redo act on the caller's own

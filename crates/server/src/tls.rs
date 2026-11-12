@@ -18,6 +18,8 @@ const KEY_FILE: &str = "self-signed.key.pem";
 const NAMES_FILE: &str = "self-signed.names";
 const STAGED_EXTENSION: &str = "new";
 const VALID_DAYS: i64 = 397;
+const PINNED_DAYS: i64 = 12;
+const PINNED_NAME: &str = "localhost";
 const RENEW_AFTER: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 const LOCAL_NAMES: [&str; 3] = ["localhost", "127.0.0.1", "::1"];
 
@@ -166,7 +168,7 @@ fn kept_or_minted(kept: &Kept, names: &[String]) -> Result<Material, TlsError> {
         None => rcgen::KeyPair::generate()?,
     };
     tracing::info!(names = %names.join(", "), "minting a self-signed certificate");
-    let cert = certificate(names, &key)?;
+    let cert = certificate(names, &key, VALID_DAYS)?;
     store(kept, names, &cert, &key)?;
     Ok((read_chain(&kept.cert)?, read_key(&kept.key)?))
 }
@@ -215,18 +217,40 @@ fn issued_for(names_path: &Path, names: &[String]) -> bool {
 #[cfg(test)]
 fn generate(names: &[String]) -> Result<rcgen::CertifiedKey<rcgen::KeyPair>, rcgen::Error> {
     let signing_key = rcgen::KeyPair::generate()?;
-    let cert = certificate(names, &signing_key)?;
+    let cert = certificate(names, &signing_key, VALID_DAYS)?;
     Ok(rcgen::CertifiedKey { cert, signing_key })
 }
 
-fn certificate(names: &[String], key: &rcgen::KeyPair) -> Result<rcgen::Certificate, rcgen::Error> {
+pub(crate) struct Pinned {
+    pub(crate) certificate: Vec<u8>,
+    pub(crate) key: Vec<u8>,
+    pub(crate) sha256: String,
+}
+
+/// A certificate a browser trusts by its hash alone, which it only does for an ECDSA P-256 key
+/// and a validity under two weeks.
+pub(crate) fn pinned() -> Result<Pinned, TlsError> {
+    let key = rcgen::KeyPair::generate()?;
+    let certificate = certificate(&[PINNED_NAME.to_owned()], &key, PINNED_DAYS)?;
+    Ok(Pinned {
+        sha256: sdrmm_wire::phone::hex(&Sha256::digest(certificate.der())),
+        certificate: certificate.der().to_vec(),
+        key: key.serialize_der(),
+    })
+}
+
+fn certificate(
+    names: &[String],
+    key: &rcgen::KeyPair,
+    valid_days: i64,
+) -> Result<rcgen::Certificate, rcgen::Error> {
     let mut params = rcgen::CertificateParams::new(names.to_vec())?;
     params.distinguished_name = distinguished_name();
     let today = jiff::Timestamp::now()
         .to_zoned(jiff::tz::TimeZone::UTC)
         .date();
     let from = today.saturating_sub(jiff::Span::new().days(1));
-    let until = today.saturating_add(jiff::Span::new().days(VALID_DAYS));
+    let until = today.saturating_add(jiff::Span::new().days(valid_days));
     params.not_before = rcgen::date_time_ymd(
         i32::from(from.year()),
         from.month().unsigned_abs(),
@@ -330,6 +354,8 @@ fn fingerprint(cert: &CertificateDer<'_>) -> String {
         .collect::<Vec<_>>()
         .join(":")
 }
+
+pub(crate) mod redirect;
 
 #[cfg(test)]
 mod tests;

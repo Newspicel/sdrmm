@@ -4,7 +4,7 @@
 
 SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 
-## Rust crates (704)
+## Rust crates (709)
 
 | Component | Version | License |
 | --- | --- | --- |
@@ -223,6 +223,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [hermit-abi](https://github.com/hermit-os/hermit-rs) | 0.5.3 | MIT OR Apache-2.0 |
 | [hex](https://github.com/KokaKiwi/rust-hex) | 0.4.3 | MIT OR Apache-2.0 |
 | [hmac](https://github.com/RustCrypto/MACs) | 0.13.0 | MIT OR Apache-2.0 |
+| [httlib-huffman](https://github.com/xpepermint/httlib-rs) | 0.3.4 | MIT |
 | [http](https://github.com/hyperium/http) | 1.5.0 | MIT OR Apache-2.0 |
 | [http-body](https://github.com/hyperium/http-body) | 1.1.0 | MIT |
 | [http-body-util](https://github.com/hyperium/http-body) | 0.1.5 | MIT |
@@ -353,6 +354,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [objc2-system-configuration](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-uniform-type-identifiers](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [object](https://github.com/gimli-rs/object) | 0.40.0 | Apache-2.0 OR MIT |
+| [octets](https://github.com/cloudflare/quiche) | 0.3.7 | BSD-2-Clause |
 | [oid-registry](https://github.com/rusticata/oid-registry.git) | 0.8.1 | MIT OR Apache-2.0 |
 | [once_cell](https://github.com/matklad/once_cell) | 1.21.4 | MIT OR Apache-2.0 |
 | [once_cell_polyfill](https://github.com/polyfill-rs/once_cell_polyfill) | 1.70.2 | MIT OR Apache-2.0 |
@@ -368,6 +370,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [parking_lot_core](https://github.com/Amanieu/parking_lot) | 0.9.12 | MIT OR Apache-2.0 |
 | [paste](https://github.com/dtolnay/paste) | 1.0.15 | MIT OR Apache-2.0 |
 | [pastey](https://github.com/as1100k/pastey) | 0.2.3 | MIT OR Apache-2.0 |
+| [pem](https://github.com/jcreekmore/pem-rs.git) | 3.0.6 | MIT |
 | [pem](https://github.com/jcreekmore/pem-rs.git) | 4.0.0 | MIT |
 | [percent-encoding](https://github.com/servo/rust-url/) | 2.3.2 | MIT OR Apache-2.0 |
 | [phf](https://github.com/rust-phf/rust-phf) | 0.13.1 | MIT |
@@ -683,6 +686,8 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [winresource](https://github.com/BenjaminRi/winresource) | 0.1.34 | MIT |
 | [wit-bindgen](https://github.com/bytecodealliance/wit-bindgen) | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [writeable](https://github.com/unicode-org/icu4x) | 0.6.4 | Unicode-3.0 |
+| [wtransport](https://github.com/BiagioFesta/wtransport) | 0.7.2 | MIT OR Apache-2.0 |
+| [wtransport-proto](https://github.com/BiagioFesta/wtransport) | 0.7.2 | MIT OR Apache-2.0 |
 | [x509-cert](https://github.com/RustCrypto/formats/tree/master/x509-cert) | 0.2.5 | Apache-2.0 OR MIT |
 | [x509-parser](https://github.com/rusticata/x509-parser.git) | 0.18.1 | MIT OR Apache-2.0 |
 | [xattr](https://github.com/Stebalien/xattr) | 1.7.0 | MIT OR Apache-2.0 |
