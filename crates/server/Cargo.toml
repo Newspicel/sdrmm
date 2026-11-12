@@ -13,10 +13,11 @@ workspace = true
 
 # Passthrough to the engine's deliberate minimal-build gates.
 [features]
-default = ["soapy", "sdrplay", "cr8", "rtlsdr", "hackrf", "airspy", "airspyhf", "funcube", "espsdr", "ad936x", "net-client", "gpu-fft"]
+default = ["soapy", "sdrplay", "aaronia", "cr8", "rtlsdr", "hackrf", "airspy", "airspyhf", "funcube", "espsdr", "ad936x", "net-client", "gpu-fft"]
 soapy = ["sdrmm-engine/soapy"]
 sdrplay = ["sdrmm-engine/sdrplay"]
 cr8 = ["sdrmm-engine/cr8"]
+aaronia = ["sdrmm-engine/aaronia"]
 rtlsdr = ["sdrmm-engine/rtlsdr"]
 hackrf = ["sdrmm-engine/hackrf"]
 airspy = ["sdrmm-engine/airspy"]

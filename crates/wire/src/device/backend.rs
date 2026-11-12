@@ -27,6 +27,7 @@ macro_rules! backends {
             (Funcube, "funcube", Local, "FUNcube Dongle", Some("fcdpp"), None),
             (Cr8, "cr8", Local, "CR-8", None, None),
             (Sdrplay, "sdrplay", Local, "SDRplay", None, None),
+            (Aaronia, "aaronia", Local, "Aaronia SPECTRAN", None, None),
             (Soapy, "soapy", Local, "SoapySDR", None, None),
             (Rtltcp, "rtltcp", Network, "rtl_tcp", None, Some("192.168.1.5:1234")),
             (Spyserver, "spyserver", Network, "SpyServer", None, Some("192.168.1.5:5555")),

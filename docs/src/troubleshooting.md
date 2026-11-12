@@ -49,6 +49,9 @@ clients send `Authorization: Bearer <token>`. URLs can carry `?token=...` instea
 **SDRplay:** install the [SDRplay API](https://www.sdrplay.com/downloads/) and start
 `sdrplay_apiService`. An RSPduo in use elsewhere only lists its free modes.
 
+**Aaronia SPECTRAN:** install the RTSA-Suite PRO and close it before opening the radio. On Linux
+run its `setup_udev.sh`.
+
 See [Radios](hardware.md) for each radio's requirements.
 
 ## A radio is plugged in but its node stays disconnected

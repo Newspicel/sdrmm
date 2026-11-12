@@ -89,6 +89,16 @@ const RADIOS: &[UsbIdentity] = &[
         product: None,
         name: "SDRplay RSP",
     },
+    UsbIdentity {
+        vendor: 0x2f72,
+        product: Some(0x0060),
+        name: "SPECTRAN V6",
+    },
+    UsbIdentity {
+        vendor: 0x2f72,
+        product: Some(0x0064),
+        name: "SPECTRAN V6 ECO",
+    },
 ];
 
 fn radio_name(vendor: u16, product: u16) -> Option<&'static str> {
@@ -156,6 +166,7 @@ mod tests {
         assert_eq!(radio_name(0x2cf0, 0x5250), Some("bladeRF 2.0 micro"));
         assert_eq!(radio_name(0x0bda, 0x2838), Some("RTL-SDR"));
         assert_eq!(radio_name(0x1d50, 0x6089), Some("HackRF One"));
+        assert_eq!(radio_name(0x2f72, 0x0064), Some("SPECTRAN V6 ECO"));
     }
 
     #[test]
@@ -168,6 +179,7 @@ mod tests {
     fn anything_else_on_the_bus_is_not_a_radio() {
         assert_eq!(radio_name(0x0bda, 0x2839), None);
         assert_eq!(radio_name(0x1d50, 0x0001), None);
+        assert_eq!(radio_name(0x2f72, 0x01a0), None);
         assert_eq!(radio_name(0x1234, 0x5678), None);
     }
 

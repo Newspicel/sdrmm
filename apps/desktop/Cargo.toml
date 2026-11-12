@@ -20,9 +20,10 @@ path = "src/helper.rs"
 workspace = true
 
 [features]
-default = ["soapy", "sdrplay", "rtlsdr", "hackrf", "airspy", "airspyhf", "funcube", "espsdr", "ad936x", "net-client", "gpu-fft"]
+default = ["soapy", "sdrplay", "aaronia", "rtlsdr", "hackrf", "airspy", "airspyhf", "funcube", "espsdr", "ad936x", "net-client", "gpu-fft"]
 soapy = ["sdrmm-server/soapy", "sdrmm-engine/soapy", "dep:sdrmm-device-soapy"]
 sdrplay = ["sdrmm-server/sdrplay", "sdrmm-engine/sdrplay"]
+aaronia = ["sdrmm-server/aaronia", "sdrmm-engine/aaronia"]
 rtlsdr = ["sdrmm-server/rtlsdr", "sdrmm-engine/rtlsdr"]
 hackrf = ["sdrmm-server/hackrf", "sdrmm-engine/hackrf"]
 airspy = ["sdrmm-server/airspy", "sdrmm-engine/airspy"]
