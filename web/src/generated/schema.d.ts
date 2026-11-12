@@ -3592,7 +3592,7 @@ export interface components {
          *     the stored patch, the doctor and the browser.
          * @enum {string}
          */
-        DeviceBackend: "virtual" | "recording" | "rtlsdr" | "hackrf" | "airspy" | "airspyhf" | "funcube" | "cr8" | "sdrplay" | "soapy" | "rtltcp" | "spyserver" | "sdrconnect" | "kiwisdr" | "ad936x" | "espsdr";
+        DeviceBackend: "virtual" | "recording" | "rtlsdr" | "hackrf" | "airspy" | "airspyhf" | "funcube" | "cr8" | "sdrplay" | "aaronia" | "soapy" | "rtltcp" | "spyserver" | "sdrconnect" | "kiwisdr" | "ad936x" | "espsdr";
         DeviceClaim: {
             device: string;
             node: string;

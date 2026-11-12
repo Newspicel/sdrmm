@@ -21,6 +21,7 @@ members = [
     "crates/device-kiwisdr",
     "crates/device-rtlsdr",
     "crates/device-cr8",
+    "crates/device-aaronia",
     "crates/device-hackrf",
     "crates/device-rtltcp",
     "crates/device-spyserver",
@@ -67,6 +68,7 @@ default-members = [
     "crates/device-kiwisdr",
     "crates/device-rtlsdr",
     "crates/device-cr8",
+    "crates/device-aaronia",
     "crates/device-hackrf",
     "crates/device-rtltcp",
     "crates/device-spyserver",
@@ -122,6 +124,7 @@ sdrmm-device-sdrconnect = { path = "crates/device-sdrconnect" }
 sdrmm-device-kiwisdr = { path = "crates/device-kiwisdr" }
 sdrmm-device-rtlsdr = { path = "crates/device-rtlsdr" }
 sdrmm-device-cr8 = { path = "crates/device-cr8" }
+sdrmm-device-aaronia = { path = "crates/device-aaronia" }
 sdrmm-device-hackrf = { path = "crates/device-hackrf" }
 sdrmm-device-rtltcp = { path = "crates/device-rtltcp" }
 sdrmm-device-spyserver = { path = "crates/device-spyserver" }
@@ -182,9 +185,9 @@ mime_guess = "2"
 # Reads the USB bus without opening devices, so a hotplug check cannot disturb a running stream
 # or wake the vendor SoapySDR modules.
 nusb = "0.2.9"
-# SoapySDR, the SDRplay API and the CR-8 library are all resolved at runtime from wherever their
-# installers put them, so nothing here links or ships them and a machine without one simply
-# reports no hardware of that kind.
+# SoapySDR, the SDRplay API, the CR-8 library and the Aaronia RTSA API are all resolved at
+# runtime from wherever their installers put them, so nothing here links or ships them and a
+# machine without one simply reports no hardware of that kind.
 libloading = "0.9"
 
 # DSP

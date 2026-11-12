@@ -45,6 +45,11 @@
     "reach": "local"
   },
   {
+    "backend": "aaronia",
+    "label": "Aaronia SPECTRAN",
+    "reach": "local"
+  },
+  {
     "backend": "soapy",
     "label": "SoapySDR",
     "reach": "local"

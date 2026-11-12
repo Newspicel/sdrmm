@@ -12,7 +12,7 @@ pub fn release_features() -> [String; 3] {
     [
         "--no-default-features".to_string(),
         "--features".to_string(),
-        "soapy,sdrplay,rtlsdr,hackrf,airspy,airspyhf,funcube,espsdr,ad936x,net-client,gpu-fft"
+        "soapy,sdrplay,aaronia,rtlsdr,hackrf,airspy,airspyhf,funcube,espsdr,ad936x,net-client,gpu-fft"
             .to_string(),
     ]
 }

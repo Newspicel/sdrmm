@@ -36,6 +36,7 @@ Radio / network / recording → DSP engine → audio, events, spectrum, IQ
 | `sdrmm-device-sdrconnect` | SDRplay SDRconnect over its WebSocket API |
 | `sdrmm-device-kiwisdr` | KiwiSDR over its WebSocket API |
 | `sdrmm-device-cr8` | Dragon Labs CR-8 through the vendor SDK, loaded at runtime |
+| `sdrmm-device-aaronia` | Aaronia SPECTRAN V6 through the RTSA API, loaded at runtime |
 | `sdrmm-channels` | Every built-in decoder, each a module with its settings, events and registration, plus the decoder registry and signal synthesis |
 | `sdrmm-plugins` | Loads WASM decoder plugins into the registry |
 | `sdrmm-plugin` | SDK for writing a decoder plugin |
