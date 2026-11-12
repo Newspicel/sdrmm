@@ -40,6 +40,9 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("stitch", Face::fit(360)),
     ("processor", Face::fit(400)),
     ("note", Face::sized(320, 200).min(200, 120)),
+    ("microphone", Face::fit(300)),
+    ("modulator", Face::fit(400)),
+    ("transmit", Face::fit(360)),
 ];
 
 fn as_sent(body: &NodeBody) -> serde_json::Value {

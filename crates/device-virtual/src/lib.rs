@@ -1,16 +1,20 @@
+mod air;
 pub mod bench;
 pub mod generator;
 
 use std::{
-    sync::{Arc, Mutex, atomic::Ordering},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 use arc_swap::ArcSwap;
 use num_complex::Complex;
 use sdrmm_device::{
-    DeviceDriver, DeviceError, RxSink, SdrDevice, SweepPlan, SweepSink, Worker,
-    check_stream_settings, lock, single_rx_sink,
+    DeviceDriver, DeviceError, Direction, DuplexState, RxSink, SdrDevice, SweepPlan, SweepSink,
+    TxStream, TxTurn, Worker, check_stream_settings, lock, single_rx_sink,
 };
 use sdrmm_dsp::scene::{LaneRenderer, LaneSetup};
 use sdrmm_modem::synth::{Catalog, EMPTY_CATALOG};
@@ -514,8 +518,19 @@ pub const MARKER_SHAPES: [MarkerShape; 3] = [
     },
 ];
 
+const TX_GAIN_RANGE: Range = Range {
+    min: -60.0,
+    max: 0.0,
+    step: Some(1.0),
+};
+
 fn marker_capabilities(shape: &MarkerShape) -> Capabilities {
+    let mut gains = band_capabilities().gains;
+    if shape.tx_streams > 0 {
+        gains.push(GainStage::new(GainKind::Tx, TX_GAIN_RANGE));
+    }
     Capabilities {
+        gains,
         duplex: shape.duplex,
         rx_streams: shape.rx_streams,
         tx_streams: shape.tx_streams,
@@ -547,11 +562,17 @@ pub struct MarkerGen {
     settings: DeviceSettings,
     shared: Arc<ArcSwap<MarkerParams>>,
     worker: Worker,
+    duplex: Arc<Mutex<DuplexState>>,
+    antennas: Vec<Arc<air::Antenna>>,
+    quiet_until: Arc<AtomicU64>,
 }
 
 struct MarkerParams {
     sample_rate: f64,
     marker_offsets: Vec<f64>,
+    lane_centers: Vec<f64>,
+    center_hz: f64,
+    tx_gain: f32,
 }
 
 impl MarkerGen {
@@ -563,6 +584,11 @@ impl MarkerGen {
             &capabilities,
         )));
         Self {
+            duplex: Arc::new(Mutex::new(DuplexState::new(capabilities.duplex))),
+            antennas: (0..capabilities.rx_streams)
+                .map(|_| air::Antenna::join())
+                .collect(),
+            quiet_until: Arc::new(AtomicU64::new(0)),
             capabilities,
             settings,
             shared,
@@ -572,10 +598,40 @@ impl MarkerGen {
 }
 
 fn marker_params(settings: &DeviceSettings, capabilities: &Capabilities) -> MarkerParams {
+    let center_hz = settings.center_hz.unwrap_or(DEFAULT_CENTER_HZ);
+    let tx_gain_db = settings
+        .gains
+        .iter()
+        .find(|gain| gain.stage == GainKind::Tx.name())
+        .map_or(0.0, |gain| gain.value_db);
     MarkerParams {
         sample_rate: settings.sample_rate.unwrap_or(DEFAULT_SAMPLE_RATE_HZ),
         marker_offsets: marker_offsets(settings, capabilities),
+        lane_centers: (0..capabilities.rx_streams)
+            .map(|stream| {
+                settings
+                    .for_stream(stream, &capabilities.per_stream)
+                    .center_hz
+                    .unwrap_or(center_hz)
+            })
+            .collect(),
+        center_hz,
+        tx_gain: 10f64.powf(tx_gain_db / 20.0) as f32,
     }
+}
+
+fn validate_tx_gain(settings: &DeviceSettings) -> Result<(), DeviceError> {
+    for gain in &settings.gains {
+        if gain.stage == GainKind::Tx.name()
+            && !(TX_GAIN_RANGE.min..=TX_GAIN_RANGE.max).contains(&gain.value_db)
+        {
+            return Err(DeviceError::Unsupported(format!(
+                "TX gain {} dB outside {} to {} dB",
+                gain.value_db, TX_GAIN_RANGE.min, TX_GAIN_RANGE.max
+            )));
+        }
+    }
+    Ok(())
 }
 
 impl SdrDevice for MarkerGen {
@@ -589,6 +645,7 @@ impl SdrDevice for MarkerGen {
 
     fn apply(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
         validate_tune(&self.capabilities, settings)?;
+        validate_tx_gain(settings)?;
         if let Some(extra) = settings.extra.first() {
             return Err(DeviceError::Unsupported(format!("extra `{}`", extra.name)));
         }
@@ -596,6 +653,39 @@ impl SdrDevice for MarkerGen {
         self.shared
             .store(Arc::new(marker_params(&self.settings, &self.capabilities)));
         Ok(())
+    }
+
+    fn tx_start_channels(&mut self, channels: &[u32]) -> Result<Box<dyn TxStream>, DeviceError> {
+        let streams = self.capabilities.tx_streams;
+        let distinct = channels
+            .iter()
+            .enumerate()
+            .all(|(index, channel)| !channels[..index].contains(channel));
+        if channels.is_empty() || !distinct || channels.iter().any(|channel| *channel >= streams) {
+            return Err(DeviceError::Unsupported(format!(
+                "this device has {streams} tx streams, got channels {channels:?}"
+            )));
+        }
+        let turn = lock(&self.duplex).claim_tx()?;
+        let shared = self.shared.clone();
+        let duplex = self.duplex.clone();
+        let turns = (turn == TxTurn::Alternating).then(|| air::Turns {
+            quiet_until: self.quiet_until.clone(),
+            antennas: self.antennas.clone(),
+        });
+        Ok(Box::new(air::VirtualTx::new(
+            channels.len(),
+            move || {
+                let params = shared.load();
+                air::Drive {
+                    center_hz: params.center_hz,
+                    rate: params.sample_rate,
+                    gain: params.tx_gain,
+                }
+            },
+            turns,
+            move || lock(&duplex).release(Direction::Tx),
+        )))
     }
 
     fn rx_start(&mut self, sinks: Vec<RxSink>) -> Result<(), DeviceError> {
@@ -606,8 +696,11 @@ impl SdrDevice for MarkerGen {
                 sinks.len()
             )));
         }
+        lock(&self.duplex).claim(Direction::Rx)?;
         let shared = self.shared.clone();
-        self.worker.start("sdrmm-marker-rx", move |running| {
+        let antennas = self.antennas.clone();
+        let quiet_until = self.quiet_until.clone();
+        let started = self.worker.start("sdrmm-marker-rx", move |running| {
             let mut lanes: Vec<(Generator, RxSink)> = sinks
                 .into_iter()
                 .enumerate()
@@ -627,6 +720,15 @@ impl SdrDevice for MarkerGen {
                         .unwrap_or_else(|| stream_marker_offset_hz(stream as u32));
                     generator.set_marker_offset_hz(offset);
                     generator.fill(&mut block, params.sample_rate);
+                    if air::now_ns() < quiet_until.load(Ordering::Acquire) {
+                        sink.dropped(n as u64);
+                        continue;
+                    }
+                    if let (Some(antenna), Some(center)) =
+                        (antennas.get(stream), params.lane_centers.get(stream))
+                    {
+                        antenna.add_to(&mut block, *center, params.sample_rate);
+                    }
                     sink.push(&block);
                 }
 
@@ -638,11 +740,16 @@ impl SdrDevice for MarkerGen {
                     next = now;
                 }
             }
-        })
+        });
+        if started.is_err() {
+            lock(&self.duplex).release(Direction::Rx);
+        }
+        started
     }
 
     fn rx_stop(&mut self) {
         self.worker.stop();
+        lock(&self.duplex).release(Direction::Rx);
     }
 }
 
@@ -1004,6 +1111,162 @@ mod tests {
         let infos = driver.probe();
         let info = infos.iter().find(|info| info.key == key).expect("probed");
         driver.open(info).expect("open")
+    }
+
+    fn tuned(key: &str, center_hz: f64) -> Box<dyn SdrDevice> {
+        let mut dev = open_virtual(key);
+        dev.apply(&DeviceSettings {
+            center_hz: Some(center_hz),
+            ..DeviceSettings::default()
+        })
+        .expect("tune");
+        dev
+    }
+
+    type Heard = Arc<Mutex<Vec<(u64, Vec<Complex<f32>>)>>>;
+
+    fn listening(dev: &mut dyn SdrDevice) -> Heard {
+        let heard: Heard = Arc::new(Mutex::new(Vec::new()));
+        let sinks = (0..dev.capabilities().rx_streams)
+            .map(|stream| {
+                let log = heard.clone();
+                RxSink::new(move |samples: &[Complex<f32>], index| {
+                    if stream == 0 {
+                        lock(&log).push((index, samples.to_vec()));
+                    }
+                })
+            })
+            .collect();
+        dev.rx_start(sinks).expect("receive");
+        heard
+    }
+
+    fn carrier(offset_hz: f64, seconds: f64) -> Vec<Complex<f32>> {
+        (0..(DEFAULT_SAMPLE_RATE_HZ * seconds) as usize)
+            .map(|n| {
+                let phase = std::f64::consts::TAU * offset_hz * n as f64 / DEFAULT_SAMPLE_RATE_HZ;
+                Complex::new(phase.cos() as f32, phase.sin() as f32) * 0.5
+            })
+            .collect()
+    }
+
+    fn transmit(stream: &mut dyn TxStream, samples: &[Complex<f32>]) {
+        let mut sent = 0;
+        while sent < samples.len() {
+            sent += stream
+                .write(&samples[sent..], Duration::from_millis(100), true)
+                .expect("write");
+        }
+    }
+
+    fn loudest_at(heard: &Heard, offset_hz: f64) -> f32 {
+        lock(heard)
+            .iter()
+            .map(|(_, block)| {
+                block
+                    .iter()
+                    .enumerate()
+                    .map(|(n, sample)| {
+                        let phase =
+                            -std::f64::consts::TAU * offset_hz * n as f64 / DEFAULT_SAMPLE_RATE_HZ;
+                        sample * Complex::new(phase.cos() as f32, phase.sin() as f32)
+                    })
+                    .sum::<Complex<f32>>()
+                    .norm()
+                    / block.len() as f32
+            })
+            .fold(0.0, f32::max)
+    }
+
+    #[test]
+    fn a_full_duplex_radio_hears_its_own_transmitter_at_the_set_gain() {
+        const TONE_HZ: f64 = 410_000.0;
+        let mut dev = tuned("transceiver", 433_000_000.0);
+        let heard = listening(dev.as_mut());
+        let mut tx = dev.tx_start().expect("transmit beside receive");
+        transmit(tx.as_mut(), &carrier(TONE_HZ, 0.3));
+        std::thread::sleep(Duration::from_millis(400));
+        let full = loudest_at(&heard, TONE_HZ);
+        assert!((0.45..0.55).contains(&full), "loopback level {full}");
+
+        lock(&heard).clear();
+        dev.apply(&DeviceSettings {
+            gains: vec![sdrmm_wire::GainValue::new(GainKind::Tx, -20.0)],
+            ..DeviceSettings::default()
+        })
+        .expect("tx gain");
+        transmit(tx.as_mut(), &carrier(TONE_HZ, 0.3));
+        std::thread::sleep(Duration::from_millis(400));
+        let backed_off = loudest_at(&heard, TONE_HZ);
+        assert!(
+            (0.045..0.055).contains(&backed_off),
+            "level at -20 dB {backed_off}"
+        );
+        tx.stop().expect("stop");
+        dev.rx_stop();
+    }
+
+    #[test]
+    fn a_half_duplex_radio_goes_deaf_for_the_burst_and_another_radio_hears_it() {
+        const TONE_HZ: f64 = -380_000.0;
+        const CENTER_HZ: f64 = 915_000_000.0;
+        let mut talker = tuned("halfduplex", CENTER_HZ);
+        let mut listener = tuned("transceiver", CENTER_HZ);
+        let own = listening(talker.as_mut());
+        let other = listening(listener.as_mut());
+        let mut tx = talker.tx_start().expect("takes turns with the receiver");
+        std::thread::sleep(Duration::from_millis(100));
+        transmit(tx.as_mut(), &carrier(TONE_HZ, 0.3));
+        std::thread::sleep(Duration::from_millis(500));
+        tx.stop().expect("stop");
+        talker.rx_stop();
+        listener.rx_stop();
+
+        assert!(
+            loudest_at(&other, TONE_HZ) > 0.45,
+            "the other radio is deaf"
+        );
+        assert!(loudest_at(&own, TONE_HZ) < 0.01, "the talker heard itself");
+        let blocks = lock(&own);
+        let gap = blocks
+            .windows(2)
+            .map(|pair| pair[1].0 - (pair[0].0 + pair[0].1.len() as u64))
+            .max()
+            .expect("blocks");
+        let burst = (0.25 * DEFAULT_SAMPLE_RATE_HZ) as u64;
+        assert!(gap >= burst, "receive gap of {gap} samples");
+        assert!(
+            blocks.last().expect("blocks").0 > blocks[0].0 + gap,
+            "receive did not resume"
+        );
+    }
+
+    #[test]
+    fn transmit_is_refused_where_the_shape_has_no_such_stream() {
+        let mut quad = open_virtual("quad");
+        assert!(matches!(quad.tx_start(), Err(DeviceError::Unsupported(_))));
+        let mut dev = open_virtual("transceiver");
+        for channels in [&[][..], &[2], &[0, 0]] {
+            assert!(
+                matches!(
+                    dev.tx_start_channels(channels),
+                    Err(DeviceError::Unsupported(_))
+                ),
+                "{channels:?}"
+            );
+        }
+        let both = dev.tx_start_channels(&[0, 1]).expect("both streams");
+        assert!(matches!(dev.tx_start(), Err(DeviceError::AlreadyStreaming)));
+        drop(both);
+        dev.tx_start()
+            .expect("free again once the stream is dropped");
+        assert!(
+            dev.apply(&DeviceSettings {
+                gains: vec![sdrmm_wire::GainValue::new(GainKind::Tx, 3.0)],
+                ..DeviceSettings::default()
+            })
+            .is_err()
+        );
     }
 
     #[test]

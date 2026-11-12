@@ -65,6 +65,12 @@ pub struct ChannelDescriptor {
     pub has_video: bool,
     #[serde(default)]
     pub can_transmit: bool,
+    /// The transmitter modulates an audio wire.
+    #[serde(default)]
+    pub transmits_audio: bool,
+    /// The form of one message the transmitter sends, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub message: Vec<SettingField>,
     #[serde(default)]
     pub needs_position: bool,
     /// Signal ID can name this decoder's signal: it has `signatures`.
@@ -140,6 +146,8 @@ impl Default for ChannelDescriptor {
             calls: None,
             has_video: false,
             can_transmit: false,
+            transmits_audio: false,
+            message: Vec::new(),
             needs_position: false,
             identifiable: false,
             signatures: Vec::new(),

@@ -16,5 +16,6 @@ mod network_export;
 mod radar_hardware;
 mod record_replay;
 mod sources;
+mod transmit;
 mod trunking;
 mod video;

@@ -19,6 +19,8 @@ import { ExportFace } from "./ExportFace";
 import { GpsFace } from "./GpsFace";
 import { HuntFace } from "./HuntFace";
 import { MapFace } from "./MapFace";
+import { MicrophoneFace } from "./MicrophoneFace";
+import { ModulatorFace } from "./ModulatorFace";
 import { NetworkExportFace } from "./NetworkExportFace";
 import { CanvasSurface } from "./NodeShell";
 import { NoteFace } from "./NoteFace";
@@ -38,6 +40,7 @@ import { SpatialSpectrumFace } from "./SpatialSpectrumFace";
 import { SpeakerFace } from "./SpeakerFace";
 import { SpectrumMonitorFace } from "./SpectrumMonitorFace";
 import { StitchFace } from "./StitchFace";
+import { TransmitFace } from "./TransmitFace";
 import { TriangulationFace } from "./TriangulationFace";
 import { TrunkFace } from "./TrunkFace";
 import { VideoFace } from "./VideoFace";
@@ -93,6 +96,9 @@ export const NODE_TYPES: Record<NodeKind, ComponentType<NodeProps<Node<FlowData>
   correlator: mount(CorrelatorFace),
   polarimeter: mount(PolarimeterFace),
   processor: mount(PluginProcessorFace),
+  microphone: mount(MicrophoneFace),
+  modulator: mount(ModulatorFace),
+  transmit: mount(TransmitFace),
   note: mount(NoteFace),
 };
 
@@ -135,6 +141,9 @@ export const FACES: Record<NodeKind, Face> = {
   correlator: CorrelatorFace,
   polarimeter: PolarimeterFace,
   processor: PluginProcessorFace,
+  microphone: MicrophoneFace,
+  modulator: ModulatorFace,
+  transmit: TransmitFace,
   note: NoteFace,
 };
 

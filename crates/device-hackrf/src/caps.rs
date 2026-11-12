@@ -19,6 +19,7 @@ const LNA_STEP_DB: f64 = 8.0;
 const VGA_MAX_DB: f64 = 62.0;
 const VGA_STEP_DB: f64 = 2.0;
 const AMP_DB: f64 = 14.0;
+const TX_VGA_MAX_DB: f64 = 47.0;
 
 pub(crate) fn capabilities() -> Capabilities {
     Capabilities {
@@ -58,6 +59,14 @@ pub(crate) fn capabilities() -> Capabilities {
                     step: Some(VGA_STEP_DB),
                 },
             ),
+            GainStage::new(
+                GainKind::Tx,
+                Range {
+                    min: 0.0,
+                    max: TX_VGA_MAX_DB,
+                    step: Some(1.0),
+                },
+            ),
         ],
         antennas: vec![ANTENNA.to_string()],
         bandwidths: FILTER_WIDTHS_HZ.iter().copied().map(f64::from).collect(),
@@ -90,6 +99,7 @@ pub(crate) struct Applied {
     pub(crate) filter: Option<FilterWidth>,
     pub(crate) lna_gain_db: Option<u8>,
     pub(crate) vga_gain_db: Option<u8>,
+    pub(crate) tx_vga_gain_db: Option<u8>,
     pub(crate) amp: Option<bool>,
     pub(crate) bias_tee: Option<bool>,
 }
@@ -148,6 +158,7 @@ pub(crate) fn validate(
         match stage.kind {
             GainKind::Lna => applied.lna_gain_db = Some(snapped.round() as u8),
             GainKind::Vga => applied.vga_gain_db = Some(snapped.round() as u8),
+            GainKind::Tx => applied.tx_vga_gain_db = Some(snapped.round() as u8),
             GainKind::Amp => applied.amp = Some(snapped > 0.0),
             _ => {
                 return Err(DeviceError::Unsupported(format!(
@@ -210,6 +221,7 @@ pub(crate) fn settings_from_config(config: &Config) -> DeviceSettings {
             GainValue::new(GainKind::Lna, f64::from(config.lna_gain_db)),
             GainValue::new(GainKind::Amp, if config.amp_enabled { AMP_DB } else { 0.0 }),
             GainValue::new(GainKind::Vga, f64::from(config.vga_gain_db)),
+            GainValue::new(GainKind::Tx, f64::from(config.tx_vga_gain_db)),
         ],
         extra: Vec::new(),
         streams: Vec::new(),
@@ -251,7 +263,9 @@ mod tests {
                 step: None
             }]
         );
-        assert_eq!(caps.gains.len(), 3);
+        assert_eq!(caps.gains.len(), 4);
+        assert_eq!(caps.gains[3].kind, GainKind::Tx);
+        assert_eq!(caps.gains[3].range.max, 47.0);
         assert_eq!(caps.gains[0].name, "LNA");
         assert_eq!(caps.gains[0].kind, GainKind::Lna);
         assert_eq!(caps.gains[0].range.step, Some(8.0));
@@ -330,6 +344,7 @@ mod tests {
                 gain(GainKind::Lna, 24.0),
                 gain(GainKind::Amp, 14.0),
                 gain(GainKind::Vga, 20.0),
+                gain(GainKind::Tx, 30.4),
             ],
             ..DeviceSettings::default()
         };
@@ -341,6 +356,7 @@ mod tests {
                 filter: Some(FilterWidth::Hz(5_000_000)),
                 lna_gain_db: Some(24),
                 vga_gain_db: Some(20),
+                tx_vga_gain_db: Some(30),
                 amp: Some(true),
                 bias_tee: Some(false),
             }
@@ -654,7 +670,7 @@ mod tests {
             sample_rate_hz: 2_000_000,
             lna_gain_db: 16,
             vga_gain_db: 30,
-            tx_vga_gain_db: 0,
+            tx_vga_gain_db: 12,
             filter: FilterWidth::Hz(1_750_000),
             amp_enabled: true,
             bias_tee_enabled: false,
@@ -670,7 +686,8 @@ mod tests {
             vec![
                 gain(GainKind::Lna, 16.0),
                 gain(GainKind::Amp, 14.0),
-                gain(GainKind::Vga, 30.0)
+                gain(GainKind::Vga, 30.0),
+                gain(GainKind::Tx, 12.0),
             ],
             "the amp reports as the stage it is, at the gain it contributes"
         );

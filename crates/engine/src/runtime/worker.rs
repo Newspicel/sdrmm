@@ -55,6 +55,7 @@ pub(super) enum Retired {
     Channel(Box<ChannelHost>),
     Recording(Option<RecorderTap>, Option<RecordingPublisher>),
     Network(NetworkExportTap),
+    Feed(crate::transmit::TxFeedTap),
     History(TimeMachineTap),
     AudioTaps(Option<AudioTaps>),
 }
@@ -67,6 +68,7 @@ impl Retired {
             Self::Channel(host) => drop(host),
             Self::Recording(tap, publisher) => release_recording(tap, publisher),
             Self::Network(tap) => drop(tap),
+            Self::Feed(tap) => drop(tap),
             Self::History(tap) => drop(tap),
             Self::AudioTaps(taps) => drop(taps),
         }
@@ -116,6 +118,7 @@ pub(super) fn dsp_loop(
     let mut tap: Option<RecorderTap> = None;
     let mut recording_publisher: Option<RecordingPublisher> = None;
     let mut network_tap: Option<NetworkExportTap> = None;
+    let mut transmit_feed: Option<crate::transmit::TxFeedTap> = None;
     let mut history: Option<TimeMachineTap> = None;
     let mut seq: u32 = 0;
     let mut publish = |frame: SpectrumFrame, db: &[f32]| {
@@ -137,6 +140,7 @@ pub(super) fn dsp_loop(
                 monitors: &mut monitors,
                 tap: &mut tap,
                 network_tap: &mut network_tap,
+                transmit_feed: &mut transmit_feed,
                 history: &mut history,
                 recording_publisher: &mut recording_publisher,
             },
@@ -178,6 +182,12 @@ pub(super) fn dsp_loop(
                 && let Some(network) = network_tap.take()
             {
                 slot.retire(Retired::Network(network));
+            }
+            if transmit_feed.as_mut().is_some_and(|feed| !feed.push(slice))
+                && let Some(slot) = retirement.slot()
+                && let Some(feed) = transmit_feed.take()
+            {
+                slot.retire(Retired::Feed(feed));
             }
             if history
                 .as_mut()
@@ -223,6 +233,7 @@ struct CommandSinks<'a> {
     monitors: &'a mut Vec<(u64, Box<crate::monitor::MonitorTap>)>,
     tap: &'a mut Option<RecorderTap>,
     network_tap: &'a mut Option<NetworkExportTap>,
+    transmit_feed: &'a mut Option<crate::transmit::TxFeedTap>,
     history: &'a mut Option<TimeMachineTap>,
     recording_publisher: &'a mut Option<RecordingPublisher>,
 }
@@ -238,6 +249,7 @@ fn drain_commands(
         monitors,
         tap,
         network_tap,
+        transmit_feed,
         history,
         recording_publisher,
     } = sinks;
@@ -379,6 +391,33 @@ fn drain_commands(
                     slot.retire(Retired::Network(old));
                 }
             }
+            DspCommand::StartTransmitFeed { tap: armed } => {
+                if let Some(old) = transmit_feed.replace(armed) {
+                    slot.retire(Retired::Feed(old));
+                }
+            }
+            DspCommand::StopTransmitFeed => {
+                if let Some(old) = transmit_feed.take() {
+                    slot.retire(Retired::Feed(old));
+                }
+            }
+            DspCommand::StartChannelTransmitFeed { id, tap: armed } => {
+                match channels.iter_mut().find(|(existing, _)| *existing == id) {
+                    Some((_, host)) => {
+                        if let Some(old) = host.set_transmit_feed(Some(armed)) {
+                            slot.retire(Retired::Feed(old));
+                        }
+                    }
+                    None => slot.retire(Retired::Feed(armed)),
+                }
+            }
+            DspCommand::StopChannelTransmitFeed { id } => {
+                if let Some((_, host)) = channels.iter_mut().find(|(existing, _)| *existing == id)
+                    && let Some(old) = host.set_transmit_feed(None)
+                {
+                    slot.retire(Retired::Feed(old));
+                }
+            }
             DspCommand::StartTimeMachine { tap: armed } => {
                 if let Some(old) = history.replace(*armed) {
                     slot.retire(Retired::History(old));
@@ -429,6 +468,7 @@ mod tests {
                     monitors: &mut monitors,
                     tap: &mut tap,
                     network_tap: &mut network_tap,
+                    transmit_feed: &mut None,
                     history: &mut history,
                     recording_publisher: &mut recording_publisher,
                 },

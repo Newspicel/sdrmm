@@ -137,6 +137,11 @@ fn a_plugin_reports_health_and_view_hints_like_a_built_in() {
 fn a_plugin_transmits_what_its_own_receiver_hears() {
     let decoder = decoder();
     assert!(decoder.descriptor().can_transmit);
+    assert_eq!(decoder.descriptor().message.len(), 1);
+    let Ok(TxPayload::Frame(form)) = decoder.compose(&serde_json::json!({"text": "CQ"})) else {
+        panic!("the beacon's form composes to a frame");
+    };
+    assert_eq!(form, br#"{"text":"CQ"}"#);
     let settings = decoder.descriptor().defaults.clone().expect("defaults");
     let ctx = ChannelCtx {
         input_rate: RATE_HZ,

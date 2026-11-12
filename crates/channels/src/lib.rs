@@ -75,7 +75,6 @@ pub mod symbols;
 mod tetra;
 mod tetrapol;
 pub mod tone_squelch;
-mod tx;
 mod vdl2;
 mod voice_inversion;
 mod vor;
@@ -263,7 +262,7 @@ pub use radiosonde::{
 pub use rds::RdsUpdate;
 pub use registry::{
     ChannelLayout, Decoder, Native, Registry, Trunking, Tuned, audio_channels, channel_filter,
-    check, create, create_tx, default_settings, descriptor, descriptors, input_rate,
+    check, compose, create, create_tx, default_settings, descriptor, descriptors, input_rate,
     install_plugins, layout, normalize, occupied_band, registry, trunking, tune,
 };
 pub use remote_id::{
@@ -387,6 +386,12 @@ pub enum ChannelError {
     Refused(&'static str),
     #[error("{0}")]
     Unsupported(String),
+}
+
+impl From<sdrmm_modem::keying::QueueFull> for ChannelError {
+    fn from(full: sdrmm_modem::keying::QueueFull) -> Self {
+        Self::InvalidPayload(full.to_string())
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -895,6 +900,30 @@ mod tests {
             let built = create(ctx, &home_settings(&d.type_id));
             assert!(built.is_ok(), "{}: {:?}", d.type_id, built.err());
         }
+    }
+
+    #[test]
+    fn every_transmitter_is_fed_by_audio_or_by_its_message_form() {
+        for d in descriptors() {
+            assert_eq!(
+                d.can_transmit,
+                d.transmits_audio != !d.message.is_empty(),
+                "{}: audio {} message fields {}",
+                d.type_id,
+                d.transmits_audio,
+                d.message.len()
+            );
+            let composed = compose(&d.type_id, &serde_json::json!({}));
+            if d.message.is_empty() {
+                assert!(
+                    matches!(composed, Err(ChannelError::InvalidPayload(_))),
+                    "{} sends no messages",
+                    d.type_id
+                );
+            }
+        }
+        assert_eq!(descriptor("aprs").expect("aprs").message.len(), 4);
+        assert!(descriptor("nfm").expect("nfm").transmits_audio);
     }
 
     #[test]

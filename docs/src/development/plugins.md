@@ -54,6 +54,10 @@ Set `can_transmit` on the descriptor, implement `Transmitter` and call `export_t
 `submit()` takes audio or a frame, `generate()` fills baseband at the input rate. The example's
 `Beacon` sends frames as two-tone FSK.
 
+A Modulator node feeds it. Set `transmits_audio` to take an audio wire. List fields in the
+descriptor's `message` to get a form with a Send button: each filled form arrives as UTF-8 JSON
+in a frame. The example's `Beacon` declares one text field and keys what is typed into it.
+
 ## Array processors
 
 A plugin can also bring an array processor: it runs on every lane of an Array node at once, like

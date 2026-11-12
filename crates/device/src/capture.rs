@@ -1,7 +1,7 @@
 use std::{
     ops::Deref,
     sync::{
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -104,10 +104,92 @@ impl CaptureConfig {
     }
 }
 
+const HOLD_POLL: Duration = Duration::from_millis(10);
+
+#[derive(Debug, Default)]
+struct HoldState {
+    wanted: AtomicBool,
+    capturing: AtomicBool,
+    parked: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl HoldState {
+    fn wanted(&self) -> bool {
+        self.wanted.load(Ordering::Acquire)
+    }
+
+    fn set_parked(&self, parked: bool) {
+        *lock(&self.parked) = parked;
+        self.changed.notify_all();
+    }
+
+    /// Waits with the stream disarmed until the transmitter lets go or the capture stops.
+    fn park(&self, running: &AtomicBool) {
+        self.set_parked(true);
+        let mut parked = lock(&self.parked);
+        while self.wanted() && running.load(Ordering::Acquire) {
+            parked = self
+                .changed
+                .wait_timeout(parked, HOLD_POLL)
+                .map_or_else(|poisoned| poisoned.into_inner().0, |(guard, _)| guard);
+        }
+        *parked = false;
+    }
+}
+
+/// Lets a half-duplex radio's transmitter take the front end from a running capture: the
+/// capture disarms, waits, and re-arms into the same sink with the gap booked.
+#[derive(Clone)]
+pub struct RxHold {
+    state: Arc<HoldState>,
+    interrupt: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl std::fmt::Debug for RxHold {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RxHold")
+            .field("wanted", &self.state.wanted())
+            .finish_non_exhaustive()
+    }
+}
+
+impl RxHold {
+    /// Returns once the receiver is off the front end, at once when none is running.
+    pub fn hold(&self, timeout: Duration) -> Result<(), DeviceError> {
+        self.state.wanted.store(true, Ordering::Release);
+        (self.interrupt)();
+        let deadline = Instant::now() + timeout;
+        let mut parked = lock(&self.state.parked);
+        while !*parked && self.state.capturing.load(Ordering::Acquire) {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                drop(parked);
+                self.release();
+                return Err(DeviceError::Io(
+                    "the receiver did not yield to the transmitter".to_string(),
+                ));
+            }
+            parked = self
+                .state
+                .changed
+                .wait_timeout(parked, left.min(HOLD_POLL))
+                .map_or_else(|poisoned| poisoned.into_inner().0, |(guard, _)| guard);
+        }
+        Ok(())
+    }
+
+    pub fn release(&self) {
+        self.state.wanted.store(false, Ordering::Release);
+        self.state.changed.notify_all();
+    }
+}
+
 pub struct Capture<R: CaptureRadio> {
     worker: Worker,
     stop: Arc<Mutex<Option<<R::Stream as CaptureStream>::Stop>>>,
     radio: Option<Arc<R>>,
+    hold: Arc<HoldState>,
 }
 
 impl<R: CaptureRadio> std::fmt::Debug for Capture<R> {
@@ -124,6 +206,7 @@ impl<R: CaptureRadio> Default for Capture<R> {
             worker: Worker::new(),
             stop: Arc::new(Mutex::new(None)),
             radio: None,
+            hold: Arc::default(),
         }
     }
 }
@@ -137,6 +220,20 @@ impl<R: CaptureRadio> Capture<R> {
     #[must_use]
     pub fn is_running(&self) -> bool {
         self.worker.is_running()
+    }
+
+    #[must_use]
+    pub fn hold_handle(&self) -> RxHold {
+        let stop = self.stop.clone();
+        RxHold {
+            state: self.hold.clone(),
+            interrupt: Arc::new(move || {
+                let stop = lock(&stop).clone();
+                if let Some(stop) = stop {
+                    stop.stop();
+                }
+            }),
+        }
     }
 
     pub fn start<C: SampleConverter>(
@@ -159,8 +256,17 @@ impl<R: CaptureRadio> Capture<R> {
         *lock(&self.stop) = Some(stream.stop_handle());
         let stop = self.stop.clone();
         let armed = radio.clone();
+        let hold = self.hold.clone();
         let started = self.worker.start(config.thread_name, move |running| {
-            supervise(stream, &*armed, &stop, running, sink, converter, &config);
+            hold.capturing.store(true, Ordering::Release);
+            let shared = Shared {
+                published: &stop,
+                running,
+                hold: &hold,
+            };
+            supervise(stream, &*armed, &shared, sink, converter, &config);
+            hold.capturing.store(false, Ordering::Release);
+            hold.set_parked(false);
         });
         match started {
             Ok(()) => {
@@ -198,15 +304,26 @@ impl<R: CaptureRadio> Drop for Capture<R> {
     }
 }
 
+/// What a running capture shares with the device that owns it.
+struct Shared<'a, S: StopHandle> {
+    published: &'a Mutex<Option<S>>,
+    running: &'a AtomicBool,
+    hold: &'a HoldState,
+}
+
 fn supervise<R: CaptureRadio, C: SampleConverter>(
     mut stream: R::Stream,
     radio: &R,
-    published: &Mutex<Option<<R::Stream as CaptureStream>::Stop>>,
-    running: &AtomicBool,
+    shared: &Shared<'_, <R::Stream as CaptureStream>::Stop>,
     mut sink: RxSink,
     mut converter: C,
     config: &CaptureConfig,
 ) {
+    let Shared {
+        published,
+        running,
+        hold,
+    } = *shared;
     let mut policy = config.restart;
     let mut dropped = 0u64;
     loop {
@@ -218,11 +335,36 @@ fn supervise<R: CaptureRadio, C: SampleConverter>(
             &mut converter,
             &mut dropped,
             config,
+            &hold.wanted,
         ) else {
             break;
         };
         if !running.load(Ordering::Acquire) {
             break;
+        }
+        if hold.wanted() {
+            let held = Instant::now();
+            drop(stream);
+            radio.disarm();
+            converter.reset();
+            hold.park(running);
+            let Some(fresh) = rearm(
+                radio,
+                running,
+                &mut policy,
+                &mut sink,
+                config,
+                Duration::ZERO,
+            ) else {
+                break;
+            };
+            *lock(published) = Some(fresh.stop_handle());
+            let lost = (held.elapsed().as_secs_f64() * config.sample_rate).ceil() as u64;
+            sink.dropped_estimate(lost, lost, GapScope::Lane);
+            sink.realigned(Uncertainty::Rearmed, UNKNOWN_ERROR, GapScope::Lane);
+            dropped = 0;
+            stream = fresh;
+            continue;
         }
         if failure.gone {
             sink.fail(DeviceError::Disconnected(failure.reason));
@@ -312,7 +454,17 @@ pub fn drain_stream<S: CaptureStream, C: SampleConverter>(
     config: &CaptureConfig,
 ) -> Option<StreamFailure> {
     let mut dropped = 0;
-    drain(stream, running, sink, converter, &mut dropped, config).map(|(failure, _)| failure)
+    let unheld = AtomicBool::new(false);
+    drain(
+        stream,
+        running,
+        sink,
+        converter,
+        &mut dropped,
+        config,
+        &unheld,
+    )
+    .map(|(failure, _)| failure)
 }
 
 fn drain<S: CaptureStream, C: SampleConverter>(
@@ -322,10 +474,20 @@ fn drain<S: CaptureStream, C: SampleConverter>(
     converter: &mut C,
     dropped: &mut u64,
     config: &CaptureConfig,
+    held: &AtomicBool,
 ) -> Option<(StreamFailure, Duration)> {
     let chunk_size = config.block_samples.max(1);
     let mut last_block = Instant::now();
     while running.load(Ordering::Acquire) {
+        if held.load(Ordering::Acquire) {
+            return Some((
+                StreamFailure {
+                    reason: "held for the transmitter".to_string(),
+                    gone: false,
+                },
+                last_block.elapsed(),
+            ));
+        }
         match stream.next_block(config.poll) {
             Next::Block(block) => {
                 last_block = Instant::now();
@@ -688,9 +850,12 @@ mod tests {
         );
         let stream = radio.arm().expect("first arm");
         let published = Mutex::new(Some(stream.stop_handle()));
-        supervise(
-            stream, &**radio, &published, &running, sink, converter, &config,
-        );
+        let shared = Shared {
+            published: &published,
+            running: &running,
+            hold: &HoldState::default(),
+        };
+        supervise(stream, &**radio, &shared, sink, converter, &config);
         let (starts, blocks) = block_rx.try_iter().unzip();
         Run {
             blocks,
@@ -706,6 +871,71 @@ mod tests {
             reason: "stalled",
             gone: false,
         }]
+    }
+
+    #[test]
+    fn a_held_capture_leaves_the_front_end_and_resumes_into_the_same_sink() {
+        let radio = FakeRadio::with([vec![Step::Block(vec![1, 2])], vec![Step::Block(vec![3])]]);
+        let (block_tx, block_rx) = mpsc::channel();
+        let (event_tx, event_rx) = mpsc::channel();
+        let sink = RxSink::with_items(
+            move |item: SinkItem<'_>| match item {
+                SinkItem::Samples { samples, index } => {
+                    let _ = block_tx.send((index, samples.len()));
+                }
+                SinkItem::Event(event) => {
+                    let _ = event_tx.send(event);
+                }
+            },
+            |_| {},
+        );
+        let mut capture = Capture::<FakeRadio>::new();
+        let hold = capture.hold_handle();
+        hold.hold(Duration::from_millis(50))
+            .expect("nothing to hold before the capture starts");
+        hold.release();
+        let rate = Some(1_000_000.0);
+        capture
+            .start(
+                radio.clone(),
+                FakeConverter::default(),
+                sink,
+                config().with_sample_rate(rate),
+            )
+            .expect("started");
+        assert_eq!(
+            block_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("first block"),
+            (0, 2)
+        );
+
+        hold.hold(Duration::from_secs(5))
+            .expect("the receiver yields");
+        assert!(!radio.is_armed(), "a held capture left the radio armed");
+        assert_eq!(radio.arms(), 1);
+        std::thread::sleep(Duration::from_millis(20));
+        hold.release();
+
+        let (index, len) = block_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("a block after the hold");
+        assert_eq!(len, 1);
+        assert!(index >= 2 + 20_000, "the hold booked {index} samples");
+        assert_eq!(radio.arms(), 2);
+        let rearmed = event_rx.try_iter().any(|event| {
+            matches!(
+                event,
+                LaneEvent::Uncertain {
+                    cause: Uncertainty::Rearmed,
+                    ..
+                }
+            )
+        });
+        assert!(rearmed, "the lane was not told it re-armed");
+        capture.stop();
+        hold.hold(Duration::from_millis(50))
+            .expect("nothing to hold once the capture stopped");
     }
 
     #[test]

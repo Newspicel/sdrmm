@@ -60,6 +60,7 @@ export function stubWorkspace(harness: FaceHarness): Workspace {
     select: () => {},
     expanded: null,
     expand: () => {},
+    talking: false,
     edit: () => {},
     editSettings: () => {},
     apply: () => {},

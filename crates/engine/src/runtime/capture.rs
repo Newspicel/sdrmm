@@ -497,6 +497,13 @@ impl CaptureRuntime {
             .apply(settings)
     }
 
+    pub(crate) fn tx_start(&mut self) -> Result<Box<dyn sdrmm_device::TxStream>, DeviceError> {
+        self.device
+            .as_mut()
+            .ok_or_else(|| DeviceError::Io("the device has been stopped".to_string()))?
+            .tx_start()
+    }
+
     pub fn agc_gains(&self) -> Result<Vec<sdrmm_wire::AgcGain>, DeviceError> {
         self.device
             .as_ref()

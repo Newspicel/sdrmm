@@ -46,6 +46,7 @@ gpu-fft = ["dep:bytemuck", "dep:pollster", "dep:wgpu"]
 probe = ["sdrmm-channels/probe"]
 
 [dependencies]
+serde_json.workspace = true
 sdrmm-wire.workspace = true
 sdrmm-dsp.workspace = true
 sdrmm-device.workspace = true
@@ -84,5 +85,4 @@ sdrmm-test-support = { workspace = true, features = ["denoise-models"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
 tempfile.workspace = true
 sdrmm-channels = { workspace = true, features = ["synth"] }
-serde_json.workspace = true
 libc.workspace = true

@@ -22,6 +22,7 @@ text field or control. Press `?` or the help button in the top bar to see them i
 | `Ctrl`/`⌘ C` | Copy the selected nodes and the wires between them |
 | `Ctrl`/`⌘ V` | Paste them beside the originals |
 | Backspace or Delete | Delete the selected node or wire |
+| Space | Hold to talk: keys the selected Microphone, or every Microphone when none is selected |
 | `?` | Open help |
 | Escape | Close an overlay or menu, or deselect |
 

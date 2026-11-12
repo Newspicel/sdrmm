@@ -8,8 +8,8 @@ use driver::{BurstQueue, DeviceDescriptor, FilterWidth, HackRf, SweepBlocks, TX_
 pub use driver::{SweepPlan, SweepRange, SweepStyle};
 use sdrmm_device::{
     ByteConverter, Capture, CaptureConfig, CaptureRadio, DeviceDriver, DeviceError, Direction,
-    DuplexState, RxSink, Sample, SampleConverter, SdrDevice, SweepSink, TxStream, Worker, lock,
-    single_rx_sink,
+    DuplexState, RxHold, RxSink, Sample, SampleConverter, SdrDevice, SweepSink, TxStream, TxTurn,
+    Worker, lock, single_rx_sink,
 };
 use sdrmm_usb_stream::{NusbBulkOut, RxStream};
 use sdrmm_wire::{Capabilities, DeviceBackend, DeviceInfo, DeviceSettings};
@@ -20,6 +20,7 @@ mod driver;
 
 const DRIVER_ID: DeviceBackend = DeviceBackend::Hackrf;
 const SWEEP_READ_TIMEOUT: Duration = Duration::from_millis(100);
+const RX_YIELD_TIMEOUT: Duration = Duration::from_secs(2);
 const SWEEP_MAX_RANGES: usize = 10;
 const NOSERIAL_KEY_PREFIX: &str = "noserial-";
 
@@ -234,6 +235,9 @@ fn write_to_hardware(device: &mut HackRf, applied: &caps::Applied) -> Result<(),
     if let Some(db) = applied.vga_gain_db {
         device.set_vga_gain_db(db).map_err(map_err)?;
     }
+    if let Some(db) = applied.tx_vga_gain_db {
+        device.set_tx_vga_gain_db(db).map_err(map_err)?;
+    }
     if let Some(enabled) = applied.amp {
         device.set_amp_enable(enabled).map_err(map_err)?;
     }
@@ -326,19 +330,23 @@ impl SdrDevice for HackRfDevice {
                 "this device has 1 tx stream, got channels {channels:?}"
             )));
         }
-        lock(&self.duplex).claim(Direction::Tx)?;
-        match self.radio.lock().start_tx() {
-            Ok(queue) => Ok(Box::new(HackRfTx {
-                radio: self.radio.clone(),
-                duplex: self.duplex.clone(),
-                queue: Some(queue),
-                bytes: Vec::with_capacity(TX_TRANSFER_SIZE),
-            })),
-            Err(e) => {
-                lock(&self.duplex).release(Direction::Tx);
-                Err(map_err(e))
-            }
+        let turn = lock(&self.duplex).claim_tx()?;
+        let mut stream = HackRfTx {
+            radio: self.radio.clone(),
+            duplex: self.duplex.clone(),
+            queue: None,
+            hold: (turn == TxTurn::Alternating).then(|| self.capture.hold_handle()),
+            stopped: false,
+            bytes: Vec::with_capacity(TX_TRANSFER_SIZE),
+        };
+        if turn == TxTurn::Free
+            && let Err(error) = stream.key()
+        {
+            stream.stopped = true;
+            lock(&self.duplex).release(Direction::Tx);
+            return Err(error);
         }
+        Ok(Box::new(stream))
     }
 }
 
@@ -357,13 +365,6 @@ impl HackRfDevice {
                 Err(map_err(e))
             }
         }
-    }
-
-    pub fn set_tx_gain_db(&mut self, gain_db: u8) -> Result<(), DeviceError> {
-        self.radio
-            .lock()
-            .set_tx_vga_gain_db(gain_db)
-            .map_err(map_err)
     }
 }
 
@@ -474,20 +475,68 @@ impl Drop for HackRfSweep {
     }
 }
 
+/// A transmit stream. Beside a running receiver it takes turns: the first write of a burst holds
+/// the receiver off the front end and the end of the burst hands it back.
 struct HackRfTx {
     radio: Arc<HackRfRadio>,
     duplex: Arc<Mutex<DuplexState>>,
     queue: Option<BurstQueue<NusbBulkOut>>,
+    hold: Option<RxHold>,
+    stopped: bool,
     bytes: Vec<u8>,
 }
 
 impl HackRfTx {
-    fn release(&mut self, queue: BurstQueue<NusbBulkOut>) -> Result<(), DeviceError> {
+    fn key(&mut self) -> Result<(), DeviceError> {
+        if let Some(hold) = &self.hold {
+            hold.hold(RX_YIELD_TIMEOUT)?;
+        }
+        match self.radio.lock().start_tx() {
+            Ok(queue) => {
+                self.queue = Some(queue);
+                Ok(())
+            }
+            Err(error) => {
+                self.yield_to_receiver();
+                Err(map_err(error))
+            }
+        }
+    }
+
+    fn yield_to_receiver(&self) {
+        if let Some(hold) = &self.hold {
+            hold.release();
+        }
+    }
+
+    fn unkey(&mut self, drain: bool) -> Result<(), DeviceError> {
+        let Some(mut queue) = self.queue.take() else {
+            return Ok(());
+        };
+        let drained = if drain {
+            queue.flush_and_drain()
+        } else {
+            Ok(())
+        };
+        if !drain || drained.is_err() {
+            queue.abort();
+        }
         tracing::info!(stats = ?queue.stats(), "hackrf transmit finished");
         drop(queue);
-        let stopped = self.radio.lock().set_mode_off();
+        let off = self.radio.lock().set_mode_off();
+        self.yield_to_receiver();
+        drained.map_err(map_err)?;
+        off.map_err(map_err)
+    }
+
+    fn close(&mut self, drain: bool) -> Result<(), DeviceError> {
+        if self.stopped {
+            return Ok(());
+        }
+        self.stopped = true;
+        let unkeyed = self.unkey(drain);
         lock(&self.duplex).release(Direction::Tx);
-        stopped.map_err(map_err)
+        unkeyed
     }
 }
 
@@ -504,6 +553,15 @@ impl TxStream for HackRfTx {
                 channels.len()
             )));
         };
+        if self.stopped {
+            return Err(DeviceError::Io("transmit stream is stopped".to_string()));
+        }
+        if self.queue.is_none() {
+            if samples.is_empty() {
+                return Ok(0);
+            }
+            self.key()?;
+        }
         let Some(queue) = self.queue.as_mut() else {
             return Err(DeviceError::Io("transmit stream is stopped".to_string()));
         };
@@ -511,30 +569,21 @@ impl TxStream for HackRfTx {
         let bytes = std::mem::take(&mut self.bytes);
         let accepted = queue.write(&bytes, timeout, end_burst);
         self.bytes = bytes;
-        accepted.map(|bytes| bytes / 2).map_err(map_err)
+        let accepted = accepted.map(|bytes| bytes / 2).map_err(map_err)?;
+        if end_burst && accepted == samples.len() && self.hold.is_some() {
+            self.unkey(true)?;
+        }
+        Ok(accepted)
     }
 
     fn stop(&mut self) -> Result<(), DeviceError> {
-        let Some(mut queue) = self.queue.take() else {
-            return Ok(());
-        };
-        let drained = queue.flush_and_drain();
-        if drained.is_err() {
-            queue.abort();
-        }
-        let stopped = self.release(queue);
-        drained.map_err(map_err)?;
-        stopped
+        self.close(true)
     }
 }
 
 impl Drop for HackRfTx {
     fn drop(&mut self) {
-        let Some(mut queue) = self.queue.take() else {
-            return;
-        };
-        queue.abort();
-        if let Err(e) = self.release(queue) {
+        if let Err(e) = self.close(false) {
             tracing::debug!("hackrf tx stop failed: {e}");
         }
     }

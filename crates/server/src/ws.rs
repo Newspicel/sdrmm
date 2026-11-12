@@ -180,6 +180,21 @@ impl Session {
             ClientCommand::PublishPose { fix, error } => self.publish_pose(fix, error).await,
             ClientCommand::Present { author, name } => self.present(&author, &name).await,
             ClientCommand::Point(pointer) => self.point(pointer).await,
+            ClientCommand::Speak { node, pcm } => self.speak(node, &pcm).await,
+        }
+    }
+
+    /// Takes one microphone frame and carries it to the transmitters that microphone keys.
+    async fn speak(&mut self, node: String, pcm: &str) {
+        let Some(pcm) = sdrmm_wire::microphone_pcm(pcm) else {
+            self.send_error("invalid microphone frame").await;
+            return;
+        };
+        let state = self.state.clone();
+        let spoken =
+            tokio::task::spawn_blocking(move || crate::transmit::speak(&state, &node, &pcm)).await;
+        if let Err(error) = spoken {
+            tracing::error!(%error, "carrying microphone audio stopped");
         }
     }
 

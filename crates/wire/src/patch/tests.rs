@@ -721,7 +721,9 @@ fn the_only_type_level_cycles_are_the_guarded_transforms() {
             .filter(|port| port.direction == PortDirection::Out)
             .any(|out| {
                 to.ports.iter().any(|input| {
-                    input.direction == PortDirection::In && wire_allowed(from, out, to, input)
+                    input.direction == PortDirection::In
+                        && input.port_type != PortType::Transmit
+                        && wire_allowed(from, out, to, input)
                 })
             })
     };
@@ -857,13 +859,24 @@ fn a_chain_of_filters_is_not_a_loop() {
 }
 
 #[test]
-fn no_radio_offers_a_transmit_input() {
+fn a_radio_takes_a_transmitter_and_only_a_transmitter_feeds_it() {
     let ports = ports_for("device");
-    assert!(
-        ports
-            .iter()
-            .all(|port| port.direction == PortDirection::Out || port.port_type == PortType::Control)
-    );
+    assert!(ports.iter().all(|port| {
+        port.direction == PortDirection::Out
+            || matches!(port.port_type, PortType::Control | PortType::Transmit)
+    }));
+    let catalog = PatchCatalog::build();
+    let feeders: Vec<&str> = catalog
+        .nodes
+        .iter()
+        .filter(|entry| {
+            entry.ports.iter().any(|port| {
+                port.direction == PortDirection::Out && port.port_type == PortType::Transmit
+            })
+        })
+        .map(|entry| entry.kind.as_str())
+        .collect();
+    assert_eq!(feeders, ["transmit"]);
     let mut retransmit = workspace();
     retransmit
         .nodes
@@ -1897,7 +1910,7 @@ fn the_catalog_offers_one_source_that_opens_a_radio() {
         .expect("device is in the catalog");
     assert_eq!(entry.category, NodeCategory::Source);
     assert!(!entry.needs_channel_type);
-    assert_eq!(entry.ports.len(), 2);
+    assert_eq!(entry.ports.len(), 3);
     for retired in ["recording", "signal_gen"] {
         assert!(NodeKind::parse(retired).is_none(), "{retired} is retired");
     }
@@ -2190,4 +2203,88 @@ fn a_speaker_output_name_is_bounded() {
     assert!(named("ä".repeat(MAX_SPEAKER_OUTPUT_LEN)).valid());
     assert!(!named("x".repeat(MAX_SPEAKER_OUTPUT_LEN + 1)).valid());
     assert!(!named(String::new()).valid());
+}
+
+fn repeater(edges: Vec<PatchEdge>) -> PatchGraph {
+    use crate::transmit::{ModulatorNode, TransmitNode};
+    PatchGraph {
+        nodes: vec![
+            node("radio", NodeBody::Device(DeviceNode::default())),
+            node(
+                "ch",
+                NodeBody::Channel(ChannelNode {
+                    channel_type: "nfm".to_owned(),
+                    tuning_locked: false,
+                }),
+            ),
+            node(
+                "mod",
+                NodeBody::Modulator(ModulatorNode {
+                    channel_type: "nfm".to_owned(),
+                    settings: serde_json::Value::Null,
+                }),
+            ),
+            node("tx", NodeBody::Transmit(TransmitNode::default())),
+        ],
+        edges,
+    }
+}
+
+#[test]
+fn a_radio_may_send_what_it_hears_because_the_antenna_closes_no_loop() {
+    let wires = vec![
+        edge(("radio", "iq"), ("ch", "iq")),
+        edge(("ch", "audio"), ("mod", "audio")),
+        edge(("mod", "baseband"), ("tx", "baseband")),
+        edge(("tx", "transmit"), ("radio", "transmit")),
+    ];
+    repeater(wires.clone()).validate().expect("a repeater");
+    let mut reordered = wires;
+    reordered.rotate_right(1);
+    repeater(reordered)
+        .validate()
+        .expect("the same patch whichever wire came first");
+}
+
+#[test]
+fn a_transmitter_takes_one_source_and_only_it_feeds_a_radio() {
+    assert_eq!(
+        repeater(vec![
+            edge(("radio", "iq"), ("tx", "iq")),
+            edge(("mod", "baseband"), ("tx", "baseband")),
+        ])
+        .validate(),
+        Err(refused(
+            ("mod", "baseband"),
+            ("tx", "baseband"),
+            Refusal::Group
+        ))
+    );
+    assert!(matches!(
+        repeater(vec![edge(("mod", "baseband"), ("radio", "transmit"))]).validate(),
+        Err(PatchError::TypeMismatch { .. })
+    ));
+}
+
+#[test]
+fn a_recording_and_a_generator_have_nothing_to_transmit_from() {
+    let pinned = |backend, key: &str| DeviceRef {
+        backend,
+        serial: None,
+        key: Some(key.to_owned()),
+    };
+    for device in [
+        pinned(DeviceBackend::Recording, "2026-09-16T10-00-00"),
+        pinned(DeviceBackend::Virtual, &crate::patch::generator_key("node")),
+    ] {
+        let body = NodeBody::Device(DeviceNode {
+            device: Some(device),
+            ..DeviceNode::default()
+        });
+        assert!(
+            body.ports(None)
+                .iter()
+                .all(|port| port.port_type != PortType::Transmit)
+        );
+    }
 }

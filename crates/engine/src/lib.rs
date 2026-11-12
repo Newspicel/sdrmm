@@ -63,6 +63,7 @@ mod spectrum;
 mod streams;
 pub mod symbols;
 mod time_machine;
+mod transmit;
 pub mod trunking;
 pub mod video;
 pub use array::{ArrayEvent, ArraySpec, LaneRef, ProcessorAction, ProcessorSpec};
@@ -76,6 +77,7 @@ pub(crate) use planning::{dc_block, descriptor_for};
 pub use recording::FinalizedRecording;
 pub use runtime::SpectrumSnapshot;
 pub use symbols::{SYMBOL_BLOCKS_PER_SEC, SymbolBlock};
+pub use transmit::{TransmitRequest, TransmitSource};
 pub use trunking::TrunkSystem;
 pub use video::{VideoPacket, VideoPicture};
 
@@ -288,6 +290,8 @@ pub enum EngineError {
     RecordingIo(String),
     #[error("network export: {0}")]
     NetworkExport(String),
+    #[error("transmit: {0}")]
+    Transmit(String),
     #[error("scan: {0}")]
     Scan(String),
     #[error("occupancy: {0}")]
@@ -337,6 +341,7 @@ impl EngineError {
             ) | Self::Channel(_)
                 | Self::Recording(_)
                 | Self::NetworkExport(_)
+                | Self::Transmit(_)
                 | Self::Scan(_)
                 | Self::OtherLane
                 | Self::Locked
@@ -662,6 +667,7 @@ struct DeviceSetState {
     baseband_recordings: HashMap<u32, ChannelBasebandRecording>,
     channel_exports: HashMap<u32, NetworkExportState>,
     network_export: Option<NetworkExportState>,
+    transmit: Option<transmit::TransmitState>,
     pre_roll: Option<TimeMachineState>,
     scanners: HashMap<u32, ScannerState>,
     hunts: HashMap<u32, HuntState>,
@@ -812,6 +818,7 @@ impl DeviceSetState {
                 .network_export
                 .as_ref()
                 .map(|export| export.status(overruns)),
+            transmit: self.transmit.as_ref().map(transmit::TransmitState::status),
             pre_roll: self
                 .pre_roll
                 .as_ref()
@@ -1352,6 +1359,7 @@ impl Engine {
             if let Some(history) = &history {
                 state.send_dsp(history.stream, DspCommand::StopTimeMachine);
             }
+            let transmit = state.transmit.take();
             let scanners: Vec<ScannerState> = state.scanners.drain().map(|(_, s)| s).collect();
             let hunts: Vec<HuntState> = state.hunts.drain().map(|(_, h)| h).collect();
             let runtime = state.runtime.clone();
@@ -1363,6 +1371,9 @@ impl Engine {
             }
             for hunt in hunts {
                 hunt.stop_and_join();
+            }
+            if let Some(transmit) = transmit {
+                transmit.halt();
             }
             lock_runtime(&runtime).stop();
             if let Some(recording) = recording {
@@ -1704,6 +1715,9 @@ fn teardown_set(mut removed: DeviceSetState) -> bool {
     }
     for (_, hunt) in removed.hunts.drain() {
         hunt.stop_and_join();
+    }
+    if let Some(transmit) = removed.transmit.take() {
+        transmit.halt();
     }
     lock_runtime(&removed.runtime).stop();
     let mut finalized = removed.recording.take().map(RecordingState::join).is_some();

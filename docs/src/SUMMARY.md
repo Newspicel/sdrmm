@@ -19,6 +19,10 @@
 - [Recording and playback](user-guide/recording.md)
 - [Network export](user-guide/network-iq.md)
 
+# Transmit
+
+- [Transmit](user-guide/transmit.md)
+
 # Location
 
 - [Position and GPS](user-guide/position.md)

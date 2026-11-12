@@ -72,10 +72,10 @@ impl ChannelBasebandRecording {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct BasebandPlan {
-    stream: u32,
-    sample_rate: f64,
+    pub(crate) stream: u32,
+    pub(crate) sample_rate: f64,
     device_rate: f64,
-    center_hz: f64,
+    pub(crate) center_hz: f64,
     hardware: String,
 }
 
@@ -101,7 +101,7 @@ impl BasebandSinks {
 }
 
 impl DeviceSetState {
-    fn baseband_plan(&self, ds: u32, ch: u32) -> Result<BasebandPlan, EngineError> {
+    pub(crate) fn baseband_plan(&self, ds: u32, ch: u32) -> Result<BasebandPlan, EngineError> {
         if self.status != DeviceSetStatus::Running {
             return Err(EngineError::Recording(
                 "device set is not running".to_string(),

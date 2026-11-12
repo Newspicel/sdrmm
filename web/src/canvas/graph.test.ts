@@ -227,7 +227,7 @@ describe("ports", () => {
   it("draws the ports the server resolved, and catalog ports until it has", () => {
     const graph = workspace();
     const dev = deviceNode(graph);
-    expect(nodePorts(context, dev).map((p) => p.name)).toEqual(["iq", "control"]);
+    expect(nodePorts(context, dev).map((p) => p.name)).toEqual(["iq", "control", "transmit"]);
     const four = { ...context, resolved: radioResolved(["iq", "iq2", "iq3", "iq4"]) };
     const ports = nodePorts(four, dev);
     expect(ports.map((p) => p.name)).toEqual(["iq", "iq2", "iq3", "iq4"]);
@@ -240,6 +240,7 @@ describe("ports", () => {
     expect(nodePorts({ ...context, resolved: stale }, dev).map((p) => p.name)).toEqual([
       "iq",
       "control",
+      "transmit",
     ]);
   });
 

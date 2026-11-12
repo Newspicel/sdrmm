@@ -84,13 +84,12 @@ export function paletteGroups(
     }
   }
   const offersChannels = catalog.nodes.some((entry) => entry.needs_channel_type === true);
-  return SECTIONS.flatMap((section) =>
-    section.id === "channel"
-      ? offersChannels
-        ? decoderGroups(channelTypes)
-        : []
-      : [{ ...section, section: section.id, items: sections.get(section.id) ?? [] }],
-  ).filter((group) => group.items.length > 0);
+  return SECTIONS.flatMap((section) => {
+    const plain = { ...section, section: section.id, items: sections.get(section.id) ?? [] };
+    return section.id === "channel" && offersChannels
+      ? [plain, ...decoderGroups(channelTypes)]
+      : [plain];
+  }).filter((group) => group.items.length > 0);
 }
 
 function processorItems(catalog: PatchCatalog, kind: NodeKind): PaletteItem[] {

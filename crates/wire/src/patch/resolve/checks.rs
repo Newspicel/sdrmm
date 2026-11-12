@@ -2,8 +2,8 @@ use super::{
     super::{
         DeviceRef, IqOrigin, MAX_EDGES, MAX_NODE_ID_LEN, MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ,
         MAX_SIGNAL_MAP_OFFSET_HZ, Multi, NodeBody, PatchEdge, PatchError, PatchGraph, PatchNode,
-        Payload, PortDirection, PortRef, PortSpec, Refusal, check_geometry, valid_host_port,
-        validate_gps_source,
+        Payload, PortDirection, PortRef, PortSpec, PortType, Refusal, check_geometry,
+        valid_host_port, validate_gps_source,
     },
     Net, feeds, ports,
 };
@@ -101,6 +101,8 @@ fn settings_valid(body: &NodeBody) -> bool {
         NodeBody::Hunt(hunt) => hunt.sweep.problem().is_none(),
         NodeBody::Triangulation(triangulation) => triangulation.settings.problem().is_none(),
         NodeBody::Scanner(scanner) => scanner.settings.problem().is_none(),
+        NodeBody::Microphone(microphone) => microphone.valid(),
+        NodeBody::Transmit(transmit) => transmit.settings.problem().is_none(),
         body => body.processor_params().is_none_or(|params| params.valid()),
     }
 }
@@ -155,7 +157,7 @@ pub(super) fn refusal<'a>(net: &mut Net<'a>, edge: &'a PatchEdge) -> Option<Patc
     if let Some(found) = arity(net, edge, &out, &input) {
         return refused(found);
     }
-    if reaches(net, &edge.to.node, &edge.from.node) {
+    if input.port_type != PortType::Transmit && reaches(net, &edge.to.node, &edge.from.node) {
         return Some(PatchError::Cycle(edge.to.node.clone()));
     }
     net.edges.push(edge);
@@ -212,6 +214,8 @@ fn arity(net: &Net<'_>, edge: &PatchEdge, out: &PortSpec, input: &PortSpec) -> O
     None
 }
 
+/// Whether samples flow from `from` to `goal` inside the patch. A wire into a radio's
+/// transmitter leaves through the antenna, so it closes no loop here.
 fn reaches(net: &Net<'_>, from: &str, goal: &str) -> bool {
     let mut seen: Vec<&str> = Vec::new();
     let mut open = vec![from];
@@ -226,11 +230,16 @@ fn reaches(net: &Net<'_>, from: &str, goal: &str) -> bool {
         open.extend(
             net.edges
                 .iter()
-                .filter(|edge| edge.from.node == node)
+                .filter(|edge| edge.from.node == node && !radiates(net, edge))
                 .map(|edge| edge.to.node.as_str()),
         );
     }
     false
+}
+
+fn radiates(net: &Net<'_>, edge: &PatchEdge) -> bool {
+    net.spec(&edge.to, PortDirection::In)
+        .is_some_and(|spec| spec.port_type == PortType::Transmit)
 }
 
 fn admission(net: &Net<'_>, edge: &PatchEdge, input: &PortSpec) -> Option<Refusal> {

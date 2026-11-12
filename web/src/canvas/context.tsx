@@ -32,6 +32,8 @@ export interface Workspace {
   select: (node: string | null) => void;
   expanded: string | null;
   expand: (node: string | null) => void;
+  /** The push-to-talk key is held. */
+  talking: boolean;
   edit: (edit: (snapshot: WorkspaceSnapshot) => WorkspaceSnapshot) => void;
   editSettings: (settings: Partial<WorkspaceSettings>) => void;
   apply: () => void;

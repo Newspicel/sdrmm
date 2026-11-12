@@ -448,6 +448,7 @@ impl Engine {
                 },
             );
             inner.revision += 1;
+            inner.transmitters_follow(ds);
         }
         let moved = self.settle_tuning(ds);
         self.emit(ServerEvent::StateChanged {

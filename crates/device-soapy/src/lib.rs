@@ -515,6 +515,16 @@ fn read_settings(
         .and_then(|key| device.read_setting(key).ok())
         .map(|value| caps::is_true(&value));
     settings.streams = rx_streams(device, capabilities)?;
+    for stage in &capabilities.gains {
+        if let Some(element) = caps::tx_element(&stage.name) {
+            settings.gains.push(GainValue {
+                stage: stage.name.clone(),
+                value_db: device
+                    .gain_element(Direction::Tx, 0, element)
+                    .map_err(map_err)?,
+            });
+        }
+    }
     for extra in &capabilities.extra {
         let name = extra.name();
         if let Ok(value) = device.read_setting(name) {
@@ -575,6 +585,40 @@ fn seed_sample_rates(
             |channel| device.sample_rate(direction, channel),
             |channel, rate| device.set_sample_rate(direction, channel, rate),
         )?;
+    }
+    Ok(())
+}
+
+/// Sets every transmit channel's gain elements alike.
+fn write_tx_gains(
+    channels: &[usize],
+    gains: &[(String, f64)],
+    mut write: impl FnMut(usize, &str, f64) -> Result<(), soapy::Error>,
+) -> Result<(), DeviceError> {
+    for &channel in channels {
+        for (element, db) in gains {
+            write(channel, element, *db).map_err(|error| {
+                DeviceError::Io(format!(
+                    "tx channel {channel}: set {element} to {db} dB: {error}"
+                ))
+            })?;
+        }
+    }
+    Ok(())
+}
+
+/// Puts every transmit channel's oscillator where the receiver's sits, so a transmitter is
+/// placed against the centre the rest of the program already works from.
+fn tune_transmitters(
+    receiver_hz: Result<f64, soapy::Error>,
+    channels: &[usize],
+    mut write: impl FnMut(usize, f64) -> Result<(), soapy::Error>,
+) -> Result<(), DeviceError> {
+    let hz = receiver_hz.map_err(map_err)?;
+    for &channel in channels {
+        write(channel, hz).map_err(|error| {
+            DeviceError::Io(format!("tx channel {channel}: tune to {hz} Hz: {error}"))
+        })?;
     }
     Ok(())
 }
@@ -728,6 +772,14 @@ impl SoapyDevice {
         }
     }
 
+    fn follow_receiver(&self, channels: &[usize]) -> Result<(), DeviceError> {
+        tune_transmitters(
+            self.device.frequency(Direction::Rx, 0),
+            channels,
+            |channel, hz| self.device.set_frequency(Direction::Tx, channel, hz, ()),
+        )
+    }
+
     fn automatic_gain_is_on(&self) -> bool {
         self.capabilities
             .directional
@@ -748,6 +800,8 @@ impl SdrDevice for SoapyDevice {
     }
 
     fn apply(&mut self, delta: &DeviceSettings) -> Result<(), DeviceError> {
+        let (delta, tx_gains) = caps::split_tx_gains(delta, &self.capabilities)?;
+        let delta = &delta;
         let writes = caps::setting_writes(delta, &self.capabilities)?;
         let _paused = caps::reshapes_the_stream(delta)
             .then(|| self.quiesce.pause(self.worker.is_running()))
@@ -796,10 +850,19 @@ impl SdrDevice for SoapyDevice {
             self.undo(undo);
             return Err(error);
         }
+        let tx_channels: Vec<usize> = (0..self.capabilities.tx_streams as usize).collect();
+        write_tx_gains(&tx_channels, &tx_gains, |channel, element, db| {
+            self.device
+                .set_gain_element(Direction::Tx, channel, element, db)
+        })?;
         self.settings.merge_from(delta);
         let actual = read_settings(&self.device, &self.capabilities)?;
         warn_coerced_rate(delta.sample_rate, actual.sample_rate);
         self.settings.merge_from(&actual);
+        if lock(&self.duplex).is_active(WireDirection::Tx) {
+            let channels: Vec<usize> = (0..self.capabilities.tx_streams as usize).collect();
+            self.follow_receiver(&channels)?;
+        }
         Ok(())
     }
 
@@ -860,6 +923,7 @@ impl SdrDevice for SoapyDevice {
             }
             native.push(*channel as usize);
         }
+        self.follow_receiver(&native)?;
         lock(&self.duplex).claim(WireDirection::Tx)?;
         let mut stream = match self.device.tx_stream::<Sample>(&native) {
             Ok(stream) => stream,
@@ -1409,6 +1473,50 @@ mod tests {
         )
         .expect("seeded");
         assert_eq!(written, vec![(0, 30.72e6), (0, 2.4e6)]);
+    }
+
+    #[test]
+    fn a_transmit_gain_is_written_to_every_transmit_channel() {
+        let gains = vec![("PAD".to_owned(), 30.0), ("IAMP".to_owned(), 6.0)];
+        let mut written = Vec::new();
+        write_tx_gains(&[0, 1], &gains, |channel, element, db| {
+            written.push((channel, element.to_owned(), db));
+            Ok(())
+        })
+        .expect("written");
+        assert_eq!(
+            written,
+            vec![
+                (0, "PAD".to_owned(), 30.0),
+                (0, "IAMP".to_owned(), 6.0),
+                (1, "PAD".to_owned(), 30.0),
+                (1, "IAMP".to_owned(), 6.0),
+            ]
+        );
+        match write_tx_gains(&[1], &gains, |_, _, _| Err(error(ErrorCode::NotSupported))) {
+            Err(DeviceError::Io(reason)) => {
+                assert!(reason.contains("tx channel 1: set PAD"), "{reason}");
+            }
+            other => panic!("a refused gain must name its channel, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn transmit_channels_are_tuned_to_where_the_receiver_sits() {
+        let mut tuned = Vec::new();
+        tune_transmitters(Ok(433.92e6), &[0, 1], |channel, hz| {
+            tuned.push((channel, hz));
+            Ok(())
+        })
+        .expect("tuned");
+        assert_eq!(tuned, vec![(0, 433.92e6), (1, 433.92e6)]);
+
+        let unread = tune_transmitters(Err(error(ErrorCode::Other)), &[0], |_, _| Ok(()));
+        assert!(unread.is_err(), "an unreadable receiver tunes nothing");
+        match tune_transmitters(Ok(1e9), &[1], |_, _| Err(error(ErrorCode::NotSupported))) {
+            Err(DeviceError::Io(reason)) => assert!(reason.contains("tx channel 1"), "{reason}"),
+            other => panic!("a refused tune must name its channel, got {other:?}"),
+        }
     }
 
     #[test]

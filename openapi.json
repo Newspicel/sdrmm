@@ -9489,6 +9489,13 @@
             "type": "boolean",
             "description": "The demodulator already levels its audio, so an added AGC stage is redundant."
           },
+          "message": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettingField"
+            },
+            "description": "The form of one message the transmitter sends, in order."
+          },
           "name": {
             "type": "string"
           },
@@ -9517,6 +9524,10 @@
           },
           "summary": {
             "type": "string"
+          },
+          "transmits_audio": {
+            "type": "boolean",
+            "description": "The transmitter modulates an audio wire."
           },
           "trial": {
             "oneOf": [
@@ -10203,6 +10214,38 @@
                 "type": "string",
                 "enum": [
                   "Point"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One frame of a keyed Microphone node: base64 of mono 16-bit little-endian PCM at 48 kHz.",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "One frame of a keyed Microphone node: base64 of mono 16-bit little-endian PCM at 48 kHz.",
+                "required": [
+                  "node",
+                  "pcm"
+                ],
+                "properties": {
+                  "node": {
+                    "type": "string"
+                  },
+                  "pcm": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Speak"
                 ]
               }
             }
@@ -12499,6 +12542,16 @@
           },
           "status": {
             "$ref": "#/components/schemas/DeviceSetStatus"
+          },
+          "transmit": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TransmitStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "virtual_lanes": {
             "type": "array",
@@ -15877,6 +15930,29 @@
           "settings"
         ]
       },
+      "MicrophoneNode": {
+        "type": "object",
+        "properties": {
+          "hang_ms": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How long the voice key stays open after the level falls.",
+            "default": 600,
+            "minimum": 0
+          },
+          "threshold_db": {
+            "type": "number",
+            "format": "double",
+            "description": "Peak level, in dB below full scale, that opens the voice key.",
+            "default": -35.0
+          },
+          "vox": {
+            "type": "boolean",
+            "description": "Keys by itself while the microphone is louder than the threshold.",
+            "default": false
+          }
+        }
+      },
       "Mission": {
         "allOf": [
           {
@@ -16408,6 +16484,41 @@
           "noise_like",
           "unknown"
         ]
+      },
+      "ModulatorMessage": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "object",
+            "description": "One message, shaped by the form its decoder declares.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ModulatorNode": {
+        "type": "object",
+        "required": [
+          "channel_type"
+        ],
+        "properties": {
+          "channel_type": {
+            "type": "string"
+          },
+          "settings": {
+            "type": "object",
+            "description": "The decoder's own settings object, absent fields taking its defaults.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
       },
       "Multi": {
         "type": "string",
@@ -17668,6 +17779,52 @@
                 "$ref": "#/components/schemas/NetworkExportStatus"
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "armed"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/TransmitStatus"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "disarmed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "sent"
+                ]
+              }
+            }
           }
         ]
       },
@@ -17795,6 +17952,42 @@
               },
               "with": {
                 "$ref": "#/components/schemas/NetworkExportAction"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "transmit"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/TransmitAction"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "send"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/ModulatorMessage"
               }
             }
           }
@@ -18466,6 +18659,60 @@
             ],
             "properties": {
               "data": {
+                "$ref": "#/components/schemas/MicrophoneNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "microphone"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ModulatorNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "modulator"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/TransmitNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "transmit"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
                 "$ref": "#/components/schemas/NoteNode"
               },
               "kind": {
@@ -18528,6 +18775,9 @@
           "processor",
           "triangulation",
           "bearing_fix",
+          "microphone",
+          "modulator",
+          "transmit",
           "note"
         ]
       },
@@ -19562,6 +19812,20 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "transmit"
+                ]
+              }
+            }
           }
         ]
       },
@@ -20343,7 +20607,8 @@
           "control",
           "position",
           "array",
-          "bearing"
+          "bearing",
+          "transmit"
         ]
       },
       "PortTypeInfo": {
@@ -20954,7 +21219,8 @@
           "monitor",
           "apply",
           "calls",
-          "recorder"
+          "recorder",
+          "transmit"
         ]
       },
       "ProcessorGate": {
@@ -27641,6 +27907,158 @@
             "type": "number",
             "format": "float",
             "default": 30.0
+          }
+        }
+      },
+      "TransmitAction": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "do"
+            ],
+            "properties": {
+              "do": {
+                "type": "string",
+                "enum": [
+                  "arm"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "do"
+            ],
+            "properties": {
+              "do": {
+                "type": "string",
+                "enum": [
+                  "disarm"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "TransmitNode": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TransmitSettings"
+          }
+        ]
+      },
+      "TransmitPhase": {
+        "type": "string",
+        "enum": [
+          "idle",
+          "on_air"
+        ]
+      },
+      "TransmitSettings": {
+        "type": "object",
+        "properties": {
+          "frequency_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Where the signal lands on the air. Unset, a modulator sits on the radio's centre and a\nlane where it was received.",
+            "default": null
+          },
+          "level_db": {
+            "type": "number",
+            "format": "double",
+            "description": "Digital drive below full scale.",
+            "default": -3.0
+          },
+          "timeout_s": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The longest one transmission may last before the transmitter disarms itself.",
+            "default": 180,
+            "minimum": 0
+          }
+        }
+      },
+      "TransmitStatus": {
+        "type": "object",
+        "required": [
+          "node",
+          "phase",
+          "frequency_hz",
+          "sample_rate",
+          "settings",
+          "samples",
+          "bursts",
+          "underruns"
+        ],
+        "properties": {
+          "bursts": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "channel_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The width the modulator's mode is meant to stay inside."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "frequency_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "node": {
+            "type": "string"
+          },
+          "occupied_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The width that holds 99 % of the latest transmission's power."
+          },
+          "peak_db": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "Peak drive of the latest transmission, in dB below full scale."
+          },
+          "phase": {
+            "$ref": "#/components/schemas/TransmitPhase"
+          },
+          "sample_rate": {
+            "type": "number",
+            "format": "double"
+          },
+          "samples": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Samples handed to the radio since arming.",
+            "minimum": 0
+          },
+          "settings": {
+            "$ref": "#/components/schemas/TransmitSettings"
+          },
+          "underruns": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Times the source ran dry in the middle of a transmission.",
+            "minimum": 0
           }
         }
       },

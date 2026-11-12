@@ -1,19 +1,38 @@
-use std::{collections::VecDeque, f64::consts::PI};
-
-use crate::ChannelError;
+use std::{collections::VecDeque, f64::consts::PI, fmt};
 
 const RAMP_MS: f64 = 2.0;
 
-pub(crate) const MAX_QUEUE_S: f64 = 5.0;
+pub const MAX_QUEUE_S: f64 = 5.0;
 
-pub(crate) struct TxQueue<T> {
+/// A transmitter was handed more than it may hold: nothing of the offer was taken.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QueueFull {
+    pub mode: &'static str,
+    pub queued: usize,
+}
+
+impl fmt::Display for QueueFull {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} transmit queue holds at most {MAX_QUEUE_S} s, {} items queued",
+            self.mode, self.queued
+        )
+    }
+}
+
+impl std::error::Error for QueueFull {}
+
+/// What a modulator still has to send, bounded so a stalled radio cannot grow it without end.
+pub struct TxQueue<T> {
     mode: &'static str,
     capacity: usize,
     items: VecDeque<T>,
 }
 
 impl<T> TxQueue<T> {
-    pub(crate) fn new(mode: &'static str, rate: f64) -> Self {
+    #[must_use]
+    pub fn new(mode: &'static str, rate: f64) -> Self {
         Self {
             mode,
             capacity: (MAX_QUEUE_S * rate) as usize,
@@ -21,34 +40,34 @@ impl<T> TxQueue<T> {
         }
     }
 
-    pub(crate) fn accept(&self, n: usize) -> Result<(), ChannelError> {
+    pub fn accept(&self, n: usize) -> Result<(), QueueFull> {
         if self.items.len() + n <= self.capacity {
             return Ok(());
         }
-        Err(ChannelError::InvalidPayload(format!(
-            "{} transmit queue holds at most {MAX_QUEUE_S} s, {} items queued",
-            self.mode,
-            self.items.len()
-        )))
+        Err(QueueFull {
+            mode: self.mode,
+            queued: self.items.len(),
+        })
     }
 
-    pub(crate) fn push(&mut self, item: T) {
+    pub fn push(&mut self, item: T) {
         self.items.push_back(item);
     }
 
-    pub(crate) fn extend(&mut self, items: impl IntoIterator<Item = T>) {
+    pub fn extend(&mut self, items: impl IntoIterator<Item = T>) {
         self.items.extend(items);
     }
 
-    pub(crate) fn pop(&mut self) -> Option<T> {
+    pub fn pop(&mut self) -> Option<T> {
         self.items.pop_front()
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.items.clear();
     }
 }
@@ -60,25 +79,30 @@ enum State {
     Falling(usize),
 }
 
-pub(crate) struct Burst {
+/// The envelope that keys a carrier up and down over a raised cosine, so a burst starts and
+/// ends without a click across the band.
+pub struct Burst {
     ramp_len: usize,
     state: State,
 }
 
 impl Burst {
-    pub(crate) fn new(rate: f64) -> Self {
+    #[must_use]
+    pub fn new(rate: f64) -> Self {
         Self {
             ramp_len: (RAMP_MS / 1_000.0 * rate) as usize,
             state: State::Idle,
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn ramp_len(&self) -> usize {
+    #[must_use]
+    pub const fn ramp_len(&self) -> usize {
         self.ramp_len
     }
 
-    pub(crate) fn next(&mut self, more: bool) -> Option<f32> {
+    /// The gain of the next sample while there is `more` to send, and `None` once the carrier
+    /// is down.
+    pub fn next(&mut self, more: bool) -> Option<f32> {
         match self.state {
             State::Idle if !more => None,
             State::Idle => {
@@ -154,10 +178,9 @@ mod tests {
         let capacity = (MAX_QUEUE_S * 10.0) as usize;
         assert!(queue.accept(capacity).is_ok());
         queue.extend(std::iter::repeat_n(1u8, capacity));
-        assert!(matches!(
-            queue.accept(1),
-            Err(ChannelError::InvalidPayload(_))
-        ));
+        let full = queue.accept(1).expect_err("over the bound");
+        assert_eq!(full.queued, capacity);
+        assert!(full.to_string().contains("test transmit queue"));
         assert_eq!(queue.pop(), Some(1));
     }
 }

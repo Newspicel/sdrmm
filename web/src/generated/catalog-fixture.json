@@ -39,6 +39,16 @@
           "multi": "many",
           "takes": "running",
           "note": "Opens the radio only while a schedule or satellite says so"
+        },
+        {
+          "name": "transmit",
+          "port_type": "transmit",
+          "direction": "in",
+          "payload": {
+            "type": "transmit"
+          },
+          "multi": "one",
+          "note": "The transmitter this radio sends"
         }
       ],
       "needs_channel_type": false,
@@ -5094,6 +5104,141 @@
       }
     },
     {
+      "kind": "microphone",
+      "name": "Microphone",
+      "category": "source",
+      "summary": "Your voice while you hold the key",
+      "role": {
+        "role": "plain"
+      },
+      "face": {
+        "width": 300,
+        "dial": false
+      },
+      "ports": [
+        {
+          "name": "audio",
+          "port_type": "audio",
+          "direction": "out",
+          "payload": {
+            "type": "audio"
+          },
+          "multi": "many"
+        }
+      ],
+      "needs_channel_type": false,
+      "needs_processor_type": false,
+      "default_body": {
+        "kind": "microphone",
+        "data": {
+          "vox": false,
+          "threshold_db": -35.0,
+          "hang_ms": 600
+        }
+      }
+    },
+    {
+      "kind": "modulator",
+      "name": "Modulator",
+      "category": "channel",
+      "summary": "Turns audio or a message into a signal",
+      "role": {
+        "role": "plain"
+      },
+      "face": {
+        "width": 400,
+        "dial": false
+      },
+      "ports": [
+        {
+          "name": "audio",
+          "port_type": "audio",
+          "direction": "in",
+          "payload": {
+            "type": "audio"
+          },
+          "multi": "many",
+          "note": "Voice for an analog mode"
+        },
+        {
+          "name": "baseband",
+          "port_type": "baseband",
+          "direction": "out",
+          "payload": {
+            "type": "baseband"
+          },
+          "multi": "one"
+        }
+      ],
+      "needs_channel_type": false,
+      "needs_processor_type": false,
+      "default_body": {
+        "kind": "modulator",
+        "data": {
+          "channel_type": ""
+        }
+      }
+    },
+    {
+      "kind": "transmit",
+      "name": "Transmitter",
+      "category": "output",
+      "summary": "Puts a modulator or a lane on the air",
+      "role": {
+        "role": "plain"
+      },
+      "face": {
+        "width": 360,
+        "dial": false
+      },
+      "ports": [
+        {
+          "name": "iq",
+          "port_type": "iq",
+          "direction": "in",
+          "payload": {
+            "type": "iq",
+            "origins": [
+              "radio",
+              "synthetic",
+              "derived"
+            ]
+          },
+          "multi": "one",
+          "group": "source",
+          "note": "A lane to send as it is"
+        },
+        {
+          "name": "baseband",
+          "port_type": "baseband",
+          "direction": "in",
+          "payload": {
+            "type": "baseband"
+          },
+          "multi": "one",
+          "group": "source"
+        },
+        {
+          "name": "transmit",
+          "port_type": "transmit",
+          "direction": "out",
+          "payload": {
+            "type": "transmit"
+          },
+          "multi": "one"
+        }
+      ],
+      "needs_channel_type": false,
+      "needs_processor_type": false,
+      "default_body": {
+        "kind": "transmit",
+        "data": {
+          "level_db": -3.0,
+          "timeout_s": 180
+        }
+      }
+    },
+    {
       "kind": "note",
       "name": "Note",
       "category": "tool",
@@ -5175,6 +5320,12 @@
       "name": "Bearing",
       "hue": "teal",
       "note": "A live bearing that steers an array"
+    },
+    {
+      "port_type": "transmit",
+      "name": "Transmit",
+      "hue": "pink",
+      "note": "What a radio puts on the air"
     }
   ],
   "event_kinds": [

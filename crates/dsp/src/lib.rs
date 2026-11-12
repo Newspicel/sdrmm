@@ -12,6 +12,8 @@ pub mod covariance;
 pub mod ddc;
 pub mod decim;
 pub mod doa;
+pub mod duc;
+pub mod emission;
 pub mod fastmath;
 pub mod fec;
 pub mod fft;
@@ -59,6 +61,8 @@ pub use channelizer::{Channelizer, ChannelizerError};
 pub use compander::Compander;
 pub use ddc::{Ddc, DdcError, flat_bandwidth_hz};
 pub use decim::{Decimator, RealDecimator};
+pub use duc::Duc;
+pub use emission::EmissionMeter;
 pub use fastmath::{fast_arg, fast_atan2, madd, phase_diff_into};
 pub use fec::{
     RdsOffset,
@@ -88,7 +92,7 @@ pub use fm::FmDemod;
 pub use iir::{
     Biquad, ComplexOnePole, DcBlocker, Deemphasis, Highpass, IqDcBlocker, one_pole_coeff,
 };
-pub use interp::{CubicInterpolator, RealInterpolator};
+pub use interp::{CubicInterpolator, Interpolator, RealInterpolator};
 pub use iq_notch::IqNotch;
 pub use level::{LEVEL_FLOOR_DB, LevelMeter, power_db};
 pub use moving::MovingSum;

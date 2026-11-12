@@ -15,6 +15,7 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 | Position | A live fix and the heading it comes with |
 | Array | One lane per antenna element |
 | Bearing | A live bearing that steers an array |
+| Transmit | What a radio puts on the air |
 
 ## Event kinds
 
@@ -95,6 +96,7 @@ A radio, a recording or a generator: where a patch starts
 |---|---|---|---|---|
 | `iq` | out | IQ | radio | many, one per lane |
 | `control` | in | Control | run | many. Opens the radio only while a schedule or satellite says so |
+| `transmit` | in | Transmit | What a radio puts on the air | one. The transmitter this radio sends |
 
 ### GPS position
 
@@ -103,6 +105,14 @@ Your station location, live or fixed
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `position` | out | Position | A live fix and the heading it comes with | many |
+
+### Microphone
+
+Your voice while you hold the key
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `audio` | out | Audio | Live audio | many |
 
 ## Channels
 
@@ -121,6 +131,15 @@ Ports follow the decoder the node runs.
 | `audio` | out | Audio | Live audio | many |
 | `events` | out | Events | any kind | many. Decoded messages and calls. Analog calls need squelch |
 | `video` | out | Video | Decoded video frames and pictures | many |
+
+### Modulator
+
+Turns audio or a message into a signal
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `audio` | in | Audio | Live audio | many. Voice for an analog mode |
+| `baseband` | out | Baseband | One channel, filtered and decimated | one |
 
 ## Tools
 
@@ -443,3 +462,13 @@ Points an antenna at a satellite
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `control` | in | Control | point | one. The satellite to follow |
+
+### Transmitter
+
+Puts a modulator or a lane on the air
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `iq` | in | IQ | radio, synthetic, derived | one. A lane to send as it is |
+| `baseband` | in | Baseband | One channel, filtered and decimated | one |
+| `transmit` | out | Transmit | What a radio puts on the air | one |

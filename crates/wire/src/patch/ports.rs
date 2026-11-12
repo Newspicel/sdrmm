@@ -12,4 +12,5 @@ pub const BEARING_PORT: &str = "bearing";
 pub const STITCH_WIDE_PORT: &str = "wide";
 pub const STEER_PORT: &str = "steer";
 pub const RADAR_TX_PORT: &str = "tx";
+pub const TRANSMIT_PORT: &str = "transmit";
 pub const RADAR_TRUTH_PORT: &str = "truth";

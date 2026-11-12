@@ -332,6 +332,11 @@ pub enum ClientCommand {
         name: String,
     },
     Point(Pointer),
+    /// One frame of a keyed Microphone node: base64 of mono 16-bit little-endian PCM at 48 kHz.
+    Speak {
+        node: String,
+        pcm: String,
+    },
 }
 
 #[cfg(test)]

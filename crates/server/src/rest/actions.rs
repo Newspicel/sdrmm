@@ -58,6 +58,16 @@ pub(crate) fn act(
         NodeAction::Scan(_) | NodeAction::Hunt(_) => {
             control(state, node, action).map(NodeActed::Controlled)
         }
+        NodeAction::Transmit(sdrmm_wire::TransmitAction::Arm) => {
+            node_of(&state.resolved.current(), node)?;
+            crate::transmit::arm(state, node).map(NodeActed::Armed)
+        }
+        NodeAction::Transmit(sdrmm_wire::TransmitAction::Disarm) => {
+            crate::transmit::disarm(state, node).map(|()| NodeActed::Disarmed)
+        }
+        NodeAction::Send(sent) => {
+            crate::transmit::send(state, node, &sent.message).map(|()| NodeActed::Sent)
+        }
     }
 }
 

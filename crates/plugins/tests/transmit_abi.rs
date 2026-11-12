@@ -1,7 +1,7 @@
 //! A plugin's transmit promise is checked when it loads, and a plugin built for another ABI is
 //! refused.
 
-use sdrmm_channels::{ChannelCtx, ChannelError, Decoder};
+use sdrmm_channels::{ChannelCtx, ChannelError, Decoder, TxPayload};
 use sdrmm_plugins::{PluginModule, WasmDecoder};
 
 mod common;
@@ -50,6 +50,26 @@ fn any_other_abi_is_refused() {
         let error = refusal(load(&format!("abi-{abi}"), abi, false, ""));
         assert!(error.contains(&format!("ABI {abi}")), "{error}");
     }
+}
+
+#[test]
+fn a_plugin_with_a_message_form_is_handed_the_filled_form_as_json() {
+    let plain = load("tx-plain", 1, true, TX_EXPORTS).unwrap_or_else(|error| panic!("{error}"));
+    assert!(matches!(
+        plain.compose(&serde_json::json!({"text": "hi"})),
+        Err(ChannelError::InvalidPayload(_))
+    ));
+
+    let manifest = r#"{"abi":1,"descriptor":{"type_id":"probe","name":"Probe","bandwidth_hz":1000.0,"input_rate_hz":48000.0,"can_transmit":true,"message":[{"key":"text","label":"Text","control":{"type":"text","placeholder":"hello"}}]}}"#;
+    let path = common::wat_plugin("tx-message", 1, manifest, "i32.const 0", TX_EXPORTS);
+    let decoder = PluginModule::load(&path)
+        .map(WasmDecoder::new)
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(decoder.descriptor().message.len(), 1);
+    let Ok(TxPayload::Frame(frame)) = decoder.compose(&serde_json::json!({"text": "hi"})) else {
+        panic!("a filled form becomes a frame");
+    };
+    assert_eq!(frame, br#"{"text":"hi"}"#);
 }
 
 #[test]

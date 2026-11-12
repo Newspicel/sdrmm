@@ -12,10 +12,9 @@ use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily};
 
 use crate::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx,
-    NativeChannel, NativeTx, TxPayload, check_input_rate, clamp_full_scale,
-    tx::{Burst, TxQueue},
-    voice_leveller,
+    NativeChannel, NativeTx, TxPayload, check_input_rate, clamp_full_scale, voice_leveller,
 };
+use sdrmm_modem::keying::{Burst, TxQueue};
 
 const AUDIO_TAPS: usize = 129;
 const CHANNEL_TAPS: usize = 129;
@@ -443,7 +442,7 @@ mod tests {
             tx.submit(TxPayload::Frame(vec![0x7E])),
             Err(ChannelError::InvalidPayload(_))
         ));
-        let over = (crate::tx::MAX_QUEUE_S * f64::from(AUDIO_RATE)) as usize + 1;
+        let over = (sdrmm_modem::keying::MAX_QUEUE_S * f64::from(AUDIO_RATE)) as usize + 1;
         assert!(matches!(
             tx.submit(TxPayload::Audio(vec![0.0; over])),
             Err(ChannelError::InvalidPayload(_))

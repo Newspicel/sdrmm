@@ -17,8 +17,8 @@ use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx, NativeChannel,
     NativeTx, TxPayload, check_input_rate,
-    tx::{Burst, TxQueue},
 };
+use sdrmm_modem::keying::{Burst, TxQueue};
 
 const CHANNEL_TAPS: usize = 65;
 
@@ -1345,11 +1345,88 @@ pub(crate) fn aprs_decoder() -> Native<AprsParams> {
     Native::new::<AprsChannel>(occupied_band)
         .filter(channel_filter)
         .home(144_800_000.0)
-        .tx::<AprsTx>()
+        .tx_messages::<AprsTx>(message_form, compose)
         .signatures(aprs_signatures)
         .trial(aprs_trial)
         .form(aprs_form)
         .kinds(aprs_kinds)
+}
+
+const MAX_PATH_HOPS: usize = 8;
+const MAX_CALL_LEN: usize = ADDRESS_LEN - 1;
+
+/// One UI frame as the operator writes it.
+#[derive(Debug, serde::Deserialize)]
+struct AprsMessage {
+    source: String,
+    #[serde(default = "default_destination")]
+    destination: String,
+    #[serde(default)]
+    path: String,
+    text: String,
+}
+
+fn default_destination() -> String {
+    "APRS".to_owned()
+}
+
+fn message_form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("source", "From", Control::text("N0CALL-9")).title("Your callsign"),
+        SettingField::new("destination", "To", Control::text("APRS")).title("Destination address"),
+        SettingField::new("path", "Path", Control::text("WIDE1-1,WIDE2-1"))
+            .title("Digipeater path, comma separated"),
+        SettingField::new("text", "Text", Control::text("!4903.50N/07201.75W-"))
+            .title("APRS information field"),
+    ]
+}
+
+fn checked_call(call: &str, what: &str) -> Result<(), ChannelError> {
+    let (base, ssid) = call.split_once('-').unwrap_or((call, "0"));
+    let named = !base.is_empty()
+        && base.len() <= MAX_CALL_LEN
+        && base.bytes().all(|byte| byte.is_ascii_alphanumeric());
+    if named && ssid.parse::<u8>().is_ok_and(|ssid| ssid <= 15) {
+        return Ok(());
+    }
+    Err(ChannelError::InvalidPayload(format!(
+        "{what} `{call}` is not a callsign with an optional -0 to -15"
+    )))
+}
+
+fn compose(message: &serde_json::Value) -> Result<TxPayload, ChannelError> {
+    let message: AprsMessage = serde_json::from_value(message.clone())
+        .map_err(|error| ChannelError::InvalidPayload(format!("aprs message: {error}")))?;
+    let source = message.source.trim();
+    let destination = message.destination.trim();
+    let hops: Vec<&str> = message
+        .path
+        .split(',')
+        .map(str::trim)
+        .filter(|hop| !hop.is_empty())
+        .collect();
+    checked_call(source, "source")?;
+    checked_call(destination, "destination")?;
+    if hops.len() > MAX_PATH_HOPS {
+        return Err(ChannelError::InvalidPayload(format!(
+            "a path holds at most {MAX_PATH_HOPS} hops, got {}",
+            hops.len()
+        )));
+    }
+    for hop in &hops {
+        checked_call(hop, "path hop")?;
+    }
+    if message.text.is_empty() || !message.text.is_ascii() {
+        return Err(ChannelError::InvalidPayload(
+            "the text must be ASCII and not empty".to_owned(),
+        ));
+    }
+    Ok(TxPayload::Frame(AprsTx::ui_frame(
+        source,
+        destination,
+        &hops,
+        &message.text,
+    )))
 }
 
 pub(crate) fn aprs_form() -> Vec<SettingField> {
@@ -2153,6 +2230,58 @@ mod tests {
             settings(ChannelParams::new("aprs", &AprsParams::default()).expect("aprs settings")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
+    }
+
+    #[test]
+    fn a_composed_message_is_the_frame_ui_frame_builds() {
+        let composed = compose(&serde_json::json!({
+            "source": " dl1abc-9 ",
+            "path": "WIDE1-1, WIDE2-1",
+            "text": "!test",
+        }))
+        .expect("composed");
+        let TxPayload::Frame(frame) = composed else {
+            panic!("aprs sends frames");
+        };
+        assert_eq!(
+            frame,
+            AprsTx::ui_frame("dl1abc-9", "APRS", &["WIDE1-1", "WIDE2-1"], "!test")
+        );
+    }
+
+    #[test]
+    fn a_message_that_cannot_be_framed_is_refused_with_its_reason() {
+        for (message, needle) in [
+            (serde_json::json!({"text": "hi"}), "source"),
+            (
+                serde_json::json!({"source": "TOOLONGCALL", "text": "hi"}),
+                "source",
+            ),
+            (
+                serde_json::json!({"source": "N0CALL-16", "text": "hi"}),
+                "source",
+            ),
+            (
+                serde_json::json!({"source": "N0CALL", "destination": "", "text": "hi"}),
+                "destination",
+            ),
+            (
+                serde_json::json!({"source": "N0CALL", "path": "A,B,C,D,E,F,G,H,I", "text": "hi"}),
+                "hops",
+            ),
+            (serde_json::json!({"source": "N0CALL", "text": ""}), "text"),
+            (
+                serde_json::json!({"source": "N0CALL", "text": "gr\u{fc}n"}),
+                "text",
+            ),
+        ] {
+            match compose(&message) {
+                Err(ChannelError::InvalidPayload(reason)) => {
+                    assert!(reason.contains(needle), "{message}: {reason}");
+                }
+                other => panic!("{message} must be refused, got {:?}", other.is_ok()),
+            }
+        }
     }
 
     #[test]

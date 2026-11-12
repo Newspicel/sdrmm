@@ -43,6 +43,7 @@ export const BINDINGS: readonly Binding[] = [
   { keys: "Ctrl / ⌘ C", what: "Copy nodes and their wires", group: "Edit" },
   { keys: "Ctrl / ⌘ V", what: "Paste beside the originals", group: "Edit" },
   { keys: "Backspace", what: "Delete node or wire", group: "Edit" },
+  { keys: "Space", what: "Hold to talk on the microphone", group: "General" },
   { keys: "?", what: "Help", group: "General" },
   { keys: "Esc", what: "Close or deselect", group: "General" },
 ];

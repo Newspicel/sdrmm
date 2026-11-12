@@ -113,7 +113,8 @@ fn carries(port: &PortSpec) -> String {
         | Payload::Video
         | Payload::Position
         | Payload::Array
-        | Payload::Bearing => port.port_type.note().unwrap_or_default().to_owned(),
+        | Payload::Bearing
+        | Payload::Transmit => port.port_type.note().unwrap_or_default().to_owned(),
     }
 }
 

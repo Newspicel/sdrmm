@@ -16,8 +16,8 @@ use sdrmm_plugin::{
     kernels::Fft,
     serde_json::Value,
     wire::{
-        Capability, ChannelDescriptor, ChannelHealth, ChannelStatus, DecoderFamily, EventContract,
-        EventKind, EventKindEntry, KindView, NumberSpec, SettingField,
+        Capability, ChannelDescriptor, ChannelHealth, ChannelStatus, Control, DecoderFamily,
+        EventContract, EventKind, EventKindEntry, KindView, NumberSpec, SettingField,
         patch::Hue,
         plugin::{ABI_VERSION, PluginLayout, PluginManifest},
         present::{Presentation, Unit, fields, number},
@@ -142,6 +142,10 @@ impl Plugin for Carrier {
                 has_audio: false,
                 emits: vec![KIND],
                 can_transmit: true,
+                message: vec![
+                    SettingField::new("text", "Text", Control::text("CQ"))
+                        .title("Text the beacon keys"),
+                ],
                 ..ChannelDescriptor::default()
             },
             form: vec![

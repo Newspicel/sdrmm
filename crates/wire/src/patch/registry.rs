@@ -7,7 +7,7 @@ use super::{
     EVENTS_PORT, EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps, NodeCategory,
     POSITION_PORT, Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo, RADAR_TRUTH_PORT,
     RADAR_TX_PORT, RecorderNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalMapNode,
-    SpeakerNode, TriangulationNode, TrunkNode, VIDEO_PORT, input, output,
+    SpeakerNode, TRANSMIT_PORT, TriangulationNode, TrunkNode, VIDEO_PORT, input, output,
 };
 use crate::{
     channel::{ChannelDescriptor, SettingField},
@@ -25,6 +25,7 @@ use crate::{
     rotator::RotatorNode,
     satellite::SatelliteNode,
     schedule::ScheduleNode,
+    transmit::{MicrophoneNode, ModulatorNode, TransmitNode},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -178,6 +179,7 @@ const SATELLITE_VERBS: &[ControlVerb] = &[
 const RUN: &[ControlVerb] = &[ControlVerb::Run];
 const POINT: &[ControlVerb] = &[ControlVerb::Point];
 const NETWORK_SOURCE: &str = "source";
+const TRANSMIT_SOURCE: &str = "source";
 const RUN_TAKE: &str = "Armed, it records only while a schedule or satellite says so";
 
 fn iq_in() -> PortSpec {
@@ -394,6 +396,7 @@ macro_rules! node_registry {
                 Role::OpensRadio, Face::fit(420).dial(), [
                 iq_out(RADIO_IQ).repeated(PortRepeat::PerRxStream),
                 run_in("Opens the radio only while a schedule or satellite says so"),
+                input(TRANSMIT_PORT, Payload::Transmit).noted("The transmitter this radio sends"),
             ]),
             (Gps(GpsNode), "gps", Source, "GPS position", "Your station location, live or fixed",
                 Role::Plain, Face::fit(360), [
@@ -575,6 +578,21 @@ macro_rules! node_registry {
                     .noted("Bearings with a known origin"),
                 events_out(kinds!(BEARING_FIX)),
             ]),
+            (Microphone(MicrophoneNode), "microphone", Source, "Microphone",
+                "Your voice while you hold the key", Role::Plain, Face::fit(300), [
+                audio_out(),
+            ]),
+            (Modulator(ModulatorNode), "modulator", Channel, "Modulator",
+                "Turns audio or a message into a signal", Role::Plain, Face::fit(400), [
+                audio_in().noted("Voice for an analog mode"),
+                output(BASEBAND_PORT, Payload::Baseband).one(),
+            ]),
+            (Transmit(TransmitNode), "transmit", Output, "Transmitter",
+                "Puts a modulator or a lane on the air", Role::Plain, Face::fit(360), [
+                iq_in().group(TRANSMIT_SOURCE).noted("A lane to send as it is"),
+                input(BASEBAND_PORT, Payload::Baseband).group(TRANSMIT_SOURCE),
+                output(TRANSMIT_PORT, Payload::Transmit).one(),
+            ]),
             (Note(NoteNode), "note", Tool, "Note", "Markdown you leave on the canvas",
                 Role::Plain, Face::sized(320, 200).min(200, 120), []),
         }
@@ -721,10 +739,11 @@ pub fn channel_ports(descriptor: &ChannelDescriptor) -> Vec<PortSpec> {
 }
 
 /// A generator makes its own samples, so its lane is synthetic rather than a radio's. A
-/// recording plays back the place it was made at, too.
+/// recording plays back the place it was made at, too. Neither has an antenna to send from.
 fn narrow_device(declared: Vec<PortSpec>, pinned: Option<&super::DeviceRef>) -> Vec<PortSpec> {
+    let receive_only = |port: &PortSpec| port.port_type != P::Transmit;
     if pinned.is_some_and(super::DeviceRef::is_recording) {
-        let mut ports = declared;
+        let mut ports: Vec<PortSpec> = declared.into_iter().filter(receive_only).collect();
         ports.push(output(POSITION_PORT, Payload::Position).noted("Recorded position"));
         return ports;
     }
@@ -733,6 +752,7 @@ fn narrow_device(declared: Vec<PortSpec>, pinned: Option<&super::DeviceRef>) -> 
     }
     declared
         .into_iter()
+        .filter(receive_only)
         .map(|port| match port.payload {
             Payload::Iq { .. } => port.carrying(Payload::iq(&[IqOrigin::Synthetic])),
             _ => port,

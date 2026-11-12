@@ -4,6 +4,7 @@ pub mod constellation;
 pub mod cpm;
 pub mod framesync;
 pub mod ita2;
+pub mod keying;
 pub mod linear;
 pub mod multicarrier;
 pub mod ofdm;

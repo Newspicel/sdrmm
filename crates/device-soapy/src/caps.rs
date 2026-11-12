@@ -23,6 +23,58 @@ fn is_bias_tee_key(key: &str) -> bool {
     BIAS_TEE_KEYS.contains(&key)
 }
 
+const TX_STAGE_PREFIX: &str = "TX ";
+
+/// The gain element a transmit stage sets, when `stage` names one.
+pub(crate) fn tx_element(stage: &str) -> Option<&str> {
+    stage.strip_prefix(TX_STAGE_PREFIX)
+}
+
+/// The first transmit channel's gain elements as stages of the radio, named apart from the
+/// receiver's: every transmit channel is set alike.
+fn tx_stages(directional: &DirectionalCapabilities) -> Vec<GainStage> {
+    directional
+        .tx
+        .first()
+        .into_iter()
+        .flat_map(|channel| &channel.gains)
+        .map(|stage| {
+            GainStage::named(
+                format!("{TX_STAGE_PREFIX}{}", stage.name),
+                GainKind::Tx,
+                stage.range,
+            )
+        })
+        .collect()
+}
+
+/// The delta without its transmit gains, and those gains as the element and level to write.
+pub(crate) fn split_tx_gains(
+    delta: &DeviceSettings,
+    capabilities: &Capabilities,
+) -> Result<(DeviceSettings, Vec<(String, f64)>), DeviceError> {
+    let mut receive = delta.clone();
+    let mut transmit = Vec::new();
+    receive.gains.clear();
+    for gain in &delta.gains {
+        let Some(element) = tx_element(&gain.stage) else {
+            receive.gains.push(gain.clone());
+            continue;
+        };
+        let stage = capabilities
+            .stage(&gain.stage)
+            .ok_or_else(|| DeviceError::Unsupported(format!("gain stage {}", gain.stage)))?;
+        if !(stage.range.min..=stage.range.max).contains(&gain.value_db) {
+            return Err(DeviceError::Unsupported(format!(
+                "gain {} {} dB outside {}..{} dB",
+                gain.stage, gain.value_db, stage.range.min, stage.range.max
+            )));
+        }
+        transmit.push((element.to_owned(), gain.value_db));
+    }
+    Ok((receive, transmit))
+}
+
 pub(crate) fn gain_stage(name: &str, range: Range) -> GainStage {
     let stage = GainStage::named(name, GainKind::from_name(name), range);
     if stage.is_switch() && stage.setting_count() != 2 {
@@ -202,6 +254,8 @@ pub(crate) fn capabilities(directional: DirectionalCapabilities) -> Capabilities
             false,
         ),
     };
+    let mut gains = gains;
+    gains.extend(tx_stages(&directional));
     let rx_streams = u32::try_from(directional.rx.len()).unwrap_or(u32::MAX);
     let tx_streams = u32::try_from(directional.tx.len()).unwrap_or(u32::MAX);
     let duplex = duplex(&directional.rx, &directional.tx);
@@ -1106,6 +1160,88 @@ mod tests {
             "1"
         );
         assert!(extra_write_value(&extras, "direct_samp", &serde_json::json!("I-ADC")).is_err());
+    }
+
+    fn transceiver() -> Capabilities {
+        let stage = |name: &str, max: f64| {
+            gain_stage(
+                name,
+                Range {
+                    min: 0.0,
+                    max,
+                    step: Some(1.0),
+                },
+            )
+        };
+        let mut receiver = channel(70e6, true);
+        receiver.gains = vec![stage("LNA", 30.0), stage("PGA", 19.0)];
+        let mut transmitter = channel(70e6, true);
+        transmitter.gains = vec![stage("PAD", 52.0), stage("IAMP", 12.0)];
+        capabilities(DirectionalCapabilities {
+            rx: vec![receiver],
+            tx: vec![transmitter],
+            ..DirectionalCapabilities::default()
+        })
+    }
+
+    #[test]
+    fn transmit_gain_elements_are_stages_named_apart_from_the_receivers() {
+        let caps = transceiver();
+        let names: Vec<&str> = caps.gains.iter().map(|stage| stage.name.as_str()).collect();
+        assert_eq!(names, ["LNA", "PGA", "TX PAD", "TX IAMP"]);
+        let pad = caps.stage("TX PAD").expect("advertised");
+        assert_eq!(pad.kind, GainKind::Tx);
+        assert_eq!(pad.range.max, 52.0);
+        assert_eq!(tx_element("TX PAD"), Some("PAD"));
+        assert_eq!(tx_element("PGA"), None);
+
+        let receive_only = capabilities(DirectionalCapabilities {
+            rx: vec![channel(70e6, false)],
+            tx: Vec::new(),
+            ..DirectionalCapabilities::default()
+        });
+        assert!(
+            receive_only
+                .gains
+                .iter()
+                .all(|stage| stage.kind != GainKind::Tx)
+        );
+    }
+
+    #[test]
+    fn a_delta_is_split_into_what_the_receiver_takes_and_the_transmit_gains() {
+        let caps = transceiver();
+        let delta = DeviceSettings {
+            center_hz: Some(433e6),
+            gains: vec![
+                gain("LNA", 12.0),
+                gain("TX PAD", 40.0),
+                gain("TX IAMP", 3.0),
+            ],
+            ..DeviceSettings::default()
+        };
+        let (receive, transmit) = split_tx_gains(&delta, &caps).expect("split");
+        assert_eq!(receive.center_hz, Some(433e6));
+        assert_eq!(receive.gains, vec![gain("LNA", 12.0)]);
+        assert_eq!(
+            transmit,
+            vec![("PAD".to_owned(), 40.0), ("IAMP".to_owned(), 3.0)]
+        );
+        validate(&receive, &caps).expect("the receiver's half still validates");
+
+        for refused in [gain("TX PAD", 60.0), gain("TX DAC", 1.0)] {
+            let delta = DeviceSettings {
+                gains: vec![refused.clone()],
+                ..DeviceSettings::default()
+            };
+            assert!(
+                matches!(
+                    split_tx_gains(&delta, &caps),
+                    Err(DeviceError::Unsupported(_))
+                ),
+                "{refused:?}"
+            );
+        }
     }
 
     #[test]

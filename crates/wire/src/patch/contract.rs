@@ -18,6 +18,7 @@ pub enum PortType {
     Position,
     Array,
     Bearing,
+    Transmit,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -56,6 +57,7 @@ impl PortType {
         Self::Position,
         Self::Array,
         Self::Bearing,
+        Self::Transmit,
     ];
 
     #[must_use]
@@ -70,6 +72,7 @@ impl PortType {
             Self::Position => "position",
             Self::Array => "array",
             Self::Bearing => "bearing",
+            Self::Transmit => "transmit",
         }
     }
 
@@ -85,6 +88,7 @@ impl PortType {
             Self::Position => "Position",
             Self::Array => "Array",
             Self::Bearing => "Bearing",
+            Self::Transmit => "Transmit",
         }
     }
 
@@ -100,6 +104,7 @@ impl PortType {
             Self::Position => Hue::Accent,
             Self::Array => Hue::Indigo,
             Self::Bearing => Hue::Teal,
+            Self::Transmit => Hue::Pink,
         }
     }
 
@@ -115,6 +120,7 @@ impl PortType {
             Self::Control => Some("Commands that retune a decoder, point a rotator or run a radio"),
             Self::Position => Some("A live fix and the heading it comes with"),
             Self::Array => Some("One lane per antenna element"),
+            Self::Transmit => Some("What a radio puts on the air"),
         }
     }
 
@@ -153,6 +159,7 @@ pub enum Payload {
     Position,
     Array,
     Bearing,
+    Transmit,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -215,6 +222,7 @@ impl Payload {
             Self::Position => PortType::Position,
             Self::Array => PortType::Array,
             Self::Bearing => PortType::Bearing,
+            Self::Transmit => PortType::Transmit,
         }
     }
 
@@ -259,7 +267,8 @@ impl Payload {
             | Self::Video
             | Self::Position
             | Self::Array
-            | Self::Bearing => None,
+            | Self::Bearing
+            | Self::Transmit => None,
         }
     }
 }

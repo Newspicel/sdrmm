@@ -408,12 +408,12 @@ pub mod sweep;
 pub mod usb;
 pub mod worker;
 pub use capture::{
-    BlockGap, Capture, CaptureConfig, CaptureRadio, CaptureStream, Next, StopHandle, StreamFailure,
-    drain_stream,
+    BlockGap, Capture, CaptureConfig, CaptureRadio, CaptureStream, Next, RxHold, StopHandle,
+    StreamFailure, drain_stream,
 };
 pub use clock::{init_clock, now_ns};
 pub use convert::{ByteCoding, ByteConverter, SampleConverter};
-pub use duplex::DuplexState;
+pub use duplex::{DuplexState, TxTurn};
 pub use marks::{
     GapScope, LaneEvent, LaneMark, MARK_SLOTS, MarkPoster, UNKNOWN_ERROR, Uncertainty,
 };

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use sdrmm_channels::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelLayout, ChannelRx, ChannelTx, Decoder,
+    TxPayload,
 };
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
@@ -106,6 +107,19 @@ impl Decoder for WasmDecoder {
             ctx.input_rate,
             &settings.params.settings,
         )?))
+    }
+
+    /// A plugin that declares a message form gets the filled form as UTF-8 JSON in a frame.
+    fn compose(&self, message: &serde_json::Value) -> Result<TxPayload, ChannelError> {
+        if self.descriptor.message.is_empty() {
+            return Err(ChannelError::InvalidPayload(format!(
+                "{} sends no messages",
+                self.descriptor.type_id
+            )));
+        }
+        serde_json::to_vec(message)
+            .map(TxPayload::Frame)
+            .map_err(|error| ChannelError::InvalidPayload(error.to_string()))
     }
 
     fn layout(&self, params: &ChannelParams) -> Result<ChannelLayout, ChannelError> {

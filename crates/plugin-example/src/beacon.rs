@@ -2,7 +2,8 @@
 
 use std::collections::VecDeque;
 
-use sdrmm_plugin::{Complex, Payload, Transmitter};
+use sdrmm_plugin::{Complex, Payload, Transmitter, serde_json};
+use serde::Deserialize;
 
 use crate::{CarrierSettings, INPUT_RATE_HZ};
 
@@ -11,6 +12,18 @@ pub const SHIFT_HZ: f64 = 1_000.0;
 pub const BAUD: f64 = 100.0;
 const AMPLITUDE: f32 = 0.5;
 const MAX_QUEUED_BITS: usize = 8 * 4_096;
+
+/// What the Modulator node's form hands over: the text to key.
+#[derive(Deserialize)]
+struct Message {
+    text: String,
+}
+
+/// The octets a frame keys: the text of a filled message form, or the frame as it is.
+fn keyed(frame: &[u8]) -> Vec<u8> {
+    serde_json::from_slice::<Message>(frame)
+        .map_or_else(|_| frame.to_vec(), |message| message.text.into_bytes())
+}
 
 pub struct Beacon {
     bits: VecDeque<bool>,
@@ -71,9 +84,10 @@ impl Transmitter for Beacon {
     }
 
     fn submit(&mut self, payload: Payload<'_>) -> Result<(), String> {
-        let Payload::Frame(bytes) = payload else {
+        let Payload::Frame(frame) = payload else {
             return Err("beacon sends frames, not audio".to_owned());
         };
+        let bytes = keyed(frame);
         if self.bits.len() + bytes.len() * 8 > MAX_QUEUED_BITS {
             return Err("beacon backlog full".to_owned());
         }
@@ -125,6 +139,15 @@ mod tests {
         let turn = |a: Complex<f32>, b: Complex<f32>| (b * a.conj()).arg();
         assert!(turn(out[10], out[11]) > 0.0);
         assert!(turn(out[500], out[501]) < 0.0);
+    }
+
+    #[test]
+    fn a_filled_message_form_keys_its_text_and_nothing_else() {
+        let mut tx = beacon();
+        tx.submit(Payload::Frame(br#"{"text":"A"}"#))
+            .expect("queues");
+        let mut out = vec![Complex::default(); 10_000];
+        assert_eq!(tx.generate(&mut out), 8 * 480, "one octet for one letter");
     }
 
     #[test]

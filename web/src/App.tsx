@@ -7,6 +7,7 @@ import { Canvas } from "./canvas/Canvas";
 import { WorkspaceProvider } from "./canvas/context";
 import { FullFace } from "./canvas/FullFace";
 import { pruneRack } from "./canvas/graph";
+import { usePushToTalk } from "./canvas/pushToTalk";
 import { Rack } from "./canvas/Rack";
 import { useSwitchStore } from "./canvas/switches";
 import { useScopedState } from "./canvas/useScopedState";
@@ -128,6 +129,7 @@ export function App() {
 
   const channelNodes = graph.nodes.filter((node) => node.kind === "channel");
 
+  const talking = usePushToTalk();
   useAppHotkeys({
     selected,
     setSelected,
@@ -169,6 +171,7 @@ export function App() {
               select: setSelected,
               expanded,
               expand: setExpanded,
+              talking,
               edit: workspace.save,
               editSettings,
               apply: workspace.apply,

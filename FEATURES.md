@@ -4,25 +4,20 @@ Remove an item once it ships.
 
 ## 1. Transmit
 
-Already there: TX streams on HackRF, AD936x/Pluto and Soapy, and modulators for NFM, AM, SSB,
-APRS, DMR, dPMR, D-Star, M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
+Already there: a Transmitter node armed by hand, fed by a Modulator (NFM, AM, SSB voice from a
+Microphone or a channel's audio, APRS messages, plugin transmitters), by a channel's baseband or
+by a lane, on HackRF, AD936x/Pluto, Soapy and the virtual radios. Level, timeout, on-air state,
+occupied width, a PTT key and VOX included.
 
 ### Foundation
-- Transmit gate: the only node that may feed a Device's `tx` input
-- Engine TX path: modulator to `TxStream`, settings via command queue
-- Safety: TX timeout, a visible on-air state
-- PTT: button, hotkey, VOX
-- Microphone input into the voice modulators
-- TX level metering and spectral mask check
+- Per-service emission masks beyond the occupied width
 
 ### Sources
 - Modulators for the remaining modes, over the frame/bit codec each protocol already owns
-- IQ recording playback to air
-- Signal generator and arbitrary waveforms to air
+- Arbitrary waveforms to air
 
 ### Links
 - Satellite uplink on the Doppler-corrected frequency the Satellite node already shows
-- Bench loopback: TX into your own RX to validate decoders. The graph's no-cycle proof stops being sufficient here
 - Beam-steering CW (TX MIMO)
 
 ### Security research (own DUT, contained link)

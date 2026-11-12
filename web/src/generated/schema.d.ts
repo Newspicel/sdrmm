@@ -2856,6 +2856,8 @@ export interface components {
             input_rate_hz: number;
             /** @description The demodulator already levels its audio, so an added AGC stage is redundant. */
             levels_audio?: boolean;
+            /** @description The form of one message the transmitter sends, in order. */
+            message?: components["schemas"]["SettingField"][];
             name: string;
             needs_position?: boolean;
             ports?: components["schemas"]["PortSpec"][];
@@ -2864,6 +2866,8 @@ export interface components {
             /** @description How this decoder's signal shows on the air, for Signal ID. */
             signatures?: components["schemas"]["SignalSignature"][];
             summary?: string;
+            /** @description The transmitter modulates an audio wire. */
+            transmits_audio?: boolean;
             trial?: components["schemas"]["SignalTrial"] | null;
             trunking?: components["schemas"]["TrunkSpec"] | null;
             type_id: string;
@@ -3060,6 +3064,14 @@ export interface components {
             data: components["schemas"]["Pointer"];
             /** @enum {string} */
             type: "Point";
+        } | {
+            /** @description One frame of a keyed Microphone node: base64 of mono 16-bit little-endian PCM at 48 kHz. */
+            data: {
+                node: string;
+                pcm: string;
+            };
+            /** @enum {string} */
+            type: "Speak";
         };
         ClientsResponse: {
             /** Format: int32 */
@@ -3676,6 +3688,7 @@ export interface components {
             scanners?: components["schemas"]["ScannerStatus"][];
             settings: components["schemas"]["DeviceSettings"];
             status: components["schemas"]["DeviceSetStatus"];
+            transmit?: components["schemas"]["TransmitStatus"] | null;
             virtual_lanes?: components["schemas"]["VirtualLane"][];
         };
         /** @enum {string} */
@@ -4635,6 +4648,25 @@ export interface components {
         MergeMode: "replace" | "append" | "union";
         /** @enum {string} */
         MergePart: "contacts" | "group_lists" | "channels" | "zones" | "scan_lists" | "radio_ids" | "settings";
+        MicrophoneNode: {
+            /**
+             * Format: int32
+             * @description How long the voice key stays open after the level falls.
+             * @default 600
+             */
+            hang_ms: number;
+            /**
+             * Format: double
+             * @description Peak level, in dB below full scale, that opens the voice key.
+             * @default -35
+             */
+            threshold_db: number;
+            /**
+             * @description Keys by itself while the microphone is louder than the threshold.
+             * @default false
+             */
+            vox: boolean;
+        };
         Mission: components["schemas"]["MissionBody"] & {
             controls?: components["schemas"]["MissionControl"][];
             label: string;
@@ -4749,6 +4781,19 @@ export interface components {
         };
         /** @enum {string} */
         Modulation: "none" | "carrier" | "ook" | "am" | "ssb" | "fm" | "fsk2" | "fsk4" | "fsk8" | "psk2" | "psk4" | "ofdm" | "chirp" | "noise_like" | "unknown";
+        ModulatorMessage: {
+            /** @description One message, shaped by the form its decoder declares. */
+            message: {
+                [key: string]: unknown;
+            };
+        };
+        ModulatorNode: {
+            channel_type: string;
+            /** @description The decoder's own settings object, absent fields taking its defaults. */
+            settings?: {
+                [key: string]: unknown;
+            };
+        };
         /** @enum {string} */
         Multi: "one" | "many" | "many_lanes";
         NanoVnaAntenna: {
@@ -5045,6 +5090,16 @@ export interface components {
             /** @enum {string} */
             result: "network_export";
             with: components["schemas"]["NetworkExportStatus"];
+        } | {
+            /** @enum {string} */
+            result: "armed";
+            with: components["schemas"]["TransmitStatus"];
+        } | {
+            /** @enum {string} */
+            result: "disarmed";
+        } | {
+            /** @enum {string} */
+            result: "sent";
         };
         NodeAction: {
             /** @enum {string} */
@@ -5075,6 +5130,14 @@ export interface components {
             /** @enum {string} */
             action: "network_export";
             with: components["schemas"]["NetworkExportAction"];
+        } | {
+            /** @enum {string} */
+            action: "transmit";
+            with: components["schemas"]["TransmitAction"];
+        } | {
+            /** @enum {string} */
+            action: "send";
+            with: components["schemas"]["ModulatorMessage"];
         };
         NodeBody: {
             data: components["schemas"]["DeviceNode"];
@@ -5222,6 +5285,18 @@ export interface components {
             /** @enum {string} */
             kind: "bearing_fix";
         } | {
+            data: components["schemas"]["MicrophoneNode"];
+            /** @enum {string} */
+            kind: "microphone";
+        } | {
+            data: components["schemas"]["ModulatorNode"];
+            /** @enum {string} */
+            kind: "modulator";
+        } | {
+            data: components["schemas"]["TransmitNode"];
+            /** @enum {string} */
+            kind: "transmit";
+        } | {
             data: components["schemas"]["NoteNode"];
             /** @enum {string} */
             kind: "note";
@@ -5229,7 +5304,7 @@ export interface components {
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "processor" | "triangulation" | "bearing_fix" | "note";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "modulator" | "transmit" | "note";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -5568,6 +5643,9 @@ export interface components {
         } | {
             /** @enum {string} */
             type: "bearing";
+        } | {
+            /** @enum {string} */
+            type: "transmit";
         };
         Peer: {
             /** Format: int32 */
@@ -5808,7 +5886,7 @@ export interface components {
             takes?: string | null;
         };
         /** @enum {string} */
-        PortType: "iq" | "baseband" | "audio" | "events" | "video" | "control" | "position" | "array" | "bearing";
+        PortType: "iq" | "baseband" | "audio" | "events" | "video" | "control" | "position" | "array" | "bearing" | "transmit";
         PortTypeInfo: {
             hue: components["schemas"]["Hue"];
             name: string;
@@ -5960,7 +6038,7 @@ export interface components {
             version: number;
         };
         /** @enum {string} */
-        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder";
+        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "transmit";
         /** @enum {string} */
         ProcessorGate: "sync" | "phase" | "gain" | "calibrating" | "retuning" | "tier" | "tuning_mode";
         /** @description A patch node running a plugin processor. */
@@ -7805,6 +7883,74 @@ export interface components {
             range_km: number;
             /** Format: int32 */
             track_id?: number | null;
+        };
+        TransmitAction: {
+            /** @enum {string} */
+            do: "arm";
+        } | {
+            /** @enum {string} */
+            do: "disarm";
+        };
+        TransmitNode: components["schemas"]["TransmitSettings"];
+        /** @enum {string} */
+        TransmitPhase: "idle" | "on_air";
+        TransmitSettings: {
+            /**
+             * Format: double
+             * @description Where the signal lands on the air. Unset, a modulator sits on the radio's centre and a
+             *     lane where it was received.
+             * @default null
+             */
+            frequency_hz: number | null;
+            /**
+             * Format: double
+             * @description Digital drive below full scale.
+             * @default -3
+             */
+            level_db: number;
+            /**
+             * Format: int32
+             * @description The longest one transmission may last before the transmitter disarms itself.
+             * @default 180
+             */
+            timeout_s: number;
+        };
+        TransmitStatus: {
+            /** Format: int64 */
+            bursts: number;
+            /**
+             * Format: double
+             * @description The width the modulator's mode is meant to stay inside.
+             */
+            channel_hz?: number | null;
+            error?: string | null;
+            /** Format: double */
+            frequency_hz: number;
+            node: string;
+            /**
+             * Format: double
+             * @description The width that holds 99 % of the latest transmission's power.
+             */
+            occupied_hz?: number | null;
+            /**
+             * Format: float
+             * @description Peak drive of the latest transmission, in dB below full scale.
+             */
+            peak_db?: number | null;
+            phase: components["schemas"]["TransmitPhase"];
+            /** Format: double */
+            sample_rate: number;
+            /**
+             * Format: int64
+             * @description Samples handed to the radio since arming.
+             */
+            samples: number;
+            settings: components["schemas"]["TransmitSettings"];
+            /**
+             * Format: int64
+             * @description Times the source ran dry in the middle of a transmission.
+             */
+            underruns: number;
         };
         Transmitter: {
             alive: boolean;

@@ -323,6 +323,12 @@ impl Engine {
                     dirty = true;
                 }
             }
+            if s.transmit
+                .as_mut()
+                .is_some_and(crate::transmit::TransmitState::changed)
+            {
+                dirty = true;
+            }
             if dirty {
                 changed.push(*id);
             }
@@ -699,6 +705,7 @@ impl Engine {
                     baseband_recordings: HashMap::new(),
                     channel_exports: HashMap::new(),
                     network_export: None,
+                    transmit: None,
                     pre_roll: None,
                     scanners: HashMap::new(),
                     hunts: HashMap::new(),
@@ -1099,6 +1106,7 @@ impl Engine {
                 capabilities_changed: state.capabilities != old_capabilities,
             };
             inner.revision += 1;
+            inner.transmitters_follow(ds);
             (settings, blocking, patched, rebuilds, resized)
         };
         lock_runtime(&runtime).set_meta(&settings, blocking);

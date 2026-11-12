@@ -47,6 +47,7 @@ pub mod sink;
 pub mod state;
 pub mod survey;
 pub mod tools;
+pub mod transmit;
 pub mod trunk;
 pub use trunk::{
     AUTO_TRUNK_PROTOCOL, MAX_TRUNK_TALKGROUPS, TrunkKind, TrunkScheme, TrunkSite, TrunkSpec,
@@ -172,8 +173,8 @@ pub use patch::{
     RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT, RADAR_TX_PORT, REFUSALS, RackCell, RackLayout,
     RackSlot, Reach, RecorderNode, Refusal, RefusedEdge, ResolveCtx, ResolvedEdge, ResolvedNode,
     ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs, STEER_PORT, STITCH_WIDE_PORT,
-    ScannerNode, SignalMapNode, Size, SpatialSpectrumNode, SpeakerNode, StitchNode, Tap,
-    TriangulationNode, TrunkChannelEntry, TrunkDiscovery, TrunkNode, TrunkSearchRange,
+    ScannerNode, SignalMapNode, Size, SpatialSpectrumNode, SpeakerNode, StitchNode, TRANSMIT_PORT,
+    Tap, TriangulationNode, TrunkChannelEntry, TrunkDiscovery, TrunkNode, TrunkSearchRange,
     UnboundReason, VIDEO_PORT, channel_ports, generator_key, port_index, port_lane, port_stream,
     stream_port,
 };
@@ -295,6 +296,13 @@ pub use tools::{
     NanoVnaResult, NanoVnaStandard, NanoVnaSweep, NanoVnaSweepRequest, NanoVnaSweepState,
     SaveNanoVnaMeasurementRequest, ToolCategory, ToolDescriptor, ToolRequest, ToolResponse,
     ToolsResponse, UpdateNanoVnaMeasurementRequest, YagiParams,
+};
+pub use transmit::{
+    DEFAULT_TRANSMIT_LEVEL_DB, DEFAULT_TRANSMIT_TIMEOUT_S, DEFAULT_VOX_HANG_MS,
+    DEFAULT_VOX_THRESHOLD_DB, MAX_MICROPHONE_FRAME, MAX_TRANSMIT_TIMEOUT_S, MAX_VOX_HANG_MS,
+    MICROPHONE_RATE_HZ, MIN_TRANSMIT_LEVEL_DB, MicrophoneNode, ModulatorMessage, ModulatorNode,
+    TransmitAction, TransmitNode, TransmitPhase, TransmitSettings, TransmitStatus,
+    encode_microphone_pcm, microphone_pcm,
 };
 pub use workspace::{
     CreateWorkspaceRequest, DroppedNode, MAX_NAME_LEN, MAX_REGION_ID_LEN, NoticeWire,
@@ -801,6 +809,7 @@ mod contract_tests {
             refused: None,
             recording: None,
             network_export: None,
+            transmit: None,
             pre_roll: None,
             scanners: Vec::new(),
             hunts: Vec::new(),

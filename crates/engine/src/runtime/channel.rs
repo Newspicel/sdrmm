@@ -177,6 +177,7 @@ pub(crate) struct ChannelHost {
     publisher: ChannelPublisher,
     baseband_rec: Option<RecorderTap>,
     baseband_export: Option<NetworkExportTap>,
+    transmit_feed: Option<crate::transmit::TxFeedTap>,
     baseband_pos: u64,
     input_rate: f64,
     device_rate: f64,
@@ -270,6 +271,7 @@ impl ChannelHost {
             publisher,
             baseband_rec: None,
             baseband_export: None,
+            transmit_feed: None,
             baseband_pos: 0,
             input_rate,
             device_rate,
@@ -291,6 +293,7 @@ impl ChannelHost {
         self.audio_rec = previous.audio_rec.take();
         self.baseband_rec = previous.baseband_rec.take();
         self.baseband_export = previous.baseband_export.take();
+        self.transmit_feed = previous.transmit_feed.take();
         self.baseband_pos = previous.baseband_pos;
         self.gap_audio = previous.gap_audio;
         self.gap_baseband = previous.gap_baseband;
@@ -530,6 +533,13 @@ impl ChannelHost {
 
     fn sink_baseband(&mut self) {
         self.baseband_pos += self.filtered.len() as u64;
+        if self
+            .transmit_feed
+            .as_mut()
+            .is_some_and(|feed| !feed.push(&self.filtered))
+        {
+            self.transmit_feed = None;
+        }
         if self.baseband_rec.is_none() && self.baseband_export.is_none() {
             return;
         }
@@ -656,6 +666,14 @@ impl ChannelHost {
 
     pub(super) fn set_baseband_export(&mut self, tap: Option<NetworkExportTap>) {
         self.baseband_export = tap;
+    }
+
+    /// Swaps the tap that feeds a transmitter and hands back the one it replaces.
+    pub(super) fn set_transmit_feed(
+        &mut self,
+        tap: Option<crate::transmit::TxFeedTap>,
+    ) -> Option<crate::transmit::TxFeedTap> {
+        std::mem::replace(&mut self.transmit_feed, tap)
     }
 }
 

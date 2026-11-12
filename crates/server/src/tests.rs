@@ -42,6 +42,7 @@ mod recordings;
 mod scanning;
 mod templates;
 mod tls;
+mod transmit;
 mod workspaces;
 
 struct NanoVnaStub;

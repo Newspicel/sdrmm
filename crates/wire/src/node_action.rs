@@ -4,6 +4,7 @@ use utoipa::ToSchema;
 use crate::{
     ControlAck, HuntAction, NetworkExportAction, NetworkExportStatus, NoticeWire, PlaybackRequest,
     PlaybackStatus, ScanAction,
+    transmit::{ModulatorMessage, TransmitAction, TransmitStatus},
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -15,6 +16,8 @@ pub enum NodeAction {
     Hunt(HuntAction),
     Playback(PlaybackRequest),
     NetworkExport(NetworkExportAction),
+    Transmit(TransmitAction),
+    Send(ModulatorMessage),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -25,6 +28,9 @@ pub enum NodeActed {
     Retyped { dropped: Vec<NoticeWire> },
     Playback(PlaybackStatus),
     NetworkExport(NetworkExportStatus),
+    Armed(TransmitStatus),
+    Disarmed,
+    Sent,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

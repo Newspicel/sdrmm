@@ -2,6 +2,14 @@ use sdrmm_wire::{Direction, Duplex};
 
 use crate::DeviceError;
 
+/// How a transmitter shares the front end with a receiver that is already running.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxTurn {
+    Free,
+    /// A half-duplex radio: the receiver steps aside for each burst.
+    Alternating,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DuplexState {
     duplex: Duplex,
@@ -55,6 +63,25 @@ impl DuplexState {
         }
         self.set(direction, true);
         Ok(())
+    }
+
+    /// Claims transmit beside whatever receive is running. On a half-duplex radio the two then
+    /// take turns instead of the claim being refused.
+    pub fn claim_tx(&mut self) -> Result<TxTurn, DeviceError> {
+        if !self.duplex.supports(Direction::Tx) {
+            return Err(DeviceError::Unsupported(
+                "this device does not transmit".to_string(),
+            ));
+        }
+        if self.tx {
+            return Err(DeviceError::AlreadyStreaming);
+        }
+        self.tx = true;
+        if self.rx && !self.duplex.simultaneous() {
+            Ok(TxTurn::Alternating)
+        } else {
+            Ok(TxTurn::Free)
+        }
     }
 
     pub const fn release(&mut self, direction: Direction) {
@@ -157,5 +184,31 @@ mod tests {
         assert!(Duplex::default().supports(Direction::Rx));
         assert!(!Duplex::default().supports(Direction::Tx));
         assert!(!Duplex::default().simultaneous());
+    }
+
+    #[test]
+    fn a_half_duplex_transmitter_takes_turns_with_a_running_receiver() {
+        let mut state = DuplexState::new(Duplex::Half);
+        assert_eq!(state.claim_tx().expect("idle"), TxTurn::Free);
+        state.release(Direction::Tx);
+        state.claim(Direction::Rx).expect("receive");
+        assert_eq!(state.claim_tx().expect("beside rx"), TxTurn::Alternating);
+        assert!(matches!(
+            state.claim_tx(),
+            Err(DeviceError::AlreadyStreaming)
+        ));
+        assert!(state.is_active(Direction::Rx));
+    }
+
+    #[test]
+    fn a_full_duplex_transmitter_never_waits_and_a_receiver_never_transmits() {
+        let mut full = DuplexState::new(Duplex::Full);
+        full.claim(Direction::Rx).expect("receive");
+        assert_eq!(full.claim_tx().expect("full duplex"), TxTurn::Free);
+        let mut rx_only = DuplexState::new(Duplex::RxOnly);
+        assert!(matches!(
+            rx_only.claim_tx(),
+            Err(DeviceError::Unsupported(_))
+        ));
     }
 }

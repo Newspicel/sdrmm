@@ -234,6 +234,7 @@ pub enum ProblemSource {
     Apply,
     Calls,
     Recorder,
+    Transmit,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

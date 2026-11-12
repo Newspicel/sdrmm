@@ -22,12 +22,12 @@ use crate::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx,
     NativeChannel, NativeTx, TxPayload, check_input_rate, clamp_full_scale,
     tone_squelch::{AUDIO_CORNER_HZ, ToneSquelch, is_standard_ctcss, is_standard_dcs},
-    tx::{Burst, TxQueue},
     voice_inversion::{
         DEFAULT_INVERSION_HZ, Inversion, InversionDetector, MAX_INVERSION_HZ, MIN_INVERSION_HZ,
         VoiceInverter, is_supported_inversion,
     },
 };
+use sdrmm_modem::keying::{Burst, TxQueue};
 
 const VOICE_CUTOFF_HZ: f64 = 3_400.0;
 const COMPANDER_REFERENCE_RMS: f32 = 0.25;
@@ -714,7 +714,6 @@ mod tests {
         testutil::{
             complex_noise, dominant_tone, fm_iq, rms, run_ragged, settings, tone_amplitude,
         },
-        tx::MAX_QUEUE_S,
     };
 
     const RATE: f64 = 48_000.0;
@@ -1604,7 +1603,7 @@ mod tests {
     #[test]
     fn tx_refuses_a_backlog_past_the_queue_bound() {
         let mut tx = transmitter();
-        let over = (MAX_QUEUE_S * f64::from(AUDIO_RATE)) as usize + 1;
+        let over = (sdrmm_modem::keying::MAX_QUEUE_S * f64::from(AUDIO_RATE)) as usize + 1;
         assert!(matches!(
             tx.submit(TxPayload::Audio(vec![0.0; over])),
             Err(ChannelError::InvalidPayload(_))

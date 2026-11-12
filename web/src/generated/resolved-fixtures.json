@@ -116,6 +116,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -154,6 +164,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -999,6 +1019,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -1064,6 +1094,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -1255,6 +1295,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -1293,6 +1343,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -1586,6 +1646,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -1624,6 +1694,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -2613,6 +2693,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -2797,6 +2887,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -3142,6 +3242,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -3865,6 +3975,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -3903,6 +4023,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -4182,6 +4312,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -4220,6 +4360,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -4795,6 +4945,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -5031,6 +5191,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -5069,6 +5239,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -5355,6 +5535,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -5483,6 +5673,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -5864,6 +6064,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -5909,6 +6119,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -6499,6 +6719,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -6544,6 +6774,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -6871,6 +7111,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -6909,6 +7159,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -7125,6 +7385,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -7237,6 +7507,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -7402,6 +7682,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -7440,6 +7730,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -7711,6 +8011,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -7997,6 +8307,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -8215,6 +8535,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -8516,6 +8846,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -8554,6 +8894,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -9398,6 +9748,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -9820,6 +10180,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -9858,6 +10228,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -10325,6 +10705,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -10611,6 +11001,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -10846,6 +11246,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -11106,6 +11516,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -11151,6 +11571,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -11419,6 +11849,16 @@
               },
               "port_type": "control",
               "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
             }
           ],
           "runs": {

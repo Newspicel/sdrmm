@@ -100,6 +100,8 @@ pub struct DeviceSet {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network_export: Option<NetworkExportStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transmit: Option<crate::transmit::TransmitStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pre_roll: Option<PreRollStatus>,
     /// One scan per decoder that is being driven.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

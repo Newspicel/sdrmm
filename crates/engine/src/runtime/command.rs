@@ -63,6 +63,17 @@ pub(crate) enum DspCommand {
         tap: NetworkExportTap,
     },
     StopNetworkExport,
+    StartTransmitFeed {
+        tap: crate::transmit::TxFeedTap,
+    },
+    StopTransmitFeed,
+    StartChannelTransmitFeed {
+        id: u32,
+        tap: crate::transmit::TxFeedTap,
+    },
+    StopChannelTransmitFeed {
+        id: u32,
+    },
     StartTimeMachine {
         tap: Box<TimeMachineTap>,
     },
