@@ -13,6 +13,92 @@ pub const MAX_INFLUX_NAME_LEN: usize = 255;
 pub const DEFAULT_POSTGRES_TABLE: &str = "sdrmm_events";
 pub const MAX_CSV_FILE_LEN: usize = 64;
 pub const CSV_SUFFIX: &str = ".csv";
+pub const MAX_SECRET_ID_LEN: usize = 64;
+
+/// A credential an output needs. The server keeps the value in its own store and a workspace
+/// names it by id, so an export never carries it and another server asks for it again.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum Secret {
+    Stored {
+        secret: String,
+    },
+    /// A value written in place, as older workspaces held it. Saving the workspace moves it
+    /// into the server's store.
+    Inline(String),
+}
+
+impl Default for Secret {
+    fn default() -> Self {
+        Self::Inline(String::new())
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stored { secret } => formatter
+                .debug_struct("Stored")
+                .field("secret", secret)
+                .finish(),
+            Self::Inline(value) if value.is_empty() => formatter.write_str("Unset"),
+            Self::Inline(_) => formatter.write_str("Inline([redacted])"),
+        }
+    }
+}
+
+impl Secret {
+    #[must_use]
+    pub fn stored(id: impl Into<String>) -> Self {
+        Self::Stored { secret: id.into() }
+    }
+
+    #[must_use]
+    pub fn is_set(&self) -> bool {
+        match self {
+            Self::Stored { secret } => !secret.is_empty(),
+            Self::Inline(value) => !value.trim().is_empty(),
+        }
+    }
+
+    /// A value still written in place, waiting to move into the server's store.
+    #[must_use]
+    pub fn inline(&self) -> Option<&str> {
+        match self {
+            Self::Inline(value) if !value.is_empty() => Some(value),
+            Self::Stored { .. } | Self::Inline(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        match self {
+            Self::Stored { secret } => valid_secret_id(secret),
+            Self::Inline(value) => value.len() <= MAX_OUTPUT_SECRET_LEN,
+        }
+    }
+}
+
+#[must_use]
+pub fn valid_secret_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_SECRET_ID_LEN
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+}
+
+/// A credential to keep in the server's store.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SecretValue {
+    pub value: String,
+}
+
+impl std::fmt::Debug for SecretValue {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SecretValue([redacted])")
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -46,14 +132,14 @@ pub enum EventOutputTarget {
         prefix: u8,
     },
     Webhook {
-        url: String,
+        url: Secret,
         #[serde(default)]
         format: WebhookFormat,
     },
     Matrix {
         homeserver_url: String,
         room_id: String,
-        access_token: String,
+        access_token: Secret,
     },
     Mqtt {
         broker_url: String,
@@ -61,7 +147,7 @@ pub enum EventOutputTarget {
         #[serde(default)]
         username: String,
         #[serde(default)]
-        password: String,
+        password: Secret,
     },
     Postgres {
         url: String,
@@ -69,7 +155,7 @@ pub enum EventOutputTarget {
         #[serde(default)]
         username: String,
         #[serde(default)]
-        password: String,
+        password: Secret,
     },
     Influx {
         url: String,
@@ -77,7 +163,7 @@ pub enum EventOutputTarget {
         #[serde(default)]
         org: String,
         #[serde(default)]
-        token: String,
+        token: Secret,
     },
 }
 
@@ -168,13 +254,60 @@ fn first_feed_format() -> String {
 impl Default for EventOutputTarget {
     fn default() -> Self {
         Self::Webhook {
-            url: String::new(),
+            url: Secret::default(),
             format: WebhookFormat::Json,
         }
     }
 }
 
 impl EventOutputTarget {
+    /// The one credential this service takes, with the name an error gives it.
+    #[must_use]
+    pub const fn secret(&self) -> Option<(&'static str, &Secret)> {
+        match self {
+            Self::Webhook { url, .. } => Some(("Webhook URL", url)),
+            Self::Matrix { access_token, .. } => Some(("Matrix token", access_token)),
+            Self::Mqtt { password, .. } => Some(("MQTT password", password)),
+            Self::Postgres { password, .. } => Some(("PostgreSQL password", password)),
+            Self::Influx { token, .. } => Some(("InfluxDB token", token)),
+            Self::Recordings
+            | Self::Desktop
+            | Self::Csv { .. }
+            | Self::Feed { .. }
+            | Self::Tunnel { .. } => None,
+        }
+    }
+
+    pub const fn secret_mut(&mut self) -> Option<&mut Secret> {
+        match self {
+            Self::Webhook { url: secret, .. }
+            | Self::Matrix {
+                access_token: secret,
+                ..
+            }
+            | Self::Mqtt {
+                password: secret, ..
+            }
+            | Self::Postgres {
+                password: secret, ..
+            }
+            | Self::Influx { token: secret, .. } => Some(secret),
+            Self::Recordings
+            | Self::Desktop
+            | Self::Csv { .. }
+            | Self::Feed { .. }
+            | Self::Tunnel { .. } => None,
+        }
+    }
+
+    /// Whether `value` would pass as this service's credential if written in place. A stored
+    /// value never went through [`Self::valid`], so a delivery checks it here.
+    #[must_use]
+    pub fn accepts_secret(&self, value: &str) -> bool {
+        value.len() <= MAX_OUTPUT_SECRET_LEN
+            && (!matches!(self, Self::Webhook { .. }) || valid_https_url(value))
+    }
+
     #[must_use]
     pub fn accepts(&self) -> KindSet {
         match self {
@@ -213,14 +346,17 @@ impl EventOutputTarget {
                 address, enabled, ..
             } => *enabled && !address.is_empty(),
             Self::Tunnel { interface, .. } => !interface.is_empty(),
-            Self::Webhook { url, .. } => !url.trim().is_empty(),
+            Self::Webhook { url, .. } => url.is_set(),
             Self::Matrix {
                 homeserver_url,
                 room_id,
                 access_token,
-            } => [homeserver_url, room_id, access_token]
-                .into_iter()
-                .all(|value| !value.trim().is_empty()),
+            } => {
+                access_token.is_set()
+                    && [homeserver_url, room_id]
+                        .into_iter()
+                        .all(|value| !value.trim().is_empty())
+            }
             Self::Mqtt {
                 broker_url, topic, ..
             } => [broker_url, topic]
@@ -269,7 +405,7 @@ impl EventOutputTarget {
                     && !address.is_multicast()
                     && !address.is_broadcast()
             }
-            Self::Webhook { url, .. } => valid_https_url(url),
+            Self::Webhook { url, .. } => url.valid() && url.inline().is_none_or(valid_https_url),
             Self::Matrix {
                 homeserver_url,
                 room_id,
@@ -277,7 +413,7 @@ impl EventOutputTarget {
             } => {
                 valid_https_url(homeserver_url)
                     && room_id.len() <= MAX_MATRIX_ROOM_ID_LEN
-                    && access_token.len() <= MAX_OUTPUT_SECRET_LEN
+                    && access_token.valid()
             }
             Self::Mqtt {
                 broker_url,
@@ -288,7 +424,7 @@ impl EventOutputTarget {
                 valid_broker_url(broker_url)
                     && valid_publish_topic(topic)
                     && username.len() <= MAX_MQTT_USERNAME_LEN
-                    && password.len() <= MAX_OUTPUT_SECRET_LEN
+                    && password.valid()
             }
             Self::Postgres {
                 url,
@@ -299,7 +435,7 @@ impl EventOutputTarget {
                 valid_postgres_url(url)
                     && (table.is_empty() || valid_sql_identifier(table))
                     && username.len() <= MAX_SQL_IDENTIFIER_LEN
-                    && password.len() <= MAX_OUTPUT_SECRET_LEN
+                    && password.valid()
             }
             Self::Influx {
                 url,
@@ -310,7 +446,7 @@ impl EventOutputTarget {
                 valid_influx_url(url)
                     && valid_influx_name(bucket)
                     && valid_influx_name(org)
-                    && token.len() <= MAX_OUTPUT_SECRET_LEN
+                    && token.valid()
             }
         }
     }
@@ -424,13 +560,13 @@ mod tests {
         EventOutputTarget::Matrix {
             homeserver_url: homeserver_url.to_owned(),
             room_id: room_id.to_owned(),
-            access_token: access_token.to_owned(),
+            access_token: Secret::Inline(access_token.to_owned()),
         }
     }
 
     fn webhook(url: &str) -> EventOutputTarget {
         EventOutputTarget::Webhook {
-            url: url.to_owned(),
+            url: Secret::Inline(url.to_owned()),
             format: WebhookFormat::Json,
         }
     }
@@ -440,7 +576,7 @@ mod tests {
             broker_url: broker_url.to_owned(),
             topic: topic.to_owned(),
             username: String::new(),
-            password: String::new(),
+            password: Secret::default(),
         }
     }
 
@@ -612,7 +748,7 @@ mod tests {
     #[test]
     fn the_webhook_format_survives_a_round_trip_and_defaults_to_json() {
         let discord = EventOutputTarget::Webhook {
-            url: "https://discord.com/api/webhooks/1/token".to_owned(),
+            url: Secret::Inline("https://discord.com/api/webhooks/1/token".to_owned()),
             format: WebhookFormat::Discord,
         };
         let encoded = serde_json::to_string(&discord).expect("encode");
@@ -658,7 +794,7 @@ mod tests {
                 broker_url: "mqtts://broker.example".to_owned(),
                 topic: "sdrmm/events".to_owned(),
                 username: "radio".to_owned(),
-                password: "p".repeat(MAX_OUTPUT_SECRET_LEN + 1),
+                password: Secret::Inline("p".repeat(MAX_OUTPUT_SECRET_LEN + 1)),
             }
             .valid()
         );
@@ -669,7 +805,7 @@ mod tests {
             url: url.to_owned(),
             table: table.to_owned(),
             username: username.to_owned(),
-            password: String::new(),
+            password: Secret::default(),
         }
     }
 
@@ -678,7 +814,7 @@ mod tests {
             url: url.to_owned(),
             bucket: bucket.to_owned(),
             org: String::new(),
-            token: String::new(),
+            token: Secret::default(),
         }
     }
 
@@ -751,7 +887,7 @@ mod tests {
                 url: "https://influx.example".to_owned(),
                 bucket: "radio".to_owned(),
                 org: String::new(),
-                token: "t".repeat(MAX_OUTPUT_SECRET_LEN + 1),
+                token: Secret::Inline("t".repeat(MAX_OUTPUT_SECRET_LEN + 1)),
             }
             .valid()
         );
@@ -795,7 +931,7 @@ mod tests {
             broker_url: "mqtts://broker.example".to_owned(),
             topic: "sdrmm/events".to_owned(),
             username: "radio".to_owned(),
-            password: broker_secret.to_owned(),
+            password: Secret::Inline(broker_secret.to_owned()),
         };
         let debug = format!("{target:?}");
         assert!(debug.contains("mqtts://broker.example"));
@@ -807,7 +943,7 @@ mod tests {
             url: "postgres://db.example/radio".to_owned(),
             table: "sdrmm_events".to_owned(),
             username: "radio".to_owned(),
-            password: database_secret.to_owned(),
+            password: Secret::Inline(database_secret.to_owned()),
         };
         let debug = format!("{target:?}");
         assert!(debug.contains("postgres://db.example/radio"));
@@ -818,10 +954,68 @@ mod tests {
             url: "https://influx.example".to_owned(),
             bucket: "radio".to_owned(),
             org: "home".to_owned(),
-            token: token.to_owned(),
+            token: Secret::Inline(token.to_owned()),
         };
         let debug = format!("{target:?}");
         assert!(debug.contains("radio"));
         assert!(!debug.contains(token));
+    }
+
+    #[test]
+    fn a_secret_reads_an_old_inline_value_and_writes_only_its_id() {
+        let old: EventOutputTarget = serde_json::from_str(
+            r#"{"service":"matrix","homeserver_url":"https://m.example","room_id":"!r:m","access_token":"hunter2"}"#,
+        )
+        .expect("old target");
+        assert_eq!(
+            old.secret(),
+            Some(("Matrix token", &Secret::Inline("hunter2".to_owned())))
+        );
+
+        let mut stored = old.clone();
+        if let Some(secret) = stored.secret_mut() {
+            *secret = Secret::stored("abc_1");
+        }
+        let encoded = serde_json::to_string(&stored).expect("encode");
+        assert!(
+            encoded.contains(r#""access_token":{"secret":"abc_1"}"#),
+            "{encoded}"
+        );
+        assert!(!encoded.contains("hunter2"));
+        assert_eq!(
+            serde_json::from_str::<EventOutputTarget>(&encoded).expect("decode"),
+            stored
+        );
+        assert!(stored.valid() && stored.configured());
+        assert_eq!(
+            format!("{:?}", Secret::Inline("tok".to_owned())),
+            "Inline([redacted])"
+        );
+    }
+
+    #[test]
+    fn a_stored_secret_needs_a_plain_bounded_id() {
+        assert!(Secret::stored("a-B_9").valid());
+        for id in ["", "a/b", "a b", &"x".repeat(MAX_SECRET_ID_LEN + 1)] {
+            assert!(!Secret::stored(id).valid(), "{id}");
+        }
+        assert!(!Secret::stored("").is_set());
+        assert!(!Secret::default().is_set());
+        let webhook = EventOutputTarget::Webhook {
+            url: Secret::stored("hook"),
+            format: WebhookFormat::Json,
+        };
+        assert!(webhook.valid() && webhook.configured());
+        assert!(!webhook.accepts_secret("http://plain.example/hook"));
+        assert!(webhook.accepts_secret("https://hooks.example/abc"));
+        assert!(
+            !EventOutputTarget::Mqtt {
+                broker_url: String::new(),
+                topic: String::new(),
+                username: String::new(),
+                password: Secret::default(),
+            }
+            .accepts_secret(&"p".repeat(MAX_OUTPUT_SECRET_LEN + 1))
+        );
     }
 }

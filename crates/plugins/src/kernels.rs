@@ -3,10 +3,11 @@
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, FracResampler, fft::Transform};
 use sdrmm_wire::plugin::{IMPORT_MODULE, import};
-use wasmtime::{Caller, Linker, Memory};
+use wasmtime::{Caller, Linker, Memory, StoreLimits};
 
 use crate::{
     PluginError,
+    engine::limits,
     samples::{SAMPLE_BYTES, floats, read_samples, write_samples},
 };
 
@@ -21,19 +22,22 @@ enum Kernel {
 }
 
 /// What a plugin instance holds on the host side.
-#[derive(Default)]
 pub(crate) struct HostState {
     kernels: Vec<Option<Kernel>>,
     input: Vec<Complex<f32>>,
     output: Vec<Complex<f32>>,
     pub(crate) plugin: String,
+    pub(crate) limits: StoreLimits,
 }
 
 impl HostState {
     pub(crate) fn new(plugin: &str) -> Self {
         Self {
+            kernels: Vec::new(),
+            input: Vec::new(),
+            output: Vec::new(),
             plugin: plugin.to_owned(),
-            ..Self::default()
+            limits: limits(),
         }
     }
 

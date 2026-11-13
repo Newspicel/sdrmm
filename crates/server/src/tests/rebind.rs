@@ -175,3 +175,96 @@ async fn the_startup_pass_leaves_a_workspace_a_client_edited_first_alone() {
         "the startup pass opened a workspace the client had taken over"
     );
 }
+
+fn quiet_workspace(store: &Store) -> i64 {
+    store
+        .create_workspace("Quiet", &sdrmm_wire::WorkspaceSnapshot::starter())
+        .expect("second workspace")
+}
+
+/// Holds the apply gate while `work` starts, switches to `quiet` behind it, then lets it run.
+fn switch_while_gated(state: &AppState, quiet: i64, work: impl FnOnce()) {
+    let gate = state.apply_gate.clone();
+    let held = rest::lock_gate(&gate);
+    work();
+    std::thread::sleep(Duration::from_millis(200));
+    state.store.activate_workspace(quiet).expect("switched");
+    drop(held);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_radio_that_turns_up_during_a_switch_binds_the_new_workspace() {
+    let store = Arc::new(Store::open(None).expect("in-memory store"));
+    let present = Arc::new(AtomicBool::new(false));
+    let state = late_state(&present, &store);
+    let (app, background) = router_with_state(state.clone(), &ServerOptions::default());
+    background.detach();
+    put_active_workspace(&app, &late_snapshot()).await;
+    let quiet = quiet_workspace(&store);
+    present.store(true, Ordering::SeqCst);
+
+    let mut binding = None;
+    switch_while_gated(&state, quiet, || {
+        binding = Some(tokio::spawn(crate::rebind::bind_new_radios(state.clone())));
+    });
+    binding.expect("spawned").await.expect("bound");
+
+    assert!(
+        state.engine.snapshot().device_sets.is_empty(),
+        "the old workspace's radio was opened after the switch"
+    );
+}
+
+#[test]
+fn a_run_controller_settles_the_workspace_active_once_it_holds_the_gate() {
+    use sdrmm_wire::{CONTROL_PORT, DeviceNode, PatchEdge, PortRef, Position, ScheduleNode};
+    let store = Arc::new(Store::open(None).expect("in-memory store"));
+    let node = |id: &str, body: NodeBody| sdrmm_wire::PatchNode {
+        id: id.to_owned(),
+        body,
+        position: Position { x: 0.0, y: 0.0 },
+        size: None,
+        label: None,
+    };
+    let port = |node: &str| PortRef {
+        node: node.to_owned(),
+        port: CONTROL_PORT.to_owned(),
+    };
+    let mut gated = sdrmm_wire::WorkspaceSnapshot::starter();
+    gated.graph.nodes = vec![
+        node("day", NodeBody::Schedule(ScheduleNode::default())),
+        node(
+            "dev",
+            NodeBody::Device(DeviceNode {
+                device: Some(DeviceRef {
+                    backend: DeviceBackend::Virtual,
+                    serial: None,
+                    key: Some("band".to_owned()),
+                }),
+                ..DeviceNode::default()
+            }),
+        ),
+    ];
+    gated.graph.edges = vec![PatchEdge {
+        from: port("day"),
+        to: port("dev"),
+    }];
+    let wired = store.create_workspace("Wired", &gated).expect("wired");
+    store.activate_workspace(wired).expect("active");
+    let quiet = quiet_workspace(&store);
+    let state = AppState::new(Engine::new(None), store);
+
+    let mut settling = None;
+    switch_while_gated(&state, quiet, || {
+        let state = state.clone();
+        settling = Some(std::thread::spawn(move || {
+            crate::run_gate::settle(&state, std::collections::BTreeSet::new(), false)
+        }));
+    });
+    let resting = settling.expect("spawned").join().expect("settled");
+
+    assert!(
+        resting.is_empty(),
+        "settled the workspace switched away from: {resting:?}"
+    );
+}

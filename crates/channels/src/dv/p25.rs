@@ -20,6 +20,7 @@ use crate::{
     check_input_rate,
 };
 pub(crate) mod privacy;
+pub(crate) mod trunk;
 use privacy::{ALGORITHM_CLEAR, CipherKey, CipherKeys, Privacy};
 
 pub(crate) const BAUD: f64 = 4_800.0;
@@ -172,6 +173,7 @@ struct Decoder {
     vocoder: MbeDecoder,
     logical: Vec<bool>,
     rejected: u32,
+    bands: trunk::BandPlan,
 }
 
 impl Decoder {
@@ -192,6 +194,7 @@ impl Decoder {
             vocoder,
             logical: Vec::with_capacity(MAX_FRAME_BITS),
             rejected: 0,
+            bands: trunk::BandPlan::default(),
         }
     }
 
@@ -211,6 +214,7 @@ impl Decoder {
         self.encryption = None;
         self.privacy.reset();
         self.vocoder.reset();
+        self.bands.reset();
     }
 
     fn push(&mut self, symbol: f32, out: &mut ChannelOutputs) {
@@ -484,7 +488,10 @@ impl Decoder {
                 self.rejected = self.rejected.saturating_add(1);
                 continue;
             }
+            self.bands.learn(&payload);
             let mut frame = decode_tsbk(&payload);
+            self.bands.place(&mut frame);
+            trunk::mark(&mut frame);
             frame.color_code = Some(self.pending_nac);
             frame.errors_corrected = self.pending_errors;
             frames.push(frame);
@@ -736,6 +743,8 @@ fn tsbk_name(opcode: u8) -> &'static str {
         0x3A => "RFSS status broadcast",
         0x3B => "network status broadcast",
         0x3C => "adjacent site status broadcast",
+        0x34 => "channel identifier update VHF/UHF",
+        0x3D => "channel identifier update",
         _ => "trunking signalling block",
     }
 }

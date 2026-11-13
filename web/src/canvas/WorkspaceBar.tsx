@@ -1,4 +1,5 @@
 import { CircleQuestionMark, Plus, Redo2, Undo2 } from "lucide-react";
+import { lazy, Suspense } from "react";
 import { Button } from "../components/BaseControls";
 import {
   BTN_PRIMARY,
@@ -14,7 +15,6 @@ import { ThemeControl } from "../components/ThemeControl";
 import { usePeople } from "../lib/presence";
 import type { WorkspaceInfo } from "../lib/types";
 import { useWorkspaceContext } from "./context";
-import { Library } from "./Library";
 import { LinkQuality } from "./LinkQuality";
 import { NodePalette } from "./NodePalette";
 import { Peers } from "./Peers";
@@ -22,6 +22,8 @@ import { useAddNode } from "./useAddNode";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 
 export type View = "patch" | "rack";
+
+const Library = lazy(() => import("./Library").then((module) => ({ default: module.Library })));
 
 const VIEWS: Options<View> = [
   { value: "patch", label: "Patch" },
@@ -186,16 +188,18 @@ export function WorkspaceBar({
           padded={false}
         >
           {(close) => (
-            <Library
-              onOpenTool={(id) => {
-                close();
-                onOpenTool(id);
-              }}
-              onActivate={(id) => {
-                close();
-                onActivate(id);
-              }}
-            />
+            <Suspense fallback={null}>
+              <Library
+                onOpenTool={(id) => {
+                  close();
+                  onOpenTool(id);
+                }}
+                onActivate={(id) => {
+                  close();
+                  onActivate(id);
+                }}
+              />
+            </Suspense>
           )}
         </Popover>
         <Rule />

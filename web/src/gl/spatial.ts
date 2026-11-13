@@ -1,5 +1,6 @@
 import { recordEvent } from "../lib/diagnostics";
 import type { SpatialSpectrumFrame } from "../lib/frame";
+import { createDrawLoop } from "./drawLoop";
 import { backingPx, pixelRatio, zoomOf } from "./raster";
 
 export const TRAIL_ROWS = 160;
@@ -108,6 +109,10 @@ export function attachTrail(canvas: HTMLCanvasElement, rows = TRAIL_ROWS): Trail
     context.clearRect(0, 0, width, height);
     context.drawImage(scratch, 0, 0, width, height);
   };
+  const loop = createDrawLoop(canvas, () => {
+    blit();
+    return false;
+  });
 
   return {
     push(frame, offsetDeg) {
@@ -123,13 +128,14 @@ export function attachTrail(canvas: HTMLCanvasElement, rows = TRAIL_ROWS): Trail
       const stride = frame.bins * 4;
       image.data.copyWithin(stride, 0, stride * (rows - 1));
       trailRow(frame, offsetDeg, image.data, 0);
-      blit();
+      loop.invalidate();
     },
     clear() {
       image?.data.fill(0);
-      blit();
+      loop.invalidate();
     },
     dispose() {
+      loop.dispose();
       scratch = null;
       image = null;
     },

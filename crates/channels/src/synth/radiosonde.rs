@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used)]
-
 use std::f64::consts::TAU;
 
 use crate::radiosonde::SondeType;
@@ -28,6 +26,7 @@ const IMET_DEVIATION_HZ: f64 = 3_000.0;
 const DFM_FRAMES_PER_CYCLE: usize = 5;
 const DFM_CHANNELS: [u8; 8] = [0, 1, 2, 3, 4, 5, 6, 0xA];
 const DFM_SERIES_OHM: f64 = 20e3;
+const DFM_SERIAL: u32 = 23_034_567;
 const RS41_REF_LOW_OHM: f64 = 750.0;
 const RS41_REF_HIGH_OHM: f64 = 1_100.0;
 const RS41_COUNTS_PER_OHM: f64 = 100.0;
@@ -139,7 +138,7 @@ pub fn flight(sonde: SondeType) -> Flight {
             ..base
         },
         SondeType::Dfm => Flight {
-            serial: "23034567".to_owned(),
+            serial: DFM_SERIAL.to_string(),
             first_frame: 0x42,
             lat: 52.520_000_0,
             lon: 13.405_000_0,
@@ -409,10 +408,6 @@ fn float24(value: f64) -> u32 {
 
 fn dfm_conf(flight: &Flight, channel: u8, serial_visit: usize) -> u32 {
     let ohm = thermistor_ohm(dfm::THERMISTOR, flight.temperature_c);
-    let serial: u32 = flight
-        .serial
-        .parse()
-        .expect("a DFM flight serial is decimal digits");
     match channel {
         0 => float24(ohm + DFM_SERIES_OHM),
         3 => float24(DFM_SERIES_OHM),
@@ -422,9 +417,9 @@ fn dfm_conf(flight: &Flight, channel: u8, serial_visit: usize) -> u32 {
         0xA => {
             let half = (serial_visit % 2) as u32;
             let word = if half == 0 {
-                serial >> 16
+                DFM_SERIAL >> 16
             } else {
-                serial & 0xFFFF
+                DFM_SERIAL & 0xFFFF
             };
             (u32::from(dfm::SERIAL_MARK) << 20) | (word << 4) | half
         }
@@ -856,22 +851,9 @@ mod tests {
     #[test]
     fn a_dfm_serial_splits_into_two_half_words() {
         let flight = flight(SondeType::Dfm);
-        let serial: u32 = flight
-            .serial
-            .parse()
-            .expect("the fixture serial is numeric");
+        assert_eq!(flight.serial, DFM_SERIAL.to_string());
         let half = |visit| dfm_conf(&flight, SERIAL_CHANNEL, visit) >> 4 & 0xFFFF;
-        assert_eq!(half(0), serial >> 16);
-        assert_eq!(half(1), serial & 0xFFFF);
-    }
-
-    #[test]
-    #[should_panic(expected = "decimal digits")]
-    fn a_dfm_serial_that_is_not_a_number_is_refused() {
-        let named = Flight {
-            serial: "DFM09-1234".to_owned(),
-            ..flight(SondeType::Dfm)
-        };
-        dfm_conf(&named, SERIAL_CHANNEL, 0);
+        assert_eq!(half(0), DFM_SERIAL >> 16);
+        assert_eq!(half(1), DFM_SERIAL & 0xFFFF);
     }
 }

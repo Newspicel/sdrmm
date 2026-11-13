@@ -716,7 +716,7 @@ pub(crate) mod tests {
 
     fn status(
         node: &str,
-        color_code: Option<u8>,
+        color_code: Option<u16>,
         map: &[(u16, u64, TrunkChannelSource)],
     ) -> TrunkSystemStatus {
         TrunkSystemStatus {

@@ -14,7 +14,9 @@ use sdrmm_channels::{
         ArrayBlock, ArrayCtx, CalView, CorrectionView, LaneBuffer, OutputSlots, Pose,
         ProcessorAction, ProcessorOutput,
     },
-    passive_radar::{CafBackend, CafError, CpiJob, CpuCaf, CubeOut, RadarPlan as StagePlan, plan},
+    passive_radar::{
+        CafBackend, CafError, CpiJob, CpuCaf, CubeOut, LiveParams, RadarPlan as StagePlan, plan,
+    },
 };
 use sdrmm_test_support::assert_no_alloc;
 use sdrmm_wire::{
@@ -28,7 +30,7 @@ use super::{
     *,
 };
 use crate::array::{
-    Command, CommandQueue, LiveFrame,
+    Command, CommandQueue, DedicatedRunner, LiveFrame,
     aggregator::{Aggregator, wire},
     board::StatusBoard,
     correct::CorrectionSet,
@@ -967,10 +969,10 @@ fn prepare_sorts_changes_into_same_live_and_rebuild() {
     let centers = [CENTER_HZ; ELEMENTS];
     let ctx = array_ctx(&geometry, &centers);
     let radar = |params: PassiveRadarParams| ProcessorParams::PassiveRadar(params);
-    let (runner, plan) = build_dedicated(&ctx, &radar(params()), GpuUse::Off).expect("built");
+    let (runner, plan) = build(&ctx, &radar(params()), GpuUse::Off).expect("built");
     assert_ne!(plan.backend, CafBackendKind::Gpu);
     assert_eq!(plan.params(), &params());
-    let (same, kept) = prepare_dedicated(&plan, &ctx, &radar(params()), GpuUse::Off).expect("same");
+    let (same, kept) = prepare(&plan, &ctx, &radar(params()), GpuUse::Off).expect("same");
     assert!(matches!(same, Prepared::Same));
     assert_eq!(kept.backend, plan.backend);
     let stricter = PassiveRadarParams {
@@ -980,10 +982,12 @@ fn prepare_sorts_changes_into_same_live_and_rebuild() {
         },
         ..params()
     };
-    let (live, tuned) =
-        prepare_dedicated(&plan, &ctx, &radar(stricter), GpuUse::Off).expect("live");
+    let (live, tuned) = prepare(&plan, &ctx, &radar(stricter), GpuUse::Off).expect("live");
     match live {
-        Prepared::Live(live) => assert!((live.cfar.min_snr - 10f32.powf(1.2)).abs() < 1e-3),
+        Prepared::Live(live) => {
+            let live = live.downcast_ref::<LiveParams>().expect("radar settings");
+            assert!((live.cfar.min_snr - 10f32.powf(1.2)).abs() < 1e-3);
+        }
         _ => panic!("a CFAR change is live"),
     }
     assert_eq!(tuned.params().cfar.min_snr_db, 12.0);
@@ -991,8 +995,7 @@ fn prepare_sorts_changes_into_same_live_and_rebuild() {
         cpi_ms: 300,
         ..params()
     };
-    let (rebuilt, _) =
-        prepare_dedicated(&plan, &ctx, &radar(longer), GpuUse::Off).expect("rebuild");
+    let (rebuilt, _) = prepare(&plan, &ctx, &radar(longer), GpuUse::Off).expect("rebuild");
     let Prepared::Rebuild(rebuilt) = rebuilt else {
         panic!("a CPI change rebuilds");
     };
@@ -1000,7 +1003,7 @@ fn prepare_sorts_changes_into_same_live_and_rebuild() {
     let moved = [CENTER_HZ + 2e6; ELEMENTS];
     let retuned = array_ctx(&geometry, &moved);
     let (moved, moved_plan) =
-        prepare_dedicated(&plan, &retuned, &radar(params()), GpuUse::Off).expect("retune");
+        prepare(&plan, &retuned, &radar(params()), GpuUse::Off).expect("retune");
     let Prepared::Rebuild(moved) = moved else {
         panic!("a retune rebuilds");
     };
@@ -1008,10 +1011,10 @@ fn prepare_sorts_changes_into_same_live_and_rebuild() {
     moved.retire().join().expect("retuned radar stopped");
     let wrong = ProcessorParams::Df(sdrmm_wire::DfParams::default());
     assert!(matches!(
-        prepare_dedicated(&plan, &ctx, &wrong, GpuUse::Off),
+        prepare(&plan, &ctx, &wrong, GpuUse::Off),
         Err(ChannelError::Refused("Wrong settings"))
     ));
-    runner.retire().join().expect("radar stopped");
+    Box::new(runner).retire().join().expect("radar stopped");
 }
 
 #[test]
@@ -1027,7 +1030,11 @@ fn a_passive_radar_host_builds_its_runner() {
         &live_frame(),
     )
     .expect("radar host");
-    let plan = built.radar.expect("radar plan");
+    let plan = built.dedicated.expect("radar plan");
+    let plan = plan
+        .as_any()
+        .downcast_ref::<RadarPlan>()
+        .expect("a radar plan");
     assert_eq!(plan.ctx().elements, ELEMENTS);
     assert!((plan.stage.front.radar_rate - RATE / 2.0).abs() < 1e-6);
     built.host.retire();

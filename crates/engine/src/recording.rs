@@ -2,10 +2,11 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, OnceLock,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc,
     },
     thread::JoinHandle,
+    time::{Duration, SystemTime},
 };
 
 use num_complex::Complex;
@@ -40,6 +41,7 @@ pub(crate) struct RecordingShared {
     bytes: AtomicU64,
     error: OnceLock<String>,
     publication_failed: AtomicBool,
+    runs: AtomicU32,
 }
 
 #[derive(Clone, Debug)]
@@ -61,6 +63,16 @@ impl RecordingPosition {
                 mpsc::TrySendError::Full(_) => PositionUpdateError::Full,
                 mpsc::TrySendError::Disconnected(_) => PositionUpdateError::Disconnected,
             })
+    }
+
+    /// A fresh tap into the same file for a restarted runtime. Its blocks carry a new run, so the
+    /// writer opens a capture at the seam instead of joining two streams silently.
+    pub(crate) fn resume(&self, shared: &Arc<RecordingShared>) -> RecorderTap {
+        RecorderTap {
+            tx: self.tx.clone(),
+            shared: shared.clone(),
+            run: shared.runs.fetch_add(1, Ordering::Relaxed) + 1,
+        }
     }
 }
 
@@ -90,6 +102,8 @@ impl RecordingShared {
 pub(crate) struct RecBlock {
     start_sample: u64,
     center_hz: f64,
+    run: u32,
+    captured: Option<SystemTime>,
     samples: Arc<[Complex<f32>]>,
 }
 
@@ -103,9 +117,14 @@ pub(crate) enum RecMessage {
 pub(crate) struct RecorderTap {
     tx: mpsc::SyncSender<RecMessage>,
     shared: Arc<RecordingShared>,
+    run: u32,
 }
 
 impl RecorderTap {
+    pub(crate) fn feeds(&self, shared: &Arc<RecordingShared>) -> bool {
+        Arc::ptr_eq(&self.shared, shared)
+    }
+
     pub(crate) fn healthy(&self) -> bool {
         self.shared.error.get().is_none() && !self.shared.publication_failed.load(Ordering::Relaxed)
     }
@@ -118,7 +137,7 @@ impl RecorderTap {
 
     #[must_use]
     pub(crate) fn push(&self, slice: &[Complex<f32>], start_sample: u64, center_hz: f64) -> bool {
-        self.enqueue(slice, start_sample, center_hz, false)
+        self.enqueue(slice, start_sample, center_hz, None, false)
     }
 
     #[must_use]
@@ -127,8 +146,9 @@ impl RecorderTap {
         slice: &[Complex<f32>],
         start_sample: u64,
         center_hz: f64,
+        captured: Option<SystemTime>,
     ) -> bool {
-        self.enqueue(slice, start_sample, center_hz, true)
+        self.enqueue(slice, start_sample, center_hz, captured, true)
     }
 
     fn enqueue(
@@ -136,6 +156,7 @@ impl RecorderTap {
         slice: &[Complex<f32>],
         start_sample: u64,
         center_hz: f64,
+        captured: Option<SystemTime>,
         wait: bool,
     ) -> bool {
         if slice.is_empty() {
@@ -144,6 +165,8 @@ impl RecorderTap {
         let block = RecBlock {
             start_sample,
             center_hz,
+            run: self.run,
+            captured,
             samples: Arc::from(slice),
         };
         let message = RecMessage::Block(block);
@@ -183,6 +206,7 @@ pub(crate) fn create_tap(
         RecorderTap {
             tx,
             shared: shared.clone(),
+            run: 0,
         },
         position,
         rx,
@@ -207,7 +231,8 @@ fn write_loop(
     shared: &RecordingShared,
 ) {
     let mut center = writer.meta().captures.last().and_then(|c| c.frequency);
-    let mut next_sample: Option<u64> = None;
+    let rate = writer.meta().global.sample_rate.unwrap_or(0.0);
+    let mut seen: Option<Seen> = None;
     while let Ok(message) = messages.recv() {
         let block = match message {
             RecMessage::Block(block) => block,
@@ -216,15 +241,11 @@ fn write_loop(
                 continue;
             }
         };
-        if let Some(expected) = next_sample
-            && block.start_sample != expected
-        {
-            tracing::debug!(
-                gap = block.start_sample.saturating_sub(expected),
-                "recording spans a capture loss"
-            );
+        if let Some(gap) = seen.and_then(|seen| seen.gap_before(&block, rate)) {
+            tracing::debug!(missing = gap.missing, "recording spans a capture loss");
+            writer.skip(gap.missing, &stamp(gap.at));
         }
-        next_sample = Some(block.start_sample + block.samples.len() as u64);
+        seen = Some(Seen::after(&block, rate));
         if center != Some(block.center_hz) {
             writer.add_capture(block.center_hz);
             center = Some(block.center_hz);
@@ -243,6 +264,55 @@ fn write_loop(
     if let Err(e) = writer.finalize() {
         shared.fail(format!("recording finalize failed: {e}"));
     }
+}
+
+/// Where the stream stood after the last block the writer took.
+#[derive(Clone, Copy)]
+struct Seen {
+    run: u32,
+    next: u64,
+    next_at: Option<SystemTime>,
+}
+
+struct Gap {
+    missing: u64,
+    at: SystemTime,
+}
+
+impl Seen {
+    fn after(block: &RecBlock, rate: f64) -> Self {
+        let len = block.samples.len() as u64;
+        Self {
+            run: block.run,
+            next: block.start_sample + len,
+            next_at: block.captured.and_then(|at| {
+                at.checked_add(Duration::try_from_secs_f64(len as f64 / rate).ok()?)
+            }),
+        }
+    }
+
+    /// The samples lost before `block`. A restarted runtime counts from a new origin, so across
+    /// runs the loss is estimated from the wall clock.
+    fn gap_before(&self, block: &RecBlock, rate: f64) -> Option<Gap> {
+        let at = block.captured.unwrap_or_else(SystemTime::now);
+        if block.run == self.run {
+            return (block.start_sample != self.next).then(|| Gap {
+                missing: block.start_sample.saturating_sub(self.next),
+                at,
+            });
+        }
+        let missing = self
+            .next_at
+            .and_then(|expected| at.duration_since(expected).ok())
+            .map_or(0, |lost| (lost.as_secs_f64() * rate).round() as u64);
+        Some(Gap { missing, at })
+    }
+}
+
+fn stamp(at: SystemTime) -> String {
+    jiff::Timestamp::try_from(at)
+        .unwrap_or_else(|_| jiff::Timestamp::now())
+        .to_string()
 }
 
 pub(crate) fn create_writer(
@@ -317,6 +387,64 @@ mod tests {
         assert_eq!(captures.len(), 2);
         assert_eq!(captures[1].sample_start, 16);
         assert_eq!(captures[1].frequency, Some(101_000_000.0));
+    }
+
+    #[test]
+    fn a_capture_loss_opens_a_segment_at_its_global_index() {
+        let dir = TempDir::new().unwrap();
+        let stem = dir.path().join("lossy");
+        let writer = SigmfWriter::create(&stem, 48_000.0, 100_000_000.0, "hw").unwrap();
+        let (tap, position, messages, shared) = create_tap(48_000.0);
+        let handle = spawn_writer(writer, messages, shared.clone()).unwrap();
+        let resumed = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+
+        assert!(tap.push(&block(16), 0, 100_000_000.0));
+        assert!(tap.push_waiting(&block(16), 40, 100_000_000.0, Some(resumed)));
+        assert!(tap.push(&block(16), 56, 100_000_000.0));
+        drop(tap);
+        drop(position);
+        handle.join().unwrap();
+
+        let reader = SigmfReader::open(&stem).unwrap();
+        assert_eq!(reader.total_samples(), 48);
+        let captures = &reader.meta().captures;
+        assert_eq!(captures.len(), 2, "{captures:?}");
+        assert_eq!(captures[1].sample_start, 16);
+        assert_eq!(captures[1].global_index, Some(40));
+        assert_eq!(captures[1].frequency, Some(100_000_000.0));
+        assert_eq!(
+            captures[1].datetime.as_deref(),
+            Some(stamp(resumed).as_str())
+        );
+    }
+
+    #[test]
+    fn a_resumed_tap_opens_a_segment_and_estimates_the_loss_from_the_clock() {
+        let dir = TempDir::new().unwrap();
+        let stem = dir.path().join("resumed");
+        let writer = SigmfWriter::create(&stem, 1_000.0, 100_000_000.0, "hw").unwrap();
+        let (tap, position, messages, shared) = create_tap(1_000.0);
+        let handle = spawn_writer(writer, messages, shared.clone()).unwrap();
+        let origin = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+
+        assert!(tap.push_waiting(&block(100), 500, 100_000_000.0, Some(origin)));
+        let restarted = position.resume(&shared);
+        drop(tap);
+        let later = origin + Duration::from_millis(600);
+        assert!(restarted.push_waiting(&block(100), 100, 101_000_000.0, Some(later)));
+        drop(restarted);
+        drop(position);
+        handle.join().unwrap();
+
+        let reader = SigmfReader::open(&stem).unwrap();
+        assert_eq!(reader.total_samples(), 200);
+        let captures = &reader.meta().captures;
+        assert_eq!(captures.len(), 2, "{captures:?}");
+        assert_eq!(captures[1].sample_start, 100);
+        assert_eq!(captures[1].global_index, Some(600));
+        assert_eq!(captures[1].frequency, Some(101_000_000.0));
+        assert_eq!(captures[1].datetime.as_deref(), Some(stamp(later).as_str()));
+        assert_eq!(shared.error(), None);
     }
 
     #[test]

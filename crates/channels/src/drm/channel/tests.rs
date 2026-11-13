@@ -90,7 +90,7 @@ fn two_services(mode: Robustness) -> Config {
 
 #[test]
 fn a_mode_b_multiplex_names_its_services_and_plays_the_first() {
-    let iq = synth::drm::signal(two_services(Robustness::B), 9);
+    let iq = synth::drm::signal(two_services(Robustness::B), 9).expect("a synthetic signal");
     let mut channel = channel(DrmMode::Auto, None);
     let out = run(&mut channel, &iq);
     let status = status(&out);
@@ -122,7 +122,7 @@ fn a_mode_b_multiplex_names_its_services_and_plays_the_first() {
 
 #[test]
 fn choosing_a_service_switches_the_audio() {
-    let iq = synth::drm::signal(two_services(Robustness::B), 6);
+    let iq = synth::drm::signal(two_services(Robustness::B), 6).expect("a synthetic signal");
     let mut channel = channel(DrmMode::Drm30, Some(1));
     let out = run(&mut channel, &iq);
     let status = status(&out);
@@ -142,7 +142,7 @@ fn mode_a_survives_noise_offset_and_echoes_with_unequal_protection() {
         higher_bytes: 60,
         ..defaults(Robustness::A)
     };
-    let clean = synth::drm::signal(config, 6);
+    let clean = synth::drm::signal(config, 6).expect("a synthetic signal");
     let mut echoed = multipath(
         &clean,
         &[
@@ -196,7 +196,7 @@ fn mode_d_locks_when_time_references_stray_from_the_table() {
         sdc_robust: true,
         ..defaults(Robustness::D)
     };
-    let mut clean = synth::drm::signal(config, 6);
+    let mut clean = synth::drm::signal(config, 6).expect("a synthetic signal");
     displace_time_references(&mut clean, Robustness::D);
     let mut echoed = multipath(
         &clean,
@@ -217,7 +217,7 @@ fn mode_d_locks_when_time_references_stray_from_the_table() {
 
 #[test]
 fn drm_plus_decodes_with_noise_offset_and_echoes() {
-    let clean = synth::drm::signal(defaults(Robustness::E), 6);
+    let clean = synth::drm::signal(defaults(Robustness::E), 6).expect("a synthetic signal");
     let mut echoed = multipath(
         &clean,
         &[
@@ -244,7 +244,7 @@ fn drm_plus_decodes_with_noise_offset_and_echoes() {
 
 #[test]
 fn a_burst_of_interference_surfaces_as_errors() {
-    let mut iq = synth::drm::signal(two_services(Robustness::B), 7);
+    let mut iq = synth::drm::signal(two_services(Robustness::B), 7).expect("a synthetic signal");
     let start = iq.len() / 2;
     let burst = crate::testutil::complex_noise(3, 2.0, 60_000);
     for (sample, noise) in iq[start..start + burst.len()].iter_mut().zip(burst) {
@@ -286,7 +286,7 @@ fn never_locks(channel: &mut DrmChannel, iq: &[Complex<f32>]) {
 
 #[test]
 fn a_drifting_sample_clock_keeps_timing() {
-    let clean = synth::drm::signal(defaults(Robustness::B), 8);
+    let clean = synth::drm::signal(defaults(Robustness::B), 8).expect("a synthetic signal");
     let iq = synth::resample(&clean, INPUT_RATE_HZ, INPUT_RATE_HZ * (1.0 + 40e-6));
     let mut channel = channel(DrmMode::Drm30, None);
     let out = run(&mut channel, &iq);
@@ -319,7 +319,7 @@ fn every_robustness_mode_and_constellation_carries_fac_sdc_and_audio() {
             sdc_robust: occupancy % 2 == 1,
             ..defaults(mode)
         };
-        let iq = synth::drm::signal(config, 6);
+        let iq = synth::drm::signal(config, 6).expect("a synthetic signal");
         let mut channel = channel(
             if mode.plus() {
                 DrmMode::DrmPlus
@@ -349,7 +349,7 @@ fn every_robustness_mode_and_constellation_carries_fac_sdc_and_audio() {
 
 #[test]
 fn decoding_keeps_ahead_of_the_channel_rate() {
-    let iq = synth::drm::signal(defaults(Robustness::B), 3);
+    let iq = synth::drm::signal(defaults(Robustness::B), 3).expect("a synthetic signal");
     let mut channel = channel(DrmMode::Auto, None);
     let mut out = ChannelOutputs::default();
     let started = Instant::now();

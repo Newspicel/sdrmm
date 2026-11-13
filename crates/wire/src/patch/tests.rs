@@ -165,7 +165,9 @@ fn a_channel_can_reach_an_event_output_through_a_filter() {
                 "output",
                 NodeBody::EventOutput(EventOutputNode {
                     target: crate::EventOutputTarget::Webhook {
-                        url: "https://discord.com/api/webhooks/1/token".to_owned(),
+                        url: crate::event_output::Secret::Inline(
+                            "https://discord.com/api/webhooks/1/token".to_owned(),
+                        ),
                         format: crate::WebhookFormat::Discord,
                     },
                 }),
@@ -445,13 +447,11 @@ fn a_dmr_trunk_system_refuses_a_channel_plan_it_cannot_use() {
         }]),
         Err(PatchError::NodeSettings("system".to_owned()))
     );
-    assert_eq!(
-        planned(vec![TrunkChannelEntry {
-            lcn: MAX_TRUNK_LOGICAL_CHANNEL + 1,
-            freq_hz: 451_012_500,
-        }]),
-        Err(PatchError::NodeSettings("system".to_owned()))
-    );
+    planned(vec![TrunkChannelEntry {
+        lcn: 0x1234,
+        freq_hz: 851_068_750,
+    }])
+    .expect("a channel number past twelve bits, as P25 names them");
 }
 
 #[test]
@@ -460,7 +460,9 @@ fn an_event_output_accepts_decoder_and_completed_call_events() {
         "output",
         NodeBody::EventOutput(EventOutputNode {
             target: crate::EventOutputTarget::Webhook {
-                url: "https://discord.com/api/webhooks/1/token".to_owned(),
+                url: crate::event_output::Secret::Inline(
+                    "https://discord.com/api/webhooks/1/token".to_owned(),
+                ),
                 format: crate::WebhookFormat::Discord,
             },
         }),

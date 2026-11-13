@@ -40,6 +40,7 @@ mod presets;
 mod rebind;
 mod recordings;
 mod scanning;
+mod secrets;
 mod templates;
 mod tls;
 mod transmit;
@@ -900,7 +901,7 @@ async fn mcp_call(app: &Router, name: &str, arguments: serde_json::Value) -> ser
                 .uri("/mcp")
                 .header("content-type", "application/json")
                 .header("accept", "application/json, text/event-stream")
-                .header("host", "sdrmm.local:8080")
+                .header("host", "192.168.1.20:8080")
                 .body(Body::from(call.to_string()))
                 .expect("request"),
         )

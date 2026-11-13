@@ -20,6 +20,7 @@ import {
 import { Button } from "../components/BaseControls";
 import { BTN_QUIET, SURFACE } from "../components/controls";
 import { CANVAS_MOVED } from "../components/Popover";
+import { zoomSettled } from "../gl/drawLoop";
 import { createPointerSender, draggedByOthers, othersOf, usePresenceStore } from "../lib/presence";
 import type { ClientCommand, PatchGraph, PatchNode, Pointer } from "../lib/types";
 import { CanvasPalette, type ScreenPoint } from "./CanvasPalette";
@@ -41,7 +42,7 @@ import {
 import { useGridStep } from "./grid";
 import { useConnections, useGraphChanges } from "./handlers";
 import { type MenuPlace, menuPlace } from "./menuPlace";
-import { NODE_TYPES } from "./nodes";
+import { flowTypeOf, NODE_TYPES } from "./nodes";
 import { ReplaceDecoder } from "./nodes/ReplaceDecoder";
 import { PeerLayer } from "./PeerLayer";
 import { focusNode } from "./selection";
@@ -215,6 +216,7 @@ export function Canvas() {
             window.dispatchEvent(new Event(CANVAS_MOVED));
           }
         }}
+        onMoveEnd={(_event, viewport) => zoomSettled(viewport.zoom)}
         onNodeContextMenu={(event, node) => openMenu(event, { kind: "node", id: node.id })}
         onEdgeContextMenu={(event, edge) => openMenu(event, { kind: "edge", id: edge.id })}
         onPaneContextMenu={(event) => openMenu(event as React.MouseEvent, { kind: "pane" })}
@@ -449,7 +451,7 @@ function toFlowNodes(graph: PatchGraph): Node<FlowData>[] {
     const size = (isResizable(node.kind) ? node.size : null) ?? nodeSize(node.kind);
     return {
       id: node.id,
-      type: node.kind,
+      type: flowTypeOf(node.kind),
       position: node.position,
       data: { node },
       width: isResizable(node.kind) ? size.w : undefined,

@@ -308,7 +308,7 @@ fn trunk_with_follower(destination: Option<u32>) -> Vec<TrunkSystemStatus> {
         followers: vec![sdrmm_wire::TrunkFollower {
             device_set: 1,
             channel: 2,
-            slot: 1,
+            slot: Some(1),
             freq_hz: 451_125_000,
             destination,
             source: Some(4001),

@@ -1056,7 +1056,8 @@ fn navtex() -> Fixture {
 
 fn psk() -> Fixture {
     let params = ChannelParams::new("psk", &PskParams::default()).expect("psk settings");
-    let iq = synth::psk::transmission("CQ CQ DE SDR \n", PskBaud::Psk31.rate());
+    let iq = synth::psk::transmission("CQ CQ DE SDR \n", PskBaud::Psk31.rate())
+        .expect("a synthetic signal");
     let rate = Fixture::rate(&params);
     Fixture::new(params, with_tail(with_lead(iq, rate, 0.5), rate, 1.0))
 }
@@ -1081,7 +1082,10 @@ fn weak(type_id: &str) -> Heard {
                 settings(ChannelParams::new("ft8", &WsjtParams::default()).expect("ft8 settings")),
             )
             .expect("builds");
-            channel.process(&weak_signal::ft8_slot("W1AW", "FN42", 1_500.0), &mut out);
+            channel.process(
+                &weak_signal::ft8_slot("W1AW", "FN42", 1_500.0).expect("a synthetic signal"),
+                &mut out,
+            );
             channel.settle(&mut out);
         }
         "ft4" => {
@@ -1090,7 +1094,10 @@ fn weak(type_id: &str) -> Heard {
                 settings(ChannelParams::new("ft4", &WsjtParams::default()).expect("ft4 settings")),
             )
             .expect("builds");
-            channel.process(&weak_signal::ft4_slot("JA1ABC", "PM95", 1_000.0), &mut out);
+            channel.process(
+                &weak_signal::ft4_slot("JA1ABC", "PM95", 1_000.0).expect("a synthetic signal"),
+                &mut out,
+            );
             channel.settle(&mut out);
         }
         _ => {
@@ -1102,7 +1109,7 @@ fn weak(type_id: &str) -> Heard {
             )
             .expect("builds");
             channel.process(
-                &weak_signal::wspr_slot("K1ABC", "FN42", 37, 1_500.0),
+                &weak_signal::wspr_slot("K1ABC", "FN42", 37, 1_500.0).expect("a synthetic signal"),
                 &mut out,
             );
             channel.settle(&mut out);
@@ -1383,7 +1390,7 @@ fn gsm() -> Fixture {
 fn dab() -> Fixture {
     Fixture::new(
         ChannelParams::new("dab", &DabParams::default()).expect("dab settings"),
-        synth::dab::ensemble_for_mode(DabTransmissionMode::I, 16),
+        synth::dab::ensemble_for_mode(DabTransmissionMode::I, 16).expect("a synthetic signal"),
     )
 }
 
@@ -1398,7 +1405,7 @@ fn datv() -> Fixture {
             },
         )
         .expect("datv settings"),
-        synth::datv::dvbs2_generic(3, &[4]),
+        synth::datv::dvbs2_generic(3, &[4]).expect("a synthetic signal"),
     )
 }
 
@@ -1420,7 +1427,8 @@ fn drm() -> Fixture {
             },
         )
         .expect("drm settings"),
-        synth::drm::signal(synth::drm::defaults(synth::drm::Robustness::B), 6),
+        synth::drm::signal(synth::drm::defaults(synth::drm::Robustness::B), 6)
+            .expect("a synthetic signal"),
     )
 }
 

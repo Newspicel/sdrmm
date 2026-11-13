@@ -510,10 +510,10 @@ pub(super) fn granted(
         .find(|follower| {
             follower.device_set == record.device_set
                 && follower.channel == record.channel
-                && frame.slot.is_none_or(|slot| slot == follower.slot)
+                && frame.slot.is_none_or(|slot| Some(slot) == follower.slot)
         })?;
     Some(DvFrame {
-        slot: frame.slot.or(Some(follower.slot)),
+        slot: frame.slot.or(follower.slot),
         destination: Some(follower.destination?),
         source: follower.source,
         group_call: follower.group_call.or(frame.group_call),

@@ -76,6 +76,7 @@ import type {
   SaveNanoVnaMeasurementRequest,
   SaveRadioRequest,
   ScannerStatus,
+  Secret,
   SerialDevicesResponse,
   StateSnapshot,
   SurveyAction,
@@ -282,6 +283,14 @@ export function presetsQuery() {
     queryKey: PRESETS_KEY,
     queryFn: async (): Promise<PresetInfo[]> => unwrap(await client.GET("/api/presets")),
   });
+}
+
+/** Keeps `value` on this server under a fresh id; a workspace only ever names the id. */
+export async function keepSecret(value: string): Promise<Secret> {
+  if (value.trim() === "") {
+    return "";
+  }
+  return unwrap(await client.POST("/api/secrets", { body: { value } }));
 }
 
 export async function createPreset(name: string): Promise<number> {
@@ -690,10 +699,6 @@ export async function startArrayRecording(
 
 export async function stopArrayRecording(node: string): Promise<void> {
   unwrap(await client.DELETE("/api/arrays/{node}/recording", { params: { path: { node } } }));
-}
-
-export async function clearRadarTracks(node: string): Promise<void> {
-  unwrap(await client.DELETE("/api/radar/{node}/tracks", { params: { path: { node } } }));
 }
 
 export function phonesQuery() {

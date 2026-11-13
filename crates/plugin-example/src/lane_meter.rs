@@ -5,7 +5,7 @@ use sdrmm_plugin::{
     ArrayOutputs, Complex, Lanes, Processor,
     processor::defaults,
     wire::{
-        ArrayNeeds, NumberSpec, ProcessorType, ReadoutSpec, SettingField,
+        ArrayNeeds, NumberSpec, ProcessorFacets, ProcessorType, ReadoutSpec, SettingField,
         plugin::processor::ArrayFacts, present::Unit,
     },
 };
@@ -59,6 +59,7 @@ pub fn kind() -> ProcessorType {
         readouts: power.chain(phase).collect(),
         emits: Vec::new(),
         defaults: defaults::<LaneMeterSettings>(),
+        facets: ProcessorFacets::default(),
     }
 }
 

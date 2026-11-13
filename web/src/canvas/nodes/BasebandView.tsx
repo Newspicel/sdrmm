@@ -30,6 +30,7 @@ import { Switch } from "../../components/Switch";
 import { dequantize } from "../../components/spectrumTraces";
 import { FULL_VIEW } from "../../components/spectrumView";
 import type { Palette } from "../../gl/colormap";
+import { createDrawLoop, type DrawLoop } from "../../gl/drawLoop";
 import type { IqFrame, SpectrumFrame, SymbolFrame } from "../../lib/frame";
 import { SPECTRUM_SIGNAL_MARGIN_DB } from "../../lib/limits";
 import { iqHub, symbolHub } from "../../lib/portTaps";
@@ -99,8 +100,11 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
   const dbRef = useRef<Float32Array | null>(null);
   const railRef = useRef<Float32Array | null>(null);
   const settingsRef = useRef({ view, eyeComponent, symbolRate, decimate });
+  const colormapRef = useRef(colormap);
+  const loopRef = useRef<DrawLoop | null>(null);
   useLayoutEffect(() => {
     settingsRef.current = { view, eyeComponent, symbolRate, decimate };
+    colormapRef.current = colormap;
   });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the clear is the effect
@@ -110,8 +114,16 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
       clearBasebandGrid(grid);
       bitmapRef.current?.invalidate();
     }
+    loopRef.current?.invalidate();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the settings are what the clear reacts to
   }, [view, eyeComponent, symbolRate, decimate]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the recolour is the effect
+  useEffect(() => {
+    bitmapRef.current?.invalidate();
+    loopRef.current?.invalidate();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new colormap is what the recolour reacts to
+  }, [colormap]);
 
   useEffect(() => {
     const blocks = { seen: 0 };
@@ -145,6 +157,7 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
           addEye(grid, burst.samples, period, rail, eyeScale(burst.samples, rail));
         }
       }
+      loopRef.current?.invalidate();
       blocks.seen += 1;
       if (blocks.seen === 1 || blocks.seen % 10 === 0) {
         setFrame(burst);
@@ -171,6 +184,7 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
         scaleRef.current = referenceScale(block);
         addConstellation(grid, paired(block), scaleRef.current);
       }
+      loopRef.current?.invalidate();
       blocks.seen += 1;
       if (blocks.seen === 1 || blocks.seen % 4 === 0) {
         setSymbols(block);
@@ -188,33 +202,44 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
       PORT,
       (row) => {
         spectrumRef.current = row;
+        loopRef.current?.invalidate();
       },
       { bins: SPECTRUM_BINS },
     );
   }, [node, showsSpectrum]);
 
   useEffect(() => {
-    const pending = { raf: 0 };
-    const loop = () => {
+    const canvas = canvasRef.current;
+    if (canvas === null) {
+      return;
+    }
+    const scatter: Scatter = { grid: null, scale: 1 };
+    const trends = { mer: merRef.current, margin: marginRef.current, drift: driftRef.current };
+    const loop = createDrawLoop(canvas, () => {
+      scatter.grid = gridRef.current;
+      scatter.scale = scaleRef.current;
       draw(
-        canvasRef.current,
+        canvas,
         frameRef.current,
         symbolsRef.current,
         settingsRef.current,
-        { grid: gridRef.current, scale: scaleRef.current },
+        scatter,
         bitmapRef,
-        colormap,
+        colormapRef.current,
         spectrumRef,
         dbRef,
         railRef,
-        { mer: merRef.current, margin: marginRef.current, drift: driftRef.current },
+        trends,
         insetRef.current,
       );
-      pending.raf = requestAnimationFrame(loop);
+      return false;
+    });
+    loopRef.current = loop;
+    return () => {
+      loop.dispose();
+      loopRef.current = null;
     };
-    pending.raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(pending.raf);
-  }, [colormap]);
+  }, []);
 
   const nyquist = frame === null ? Number.POSITIVE_INFINITY : frame.sampleRate / 2;
   const period = frame === null ? 0 : samplesPerSymbol(frame.sampleRate, symbolRate);
@@ -425,7 +450,7 @@ export function referenceScale(block: SymbolFrame): number {
 }
 
 function draw(
-  canvas: HTMLCanvasElement | null,
+  canvas: HTMLCanvasElement,
   frame: IqFrame | null,
   block: SymbolFrame | null,
   settings: { view: BasebandView; eyeComponent: EyeComponent; symbolRate: number },
@@ -438,9 +463,6 @@ function draw(
   trends: Trends,
   inset: PlotInset,
 ): void {
-  if (canvas === null) {
-    return;
-  }
   const view = settings.view;
   if (view === "quality") {
     drawTrend(

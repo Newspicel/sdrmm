@@ -20,10 +20,10 @@ pub(crate) fn import_collection(
 ) -> Result<Imported, SigmfError> {
     let name = sanitize(&archive.name)?;
     let mut file: CollectionFile = serde_json::from_slice(&archive.collection)?;
-    let lanes = in_stream_order(&file, archive.lanes)?;
+    let mut lanes = in_stream_order(&file, archive.lanes)?;
     fs::create_dir_all(dir)?;
     let stem = claim_free(dir, &name, lanes.len())?;
-    match land(&stem, &mut file, &lanes) {
+    match land(&stem, &mut file, &mut lanes) {
         Ok(samples) => Ok(Imported { stem, samples }),
         Err(err) => {
             discard(&stem, lanes.len());
@@ -83,10 +83,16 @@ fn claim_free(dir: &Path, name: &str, lanes: usize) -> Result<PathBuf, SigmfErro
     }
 }
 
-fn land(stem: &Path, file: &mut CollectionFile, lanes: &[Member]) -> Result<u64, SigmfError> {
-    for (index, (stream, member)) in file.collection.streams.iter_mut().zip(lanes).enumerate() {
+fn land(stem: &Path, file: &mut CollectionFile, lanes: &mut [Member]) -> Result<u64, SigmfError> {
+    for (index, (stream, member)) in file
+        .collection
+        .streams
+        .iter_mut()
+        .zip(lanes.iter_mut())
+        .enumerate()
+    {
         let lane = lane_stem(stem, index);
-        fs::write(data_path(&lane), &member.data)?;
+        member.data.land(&data_path(&lane))?;
         fs::write(tmp_meta_path(&lane), &member.meta)?;
         stream.name = stream_name(&lane)?;
     }
@@ -131,7 +137,8 @@ mod tests {
     }
 
     fn unpacked(stem: &Path) -> ArchivedCollection {
-        match read_archive(archived(stem).as_slice()).expect("reads") {
+        let spool = stem.parent().expect("a recording sits in a directory");
+        match read_archive(archived(stem).as_slice(), spool).expect("reads") {
             Archive::Collection(collection) => collection,
             Archive::Pair(_) => panic!("a collection"),
         }

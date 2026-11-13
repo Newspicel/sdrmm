@@ -11,7 +11,7 @@ use crate::ChannelError;
 use crate::array_processor::{
     ArrayBlock, ArrayCtx, ArrayProcessor, Execution, LaneFormat, MAX_LANES, ProcessorAction,
     ProcessorDescriptor, ProcessorFaults, ProcessorNeeds, ProcessorOutput, Registration,
-    ResetCause, TuningNeed, boxed, check_tuning, stamp_at,
+    ResetCause, TuningNeed, boxed, check_tuning, no_gpu, stamp_at,
 };
 
 const WIDE: usize = 0;
@@ -33,6 +33,11 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
         batch: ctx.max_block,
     },
     in_place: |old, new| settings(old).is_some() && settings(new).is_some(),
+    actions: &[],
+    gpu: no_gpu,
+    event_bytes: 0,
+    enricher: None,
+    mission: None,
 };
 
 pub const REGISTRATION: Registration = Registration {

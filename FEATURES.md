@@ -36,9 +36,5 @@ occupied width, a PTT key and VOX included.
   shifted channel
 - Radtel RT-4D: settings blocks, keys and message templates are read but not modelled
 
-## 3. Recording & measurement
-- Recording scheduler and unattended satellite-pass automation
+## 3. Measurement
 - Radio astronomy, star tracker, sky map
-
-## 4. Automation & API
-- WASM plugin SDK

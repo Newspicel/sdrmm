@@ -25,6 +25,7 @@ Radio / network / recording → DSP engine → audio, events, spectrum, IQ
 | `sdrmm-device-rtlsdr` | Native RTL-SDR driver |
 | `sdrmm-device-airspy`, `sdrmm-device-airspyhf` | Native Airspy drivers |
 | `sdrmm-device-hackrf` | Native HackRF driver |
+| `sdrmm-device-funcube` | FUNcube Dongle Pro+, over USB audio and HID |
 | `sdrmm-device-espsdr` | ESP32 running ESP-SDR firmware, over serial |
 | `sdrmm-device-ad936x` | AntSDR, PlutoSDR and other AD936x boards, speaking iiod over Ethernet or USB |
 | `sdrmm-iqlink` | UDP sample protocol shared by `sdrmm-iqlinkd` and `sdrmm-device-ad936x` |
@@ -36,10 +37,12 @@ Radio / network / recording → DSP engine → audio, events, spectrum, IQ
 | `sdrmm-device-sdrconnect` | SDRplay SDRconnect over its WebSocket API |
 | `sdrmm-device-kiwisdr` | KiwiSDR over its WebSocket API |
 | `sdrmm-device-cr8` | Dragon Labs CR-8 through the vendor SDK, loaded at runtime |
-| `sdrmm-device-aaronia` | Aaronia SPECTRAN V6 through the RTSA API, loaded at runtime |
+| `sdrmm-device-aaronia` | Aaronia SPECTRAN V6 and V6 ECO through the RTSA API, loaded at runtime |
 | `sdrmm-channels` | Every built-in decoder, each a module with its settings, events and registration, plus the decoder registry and signal synthesis |
-| `sdrmm-plugins` | Loads WASM decoder plugins into the registry |
-| `sdrmm-plugin` | SDK for writing a decoder plugin |
+| `sdrmm-dvsi` | DVSI AMBE vocoder chips over USB serial |
+| `sdrmm-plugins` | Loads WASM plugins into the registries |
+| `sdrmm-plugin` | SDK for writing a WASM plugin |
+| `sdrmm-plugin-example` | Plugin template |
 | `sdrmm-recorder` | SigMF writing, reading, scanning, and export |
 | `sdrmm-orbit` | SGP4, pass prediction, and Doppler |
 | `sdrmm-tools` | Antenna calculator and NanoVNA |
@@ -62,6 +65,7 @@ The dependency rules:
 - `dsp` does no I/O and depends on no project crate.
 - `modem` builds reusable modulation algorithms on `dsp` only.
 - `channels` pulls no internal crates beyond `dsp`, `modem` and `wire`.
+- Device crates never depend on `channels`, `engine` or `server`.
 - `mobile-core` depends on `wire` only. Phone builds pull no engine, server, DSP, USB, FFmpeg,
   codec2, or SQLite crate.
 - `test-support` and `modem-test-support` never reach the `sdrmm` dependency graph.
@@ -106,9 +110,11 @@ visible. Each radio lane has a dormant tap. An Array node wakes the taps of its 
 engine's array runtime aligns them in time, solves delay, phase and gain on the noise source or a
 pilot, and corrects each lane with one filter. A lane that slips is realigned and reported.
 
-Array processors run on the aligned block, inline or on worker threads. Their lane outputs, such
-as a beam or a stitched band, are virtual lanes of the first member radio, so channels, recorders
-and scopes use them like any radio lane.
+Array processors run on the aligned block, inline, on worker threads, or dedicated on threads and
+backends the engine gives them, such as the radar's GPU. Each declares its execution, actions, GPU
+use and room for events in its descriptor. Their lane outputs, such as a beam or a stitched band,
+are virtual lanes of the first member radio, so channels, recorders and scopes use them like any
+radio lane.
 
 The Array never opens hardware. Device nodes own the radios; the Array holds the tuning and gain of
 its lanes while it exists.

@@ -142,7 +142,9 @@ pub struct TrunkFollower {
     pub channel: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logical_channel: Option<u16>,
-    pub slot: u8,
+    /// The timeslot, on a protocol that shares a carrier between calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<u8>,
     pub freq_hz: u64,
     /// The talkgroup or radio the control channel last granted this channel to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -156,7 +158,8 @@ pub struct TrunkFollower {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TrunkProblem {
     pub freq_hz: u64,
-    pub slot: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logical_channel: Option<u16>,
     pub reason: String,
@@ -218,8 +221,9 @@ pub struct TrunkSystemStatus {
     /// Other frequencies the site runs a control channel on, found while searching.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub other_control_hz: Vec<u64>,
+    /// The code the site keys its bursts with: a colour code, NAC or RAN, as the protocol names it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub color_code: Option<u8>,
+    pub color_code: Option<u16>,
     #[serde(default, skip_serializing_if = "crate::TrunkSite::is_empty")]
     pub site: crate::TrunkSite,
     /// Decoded frames the trunk follower fell too far behind to read.

@@ -1,6 +1,6 @@
-#![allow(clippy::expect_used)]
-
 use num_complex::Complex;
+
+use super::{Need, SynthError};
 use sdrmm_dsp::fft::Transform;
 
 use crate::drm::{
@@ -152,8 +152,13 @@ impl Program {
         piece
     }
 
-    fn superframe(&mut self, plus: bool, length: usize, higher: usize) -> Vec<u8> {
-        let count = aac_frames(plus, self.config.rate_hz).expect("a DRM AAC rate");
+    fn superframe(
+        &mut self,
+        plus: bool,
+        length: usize,
+        higher: usize,
+    ) -> Result<Vec<u8>, SynthError> {
+        let count = aac_frames(plus, self.config.rate_hz).need("DRM AAC rate")?;
         let higher = if plus { 0 } else { higher };
         let unused = higher
             .checked_sub(header_bytes(count) + count)
@@ -163,40 +168,47 @@ impl Program {
             .map(|index| self.units[(self.next + index) % self.units.len()].clone())
             .collect();
         self.next += count;
-        let mut frames: Vec<Vec<u8>> = raw
+        let mut frames = raw
             .iter()
-            .map(|unit| drm_frame_padded(unit, &self.config, 0).expect("a DRM AAC frame"))
-            .collect();
+            .map(|unit| drm_frame_padded(unit, &self.config, 0).need("DRM AAC frame"))
+            .collect::<Result<Vec<_>, _>>()?;
         let used: usize =
             frames.iter().map(|frame| frame.len()).sum::<usize>() + (count - 1) * 12 / 8 + 1;
         let last = frames.len() - 1;
         let spare = length.saturating_sub(used);
         frames[last] = drm_frame_padded(&raw[last], &self.config, frames[last].len() - 1 + spare)
-            .expect("a padded DRM AAC frame");
-        let joined = build_aac_superframe(&frames, length).expect("the audio fits its stream");
+            .need("padded DRM AAC frame")?;
+        let joined =
+            build_aac_superframe(&frames, length).need("AAC superframe fitting its stream")?;
         if higher == 0 {
-            return joined;
+            return Ok(joined);
         }
-        split_protected(&joined, count, higher).expect("the protected part holds the headers")
+        split_protected(&joined, count, higher).need("protected part holding the headers")
     }
 
-    fn logical(&mut self, plus: bool, length: usize, higher: usize, first: bool) -> Vec<u8> {
+    fn logical(
+        &mut self,
+        plus: bool,
+        length: usize,
+        higher: usize,
+        first: bool,
+    ) -> Result<Vec<u8>, SynthError> {
         let audio = length - if self.config.text { TEXT_BYTES } else { 0 };
         let mut frame = if plus {
             if first {
-                let whole = self.superframe(plus, 2 * audio, 0);
+                let whole = self.superframe(plus, 2 * audio, 0)?;
                 self.pending = whole[audio..].to_vec();
                 whole[..audio].to_vec()
             } else {
                 std::mem::take(&mut self.pending)
             }
         } else {
-            self.superframe(plus, audio, higher)
+            self.superframe(plus, audio, higher)?
         };
         if self.config.text {
             frame.extend_from_slice(&self.text_piece());
         }
-        frame
+        Ok(frame)
     }
 }
 
@@ -224,7 +236,7 @@ fn services_code(count: usize) -> u8 {
     }
 }
 
-fn pack_sdc(entities: Vec<Sdc>, plan: &Plan) -> Vec<Vec<bool>> {
+fn pack_sdc(entities: Vec<Sdc>, plan: &Plan) -> Result<Vec<Vec<bool>>, SynthError> {
     let data_bytes = (plan.bits() - 20) / 8;
     let encode = |block: &Sdc| sdc::encode(block, data_bytes, plan.bits());
     let mut blocks = Vec::new();
@@ -235,24 +247,23 @@ fn pack_sdc(entities: Vec<Sdc>, plan: &Plan) -> Vec<Vec<bool>> {
         if encode(&candidate).is_some() {
             current = candidate;
         } else {
-            blocks.push(encode(&current).expect("an SDC block"));
+            blocks.push(encode(&current).need("SDC block")?);
             current = entity;
         }
     }
-    blocks.push(encode(&current).expect("an SDC entity fits a block"));
-    blocks
+    blocks.push(encode(&current).need("SDC block fitting the entity")?);
+    Ok(blocks)
 }
 
 impl Transmitter {
-    #[must_use]
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config) -> Result<Self, SynthError> {
         let mode = config.mode;
         let plus = mode.plus();
-        let layout = Layout::new(mode, config.occupancy).expect("a defined occupancy");
+        let layout = Layout::new(mode, config.occupancy).need("layout for the occupancy")?;
         let fac_plan = Plan::fac(Qam::Q4, mode.fac_cells(), fac_rate(plus), fac_bits(plus));
         let fac = Self::fac_template(&config, 0);
         let (sdc_qam, sdc_rates) = fac.sdc_coding();
-        let sdc_plan = Plan::eep(sdc_qam, layout.sdc_cells, sdc_rates).expect("an SDC plan");
+        let sdc_plan = Plan::eep(sdc_qam, layout.sdc_cells, sdc_rates).need("SDC plan")?;
         let probe = Multiplex {
             protection_higher: config.protection_higher,
             protection_lower: config.protection_lower,
@@ -266,9 +277,12 @@ impl Transmitter {
             plus,
             cells: layout.multiplex_cells(),
         };
-        let capacity = msc_plan(msc_config, &probe).expect("an MSC plan").bits() / 8;
+        let capacity = msc_plan(msc_config, &probe).need("MSC plan")?.bits() / 8;
         let count = config.services.len();
-        let share = (capacity - usize::from(config.higher_bytes) * count) / count;
+        let share = capacity
+            .checked_sub(usize::from(config.higher_bytes) * count)
+            .and_then(|lower| lower.checked_div(count))
+            .need("MSC room for every service")?;
         let multiplex = Multiplex {
             protection_higher: config.protection_higher,
             protection_lower: config.protection_lower,
@@ -279,7 +293,7 @@ impl Transmitter {
                 })
                 .collect(),
         };
-        let msc = msc_plan(msc_config, &multiplex).expect("an MSC plan");
+        let msc = msc_plan(msc_config, &multiplex).need("MSC plan")?;
         let mut entities = vec![Sdc {
             multiplex: Some(multiplex.clone()),
             ..Sdc::default()
@@ -315,9 +329,9 @@ impl Transmitter {
                 }
             })
             .collect();
-        let sdc_blocks = pack_sdc(entities, &sdc_plan);
+        let sdc_blocks = pack_sdc(entities, &sdc_plan)?;
         let oversample = if plus { 1 } else { 4 };
-        Self {
+        Ok(Self {
             interleaver: CellInterleaver::new(
                 layout.multiplex_cells(),
                 if config.short_interleave && !plus {
@@ -337,7 +351,7 @@ impl Transmitter {
             programs,
             logical_count: 0,
             oversample,
-        }
+        })
     }
 
     fn fac_template(config: &Config, frame: usize) -> Fac {
@@ -382,7 +396,7 @@ impl Transmitter {
         }
     }
 
-    fn multiplex_frame(&mut self) -> Vec<bool> {
+    fn multiplex_frame(&mut self) -> Result<Vec<bool>, SynthError> {
         let plus = self.config.mode.plus();
         let first = self.logical_count.is_multiple_of(2);
         self.logical_count += 1;
@@ -390,19 +404,19 @@ impl Transmitter {
         let mut lower = Vec::new();
         for (program, stream) in self.programs.iter_mut().zip(&self.multiplex.streams) {
             let length = usize::from(stream.higher + stream.lower);
-            let logical = program.logical(plus, length, usize::from(stream.higher), first);
+            let logical = program.logical(plus, length, usize::from(stream.higher), first)?;
             higher.extend_from_slice(&logical[..usize::from(stream.higher)]);
             lower.extend_from_slice(&logical[usize::from(stream.higher)..]);
         }
         higher.extend_from_slice(&lower);
-        crate::drm::bits::byte_bits(&higher).collect()
+        Ok(crate::drm::bits::byte_bits(&higher).collect())
     }
 
-    fn superframe_cells(&mut self) -> Vec<Complex<f32>> {
+    fn superframe_cells(&mut self) -> Result<Vec<Complex<f32>>, SynthError> {
         let mode = self.config.mode;
         let mut cells = Vec::with_capacity(self.layout.msc_cells);
         for _ in 0..mode.frames() {
-            let bits = self.multiplex_frame();
+            let bits = self.multiplex_frame()?;
             let frame = mlc::encode(&self.msc_plan, &bits);
             cells.extend(self.interleaver.push(frame));
         }
@@ -412,7 +426,7 @@ impl Transmitter {
             cells.push(Complex::new(dummy, sign * dummy));
             sign = -sign;
         }
-        cells
+        Ok(cells)
     }
 
     fn symbol(&mut self, carriers: &[(i32, Complex<f32>)], out: &mut Vec<Complex<f32>>) {
@@ -429,9 +443,13 @@ impl Transmitter {
         out.extend(buffer.iter().map(|&value| value * scale));
     }
 
-    pub fn superframe(&mut self, index: usize, out: &mut Vec<Complex<f32>>) {
+    pub fn superframe(
+        &mut self,
+        index: usize,
+        out: &mut Vec<Complex<f32>>,
+    ) -> Result<(), SynthError> {
         let mode = self.config.mode;
-        let msc = self.superframe_cells();
+        let msc = self.superframe_cells()?;
         let block = &self.sdc_blocks[index % self.sdc_blocks.len()];
         let sdc = mlc::encode(&self.sdc_plan, block);
         let mut msc_at = 0;
@@ -466,17 +484,17 @@ impl Transmitter {
                 self.symbol(&carriers, out);
             }
         }
+        Ok(())
     }
 }
 
-#[must_use]
-pub fn signal(config: Config, superframes: usize) -> Vec<Complex<f32>> {
-    let mut transmitter = Transmitter::new(config);
+pub fn signal(config: Config, superframes: usize) -> Result<Vec<Complex<f32>>, SynthError> {
+    let mut transmitter = Transmitter::new(config)?;
     let mut out = Vec::new();
     for index in 0..superframes {
-        transmitter.superframe(index, &mut out);
+        transmitter.superframe(index, &mut out)?;
     }
-    out
+    Ok(out)
 }
 
 #[must_use]

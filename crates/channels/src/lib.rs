@@ -261,9 +261,10 @@ pub use radiosonde::{
 };
 pub use rds::RdsUpdate;
 pub use registry::{
-    ChannelLayout, Decoder, Native, Registry, Trunking, Tuned, audio_channels, channel_filter,
-    check, compose, create, create_tx, default_settings, descriptor, descriptors, input_rate,
-    install_plugins, layout, normalize, occupied_band, registry, trunking, tune,
+    ChannelLayout, Decoder, Native, Registry, TrunkGrant, TrunkPlacement, Trunking, Tuned,
+    audio_channels, channel_filter, check, compose, create, create_tx, default_settings,
+    descriptor, descriptors, input_rate, install_plugins, layout, normalize, occupied_band,
+    plugin_refusal, registry, trunking, tune,
 };
 pub use remote_id::{
     AuthType, EuCategory, EuClassification, HeightReference, OperatorLocationType, RemoteIdFrame,
@@ -386,6 +387,10 @@ pub enum ChannelError {
     Refused(&'static str),
     #[error("{0}")]
     Unsupported(String),
+    #[error("type {0} is already built in")]
+    BuiltIn(String),
+    #[error("type {0} is loaded twice")]
+    LoadedTwice(String),
 }
 
 impl From<sdrmm_modem::keying::QueueFull> for ChannelError {

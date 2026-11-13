@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useWorkspaceContext } from "./context";
-import { FACES, faceSize } from "./nodes";
+import { faceSize, NodeFace } from "./nodes";
 import { isTyping } from "./useHotkeys";
 
 export function FullFace() {
@@ -34,14 +34,13 @@ export function FullFace() {
   if (node === null) {
     return null;
   }
-  const Face = FACES[node.kind];
   return (
     <div
       data-full={node.id}
       className="absolute inset-0 z-30 flex items-center justify-center bg-bg p-px"
     >
       <div className="max-h-full max-w-full" style={faceSize(node)}>
-        <Face node={node} />
+        <NodeFace node={node} />
       </div>
     </div>
   );

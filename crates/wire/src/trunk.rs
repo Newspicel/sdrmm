@@ -23,20 +23,39 @@ pub struct TrunkScheme {
     pub kind: TrunkKind,
 }
 
-/// How a decoder trunks: the protocols it recognises and how many calls share a carrier.
+/// How a decoder trunks: the protocols it recognises, how many calls share a carrier and how
+/// far its logical channels are numbered.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TrunkSpec {
+    /// Timeslots per carrier; one on a protocol that gives every call a carrier of its own.
     pub slots: u8,
+    /// The highest logical channel number the protocol can name.
+    #[serde(default = "widest_channel")]
+    pub max_channel: u16,
     pub schemes: Vec<TrunkScheme>,
     /// Followed calls can play through a vocoder chip.
     #[serde(default)]
     pub vocoder: bool,
 }
 
+const fn widest_channel() -> u16 {
+    u16::MAX
+}
+
 impl TrunkSpec {
     #[must_use]
     pub fn scheme(&self, id: &str) -> Option<&TrunkScheme> {
         self.schemes.iter().find(|scheme| scheme.id == id)
+    }
+
+    /// The timeslots a carrier holds calls in: none to name on a protocol with one call each.
+    #[must_use]
+    pub fn timeslots(&self) -> Vec<Option<u8>> {
+        if self.slots <= 1 {
+            vec![None]
+        } else {
+            (1..=self.slots).map(Some).collect()
+        }
     }
 }
 
@@ -75,15 +94,16 @@ impl TrunkTalkgroups {
     }
 }
 
-/// The identity a site broadcasts on its control channel.
+/// The identity a site broadcasts on its control channel, each part as wide as the protocol
+/// numbers it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TrunkSite {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub system_id: Option<u16>,
+    pub system_id: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network_id: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub site_id: Option<u16>,
+    pub site_id: Option<u32>,
 }
 
 impl TrunkSite {
@@ -118,6 +138,18 @@ mod tests {
         };
         assert!(talkgroups.follows(9));
         assert!(!talkgroups.follows(3));
+    }
+
+    #[test]
+    fn a_carrier_with_one_call_names_no_timeslot() {
+        let spec = |slots| TrunkSpec {
+            slots,
+            max_channel: u16::MAX,
+            schemes: Vec::new(),
+            vocoder: false,
+        };
+        assert_eq!(spec(1).timeslots(), vec![None]);
+        assert_eq!(spec(2).timeslots(), vec![Some(1), Some(2)]);
     }
 
     #[test]

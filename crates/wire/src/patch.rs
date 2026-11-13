@@ -198,7 +198,6 @@ pub const MIN_TRUNK_SEARCH_STEP_HZ: u64 = 1_250;
 pub const MAX_TRUNK_CHANNEL_MAP: usize = 512;
 pub const MAX_TRUNK_PROBES: u8 = 8;
 pub const DEFAULT_TRUNK_PROBES: u8 = 4;
-pub const MAX_TRUNK_LOGICAL_CHANNEL: u16 = 4095;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TrunkSearchRange {
@@ -308,10 +307,7 @@ impl TrunkNode {
             && self.keys.len() <= crate::MAX_VOICE_KEYS
             && self.keys.iter().all(crate::VoiceKey::valid)
             && self.channel_map.len() <= MAX_TRUNK_CHANNEL_MAP
-            && self
-                .channel_map
-                .iter()
-                .all(|entry| entry.lcn <= MAX_TRUNK_LOGICAL_CHANNEL && entry.freq_hz > 0)
+            && self.channel_map.iter().all(|entry| entry.freq_hz > 0)
             && self.control_hz.is_none_or(|hz| hz > 0)
     }
 }

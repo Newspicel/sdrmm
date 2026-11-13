@@ -12,30 +12,30 @@ nodes, wires, and settings is a **workspace**. It lives on the server and every 
 
 ## Ports
 
-A wire joins an output port to an input port that carries the same kind of data:
+A wire joins an output port to an input port of the same type:
 
 | Port | Carries | Typical wire |
 |---|---|---|
-| `iq` | Raw radio samples | Device → channel, Scope, recorder |
-| `audio` | Demodulated sound | Channel → Audio FX, Speaker, Audio recorder |
+| `iq` | Raw radio samples | Device → channel, Scope, Recorder |
+| `audio` | Sound | Channel → Audio FX, Speaker, Audio recorder |
 | `events` | Decoded messages | Channel → Readout, Decoder log, Map |
-| `baseband` | One channel's filtered IQ | Channel → Baseband scope, recorder, Network IQ |
+| `baseband` | One channel's filtered IQ | Channel → Baseband scope, Baseband recorder, Network IQ |
 | `video` | Pictures and video | Channel → Video |
-| `control` | Tuning commands | Scanner, Signal hunt, Satellite → channel |
-| `position` | Station location and heading | GPS position → Map, Array, Satellite, ADS-B |
+| `control` | Tune, point and run commands | Scanner, Satellite → channel; Schedule → Device, recorder |
+| `position` | Location and heading | GPS position → Map, Array, Satellite, channel |
 | `array` | Aligned lanes of an antenna array | Array → Direction finder, Beamformer, Passive radar |
+| `bearing` | A live bearing | Direction finder → Beamformer |
+| `transmit` | What a radio sends | Transmitter → Device |
 
 ## Node types
 
-| Group | Nodes |
-|---|---|
-| Sources | Device, GPS position |
-| Decoders | AM, NFM, WFM, ADS-B, DMR, and every other [decoder](../user-guide/decoders.md), by family |
-| Tools | Scanner, Signal hunt, Satellite, Spectrum monitor, Trunk system, Event filter, Audio FX, Array, Direction finder, Beamformer, Passive radar, Stitch, Spatial spectrum, Correlator, Polarimeter, Triangulation, Note |
-| Outputs | Scope, Baseband scope, Speaker, Readout, Decoder log, Map, Video, Signal survey, Propagation map, Recorder, Audio recorder, Baseband recorder, Network IQ, Event output, Export |
+**+ Add** groups nodes as **Sources** (Device, GPS position, Microphone), **Decoders** (every
+[decoder](../user-guide/decoders.md) by family, and the Modulator), **Tools** (Scanner, Array,
+Audio FX and more) and **Outputs** (Scope, Speaker, Map, recorders and more). It lists what the
+running server offers. [Wires and what they carry](../wires.md) lists every node and its ports.
 
-**+ Add** lists what the running server offers. To add a node at the cursor, double-click the
-canvas, or right-click it and pick **Add node here**. Hover an entry to see what it does.
+To add a node at the cursor, double-click the canvas, or right-click it and pick **Add node
+here**.
 
 ## Devices and channels
 

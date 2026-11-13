@@ -78,6 +78,8 @@ pub struct ProcessorType {
     /// What a fresh node starts on.
     #[serde(default)]
     pub defaults: Value,
+    #[serde(default)]
+    pub facets: super::view::ProcessorFacets,
 }
 
 const fn min_lanes() -> u32 {
@@ -269,6 +271,7 @@ mod tests {
             ],
             emits: Vec::new(),
             defaults: Value::Null,
+            facets: super::super::view::ProcessorFacets::default(),
         }
     }
 

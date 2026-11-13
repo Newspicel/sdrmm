@@ -9,6 +9,7 @@ use wasmtime::{Instance, Linker, Memory, Module, Store, TypedFunc};
 
 use crate::{
     PluginError,
+    cache::ModuleCache,
     engine::{CALL_BUDGET, engine},
     kernels::{HostState, link},
     processor::check_processor,
@@ -41,17 +42,26 @@ impl PluginModule {
             plugin: name.clone(),
             error: error.to_string(),
         })?;
-        Self::from_bytes(name, &bytes)
+        Self::from_bytes(name, &bytes, None)
     }
 
-    /// Compiles the module in `bytes`, `name` being what logs and errors call it.
-    pub fn from_bytes(name: String, bytes: &[u8]) -> Result<Arc<Self>, PluginError> {
+    /// Compiles the module in `bytes`, or takes its build from `cache`, `name` being what logs
+    /// and errors call it.
+    pub fn from_bytes(
+        name: String,
+        bytes: &[u8],
+        cache: Option<&ModuleCache>,
+    ) -> Result<Arc<Self>, PluginError> {
         let fail = |error: String| PluginError::Load {
             plugin: name.clone(),
             error,
         };
         let engine = engine()?;
-        let module = Module::new(engine, bytes).map_err(|error| fail(error.to_string()))?;
+        let module = match cache {
+            Some(cache) => cache.module(engine, &name, bytes),
+            None => Module::new(engine, bytes).map_err(|error| error.to_string()),
+        }
+        .map_err(fail)?;
         let mut linker = Linker::new(engine);
         link(&mut linker)?;
         let mut control = instantiate(&name, &module, &linker).map_err(fail)?;
@@ -88,6 +98,7 @@ impl PluginModule {
 fn instantiate(name: &str, module: &Module, linker: &Linker<HostState>) -> Result<Guest, String> {
     let engine = module.engine();
     let mut store = Store::new(engine, HostState::new(name));
+    store.limiter(|state| &mut state.limits);
     store.set_epoch_deadline(CALL_BUDGET);
     let instance = linker
         .instantiate(&mut store, module)
@@ -108,6 +119,12 @@ fn instantiate(name: &str, module: &Module, linker: &Linker<HostState>) -> Resul
         instance,
         memory,
     })
+}
+
+fn guest_span(memory: &[u8], ptr: u32, len: u32) -> Option<&[u8]> {
+    let start = usize::try_from(ptr).ok()?;
+    let end = start.checked_add(usize::try_from(len).ok()?)?;
+    memory.get(start..end)
 }
 
 pub(crate) fn plugin_name(path: &Path) -> String {
@@ -191,13 +208,13 @@ impl Guest {
         Ok((ptr, len))
     }
 
+    /// The bytes a packed pointer and length name, checked against the guest's memory before
+    /// anything is allocated for them.
     pub(crate) fn read_packed(&self, packed: i64) -> Result<Vec<u8>, String> {
         let (ptr, len) = unpack(packed);
-        let mut bytes = vec![0u8; len as usize];
-        self.memory
-            .read(&self.store, ptr as usize, &mut bytes)
-            .map_err(|error| error.to_string())?;
-        Ok(bytes)
+        guest_span(self.memory.data(&self.store), ptr, len)
+            .map(<[u8]>::to_vec)
+            .ok_or_else(|| format!("reply of {len} bytes at {ptr} lies outside guest memory"))
     }
 
     /// The message the guest left after a failed call.
@@ -209,5 +226,19 @@ impl Guest {
             .and_then(|packed| self.read_packed(packed))
             .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
             .unwrap_or_else(|error| error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::guest_span;
+
+    #[test]
+    fn a_span_past_guest_memory_is_refused() {
+        let memory = [1u8, 2, 3, 4];
+        assert_eq!(guest_span(&memory, 1, 2), Some([2u8, 3].as_slice()));
+        assert_eq!(guest_span(&memory, 4, 0), Some([].as_slice()));
+        assert_eq!(guest_span(&memory, 3, 2), None);
+        assert_eq!(guest_span(&memory, u32::MAX, u32::MAX), None);
     }
 }

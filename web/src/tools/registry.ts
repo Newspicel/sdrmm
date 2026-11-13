@@ -1,8 +1,15 @@
-import type { ComponentType } from "react";
+import { type ComponentType, lazy } from "react";
 import type { ToolCategory, ToolDescriptor } from "../lib/types";
-import { AntennaPanel } from "./antenna/AntennaPanel";
-import { CpsPanel } from "./cps/CpsPanel";
-import { NanoVnaPanel } from "./nanovna/NanoVnaPanel";
+
+const AntennaPanel = lazy(() =>
+  import("./antenna/AntennaPanel").then((module) => ({ default: module.AntennaPanel })),
+);
+const CpsPanel = lazy(() =>
+  import("./cps/CpsPanel").then((module) => ({ default: module.CpsPanel })),
+);
+const NanoVnaPanel = lazy(() =>
+  import("./nanovna/NanoVnaPanel").then((module) => ({ default: module.NanoVnaPanel })),
+);
 
 export interface ToolPanel {
   id: string;

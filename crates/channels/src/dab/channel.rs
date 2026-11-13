@@ -862,7 +862,7 @@ mod tests {
 
     #[test]
     fn a_generated_ensemble_locks_and_names_its_services() {
-        let iq = synth::dab::ensemble(12);
+        let iq = synth::dab::ensemble(12).expect("a synthetic signal");
         let mut channel = channel(None);
         let mut out = ChannelOutputs::default();
         for block in iq.chunks(16_384) {
@@ -880,7 +880,7 @@ mod tests {
 
     #[test]
     fn the_selected_service_yields_dab_plus_access_units() {
-        let iq = synth::dab::ensemble(40);
+        let iq = synth::dab::ensemble(40).expect("a synthetic signal");
         let mut channel = channel(Some(synth::dab::MUSIC_SERVICE));
         let mut out = ChannelOutputs::default();
         for block in iq.chunks(16_384) {
@@ -928,7 +928,7 @@ mod tests {
 
     #[test]
     fn zero_padded_superframes_decode_from_every_joining_phase() {
-        let iq = synth::dab::ensemble_zero_padded(36);
+        let iq = synth::dab::ensemble_zero_padded(36).expect("a synthetic signal");
         for skip in 0..FRAMES {
             let mut channel = channel(Some(synth::dab::MUSIC_SERVICE));
             run(&mut channel, &iq[skip * FRAME..]);
@@ -948,7 +948,7 @@ mod tests {
             DabTransmissionMode::Iv,
         };
         for mode in [I, Ii, Iii, Iv] {
-            let iq = synth::dab::ensemble_for_mode(mode, 40);
+            let iq = synth::dab::ensemble_for_mode(mode, 40).expect("a synthetic signal");
             let mut reference = None;
             for block_size in [997, 16384, iq.len()] {
                 let mut channel = channel(Some(synth::dab::MUSIC_SERVICE));
@@ -988,7 +988,10 @@ mod tests {
     fn changing_transmission_mode_discards_old_ensemble_and_interleaver_state() {
         let mut channel = channel(None);
         let mut out = ChannelOutputs::default();
-        channel.process(&synth::dab::ensemble(6), &mut out);
+        channel.process(
+            &synth::dab::ensemble(6).expect("a synthetic signal"),
+            &mut out,
+        );
         assert!(status(&out).locked);
         let settings = settings_of(DabParams {
             transmission_mode: crate::dab::DabTransmissionMode::Iii,
@@ -1000,7 +1003,8 @@ mod tests {
         assert!(channel.selection.is_none());
         out.reset();
         channel.process(
-            &synth::dab::ensemble_for_mode(crate::dab::DabTransmissionMode::Iii, 11),
+            &synth::dab::ensemble_for_mode(crate::dab::DabTransmissionMode::Iii, 11)
+                .expect("a synthetic signal"),
             &mut out,
         );
         assert!(status(&out).locked);
@@ -1091,7 +1095,10 @@ mod tests {
     fn a_subchannel_size_that_disagrees_with_its_profile_is_rejected_and_reported() {
         let mut channel = channel(Some(synth::dab::MUSIC_SERVICE));
         let mut out = ChannelOutputs::default();
-        channel.process(&synth::dab::ensemble(20), &mut out);
+        channel.process(
+            &synth::dab::ensemble(20).expect("a synthetic signal"),
+            &mut out,
+        );
         assert!(status(&out).locked);
         assert_eq!(channel.rejected(), 0);
         channel
@@ -1117,7 +1124,10 @@ mod tests {
         });
         channel.apply(settings).expect("classic generation");
         let mut out = ChannelOutputs::default();
-        for block in synth::dab::ensemble(18).chunks(16384) {
+        for block in synth::dab::ensemble(18)
+            .expect("a synthetic signal")
+            .chunks(16384)
+        {
             channel.process(block, &mut out);
         }
         let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
@@ -1144,7 +1154,11 @@ mod tests {
     #[test]
     fn an_ensemble_at_the_coverage_edge_still_locks_and_reports_its_carrier_to_noise() {
         for (snr_db, floor_db) in [(20.0f32, 17.0f32), (12.0, 9.0), (8.0, 5.0)] {
-            let iq = crate::testutil::at_snr(&synth::dab::ensemble(20), snr_db, 7);
+            let iq = crate::testutil::at_snr(
+                &synth::dab::ensemble(20).expect("a synthetic signal"),
+                snr_db,
+                7,
+            );
             let mut channel = channel(None);
             let mut out = ChannelOutputs::default();
             for block in iq.chunks(16_384) {
@@ -1164,7 +1178,7 @@ mod tests {
     #[test]
     fn an_echo_inside_the_guard_interval_does_not_read_as_noise() {
         const ECHO: usize = 200;
-        let clean = synth::dab::ensemble(20);
+        let clean = synth::dab::ensemble(20).expect("a synthetic signal");
         let mut echoed = clean.clone();
         for index in ECHO..echoed.len() {
             echoed[index] += clean[index - ECHO] * 0.7;
@@ -1184,20 +1198,27 @@ mod tests {
     fn losing_the_carrier_clears_lock_and_pending_audio() {
         let mut channel = channel(None);
         let mut out = ChannelOutputs::default();
-        channel.process(&synth::dab::ensemble(7), &mut out);
+        channel.process(
+            &synth::dab::ensemble(7).expect("a synthetic signal"),
+            &mut out,
+        );
         assert!(status(&out).locked);
         out.reset();
         channel.process(&vec![Complex::new(0.0, 0.0); 5 * FRAME], &mut out);
         assert!(!status(&out).locked);
         assert!(channel.selection.is_none());
-        channel.process(&synth::dab::ensemble(8), &mut out);
+        channel.process(
+            &synth::dab::ensemble(8).expect("a synthetic signal"),
+            &mut out,
+        );
         assert!(status(&out).locked);
     }
 
     #[test]
     fn packet_mode_mot_crosses_fec_and_the_msc() {
         let mut channel = channel(Some(synth::dab::DATA_SERVICE));
-        let iq = synth::dab::ensemble_with_data(crate::dab::DabTransmissionMode::I, 24);
+        let iq = synth::dab::ensemble_with_data(crate::dab::DabTransmissionMode::I, 24)
+            .expect("a synthetic signal");
         let mut out = ChannelOutputs::default();
         for block in iq.chunks(16384) {
             channel.process(block, &mut out);
@@ -1247,7 +1268,7 @@ mod tests {
 
     #[test]
     fn decoding_keeps_ahead_of_the_channel_rate() {
-        let iq = synth::dab::ensemble(11);
+        let iq = synth::dab::ensemble(11).expect("a synthetic signal");
         let mut channel = channel(None);
         let mut out = ChannelOutputs::default();
         let started = std::time::Instant::now();
@@ -1290,7 +1311,7 @@ mod tests {
 
     #[test]
     fn an_ensemble_six_db_above_the_noise_decodes_its_audio() {
-        let iq = with_noise(&synth::dab::ensemble(40), 6.0);
+        let iq = with_noise(&synth::dab::ensemble(40).expect("a synthetic signal"), 6.0);
         let mut channel = channel(Some(synth::dab::MUSIC_SERVICE));
         let mut out = ChannelOutputs::default();
         for block in iq.chunks(16_384) {
@@ -1329,7 +1350,7 @@ mod tests {
 
     #[test]
     fn access_units_lost_to_noise_leave_a_gap_of_their_own_length() {
-        let clean = synth::dab::ensemble(40);
+        let clean = synth::dab::ensemble(40).expect("a synthetic signal");
         let (whole, _) = audio_frames_delivered(&clean);
         let (damaged, errors) = audio_frames_delivered(&with_noise(&clean, 4.5));
         assert!(errors > 0, "no access unit was lost");
@@ -1351,7 +1372,8 @@ mod tests {
             (Iii, -30_150.0),
             (Iv, 28_420.0),
         ] {
-            let clean = synth::dab::ensemble_for_mode(transmission, cif_frames(transmission, 40));
+            let clean = synth::dab::ensemble_for_mode(transmission, cif_frames(transmission, 40))
+                .expect("a synthetic signal");
             let iq = crate::testutil::frequency_shift(&clean, offset_hz, INPUT_RATE_HZ);
             let mut channel = automatic(Some(synth::dab::MUSIC_SERVICE));
             let mut out = run(&mut channel, &iq);
@@ -1382,7 +1404,8 @@ mod tests {
             (Iv, -18_765.0, -100.0, 60.0),
         ] {
             let mode = Mode::new(transmission);
-            let clean = synth::dab::ensemble_for_mode(transmission, cif_frames(transmission, 48));
+            let clean = synth::dab::ensemble_for_mode(transmission, cif_frames(transmission, 48))
+                .expect("a synthetic signal");
             let echoes = crate::testutil::multipath(
                 &clean,
                 &[
@@ -1426,7 +1449,8 @@ mod tests {
         for transmission in [Ii, Iii] {
             let mode = Mode::new(transmission);
             let frames = 40;
-            let clean = synth::dab::ensemble_for_mode(transmission, frames);
+            let clean =
+                synth::dab::ensemble_for_mode(transmission, frames).expect("a synthetic signal");
             let shifted = crate::testutil::frequency_shift(&clean, -9_870.0, INPUT_RATE_HZ);
             let iq = crate::testutil::at_snr(&shifted, 5.0, 23);
             let mut channel = automatic(None);
@@ -1447,10 +1471,16 @@ mod tests {
     fn automatic_mode_follows_a_retune_to_another_mode() {
         use crate::dab::{DabTransmissionMode::Ii, DabTransmissionMode::Iii};
         let mut channel = automatic(None);
-        let out = run(&mut channel, &synth::dab::ensemble_for_mode(Ii, 8));
+        let out = run(
+            &mut channel,
+            &synth::dab::ensemble_for_mode(Ii, 8).expect("a synthetic signal"),
+        );
         assert_eq!(status(&out).transmission_mode, Some(Ii));
         channel.retuned();
-        let out = run(&mut channel, &synth::dab::ensemble_for_mode(Iii, 8));
+        let out = run(
+            &mut channel,
+            &synth::dab::ensemble_for_mode(Iii, 8).expect("a synthetic signal"),
+        );
         let status = status(&out);
         assert!(status.locked, "{status:?}");
         assert_eq!(status.transmission_mode, Some(Iii));

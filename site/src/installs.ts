@@ -60,8 +60,9 @@ sudo dnf install sdrmm-app`,
     note: "Flake package for x86-64 and ARM64 Linux, with SoapySDR modules selectable.",
     shells: [
       {
-        lines: `nix --extra-experimental-features 'nix-command flakes' \\
-  profile install github:Newspicel/sdrmm
+        lines: `VERSION=1.2.3
+nix --extra-experimental-features 'nix-command flakes' profile install \\
+  "https://github.com/Newspicel/sdrmm/releases/download/v$VERSION/sdrmm-$VERSION-src.tar.gz"
 sdrmm-desktop`,
       },
     ],

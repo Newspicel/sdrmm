@@ -28,6 +28,7 @@ import {
   formatSearchRanges,
   formatTalkgroups,
   formatVoiceKeys,
+  maxChannel,
   otherControlLabel,
   parseControlHz,
   parseSearchRanges,
@@ -170,7 +171,7 @@ export function TrunkFace({ node }: { node: PatchNode }) {
         {status?.problems.map((problem) => (
           <FaceFault
             key={`${problem.freq_hz}-${problem.slot}`}
-            message={`Cannot follow ${formatHz(problem.freq_hz)}${slots > 1 ? ` TS ${problem.slot}` : ""}`}
+            message={`Cannot follow ${formatHz(problem.freq_hz)}${slots > 1 && problem.slot != null ? ` TS ${problem.slot}` : ""}`}
             detail={problem.reason}
           />
         ))}
@@ -181,6 +182,7 @@ export function TrunkFace({ node }: { node: PatchNode }) {
           />
         )}
         <ChannelPlanTable
+          maxChannel={maxChannel(spec)}
           label={planLabel(scheme)}
           rows={channelPlanRows(learned, channelMap)}
           entries={channelMap}

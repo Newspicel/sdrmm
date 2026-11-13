@@ -436,6 +436,13 @@ const MIGRATIONS: &[&str] = &[
     DELETE FROM nanovna_measurements
         WHERE antenna_id NOT IN (SELECT id FROM nanovna_antennas);
     ",
+    "
+    CREATE TABLE secrets (
+        id TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    ) WITHOUT ROWID;
+    ",
 ];
 
 const SERVER_ID_KEY: &str = "server_id";
@@ -477,6 +484,7 @@ pub struct Store {
     conn: Mutex<Connection>,
     run_start: String,
     server_id: std::sync::Arc<str>,
+    secret_changes: tokio::sync::watch::Sender<u64>,
 }
 
 impl Store {
@@ -490,11 +498,14 @@ impl Store {
         audio_fx_lift::lift_audio_chains(&conn)?;
         coherent_break::break_old_snapshots(&conn)?;
         steps::upgrade_stored(&conn)?;
+        secrets::lift_stored(&conn)?;
+        secrets::collect(&conn)?;
         let server_id = ensure_server_id(&conn)?.into();
         let store = Self {
             conn: Mutex::new(conn),
             run_start: now_rfc3339(),
             server_id,
+            secret_changes: tokio::sync::watch::Sender::new(0),
         };
         store.seed_workspaces()?;
         Ok(store)
@@ -956,11 +967,12 @@ impl Store {
         snapshot: &WorkspaceSnapshot,
     ) -> Result<i64, StoreError> {
         validate_name(name)?;
-        let snapshot = settled(snapshot.clone());
+        let mut snapshot = settled(snapshot.clone());
         snapshot.validate_against(&sdrmm_channels::descriptors())?;
+        let conn = self.lock();
+        secrets::lift(&conn, &mut snapshot)?;
         let json = serde_json::to_string(&snapshot)?;
         let now = now_rfc3339();
-        let conn = self.lock();
         conn.execute(
             "INSERT INTO workspaces (name, created_at, updated_at, revision, nodes, snapshot) \
              VALUES (?1, ?2, ?2, 1, ?3, ?4)",
@@ -975,6 +987,7 @@ impl Store {
         let detail = read_workspace(&conn, id, None)?;
         let state = read_workspace_state(&conn, id)?;
         let mut export = WorkspaceExport::new(detail.info.name, detail.snapshot, state);
+        secrets::lift(&conn, &mut export.snapshot)?;
         export.forget_absent_nodes();
         Ok(export)
     }
@@ -988,10 +1001,11 @@ impl Store {
         document.snapshot.graph.settle_arrays();
         document.validate_against(&sdrmm_channels::descriptors())?;
         document.forget_absent_nodes();
-        let json = serde_json::to_string(&document.snapshot)?;
         let now = now_rfc3339();
         let mut conn = self.lock();
         let tx = conn.transaction()?;
+        secrets::lift(&tx, &mut document.snapshot)?;
+        let json = serde_json::to_string(&document.snapshot)?;
         let name = free_workspace_name(&tx, document.name.trim())?;
         tx.execute(
             "INSERT INTO workspaces (name, created_at, updated_at, revision, nodes, snapshot) \
@@ -1029,9 +1043,10 @@ impl Store {
             )
             .map_err(|err| name_taken(err, name))?;
         }
-        if let Some(ours) = &settled {
+        if let Some(mut ours) = settled {
+            secrets::lift(&tx, &mut ours)?;
             let held = parse_workspace_snapshot(&held)?;
-            let merged = rebase(&tx, id, req.revision, current, &held, ours)?;
+            let merged = rebase(&tx, id, req.revision, current, &held, &ours)?;
             if merged != held {
                 let revision = current.saturating_add(1);
                 forget_released_radios(&tx, id, &merged.graph)?;
@@ -1179,6 +1194,7 @@ impl Store {
             "DELETE FROM workspace_notices WHERE workspace_id = ?1",
             params![id],
         )?;
+        secrets::collect(&tx)?;
         let active = active_workspace(&tx)?;
         tx.commit()?;
         Ok(active)
@@ -1418,6 +1434,7 @@ fn write_snapshot(
             now_rfc3339()
         ],
     )?;
+    secrets::collect(conn)?;
     Ok(())
 }
 
@@ -2251,6 +2268,7 @@ mod history;
 mod log_groups;
 mod nanovna;
 mod phones;
+mod secrets;
 mod steps;
 
 pub(crate) use phones::{OfferFailure, OfferRow, PairWrite, PhoneRow};

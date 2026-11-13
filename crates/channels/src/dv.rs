@@ -463,6 +463,20 @@ pub(crate) fn p25_decoder() -> Native<P25Params> {
         .signatures(p25_signatures)
         .form(p25_form)
         .kinds(p25_kinds)
+        .trunking(p25::trunk::trunking())
+}
+
+/// The logical channel a burst's channel definition places, for a decoder that works out the
+/// protocol's channel numbering itself and announces the result on the frame.
+pub(crate) fn announced_channels(frame: &sdrmm_wire::DvFrame) -> Vec<crate::TrunkPlacement> {
+    frame
+        .channel_definition
+        .iter()
+        .map(|definition| crate::TrunkPlacement {
+            logical_channel: definition.channel,
+            freq_hz: definition.rx_hz,
+        })
+        .collect()
 }
 
 pub(crate) fn p25_form() -> Vec<SettingField> {

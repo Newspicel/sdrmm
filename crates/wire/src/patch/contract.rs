@@ -111,7 +111,7 @@ impl PortType {
     #[must_use]
     pub const fn note(self) -> Option<&'static str> {
         match self {
-            Self::Iq => Some("Decoders on a lane retune it unless the lane is locked"),
+            Self::Iq => Some("One radio lane, retuned by its decoders unless locked"),
             Self::Bearing => Some("A live bearing that steers an array"),
             Self::Audio => Some("Live audio"),
             Self::Events => Some("Decoded events. Calls and transmissions bring their clip"),

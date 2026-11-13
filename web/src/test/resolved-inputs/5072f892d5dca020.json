@@ -1,6 +1,6 @@
 {
   "name": "5072f892d5dca020",
-  "test": "array processor faces > asks to spread an array that tunes lanes together",
+  "test": "other declared views > asks for the array tuning the processor declares",
   "graph": {
     "nodes": [
       {

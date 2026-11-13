@@ -588,17 +588,14 @@ async fn an_operator_named_host_reaches_a_tokenless_server() {
         &["Radio.example"],
         &phones(),
     ));
-    for host in [
-        "radio.example",
-        "radio.example:8080",
-        "192.168.1.20:8080",
-        "nas.local:8080",
-    ] {
+    for host in ["radio.example", "radio.example:8080", "192.168.1.20:8080"] {
         let answer = call(&app, "GET", "/api/state", &[("host", host)]).await;
         assert_eq!(answer.status, StatusCode::OK, "{host}");
     }
-    let other = call(&app, "GET", "/api/state", &[("host", "nas.example")]).await;
-    assert_eq!(other.status, StatusCode::FORBIDDEN);
+    for host in ["nas.example", "nas.local:8080"] {
+        let other = call(&app, "GET", "/api/state", &[("host", host)]).await;
+        assert_eq!(other.status, StatusCode::FORBIDDEN, "{host}");
+    }
 }
 
 #[tokio::test]
@@ -633,6 +630,8 @@ async fn a_rebound_name_cannot_reach_an_open_loopback_server() {
     )
     .await;
     assert_eq!(lookalike.status, StatusCode::FORBIDDEN);
+    let mdns = call(&app, "GET", "/api/state", &[("host", "evil.local:41234")]).await;
+    assert_eq!(mdns.status, StatusCode::FORBIDDEN);
     let without_host = call(&app, "GET", "https://evil.example:41234/api/state", &[]).await;
     assert_eq!(without_host.status, StatusCode::FORBIDDEN);
     let loopback_authority = call(&app, "GET", "https://127.0.0.1:41234/api/state", &[]).await;
@@ -673,15 +672,27 @@ fn a_tokenless_main_listener_checks_the_host_wherever_it_is_bound() {
         std::net::Ipv4Addr::UNSPECIFIED.into(),
         vec!["radio.example".to_owned()],
     );
-    assert_eq!(
+    assert!(
         AuthGate::new(&named, ListenerRole::Main, false)
             .allowed_hosts
-            .as_deref(),
-        Some(["radio.example".to_owned()].as_slice())
+            .is_some_and(|names| names.contains(&"radio.example".to_owned()))
     );
     let mut guarded = loopback.clone();
     guarded.auth = Auth::new(Some("secret"));
     assert!(!checks(&guarded, ListenerRole::Main));
     let lan = bound_on(std::net::Ipv4Addr::UNSPECIFIED.into());
     assert!(checks(&lan, ListenerRole::Main));
+}
+
+#[test]
+fn only_a_lan_bind_trusts_its_own_mdns_name() {
+    let own = crate::net::mdns_host();
+    let trusts = |ip: std::net::IpAddr| {
+        AuthGate::new(&bound_on(ip), ListenerRole::Main, false)
+            .allowed_hosts
+            .is_some_and(|names| names.contains(&own))
+    };
+    assert!(!trusts(std::net::Ipv4Addr::LOCALHOST.into()));
+    assert!(!trusts(std::net::Ipv6Addr::LOCALHOST.into()));
+    assert!(trusts(std::net::Ipv4Addr::UNSPECIFIED.into()));
 }

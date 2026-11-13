@@ -53,7 +53,7 @@ pub(crate) fn handle(state: &AppState, received: Result<ArrayEvent, RecvError>) 
         Ok(ArrayEvent::Solved { array, record }) => keep_solution(state, array, record),
         Err(RecvError::Lagged(count)) => {
             tracing::warn!(count, "array updates lost");
-            state.radar.lagged(count);
+            state.reports.lagged(count);
             state.engine.emit_event(ServerEvent::Error {
                 message: format!("array updates lost: {count}"),
             });
@@ -64,12 +64,11 @@ pub(crate) fn handle(state: &AppState, received: Result<ArrayEvent, RecvError>) 
 }
 
 fn report(state: &AppState, processor: String, reading: &ProcessorReading) {
-    let reading = match reading {
-        ProcessorReading::PassiveRadar(update) => {
-            ProcessorReading::PassiveRadar(state.radar.on_report(state, &processor, update.clone()))
-        }
-        other => other.clone(),
-    };
+    let mut reading = reading.clone();
+    state.reports.on_report(state, &processor, &mut reading);
+    if state.arrays.holds_processor(&processor) {
+        state.reports.keep(&processor, &reading);
+    }
     state
         .engine
         .emit_event(ServerEvent::processor_update(processor, reading));

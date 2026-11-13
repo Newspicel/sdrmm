@@ -1,6 +1,6 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { useQuery } from "@tanstack/react-query";
-import { useRef } from "react";
+import { Suspense, useRef } from "react";
 import { BTN, DIALOG_TITLE, SURFACE } from "../components/controls";
 import { PortalContainerProvider } from "../components/PortalContainer";
 import { toolsQuery } from "../lib/api";
@@ -68,5 +68,9 @@ function ToolBody({ tool }: { tool: LaunchableTool }) {
       </p>
     );
   }
-  return <Panel key={tool.descriptor.id} />;
+  return (
+    <Suspense fallback={<p className="legend">Loading…</p>}>
+      <Panel key={tool.descriptor.id} />
+    </Suspense>
+  );
 }

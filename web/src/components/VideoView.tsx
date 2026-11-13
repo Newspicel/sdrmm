@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
+import { createDrawLoop } from "../gl/drawLoop";
 import { recordEvent } from "../lib/diagnostics";
 import { VIDEO_RGB, type VideoFrame } from "../lib/frame";
 import { latestOnly } from "../lib/latest";
@@ -58,26 +59,32 @@ export function VideoView({
       return;
     }
     const shown = { width: 0, height: 0, stale: 0, stopped: false };
+    const pending: { frame: VideoFrame | null } = { frame: null };
 
-    const paint = (frame: VideoFrame, picture: ImageBitmap): void => {
+    const signal = (frame: VideoFrame): void => {
       if (shown.width !== frame.width || shown.height !== frame.height) {
         shown.width = frame.width;
         shown.height = frame.height;
-        canvas.width = frame.width;
-        canvas.height = frame.height;
         setGeometry({
           width: frame.width,
           height: frame.height,
           aspect: frame.channels === VIDEO_RGB ? frame.width / frame.height : DISPLAY_ASPECT,
         });
       }
-      ctx.drawImage(picture, 0, 0, frame.width, frame.height);
       setLive(true);
       clearTimeout(shown.stale);
       shown.stale = window.setTimeout(() => setLive(false), STALE_MS);
     };
 
-    const draw = latestOnly(async (frame: VideoFrame): Promise<void> => {
+    const paint = (frame: VideoFrame, picture: ImageBitmap): void => {
+      if (canvas.width !== frame.width || canvas.height !== frame.height) {
+        canvas.width = frame.width;
+        canvas.height = frame.height;
+      }
+      ctx.drawImage(picture, 0, 0, frame.width, frame.height);
+    };
+
+    const decode = latestOnly(async (frame: VideoFrame): Promise<void> => {
       try {
         const picture = await createImageBitmap(
           new Blob([frame.jpeg as Uint8Array<ArrayBuffer>], { type: "image/jpeg" }),
@@ -91,15 +98,31 @@ export function VideoView({
       }
     });
 
+    const loop = createDrawLoop(canvas, () => {
+      const frame = pending.frame;
+      pending.frame = null;
+      if (frame !== null) {
+        decode(frame);
+      }
+      return false;
+    });
+
+    const arrive = (frame: VideoFrame): void => {
+      signal(frame);
+      pending.frame = frame;
+      loop.invalidate();
+    };
+
     const input = { node, port, source };
     const held = videoHub.latest(input);
     if (held !== null) {
-      draw(held);
+      arrive(held);
     }
-    const stop = videoHub.subscribe(input, draw);
+    const stop = videoHub.subscribe(input, arrive);
     return () => {
       shown.stopped = true;
       stop();
+      loop.dispose();
       clearTimeout(shown.stale);
     };
   }, [node, port, source]);

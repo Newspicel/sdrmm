@@ -1,51 +1,23 @@
 import type { Node, NodeProps } from "@xyflow/react";
-import type { ComponentType, CSSProperties } from "react";
+import { type ComponentType, type CSSProperties, lazy, Suspense } from "react";
 import type { NodeKind, PatchNode } from "../../lib/types";
 import type { FlowData } from "../Canvas";
 import { nodeMinSize, nodeSize } from "../graph";
-import { ArrayFace } from "./ArrayFace";
-import { AudioFxFace } from "./AudioFxFace";
-import { BasebandScopeFace } from "./BasebandScopeFace";
-import { BeamformerFace } from "./BeamformerFace";
-import { BearingFixFace } from "./BearingFixFace";
-import { ChannelFace } from "./ChannelFace";
-import { CorrelatorFace } from "./CorrelatorFace";
-import { DecoderLogFace } from "./DecoderLogFace";
-import { DeviceFace } from "./DeviceFace";
-import { DfFace } from "./DfFace";
-import { EventFilterFace } from "./EventFilterFace";
-import { EventOutputFace } from "./EventOutputFace";
-import { ExportFace } from "./ExportFace";
-import { GpsFace } from "./GpsFace";
-import { HuntFace } from "./HuntFace";
-import { MapFace } from "./MapFace";
-import { MicrophoneFace } from "./MicrophoneFace";
-import { ModulatorFace } from "./ModulatorFace";
-import { NetworkExportFace } from "./NetworkExportFace";
 import { CanvasSurface } from "./NodeShell";
-import { NoteFace } from "./NoteFace";
-import { PluginProcessorFace } from "./PluginProcessorFace";
-import { PolarimeterFace } from "./PolarimeterFace";
-import { PropagationFace } from "./PropagationFace";
-import { RadarFace } from "./RadarFace";
-import { ReadoutFace } from "./ReadoutFace";
-import { AudioRecorderFace, BasebandRecorderFace, RecorderFace } from "./RecorderFaces";
-import { RotatorFace } from "./RotatorFace";
-import { SatelliteFace } from "./SatelliteFace";
-import { ScannerFace } from "./ScannerFace";
-import { ScheduleFace } from "./ScheduleFace";
-import { ScopeFace } from "./ScopeFace";
-import { SignalMapFace } from "./SignalMapFace";
-import { SpatialSpectrumFace } from "./SpatialSpectrumFace";
-import { SpeakerFace } from "./SpeakerFace";
-import { SpectrumMonitorFace } from "./SpectrumMonitorFace";
-import { StitchFace } from "./StitchFace";
-import { TransmitFace } from "./TransmitFace";
-import { TriangulationFace } from "./TriangulationFace";
-import { TrunkFace } from "./TrunkFace";
-import { VideoFace } from "./VideoFace";
 
 type Face = ComponentType<{ node: PatchNode }>;
+
+/// A face whose code loads the first time a node of its kind is drawn, so startup carries none.
+function lazyFace<K extends string>(load: () => Promise<Record<K, Face>>, name: K): Face {
+  const Loaded = lazy<Face>(() => load().then((module) => ({ default: module[name] })));
+  return function LazyFace({ node }: { node: PatchNode }) {
+    return (
+      <Suspense fallback={null}>
+        <Loaded node={node} />
+      </Suspense>
+    );
+  };
+}
 
 function mount(Face: Face) {
   return function FaceNode({ data }: NodeProps<Node<FlowData>>) {
@@ -57,94 +29,62 @@ function mount(Face: Face) {
   };
 }
 
-export const NODE_TYPES: Record<NodeKind, ComponentType<NodeProps<Node<FlowData>>>> = {
-  device: mount(DeviceFace),
-  gps: mount(GpsFace),
-  channel: mount(ChannelFace),
-  event_output: mount(EventOutputFace),
-  scope: mount(ScopeFace),
-  baseband_scope: mount(BasebandScopeFace),
-  speaker: mount(SpeakerFace),
-  map: mount(MapFace),
-  signal_map: mount(SignalMapFace),
-  propagation: mount(PropagationFace),
-  readout: mount(ReadoutFace),
-  decoder_log: mount(DecoderLogFace),
-  trunk: mount(TrunkFace),
-  spectrum_monitor: mount(SpectrumMonitorFace),
-  event_filter: mount(EventFilterFace),
-  audio_fx: mount(AudioFxFace),
-  video: mount(VideoFace),
-  recorder: mount(RecorderFace),
-  audio_recorder: mount(AudioRecorderFace),
-  baseband_recorder: mount(BasebandRecorderFace),
-  network_export: mount(NetworkExportFace),
-  export: mount(ExportFace),
-  scanner: mount(ScannerFace),
-  hunt: mount(HuntFace),
-  schedule: mount(ScheduleFace),
-  satellite: mount(SatelliteFace),
-  rotator: mount(RotatorFace),
-  triangulation: mount(TriangulationFace),
-  bearing_fix: mount(BearingFixFace),
-  array: mount(ArrayFace),
-  df: mount(DfFace),
-  beamformer: mount(BeamformerFace),
-  passive_radar: mount(RadarFace),
-  stitch: mount(StitchFace),
-  spatial_spectrum: mount(SpatialSpectrumFace),
-  correlator: mount(CorrelatorFace),
-  polarimeter: mount(PolarimeterFace),
-  processor: mount(PluginProcessorFace),
-  microphone: mount(MicrophoneFace),
-  modulator: mount(ModulatorFace),
-  transmit: mount(TransmitFace),
-  note: mount(NoteFace),
+const ProcessorFace = lazyFace(() => import("./ArrayProcessorFace"), "ArrayProcessorFace");
+
+/** Kinds with a face of their own. Every other kind is an array processor, drawn from its type. */
+const FACES: Partial<Record<NodeKind, Face>> = {
+  device: lazyFace(() => import("./DeviceFace"), "DeviceFace"),
+  gps: lazyFace(() => import("./GpsFace"), "GpsFace"),
+  channel: lazyFace(() => import("./ChannelFace"), "ChannelFace"),
+  event_output: lazyFace(() => import("./EventOutputFace"), "EventOutputFace"),
+  scope: lazyFace(() => import("./ScopeFace"), "ScopeFace"),
+  baseband_scope: lazyFace(() => import("./BasebandScopeFace"), "BasebandScopeFace"),
+  speaker: lazyFace(() => import("./SpeakerFace"), "SpeakerFace"),
+  map: lazyFace(() => import("./MapFace"), "MapFace"),
+  signal_map: lazyFace(() => import("./SignalMapFace"), "SignalMapFace"),
+  propagation: lazyFace(() => import("./PropagationFace"), "PropagationFace"),
+  readout: lazyFace(() => import("./ReadoutFace"), "ReadoutFace"),
+  decoder_log: lazyFace(() => import("./DecoderLogFace"), "DecoderLogFace"),
+  trunk: lazyFace(() => import("./TrunkFace"), "TrunkFace"),
+  spectrum_monitor: lazyFace(() => import("./SpectrumMonitorFace"), "SpectrumMonitorFace"),
+  event_filter: lazyFace(() => import("./EventFilterFace"), "EventFilterFace"),
+  audio_fx: lazyFace(() => import("./AudioFxFace"), "AudioFxFace"),
+  video: lazyFace(() => import("./VideoFace"), "VideoFace"),
+  recorder: lazyFace(() => import("./RecorderFaces"), "RecorderFace"),
+  audio_recorder: lazyFace(() => import("./RecorderFaces"), "AudioRecorderFace"),
+  baseband_recorder: lazyFace(() => import("./RecorderFaces"), "BasebandRecorderFace"),
+  network_export: lazyFace(() => import("./NetworkExportFace"), "NetworkExportFace"),
+  export: lazyFace(() => import("./ExportFace"), "ExportFace"),
+  scanner: lazyFace(() => import("./ScannerFace"), "ScannerFace"),
+  hunt: lazyFace(() => import("./HuntFace"), "HuntFace"),
+  schedule: lazyFace(() => import("./ScheduleFace"), "ScheduleFace"),
+  satellite: lazyFace(() => import("./SatelliteFace"), "SatelliteFace"),
+  rotator: lazyFace(() => import("./RotatorFace"), "RotatorFace"),
+  triangulation: lazyFace(() => import("./TriangulationFace"), "TriangulationFace"),
+  bearing_fix: lazyFace(() => import("./BearingFixFace"), "BearingFixFace"),
+  array: lazyFace(() => import("./ArrayFace"), "ArrayFace"),
+  microphone: lazyFace(() => import("./MicrophoneFace"), "MicrophoneFace"),
+  modulator: lazyFace(() => import("./ModulatorFace"), "ModulatorFace"),
+  transmit: lazyFace(() => import("./TransmitFace"), "TransmitFace"),
+  note: lazyFace(() => import("./NoteFace"), "NoteFace"),
 };
 
-export const FACES: Record<NodeKind, Face> = {
-  device: DeviceFace,
-  gps: GpsFace,
-  channel: ChannelFace,
-  event_output: EventOutputFace,
-  scope: ScopeFace,
-  baseband_scope: BasebandScopeFace,
-  speaker: SpeakerFace,
-  map: MapFace,
-  signal_map: SignalMapFace,
-  propagation: PropagationFace,
-  readout: ReadoutFace,
-  decoder_log: DecoderLogFace,
-  trunk: TrunkFace,
-  spectrum_monitor: SpectrumMonitorFace,
-  event_filter: EventFilterFace,
-  audio_fx: AudioFxFace,
-  video: VideoFace,
-  recorder: RecorderFace,
-  audio_recorder: AudioRecorderFace,
-  baseband_recorder: BasebandRecorderFace,
-  network_export: NetworkExportFace,
-  export: ExportFace,
-  scanner: ScannerFace,
-  hunt: HuntFace,
-  schedule: ScheduleFace,
-  satellite: SatelliteFace,
-  rotator: RotatorFace,
-  triangulation: TriangulationFace,
-  bearing_fix: BearingFixFace,
-  array: ArrayFace,
-  df: DfFace,
-  beamformer: BeamformerFace,
-  passive_radar: RadarFace,
-  stitch: StitchFace,
-  spatial_spectrum: SpatialSpectrumFace,
-  correlator: CorrelatorFace,
-  polarimeter: PolarimeterFace,
-  processor: PluginProcessorFace,
-  microphone: MicrophoneFace,
-  modulator: ModulatorFace,
-  transmit: TransmitFace,
-  note: NoteFace,
+const PROCESSOR_FLOW = "processor";
+
+/** A node's face: its kind's own, or the one every array processor shares. */
+export function NodeFace({ node }: { node: PatchNode }) {
+  const Face = FACES[node.kind];
+  return Face === undefined ? <ProcessorFace node={node} /> : <Face node={node} />;
+}
+
+/** The React Flow type that draws a node of `kind`. */
+export function flowTypeOf(kind: NodeKind): string {
+  return kind in FACES ? kind : PROCESSOR_FLOW;
+}
+
+export const NODE_TYPES: Record<string, ComponentType<NodeProps<Node<FlowData>>>> = {
+  ...Object.fromEntries(Object.entries(FACES).map(([kind, Face]) => [kind, mount(Face)])),
+  [PROCESSOR_FLOW]: mount(ProcessorFace),
 };
 
 export function faceSize(node: PatchNode): CSSProperties {

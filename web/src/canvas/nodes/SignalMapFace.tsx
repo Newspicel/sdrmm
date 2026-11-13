@@ -5,7 +5,7 @@ import { ChipField, Chips, NumberChip, SettingChip } from "../../components/face
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { formatHz, formatSignedHz } from "../../components/format";
-import { MapPanel } from "../../components/MapPanel";
+import { MapPanel } from "../../components/LazyMapPanel";
 import { OffsetStepper } from "../../components/OffsetStepper";
 import { usePositionStore } from "../../lib/position";
 import { useFeeds } from "../../lib/resolved";

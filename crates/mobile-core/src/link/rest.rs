@@ -10,6 +10,7 @@ use sdrmm_wire::{
     fusion::DfFusionState,
     mission::{MissionAction, MissionActionResponse, MissionsResponse, SwitchWorkspaceRequest},
     phone::{PairRequest, PairResponse, PhoneSelf},
+    processor::ProcessorReading,
     radar::RadarUpdate,
     rest::ApiError,
     state::StateSnapshot,
@@ -224,7 +225,15 @@ impl Api for RestClient {
     }
 
     fn radar(&self, node: String) -> BoxFuture<'_, Result<RadarUpdate, RestError>> {
-        Box::pin(async move { self.get(&["api", "radar", &node]).await })
+        Box::pin(async move {
+            match self.get(&["api", "processors", &node]).await? {
+                ProcessorReading::PassiveRadar(update) => Ok(update),
+                other => Err(RestError::Decode(format!(
+                    "{node} runs {}, not a radar",
+                    other.type_id()
+                ))),
+            }
+        })
     }
 
     fn survey(&self, node: String) -> BoxFuture<'_, Result<SurveyGrid, RestError>> {

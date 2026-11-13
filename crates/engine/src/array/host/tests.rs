@@ -8,7 +8,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use sdrmm_channels::array_processor::{
     ArrayBlock, ArrayCtx, ArrayProcessor, CalView, CorrectionView, Execution, LaneFormat, Pose,
     ProcessorAction, ProcessorDescriptor, ProcessorFaults, ProcessorNeeds, ProcessorOutput,
-    ResetCause, Steer, TuningNeed, no_lane_format,
+    ResetCause, Steer, TuningNeed, no_gpu, no_lane_format,
 };
 use sdrmm_wire::{
     ArrayGeometry, ArrayOrientation, ArrayTuningMode, Coherence, DecodedRecord, DfBearing,
@@ -38,6 +38,11 @@ pub(crate) static TALKER: ProcessorDescriptor = ProcessorDescriptor {
     lane_format: no_lane_format,
     execution: |_, _| Execution::Inline,
     in_place: |_, _| true,
+    actions: &[],
+    gpu: no_gpu,
+    event_bytes: 0,
+    enricher: None,
+    mission: None,
 };
 
 pub(crate) static BANDED: ProcessorDescriptor = ProcessorDescriptor {
@@ -281,7 +286,6 @@ pub(crate) fn plan(
         steer_in: SteerInput::None,
         steer_out: Arc::new(SteerMailbox::default()),
         stats: Arc::new(ProcessorStats::default()),
-        gpu: GpuUse::Off,
     }
 }
 

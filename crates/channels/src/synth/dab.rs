@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used)]
-
+use super::{Need, SynthError};
 use crate::dab::DabTransmissionMode;
 use num_complex::Complex;
 use sdrmm_dsp::fft::Transform;
@@ -176,21 +175,20 @@ struct Music {
 }
 
 impl Music {
-    fn new(programme: Programme) -> Self {
-        let protection =
-            Protection::eep(MUSIC_BITRATE_KBPS, Eep::A, 3).expect("EEP-A 3 at 96 kbit/s");
+    fn new(programme: Programme) -> Result<Self, SynthError> {
+        let protection = Protection::eep(MUSIC_BITRATE_KBPS, Eep::A, 3).need("music EEP-A 3")?;
         let frame_bytes = protection.frame_bits() / 8;
-        Self {
+        Ok(Self {
             encoder: SubChannelEncoder::new(protection),
-            builder: SuperframeBuilder::new(frame_bytes).expect("96 kbit/s builds superframes"),
+            builder: SuperframeBuilder::new(frame_bytes).need("music superframe builder")?,
             format: programme.format(),
             queued: Vec::new(),
             counter: 0,
             access_units: programme.access_units(),
-        }
+        })
     }
 
-    fn logical(&mut self) -> Vec<u8> {
+    fn logical(&mut self) -> Result<Vec<u8>, SynthError> {
         if self.queued.is_empty() {
             let units: Vec<Vec<u8>> = (0..self.format.access_units())
                 .map(|index| {
@@ -201,10 +199,10 @@ impl Music {
             self.queued = self
                 .builder
                 .build(self.format, &units)
-                .expect("the access units fit the superframe");
+                .need("superframe holding the access units")?;
             self.queued.reverse();
         }
-        self.queued.pop().unwrap_or_default()
+        Ok(self.queued.pop().unwrap_or_default())
     }
 }
 
@@ -215,15 +213,14 @@ struct Talk {
 }
 
 impl Talk {
-    fn new() -> Self {
-        let protection =
-            Protection::eep(TALK_BITRATE_KBPS, Eep::A, 3).expect("EEP-A 3 at 64 kbit/s");
+    fn new() -> Result<Self, SynthError> {
+        let protection = Protection::eep(TALK_BITRATE_KBPS, Eep::A, 3).need("talk EEP-A 3")?;
         let frame_bytes = protection.frame_bits() / 8;
-        Self {
+        Ok(Self {
             encoder: SubChannelEncoder::new(protection),
             frame_bytes,
             counter: 0,
-        }
+        })
     }
 
     fn logical(&mut self) -> Vec<u8> {
@@ -293,30 +290,27 @@ fn place(cif: &mut [bool], start_cu: u16, size_cu: u16, fragment: &[bool]) {
     }
 }
 
-#[must_use]
-pub fn ensemble(frames: usize) -> Vec<Complex<f32>> {
+pub fn ensemble(frames: usize) -> Result<Vec<Complex<f32>>, SynthError> {
     ensemble_for_mode(DabTransmissionMode::I, frames)
 }
 
-#[must_use]
 pub fn ensemble_for_mode(
     transmission_mode: DabTransmissionMode,
     frames: usize,
-) -> Vec<Complex<f32>> {
+) -> Result<Vec<Complex<f32>>, SynthError> {
     generate(transmission_mode, frames, false, Programme::HeStereo)
 }
 
 pub fn ensemble_with_data(
     transmission_mode: DabTransmissionMode,
     frames: usize,
-) -> Vec<Complex<f32>> {
+) -> Result<Vec<Complex<f32>>, SynthError> {
     generate(transmission_mode, frames, true, Programme::HeStereo)
 }
 
 /// Mode I with a music service whose superframes end in zero padding, so a whole logical
 /// frame of zeros (a valid Fire code) precedes every superframe head.
-#[must_use]
-pub fn ensemble_zero_padded(frames: usize) -> Vec<Complex<f32>> {
+pub fn ensemble_zero_padded(frames: usize) -> Result<Vec<Complex<f32>>, SynthError> {
     generate(
         DabTransmissionMode::I,
         frames,
@@ -330,14 +324,14 @@ fn generate(
     frames: usize,
     with_data: bool,
     programme: Programme,
-) -> Vec<Complex<f32>> {
+) -> Result<Vec<Complex<f32>>, SynthError> {
     let mode = Mode::new(transmission_mode);
     let mut modulator = Modulator::new(transmission_mode);
     let mut fic = FicEncoder::for_mode(transmission_mode);
-    let mut music = Music::new(programme);
-    let mut talk = Talk::new();
+    let mut music = Music::new(programme)?;
+    let mut talk = Talk::new()?;
     let mut information = service_information();
-    let mut data = super::dab_packet::Data::new();
+    let mut data = super::dab_packet::Data::new()?;
     if with_data {
         information.extend([
             fib(&[(0, vec![1, 3 << 2, 120, 0x88, 48])]),
@@ -377,7 +371,7 @@ fn generate(
         }
         for _ in 0..mode.cifs {
             let mut cif = vec![false; CIF_BITS];
-            let payload = music.logical();
+            let payload = music.logical()?;
             music.encoder.frame(&payload, &mut fragment);
             place(&mut cif, MUSIC_START_CU, MUSIC_SIZE_CU, &fragment);
             let payload = talk.logical();
@@ -395,7 +389,7 @@ fn generate(
             .collect();
         modulator.frame(&symbols, &mut iq);
     }
-    iq
+    Ok(iq)
 }
 
 #[cfg(test)]
@@ -405,7 +399,7 @@ mod tests {
 
     #[test]
     fn a_generated_frame_has_the_documented_length_and_a_null_symbol() {
-        let iq = ensemble(2);
+        let iq = ensemble(2).expect("an ensemble");
         assert_eq!(iq.len(), 2 * FRAME);
         assert!(iq[..NULL].iter().all(|value| value.norm() < 1e-9));
         let power: f32 = iq[NULL..NULL + SYMBOL]

@@ -84,6 +84,29 @@ fn descriptor_forms_are_the_forms_the_catalog_publishes() {
 }
 
 #[test]
+fn descriptors_agree_with_the_facets_the_catalog_publishes() {
+    for type_id in PROCESSOR_TYPE_IDS {
+        let descriptor = processor_descriptor(type_id).expect("registered");
+        let kind = NodeKind::parse(type_id).expect("node kind");
+        let facets = kind
+            .processor_facets()
+            .expect("a processor declares facets");
+        let declared: Vec<ProcessorAction> =
+            facets.actions.iter().map(|spec| spec.action).collect();
+        assert_eq!(descriptor.actions, declared.as_slice(), "{type_id}");
+        let params = NodeBody::default_for(kind)
+            .processor_params()
+            .expect("processor params");
+        let spread = (descriptor.tuning)(&params) == TuningNeed::Spread;
+        assert_eq!(
+            facets.tuning == Some(ArrayTuningMode::Spread),
+            spread,
+            "{type_id}"
+        );
+    }
+}
+
+#[test]
 fn descriptors_read_their_own_settings() {
     let df = ProcessorParams::Df(DfParams::default());
     let descriptor = processor_descriptor("df").expect("df");
@@ -123,6 +146,31 @@ fn create_processor_refuses_too_few_lanes() {
     });
     let two = Bench::together("two", 2, 2_048_000.0, 4_096);
     assert_eq!(refusal(created(&two, &wrong)), "Peaks out of range");
+}
+
+#[test]
+fn descriptors_declare_what_the_engine_offers_them() {
+    let radar = processor_descriptor("passive_radar").expect("radar");
+    assert!(radar.takes(ProcessorAction::ClearTracks));
+    let off = ProcessorParams::PassiveRadar(PassiveRadarParams {
+        gpu: GpuUse::Off,
+        ..PassiveRadarParams::default()
+    });
+    assert_eq!((radar.gpu)(&off), GpuUse::Off);
+    let auto = ProcessorParams::PassiveRadar(PassiveRadarParams::default());
+    assert_eq!((radar.gpu)(&auto), GpuUse::Auto);
+    let df = processor_descriptor("df").expect("df");
+    assert!(!df.takes(ProcessorAction::ClearTracks));
+    assert_eq!(
+        (df.gpu)(&ProcessorParams::Df(DfParams::default())),
+        GpuUse::Off
+    );
+    assert_eq!(plugin_descriptor().event_bytes, EVENT_BYTES);
+    assert!(
+        registrations()
+            .iter()
+            .all(|entry| entry.descriptor.event_bytes == 0)
+    );
 }
 
 #[test]

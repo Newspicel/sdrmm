@@ -9,7 +9,7 @@ pub(crate) const PHONE_ROUTES: &[(Method, &str)] = &[
     (Method::POST, "/api/missions/{node}/actions"),
     (Method::GET, "/api/survey/{node}"),
     (Method::GET, "/api/fusion/{node}"),
-    (Method::GET, "/api/radar/{node}"),
+    (Method::GET, "/api/processors/{node}"),
     (Method::GET, "/api/phones/self"),
     (Method::DELETE, "/api/phones/self"),
     (Method::GET, "/api/ws"),

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAX_EXTENT_M, MIN_ELEMENTS } from "../canvas/nodes/arrayGeometry";
 import { calSourceOf } from "../canvas/nodes/arrayNode";
-import { readingAxes } from "../canvas/nodes/radar";
 import {
   ARRAY_LIMITS,
   BAND_SEED_HZ,
@@ -53,25 +52,6 @@ describe("generated limits", () => {
     });
     expect(holds(ARRAY_LIMITS.cal_bandwidth_hz, ARRAY_LIMITS.cal_bandwidth_seed_hz)).toBe(true);
     expect(holds(FUSION_LIMITS.half_life_s, FUSION_LIMITS.half_life_seed_s)).toBe(true);
-  });
-
-  it("offers only choices the server takes", () => {
-    const axes = readingAxes({
-      sample_rate_hz: 1,
-      carrier_hz: 1,
-      range_step_m: 1,
-      gates: 1,
-      doppler_step_hz: 1,
-      doppler_rows: 1,
-      batches: 1,
-      cpi_ms: 1,
-      hop_ms: 1,
-      lanes: 1,
-    });
-    expect([axes.dbMin, axes.dbMax]).toEqual([
-      RADAR_LIMITS.surface_db.min,
-      RADAR_LIMITS.surface_db.max,
-    ]);
   });
 
   it("lists the powers of two a bound holds", () => {

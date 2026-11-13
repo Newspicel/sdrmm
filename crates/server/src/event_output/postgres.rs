@@ -1,9 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, net::IpAddr, sync::Arc};
 
 use rustls::ClientConfig;
 use rustls_platform_verifier::BuilderVerifierExt;
 use sdrmm_wire::{EventOutputTarget, valid_sql_identifier};
-use tokio_postgres::{Client, Config};
+use tokio_postgres::{
+    Client, Config,
+    config::{Host, SslMode},
+};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
 use super::{Delivery, DeliveryError, REQUEST_TIMEOUT};
@@ -17,6 +20,7 @@ pub(super) struct PostgresTarget<'a> {
 
 struct Open {
     target: EventOutputTarget,
+    password: String,
     client: Client,
 }
 
@@ -30,13 +34,14 @@ impl Connections {
         &mut self,
         node: &str,
         target: &EventOutputTarget,
+        password: &str,
         batch: &[Delivery],
     ) -> Result<(), DeliveryError> {
         let EventOutputTarget::Postgres {
             url,
             table,
             username,
-            password,
+            ..
         } = target
         else {
             return Err(DeliveryError::Failed(
@@ -69,16 +74,16 @@ impl Connections {
         target: &EventOutputTarget,
         settings: &PostgresTarget<'_>,
     ) -> Result<&Client, DeliveryError> {
-        let reusable = self
-            .open
-            .get(node)
-            .is_some_and(|open| open.target == *target && !open.client.is_closed());
+        let reusable = self.open.get(node).is_some_and(|open| {
+            open.target == *target && open.password == settings.password && !open.client.is_closed()
+        });
         if !reusable {
             let client = connect(settings).await?;
             self.open.insert(
                 node.to_owned(),
                 Open {
                     target: target.clone(),
+                    password: settings.password.to_owned(),
                     client,
                 },
             );
@@ -126,7 +131,24 @@ pub(super) fn config(target: &PostgresTarget<'_>) -> Result<Config, DeliveryErro
     if !target.password.is_empty() {
         config.password(target.password);
     }
+    if !target.url.to_ascii_lowercase().contains("sslmode") && !on_this_host(&config) {
+        config.ssl_mode(SslMode::Require);
+    }
     Ok(config)
+}
+
+/// Whether every server is on this machine. Any other one must speak TLS unless the URL names an
+/// `sslmode`: the default `prefer` sends the password in the clear once TLS is stripped.
+fn on_this_host(config: &Config) -> bool {
+    let named = config.get_hosts().iter().all(|host| match host {
+        Host::Tcp(name) => {
+            name.eq_ignore_ascii_case("localhost")
+                || name.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
+        }
+        #[cfg(unix)]
+        Host::Unix(_) => true,
+    });
+    named && config.get_hostaddrs().iter().all(IpAddr::is_loopback)
 }
 
 fn tls() -> Result<MakeRustlsConnect, DeliveryError> {

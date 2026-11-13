@@ -892,7 +892,7 @@ fn remodulate(input: &[C32], remod: &mut DabRemod) -> Vec<C32> {
 }
 
 fn rebuilt_correlation(cfo: f64) -> (sdrmm_wire::radar::ReferenceHealth, f64) {
-    let clean = crate::synth::dab::ensemble(8);
+    let clean = crate::synth::dab::ensemble(8).expect("a synthetic signal");
     let received = dab_channel(&clean, cfo, 0.03);
     let mut remod = DabRemod::new(DAB_RATE).unwrap();
     let out = remodulate(&received, &mut remod);
@@ -928,7 +928,7 @@ fn dab_remod_finds_a_whole_carrier_offset() {
 
 #[test]
 fn dab_remod_falls_back_and_counts_when_sync_is_lost() {
-    let clean = crate::synth::dab::ensemble(4);
+    let clean = crate::synth::dab::ensemble(4).expect("a synthetic signal");
     let mut received = dab_channel(&clean, 120.0, 0.03);
     received.extend(gaussian(3 * DAB_FRAME, 0.87, 77));
     let mut remod = DabRemod::new(DAB_RATE).unwrap();
@@ -1083,7 +1083,7 @@ const DAB_ECHO_GATES: usize = 200;
 const DAB_ECHO_HZ: f64 = 40.0;
 
 fn dab_radar_lanes(frames: usize) -> Vec<Vec<C32>> {
-    let clean = crate::synth::dab::ensemble(frames);
+    let clean = crate::synth::dab::ensemble(frames).expect("a synthetic signal");
     let len = clean.len();
     let turn = |n: usize, hz: f64| C32::from_polar(1.0, (TAU * hz * n as f64 / DAB_RATE) as f32);
     let multipath = C32::from_polar(0.4, 1.0);

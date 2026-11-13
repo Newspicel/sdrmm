@@ -20,7 +20,9 @@ function harness() {
   const texSubImage2D = vi.fn();
   const callbacks = new Map<number, FrameRequestCallback>();
   const observers: IntersectionObserverCallback[] = [];
+  const resizers: ResizeObserverCallback[] = [];
   const listeners = new Map<string, EventListener>();
+  const windowListeners = new Map<string, EventListener>();
   let next = 0;
   const gl = new Proxy(
     { drawArrays: draw, uniform3fv, texSubImage2D },
@@ -41,7 +43,24 @@ function harness() {
     getContext: () => gl,
     addEventListener: (name: string, listener: EventListener) => listeners.set(name, listener),
   };
-  vi.stubGlobal("window", { devicePixelRatio: 2, setTimeout, clearTimeout });
+  vi.stubGlobal("window", {
+    devicePixelRatio: 2,
+    setTimeout,
+    clearTimeout,
+    addEventListener: (name: string, listener: EventListener) =>
+      windowListeners.set(name, listener),
+    removeEventListener: (name: string) => windowListeners.delete(name),
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(callback: ResizeObserverCallback) {
+        resizers.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal("document", { createElement: () => shared });
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     callbacks.set(++next, callback);
@@ -63,6 +82,7 @@ function harness() {
     uniform3fv,
     texSubImage2D,
     canvas,
+    pendingFrames: () => callbacks.size,
     frame() {
       const pending = [...callbacks.values()];
       callbacks.clear();
@@ -73,6 +93,12 @@ function harness() {
         [{ isIntersecting: visible } as IntersectionObserverEntry],
         {} as IntersectionObserver,
       );
+    },
+    resized(index: number) {
+      resizers[index]?.([], {} as ResizeObserver);
+    },
+    windowEvent(name: string) {
+      windowListeners.get(name)?.(new Event(name));
     },
     event(name: string) {
       listeners.get(name)?.({ target: shared, preventDefault() {} } as unknown as Event);
@@ -123,6 +149,16 @@ describe("waterfall repainting", () => {
     expect(h.draw).toHaveBeenCalledTimes(5);
   });
 
+  it("asks for no frames while idle", () => {
+    const h = harness();
+    views.push(attachWaterfall(h.canvas().element));
+    h.visible(0, true);
+    h.frame();
+    expect(h.pendingFrames()).toBe(0);
+    views[0]?.pushRow(new Uint8Array(8));
+    expect(h.pendingFrames()).toBe(1);
+  });
+
   it("stores a row's level in place, without a scratch array per row", () => {
     const h = harness();
     const view = attachWaterfall(h.canvas().element);
@@ -164,11 +200,13 @@ describe("waterfall repainting", () => {
     h.visible(1, true);
     h.frame();
     Object.defineProperty(second.element, "clientWidth", { value: 1000 });
+    h.resized(1);
     h.frame();
     h.frame();
     expect(first.context.drawImage).toHaveBeenCalledTimes(1);
     expect(second.context.drawImage).toHaveBeenCalledTimes(2);
     window.devicePixelRatio = 1;
+    h.windowEvent("resize");
     h.frame();
     expect(first.context.drawImage).toHaveBeenCalledTimes(2);
     expect(second.context.drawImage).toHaveBeenCalledTimes(3);

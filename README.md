@@ -31,7 +31,7 @@ covers macOS, Windows, Linux, Homebrew, APT, DNF, Nix, and Docker.
 ## Start with an RTL-SDR
 
 1. Plug in the RTL-SDR and pick it on the **Device** node. Set the rate to **2.4 MS/s**.
-2. Add a **WFM** channel from **+ Node** and set it to a local FM station.
+2. Add a **WFM** channel from **+ Add** and set it to a local FM station.
 3. Wire Device `iq` to WFM `iq`, and WFM `audio` to the Speaker.
 4. Start the Speaker. Press `p` on a node to pin it to the Rack.
 
@@ -47,6 +47,7 @@ through it. [Radios](https://sdrmm.com/docs/hardware) covers other hardware.
 - **Displays:** [spectrum, waterfalls, maps, decoded messages, and video](https://sdrmm.com/docs/getting-started/workspace).
 - **Recording:** [device IQ, channel baseband, audio, and each call](https://sdrmm.com/docs/user-guide/recording),
   with a pre-roll and SigMF playback.
+- **Transmitting:** [NFM, AM and SSB voice, and APRS](https://sdrmm.com/docs/user-guide/transmit).
 - **Finding signals:** [scanning, signal identification, band monitoring, and transmitter
   hunting](https://sdrmm.com/docs/user-guide/scanning).
 - **Arrays:** [coherent arrays](https://sdrmm.com/docs/user-guide/arrays),

@@ -684,7 +684,7 @@ fn drm_is_confirmed_in_every_robustness_mode_it_is_heard_in() {
     use crate::drm::mode::Robustness;
     for mode in [Robustness::B, Robustness::D] {
         let mut iq = synth::resample(
-            &synth::drm::signal(synth::drm::defaults(mode), 3),
+            &synth::drm::signal(synth::drm::defaults(mode), 3).expect("a synthetic signal"),
             synth::drm::RATE_HZ,
             RATE,
         );

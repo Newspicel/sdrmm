@@ -1,7 +1,6 @@
-#![allow(clippy::expect_used)]
-
 use sdrmm_dsp::{DVB_PRIMITIVE, ReedSolomon, crc16_msb};
 
+use super::{Need, SynthError};
 use crate::dab::{
     msc::SubChannelEncoder,
     protection::{Eep, Protection},
@@ -14,7 +13,7 @@ pub struct Data {
 }
 
 impl Data {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, SynthError> {
         let image = include_bytes!("../../../../fixtures/broadcast_audio/slideshow.png");
         let groups = [
             super::dab_pad::group(3, 0, true, &super::dab_pad::header(image.len())),
@@ -47,11 +46,11 @@ impl Data {
             application.extend_from_slice(&[(i as u8) << 2 | 3, 254]);
             application.extend_from_slice(bytes);
         }
-        Self {
-            encoder: SubChannelEncoder::new(Protection::eep(64, Eep::A, 3).expect("EEP-A3")),
+        Ok(Self {
+            encoder: SubChannelEncoder::new(Protection::eep(64, Eep::A, 3).need("EEP-A 3")?),
             stream: application,
             at: 0,
-        }
+        })
     }
 
     pub fn frame(&mut self, out: &mut Vec<bool>) {

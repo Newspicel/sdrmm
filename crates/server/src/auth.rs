@@ -28,7 +28,6 @@ const PAIR_PATH: &str = "/api/phones/pair";
 const KEYS_UNREADABLE: &str = "Phone keys unreadable, try again";
 const LOCAL_NAME: &str = "localhost";
 const LOCAL_SUFFIX: &str = ".localhost";
-const MDNS_SUFFIX: &str = ".local";
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Auth {
@@ -96,7 +95,7 @@ impl AuthGate {
     pub(crate) fn new(state: &AppState, role: ListenerRole, tls: bool) -> Self {
         let shared = state.auth.token.clone();
         let allowed_hosts = (role == ListenerRole::Main && shared.is_none())
-            .then(|| Arc::from(state.gate.main_names()));
+            .then(|| Arc::from(trusted_names(state)));
         Self {
             role,
             tls,
@@ -133,6 +132,17 @@ impl AuthGate {
     }
 }
 
+/// Names a tokenless server answers to beyond IP literals and `localhost`. Any other name, a
+/// `.local` one included, can be rebound to this machine by whoever answers DNS or mDNS. A LAN
+/// bind also trusts its own mDNS name, which a peer able to spoof it could reach directly anyway.
+fn trusted_names(state: &AppState) -> Vec<String> {
+    let mut names = state.gate.main_names().to_vec();
+    if state.gate.main_bound().is_some_and(|ip| !ip.is_loopback()) {
+        names.push(crate::net::mdns_host());
+    }
+    names
+}
+
 fn host<'a>(headers: &'a HeaderMap, uri: &'a Uri) -> Option<&'a str> {
     headers
         .get(header::HOST)
@@ -164,10 +174,7 @@ fn addressed_here(headers: &HeaderMap, uri: &Uri, allowed: &[String]) -> bool {
 
 fn unrebindable(name: &str) -> bool {
     let lowered = name.to_ascii_lowercase();
-    name.parse::<IpAddr>().is_ok()
-        || lowered == LOCAL_NAME
-        || lowered.ends_with(LOCAL_SUFFIX)
-        || lowered.ends_with(MDNS_SUFFIX)
+    name.parse::<IpAddr>().is_ok() || lowered == LOCAL_NAME || lowered.ends_with(LOCAL_SUFFIX)
 }
 
 fn configured(allowed: &[String], name: &str) -> bool {

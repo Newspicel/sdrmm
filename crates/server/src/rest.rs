@@ -50,9 +50,10 @@ mod nodes;
 mod patch;
 mod phones;
 mod presets;
-mod radar;
+mod processors;
 mod recordings;
 mod satellites;
+mod secrets;
 mod sinks;
 mod survey;
 mod workspaces;
@@ -497,11 +498,12 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(get_about))
         .routes(routes!(get_license_text))
         .merge(arrays::routes())
-        .merge(radar::routes())
+        .merge(processors::routes())
         .merge(phones::routes())
         .merge(missions::routes())
         .merge(survey::routes())
         .merge(fusion::routes())
         .merge(denoise::routes())
         .merge(nanovna::routes())
+        .merge(secrets::routes())
 }

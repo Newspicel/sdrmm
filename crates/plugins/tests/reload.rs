@@ -32,7 +32,7 @@ fn a_reload_names_the_plugins_a_changed_file_rebuilt() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap_or_else(|error| panic!("{error}"));
     write(&dir, "First");
-    let mut plugins = PluginDir::new(dir.clone());
+    let mut plugins = PluginDir::new(dir.clone()).with_cache(None);
 
     let first = plugins.reload();
     assert!(first.errors.is_empty(), "{:?}", first.errors);

@@ -91,16 +91,37 @@ pub trait Decoder: Send + Sync {
     }
 }
 
-/// A channel following one granted call in `slot`, deciphering with `keys` and playing through
-/// the vocoder chip on the named serial port, when there is one.
+/// A channel following one granted call, in `slot` on a protocol whose carriers carry several,
+/// deciphering with `keys` and playing through the vocoder chip on the named serial port, when
+/// there is one.
 pub type Follow = fn(
-    slot: u8,
+    slot: Option<u8>,
     ignore_crc: bool,
     keys: &[sdrmm_wire::VoiceKey],
     vocoder: Option<&str>,
 ) -> Result<ChannelParams, ChannelError>;
 
-/// The settings a trunk system opens channels of its decoder with.
+/// A call the control channel granted a logical channel to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TrunkGrant {
+    pub logical_channel: u16,
+    /// The timeslot, on a protocol that shares a carrier between calls.
+    pub slot: Option<u8>,
+    /// The talkgroup, or the radio on a private call.
+    pub destination: u32,
+    pub source: Option<u32>,
+    pub group_call: Option<bool>,
+}
+
+/// A logical channel the signalling placed on the frequency it is received on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TrunkPlacement {
+    pub logical_channel: u16,
+    pub freq_hz: u64,
+}
+
+/// How a trunked system runs on a decoder: the channels it opens and how it reads the
+/// protocol's signalling, so the trunk follower never needs to know which protocol it follows.
 #[derive(Clone, Copy, Debug)]
 pub struct Trunking {
     /// A channel hearing everything on a carrier: the control channel and channel-plan probes.
@@ -108,6 +129,10 @@ pub struct Trunking {
     pub follow: Follow,
     /// The protocols the decoder recognises and how many calls share one carrier.
     pub spec: fn() -> sdrmm_wire::TrunkSpec,
+    /// The calls a control burst grants.
+    pub grants: fn(&sdrmm_wire::DvFrame) -> Vec<TrunkGrant>,
+    /// Where a burst says logical channels transmit: the protocol's channel numbering.
+    pub placements: fn(&sdrmm_wire::DvFrame) -> Vec<TrunkPlacement>,
 }
 
 type CreateRx = fn(ChannelCtx, ChannelSettings) -> Result<Box<dyn ChannelRx>, ChannelError>;
@@ -490,20 +515,34 @@ pub fn registry() -> Arc<Registry> {
         .clone()
 }
 
+/// Why a plugin decoder of `type_id` may not load beside the built-ins and the plugin types in
+/// `taken`, if it may not.
+#[must_use]
+pub fn plugin_refusal(type_id: &str, taken: &[&str]) -> Option<ChannelError> {
+    if BUILT_IN
+        .iter()
+        .any(|decoder| decoder.descriptor().type_id == type_id)
+    {
+        Some(ChannelError::BuiltIn(type_id.to_owned()))
+    } else if taken.contains(&type_id) {
+        Some(ChannelError::LoadedTwice(type_id.to_owned()))
+    } else {
+        None
+    }
+}
+
 /// Opens `plugins` beside the built-in decoders, replacing every plugin loaded before, and
 /// returns the type ids now on a different decoder than before: their running channels still
-/// hold the old one. A plugin may not take a built-in decoder's type id.
+/// hold the old one. Refuses the whole set, changing nothing, when a plugin takes a built-in's
+/// type id or one another plugin took; [`plugin_refusal`] finds which to leave out first.
 pub fn install_plugins(plugins: Vec<Arc<dyn Decoder>>) -> Result<Vec<String>, ChannelError> {
+    let mut taken: Vec<&str> = Vec::with_capacity(plugins.len());
     for plugin in &plugins {
-        let type_id = &plugin.descriptor().type_id;
-        if BUILT_IN
-            .iter()
-            .any(|decoder| decoder.descriptor().type_id == *type_id)
-        {
-            return Err(ChannelError::InvalidSettings(format!(
-                "plugin type {type_id} is already a built-in decoder"
-            )));
+        let type_id = plugin.descriptor().type_id.as_str();
+        if let Some(refusal) = plugin_refusal(type_id, &taken) {
+            return Err(refusal);
         }
+        taken.push(type_id);
     }
     let mut current = CURRENT.write().unwrap_or_else(PoisonError::into_inner);
     let replaced = plugins
@@ -617,4 +656,76 @@ pub fn input_rate(params: &ChannelParams) -> f64 {
 #[must_use]
 pub fn audio_channels(params: &ChannelParams) -> u8 {
     layout(params).map_or(1, |layout| layout.audio_channels)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Plugin(ChannelDescriptor);
+
+    impl Decoder for Plugin {
+        fn descriptor(&self) -> &ChannelDescriptor {
+            &self.0
+        }
+
+        fn create_rx(
+            &self,
+            _: ChannelCtx,
+            settings: &ChannelSettings,
+        ) -> Result<Box<dyn ChannelRx>, ChannelError> {
+            Err(ChannelError::UnknownType(
+                settings.params.type_id().to_owned(),
+            ))
+        }
+
+        fn layout(&self, params: &ChannelParams) -> Result<ChannelLayout, ChannelError> {
+            Err(ChannelError::UnknownType(params.type_id().to_owned()))
+        }
+
+        fn filter(&self, _: &ChannelParams) -> Result<ChannelFilter, ChannelError> {
+            Ok(ChannelFilter::Passthrough)
+        }
+
+        fn normalize(&self, params: &ChannelParams) -> Result<ChannelParams, ChannelError> {
+            Ok(params.clone())
+        }
+    }
+
+    fn plugin(type_id: &str) -> Arc<dyn Decoder> {
+        Arc::new(Plugin(ChannelDescriptor {
+            type_id: type_id.to_owned(),
+            ..ChannelDescriptor::default()
+        }))
+    }
+
+    #[test]
+    fn a_plugin_may_not_take_a_built_in_or_a_taken_type() {
+        let built_in = BUILT_IN[0].descriptor().type_id.clone();
+        assert!(matches!(
+            plugin_refusal(&built_in, &[]),
+            Some(ChannelError::BuiltIn(id)) if id == built_in
+        ));
+        assert!(matches!(
+            plugin_refusal("twin", &["twin"]),
+            Some(ChannelError::LoadedTwice(id)) if id == "twin"
+        ));
+        assert!(plugin_refusal("twin", &["other"]).is_none());
+    }
+
+    #[test]
+    fn a_clashing_set_installs_nothing() {
+        let built_in = BUILT_IN[0].descriptor().type_id.clone();
+        for refused in [
+            vec![plugin("clash_ok"), plugin(&built_in)],
+            vec![plugin("clash_twin"), plugin("clash_twin")],
+        ] {
+            assert!(install_plugins(refused).is_err());
+        }
+        let current = registry();
+        assert!(current.find("clash_ok").is_none());
+        assert!(current.find("clash_twin").is_none());
+        let kept = current.find(&built_in).expect("the built-in stays");
+        assert!(Arc::ptr_eq(kept, &BUILT_IN[0]));
+    }
 }

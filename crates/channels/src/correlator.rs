@@ -14,7 +14,7 @@ use crate::ChannelError;
 use crate::array_processor::{
     ArrayBlock, ArrayCtx, ArrayProcessor, Execution, MAX_LANES, ProcessorAction,
     ProcessorDescriptor, ProcessorFaults, ProcessorNeeds, ProcessorOutput, Registration,
-    ResetCause, TuningNeed, boxed, check_tuning, no_lane_format, stamp_at,
+    ResetCause, TuningNeed, boxed, check_tuning, no_gpu, no_lane_format, stamp_at,
 };
 
 pub const VISIBILITY_DB_MIN: f32 = -40.0;
@@ -40,6 +40,11 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
         batch: ctx.max_block,
     },
     in_place,
+    actions: &[],
+    gpu: no_gpu,
+    event_bytes: 0,
+    enricher: None,
+    mission: None,
 };
 
 pub const REGISTRATION: Registration = Registration {

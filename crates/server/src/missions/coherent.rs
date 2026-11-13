@@ -1,6 +1,6 @@
+use sdrmm_channels::array_processor::MissionShape;
 use sdrmm_wire::{
-    ARRAY_PORT, DfMission, MissionBody, MissionControl, MissionProblem, PositionLink,
-    RADAR_TX_PORT, RadarMission,
+    ARRAY_PORT, DfMission, MissionBody, MissionControl, MissionProblem, PositionLink, RadarMission,
 };
 
 use super::{Built, Scene, graph};
@@ -16,7 +16,14 @@ struct Wired {
     controls: Vec<MissionControl>,
 }
 
-pub(super) fn df(scene: &Scene<'_>, node: &str) -> Built {
+pub(super) fn coherent(scene: &Scene<'_>, node: &str, shape: MissionShape) -> Built {
+    match shape {
+        MissionShape::Bearings => bearings(scene, node),
+        MissionShape::Radar { transmitter } => radar(scene, node, transmitter),
+    }
+}
+
+fn bearings(scene: &Scene<'_>, node: &str) -> Built {
     let wired = wired(scene, node);
     Built {
         body: MissionBody::Df(DfMission {
@@ -30,10 +37,10 @@ pub(super) fn df(scene: &Scene<'_>, node: &str) -> Built {
     }
 }
 
-pub(super) fn radar(scene: &Scene<'_>, node: &str) -> Built {
+fn radar(scene: &Scene<'_>, node: &str, transmitter_port: &str) -> Built {
     let mut wired = wired(scene, node);
     let (transmitter, phone) =
-        graph::link(&scene.resolved, &scene.state.phones, node, RADAR_TX_PORT);
+        graph::link(&scene.resolved, &scene.state.phones, node, transmitter_port);
     wired.problems.extend(phone);
     Built {
         body: MissionBody::Radar(RadarMission {

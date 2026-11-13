@@ -26,7 +26,6 @@ function server(index: number, playbackSpeed: number, profile: string) {
       `--db ${scratch}/shots.db --recordings-dir ${scratch}/recordings ` +
       `--playback-speed ${playbackSpeed}`,
     cwd: "..",
-    env: { VITE_ENABLE_SYNTHETIC_DEVICES: "true" },
     url: `${serverURL(FIRST, index)}/api/state`,
     reuseExistingServer: false,
     timeout: 300_000,

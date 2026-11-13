@@ -222,6 +222,9 @@ pub enum ServerEvent {
         /// Readouts and health derived from `reading`, for any face to show.
         #[serde(default)]
         status: Box<crate::channel::ChannelStatus>,
+        /// What `reading` puts on the face, derived from it.
+        #[serde(default)]
+        view: Box<crate::processor::view::ProcessorView>,
     },
     DfFusionUpdate {
         node: String,
@@ -275,6 +278,7 @@ impl ServerEvent {
         Self::ProcessorUpdate {
             node,
             status: Box::new(reading.status()),
+            view: Box::new(reading.view()),
             reading: Box::new(reading),
         }
     }

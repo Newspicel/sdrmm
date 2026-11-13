@@ -855,7 +855,7 @@ mod probe {
         );
         plan.sinks = sinks;
         let built = ProcessorHost::build(plan, &rig.frame).expect("probe host");
-        assert!(built.radar.is_none());
+        assert!(built.dedicated.is_none());
         built.host
     }
 

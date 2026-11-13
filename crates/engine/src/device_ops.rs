@@ -206,7 +206,7 @@ impl Engine {
         let mut history_faults: Vec<(u32, String)> = Vec::new();
         let mut changed: Vec<u32> = Vec::new();
         for (id, s) in inner.device_sets.iter_mut() {
-            let now = s.overruns_total();
+            let now = s.overruns_live();
             let delta = now.saturating_sub(s.overruns_seen);
             s.overruns_seen = now;
             let mut dirty = delta > 0;
@@ -536,8 +536,7 @@ impl Engine {
             };
             let old_runtime = std::mem::replace(&mut state.runtime, runtime);
             state.cmd_txs = cmd_txs;
-            state.overruns = overruns;
-            state.overruns_seen = 0;
+            state.adopt_overruns(overruns);
             state.overruns_polled = None;
             state.loss = None;
             state.stalls = stalls;
@@ -712,6 +711,7 @@ impl Engine {
                     rate_patches: 0,
                     cmd_txs,
                     overruns,
+                    overruns_retired: 0,
                     overruns_seen: 0,
                     overruns_polled: None,
                     loss: None,

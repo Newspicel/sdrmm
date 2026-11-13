@@ -1,28 +1,41 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { detection, radarUpdate } from "../test/fixtures";
-import { isStale, readingOf, useProcessorStore } from "./processors";
+import { isStale, useProcessorStore } from "./processors";
 import type { ServerEvent } from "./types";
 
 function radar(node: string, detections: ReturnType<typeof detection>[]): ServerEvent {
+  const marks = detections.map((found) => ({
+    x: found.range_km,
+    y: found.doppler_hz,
+    shape: "dot" as const,
+  }));
   return {
     type: "ProcessorUpdate",
-    data: { node, reading: { type: "passive_radar", reading: radarUpdate(detections) } },
+    data: {
+      node,
+      reading: { type: "passive_radar", reading: radarUpdate(detections) },
+      view: { surface: { marks } },
+    },
   };
 }
 
 afterEach(() => useProcessorStore.getState().reset());
 
 describe("useProcessorStore", () => {
-  it("replaces a radar reading every CPI so empty CPIs clear detections", () => {
+  it("replaces the view every report so empty reports clear marks", () => {
     const { observe } = useProcessorStore.getState();
     observe(radar("radar", [detection(12), detection(30)]));
-    expect(
-      readingOf(useProcessorStore.getState().byNode.radar, "passive_radar")?.detections,
-    ).toHaveLength(2);
+    expect(useProcessorStore.getState().byNode.radar?.view.surface?.marks).toHaveLength(2);
     observe(radar("radar", []));
-    expect(
-      readingOf(useProcessorStore.getState().byNode.radar, "passive_radar")?.detections,
-    ).toEqual([]);
+    expect(useProcessorStore.getState().byNode.radar?.view.surface?.marks).toEqual([]);
+  });
+
+  it("learns each processor's pace from the gap between reports", () => {
+    const { observe } = useProcessorStore.getState();
+    observe(radar("radar", []));
+    expect(useProcessorStore.getState().byNode.radar?.periodMs).toBe(0);
+    observe(radar("radar", []));
+    expect(useProcessorStore.getState().byNode.radar?.periodMs).toBeGreaterThanOrEqual(0);
   });
 
   it("forgets removed nodes", () => {
@@ -43,13 +56,6 @@ describe("useProcessorStore", () => {
   it("ignores events that are not processor updates", () => {
     useProcessorStore.getState().observe({ type: "Hello", data: { revision: 1, protocol: 1 } });
     expect(useProcessorStore.getState().byNode).toEqual({});
-  });
-
-  it("reads a reading only as its own type", () => {
-    useProcessorStore.getState().observe(radar("radar", []));
-    const state = useProcessorStore.getState().byNode.radar;
-    expect(readingOf(state, "df")).toBeNull();
-    expect(readingOf(undefined, "passive_radar")).toBeNull();
   });
 });
 

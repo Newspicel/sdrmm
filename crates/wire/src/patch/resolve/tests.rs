@@ -455,7 +455,7 @@ fn a_trunk_system_runs_on_its_control_and_follower_channels() {
             device_set: 1,
             channel: 3,
             logical_channel: None,
-            slot: 1,
+            slot: Some(1),
             freq_hz: 2,
             ..TrunkFollower::default()
         }],

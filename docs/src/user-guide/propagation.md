@@ -13,18 +13,16 @@ On opening, the map loads the last six hours of logged decodes.
 
 ## Layers
 
-**Map** picks the layer. **Paths** draws lines on top.
-
-| Layer | Shows |
+| Setting | Shows |
 |---|---|
-| Activity | Heard stations per grid square, weighted by count and age |
-| MUF | Estimated MUF lower bound at each reflection point |
-| Paths | Great-circle paths, one per grid square and band. Off by default. |
+| Map, Activity | Heard stations per grid square, weighted by count and age |
+| Map, MUF | Estimated MUF lower bound at each reflection point |
+| Paths | Great-circle paths on top, one per grid square and band. Off by default. |
 
 Only messages with a locator count. Reports and `73` usually have none.
 
-For MUF, each path is split into hops. A one-hop path reflects at its midpoint. Points lose half their
-weight every **Half-life**, from five minutes to twelve hours (default 30 minutes).
+For MUF, each path is split into hops. A one-hop path reflects at its midpoint. Points lose half
+their weight every **Half-life**, from five minutes to twelve hours (default 30 minutes).
 
 ## Measured MUF
 

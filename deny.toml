@@ -1,4 +1,5 @@
-# Supply-chain gate for `cargo xtask audit` (CI mirrors it verbatim).
+# Supply-chain gate. Pull requests check licenses, bans and sources; `cargo xtask audit` checks
+# advisories nightly, since those change without a pull request.
 
 [advisories]
 # Unsound advisories default to workspace-direct crates; a transitive dependency can

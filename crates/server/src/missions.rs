@@ -1,3 +1,4 @@
+use sdrmm_channels::array_processor::{MissionShape, descriptor_for};
 use sdrmm_wire::{
     ChannelInfo, DeviceSet, Mission, MissionBody, MissionControl, MissionProblem, MissionWorkspace,
     MissionsResponse, NodeBody, PatchGraph, PatchNode, StateSnapshot, mission::MAX_MISSIONS,
@@ -73,11 +74,9 @@ impl<'a> Scene<'a> {
     fn build(&self, node: &PatchNode) -> Option<Mission> {
         let built = match &node.body {
             NodeBody::Hunt(settings) => hunt::hunt(self, &node.id, settings),
-            NodeBody::Df(_) => coherent::df(self, &node.id),
-            NodeBody::PassiveRadar(_) => coherent::radar(self, &node.id),
             NodeBody::SignalMap(settings) => survey::survey(self, &node.id, settings),
             NodeBody::Triangulation(_) => triangulation::triangulation(self, &node.id),
-            _ => return None,
+            body => coherent::coherent(self, &node.id, processor_mission(body)?),
         };
         Some(Mission {
             node: node.id.clone(),
@@ -90,15 +89,15 @@ impl<'a> Scene<'a> {
     }
 }
 
-const fn is_mission(body: &NodeBody) -> bool {
+fn processor_mission(body: &NodeBody) -> Option<MissionShape> {
+    descriptor_for(&body.processor_params()?)?.mission
+}
+
+fn is_mission(body: &NodeBody) -> bool {
     matches!(
         body,
-        NodeBody::Hunt(_)
-            | NodeBody::Df(_)
-            | NodeBody::PassiveRadar(_)
-            | NodeBody::SignalMap(_)
-            | NodeBody::Triangulation(_)
-    )
+        NodeBody::Hunt(_) | NodeBody::SignalMap(_) | NodeBody::Triangulation(_)
+    ) || processor_mission(body).is_some()
 }
 
 fn label(node: &PatchNode) -> String {

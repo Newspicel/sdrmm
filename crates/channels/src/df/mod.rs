@@ -24,9 +24,10 @@ use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use crate::ChannelError;
 use crate::array_processor::{
-    ArrayBlock, ArrayCtx, ArrayProcessor, CalView, MAX_LANES, Pose, ProcessorAction,
+    ArrayBlock, ArrayCtx, ArrayProcessor, CalView, MAX_LANES, MissionShape, Pose, ProcessorAction,
     ProcessorDescriptor, ProcessorFaults, ProcessorNeeds, ProcessorOutput, Registration,
-    ResetCause, TuningNeed, banded_execution, boxed, check_tuning, geometry_of, no_lane_format,
+    ResetCause, TuningNeed, banded_execution, boxed, check_tuning, geometry_of, no_gpu,
+    no_lane_format,
 };
 use crate::band::LaneBand;
 
@@ -48,6 +49,11 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_format: no_lane_format,
     execution: |_, ctx| banded_execution(ctx),
     in_place,
+    actions: &[],
+    gpu: no_gpu,
+    event_bytes: 0,
+    enricher: None,
+    mission: Some(MissionShape::Bearings),
 };
 
 pub const REGISTRATION: Registration = Registration {

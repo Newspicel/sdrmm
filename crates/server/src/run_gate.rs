@@ -91,7 +91,10 @@ pub(crate) fn follow(state: &AppState) {
     });
 }
 
-fn settle(state: &AppState, was: BTreeSet<String>, moved: bool) -> BTreeSet<String> {
+/// Reads the active workspace under the apply gate, so a switch that finished while this waited
+/// is the workspace settled, never the one before it.
+pub(crate) fn settle(state: &AppState, was: BTreeSet<String>, moved: bool) -> BTreeSet<String> {
+    let serialized = lock_gate(&state.apply_gate);
     let active = match state.store.active_workspace() {
         Ok(Some(active)) => active,
         Ok(None) => return BTreeSet::new(),
@@ -105,12 +108,12 @@ fn settle(state: &AppState, was: BTreeSet<String>, moved: bool) -> BTreeSet<Stri
     let rested: Vec<&String> = now.difference(&was).collect();
     let woke = was.difference(&now).next().is_some();
     if !rested.is_empty() || woke {
-        let _serialized = lock_gate(&state.apply_gate);
         close(state, saved, &rested);
         if woke && let Err(error) = apply::bring_up_active(state, active.info.id) {
             tracing::warn!(?error, "could not open a radio its controller woke");
         }
     }
+    drop(serialized);
     if moved || !rested.is_empty() || woke {
         state.resolve_now();
     }

@@ -2317,7 +2317,15 @@
           },
           "section": "More"
         }
-      ]
+      ],
+      "processor": {
+        "views": [
+          {
+            "view": "bearing"
+          }
+        ],
+        "actions": []
+      }
     },
     {
       "kind": "beamformer",
@@ -3064,7 +3072,15 @@
             null
           ]
         }
-      ]
+      ],
+      "processor": {
+        "views": [
+          {
+            "view": "pattern"
+          }
+        ],
+        "actions": []
+      }
     },
     {
       "kind": "passive_radar",
@@ -4043,7 +4059,25 @@
           },
           "section": "Track"
         }
-      ]
+      ],
+      "processor": {
+        "views": [
+          {
+            "view": "surface",
+            "stream": "range_doppler"
+          },
+          {
+            "view": "table"
+          }
+        ],
+        "actions": [
+          {
+            "action": "clear_tracks",
+            "label": "Clear",
+            "title": "Forget every track"
+          }
+        ]
+      }
     },
     {
       "kind": "stitch",
@@ -4147,7 +4181,16 @@
             "type": "toggle"
           }
         }
-      ]
+      ],
+      "processor": {
+        "views": [
+          {
+            "view": "table"
+          }
+        ],
+        "actions": [],
+        "tuning": "spread"
+      }
     },
     {
       "kind": "spatial_spectrum",
@@ -4394,7 +4437,16 @@
             null
           ]
         }
-      ]
+      ],
+      "processor": {
+        "views": [
+          {
+            "view": "surface",
+            "stream": "spatial_spectrum"
+          }
+        ],
+        "actions": []
+      }
     },
     {
       "kind": "correlator",
@@ -4573,7 +4625,16 @@
             null
           ]
         }
-      ]
+      ],
+      "processor": {
+        "views": [
+          {
+            "view": "surface",
+            "stream": "visibility"
+          }
+        ],
+        "actions": []
+      }
     },
     {
       "kind": "polarimeter",
@@ -4741,7 +4802,15 @@
             "type": "toggle"
           }
         }
-      ]
+      ],
+      "processor": {
+        "views": [
+          {
+            "view": "ellipse"
+          }
+        ],
+        "actions": []
+      }
     },
     {
       "kind": "processor",
@@ -5271,7 +5340,7 @@
       "port_type": "iq",
       "name": "IQ",
       "hue": "blue",
-      "note": "Decoders on a lane retune it unless the lane is locked"
+      "note": "One radio lane, retuned by its decoders unless locked"
     },
     {
       "port_type": "baseband",

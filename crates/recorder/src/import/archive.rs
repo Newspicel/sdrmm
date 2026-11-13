@@ -1,4 +1,9 @@
-use std::io::Read;
+use std::{
+    fs::{self, File},
+    io::{self, BufWriter, Read, Write},
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use crate::{COLLECTION_SUFFIX, DATA_SUFFIX, META_SUFFIX, SigmfError};
 
@@ -6,14 +11,117 @@ pub const ARCHIVE_SUFFIX: &str = ".sigmf";
 
 const BLOCK: usize = 512;
 const MAX_META_BYTES: u64 = 8 * 1024 * 1024;
+const SPOOL_PREFIX: &str = ".import-";
+const SPOOL_SUFFIX: &str = ".sigmf-spool";
 const MEMBER_TOO_LARGE: &str = "the archive declares a member longer than the archive itself";
 const ONE_RECORDING: &str =
     "a .sigmf archive must hold one .sigmf-meta and one .sigmf-data, or a collection and its lanes";
 
+static SPOOLS: AtomicU64 = AtomicU64::new(0);
+
+/// A data member copied out of the archive onto disk, so an upload of many GiB never sits in
+/// memory. The file is removed again unless it is landed in the library.
+pub struct Spooled {
+    path: PathBuf,
+    landed: bool,
+}
+
+impl Spooled {
+    fn copy(dir: &Path, source: &mut impl Read, size: u64) -> Result<Self, SigmfError> {
+        let (path, file) = claim_spool(dir)?;
+        let spooled = Self {
+            path,
+            landed: false,
+        };
+        let mut out = BufWriter::new(file);
+        if io::copy(&mut source.take(size), &mut out)? != size {
+            return Err(SigmfError::Malformed(MEMBER_TOO_LARGE.to_owned()));
+        }
+        out.flush()?;
+        out.get_ref().sync_all()?;
+        Ok(spooled)
+    }
+
+    pub fn open(&self) -> io::Result<File> {
+        File::open(&self.path)
+    }
+
+    pub fn land(&mut self, to: &Path) -> io::Result<()> {
+        fs::rename(&self.path, to)?;
+        self.landed = true;
+        Ok(())
+    }
+}
+
+impl Drop for Spooled {
+    fn drop(&mut self) {
+        if !self.landed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// A fresh spool file in `dir` that [`sweep_spools`] clears away should this process die.
+pub fn claim_spool(dir: &Path) -> Result<(PathBuf, File), SigmfError> {
+    loop {
+        let n = SPOOLS.fetch_add(1, Ordering::Relaxed);
+        let path = dir.join(format!(
+            "{SPOOL_PREFIX}{}-{n}{SPOOL_SUFFIX}",
+            std::process::id()
+        ));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(file) => return Ok((path, file)),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(err) => return Err(err.into()),
+        }
+    }
+}
+
+/// Removes the spools a crashed import left in `dir` and answers what it removed. A spool this
+/// process claimed may belong to an import still running, so it stays.
+pub fn sweep_spools(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(err),
+    };
+    let mut removed = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(left_behind)
+        {
+            fs::remove_file(&path)?;
+            removed.push(path);
+        }
+    }
+    Ok(removed)
+}
+
+fn left_behind(name: &str) -> bool {
+    let Some((pid, n)) = name
+        .strip_prefix(SPOOL_PREFIX)
+        .and_then(|rest| rest.strip_suffix(SPOOL_SUFFIX))
+        .and_then(|rest| rest.split_once('-'))
+    else {
+        return false;
+    };
+    let (Ok(pid), Ok(n)) = (pid.parse::<u32>(), n.parse::<u64>()) else {
+        return false;
+    };
+    pid != std::process::id() || n >= SPOOLS.load(Ordering::Relaxed)
+}
+
 pub struct Member {
     pub name: String,
     pub meta: Vec<u8>,
-    pub data: Vec<u8>,
+    pub data: Spooled,
 }
 
 pub struct ArchivedCollection {
@@ -30,7 +138,7 @@ pub enum Archive {
 struct Found {
     name: String,
     meta: Option<Vec<u8>>,
-    data: Option<Vec<u8>>,
+    data: Option<Spooled>,
 }
 
 #[derive(Default)]
@@ -40,13 +148,30 @@ struct Parts {
 }
 
 impl Parts {
-    fn take(&mut self, name: String, suffix: &str, body: Vec<u8>) -> Result<(), SigmfError> {
-        if suffix == COLLECTION_SUFFIX {
-            return match self.collection.replace((name, body)) {
-                None => Ok(()),
-                Some(_) => Err(SigmfError::Malformed(ONE_RECORDING.to_owned())),
-            };
+    fn take_collection(&mut self, name: String, body: Vec<u8>) -> Result<(), SigmfError> {
+        match self.collection.replace((name, body)) {
+            None => Ok(()),
+            Some(_) => Err(SigmfError::Malformed(ONE_RECORDING.to_owned())),
         }
+    }
+
+    fn take_meta(&mut self, name: String, body: Vec<u8>) -> Result<(), SigmfError> {
+        let found = self.found(name);
+        if found.meta.replace(body).is_some() {
+            return Err(twice(&found.name, META_SUFFIX));
+        }
+        Ok(())
+    }
+
+    fn take_data(&mut self, name: String, body: Spooled) -> Result<(), SigmfError> {
+        let found = self.found(name);
+        if found.data.replace(body).is_some() {
+            return Err(twice(&found.name, DATA_SUFFIX));
+        }
+        Ok(())
+    }
+
+    fn found(&mut self, name: String) -> &mut Found {
         let index = match self.pairs.iter().position(|found| found.name == name) {
             Some(index) => index,
             None => {
@@ -58,19 +183,7 @@ impl Parts {
                 self.pairs.len() - 1
             }
         };
-        let found = &mut self.pairs[index];
-        let slot = if suffix == META_SUFFIX {
-            &mut found.meta
-        } else {
-            &mut found.data
-        };
-        if slot.replace(body).is_some() {
-            return Err(SigmfError::Malformed(format!(
-                "the archive holds `{}{suffix}` twice",
-                found.name
-            )));
-        }
-        Ok(())
+        &mut self.pairs[index]
     }
 
     fn finish(self) -> Result<Archive, SigmfError> {
@@ -100,7 +213,13 @@ impl Parts {
     }
 }
 
-pub fn read_archive(mut archive: impl Read) -> Result<Archive, SigmfError> {
+fn twice(name: &str, suffix: &str) -> SigmfError {
+    SigmfError::Malformed(format!("the archive holds `{name}{suffix}` twice"))
+}
+
+/// Reads a .sigmf tar. Metadata stays in memory; every data member is spooled into `spool`, which
+/// must sit on the filesystem the recording lands on so landing it is a rename.
+pub fn read_archive(mut archive: impl Read, spool: &Path) -> Result<Archive, SigmfError> {
     let mut parts = Parts::default();
     let mut header = [0u8; BLOCK];
     while fill(&mut archive, &mut header)? && header.iter().any(|byte| *byte != 0) {
@@ -114,7 +233,14 @@ pub fn read_archive(mut archive: impl Read) -> Result<Archive, SigmfError> {
             skip(&mut archive, padded)?;
             continue;
         };
-        if suffix != DATA_SUFFIX && size > MAX_META_BYTES {
+        let name = stem_of(&entry, suffix);
+        if suffix == DATA_SUFFIX {
+            let data = Spooled::copy(spool, &mut archive, size)?;
+            skip(&mut archive, padded - size)?;
+            parts.take_data(name, data)?;
+            continue;
+        }
+        if size > MAX_META_BYTES {
             return Err(SigmfError::Malformed(
                 "the archive's metadata is larger than any SigMF metadata".to_owned(),
             ));
@@ -124,7 +250,11 @@ pub fn read_archive(mut archive: impl Read) -> Result<Archive, SigmfError> {
             return Err(SigmfError::Malformed(MEMBER_TOO_LARGE.to_owned()));
         }
         skip(&mut archive, padded - size)?;
-        parts.take(stem_of(&entry, suffix), suffix, body)?;
+        if suffix == COLLECTION_SUFFIX {
+            parts.take_collection(name, body)?;
+        } else {
+            parts.take_meta(name, body)?;
+        }
     }
     parts.finish()
 }
@@ -216,9 +346,23 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::{Export, ExportKind, SigmfWriter};
+    use crate::{Export, ExportKind, SigmfWriter, data_path};
 
     const TRAILER: usize = 2 * BLOCK;
+
+    fn entries(dir: &Path) -> usize {
+        std::fs::read_dir(dir).expect("dir").count()
+    }
+
+    impl Spooled {
+        fn len(&self) -> u64 {
+            self.open()
+                .expect("spool")
+                .metadata()
+                .expect("metadata")
+                .len()
+        }
+    }
 
     fn recorded(dir: &Path, name: &str) -> std::path::PathBuf {
         let stem = dir.join(name);
@@ -239,13 +383,53 @@ mod tests {
         let mut bytes = Vec::new();
         std::io::Read::read_to_end(&mut export, &mut bytes).expect("read");
 
-        let Archive::Pair(member) = read_archive(bytes.as_slice()).expect("reads back") else {
+        let spool = TempDir::new().expect("temp");
+        let Archive::Pair(member) =
+            read_archive(bytes.as_slice(), spool.path()).expect("reads back")
+        else {
             panic!("one recording");
         };
         assert_eq!(member.name, "round-trip");
         assert_eq!(member.data.len(), 128 * 8);
+        let mut spooled = Vec::new();
+        std::io::Read::read_to_end(&mut member.data.open().expect("spool"), &mut spooled)
+            .expect("read spool");
+        assert_eq!(std::fs::read(data_path(&stem)).expect("source"), spooled);
         let meta: crate::SigmfMeta = serde_json::from_slice(&member.meta).expect("meta");
         assert_eq!(meta.global.sample_rate, Some(48_000.0));
+        drop(member);
+        assert_eq!(entries(spool.path()), 0, "an unlanded spool is removed");
+    }
+
+    #[test]
+    fn a_crashed_import_leaves_no_spool_behind_and_a_running_one_keeps_its_own() {
+        let dir = TempDir::new().expect("temp");
+        let spool = |name: String| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, b"iq").expect("spool");
+            path
+        };
+        let other = spool(format!("{SPOOL_PREFIX}0-3{SPOOL_SUFFIX}"));
+        let unclaimed = spool(format!(
+            "{SPOOL_PREFIX}{}-{}{SPOOL_SUFFIX}",
+            std::process::id(),
+            u64::MAX
+        ));
+        let foreign = spool(format!("{SPOOL_PREFIX}notes{SPOOL_SUFFIX}"));
+        let (running, _file) = claim_spool(dir.path()).expect("claim");
+
+        let mut removed = sweep_spools(dir.path()).expect("swept");
+
+        removed.sort();
+        let mut expected = vec![other, unclaimed];
+        expected.sort();
+        assert_eq!(removed, expected);
+        assert!(running.exists() && foreign.exists());
+        assert!(
+            sweep_spools(&dir.path().join("absent"))
+                .expect("no library yet")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -257,13 +441,15 @@ mod tests {
         let mut bytes = header.to_vec();
         bytes.extend_from_slice(b"short");
 
-        let Err(error) = read_archive(bytes.as_slice()) else {
+        let spool = TempDir::new().expect("temp");
+        let Err(error) = read_archive(bytes.as_slice(), spool.path()) else {
             panic!("a member longer than the archive must be refused");
         };
         assert!(
             matches!(&error, SigmfError::Malformed(why) if why == MEMBER_TOO_LARGE),
             "{error:?}"
         );
+        assert_eq!(entries(spool.path()), 0, "a cut member leaves no spool");
     }
 
     #[test]
@@ -274,7 +460,9 @@ mod tests {
         let mut bytes = Vec::new();
         std::io::Read::read_to_end(&mut export, &mut bytes).expect("read");
 
-        let Archive::Collection(collection) = read_archive(bytes.as_slice()).expect("reads back")
+        let spool = TempDir::new().expect("temp");
+        let Archive::Collection(collection) =
+            read_archive(bytes.as_slice(), spool.path()).expect("reads back")
         else {
             panic!("a collection");
         };
@@ -283,7 +471,7 @@ mod tests {
             collection.collection,
             std::fs::read(crate::collection_path(&stem)).expect("collection")
         );
-        let lanes: Vec<(&str, usize)> = collection
+        let lanes: Vec<(&str, u64)> = collection
             .lanes
             .iter()
             .map(|lane| (lane.name.as_str(), lane.data.len()))
@@ -311,10 +499,16 @@ mod tests {
             bytes.truncate(bytes.len() - TRAILER);
         }
         bytes.extend_from_slice(&[0u8; TRAILER]);
+        let spool = TempDir::new().expect("temp");
         assert!(matches!(
-            read_archive(bytes.as_slice()),
+            read_archive(bytes.as_slice(), spool.path()),
             Err(SigmfError::Malformed(_))
         ));
+        assert_eq!(
+            entries(spool.path()),
+            0,
+            "a refused archive leaves no spool"
+        );
     }
 
     #[test]
@@ -330,12 +524,13 @@ mod tests {
 
     #[test]
     fn an_archive_without_both_members_is_refused() {
+        let spool = TempDir::new().expect("temp");
         assert!(matches!(
-            read_archive([0u8; BLOCK * 2].as_slice()),
+            read_archive([0u8; BLOCK * 2].as_slice(), spool.path()),
             Err(SigmfError::Malformed(_))
         ));
         assert!(matches!(
-            read_archive(b"not a tar at all".as_slice()),
+            read_archive(b"not a tar at all".as_slice(), spool.path()),
             Err(SigmfError::Malformed(_)) | Err(SigmfError::Io(_))
         ));
     }

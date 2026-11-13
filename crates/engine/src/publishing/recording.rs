@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use num_complex::Complex;
 
 use super::Publisher;
@@ -10,6 +12,7 @@ struct RecordingPacket {
     samples: Vec<Complex<f32>>,
     start: u64,
     center: f64,
+    captured: Option<SystemTime>,
     recorder: Option<RecorderTap>,
 }
 
@@ -24,11 +27,17 @@ impl RecordingPublisher {
                 samples: Vec::with_capacity(DSP_BLOCK),
                 start: 0,
                 center: 0.0,
+                captured: None,
                 recorder: None,
             },
             |packet| {
                 if let Some(recorder) = packet.recorder.take() {
-                    let _ = recorder.push_waiting(&packet.samples, packet.start, packet.center);
+                    let _ = recorder.push_waiting(
+                        &packet.samples,
+                        packet.start,
+                        packet.center,
+                        packet.captured,
+                    );
                 }
                 packet.samples.clear();
             },
@@ -37,12 +46,15 @@ impl RecordingPublisher {
         .map(Self)
     }
 
+    /// `captured` is the wall-clock time of the first sample. Only the first block carries it: the
+    /// rest follow on without a seam.
     pub(crate) fn publish(
         &mut self,
         recorder: &RecorderTap,
         samples: &[Complex<f32>],
         start: u64,
         center: f64,
+        captured: Option<SystemTime>,
     ) -> bool {
         if !recorder.healthy() {
             return false;
@@ -52,6 +64,7 @@ impl RecordingPublisher {
                 packet.samples.extend_from_slice(samples);
                 packet.start = start + (index * DSP_BLOCK) as u64;
                 packet.center = center;
+                packet.captured = captured.filter(|_| index == 0);
                 packet.recorder = Some(recorder.clone());
             }) {
                 recorder.publication_failed();
@@ -97,7 +110,8 @@ mod tests {
                         100_000_000.0
                     } else {
                         101_000_000.0
-                    }
+                    },
+                    None
                 ));
             }
         });
@@ -152,6 +166,7 @@ mod tests {
                     &samples,
                     (index * DSP_BLOCK) as u64,
                     100_000_000.0,
+                    None,
                 ));
             }
         });
@@ -176,8 +191,8 @@ mod tests {
             .map(|index| Complex::new(index as f32, -(index as f32)))
             .collect();
         assert_no_alloc("large recording blocks", || {
-            assert!(publisher.publish(&tap, &samples[..count], 0, 100_000_000.0));
-            assert!(publisher.publish(&tap, &samples[count..], count as u64, 101_000_000.0));
+            assert!(publisher.publish(&tap, &samples[..count], 0, 100_000_000.0, None));
+            assert!(publisher.publish(&tap, &samples[count..], count as u64, 101_000_000.0, None));
         });
         let handle = spawn_writer(writer, messages, shared.clone()).unwrap();
         drop(publisher);

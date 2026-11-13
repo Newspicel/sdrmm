@@ -443,7 +443,7 @@ pub(crate) fn release(state: &AppState, resolved: &Resolved) {
     for node in state.arrays.keep(&arrays, &processors) {
         state.surfaces.forget(&node);
     }
-    crate::radar::release(state, &resolved.graph);
+    crate::reports::release(state, &resolved.graph);
 }
 
 fn wired_lane_ports(patch: &ResolvedPatch, node: &PatchNode) -> Vec<String> {
@@ -685,6 +685,15 @@ pub(crate) fn stop_recording(state: &AppState, node: &str) -> Result<(), AppErro
         .map_err(|error| refusal(state, node, error))
 }
 
+#[cfg(test)]
+pub(crate) fn processor_array(state: &AppState, processor: &str) -> Option<String> {
+    state
+        .arrays
+        .processors()
+        .get(processor)
+        .map(|binding| binding.array.clone())
+}
+
 pub(crate) fn array_pose(state: &AppState, node: &str) -> Option<ArrayPose> {
     let binding = state.arrays.binding(node)?;
     let orientation = binding.spec?.settings.orientation;
@@ -709,12 +718,4 @@ pub(crate) fn array_pose(state: &AppState, node: &str) -> Option<ArrayPose> {
         heading_sigma_deg,
         heading_source,
     })
-}
-
-pub(crate) fn processor_array(state: &AppState, processor: &str) -> Option<String> {
-    state
-        .arrays
-        .processors()
-        .get(processor)
-        .map(|binding| binding.array.clone())
 }

@@ -12,7 +12,9 @@ use crate::{
 mod archive;
 mod datatype;
 
-pub use archive::{ARCHIVE_SUFFIX, Archive, ArchivedCollection, Member, read_archive};
+pub use archive::{
+    ARCHIVE_SUFFIX, Archive, ArchivedCollection, Member, claim_spool, read_archive, sweep_spools,
+};
 pub use datatype::Datatype;
 
 pub const MAX_IMPORT_NAME_LEN: usize = 96;
@@ -61,10 +63,9 @@ pub fn import_pair(
 }
 
 pub fn import_archive(dir: &Path, archive: impl Read) -> Result<Imported, SigmfError> {
-    match read_archive(archive)? {
-        Archive::Pair(Member { name, meta, data }) => {
-            import_pair(dir, &name, &meta, data.as_slice())
-        }
+    fs::create_dir_all(dir)?;
+    match read_archive(archive, dir)? {
+        Archive::Pair(Member { name, meta, data }) => import_pair(dir, &name, &meta, data.open()?),
         Archive::Collection(collection) => crate::collection::import_collection(dir, collection),
     }
 }
@@ -323,6 +324,22 @@ mod tests {
             Some("from-archive")
         );
         assert_eq!(imported.samples, 64);
+        let mut left: Vec<String> = std::fs::read_dir(library.path())
+            .expect("library")
+            .map(|entry| {
+                entry
+                    .expect("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        left.sort();
+        assert_eq!(
+            left,
+            ["from-archive.sigmf-data", "from-archive.sigmf-meta"],
+            "the spooled data member is gone once converted"
+        );
     }
 
     #[test]

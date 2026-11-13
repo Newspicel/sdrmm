@@ -218,34 +218,46 @@ export function AntennaView({
           />
         )}
 
-        <g className="fill-ink-faint stroke-ink-faint">
-          <line x1={16} y1={RULER_LINE} x2={16 + ruler.pixels} y2={RULER_LINE} strokeWidth={1.5} />
-          <text x={16} y={RULER_LINE - 6} className="font-mono text-2xs" stroke="none">
-            {ruler.label}
-          </text>
-        </g>
+        <Ruler pixels={ruler.pixels} label={ruler.label} />
       </svg>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        {currents.length > 0 && <CurrentScale />}
-        {rolesIn(report.geometry).map((role) => (
-          <span key={role} className="flex items-center gap-1.5 font-mono text-2xs text-ink-dim">
-            <svg viewBox="0 0 16 4" className="h-1 w-4" aria-hidden>
-              <line
-                x1={0}
-                y1={2}
-                x2={16}
-                y2={2}
-                className={ROLE_STYLE[role].stroke}
-                strokeWidth={4}
-                strokeDasharray={ROLE_STYLE[role].dash}
-              />
-            </svg>
-            {ROLE_LABEL[role]}
-          </span>
-        ))}
-      </div>
+      <Legend geometry={report.geometry} current={currents.length > 0} />
     </div>
+  );
+}
+
+function Legend({ geometry, current }: { geometry: AntennaReport["geometry"]; current: boolean }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+      {current && <CurrentScale />}
+      {rolesIn(geometry).map((role) => (
+        <span key={role} className="flex items-center gap-1.5 font-mono text-2xs text-ink-dim">
+          <svg viewBox="0 0 16 4" className="h-1 w-4" aria-hidden>
+            <line
+              x1={0}
+              y1={2}
+              x2={16}
+              y2={2}
+              className={ROLE_STYLE[role].stroke}
+              strokeWidth={4}
+              strokeDasharray={ROLE_STYLE[role].dash}
+            />
+          </svg>
+          {ROLE_LABEL[role]}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Ruler({ pixels, label }: { pixels: number; label: string }) {
+  return (
+    <g className="fill-ink-faint stroke-ink-faint">
+      <line x1={16} y1={RULER_LINE} x2={16 + pixels} y2={RULER_LINE} strokeWidth={1.5} />
+      <text x={16} y={RULER_LINE - 6} className="font-mono text-2xs" stroke="none">
+        {label}
+      </text>
+    </g>
   );
 }
 

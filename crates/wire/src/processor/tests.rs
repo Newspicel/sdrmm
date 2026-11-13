@@ -20,6 +20,7 @@ macro_rules! table_rows {
             $name:literal,
             $summary:literal,
             $face:expr,
+            $facets:expr,
             [$($port:tt)*]
         )),* $(,)?],
         probe: ($probe:ident, $probe_id:literal, $probe_params:ty) $(,)?
@@ -682,4 +683,15 @@ fn probe_params_exist_only_with_the_feature() {
     #[cfg(not(feature = "probe"))]
     assert!(parsed.is_err());
     assert!(!PROCESSOR_TYPE_IDS.contains(&"probe"));
+}
+
+#[test]
+fn every_processor_declares_the_face_it_fills() {
+    for type_id in PROCESSOR_TYPE_IDS {
+        let kind = crate::patch::NodeKind::parse(type_id).expect("a node kind");
+        let facets = kind.processor_facets().expect("declared facets");
+        assert!(!facets.views.is_empty(), "{type_id} draws nothing");
+        assert_eq!(kind.info().processor, Some(facets));
+    }
+    assert_eq!(crate::patch::NodeKind::Channel.processor_facets(), None);
 }

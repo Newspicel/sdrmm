@@ -18,6 +18,14 @@ describe("FrameTween", () => {
     expect(tween.sample(start + 1000)[0]).toBeCloseTo(-60);
   });
 
+  it("settles once a blend has run its interval", () => {
+    const tween = new FrameTween();
+    tween.push(Float32Array.of(-80), 0);
+    tween.push(Float32Array.of(-60), 1000 / 30);
+    expect(tween.settled(1000 / 30 + 1)).toBe(false);
+    expect(tween.settled(1000)).toBe(true);
+  });
+
   it("starts the next blend where the shown trace is", () => {
     const tween = new FrameTween();
     tween.push(Float32Array.of(-80), 0);

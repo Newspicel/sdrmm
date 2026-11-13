@@ -58,7 +58,6 @@ export default defineConfig({
       `--db web/${SCRATCH}/e2e.db --recordings-dir web/${SCRATCH}/recordings` +
       (TLS ? " --tls-self-signed" : ""),
     cwd: "..",
-    env: { VITE_ENABLE_SYNTHETIC_DEVICES: "true" },
     url: `${ORIGIN}/api/state`,
     ignoreHTTPSErrors: TLS,
     reuseExistingServer: false,

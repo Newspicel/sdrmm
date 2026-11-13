@@ -5,6 +5,7 @@ mod board;
 mod capture;
 mod controller;
 mod correct;
+mod dedicated;
 mod host;
 mod radar;
 mod record;
@@ -50,10 +51,10 @@ pub(crate) use controller::{
 };
 pub(crate) use correct::CorrectionSet;
 use correct::{correction_stage, spawn_stage};
+pub(crate) use dedicated::{DedicatedPlan, DedicatedRunner, Prepared};
 pub(crate) use host::{
     ArrayShape, HostPlan, HostSinks, ProcessorHost, ProcessorStats, SteerInput, SteerMailbox,
 };
-pub(crate) use radar::{DedicatedRunner, Prepared, RadarPlan, prepare_dedicated};
 pub(crate) use record::{ArrayRecording, RecordTap, record_tap};
 pub(crate) use tap::{LaneFeed, TapPort, TapWriter};
 pub(crate) use tier::TierDecision;

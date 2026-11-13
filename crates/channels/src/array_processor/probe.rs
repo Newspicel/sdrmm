@@ -12,7 +12,7 @@ use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 use super::{
     ArrayBlock, ArrayCtx, ArrayProcessor, Execution, LaneFormat, MAX_LANE_PORTS, MAX_LANES,
     ProcessorAction, ProcessorDescriptor, ProcessorFaults, ProcessorNeeds, ProcessorOutput,
-    Registration, ResetCause, Steer, TuningNeed, boxed,
+    Registration, ResetCause, Steer, TuningNeed, boxed, no_gpu,
 };
 use crate::ChannelError;
 
@@ -37,6 +37,11 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_format,
     execution: |_, _| Execution::Inline,
     in_place,
+    actions: &[ProcessorAction::ClearTracks],
+    gpu: no_gpu,
+    event_bytes: 0,
+    enricher: None,
+    mission: None,
 };
 
 pub const REGISTRATION: Registration = Registration {

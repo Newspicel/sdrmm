@@ -17,9 +17,12 @@ export interface PortStream {
 interface Held {
   node: string;
   port: string;
-  count: number;
+  holders: Map<symbol, StreamParams | undefined>;
   params: StreamParams | undefined;
 }
+
+/// Releases a hold when called; `tune` changes what this holder asks of the port.
+export type PortHold = (() => void) & { tune: (params: StreamParams | undefined) => void };
 
 export function portKey(node: string, port: string): string {
   return `${node}\u0000${port}`;
@@ -115,33 +118,31 @@ export class PortHub {
     this.streams.clear();
   }
 
-  hold(node: string, port: string, params?: StreamParams): () => void {
+  hold(node: string, port: string, params?: StreamParams): PortHold {
     const key = portKey(node, port);
-    const held = this.held.get(key) ?? { node, port, count: 0, params };
-    held.count += 1;
+    const holder = Symbol(key);
+    const held = this.held.get(key) ?? { node, port, holders: new Map(), params: undefined };
+    const fresh = held.holders.size === 0;
+    held.holders.set(holder, params);
     this.held.set(key, held);
-    if (held.count === 1) {
-      held.params = params;
+    if (fresh) {
+      held.params = combinedParams(held.holders.values());
       this.send(held, true);
     } else {
-      this.tune(node, port, params);
+      this.retune(held);
     }
-    let released = false;
-    return () => {
-      if (!released) {
-        released = true;
-        this.release(key);
+    const release = (): void => {
+      if (held.holders.delete(holder)) {
+        this.release(key, held);
       }
     };
-  }
-
-  tune(node: string, port: string, params: StreamParams | undefined): void {
-    const held = this.held.get(portKey(node, port));
-    if (held === undefined || params === undefined || sameParams(held.params, params)) {
-      return;
-    }
-    held.params = params;
-    this.send(held, true);
+    const tune = (next: StreamParams | undefined): void => {
+      if (held.holders.has(holder)) {
+        held.holders.set(holder, next);
+        this.retune(held);
+      }
+    };
+    return Object.assign(release, { tune });
   }
 
   streamOf(streamId: number): PortStream | undefined {
@@ -162,13 +163,18 @@ export class PortHub {
     return this.refusals.get(portKey(node, port)) ?? null;
   }
 
-  private release(key: string): void {
-    const held = this.held.get(key);
-    if (held === undefined) {
+  private retune(held: Held): void {
+    const params = combinedParams(held.holders.values());
+    if (sameParams(held.params, params)) {
       return;
     }
-    held.count -= 1;
-    if (held.count > 0) {
+    held.params = params;
+    this.send(held, true);
+  }
+
+  private release(key: string, held: Held): void {
+    if (held.holders.size > 0) {
+      this.retune(held);
       return;
     }
     this.held.delete(key);
@@ -206,8 +212,31 @@ export class PortHub {
   }
 }
 
-function sameParams(a: StreamParams | undefined, b: StreamParams): boolean {
-  return a !== undefined && a.fps === b.fps && a.bins === b.bins && a.spectrum === b.spectrum;
+function sameParams(a: StreamParams | undefined, b: StreamParams | undefined): boolean {
+  if (a === undefined || b === undefined) {
+    return a === b;
+  }
+  return a.fps === b.fps && a.bins === b.bins && a.spectrum === b.spectrum;
+}
+
+/// What every holder of a port needs at once: the fastest rate, the finest bins, and the
+/// spectrum if any holder reads it.
+export function combinedParams(
+  wants: Iterable<StreamParams | undefined>,
+): StreamParams | undefined {
+  let combined: StreamParams | undefined;
+  for (const want of wants) {
+    if (want === undefined) {
+      continue;
+    }
+    combined = {
+      ...combined,
+      ...(want.fps === undefined ? {} : { fps: Math.max(combined?.fps ?? 0, want.fps) }),
+      ...(want.bins === undefined ? {} : { bins: Math.max(combined?.bins ?? 0, want.bins) }),
+      ...(want.spectrum === true ? { spectrum: true } : {}),
+    };
+  }
+  return combined;
 }
 
 export const portHub = new PortHub();

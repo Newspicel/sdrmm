@@ -635,7 +635,7 @@ fn processor_action_reaches_the_runner() {
         .expect("a df starts");
     assert!(matches!(
         engine.processor_action("df-action", ProcessorAction::ClearTracks),
-        Err(EngineError::Processor(text)) if text == "No tracks here"
+        Err(EngineError::Processor(text)) if text == "Not supported here"
     ));
     engine.remove_array(ARRAY).expect("the array stops");
     assert!(matches!(

@@ -94,6 +94,15 @@ describe("event output configuration", () => {
     expect(matrix("secret")).toBe(true);
   });
 
+  it("counts a credential this server keeps by id", () => {
+    expect(
+      eventOutputConfigured({ service: "webhook", url: { secret: "a1" }, format: "json" }),
+    ).toBe(true);
+    expect(eventOutputConfigured({ service: "webhook", url: { secret: "" }, format: "json" })).toBe(
+      false,
+    );
+  });
+
   it("needs an MQTT broker and a topic, but no credentials", () => {
     expect(mqtt("", "sdrmm/events")).toBe(false);
     expect(mqtt("mqtts://broker.example", "  ")).toBe(false);

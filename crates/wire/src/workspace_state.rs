@@ -60,7 +60,7 @@ pub struct WorkspaceTrunk {
     /// Which site the plan belongs to. Neighbouring sites of one system repeat logical channel
     /// numbers on different frequencies, so a plan learned from one site is wrong for the next.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub color_code: Option<u8>,
+    pub color_code: Option<u16>,
     #[serde(default)]
     pub channels: Vec<TrunkChannelEntry>,
 }
@@ -166,7 +166,7 @@ impl WorkspaceState {
     }
 
     #[must_use]
-    pub fn trunk(&self, node: &str, color_code: Option<u8>) -> Option<&WorkspaceTrunk> {
+    pub fn trunk(&self, node: &str, color_code: Option<u16>) -> Option<&WorkspaceTrunk> {
         self.trunks
             .iter()
             .find(|trunk| trunk.node == node && trunk.color_code == color_code)
@@ -288,7 +288,7 @@ mod tests {
         }
     }
 
-    fn trunk(node: &str, color_code: Option<u8>, channels: &[(u16, u64)]) -> WorkspaceTrunk {
+    fn trunk(node: &str, color_code: Option<u16>, channels: &[(u16, u64)]) -> WorkspaceTrunk {
         WorkspaceTrunk {
             node: node.to_string(),
             color_code,
@@ -320,6 +320,26 @@ mod tests {
         let state: WorkspaceState = serde_json::from_value(stored).expect("loads");
         assert!(state.channel("gone").is_none());
         assert_eq!(state.channel("kept"), Some(&channel("kept", 145_500_000.0)));
+    }
+
+    #[test]
+    fn a_plan_saved_under_a_dmr_colour_code_loads_beside_a_p25_nac() {
+        let stored = serde_json::json!({
+            "version": WORKSPACE_STATE_VERSION,
+            "trunks": [
+                { "node": "dmr", "color_code": 3, "channels": [{ "lcn": 17, "freq_hz": 451_012_500 }] },
+                { "node": "p25", "color_code": 0x4D2, "channels": [{ "lcn": 0x1234, "freq_hz": 851_068_750 }] },
+            ],
+        });
+        let state: WorkspaceState = serde_json::from_value(stored).expect("loads");
+        assert_eq!(
+            state.trunk("dmr", Some(3)),
+            Some(&trunk("dmr", Some(3), &[(17, 451_012_500)]))
+        );
+        assert_eq!(
+            state.trunk("p25", Some(0x4D2)),
+            Some(&trunk("p25", Some(0x4D2), &[(0x1234, 851_068_750)]))
+        );
     }
 
     #[test]

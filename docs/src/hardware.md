@@ -1,7 +1,7 @@
 # Radios
 
-A **Device** node opens one radio: over USB, over the network, or through SoapySDR. Recordings and
-generated signals have nodes of their own, see [Other sources](#other-sources).
+A **Device** node opens one radio: over USB, over the network, or through SoapySDR. It also plays
+recordings and generates test signals, see [Other sources](#other-sources).
 
 ## Supported radios
 
@@ -21,6 +21,7 @@ Packaged builds include every driver here except CR-8:
 | [SDRplay on another machine](#sdrconnect) | Network | SDRconnect there |
 | [Aaronia SPECTRAN V6, V6 ECO](#aaronia-spectran-v6) | USB | RTSA-Suite PRO, Windows or Linux |
 | [KiwiSDR](#kiwisdr) | Network | Nothing |
+| `rtl_tcp` and SpyServer servers | [Network](#network-radios) | Nothing |
 | [Dragon Labs CR-8](#dragon-labs-cr-8) | USB | Vendor library, a build with `cr8` |
 | bladeRF, LimeSDR, USRP, others | USB | A [SoapySDR module](#soapysdr) |
 
@@ -89,6 +90,7 @@ On an empty Device node, open the **Network** tab, pick the protocol under **Via
 | SDRconnect | 5454 |
 | KiwiSDR | 8073 |
 | AntSDR / Pluto | 30431 |
+| ESP-SDR | 80 |
 
 The address becomes the radio's identity in the workspace. The bookmark button next to **Add**
 saves it; saved radios are listed above the form.
@@ -134,7 +136,7 @@ downconverter, like 9750 for a Ku-band LNB, and a negative one for an upconverte
 Ham It Up.
 
 Settings only one radio has appear as extra chips. Some change the others: RTL-SDR direct
-sampling changes the tuning range. There is no transmit.
+sampling changes the tuning range. Radios that send are covered in [Transmit](user-guide/transmit.md).
 
 ### Calibration
 
@@ -474,11 +476,11 @@ SDRmm probes SoapySDR in a child process, so a crashing module cannot take it do
 
 ## Other sources
 
-A Device node picks these from its own source tabs, the same way it picks a radio.
+An empty Device node picks these from its own tabs, the same way it picks a radio.
 
-| Source | Gives |
+| Tab | Gives |
 |---|---|
 | Recording | Plays a [SigMF recording](user-guide/recording.md#play-a-recording) |
-| Signal generator | Test signals, from a carrier tone to DVB-T and ATV |
+| Virtual | The signal generator: test signals, from a carrier tone to DVB-T and ATV |
 
 Debug builds also list [synthetic radios](development/building.md#test-without-a-radio).

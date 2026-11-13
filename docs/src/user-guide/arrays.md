@@ -13,7 +13,7 @@ array recording has the same button.
 For separate radios, a KrakenSDR among them:
 
 1. Add a Device for each radio.
-2. Wire each Device `iq` to the Array in antenna order: `lane1`, `lane2`, and so on.
+2. Wire each Device `iq` to the Array in antenna order: `lane`, `lane2`, and so on.
 3. Open **Tier** and pick what the radios share: **Shared clock**, or **Shared LO** for clock and
    local oscillator. Radios that know they share a clock, the lanes of a
    [KrakenSDR](../hardware.md#krakensdr) among them, say so themselves and keep that tier whatever
@@ -112,6 +112,10 @@ When the array stops, the face says why, such as `Noise clips, lower gain`.
 
 A processor that cannot run says why on its own face: `Syncing`, `Calibrating`, `Needs cal`,
 `Retuning`, `Not coherent` or `Wrong tuning`.
+
+Every processor has the same face: its plot, its readouts, any table, then its settings. Chips at
+the foot flag what needs a look; `Stale` means no reading for three report periods. A processor
+that needs the Array tuned another way offers a button that retunes it.
 
 **Rec** [records](recording.md#record-an-array) every lane into one SigMF collection.
 [Play it back](recording.md#play-an-array-recording) into an Array like a radio.

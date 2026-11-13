@@ -1,6 +1,9 @@
 pub const CONTROL_PORT: u16 = 30_432;
 pub const HEADER_BYTES: usize = 24;
 pub const DATAGRAM_BYTES: usize = 1_472;
+/// The longest control line either end reads, newline included. A real one is far shorter, so a
+/// peer that never sends a newline cannot grow the reader's memory.
+pub const MAX_LINE_BYTES: usize = 1_024;
 
 const MAGIC: [u8; 4] = *b"IQLK";
 const VERSION: u8 = 1;

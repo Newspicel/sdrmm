@@ -10,6 +10,8 @@ pub mod polarimeter;
 mod readouts;
 pub mod spatial;
 pub mod stitch;
+pub mod view;
+mod views;
 
 use crate::limits::{BandLimits, Bounds};
 
@@ -42,6 +44,7 @@ macro_rules! processors {
                     "Direction finder",
                     "Bearings from an array",
                     $crate::patch::Face::fit(400),
+                    $crate::processor::view::ProcessorFacets::new(&[$crate::processor::view::ViewSpec::Bearing], &[]),
                     [
                         array_in,
                         events_out("True bearings", DF),
@@ -57,6 +60,7 @@ macro_rules! processors {
                     "Beamformer",
                     "Steer, null or combine an array",
                     $crate::patch::Face::fit(400),
+                    $crate::processor::view::ProcessorFacets::new(&[$crate::processor::view::ViewSpec::Pattern], &[]),
                     [
                         array_in,
                         steer_in("A direction finder to steer at"),
@@ -72,6 +76,15 @@ macro_rules! processors {
                     "Passive radar",
                     "Aircraft echoes of FM, DAB or DVB-T",
                     $crate::patch::Face::sized(560, 540).min(420, 380),
+                    $crate::processor::view::ProcessorFacets::new(
+                        &[
+                            $crate::processor::view::ViewSpec::Surface {
+                                stream: $crate::ws::StreamKind::RangeDoppler,
+                            },
+                            $crate::processor::view::ViewSpec::Table,
+                        ],
+                        &[$crate::processor::view::ProcessorAction::ClearTracks],
+                    ),
                     [
                         array_in,
                         tx_in("GPS node fixed at the transmitter"),
@@ -88,6 +101,8 @@ macro_rules! processors {
                     "Stitch",
                     "Spread lanes joined into one wide band",
                     $crate::patch::Face::fit(360),
+                    $crate::processor::view::ProcessorFacets::new(&[$crate::processor::view::ViewSpec::Table], &[])
+                        .tuned($crate::array::ArrayTuningMode::Spread),
                     [array_in, wide_out("Every lane joined")]
                 ),
                 (
@@ -99,6 +114,12 @@ macro_rules! processors {
                     "Spatial spectrum",
                     "Bearing over frequency",
                     $crate::patch::Face::sized(560, 420).min(400, 300),
+                    $crate::processor::view::ProcessorFacets::new(
+                        &[$crate::processor::view::ViewSpec::Surface {
+                            stream: $crate::ws::StreamKind::SpatialSpectrum,
+                        }],
+                        &[],
+                    ),
                     [array_in]
                 ),
                 (
@@ -110,6 +131,12 @@ macro_rules! processors {
                     "Correlator",
                     "Baseline visibilities",
                     $crate::patch::Face::sized(520, 460).min(380, 340),
+                    $crate::processor::view::ProcessorFacets::new(
+                        &[$crate::processor::view::ViewSpec::Surface {
+                            stream: $crate::ws::StreamKind::Visibility,
+                        }],
+                        &[],
+                    ),
                     [array_in]
                 ),
                 (
@@ -121,6 +148,7 @@ macro_rules! processors {
                     "Polarimeter",
                     "Polarisation of two crossed antennas",
                     $crate::patch::Face::fit(360),
+                    $crate::processor::view::ProcessorFacets::new(&[$crate::processor::view::ViewSpec::Ellipse], &[]),
                     [array_in, beam_out("Matched to the wave")]
                 ),
             ],
@@ -142,6 +170,7 @@ macro_rules! define_processor_enums {
             $name:literal,
             $summary:literal,
             $face:expr,
+            $facets:expr,
             [$($port:tt)*]
         )),* $(,)?],
         probe: ($probe:ident, $probe_id:literal, $probe_params:ty) $(,)?
@@ -213,6 +242,15 @@ macro_rules! define_processor_enums {
                 match self {
                     $(Self::$variant(reading) => reading.status(),)*
                     Self::Plugin(reading) => reading.status(),
+                }
+            }
+
+            /// What this reading puts on its processor's face.
+            #[must_use]
+            pub fn view(&self) -> $crate::processor::view::ProcessorView {
+                match self {
+                    $(Self::$variant(reading) => reading.view(),)*
+                    Self::Plugin(reading) => reading.view(),
                 }
             }
 

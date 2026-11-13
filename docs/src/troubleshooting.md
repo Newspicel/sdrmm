@@ -18,6 +18,8 @@ It checks drivers, libraries, radio discovery, USB permissions, and storage path
 - Behind a reverse proxy, serve SDRmm at the root. Path prefixes do not work.
 - A server on a network bind serves `https://` and sends `http://` there. Accept the
   certificate warning once.
+- `Host not allowed`: a server without a token answers only to the
+  [names under Token](server/configuration.md#token). Open it by IP address, or set a token.
 
 ## The window is blank or the waterfall is missing
 
@@ -25,7 +27,8 @@ Some graphics drivers break hardware rendering: a blank window, frozen panels, o
 `waterfall unavailable: no WebGL2 context`. Start the app with GPU rendering off:
 
 ```sh
-sdrmm-app --disable-gpu
+sdrmm-app --disable-gpu                    # Linux
+open -a SDRmm --args --disable-gpu         # macOS
 ```
 
 The waterfall then runs in software and may be slower. If the window still fails, run the
@@ -42,7 +45,8 @@ clients send `Authorization: Bearer <token>`. URLs can carry `?token=...` instea
 1. Check that the operating system sees it.
 2. Run `sdrmm --doctor` and fix any library or permission error.
 3. Close other SDR programs that may hold it.
-4. For SoapySDR radios, run `SoapySDRUtil --find` and check the module is built for 0.8.
+4. For SoapySDR radios, run `SoapySDRUtil --find` and check the module matches the core's
+   version, 0.8 or 0.9.
 5. On Linux, install the udev rules. In a container, set
    [`group_add`](server/deployment.md#usb-devices).
 
@@ -56,7 +60,7 @@ See [Radios](hardware.md) for each radio's requirements.
 
 ## A radio is plugged in but its node stays disconnected
 
-The node waits for the exact radio it saved, by serial number. If it shows **Open radio**, press it.
+The node waits for the exact radio it saved: by serial, or by address for a network radio. If it shows **Open radio**, press it.
 A node that says `stopped` was stopped by hand: press **Start**. To use a different radio, press
 **Forget radio** and pick the new one.
 
@@ -86,7 +90,7 @@ The drop counter on a Device counts samples lost anywhere between the radio and 
 Drops damage audio, spectrum, recordings, and decoding.
 
 - Lower the sample rate and close channels and displays you do not need.
-- Use a release build.
+- From source, build with `--release`.
 - On small computers, check for CPU throttling and heat.
 - On Linux, allow a higher thread priority: add `@audio - nice -10` to
   `/etc/security/limits.conf` and join the `audio` group.

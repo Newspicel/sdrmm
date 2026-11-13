@@ -25,7 +25,7 @@ machines.
 4. Set the receiver to the rate and centre frequency shown on the node.
 
 Channel `baseband` sends only that channel, at its lower rate. The sample rate is locked during
-export. Retuning works, but you must update the receiver yourself. The node counts bytes sent,
+export. A radio restart pauses the export instead of ending it. Retuning works, but you must update the receiver yourself. The node counts bytes sent,
 datagrams or writes, and drops.
 
 Samples are interleaved `I, Q, I, Q`, with no header or timestamps:
@@ -93,8 +93,8 @@ Failures go to the server log.
 Wire `events` to an **Event output** and choose **PostgreSQL**, **InfluxDB** or **CSV file**.
 
 **PostgreSQL** creates the table (default `sdrmm_events`) on first write: one row per event with time, kind, frequency,
-station, summary, and the full record as `jsonb`. Add `?sslmode=disable` to the URL for a server
-without TLS.
+station, summary, and the full record as `jsonb`. A server on another host must speak TLS unless
+the URL sets `sslmode`, such as `?sslmode=disable`.
 
 **CSV file** appends one row per event to `Recordings/events/<file>.csv`: time, kind, output,
 device set, channel, frequency, station, summary, and the event data as JSON. Text that starts
@@ -102,6 +102,12 @@ like a formula gets a leading `'`.
 
 **InfluxDB** 2 and 3 take one point per event. The measurement is the event kind, and numbers,
 flags, and short text from the event become fields.
+
+## Credentials
+
+Webhook URLs, the Matrix token, MQTT and PostgreSQL passwords and the InfluxDB token stay in the
+server's database. The workspace and its export name them by id only. On another server the node
+shows, for example, `Matrix token is not set on this server` until you enter it again.
 
 ## IP data
 

@@ -26,6 +26,7 @@ num-complex.workspace = true
 realfft.workspace = true
 rtrb.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 blip25-vocoder.workspace = true
 codec2.workspace = true
 symphonia-core.workspace = true

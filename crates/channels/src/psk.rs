@@ -503,7 +503,8 @@ mod tests {
             PskBaud::Psk125,
             PskBaud::Psk250,
         ] {
-            let iq = synth::psk::transmission("CQ de DL1ABC\n", baud.rate());
+            let iq = synth::psk::transmission("CQ de DL1ABC\n", baud.rate())
+                .expect("a synthetic signal");
             let events = decoded(baud, &iq);
             let text: String = events.iter().map(|e| e.text.as_str()).collect();
             assert!(text.contains("DL1ABC"), "{baud:?} decoded {text:?}");

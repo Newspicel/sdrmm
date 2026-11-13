@@ -10,8 +10,8 @@ use sdrmm_wire::{
 };
 
 use super::{
-    ArrayCtx, ArrayProcessor, Execution, ProcessorDescriptor, ProcessorNeeds, TuningNeed,
-    no_lane_format, registrations,
+    ArrayCtx, ArrayProcessor, EVENT_BYTES, Execution, ProcessorDescriptor, ProcessorNeeds,
+    TuningNeed, no_gpu, no_lane_format, registrations,
 };
 use crate::ChannelError;
 
@@ -47,6 +47,11 @@ pub(super) static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
         batch: ctx.max_block,
     },
     in_place: same_type,
+    actions: &[],
+    gpu: no_gpu,
+    event_bytes: EVENT_BYTES,
+    enricher: None,
+    mission: None,
 };
 
 const fn needs_of(needs: ArrayNeeds) -> ProcessorNeeds {
@@ -84,21 +89,20 @@ pub fn processor_plugin(type_id: &str) -> Option<Arc<dyn ProcessorFactory>> {
         .cloned()
 }
 
-fn refusal(kind: &ProcessorType, taken: &[&str]) -> Option<ChannelError> {
+/// Why a loaded processor of `kind` may not join the built-ins and the loaded types in `taken`,
+/// if it may not.
+#[must_use]
+pub fn processor_refusal(kind: &ProcessorType, taken: &[&str]) -> Option<ChannelError> {
     let type_id = kind.type_id.as_str();
     if registrations()
         .iter()
         .any(|entry| entry.descriptor.type_id == type_id)
         || type_id == DESCRIPTOR.type_id
     {
-        return Some(ChannelError::InvalidSettings(format!(
-            "processor type {type_id} is already a built-in processor"
-        )));
+        return Some(ChannelError::BuiltIn(type_id.to_owned()));
     }
     if taken.contains(&type_id) {
-        return Some(ChannelError::InvalidSettings(format!(
-            "processor type {type_id} is loaded twice"
-        )));
+        return Some(ChannelError::LoadedTwice(type_id.to_owned()));
     }
     (kind.min_lanes < MIN_ARRAY_LANES
         || kind.max_lanes > MAX_ARRAY_LANES
@@ -111,13 +115,14 @@ fn refusal(kind: &ProcessorType, taken: &[&str]) -> Option<ChannelError> {
 }
 
 /// Loads `factories` in place of every one loaded before, and returns the type ids now built
-/// by a different factory: their running processors still hold the old one.
+/// by a different factory: their running processors still hold the old one. Refuses the whole
+/// set, changing nothing, when [`processor_refusal`] refuses one of them.
 pub fn install_processors(
     factories: Vec<Arc<dyn ProcessorFactory>>,
 ) -> Result<Vec<String>, ChannelError> {
     let mut taken: Vec<&str> = Vec::with_capacity(factories.len());
     for factory in &factories {
-        if let Some(error) = refusal(factory.kind(), &taken) {
+        if let Some(error) = processor_refusal(factory.kind(), &taken) {
             return Err(error);
         }
         taken.push(&factory.kind().type_id);
@@ -186,6 +191,7 @@ mod tests {
             readouts: Vec::new(),
             emits: Vec::new(),
             defaults: serde_json::Value::Null,
+            facets: sdrmm_wire::ProcessorFacets::default(),
         }))
     }
 

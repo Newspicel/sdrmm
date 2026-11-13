@@ -5,7 +5,7 @@ import { deepEqual } from "../lib/deepEqual";
 import type { PatchNode, RackLayout } from "../lib/types";
 import { useWorkspaceContext } from "./context";
 import { RACK_COLS, RACK_ROWS, type RackCell } from "./graph";
-import { FACES, rackFaceSize } from "./nodes";
+import { NodeFace, rackFaceSize } from "./nodes";
 import {
   applyGesture,
   fromHeader,
@@ -207,8 +207,7 @@ export function Rack() {
 }
 
 const RackFace = memo(function RackFace({ node }: { node: PatchNode }) {
-  const Face = FACES[node.kind];
-  return <Face node={node} />;
+  return <NodeFace node={node} />;
 });
 
 const EDGE_LINE =

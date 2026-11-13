@@ -13,7 +13,8 @@ use crate::ChannelError;
 use crate::array_processor::{
     ArrayBlock, ArrayCtx, ArrayProcessor, LaneFormat, MAX_LANES, ProcessorAction,
     ProcessorDescriptor, ProcessorFaults, ProcessorNeeds, ProcessorOutput, Registration,
-    ResetCause, TuningNeed, banded_execution, boxed, check_tuning, no_lane_format, stamp_at,
+    ResetCause, TuningNeed, banded_execution, boxed, check_tuning, no_gpu, no_lane_format,
+    stamp_at,
 };
 use crate::band::{LaneBand, band_lane_format, check_offset};
 
@@ -37,6 +38,11 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_format,
     execution: |_, ctx| banded_execution(ctx),
     in_place,
+    actions: &[],
+    gpu: no_gpu,
+    event_bytes: 0,
+    enricher: None,
+    mission: None,
 };
 
 pub const REGISTRATION: Registration = Registration {

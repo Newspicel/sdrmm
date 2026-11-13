@@ -8,7 +8,7 @@ mod release;
 pub(crate) use release::{drops_radio, release};
 
 use crate::{
-    AppState, array, radar,
+    AppState, array, reports,
     resolved::Resolved,
     rest::AppError,
     workspace::{self, Restored},
@@ -45,7 +45,7 @@ pub(crate) fn bring_up(
 
 fn hooks(state: &AppState, resolved: &Resolved, saved: &WorkspaceState) -> Vec<(String, String)> {
     let mut refusals = array::reconcile(state, resolved, saved);
-    refusals.extend(radar::reconcile(state, resolved));
+    refusals.extend(reports::reconcile(state, resolved));
     refusals
 }
 

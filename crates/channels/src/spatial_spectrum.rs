@@ -15,7 +15,7 @@ use crate::ChannelError;
 use crate::array_processor::{
     ArrayBlock, ArrayCtx, ArrayProcessor, Execution, LaneFormat, MAX_LANES, ProcessorAction,
     ProcessorDescriptor, ProcessorFaults, ProcessorNeeds, ProcessorOutput, Registration,
-    ResetCause, TuningNeed, boxed, check_tuning, stamp_at,
+    ResetCause, TuningNeed, boxed, check_tuning, no_gpu, stamp_at,
 };
 use crate::band::{LaneBand, band_rate};
 use crate::df::{check_band, manifold_of, same_array};
@@ -44,6 +44,11 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
         batch: ctx.max_block,
     },
     in_place,
+    actions: &[],
+    gpu: no_gpu,
+    event_bytes: 0,
+    enricher: None,
+    mission: None,
 };
 
 pub const REGISTRATION: Registration = Registration {

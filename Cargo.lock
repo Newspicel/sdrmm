@@ -5303,6 +5303,7 @@ dependencies = [
  "symphonia-bundle-mp3",
  "symphonia-core",
  "thiserror 2.0.21",
+ "tracing",
  "xng-acars",
  "xng-mode-aero",
  "xng-mode-dsc",
@@ -5770,6 +5771,7 @@ dependencies = [
 name = "sdrmm-plugins"
 version = "0.0.0"
 dependencies = [
+ "dirs 7.0.0",
  "notify",
  "num-complex",
  "sdrmm-channels",
@@ -5777,6 +5779,8 @@ dependencies = [
  "sdrmm-wire",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
  "thiserror 2.0.21",
  "tracing",
  "wasmtime",
@@ -8835,10 +8839,12 @@ dependencies = [
  "flate2",
  "libc",
  "notify",
+ "proc-macro2",
  "sdrmm-wire",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "syn 3.0.10",
  "tempfile",
  "xtask-release",
 ]

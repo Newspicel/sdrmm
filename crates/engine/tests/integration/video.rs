@@ -41,7 +41,7 @@ async fn dvb_satellite_video_reaches_the_color_video_stream() {
         );
         let engine = Engine::with_registry(registry, Some(dir.path().to_path_buf()));
         let iq = match standard {
-            DatvStandard::DvbS => datv::dvbs(4),
+            DatvStandard::DvbS => Ok(datv::dvbs(4)),
             DatvStandard::DvbS2 if superframes => datv::dvbs2_superframes(4),
             DatvStandard::DvbS2 if extended => datv::dvbs2_mode(
                 4,
@@ -51,7 +51,8 @@ async fn dvb_satellite_video_reaches_the_color_video_stream() {
                 true,
             ),
             DatvStandard::DvbS2 => datv::dvbs2(4),
-        };
+        }
+        .expect("a synthetic signal");
         let path = dir.path().join("dvb-video");
         let mut writer =
             SigmfWriter::create(&path, 2_000_000.0, CENTER_HZ, "DVB media fixture").unwrap();

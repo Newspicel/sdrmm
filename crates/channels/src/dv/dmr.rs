@@ -13,8 +13,7 @@ use sdrmm_dsp::{
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, DecoderEvent, DecoderFamily,
-    DvChannelDefinition, DvFrame, DvFrameKind, DvSlotActivity, EventKind, TrunkKind, TrunkScheme,
-    TrunkSpec, Vendor,
+    DvChannelDefinition, DvFrame, DvFrameKind, DvSlotActivity, EventKind, Vendor,
 };
 
 use super::{
@@ -24,11 +23,13 @@ use super::{
     vocoder::{HALF_RATE_SOFT_BITS, MbeDecoder, half_soft_frame},
 };
 pub(crate) mod privacy;
+mod trunk;
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
     check_input_rate,
 };
 use privacy::{CipherKey, Privacy};
+use trunk::{CAPACITY_PLUS, HYTERA_XPT, TIER_THREE};
 
 pub(crate) const BAUD: f64 = 4_800.0;
 pub(crate) const DEVIATION_HZ: f64 = 1_944.0;
@@ -1897,97 +1898,13 @@ fn dmr_signatures() -> Vec<sdrmm_wire::SignalSignature> {
         .collect()
 }
 
-/// A trunking protocol DMR signalling announces.
-#[derive(Clone, Copy)]
-struct DmrTrunk {
-    id: &'static str,
-    label: &'static str,
-    kind: TrunkKind,
-}
-
-impl DmrTrunk {
-    fn mark(self, frame: &mut DvFrame) {
-        frame.trunk_protocol = Some(self.id.to_owned());
-        frame.trunk_label = Some(self.label.to_owned());
-    }
-}
-
-const CAPACITY_PLUS: DmrTrunk = DmrTrunk {
-    id: "capacity_plus",
-    label: "Capacity Plus",
-    kind: TrunkKind::Distributed,
-};
-const HYTERA_XPT: DmrTrunk = DmrTrunk {
-    id: "hytera_xpt",
-    label: "Hytera XPT",
-    kind: TrunkKind::Distributed,
-};
-const TIER_THREE: DmrTrunk = DmrTrunk {
-    id: "tier_three",
-    label: "Tier III",
-    kind: TrunkKind::Grants,
-};
-
-fn dmr_trunk_spec() -> TrunkSpec {
-    TrunkSpec {
-        slots: 2,
-        schemes: [CAPACITY_PLUS, HYTERA_XPT, TIER_THREE]
-            .into_iter()
-            .map(|trunk| TrunkScheme {
-                id: trunk.id.to_owned(),
-                label: trunk.label.to_owned(),
-                kind: trunk.kind,
-            })
-            .collect(),
-        vocoder: super::chip::VOCODER_CHIPS,
-    }
-}
-
 pub(crate) fn dmr_decoder() -> Native<DmrParams> {
     Native::new::<DmrChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .signatures(dmr_signatures)
         .form(dmr_form)
         .kinds(dmr_kinds)
-        .trunking(crate::Trunking {
-            watch: dmr_watch,
-            follow: dmr_follow,
-            spec: dmr_trunk_spec,
-        })
-}
-
-fn dmr_watch(ignore_crc: bool) -> Result<sdrmm_wire::ChannelParams, ChannelError> {
-    sdrmm_wire::ChannelParams::of(&DmrParams {
-        slots: DmrSlots::Both,
-        ignore_crc,
-        ..DmrParams::default()
-    })
-    .map_err(ChannelError::InvalidSettings)
-}
-
-fn dmr_follow(
-    slot: u8,
-    ignore_crc: bool,
-    keys: &[VoiceKey],
-    vocoder: Option<&str>,
-) -> Result<sdrmm_wire::ChannelParams, ChannelError> {
-    cipher_keys(keys)?;
-    let slots = match slot {
-        1 => DmrSlots::One,
-        2 => DmrSlots::Two,
-        other => {
-            return Err(ChannelError::InvalidSettings(format!(
-                "DMR has slots 1 and 2, not {other}"
-            )));
-        }
-    };
-    sdrmm_wire::ChannelParams::of(&DmrParams {
-        slots,
-        ignore_crc,
-        keys: keys.to_vec(),
-        vocoder: vocoder.map(str::to_owned),
-    })
-    .map_err(ChannelError::InvalidSettings)
+        .trunking(trunk::trunking())
 }
 
 pub(crate) fn dmr_form() -> Vec<SettingField> {

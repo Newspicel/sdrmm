@@ -131,6 +131,7 @@ fn build(build: f64) -> Arc<dyn ProcessorFactory> {
             ],
             emits: vec![EventKind::named("lane_meter")],
             defaults: serde_json::Value::Null,
+            facets: sdrmm_wire::ProcessorFacets::default(),
         },
         build,
     })

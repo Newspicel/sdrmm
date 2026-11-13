@@ -301,7 +301,12 @@ impl Engine {
                 ));
             }
         }
-        let (tap, shared, writer) = network_export::start(&settings)?;
+        let network_export::Started {
+            tap,
+            shared,
+            writer,
+            ..
+        } = network_export::start(&settings)?;
         let commit = {
             let mut inner = self.lock();
             match inner.device_sets.get_mut(&ds) {
@@ -317,6 +322,7 @@ impl Engine {
                         sample_rate: plan.sample_rate.round() as u64,
                         center_hz: plan.center_hz.round() as i64,
                         shared,
+                        refeed: None,
                         writer: Some(writer),
                         overruns_at_start: state.overruns_total(),
                         samples_seen: 0,

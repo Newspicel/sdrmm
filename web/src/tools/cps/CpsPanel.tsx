@@ -26,7 +26,15 @@ import {
   readRadio,
   writeRadio,
 } from "../../lib/api";
-import type { ConversionReport, CpsPort, MergeMode } from "../../lib/types";
+import type {
+  ConversionReport,
+  CpsCodeplugInfo,
+  CpsJob,
+  CpsPort,
+  CpsUser,
+  MergeMode,
+  RadioModelDescriptor,
+} from "../../lib/types";
 import { CodeplugView } from "./CodeplugView";
 import {
   anyActive,
@@ -113,35 +121,15 @@ export function CpsPanel() {
     onSuccess: refresh,
   });
 
-  const convert = useMutation({
-    mutationFn: async () => {
-      if (selected === null) {
-        throw new Error("pick a codeplug first");
-      }
-      return convertCpsCodeplug(selected, {
-        target_model_id: targetModel === "" ? model : targetModel,
-        user_id: userId === 0 ? undefined : userId,
-        store: true,
-      });
-    },
-    onSuccess: async (result) => {
-      setReport(result.report);
-      await refresh();
-    },
-  });
-
-  const mergeIn = useMutation({
-    mutationFn: async () => {
-      if (selected === null || mergeSource === 0) {
-        throw new Error("pick both codeplugs first");
-      }
-      return mergeCpsCodeplug(selected, { source_id: mergeSource, mode: mergeMode, parts: [] });
-    },
-    onSuccess: async (result) => {
-      setReport(result.report);
-      await refresh();
-      await codeplug.refetch();
-    },
+  const { convert, mergeIn } = useCodeplugEdits({
+    selected,
+    target: targetModel === "" ? model : targetModel,
+    userId,
+    mergeSource,
+    mergeMode,
+    onReport: setReport,
+    refresh,
+    refetchCodeplug: codeplug.refetch,
   });
 
   const stop = useMutation({
@@ -155,45 +143,17 @@ export function CpsPanel() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <section className="flex flex-wrap items-end gap-2 rounded-control border border-line bg-panel-2 p-2">
-        <label className="flex flex-col gap-1">
-          <span className={LABEL}>Port</span>
-          <Select
-            label="Serial port"
-            className="w-64"
-            value={port}
-            options={[
-              { value: "", label: "Pick a port…" },
-              ...portOptions(ports.data?.ports ?? []),
-            ]}
-            onChange={setPort}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className={LABEL}>Radio</span>
-          <Select
-            label="Radio model"
-            className="w-52"
-            value={model}
-            options={offered.map((entry) => ({ value: entry.id, label: modelLabel(entry) }))}
-            onChange={setModelId}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className={LABEL}>Operator</span>
-          <Select
-            label="Operator"
-            className="w-40"
-            value={userId}
-            options={[
-              { value: 0, label: "Leave as read" },
-              ...users.map((user) => ({
-                value: user.id,
-                label: user.callsign ?? user.name,
-              })),
-            ]}
-            onChange={setUserId}
-          />
-        </label>
+        <RadioFields
+          ports={ports.data?.ports ?? []}
+          port={port}
+          onPort={setPort}
+          offered={offered}
+          model={model}
+          onModel={setModelId}
+          users={users}
+          userId={userId}
+          onUser={setUserId}
+        />
         <Button
           type="button"
           className={BTN}
@@ -234,24 +194,7 @@ export function CpsPanel() {
         )}
       </section>
 
-      {job !== null && (
-        <section className="flex items-center gap-3 rounded-control border border-line bg-panel-2 px-2 py-1.5">
-          <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink">
-            {describeJob(job)}
-          </span>
-          <div className="h-1 w-40 overflow-hidden rounded-full bg-panel-3">
-            <div
-              className="h-full bg-accent transition-[width] duration-200"
-              style={{ width: `${jobPercent(job)}%` }}
-            />
-          </div>
-          {(job.state === "running" || job.state === "pending") && (
-            <Button type="button" className={BTN_SM} onClick={() => stop.mutate(job.id)}>
-              Stop
-            </Button>
-          )}
-        </section>
-      )}
+      {job !== null && <JobBar job={job} onStop={() => stop.mutate(job.id)} />}
 
       {failure !== null && <p className={ALERT}>{failure.message}</p>}
 
@@ -261,60 +204,21 @@ export function CpsPanel() {
         </aside>
 
         <div className="flex min-h-0 flex-1 flex-col gap-2">
-          <section className="flex flex-wrap items-end gap-2">
-            <label className="flex flex-col gap-1">
-              <span className={LABEL}>Copy to</span>
-              <Select
-                label="Target radio model"
-                className="w-52"
-                value={targetModel === "" ? model : targetModel}
-                options={(models.data?.models ?? []).map((entry) => ({
-                  value: entry.id,
-                  label: modelLabel(entry),
-                }))}
-                onChange={setTargetModel}
-              />
-            </label>
-            <Button
-              type="button"
-              className={BTN}
-              disabled={selected === null || convert.isPending}
-              onClick={() => convert.mutate()}
-              title="Fits this codeplug to the target radio and stores it as a new one"
-            >
-              Copy for that radio
-            </Button>
-            <label className="flex flex-col gap-1">
-              <span className={LABEL}>Take entries from</span>
-              <Select
-                label="Merge source"
-                className="w-52"
-                value={mergeSource}
-                options={[
-                  { value: 0, label: "Pick a codeplug…" },
-                  ...codeplugs
-                    .filter((info) => info.id !== selected)
-                    .map((info) => ({ value: info.id, label: info.name })),
-                ]}
-                onChange={setMergeSource}
-              />
-            </label>
-            <Select
-              label="Merge mode"
-              className="w-44"
-              value={mergeMode}
-              options={MERGE_MODES}
-              onChange={setMergeMode}
-            />
-            <Button
-              type="button"
-              className={BTN}
-              disabled={selected === null || mergeSource === 0 || mergeIn.isPending}
-              onClick={() => mergeIn.mutate()}
-            >
-              Merge in
-            </Button>
-          </section>
+          <CodeplugTools
+            models={models.data?.models ?? []}
+            target={targetModel === "" ? model : targetModel}
+            onTarget={setTargetModel}
+            selected={selected}
+            codeplugs={codeplugs}
+            mergeSource={mergeSource}
+            onMergeSource={setMergeSource}
+            mergeMode={mergeMode}
+            onMergeMode={setMergeMode}
+            converting={convert.isPending}
+            onConvert={() => convert.mutate()}
+            merging={mergeIn.isPending}
+            onMerge={() => mergeIn.mutate()}
+          />
 
           <ReportView report={report ?? job?.report ?? null} />
 
@@ -330,5 +234,231 @@ export function CpsPanel() {
         </div>
       </div>
     </div>
+  );
+}
+
+function useCodeplugEdits({
+  selected,
+  target,
+  userId,
+  mergeSource,
+  mergeMode,
+  onReport,
+  refresh,
+  refetchCodeplug,
+}: {
+  selected: number | null;
+  target: string;
+  userId: number;
+  mergeSource: number;
+  mergeMode: MergeMode;
+  onReport: (report: ConversionReport) => void;
+  refresh: () => Promise<void>;
+  refetchCodeplug: () => Promise<unknown>;
+}) {
+  const convert = useMutation({
+    mutationFn: async () => {
+      if (selected === null) {
+        throw new Error("pick a codeplug first");
+      }
+      return convertCpsCodeplug(selected, {
+        target_model_id: target,
+        user_id: userId === 0 ? undefined : userId,
+        store: true,
+      });
+    },
+    onSuccess: async (result) => {
+      onReport(result.report);
+      await refresh();
+    },
+  });
+
+  const mergeIn = useMutation({
+    mutationFn: async () => {
+      if (selected === null || mergeSource === 0) {
+        throw new Error("pick both codeplugs first");
+      }
+      return mergeCpsCodeplug(selected, { source_id: mergeSource, mode: mergeMode, parts: [] });
+    },
+    onSuccess: async (result) => {
+      onReport(result.report);
+      await refresh();
+      await refetchCodeplug();
+    },
+  });
+
+  return { convert, mergeIn };
+}
+
+function JobBar({ job, onStop }: { job: CpsJob; onStop: () => void }) {
+  return (
+    <section className="flex items-center gap-3 rounded-control border border-line bg-panel-2 px-2 py-1.5">
+      <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink">{describeJob(job)}</span>
+      <div className="h-1 w-40 overflow-hidden rounded-full bg-panel-3">
+        <div
+          className="h-full bg-accent transition-[width] duration-200"
+          style={{ width: `${jobPercent(job)}%` }}
+        />
+      </div>
+      {(job.state === "running" || job.state === "pending") && (
+        <Button type="button" className={BTN_SM} onClick={onStop}>
+          Stop
+        </Button>
+      )}
+    </section>
+  );
+}
+
+interface CodeplugToolsProps {
+  models: readonly RadioModelDescriptor[];
+  target: string;
+  onTarget: (model: string) => void;
+  selected: number | null;
+  codeplugs: readonly CpsCodeplugInfo[];
+  mergeSource: number;
+  onMergeSource: (id: number) => void;
+  mergeMode: MergeMode;
+  onMergeMode: (mode: MergeMode) => void;
+  converting: boolean;
+  onConvert: () => void;
+  merging: boolean;
+  onMerge: () => void;
+}
+
+function CodeplugTools({
+  models,
+  target,
+  onTarget,
+  selected,
+  codeplugs,
+  mergeSource,
+  onMergeSource,
+  mergeMode,
+  onMergeMode,
+  converting,
+  onConvert,
+  merging,
+  onMerge,
+}: CodeplugToolsProps) {
+  return (
+    <section className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1">
+        <span className={LABEL}>Copy to</span>
+        <Select
+          label="Target radio model"
+          className="w-52"
+          value={target}
+          options={models.map((entry) => ({
+            value: entry.id,
+            label: modelLabel(entry),
+          }))}
+          onChange={onTarget}
+        />
+      </label>
+      <Button
+        type="button"
+        className={BTN}
+        disabled={selected === null || converting}
+        onClick={onConvert}
+        title="Fits this codeplug to the target radio and stores it as a new one"
+      >
+        Copy for that radio
+      </Button>
+      <label className="flex flex-col gap-1">
+        <span className={LABEL}>Take entries from</span>
+        <Select
+          label="Merge source"
+          className="w-52"
+          value={mergeSource}
+          options={[
+            { value: 0, label: "Pick a codeplug…" },
+            ...codeplugs
+              .filter((info) => info.id !== selected)
+              .map((info) => ({ value: info.id, label: info.name })),
+          ]}
+          onChange={onMergeSource}
+        />
+      </label>
+      <Select
+        label="Merge mode"
+        className="w-44"
+        value={mergeMode}
+        options={MERGE_MODES}
+        onChange={onMergeMode}
+      />
+      <Button
+        type="button"
+        className={BTN}
+        disabled={selected === null || mergeSource === 0 || merging}
+        onClick={onMerge}
+      >
+        Merge in
+      </Button>
+    </section>
+  );
+}
+
+interface RadioFieldsProps {
+  ports: readonly CpsPort[];
+  port: string;
+  onPort: (port: string) => void;
+  offered: readonly RadioModelDescriptor[];
+  model: string;
+  onModel: (model: string) => void;
+  users: readonly CpsUser[];
+  userId: number;
+  onUser: (id: number) => void;
+}
+
+function RadioFields({
+  ports,
+  port,
+  onPort,
+  offered,
+  model,
+  onModel,
+  users,
+  userId,
+  onUser,
+}: RadioFieldsProps) {
+  return (
+    <>
+      <label className="flex flex-col gap-1">
+        <span className={LABEL}>Port</span>
+        <Select
+          label="Serial port"
+          className="w-64"
+          value={port}
+          options={[{ value: "", label: "Pick a port…" }, ...portOptions(ports)]}
+          onChange={onPort}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={LABEL}>Radio</span>
+        <Select
+          label="Radio model"
+          className="w-52"
+          value={model}
+          options={offered.map((entry) => ({ value: entry.id, label: modelLabel(entry) }))}
+          onChange={onModel}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={LABEL}>Operator</span>
+        <Select
+          label="Operator"
+          className="w-40"
+          value={userId}
+          options={[
+            { value: 0, label: "Leave as read" },
+            ...users.map((user) => ({
+              value: user.id,
+              label: user.callsign ?? user.name,
+            })),
+          ]}
+          onChange={onUser}
+        />
+      </label>
+    </>
   );
 }

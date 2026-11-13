@@ -1,4 +1,8 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::HashMap,
+    net::{Ipv4Addr, Ipv6Addr},
+    time::Duration,
+};
 
 use sdrmm_wire::{BroadcastData, DecodedRecord, EventOutputTarget};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -7,6 +11,7 @@ use super::{Binding, status::Statuses};
 
 struct Entry {
     target: EventOutputTarget,
+    scope: Scope,
     sender: mpsc::Sender<Vec<u8>>,
     worker: JoinHandle<()>,
 }
@@ -88,6 +93,7 @@ impl Outputs {
                 binding.node.clone(),
                 Entry {
                     target: binding.target.clone(),
+                    scope: Scope::new(*address, *prefix),
                     sender,
                     worker,
                 },
@@ -107,7 +113,7 @@ impl Outputs {
             if !record.sinks.contains(&binding.node) {
                 continue;
             }
-            match ip_packet(data) {
+            match ip_packet(data, entry.scope) {
                 Ok(bytes) => {
                     if let Err(error) = entry.sender.try_send(bytes.to_vec()) {
                         fail(
@@ -128,7 +134,59 @@ fn fail(statuses: &Statuses, node: &str, error: String) {
     statuses.failed(node, 1, error);
 }
 
-fn ip_packet(data: &BroadcastData) -> Result<&[u8], &'static str> {
+/// Where a packet off the air may go. Anyone can transmit one, so it reaches multicast listeners
+/// or the tunnel's own subnet, never another host interface, and never claims the loopback.
+#[derive(Clone, Copy, Debug)]
+struct Scope {
+    network: u32,
+    mask: u32,
+}
+
+impl Scope {
+    fn new(address: Ipv4Addr, prefix: u8) -> Self {
+        let mask = u32::MAX
+            .checked_shl(32 - u32::from(prefix.min(32)))
+            .unwrap_or(0);
+        Self {
+            network: address.to_bits() & mask,
+            mask,
+        }
+    }
+
+    fn admits_v4(self, source: Ipv4Addr, destination: Ipv4Addr) -> Result<(), &'static str> {
+        if source.is_loopback() || destination.is_loopback() {
+            return Err("Loopback address refused");
+        }
+        if destination.is_multicast() || destination.to_bits() & self.mask == self.network {
+            return Ok(());
+        }
+        Err("Destination outside the tunnel subnet")
+    }
+
+    fn admits_v6(source: Ipv6Addr, destination: Ipv6Addr) -> Result<(), &'static str> {
+        if source.is_loopback() || destination.is_loopback() {
+            return Err("Loopback address refused");
+        }
+        if destination.is_multicast() {
+            return Ok(());
+        }
+        Err("IPv6 reaches only multicast groups")
+    }
+}
+
+fn v4_at(bytes: &[u8], at: usize) -> Ipv4Addr {
+    let mut octets = [0; 4];
+    octets.copy_from_slice(&bytes[at..at + 4]);
+    Ipv4Addr::from(octets)
+}
+
+fn v6_at(bytes: &[u8], at: usize) -> Ipv6Addr {
+    let mut octets = [0; 16];
+    octets.copy_from_slice(&bytes[at..at + 16]);
+    Ipv6Addr::from(octets)
+}
+
+fn ip_packet(data: &BroadcastData, scope: Scope) -> Result<&[u8], &'static str> {
     let bytes = data.bytes.as_slice();
     match data.protocol {
         Some(0x0800) if bytes.len() >= 20 && bytes[0] >> 4 == 4 => {
@@ -150,11 +208,13 @@ fn ip_packet(data: &BroadcastData) -> Result<&[u8], &'static str> {
             if checksum != 65535 {
                 return Err("Invalid IPv4 header checksum");
             }
+            scope.admits_v4(v4_at(bytes, 12), v4_at(bytes, 16))?;
         }
         Some(0x86dd) if bytes.len() >= 40 && bytes[0] >> 4 == 6 => {
             if 40 + usize::from(u16::from_be_bytes([bytes[4], bytes[5]])) != bytes.len() {
                 return Err("Invalid IPv6 packet length");
             }
+            Scope::admits_v6(v6_at(bytes, 8), v6_at(bytes, 24))?;
         }
         _ => return Err("TUN accepts IPv4 and IPv6 datagrams"),
     }
@@ -194,6 +254,7 @@ mod tests {
         outputs.entries.insert(
             "out".to_owned(),
             Entry {
+                scope: Scope::new(Ipv4Addr::new(10, 23, 0, 1), 24),
                 target,
                 sender,
                 worker: tokio::spawn(std::future::pending()),
@@ -202,6 +263,7 @@ mod tests {
         let mut bytes = vec![0; 44];
         bytes[0] = 0x60;
         bytes[5] = 4;
+        bytes[24] = 0xff;
         let elsewhere = DecodedRecord {
             origin: None,
             sinks: vec!["other".to_owned()],
@@ -237,12 +299,15 @@ mod tests {
         assert!(receiver.recv().await.is_none());
     }
 
-    #[test]
-    fn only_complete_ip_packets_reach_the_interface() {
-        let mut ipv4 = vec![
-            0x45, 0, 0, 20, 0, 0, 0, 0, 64, 17, 0, 0, 192, 0, 2, 1, 192, 0, 2, 2,
-        ];
-        let mut sum = ipv4
+    fn scope() -> Scope {
+        Scope::new(Ipv4Addr::new(192, 0, 2, 1), 24)
+    }
+
+    fn ipv4(source: [u8; 4], destination: [u8; 4]) -> Vec<u8> {
+        let mut packet = vec![0x45, 0, 0, 20, 0, 0, 0, 0, 64, 17, 0, 0];
+        packet.extend(source);
+        packet.extend(destination);
+        let mut sum = packet
             .as_chunks::<2>()
             .0
             .iter()
@@ -250,16 +315,69 @@ mod tests {
         while sum >> 16 != 0 {
             sum = (sum & 65535) + (sum >> 16);
         }
-        ipv4[10..12].copy_from_slice(&(!(sum as u16)).to_be_bytes());
-        assert_eq!(ip_packet(&data(0x800, ipv4.clone())).unwrap(), ipv4);
+        packet[10..12].copy_from_slice(&(!(sum as u16)).to_be_bytes());
+        packet
+    }
+
+    fn ipv6(destination: Ipv6Addr) -> Vec<u8> {
+        let mut packet = vec![0u8; 44];
+        packet[0] = 0x60;
+        packet[5] = 4;
+        packet[8..24].copy_from_slice(&Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1).octets());
+        packet[24..40].copy_from_slice(&destination.octets());
+        packet
+    }
+
+    #[test]
+    fn only_complete_ip_packets_reach_the_interface() {
+        let mut ipv4 = ipv4([192, 0, 2, 1], [192, 0, 2, 2]);
+        assert_eq!(
+            ip_packet(&data(0x800, ipv4.clone()), scope()).unwrap(),
+            ipv4
+        );
         ipv4[12] ^= 1;
-        assert!(ip_packet(&data(0x800, ipv4)).is_err());
-        let mut ipv6 = vec![0u8; 44];
-        ipv6[0] = 0x60;
-        ipv6[5] = 4;
-        assert_eq!(ip_packet(&data(0x86dd, ipv6.clone())).unwrap(), ipv6);
+        assert!(ip_packet(&data(0x800, ipv4), scope()).is_err());
+        let mut ipv6 = ipv6(Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 1));
+        assert_eq!(
+            ip_packet(&data(0x86dd, ipv6.clone()), scope()).unwrap(),
+            ipv6
+        );
         ipv6.pop();
-        assert!(ip_packet(&data(0x86dd, ipv6)).is_err());
-        assert!(ip_packet(&data(0x806, vec![0; 28])).is_err());
+        assert!(ip_packet(&data(0x86dd, ipv6), scope()).is_err());
+        assert!(ip_packet(&data(0x806, vec![0; 28]), scope()).is_err());
+    }
+
+    #[test]
+    fn packets_off_the_air_reach_only_multicast_or_the_tunnel_subnet() {
+        let admitted =
+            |packet: Vec<u8>, protocol| ip_packet(&data(protocol, packet), scope()).is_ok();
+        assert!(admitted(ipv4([203, 0, 113, 9], [192, 0, 2, 255]), 0x800));
+        assert!(admitted(ipv4([203, 0, 113, 9], [239, 1, 2, 3]), 0x800));
+        assert!(!admitted(ipv4([203, 0, 113, 9], [192, 168, 1, 20]), 0x800));
+        assert!(!admitted(ipv4([203, 0, 113, 9], [127, 0, 0, 1]), 0x800));
+        assert!(!admitted(ipv4([127, 0, 0, 1], [192, 0, 2, 2]), 0x800));
+        assert!(!admitted(ipv6(Ipv6Addr::LOCALHOST), 0x86dd));
+        assert!(!admitted(
+            ipv6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)),
+            0x86dd
+        ));
+    }
+
+    #[test]
+    fn a_scope_masks_its_prefix() {
+        let open = Scope::new(Ipv4Addr::new(10, 0, 0, 1), 0);
+        assert!(
+            open.admits_v4(Ipv4Addr::new(1, 1, 1, 1), Ipv4Addr::new(8, 8, 8, 8))
+                .is_ok()
+        );
+        let host = Scope::new(Ipv4Addr::new(10, 0, 0, 1), 32);
+        assert!(
+            host.admits_v4(Ipv4Addr::new(1, 1, 1, 1), Ipv4Addr::new(10, 0, 0, 1))
+                .is_ok()
+        );
+        assert!(
+            host.admits_v4(Ipv4Addr::new(1, 1, 1, 1), Ipv4Addr::new(10, 0, 0, 2))
+                .is_err()
+        );
     }
 }

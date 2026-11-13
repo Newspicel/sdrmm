@@ -1105,7 +1105,8 @@ async fn psk_text_survives_the_ddc_and_reaches_the_decoded_stream() {
         let dir = TempDir::new().unwrap();
         let engine = accelerated_engine_for(dir.path());
         let offset_hz = 5_000.0;
-        let iq = synth::psk::transmission(&format!("{want}\n"), baud.rate());
+        let iq = synth::psk::transmission(&format!("{want}\n"), baud.rate())
+            .expect("a synthetic signal");
         let mut iq = synth::resample(&iq, 8_000.0, AUDIO_DEVICE_RATE);
         synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
         let device = plant(dir.path(), stem, iq, AUDIO_DEVICE_RATE);
@@ -1148,7 +1149,7 @@ async fn ft8_message_survives_the_ddc_and_reaches_the_decoded_stream() {
     let dir = TempDir::new().unwrap();
     let engine = accelerated_engine_for(dir.path());
     let offset_hz = -8_000.0;
-    let iq = synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0);
+    let iq = synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0).expect("a synthetic signal");
     let mut iq = synth::resample(&iq, 12_000.0, AUDIO_DEVICE_RATE);
     synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
     let device = plant(dir.path(), "ft8", iq, AUDIO_DEVICE_RATE);
@@ -1177,7 +1178,7 @@ async fn ft4_message_survives_the_ddc_and_reaches_the_decoded_stream() {
     let dir = TempDir::new().unwrap();
     let engine = accelerated_engine_for(dir.path());
     let offset_hz = 8_000.0;
-    let iq = synth::weak_signal::ft4_slot("JA1ABC", "PM95", 1_000.0);
+    let iq = synth::weak_signal::ft4_slot("JA1ABC", "PM95", 1_000.0).expect("a synthetic signal");
     let mut iq = synth::resample(&iq, 12_000.0, AUDIO_DEVICE_RATE);
     synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
     let device = plant(dir.path(), "ft4", iq, AUDIO_DEVICE_RATE);
@@ -1206,7 +1207,8 @@ async fn ft4_message_survives_the_ddc_and_reaches_the_decoded_stream() {
 async fn wspr_spot_survives_the_ddc_and_reaches_the_decoded_stream() {
     let dir = TempDir::new().unwrap();
     let engine = accelerated_engine_for(dir.path());
-    let iq = synth::weak_signal::wspr_slot("K1ABC", "FN42", 37, 1_500.0);
+    let iq =
+        synth::weak_signal::wspr_slot("K1ABC", "FN42", 37, 1_500.0).expect("a synthetic signal");
     let iq = synth::resample(&iq, 12_000.0, AUDIO_DEVICE_RATE);
     let device = plant(dir.path(), "wspr", iq, AUDIO_DEVICE_RATE);
     let record = decode_first(
@@ -1545,7 +1547,7 @@ async fn a_dab_ensemble_locks_through_a_virtual_device() {
         let dir = TempDir::new().unwrap();
         let engine = engine_for(dir.path());
         let iq = synth::resample(
-            &synth::dab::ensemble_for_mode(mode, 16),
+            &synth::dab::ensemble_for_mode(mode, 16).expect("a synthetic signal"),
             2_048_000.0,
             DEVICE_RATE,
         );
@@ -1666,7 +1668,8 @@ async fn drm30_lock_is_reported() {
     let device = plant(
         dir.path(),
         "drm30-mode-b",
-        synth::drm::signal(synth::drm::defaults(synth::drm::Robustness::B), 3),
+        synth::drm::signal(synth::drm::defaults(synth::drm::Robustness::B), 3)
+            .expect("a synthetic signal"),
         synth::drm::RATE_HZ,
     );
     let status = broadcast_first(
@@ -2206,7 +2209,7 @@ async fn broadcast_audio_reaches_stereo_opus_through_virtual_devices() {
         let engine = engine_for(dir.path());
         let (iq, rate, params) = match system {
             BroadcastSystem::DabPlus => (
-                synth::dab::ensemble(30),
+                synth::dab::ensemble(30).expect("a synthetic signal"),
                 2048000.0,
                 ChannelParams::new(
                     "dab",
@@ -2218,7 +2221,7 @@ async fn broadcast_audio_reaches_stereo_opus_through_virtual_devices() {
                 .expect("dab settings"),
             ),
             BroadcastSystem::Dab => (
-                synth::dab::ensemble(30),
+                synth::dab::ensemble(30).expect("a synthetic signal"),
                 2048000.0,
                 ChannelParams::new(
                     "dab",
@@ -2243,7 +2246,7 @@ async fn broadcast_audio_reaches_stereo_opus_through_virtual_devices() {
                 .expect("datv settings"),
             ),
             BroadcastSystem::DvbS2 => (
-                synth::datv::dvbs2(4),
+                synth::datv::dvbs2(4).expect("a synthetic signal"),
                 2000000.0,
                 ChannelParams::new(
                     "datv",
@@ -2332,7 +2335,7 @@ async fn dab_pad_slideshow_crosses_the_virtual_receiver_and_decoded_event_stream
     let device = plant(
         dir.path(),
         "dab-slideshow",
-        synth::dab::ensemble(30),
+        synth::dab::ensemble(30).expect("a synthetic signal"),
         2_048_000.0,
     );
     let record = decode_first(

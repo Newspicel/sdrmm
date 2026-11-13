@@ -7,21 +7,20 @@ use sdrmm_channels::{
     },
 };
 use sdrmm_device::lock;
-use sdrmm_wire::{GpuUse, ProcessorParams, ServerEvent, StateScope, array::MAX_VIRTUAL_LANES};
+use sdrmm_wire::{ProcessorParams, ServerEvent, StateScope, array::MAX_VIRTUAL_LANES};
 
 use super::{ArrayState, find, find_mut};
 use crate::{
     DeviceSetState, Engine, EngineError, Inner, RebuildEntry, VirtualLaneState,
     array::{
-        ArrayShape, Command, ControlConfig, HostPlan, HostSinks, LiveFrame, ProcessorAction,
-        ProcessorHost, ProcessorSpec, ProcessorStats, RadarPlan, SteerInput, SteerMailbox,
-        prepare_dedicated,
+        ArrayShape, Command, ControlConfig, DedicatedPlan, HostPlan, HostSinks, LiveFrame,
+        ProcessorAction, ProcessorHost, ProcessorSpec, ProcessorStats, SteerInput, SteerMailbox,
     },
     lock_runtime,
     runtime::{VirtualLaneSink, capture::RetiredLane},
 };
 
-const NO_TRACKS: &str = "No tracks here";
+const NO_ACTION: &str = "Not supported here";
 const NOT_RUNNING: &str = "Not running";
 const NO_LANE_RADIO: &str = "No radio for lane outputs";
 const TOO_MANY_LANES: &str = "Max 16 lane outputs";
@@ -41,7 +40,7 @@ pub(crate) struct ProcessorRecord {
     pub(crate) kind: String,
     pub(crate) lanes: Vec<LaneOut>,
     pub(crate) stats: Arc<ProcessorStats>,
-    pub(crate) radar: Option<Arc<RadarPlan>>,
+    pub(crate) dedicated: Option<Arc<dyn DedicatedPlan>>,
     pub(crate) needs: ProcessorNeeds,
     pub(crate) installed: bool,
     pub(crate) error: Option<String>,
@@ -52,8 +51,8 @@ impl ProcessorRecord {
         self.needs.phase || self.needs.geometry
     }
 
-    const fn takes_actions(&self) -> bool {
-        matches!(self.spec.params, ProcessorParams::PassiveRadar(_)) || probe(&self.spec.params)
+    fn takes(&self, action: ProcessorAction) -> bool {
+        descriptor_for(&self.spec.params).is_some_and(|descriptor| descriptor.takes(action))
     }
 
     fn refused(spec: &ProcessorSpec, error: &EngineError) -> Self {
@@ -62,29 +61,11 @@ impl ProcessorRecord {
             kind: spec.params.type_id().to_owned(),
             lanes: Vec::new(),
             stats: Arc::new(ProcessorStats::default()),
-            radar: None,
+            dedicated: None,
             needs: ProcessorNeeds::default(),
             installed: false,
             error: Some(error.to_string()),
         }
-    }
-}
-
-#[cfg(feature = "probe")]
-const fn probe(params: &ProcessorParams) -> bool {
-    matches!(params, ProcessorParams::Probe(_))
-}
-
-#[cfg(not(feature = "probe"))]
-const fn probe(_: &ProcessorParams) -> bool {
-    false
-}
-
-fn gpu_of(params: &ProcessorParams) -> GpuUse {
-    if let ProcessorParams::PassiveRadar(radar) = params {
-        radar.gpu
-    } else {
-        GpuUse::Off
     }
 }
 
@@ -293,8 +274,8 @@ impl Engine {
     pub fn processor_action(&self, node: &str, action: ProcessorAction) -> Result<(), EngineError> {
         let inner = self.lock();
         let (state, record) = processor(&inner, node)?;
-        if !record.takes_actions() {
-            return Err(EngineError::Processor(NO_TRACKS.to_owned()));
+        if !record.takes(action) {
+            return Err(EngineError::Processor(NO_ACTION.to_owned()));
         }
         if !record.installed {
             return Err(EngineError::Processor(
@@ -527,11 +508,11 @@ impl Engine {
         {
             return Ok(false);
         }
-        let (command, radar) = if previous.spec.params == spec.params {
+        let (command, dedicated) = if previous.spec.params == spec.params {
             (None, None)
-        } else if let Some(radar) = &previous.radar {
-            let (prepared, plan) =
-                prepare_dedicated(radar, &ctx, &spec.params, gpu_of(&spec.params))?;
+        } else if let Some(dedicated) = &previous.dedicated {
+            let gpu = (descriptor.gpu)(&spec.params);
+            let (prepared, plan) = dedicated.prepare(&ctx, &spec.params, gpu)?;
             let commit = Command::CommitDedicated {
                 node: spec.node.clone(),
                 prepared,
@@ -555,8 +536,8 @@ impl Engine {
             record.spec = spec.clone();
             record.needs = (descriptor.needs)(&spec.params);
             record.error = None;
-            if radar.is_some() {
-                record.radar = radar;
+            if dedicated.is_some() {
+                record.dedicated = dedicated;
             }
         }
         update_needs(state);
@@ -584,7 +565,6 @@ impl Engine {
             steer_in: view.steer_in,
             steer_out: view.steer_out.clone(),
             stats: stats.clone(),
-            gpu: gpu_of(&spec.params),
         };
         let built = ProcessorHost::build(plan, &view.frame)?;
         let ctx = view.shape.ctx(&spec.node, &view.frame);
@@ -604,7 +584,7 @@ impl Engine {
             kind: spec.params.type_id().to_owned(),
             lanes: opened.iter().map(|lane| lane.out.clone()).collect(),
             stats,
-            radar: built.radar,
+            dedicated: built.dedicated,
             needs: (descriptor.needs)(&spec.params),
             installed: true,
             error: None,

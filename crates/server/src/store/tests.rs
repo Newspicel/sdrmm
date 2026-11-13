@@ -2297,7 +2297,9 @@ fn a_stored_discord_output_reopens_as_a_webhook_in_the_discord_format() {
     assert_eq!(
         discord.target,
         sdrmm_wire::EventOutputTarget::Webhook {
-            url: "https://discord.com/api/webhooks/1/token".to_owned(),
+            url: sdrmm_wire::event_output::Secret::Inline(
+                "https://discord.com/api/webhooks/1/token".to_owned()
+            ),
             format: sdrmm_wire::WebhookFormat::Discord,
         }
     );
@@ -2612,7 +2614,7 @@ fn a_stored_retired_decoder_event_leaves_the_log() {
              ALTER TABLE workspace_history DROP COLUMN kind; \
              ALTER TABLE workspace_history DROP COLUMN undone_by; \
              ALTER TABLE workspaces ADD COLUMN history_at INTEGER NOT NULL DEFAULT 0; \
-             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas;",
+             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas; DROP TABLE secrets;",
         )
         .expect("drop the later tables");
     }
@@ -2649,7 +2651,7 @@ fn a_stored_broadcast_status_leaves_the_log() {
              ALTER TABLE workspace_history DROP COLUMN kind; \
              ALTER TABLE workspace_history DROP COLUMN undone_by; \
              ALTER TABLE workspaces ADD COLUMN history_at INTEGER NOT NULL DEFAULT 0; \
-             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas;",
+             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas; DROP TABLE secrets;",
         )
         .expect("undo the later migrations");
     }
@@ -2772,7 +2774,7 @@ fn the_author_migration_keeps_the_head_and_drops_the_redo_tail() {
              ALTER TABLE workspace_history DROP COLUMN kind; \
              ALTER TABLE workspace_history DROP COLUMN undone_by; \
              ALTER TABLE workspaces ADD COLUMN history_at INTEGER NOT NULL DEFAULT 0; \
-             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas;",
+             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas; DROP TABLE secrets;",
         )
         .expect("back to the shared history");
         let starter = serde_json::to_string(&WorkspaceSnapshot::starter()).expect("json");

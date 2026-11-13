@@ -12,13 +12,13 @@ covers the modes that need more than a frequency.
 | Analog voice | | | AM, NFM, SSB, WFM (broadcast) | |
 | Digital voice | DMR, FreeDV 1600, [TETRA](#tetra), [Tetrapol](#tetrapol) | | D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | |
 | Aviation | ADS-B (1090ES), ACARS, [Inmarsat Classic Aero](#inmarsat-and-iridium) | [Drone Remote ID](#drone-remote-id) | VDL Mode 2, High Frequency Data Link | VOR, ILS localizer / glideslope |
-| Marine | Digital Selective Calling, Inmarsat STD-C / EGC | | AIS, NAVTEX, [406 MHz beacons](#406-mhz-beacons) | |
+| Marine | Digital Selective Calling, Inmarsat STD-C / EGC | | AIS, NAVTEX | |
 | Amateur and HF | [FT8](#ft8-ft4-and-wspr) | | CW skimmer, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | |
-| Paging and telemetry | FLEX pager, Radio clock (DCF77 / WWVB / MSF / JJY), [End-of-Train](#end-of-train) | | POCSAG, Selcall (CCIR/ZVEI), ERMES pager | |
+| Paging and telemetry | FLEX pager, Radio clock (DCF77 / WWVB / MSF / JJY) | | POCSAG, Selcall (CCIR/ZVEI), ERMES pager | |
 | Pictures and video | | | [SSTV](#sstv), ATV | |
 | Weather and satellites | [Meteor LRPT](#weather-satellites) | | [WEFAX](#wefax), [NOAA APT](#weather-satellites), [Radiosonde](#radiosondes), [SAME alerts](#same-alerts) | |
 | Broadcast digital | | [DAB / DAB+](#dab-and-dab), [DRM30, DRM+](#drm) | | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy), [HF modems](#hf-modems), [Wireless M-Bus](#wireless-m-bus), [ISM sensors](#ism-sensors) | [Iridium bursts](#inmarsat-and-iridium) | [DECT](#dect), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [End-of-Train](#end-of-train), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy), [HF modems](#hf-modems), [Wireless M-Bus](#wireless-m-bus), [ISM sensors](#ism-sensors) | [Iridium bursts](#inmarsat-and-iridium) | [DECT](#dect), [406 MHz beacons](#406-mhz-beacons), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
@@ -42,16 +42,18 @@ recording came from.
 ## Trunking
 
 Add **Trunk system**, wire Device `iq`, and enter the control channel in MHz under **Control**.
-Set **Protocol** or leave it on **Auto-detect**. The node runs the channels it needs, on the
-first decoder that trunks (DMR) or the one picked under **Decoder**.
+Set **Protocol** or leave it on **Auto-detect**. The node runs the channels it needs on the
+decoder picked under **Decoder**: DMR by default, or P25 Phase 1.
 
 | Protocol | Finds its channels by |
 |---|---|
-| Tier III / Capacity Max | Reading the channel plan from the control channel |
-| Capacity Plus | **Search**: carriers that follow the same rest channel |
+| DMR Tier III / Capacity Max | Reading the channel plan from the control channel |
+| DMR Capacity Plus | **Search**: carriers that follow the same rest channel |
 | Hytera XPT | Same as Capacity Plus |
+| P25 trunking | Reading the channel identifiers from the control channel |
 
-**Range** narrows the search. Channels can also be entered in the plan table.
+**Range** narrows the search. Channels can also be entered in the plan table. Learned channels
+are kept per site, by DMR colour code or P25 NAC.
 
 **Priority** talkgroups take a receiver from other calls when all are busy, **Lockout**
 talkgroups are never followed, and **Only these** follows just the priority list. Each followed
@@ -81,7 +83,7 @@ Calls without their key stay muted.
 ## Vocoder chip
 
 DMR, NXDN, dPMR, System Fusion, P25 Phase 1 and D-STAR voice plays through blip25 in software.
-Servers built with the `dvsi` feature (`cargo build --features dvsi`) can use a DVSI AMBE-3000
+Servers built with the `dvsi` feature (`cargo build -p sdrmm --features dvsi`) can use a DVSI AMBE-3000
 or AMBE-3003 chip instead (ThumbDV, DV3000U, USB-3000, USB-3003): pick its serial port under
 **Vocoder**. A trunk node has its own **Vocoder** for the calls it follows.
 
@@ -155,8 +157,8 @@ widths. A burst whose checksum fails in every decoder counts under **Rejected**.
 ## Wireless M-Bus
 
 Reads water, heat, gas and electricity meters (EN 13757-4). One channel decodes modes T and C on
-868.95 MHz; tune 868.3 MHz for mode S, which only our own modulator has tested. Each frame shows the meter's manufacturer, ID and type, and
-the radio it came through when a repeater forwards it.
+868.95 MHz; tune 868.3 MHz for mode S, tested only against our own modulator. Each frame shows the
+meter's manufacturer, ID and type, and the repeater it came through.
 
 Most meters encrypt their readings. Add the meter ID and its AES key under **Keys** to open them;
 OMS security mode 5 and Kamstrup's ELL encryption are supported. Plain and decrypted frames list
@@ -256,9 +258,9 @@ as its six digits.
 
 ## Map
 
-Wire ADS-B, AIS, APRS, Radiosonde, LoRa, Drone Remote ID or Satellite `events` to **Map**. Each target draws its track. The
-gear at the bottom left picks the style, hides tracks, switches to a globe, or takes a custom URL: an XYZ template
-(`https://…/{z}/{x}/{y}.png`) or a MapLibre style URL, with any API key in the URL. The choice is
+Wire the `events` of any decoder that reports positions, such as ADS-B, AIS or APRS, to **Map**.
+Each target draws its track. The gear at the bottom left picks the style, hides tracks, switches to
+a globe, or takes a custom URL: an XYZ template (`https://…/{z}/{x}/{y}.png`) or a MapLibre style URL, with any API key in the URL. The choice is
 kept in this browser.
 
 ## APRS weather
@@ -286,8 +288,8 @@ Wire `audio` to a Speaker. **Mode** picks DRM30 (robustness A to D), DRM+ (E) or
 covers the DRM+ width. **BW** sets the DRM30 channel, 4.5 to 20 kHz; tune to the DRM reference
 frequency. **Service** picks one of up to four services; Auto plays the first playable one.
 
-AAC, HE-AAC, HE-AAC v2 and xHE-AAC play. The dynamic label shows the text message. SDC and text CRC failures count as data failures, broken audio frames as audio
-failures.
+AAC, HE-AAC, HE-AAC v2 and xHE-AAC play. The dynamic label shows the text message. SDC and text
+CRC failures count as data failures, broken audio frames as audio failures.
 
 ## DVB
 

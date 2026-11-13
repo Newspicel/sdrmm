@@ -19,9 +19,9 @@ import {
   type TraceState,
   traceOf,
 } from "../../components/spectrumTraces";
-import { viewWidth } from "../../components/spectrumView";
+import { FULL_VIEW, viewWidth } from "../../components/spectrumView";
 import { quantizeDb, VideoAverage } from "../../components/videoAverage";
-import { watchOnScreen } from "../../gl/onScreen";
+import { createDrawLoop, type DrawLoop } from "../../gl/drawLoop";
 import { attachWaterfall, type WaterfallView } from "../../gl/waterfall";
 import type { SpectrumFrame } from "../../lib/frame";
 import { SPECTRUM_SIGNAL_MARGIN_DB } from "../../lib/limits";
@@ -29,7 +29,14 @@ import { SPECTRUM_MAX_BINS, spectrumHub } from "../../lib/spectrum";
 import type { DeviceSet } from "../../lib/types";
 import type { IqLane } from "../lanes";
 import type { ScopeDisplay, ScopeLive } from "./scopeDisplay";
-import { DensityLayer, drawPlot, type PlotFrame, type PlotTrace, rollOffShare } from "./scopePlot";
+import {
+  DensityLayer,
+  drawPlot,
+  type PlotFrame,
+  type PlotOptions,
+  type PlotTrace,
+  rollOffShare,
+} from "./scopePlot";
 
 export const SCOPE_PORT = "iq";
 
@@ -53,6 +60,7 @@ export interface FeedState {
   clean: number | null;
   rate: number | null;
   reseed: number;
+  loop: DrawLoop | null;
   readonly tween: FrameTween;
   readonly readout: ReadoutHold;
   readonly video: VideoAverage;
@@ -82,6 +90,7 @@ function newFeedState(seed: SpectrumFrame | null): FeedState {
     clean: null,
     rate: null,
     reseed: 0,
+    loop: null,
     tween: new FrameTween(),
     readout: new ReadoutHold(),
     video: new VideoAverage(),
@@ -122,41 +131,101 @@ function waterfallRow(
   return held === null ? frame.bins : requantize(frame.bins, frameWindow(frame), held, scratch);
 }
 
-function plotSource(
-  frame: SpectrumFrame | null,
-  liveDb: Float32Array | null,
-  held: DbWindow | null,
-): { frame: PlotFrame | null; window: DbWindow } {
-  if (frame === null || liveDb === null) {
-    return { frame: null, window: held ?? EMPTY_WINDOW };
-  }
+interface PaintScratch {
+  readonly frame: PlotFrame;
+  readonly window: DbWindow;
+  readonly traces: PlotTrace[];
+  readonly slots: Record<TraceMode, PlotTrace>;
+  readonly options: PlotOptions;
+}
+
+function newPaintScratch(): PaintScratch {
+  const frame: PlotFrame = { centerHz: 0, spanHz: 0, signalDb: 0, db: new Float32Array(0) };
+  const window: DbWindow = { ...EMPTY_WINDOW };
+  const traces: PlotTrace[] = [];
+  const slot = (mode: TraceMode): PlotTrace => ({ mode, db: frame.db });
   return {
-    frame: {
-      centerHz: frame.centerHz,
-      spanHz: frame.spanHz,
-      signalDb: frame.floorDb + SPECTRUM_SIGNAL_MARGIN_DB,
-      db: liveDb,
-    },
-    window: held ?? frameWindow(frame),
+    frame,
+    window,
+    traces,
+    slots: { peak: slot("peak"), average: slot("average"), min: slot("min") },
+    options: { frame: null, view: FULL_VIEW, window, traces, density: null },
   };
 }
 
+function fillWindow(out: DbWindow, from: DbWindow | SpectrumFrame): void {
+  out.min = "min" in from ? from.min : from.dbMin;
+  out.max = "max" in from ? from.max : from.dbMax;
+}
+
+function plotSource(
+  scratch: PaintScratch,
+  frame: SpectrumFrame | null,
+  liveDb: Float32Array | null,
+  held: DbWindow | null,
+): PlotFrame | null {
+  if (frame === null || liveDb === null) {
+    fillWindow(scratch.window, held ?? EMPTY_WINDOW);
+    return null;
+  }
+  fillWindow(scratch.window, held ?? frame);
+  const out = scratch.frame;
+  out.centerHz = frame.centerHz;
+  out.spanHz = frame.spanHz;
+  out.signalDb = frame.floorDb + SPECTRUM_SIGNAL_MARGIN_DB;
+  out.db = liveDb;
+  return out;
+}
+
 function overlays(
+  scratch: PaintScratch,
   traces: TraceState | null,
   modes: readonly TraceMode[],
   frame: PlotFrame | null,
-): PlotTrace[] {
+): void {
+  const shown = scratch.traces;
+  shown.length = 0;
   if (traces === null || frame === null) {
-    return [];
+    return;
   }
-  const shown: PlotTrace[] = [];
   for (const mode of modes) {
     const db = traceOf(traces, mode);
     if (db.length === frame.db.length) {
-      shown.push({ mode, db });
+      const slot = scratch.slots[mode];
+      slot.db = db;
+      shown.push(slot);
     }
   }
-  return shown;
+}
+
+interface TraceInputs {
+  state: FeedState;
+  live: ScopeLive;
+  cursor: number | null;
+  density: DensityLayer | null;
+}
+
+/// Paints the trace once and tells whether the next frame is needed: a blend is still
+/// running or the cursor readout is live.
+function paintTrace(canvas: HTMLCanvasElement, scratch: PaintScratch, input: TraceInputs): boolean {
+  const { state, live, cursor, density } = input;
+  const now = performance.now();
+  const frame = plotSource(
+    scratch,
+    state.frame,
+    state.liveDb === null ? null : state.tween.sample(now),
+    live.range,
+  );
+  overlays(scratch, state.traces, live.modes, frame);
+  const options = scratch.options;
+  options.frame = frame;
+  options.view = live.view;
+  options.density = density;
+  options.cursor = cursor;
+  options.readout = state.readout;
+  options.rollOff = frame === null ? 0 : rollOffShare(state.clean, state.rate, frame.spanHz);
+  drawPlot(canvas, options);
+  return !state.tween.settled(now) || cursor !== null;
 }
 
 function seedHistory(node: string, state: FeedState, held: DbWindow | null): void {
@@ -221,6 +290,7 @@ function spectrumListener(
     }
     state.traces = accumulateTraces(state.traces, db);
     density.current?.add(db, live.current.view, window);
+    state.loop?.invalidate();
     count += 1;
     if (count === 1 || count % 8 === 0) {
       onMeta(metaOf(frame));
@@ -251,7 +321,6 @@ export function useScopeFeed(input: {
     seedFrame === null ? null : metaOf(seedFrame),
   );
   const [glError, setGlError] = useState<string | null>(null);
-  const [onScreen, setOnScreen] = useState(true);
   const [waterfall, setWaterfall] = useState<WaterfallBox>({ top: 0, height: 0, width: 0 });
 
   useLayoutEffect(() => {
@@ -261,6 +330,7 @@ export function useScopeFeed(input: {
     if (!active) {
       hoverRef.current = null;
     }
+    state.loop?.invalidate();
   });
 
   useEffect(() => {
@@ -312,37 +382,25 @@ export function useScopeFeed(input: {
   }, [setId, node, live, densityRef]);
 
   useEffect(() => {
-    const plot = traceRef.current;
-    return plot === null ? undefined : watchOnScreen(plot, setOnScreen);
-  }, [traceRef]);
-
-  useEffect(() => {
-    if (!onScreen) {
+    const canvas = traceRef.current;
+    if (canvas === null) {
       return;
     }
     const state = stateRef.current;
-    const pending = { raf: 0 };
-    const loop = () => {
-      const { frame, window } = plotSource(
-        state.frame,
-        state.liveDb === null ? null : state.tween.sample(performance.now()),
-        live.current.range,
-      );
-      drawPlot(traceRef.current, {
-        frame,
-        view: live.current.view,
-        window,
-        traces: overlays(state.traces, live.current.modes, frame),
-        density: densityRef.current,
-        cursor: hoverRef.current,
-        readout: state.readout,
-        rollOff: frame === null ? 0 : rollOffShare(state.clean, state.rate, frame.spanHz),
-      });
-      pending.raf = requestAnimationFrame(loop);
+    const scratch = newPaintScratch();
+    const inputs: TraceInputs = { state, live: live.current, cursor: null, density: null };
+    const loop = createDrawLoop(canvas, () => {
+      inputs.live = live.current;
+      inputs.cursor = hoverRef.current;
+      inputs.density = densityRef.current;
+      return paintTrace(canvas, scratch, inputs);
+    });
+    state.loop = loop;
+    return () => {
+      loop.dispose();
+      state.loop = null;
     };
-    pending.raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(pending.raf);
-  }, [onScreen, live, traceRef, hoverRef, densityRef]);
+  }, [live, traceRef, hoverRef, densityRef]);
 
   useEffect(() => {
     if (!display.phosphor) {

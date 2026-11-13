@@ -95,6 +95,8 @@ describe("trunk protocols", () => {
   it("names a slot only where a carrier holds more than one call", () => {
     expect(slotLabel(2, 2)).toBe("TS 2");
     expect(slotLabel(1, 1)).toBe("Call");
+    expect(slotLabel(null, 1)).toBe("Call");
+    expect(slotLabel(undefined, 2)).toBe("Call");
   });
 });
 
@@ -157,19 +159,21 @@ describe("site", () => {
 
 describe("DMR channel plan", () => {
   it("takes a logical channel and a frequency in MHz", () => {
-    expect(channelEntry(17, 451.0125)).toEqual({ lcn: 17, freq_hz: 451_012_500 });
+    expect(channelEntry(17, 451.0125, 4095)).toEqual({ lcn: 17, freq_hz: 451_012_500 });
   });
 
   it("waits for both halves before it makes an entry", () => {
-    expect(channelEntry(17, null)).toBeNull();
-    expect(channelEntry(null, 451.0125)).toBeNull();
+    expect(channelEntry(17, null, 4095)).toBeNull();
+    expect(channelEntry(null, 451.0125, 4095)).toBeNull();
   });
 
   it("refuses a channel or a frequency the system could never use", () => {
-    expect(channelEntry(-1, 451.0125)).toBeNull();
-    expect(channelEntry(99_999, 451.0125)).toBeNull();
-    expect(channelEntry(17.5, 451.0125)).toBeNull();
-    expect(channelEntry(17, 0)).toBeNull();
+    expect(channelEntry(-1, 451.0125, 4095)).toBeNull();
+    expect(channelEntry(4096, 451.0125, 4095)).toBeNull();
+    expect(channelEntry(0x1234, 851.06875, 65_535)).toEqual({ lcn: 0x1234, freq_hz: 851_068_750 });
+    expect(channelEntry(99_999, 451.0125, 65_535)).toBeNull();
+    expect(channelEntry(17.5, 451.0125, 4095)).toBeNull();
+    expect(channelEntry(17, 0, 4095)).toBeNull();
   });
 
   it("keeps the plan ordered by logical channel", () => {

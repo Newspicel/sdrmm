@@ -1,11 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
+    path::Path,
     sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::Duration,
 };
 
 use sdrmm_recorder::RecordedTrack;
-use sdrmm_wire::{NodeBody, PlaybackStatus, PositionFix};
+use sdrmm_wire::{NodeBody, PlaybackStatus, PositionFix, recording_stem_valid};
 use tokio::sync::watch;
 
 use super::{GpsHub, RouteState, limit_error};
@@ -14,6 +15,7 @@ use crate::{AppState, resolved::Resolved};
 const REPLAY_EVERY: Duration = Duration::from_millis(200);
 const NO_POSITIONS: &str = "no positions recorded";
 const NONE_HERE: &str = "no position recorded here";
+const NOT_A_RECORDING: &str = "not a recording name";
 
 /// A recording on a Device node whose position output is wired, played back in step with its IQ.
 pub(super) struct Replay {
@@ -36,11 +38,7 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 impl Replay {
     fn load(state: &AppState, stem: &str) -> Self {
-        let track = match state.engine.recordings_dir() {
-            Some(dir) => RecordedTrack::read(&dir.join(stem))
-                .map_err(|error| limit_error(format!("recorded positions: {error}"))),
-            None => Err("recording disabled".to_owned()),
-        };
+        let track = read_track(state.engine.recordings_dir(), stem);
         Self {
             stem: stem.to_owned(),
             track,
@@ -81,6 +79,16 @@ impl Replay {
             _ => (None, None),
         })
     }
+}
+
+/// Reads only a stem inside `dir`: the key comes from a saved graph and may name any path.
+fn read_track(dir: Option<&Path>, stem: &str) -> Result<RecordedTrack, String> {
+    let dir = dir.ok_or_else(|| "recording disabled".to_owned())?;
+    if !recording_stem_valid(stem) {
+        return Err(NOT_A_RECORDING.to_owned());
+    }
+    RecordedTrack::read(&dir.join(stem))
+        .map_err(|error| limit_error(format!("recorded positions: {error}")))
 }
 
 fn unreadable(track: &RecordedTrack) -> Option<String> {
@@ -166,5 +174,24 @@ impl GpsHub {
         for (node, fix, error) in due {
             self.publish_routed(route.clone(), &node, fix, error);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stem_outside_the_library_is_never_read() {
+        let dir = tempfile::tempdir().expect("dir");
+        for stem in ["../escape", "/etc/passwd", "..", ""] {
+            assert_eq!(
+                read_track(Some(dir.path()), stem).err().as_deref(),
+                Some(NOT_A_RECORDING),
+                "{stem}"
+            );
+        }
+        let missing = read_track(Some(dir.path()), "absent").expect_err("no such recording");
+        assert!(missing.starts_with("recorded positions"), "{missing}");
     }
 }

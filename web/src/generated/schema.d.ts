@@ -1156,33 +1156,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/radar/{node}": {
+    "/api/processors/{node}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["get_radar"];
+        get: operations["get_processor"];
         put?: never;
         post?: never;
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/radar/{node}/tracks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["clear_radar_tracks"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1343,6 +1327,38 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["delete_saved_radio"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_secret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/secrets/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_secret"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1733,6 +1749,12 @@ export interface components {
             server_id: string;
             server_name: string;
             version: string;
+        };
+        /** @description A button a processor face shows for one of its actions. */
+        ActionSpec: {
+            action: components["schemas"]["ProcessorAction"];
+            label: string;
+            title: string;
         };
         /** @enum {string} */
         Adaptation: "nlms" | "rls";
@@ -2628,6 +2650,19 @@ export interface components {
         };
         /** @enum {string} */
         BearingSource: "array" | "sweep" | "mark";
+        /** @description Bearings relative to the array; `heading_deg` turns them to true north. */
+        BearingView: {
+            /** Format: double */
+            heading_deg?: number | null;
+            needles: components["schemas"]["Needle"][];
+            /**
+             * Format: float
+             * @description The spread of the first needle.
+             */
+            sigma_deg?: number | null;
+            /** @description Levels round the circle from the array's forward direction, clockwise. */
+            spectrum: number[];
+        };
         Bookmark: {
             /** Format: double */
             freq_hz: number;
@@ -2724,6 +2759,11 @@ export interface components {
             catalog: string;
             name: string;
             tle: string;
+        };
+        Cell: {
+            faint?: boolean;
+            text: string;
+            title?: string | null;
         };
         CfarKind: {
             /** @enum {string} */
@@ -3987,6 +4027,17 @@ export interface components {
         };
         /** @enum {string} */
         Duplex: "rx_only" | "tx_only" | "half" | "full";
+        EllipseView: {
+            /** Format: float */
+            angle_deg: number;
+            /** Format: float */
+            ellipticity_deg: number;
+            /**
+             * Format: float
+             * @description Its sign gives the sense of rotation.
+             */
+            v: number;
+        };
         Entity: {
             event: components["schemas"]["DecoderEvent"];
             first_seen: string;
@@ -4098,22 +4149,22 @@ export interface components {
             format?: components["schemas"]["WebhookFormat"];
             /** @enum {string} */
             service: "webhook";
-            url: string;
+            url: components["schemas"]["Secret"];
         } | {
-            access_token: string;
+            access_token: components["schemas"]["Secret"];
             homeserver_url: string;
             room_id: string;
             /** @enum {string} */
             service: "matrix";
         } | {
             broker_url: string;
-            password?: string;
+            password?: components["schemas"]["Secret"];
             /** @enum {string} */
             service: "mqtt";
             topic: string;
             username?: string;
         } | {
-            password?: string;
+            password?: components["schemas"]["Secret"];
             /** @enum {string} */
             service: "postgres";
             table: string;
@@ -4124,7 +4175,7 @@ export interface components {
             org?: string;
             /** @enum {string} */
             service: "influx";
-            token?: string;
+            token?: components["schemas"]["Secret"];
             url: string;
         };
         ExampleInfo: {
@@ -4266,6 +4317,12 @@ export interface components {
         };
         /** @enum {string} */
         FilterMode: "keep" | "drop";
+        /** @description A condition a face shows as a chip. */
+        Flag: {
+            danger?: boolean;
+            label: string;
+            title: string;
+        };
         FmChannel: {
             admit?: components["schemas"]["Admit"];
             bandwidth?: components["schemas"]["Bandwidth"];
@@ -4343,6 +4400,11 @@ export interface components {
         Hand: "right" | "left" | "linear";
         /** @enum {string} */
         HeadingSource: "compass" | "course" | "fused" | "gnss" | "sensor";
+        /** @description The face's subtitle when a reading has more to say than the lane count. */
+        Headline: {
+            text: string;
+            warn?: boolean;
+        };
         Held: {
             /** @enum {string} */
             by: "hand";
@@ -4591,6 +4653,17 @@ export interface components {
             /** Format: double */
             lon: number;
         };
+        /** @description One of several layers a surface holds, such as a baseline. */
+        Layer: {
+            label: string;
+            /**
+             * Format: float
+             * @description Followed over time while the layer is shown.
+             */
+            phase_deg?: number | null;
+            text: string;
+            title: string;
+        };
         LicenseTextResponse: {
             id: string;
             text: string;
@@ -4632,6 +4705,28 @@ export interface components {
             message: string;
             target: string;
         };
+        /** @description A point on a surface, in the surface's own axes. */
+        Mark: {
+            faint?: boolean;
+            /** Format: int32 */
+            key?: number | null;
+            label?: string | null;
+            shape: components["schemas"]["MarkShape"];
+            title?: string | null;
+            /** @description Where it was before, oldest first. */
+            trail?: number[][];
+            /**
+             * Format: double
+             * @description `y` from true north, for a surface with a bearing axis.
+             */
+            true_y?: number | null;
+            /** Format: double */
+            x: number;
+            /** Format: double */
+            y: number;
+        };
+        /** @enum {string} */
+        MarkShape: "dot" | "cross" | "square" | "triangle";
         MdnsState: {
             /** @enum {string} */
             state: "off";
@@ -5030,6 +5125,15 @@ export interface components {
         };
         /** @enum {string} */
         NavTargetKind: "probe" | "estimate";
+        Needle: {
+            /** Format: float */
+            relative_deg: number;
+            /** Format: float */
+            true_deg?: number | null;
+            weight: components["schemas"]["NeedleWeight"];
+        };
+        /** @enum {string} */
+        NeedleWeight: "primary" | "secondary" | "mirror";
         /** @enum {string} */
         NetworkExportAction: "start" | "stop";
         NetworkExportNode: components["schemas"]["NetworkExportSettings"];
@@ -5100,6 +5204,9 @@ export interface components {
         } | {
             /** @enum {string} */
             result: "sent";
+        } | {
+            /** @enum {string} */
+            result: "processed";
         };
         NodeAction: {
             /** @enum {string} */
@@ -5138,6 +5245,11 @@ export interface components {
             /** @enum {string} */
             action: "send";
             with: components["schemas"]["ModulatorMessage"];
+        } | {
+            /** @enum {string} */
+            action: "processor";
+            /** @description One of the actions a processor declares. */
+            with: components["schemas"]["ProcessorAction"];
         };
         NodeBody: {
             data: components["schemas"]["DeviceNode"];
@@ -5320,6 +5432,7 @@ export interface components {
             /** @description A node of this kind runs one of the catalog's `processors`. */
             needs_processor_type?: boolean;
             ports: components["schemas"]["PortSpec"][];
+            processor?: components["schemas"]["ProcessorFacets"] | null;
             role: components["schemas"]["Role"];
             /** @description The form a face renders for this node's settings, in order. */
             settings?: components["schemas"]["SettingField"][];
@@ -5612,6 +5725,14 @@ export interface components {
         PatchRefusal: {
             node: string;
             reason: string;
+        };
+        PatternView: {
+            nulls_deg: number[];
+            /** @description Levels round the circle from the array's forward direction, clockwise. */
+            pattern: number[];
+            /** Format: float */
+            steer_deg?: number | null;
+            weights: components["schemas"]["LaneWeight"][];
         };
         Payload: {
             origins: components["schemas"]["IqOrigin"][];
@@ -6039,6 +6160,23 @@ export interface components {
         };
         /** @enum {string} */
         ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "transmit";
+        /**
+         * @description Something an operator asks a running processor to do.
+         * @enum {string}
+         */
+        ProcessorAction: "clear_tracks";
+        /** @description What a processor declares about its face. */
+        ProcessorFacets: {
+            /** @default [] */
+            actions: components["schemas"]["ActionSpec"][];
+            /** @default null */
+            tuning: components["schemas"]["ArrayTuningMode"] | null;
+            /**
+             * @description Widgets in the order the face draws them.
+             * @default []
+             */
+            views: components["schemas"]["ViewSpec"][];
+        };
         /** @enum {string} */
         ProcessorGate: "sync" | "phase" | "gain" | "calibrating" | "retuning" | "tier" | "tuning_mode";
         /** @description A patch node running a plugin processor. */
@@ -6110,6 +6248,7 @@ export interface components {
             defaults?: unknown;
             /** @description Kinds of the events it emits, each one the plugin declares. */
             emits?: components["schemas"]["EventKind"][];
+            facets?: components["schemas"]["ProcessorFacets"];
             /** Format: int32 */
             max_lanes?: number;
             /** Format: int32 */
@@ -6121,6 +6260,16 @@ export interface components {
             settings?: components["schemas"]["SettingField"][];
             summary?: string;
             type_id: string;
+        };
+        /** @description What one reading puts on its processor's face. */
+        ProcessorView: {
+            bearing?: components["schemas"]["BearingView"] | null;
+            ellipse?: components["schemas"]["EllipseView"] | null;
+            flags?: components["schemas"]["Flag"][];
+            headline?: components["schemas"]["Headline"] | null;
+            pattern?: components["schemas"]["PatternView"] | null;
+            surface?: components["schemas"]["SurfaceView"] | null;
+            table?: components["schemas"]["TableView"] | null;
         };
         PropagationCell: {
             /** Format: double */
@@ -6962,6 +7111,17 @@ export interface components {
             /** Format: int32 */
             stop_min: number;
         };
+        /**
+         * @description A credential an output needs. The server keeps the value in its own store and a workspace
+         *     names it by id, so an export never carries it and another server asks for it again.
+         */
+        Secret: {
+            secret: string;
+        } | string;
+        /** @description A credential to keep in the server's store. */
+        SecretValue: {
+            value: string;
+        };
         SerialDeviceInfo: {
             manufacturer?: string | null;
             path: string;
@@ -7138,6 +7298,8 @@ export interface components {
                 reading: components["schemas"]["ProcessorReading"];
                 /** @description Readouts and health derived from `reading`, for any face to show. */
                 status?: components["schemas"]["ChannelStatus"];
+                /** @description What `reading` puts on the face, derived from it. */
+                view?: components["schemas"]["ProcessorView"];
             };
             /** @enum {string} */
             type: "ProcessorUpdate";
@@ -7632,6 +7794,12 @@ export interface components {
         };
         /** @enum {string} */
         SurfaceRefusal: "no_surface" | "fit_not_positive" | "no_stream_ids";
+        SurfaceView: {
+            /** Format: double */
+            heading_deg?: number | null;
+            layers?: components["schemas"]["Layer"][];
+            marks?: components["schemas"]["Mark"][];
+        };
         SurveillanceSet: {
             /** @enum {string} */
             kind: "all_others";
@@ -7724,6 +7892,22 @@ export interface components {
         Symbol: string;
         /** @enum {string} */
         SyncState: "idle" | "searching" | "locked" | "drifting" | "lost";
+        TableRow: {
+            cells: components["schemas"]["Cell"][];
+            dim?: boolean;
+            /**
+             * Format: int32
+             * @description Ties the row to the surface mark with the same key.
+             */
+            key: number;
+            /** @description The row can be picked to pick its mark. */
+            pick?: boolean;
+            title?: string | null;
+        };
+        TableView: {
+            heads: string[];
+            rows: components["schemas"]["TableRow"][];
+        };
         Tap: {
             /** Format: int32 */
             device_set: number;
@@ -8057,8 +8241,11 @@ export interface components {
             group_call?: boolean | null;
             /** Format: int32 */
             logical_channel?: number | null;
-            /** Format: int32 */
-            slot: number;
+            /**
+             * Format: int32
+             * @description The timeslot, on a protocol that shares a carrier between calls.
+             */
+            slot?: number | null;
             /** Format: int32 */
             source?: number | null;
         };
@@ -8104,7 +8291,7 @@ export interface components {
             reason: string;
             since: string;
             /** Format: int32 */
-            slot: number;
+            slot?: number | null;
         };
         TrunkScheme: {
             id: string;
@@ -8119,7 +8306,10 @@ export interface components {
             /** Format: int64 */
             step_hz: number;
         };
-        /** @description The identity a site broadcasts on its control channel. */
+        /**
+         * @description The identity a site broadcasts on its control channel, each part as wide as the protocol
+         *     numbers it.
+         */
         TrunkSite: {
             /** Format: int32 */
             network_id?: number | null;
@@ -8128,10 +8318,21 @@ export interface components {
             /** Format: int32 */
             system_id?: number | null;
         };
-        /** @description How a decoder trunks: the protocols it recognises and how many calls share a carrier. */
+        /**
+         * @description How a decoder trunks: the protocols it recognises, how many calls share a carrier and how
+         *     far its logical channels are numbered.
+         */
         TrunkSpec: {
+            /**
+             * Format: int32
+             * @description The highest logical channel number the protocol can name.
+             */
+            max_channel?: number;
             schemes: components["schemas"]["TrunkScheme"][];
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Timeslots per carrier; one on a protocol that gives every call a carrier of its own.
+             */
             slots: number;
             /** @description Followed calls can play through a vocoder chip. */
             vocoder?: boolean;
@@ -8146,7 +8347,10 @@ export interface components {
             /** Format: int32 */
             carriers: number;
             channel_map?: components["schemas"]["TrunkChannel"][];
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description The code the site keys its bursts with: a colour code, NAC or RAN, as the protocol names it.
+             */
             color_code?: number | null;
             control?: components["schemas"]["TrunkControl"] | null;
             detected?: string | null;
@@ -8200,6 +8404,24 @@ export interface components {
             pid: number;
             /** Format: int32 */
             vid: number;
+        };
+        /** @description A widget on a processor face. */
+        ViewSpec: {
+            /** @enum {string} */
+            view: "bearing";
+        } | {
+            /** @enum {string} */
+            view: "pattern";
+        } | {
+            /** @enum {string} */
+            view: "ellipse";
+        } | {
+            stream: components["schemas"]["StreamKind"];
+            /** @enum {string} */
+            view: "surface";
+        } | {
+            /** @enum {string} */
+            view: "table";
         };
         VirtualLane: {
             /** Format: double */
@@ -11576,68 +11798,29 @@ export interface operations {
             };
         };
     };
-    get_radar: {
+    get_processor: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Passive radar node id */
+                /** @description Array processor node id */
                 node: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description The latest radar picture */
+            /** @description The reading the processor shows now */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RadarUpdate"];
+                    "application/json": components["schemas"]["ProcessorReading"];
                 };
             };
-            /** @description No radar with that id */
+            /** @description No reading from that node */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    clear_radar_tracks: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Passive radar node id */
-                node: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Every track dropped */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description No radar with that id */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description The radar cannot drop its tracks now */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12085,6 +12268,91 @@ export interface operations {
             };
             /** @description Saved radio not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    create_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretValue"];
+            };
+        };
+        responses: {
+            /** @description Kept on this server under a fresh id. A workspace names the id, never the value */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Secret"];
+                };
+            };
+            /** @description Empty or too long */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    put_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Secret id a workspace names */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretValue"];
+            };
+        };
+        responses: {
+            /** @description Kept on this server under that id */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unusable id, or the value is empty or too long */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

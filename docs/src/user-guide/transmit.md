@@ -12,6 +12,7 @@ before you arm.
 |---|---|---|
 | HackRF One | Half | Receive pauses for each burst. The 14 dB amp is shared by receive and transmit |
 | ADALM-Pluto, AntSDR | Full | TX attenuation per lane on the Device |
+| Aaronia SPECTRAN V6 | Half | If the unit opens as a transmitter. Receive pauses while it sends |
 | bladeRF, LimeSDR, USRP (Soapy) | Per board | One `TX` gain per element the board has, set alike on every transmit channel |
 | Transceiver, Half-duplex (virtual) | Full, half | Debug builds. What one virtual radio sends, the others hear |
 

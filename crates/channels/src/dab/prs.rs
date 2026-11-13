@@ -212,7 +212,7 @@ mod tests {
     fn the_reference_symbol_reveals_integer_offset_and_timing() {
         for transmission in TRANSMISSION_MODES {
             let mode = Mode::new(transmission);
-            let iq = synth::dab::ensemble_for_mode(transmission, 1);
+            let iq = synth::dab::ensemble_for_mode(transmission, 1).expect("a synthetic signal");
             let mut probe = PrsProbe::for_mode(transmission);
             for (bins, offset) in [(0, 0i32), (3, -5), (-4, -7)] {
                 let start = (mode.null + mode.guard) as i32 + offset;
@@ -235,7 +235,7 @@ mod tests {
     fn a_large_offset_is_not_taken_for_its_mirrored_phase_table() {
         let transmission = DabTransmissionMode::I;
         let mode = Mode::new(transmission);
-        let iq = synth::dab::ensemble_for_mode(transmission, 1);
+        let iq = synth::dab::ensemble_for_mode(transmission, 1).expect("a synthetic signal");
         let mut probe = PrsProbe::for_mode(transmission);
         let start = mode.null + mode.guard - mode.backoff();
         for bins in [-31, 33, -40] {
@@ -252,7 +252,7 @@ mod tests {
     fn the_first_path_leads_a_stronger_echo() {
         let transmission = DabTransmissionMode::Ii;
         let mode = Mode::new(transmission);
-        let clean = synth::dab::ensemble_for_mode(transmission, 1);
+        let clean = synth::dab::ensemble_for_mode(transmission, 1).expect("a synthetic signal");
         let mut echoed = clean.clone();
         for index in 40..echoed.len() {
             echoed[index] += clean[index - 40] * 1.5;

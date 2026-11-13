@@ -1,4 +1,6 @@
-use sdrmm_wire::{ControlAck, ControlCommand, NodeActed, NodeAction, SweepJob};
+use sdrmm_channels::array_processor::descriptor_for;
+use sdrmm_engine::EngineError;
+use sdrmm_wire::{ControlAck, ControlCommand, NodeActed, NodeAction, ProcessorAction, SweepJob};
 
 use super::*;
 
@@ -7,6 +9,8 @@ mod retype;
 mod tune;
 
 pub(crate) use tune::{Tuner, tune as tune_node};
+
+const NOT_RUNNING: &str = "Not running";
 
 #[utoipa::path(
     post, path = "/api/workspaces/active/nodes/{node}/actions",
@@ -68,7 +72,31 @@ pub(crate) fn act(
         NodeAction::Send(sent) => {
             crate::transmit::send(state, node, &sent.message).map(|()| NodeActed::Sent)
         }
+        NodeAction::Processor(action) => {
+            processor(state, node, action).map(|()| NodeActed::Processed)
+        }
     }
+}
+
+fn processor(state: &AppState, node: &str, action: ProcessorAction) -> Result<(), AppError> {
+    let resolved = state.resolved.current();
+    let takes = node_of(&resolved, node)?
+        .body
+        .processor_params()
+        .and_then(|params| descriptor_for(&params))
+        .is_some_and(|descriptor| descriptor.takes(action));
+    if !takes {
+        return Err(takes_no_such_action(node));
+    }
+    state
+        .engine
+        .processor_action(node, action)
+        .map_err(|error| match error {
+            EngineError::ProcessorNotFound(_) => AppError::conflict(NOT_RUNNING),
+            other => AppError::conflict(other.to_string()),
+        })?;
+    state.reports.act(node, action);
+    Ok(())
 }
 
 fn control(state: &AppState, node: &str, action: NodeAction) -> Result<Vec<ControlAck>, AppError> {

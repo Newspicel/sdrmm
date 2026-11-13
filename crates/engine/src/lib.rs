@@ -53,6 +53,7 @@ mod placement;
 mod planning;
 mod position;
 mod publishing;
+mod reattach;
 pub mod recording;
 mod refusal;
 mod reopen;
@@ -600,6 +601,7 @@ struct NetworkExportState {
     sample_rate: u64,
     center_hz: i64,
     shared: Arc<NetworkExportShared>,
+    refeed: Option<network_export::NetworkRefeed>,
     writer: Option<JoinHandle<()>>,
     overruns_at_start: u64,
     samples_seen: u64,
@@ -627,7 +629,7 @@ impl NetworkExportState {
             bytes: self.shared.bytes(),
             packets: self.shared.packets(),
             clients: self.shared.clients(),
-            overruns: overruns_now - self.overruns_at_start,
+            overruns: overruns_now.saturating_sub(self.overruns_at_start),
             error: self.shared.error(),
         }
     }
@@ -648,7 +650,7 @@ impl RecordingState {
             started_at: self.started_at.clone(),
             samples: self.shared.samples(),
             bytes: self.shared.bytes(),
-            overruns: overruns_now - self.overruns_at_start,
+            overruns: overruns_now.saturating_sub(self.overruns_at_start),
             error: self.shared.error(),
         }
     }
@@ -682,6 +684,7 @@ struct DeviceSetState {
     rate_patches: u32,
     cmd_txs: Vec<mpsc::Sender<DspCommand>>,
     overruns: Vec<Arc<AtomicU64>>,
+    overruns_retired: u64,
     overruns_seen: u64,
     overruns_polled: Option<Instant>,
     loss: Option<f32>,
@@ -694,6 +697,22 @@ struct DeviceSetState {
     held: BTreeMap<u32, String>,
     locked: BTreeSet<u32>,
     virtual_lanes: BTreeMap<u32, VirtualLaneState>,
+}
+
+struct OverrunMeter {
+    retired: u64,
+    counters: Vec<Arc<AtomicU64>>,
+}
+
+impl OverrunMeter {
+    fn total(&self) -> u64 {
+        self.retired
+            + self
+                .counters
+                .iter()
+                .map(|counter| counter.load(Ordering::Relaxed))
+                .sum::<u64>()
+    }
 }
 
 struct VirtualLaneState {
@@ -815,7 +834,7 @@ impl DeviceSetState {
                     ..channel.clone()
                 })
                 .collect(),
-            overruns,
+            overruns: self.overruns_live(),
             loss: self.loss,
             clipping: self.clipping.clone(),
             error: self.error.clone(),
@@ -948,11 +967,32 @@ impl DeviceSetState {
         })
     }
 
-    fn overruns_total(&self) -> u64 {
+    /// Overruns of the running capture. A restarted runtime counts from zero again.
+    fn overruns_live(&self) -> u64 {
         self.overruns
             .iter()
             .map(|counter| counter.load(Ordering::Relaxed))
             .sum()
+    }
+
+    /// Every overrun since the set opened, the baseline of sinks that outlive a runtime restart.
+    /// What replaced runtimes counted is carried in `overruns_retired`, so it never steps back.
+    fn overruns_total(&self) -> u64 {
+        self.overruns_retired + self.overruns_live()
+    }
+
+    /// Reads `overruns_total` later, outside the engine lock.
+    fn overrun_meter(&self) -> OverrunMeter {
+        OverrunMeter {
+            retired: self.overruns_retired,
+            counters: self.overruns.clone(),
+        }
+    }
+
+    fn adopt_overruns(&mut self, counters: Vec<Arc<AtomicU64>>) {
+        self.overruns_retired = self.overruns_total();
+        self.overruns = counters;
+        self.overruns_seen = 0;
     }
 
     fn runs_agc(&self) -> bool {

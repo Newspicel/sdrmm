@@ -57,10 +57,13 @@ fn stored(path: &Path) -> anyhow::Result<Option<String>> {
     }
 }
 
+/// Hides the token from the diagnostics log before returning it, so the line that announces it
+/// reaches only the console.
 fn mint(path: &Path) -> anyhow::Result<String> {
     let mut bytes = [0; TOKEN_BYTES];
     getrandom::fill(&mut bytes).map_err(|error| anyhow::anyhow!("no randomness: {error}"))?;
     let token: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    sdrmm_server::diagnostics::hide_secret(&token);
     write_private(path, &token).with_context(|| format!("cannot write {}", path.display()))?;
     Ok(token)
 }
@@ -144,6 +147,18 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn the_minted_token_is_hidden_from_diagnostics() {
+        let dir = tempfile::tempdir().expect("dir");
+        let token = resolve(open(), None, false, false, dir.path())
+            .expect("resolve")
+            .expect("minted");
+        assert_eq!(
+            sdrmm_server::diagnostics::redact_text(&format!("/?token={token}")),
+            "/?token=<redacted>"
+        );
     }
 
     #[test]

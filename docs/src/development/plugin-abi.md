@@ -15,7 +15,8 @@ A plugin is a core WebAssembly module. Rust gets the SDK; any other language tha
 
 ## Module rules
 
-- Export the linear memory as `memory`.
+- Export the linear memory as `memory`, your only one. It grows to at most 256 MiB; a larger
+  `memory.grow` fails.
 - Import nothing but the `sdrmm` module below: no WASI, no `env`. An unknown import fails the
   load.
 - Numbers in memory are little-endian. Strings are UTF-8 JSON.

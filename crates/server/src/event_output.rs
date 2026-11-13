@@ -4,6 +4,7 @@ use std::{
 };
 
 use axum::body::Bytes;
+use futures::FutureExt;
 use reqwest::{Client, Response, Url, multipart};
 use rumqttc::{
     AsyncClient, AsyncClientBuilder, Event, EventLoop, MqttOptions, Outgoing, Packet,
@@ -13,7 +14,7 @@ use sdrmm_engine::Engine;
 use sdrmm_recorder::{AUDIO_SUFFIX, audio_stem, save_unique};
 use sdrmm_wire::{
     DecodedRecord, EVENTS_PORT, EventOutputTarget, NodeBody, StateScope, WebhookFormat,
-    present::Presentation,
+    event_output::Secret, present::Presentation,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -22,7 +23,7 @@ use tokio::sync::{
     mpsc, watch,
 };
 
-use crate::{NativeShell, calls::Calls, decoded::Decoded, resolved::Resolved};
+use crate::{NativeShell, Store, calls::Calls, decoded::Decoded, resolved::Resolved};
 
 pub(crate) mod csv;
 mod feed;
@@ -118,7 +119,9 @@ pub(crate) async fn run(
     mut patch: watch::Receiver<Arc<Resolved>>,
     calls: Arc<Calls>,
     shell: Option<Arc<dyn NativeShell>>,
+    store: Arc<Store>,
 ) {
+    let mut secret_changes = store.subscribe_secrets();
     let mut decoded = decoded;
     let client = match Client::builder()
         .timeout(REQUEST_TIMEOUT)
@@ -132,37 +135,44 @@ pub(crate) async fn run(
         }
     };
     let statuses = status::Statuses::default();
-    let (delivery_tx, delivery_rx) = mpsc::channel(DELIVERY_QUEUE);
-    let worker = tokio::spawn(deliver_all(
-        Senders {
-            client,
-            engine: engine.clone(),
-            shell,
-        },
-        delivery_rx,
-        statuses.clone(),
-    ));
+    let senders = Senders {
+        client,
+        engine: engine.clone(),
+        shell,
+        store: store.clone(),
+    };
+    let (mut delivery_tx, mut worker) = spawn_worker(&senders, &statuses);
     let mut routing = routing_of(&patch.borrow_and_update());
     let mut tunnels = tunnel::Outputs::new(statuses.clone());
     let mut feeds = feed::Outputs::default();
     configure(&routing, &mut tunnels, &mut feeds, &statuses);
+    check_secrets(&store, &routing.bindings, &statuses).await;
     let mut status_tick = tokio::time::interval(Duration::from_secs(1));
     let mut decoded_open = true;
     let mut decoded_sequence = 0_u64;
     loop {
         tokio::select! {
             _ = status_tick.tick() => {
+                feeds.retry();
                 if let Some(engine) = engine.upgrade() {
                     feeds.publish_status(&engine);
                     statuses.publish(&engine);
                 }
             },
+            ended = &mut worker => {
+                worker_ended(ended, &statuses);
+                (delivery_tx, worker) = spawn_worker(&senders, &statuses);
+            },
             changed = patch.changed() => match changed {
                 Ok(()) => {
                     routing = routing_of(&patch.borrow_and_update());
                     configure(&routing, &mut tunnels, &mut feeds, &statuses);
+                    check_secrets(&store, &routing.bindings, &statuses).await;
                 }
                 Err(_) => break,
+            },
+            Ok(()) = secret_changes.changed() => {
+                check_secrets(&store, &routing.bindings, &statuses).await;
             },
             record = decoded.recv(), if decoded_open => match record {
                 Ok(Decoded::Record(routed)) => {
@@ -186,6 +196,26 @@ pub(crate) async fn run(
     let _ = worker.await;
 }
 
+fn spawn_worker(
+    senders: &Senders,
+    statuses: &status::Statuses,
+) -> (mpsc::Sender<Delivery>, tokio::task::JoinHandle<()>) {
+    let (delivery_tx, delivery_rx) = mpsc::channel(DELIVERY_QUEUE);
+    let worker = tokio::spawn(deliver_all(senders.clone(), delivery_rx, statuses.clone()));
+    (delivery_tx, worker)
+}
+
+/// The worker only ends on its own when something escaped the per-batch guard. Every output
+/// hears why, and the caller starts a fresh worker.
+fn worker_ended(ended: Result<(), tokio::task::JoinError>, statuses: &status::Statuses) {
+    let reason = match ended {
+        Ok(()) => "Delivery worker stopped, restarted".to_owned(),
+        Err(error) => format!("Delivery worker failed, restarted: {error}"),
+    };
+    tracing::error!(%reason, "event output delivery worker ended");
+    statuses.fault(&reason);
+}
+
 fn configure(
     routing: &Routing,
     tunnels: &mut tunnel::Outputs,
@@ -195,6 +225,34 @@ fn configure(
     statuses.configure(&routing.bindings);
     tunnels.configure(&routing.bindings);
     feeds.configure(&routing.bindings);
+}
+
+/// An output whose credential this server lacks says so before an event finds out.
+async fn check_secrets(store: &Arc<Store>, bindings: &[Binding], statuses: &status::Statuses) {
+    for binding in bindings {
+        let problem = reveal(store, &binding.target).await.err();
+        statuses.unresolved(&binding.node, problem.map(|problem| problem.to_string()));
+    }
+}
+
+/// The credential a delivery sends, read from this server's store when the workspace names it.
+async fn reveal(store: &Arc<Store>, target: &EventOutputTarget) -> Result<String, DeliveryError> {
+    let Some((what, secret)) = target.secret() else {
+        return Ok(String::new());
+    };
+    let Secret::Stored { secret: id } = secret else {
+        return Ok(secret.inline().unwrap_or_default().to_owned());
+    };
+    let (store, id) = (store.clone(), id.clone());
+    let value = tokio::task::spawn_blocking(move || store.secret(&id))
+        .await
+        .map_err(|error| DeliveryError::Failed(format!("{what}: {error}")))?
+        .map_err(|error| DeliveryError::Failed(format!("{what}: {error}")))?
+        .ok_or_else(|| DeliveryError::Failed(format!("{what} is not set on this server")))?;
+    if !target.accepts_secret(&value) {
+        return Err(DeliveryError::Failed(format!("{what} is not valid")));
+    }
+    Ok(value)
 }
 
 fn enqueue(delivery_tx: &mpsc::Sender<Delivery>, statuses: &status::Statuses, delivery: Delivery) {
@@ -317,10 +375,12 @@ fn routing_of(resolved: &Resolved) -> Routing {
     Routing { bindings }
 }
 
+#[derive(Clone)]
 struct Senders {
     client: Client,
     engine: std::sync::Weak<Engine>,
     shell: Option<Arc<dyn NativeShell>>,
+    store: Arc<Store>,
 }
 
 async fn deliver_all(
@@ -334,6 +394,7 @@ async fn deliver_all(
         for batch in pending.chunk_by(same_batch) {
             let outputs = Outputs {
                 client: &senders.client,
+                store: &senders.store,
                 databases: &mut databases,
                 engine: &senders.engine,
                 shell: senders.shell.as_ref(),
@@ -341,13 +402,32 @@ async fn deliver_all(
             let Some(first) = batch.first() else {
                 continue;
             };
-            match deliver_with_retries(outputs, batch).await {
+            match guarded(deliver_with_retries(outputs, batch)).await {
                 Ok(()) => statuses.delivered(&first.node, batch.len()),
                 Err(error) => statuses.failed(&first.node, batch.len(), error.to_string()),
             }
         }
         pending.clear();
     }
+}
+
+/// A panic while delivering one batch fails that batch and leaves the worker serving the rest.
+async fn guarded(
+    delivery: impl std::future::Future<Output = Result<(), DeliveryError>>,
+) -> Result<(), DeliveryError> {
+    std::panic::AssertUnwindSafe(delivery)
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|panic| Err(DeliveryError::Failed(panic_reason(panic.as_ref()))))
+}
+
+fn panic_reason(panic: &(dyn std::any::Any + Send)) -> String {
+    let detail = panic
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("unknown cause");
+    format!("Delivery crashed: {detail}")
 }
 
 fn same_batch(first: &Delivery, next: &Delivery) -> bool {
@@ -369,6 +449,7 @@ fn batch_name(batch: &[Delivery]) -> String {
 
 struct Outputs<'a> {
     client: &'a Client,
+    store: &'a Arc<Store>,
     databases: &'a mut postgres::Connections,
     engine: &'a std::sync::Weak<Engine>,
     shell: Option<&'a Arc<dyn NativeShell>>,
@@ -420,6 +501,7 @@ async fn deliver(outputs: &mut Outputs<'_>, batch: &[Delivery]) -> Result<(), De
         return Ok(());
     };
     let client = outputs.client;
+    let secret = reveal(outputs.store, &delivery.target).await?;
     match &delivery.target {
         EventOutputTarget::Recordings => save_recording(outputs.engine, &delivery.message).await,
         EventOutputTarget::Desktop => notify(outputs.shell, &delivery.message).await,
@@ -427,20 +509,20 @@ async fn deliver(outputs: &mut Outputs<'_>, batch: &[Delivery]) -> Result<(), De
         EventOutputTarget::Tunnel { .. } | EventOutputTarget::Feed { .. } => Err(
             DeliveryError::Failed("Network streams use the dedicated writer".to_owned()),
         ),
-        EventOutputTarget::Webhook { url, format } => {
-            send_webhook(client, url, *format, &delivery.message).await
+        EventOutputTarget::Webhook { format, .. } => {
+            send_webhook(client, &secret, *format, &delivery.message).await
         }
         EventOutputTarget::Matrix {
             homeserver_url,
             room_id,
-            access_token,
+            ..
         } => {
             send_matrix(
                 client,
                 MatrixTarget {
                     homeserver_url,
                     room_id,
-                    access_token,
+                    access_token: &secret,
                 },
                 &delivery.message,
             )
@@ -450,14 +532,14 @@ async fn deliver(outputs: &mut Outputs<'_>, batch: &[Delivery]) -> Result<(), De
             broker_url,
             topic,
             username,
-            password,
+            ..
         } => {
             send_mqtt(
                 MqttTarget {
                     broker_url,
                     topic,
                     username,
-                    password,
+                    password: &secret,
                     client_id: &mqtt_client_id(&delivery.node),
                 },
                 &delivery.message,
@@ -467,14 +549,11 @@ async fn deliver(outputs: &mut Outputs<'_>, batch: &[Delivery]) -> Result<(), De
         EventOutputTarget::Postgres { .. } => {
             outputs
                 .databases
-                .insert(&delivery.node, &delivery.target, batch)
+                .insert(&delivery.node, &delivery.target, &secret, batch)
                 .await
         }
         EventOutputTarget::Influx {
-            url,
-            bucket,
-            org,
-            token,
+            url, bucket, org, ..
         } => {
             influx::send(
                 client,
@@ -482,7 +561,7 @@ async fn deliver(outputs: &mut Outputs<'_>, batch: &[Delivery]) -> Result<(), De
                     url,
                     bucket,
                     org,
-                    token,
+                    token: &secret,
                 },
                 batch,
             )
@@ -1015,8 +1094,10 @@ fn retry_after_body(body: &str) -> Option<Duration> {
         .and_then(seconds_to_delay)
 }
 
+/// Clamps before converting: a server may ask for more seconds than a `Duration` holds.
 fn seconds_to_delay(seconds: f64) -> Option<Duration> {
-    (seconds.is_finite() && seconds >= 0.0).then(|| Duration::from_secs_f64(seconds))
+    (seconds.is_finite() && seconds >= 0.0)
+        .then(|| Duration::from_secs_f64(seconds.min(MAX_RETRY_DELAY.as_secs_f64())))
 }
 
 #[cfg(test)]

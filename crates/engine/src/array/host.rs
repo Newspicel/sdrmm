@@ -12,16 +12,16 @@ use sdrmm_channels::{
         ArrayBlock, ArrayCtx, ArrayProcessor, EventBytes, Execution, LaneBuffer,
         MAX_EVENTS_PER_BLOCK, MAX_LANE_PORTS, OutputSlots, OutputTally, ProcessorAction,
         ProcessorDescriptor, ProcessorFaults, ProcessorNeeds, ProcessorOutput, ResetCause, Steer,
-        TuningNeed, create_processor, descriptor_for, processor_plugin,
+        TuningNeed, create_processor, descriptor_for, reserved_reading,
     },
     df::reserved_bearing,
 };
 use sdrmm_dsp::manifold::ManifoldTable;
 use sdrmm_wire::{
     ArrayGeometry, ArrayTuningMode, Coherence, DecodedRecord, DecoderEvent, DfBearing, EventOrigin,
-    GpuUse, NO_CHANNEL, PluginReading, ProcessorGate, ProcessorParams, ProcessorReading,
-    ProcessorStatus, RangeDopplerOwned, SpatialSpectrumOwned, StreamKind, SurfaceFrame,
-    VisibilityOwned, patch::MAX_NODE_ID_LEN, plugin::read_events,
+    NO_CHANNEL, ProcessorGate, ProcessorParams, ProcessorReading, ProcessorStatus,
+    RangeDopplerOwned, SpatialSpectrumOwned, StreamKind, SurfaceFrame, VisibilityOwned,
+    patch::MAX_NODE_ID_LEN, plugin::read_events,
 };
 use tokio::sync::broadcast;
 
@@ -31,7 +31,7 @@ use super::{
     batch::{BatchRunner, BatchStart},
     board::{gate_code, gate_of},
     correct::CORR_HOP,
-    radar::{DedicatedRunner, Prepared, RadarPlan, build_dedicated},
+    dedicated::{DedicatedPlan, DedicatedRunner, Prepared, build_dedicated},
 };
 use crate::{EngineError, publishing::Publisher, runtime::VirtualLaneSink};
 
@@ -41,7 +41,6 @@ const PUBLISH_SLOTS: usize = 16;
 const SURFACE_CELLS: usize = 1 << 19;
 const STEER_WORDS: usize = 12;
 const STEER_READS: usize = 4;
-const EVENT_BYTES: usize = 16 * 1024;
 
 pub(crate) struct ProcessorStats {
     pub(crate) gated_samples: AtomicU64,
@@ -299,12 +298,11 @@ pub(crate) struct HostPlan {
     pub(crate) steer_in: SteerInput,
     pub(crate) steer_out: Arc<SteerMailbox>,
     pub(crate) stats: Arc<ProcessorStats>,
-    pub(crate) gpu: GpuUse,
 }
 
 pub(crate) struct BuiltHost {
     pub(crate) host: Box<ProcessorHost>,
-    pub(crate) radar: Option<Arc<RadarPlan>>,
+    pub(crate) dedicated: Option<Arc<dyn DedicatedPlan>>,
 }
 
 enum Out {
@@ -322,24 +320,6 @@ pub(crate) struct Packet {
     events: EventBytes,
     seq: u32,
     freq_hz: f64,
-}
-
-/// The reading slot a processor of `params` fills: a plugin's carries the readouts its type
-/// declares. Built afresh for every slot, since a clone drops the room reserved in it.
-fn reserved_reading(params: &ProcessorParams) -> Option<ProcessorReading> {
-    match params {
-        ProcessorParams::Plugin(plugin) => processor_plugin(&plugin.type_id)
-            .map(|factory| ProcessorReading::Plugin(PluginReading::reserved(factory.kind()))),
-        _ => ProcessorReading::empty(params.type_id()),
-    }
-}
-
-/// Room for one block's events; only a plugin hands events on as JSON.
-fn event_room(params: &ProcessorParams) -> usize {
-    match params {
-        ProcessorParams::Plugin(_) => EVENT_BYTES,
-        _ => 0,
-    }
 }
 
 fn surface_slot(kind: Option<StreamKind>) -> Option<SurfaceFrame> {
@@ -396,7 +376,7 @@ impl Outputs {
         let mut sinks: Vec<Option<VirtualLaneSink>> = std::mem::take(&mut plan.sinks);
         sinks.resize_with(ports, || None);
         let reading = reserved_reading(&plan.params);
-        let room = event_room(&plan.params);
+        let room = descriptor.event_bytes;
         let kind = descriptor.surface;
         let node = plan.node.clone();
         let sink = plan.outputs.clone();
@@ -679,7 +659,7 @@ impl ProcessorHost {
         let descriptor = descriptor_for(&plan.params)
             .ok_or_else(|| ChannelError::UnknownType(plan.params.type_id().to_owned()))?;
         let ctx = plan.shape.ctx(&plan.node, frame);
-        let (host, radar) = match (descriptor.execution)(&plan.params, &ctx) {
+        let (host, dedicated) = match (descriptor.execution)(&plan.params, &ctx) {
             Execution::Inline => {
                 let processor = create_processor(&ctx, &plan.params)?;
                 (
@@ -695,15 +675,15 @@ impl ProcessorHost {
                 )
             }
             Execution::Dedicated => {
-                let (runner, radar) = build_dedicated(&ctx, &plan.params, plan.gpu)?;
+                let (runner, built) = build_dedicated(descriptor, &ctx, &plan.params)?;
                 let runner = Runner::Dedicated(runner);
                 (
                     Self::assemble(plan, frame, descriptor, runner, true)?,
-                    Some(radar),
+                    Some(built),
                 )
             }
         };
-        Ok(BuiltHost { host, radar })
+        Ok(BuiltHost { host, dedicated })
     }
 
     #[cfg(test)]
@@ -1080,7 +1060,7 @@ impl ProcessorHost {
         if let Runner::Dedicated(runner) = host.runner
             && let Err(error) = runner.retire().join()
         {
-            tracing::error!(%error, "a retired radar runner did not stop cleanly");
+            tracing::error!(%error, "a retired runner did not stop cleanly");
         }
     }
 

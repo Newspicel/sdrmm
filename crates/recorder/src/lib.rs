@@ -21,7 +21,8 @@ pub use collection::{
 };
 pub use export::{Export, ExportKind};
 pub use import::{
-    ARCHIVE_SUFFIX, Datatype, Imported, MAX_IMPORT_NAME_LEN, import_archive, import_pair,
+    ARCHIVE_SUFFIX, Datatype, Imported, MAX_IMPORT_NAME_LEN, claim_spool, import_archive,
+    import_pair, sweep_spools,
 };
 pub use library::{Stored, scan_library};
 use num_complex::Complex;
@@ -216,6 +217,7 @@ pub struct SigmfWriter {
     meta: SigmfMeta,
     stem: PathBuf,
     samples: u64,
+    skipped: u64,
     scratch: Vec<u8>,
 }
 
@@ -277,6 +279,7 @@ impl SigmfWriter {
             meta,
             stem: stem.to_path_buf(),
             samples: 0,
+            skipped: 0,
             scratch: Vec::new(),
         })
     }
@@ -326,6 +329,16 @@ impl SigmfWriter {
         }
         let at = captures.len() - 1;
         &mut captures[at]
+    }
+
+    /// Opens a capture after `missing` samples the file never received. Per SigMF the jump shows
+    /// in `core:global_index`, and `core:datetime` says when the stream picked up again.
+    pub fn skip(&mut self, missing: u64, at: &str) {
+        self.skipped += missing;
+        let global = self.samples + self.skipped;
+        let capture = self.capture_here();
+        capture.global_index = Some(global);
+        capture.datetime = Some(at.to_owned());
     }
 
     pub fn push_annotation(&mut self, annotation: serde_json::Value) {
@@ -781,6 +794,39 @@ mod tests {
         assert_eq!(meta.captures[1].sample_start, 1_000);
         assert_eq!(meta.captures[1].frequency, Some(145_500_000.0));
         assert_eq!(meta.captures[1].datetime, None);
+    }
+
+    #[test]
+    fn a_skip_opens_a_capture_at_the_global_index_after_the_gap() {
+        let dir = TempDir::new().unwrap();
+        let stem = dir.path().join("gapped");
+        let tone = samples(300);
+
+        let mut writer = SigmfWriter::create(&stem, 48_000.0, 100_000_000.0, "hw").unwrap();
+        writer.write_block(&tone[..100]).unwrap();
+        writer.skip(50, "2026-11-12T10:00:01Z");
+        writer.write_block(&tone[100..200]).unwrap();
+        writer.skip(0, "2026-11-12T10:00:05Z");
+        writer.add_capture(101_000_000.0);
+        writer.write_block(&tone[200..]).unwrap();
+        let meta = writer.finalize().unwrap();
+
+        assert_eq!(meta.captures.len(), 3);
+        assert_eq!(meta.captures[0].global_index, None);
+        assert_eq!(meta.captures[1].sample_start, 100);
+        assert_eq!(meta.captures[1].global_index, Some(150));
+        assert_eq!(meta.captures[1].frequency, Some(100_000_000.0));
+        assert_eq!(
+            meta.captures[1].datetime.as_deref(),
+            Some("2026-11-12T10:00:01Z")
+        );
+        assert_eq!(meta.captures[2].sample_start, 200);
+        assert_eq!(meta.captures[2].global_index, Some(250));
+        assert_eq!(meta.captures[2].frequency, Some(101_000_000.0));
+        assert_eq!(
+            meta.captures[2].datetime.as_deref(),
+            Some("2026-11-12T10:00:05Z")
+        );
     }
 
     #[test]

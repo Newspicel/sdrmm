@@ -405,6 +405,71 @@ function iqOutputs(resolved: ResolvedPatch | null, node: string): string[] {
     .map((port) => port.name);
 }
 
+interface ClosedRadioProps {
+  node: PatchNode;
+  reference: DeviceRef;
+  stopped: boolean;
+  waiting: boolean;
+  onBus: boolean;
+  onForget: () => void;
+  onStart: () => void;
+  onOpen: () => void;
+}
+
+function ClosedRadioFace({
+  node,
+  reference,
+  stopped,
+  waiting,
+  onBus,
+  onForget,
+  onStart,
+  onOpen,
+}: ClosedRadioProps) {
+  return (
+    <NodeShell
+      node={node}
+      title="Device"
+      category="source"
+      subtitle={idleSaid(stopped, waiting, onBus)}
+    >
+      <FaceBody>
+        <p className="p-3 font-mono text-sm text-ink">{refLabel(reference)}</p>
+      </FaceBody>
+      <FaceFooter>
+        <Button
+          type="button"
+          className={BTN_QUIET_DANGER}
+          title="Free this node so you can pick a different radio"
+          onClick={onForget}
+        >
+          Forget radio
+        </Button>
+        {stopped ? (
+          <Button
+            type="button"
+            className={BTN_PRIMARY}
+            title="Open this radio again and start the decoders wired to it"
+            onClick={onStart}
+          >
+            Start
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            className={BTN_PRIMARY}
+            title={openSaid(waiting, onBus)}
+            onClick={onOpen}
+            disabled={!onBus}
+          >
+            Open radio
+          </Button>
+        )}
+      </FaceFooter>
+    </NodeShell>
+  );
+}
+
 export function DeviceFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const queryClient = useQueryClient();
@@ -495,46 +560,16 @@ export function DeviceFace({ node }: { node: PatchNode }) {
 
   if (set === null) {
     return (
-      <NodeShell
+      <ClosedRadioFace
         node={node}
-        title="Device"
-        category="source"
-        subtitle={idleSaid(stopped, waiting, onBus)}
-      >
-        <FaceBody>
-          <p className="p-3 font-mono text-sm text-ink">{refLabel(reference)}</p>
-        </FaceBody>
-        <FaceFooter>
-          <Button
-            type="button"
-            className={BTN_QUIET_DANGER}
-            title="Free this node so you can pick a different radio"
-            onClick={forget}
-          >
-            Forget radio
-          </Button>
-          {stopped ? (
-            <Button
-              type="button"
-              className={BTN_PRIMARY}
-              title="Open this radio again and start the decoders wired to it"
-              onClick={start}
-            >
-              Start
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              className={BTN_PRIMARY}
-              title={openSaid(waiting, onBus)}
-              onClick={() => workspace.apply()}
-              disabled={!onBus}
-            >
-              Open radio
-            </Button>
-          )}
-        </FaceFooter>
-      </NodeShell>
+        reference={reference}
+        stopped={stopped}
+        waiting={waiting}
+        onBus={onBus}
+        onForget={forget}
+        onStart={start}
+        onOpen={() => workspace.apply()}
+      />
     );
   }
 

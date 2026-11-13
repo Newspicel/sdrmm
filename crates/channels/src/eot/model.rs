@@ -283,7 +283,14 @@ mod model_tests {
 
     #[test]
     fn kind_matches_the_serialized_tag() {
-        let link = || DataLinkMessage {
+        for ev in every_event_kind() {
+            let json = serde_json::to_value(&ev).unwrap();
+            assert_eq!(json["kind"], ev.kind().as_str());
+        }
+    }
+
+    fn link() -> DataLinkMessage {
+        DataLinkMessage {
             message_type: "test".to_owned(),
             station: None,
             text: None,
@@ -296,8 +303,11 @@ mod model_tests {
             raw: None,
             area: None,
             details: serde_json::Value::Null,
-        };
-        for ev in [
+        }
+    }
+
+    fn every_event_kind() -> Vec<DecoderEvent> {
+        vec![
             DecoderEvent::of(&RdsUpdate::default()),
             DecoderEvent::of(&PocsagMessage {
                 address: 1,
@@ -479,10 +489,7 @@ mod model_tests {
             DecoderEvent::of(&radar_event()),
             DecoderEvent::of(&crate::ism::IsmMessage::default()),
             DecoderEvent::of(&crate::wmbus::WmbusMessage::default()),
-        ] {
-            let json = serde_json::to_value(&ev).unwrap();
-            assert_eq!(json["kind"], ev.kind().as_str());
-        }
+        ]
     }
 
     fn radar_event() -> sdrmm_wire::RadarTrackEvent {

@@ -131,14 +131,13 @@ fn openapi_matches_the_committed_snapshot() {
     );
 }
 
-const NEW_ROUTES: [(&str, &str); 22] = [
+const NEW_ROUTES: [(&str, &str); 21] = [
     ("GET", "/api/arrays"),
     ("POST", "/api/arrays/{node}/calibrate"),
     ("PATCH", "/api/arrays/{node}/tune"),
     ("POST", "/api/arrays/{node}/recording"),
     ("DELETE", "/api/arrays/{node}/recording"),
-    ("GET", "/api/radar/{node}"),
-    ("DELETE", "/api/radar/{node}/tracks"),
+    ("GET", "/api/processors/{node}"),
     ("GET", "/api/phones"),
     ("PUT", "/api/phones/access"),
     ("POST", "/api/phones/offers"),

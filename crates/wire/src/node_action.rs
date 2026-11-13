@@ -10,14 +10,20 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "action", content = "with", rename_all = "snake_case")]
 pub enum NodeAction {
-    Tune { freq_hz: f64 },
-    Retype { channel_type: String },
+    Tune {
+        freq_hz: f64,
+    },
+    Retype {
+        channel_type: String,
+    },
     Scan(ScanAction),
     Hunt(HuntAction),
     Playback(PlaybackRequest),
     NetworkExport(NetworkExportAction),
     Transmit(TransmitAction),
     Send(ModulatorMessage),
+    /// One of the actions a processor declares.
+    Processor(crate::processor::view::ProcessorAction),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -31,6 +37,7 @@ pub enum NodeActed {
     Armed(TransmitStatus),
     Disarmed,
     Sent,
+    Processed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

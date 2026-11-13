@@ -1,4 +1,4 @@
-import type { EventOutputTarget, FeedEntry } from "../../lib/types";
+import type { EventOutputTarget, FeedEntry, Secret } from "../../lib/types";
 
 export const OUTPUT_SERVICES = [
   { value: "recordings", label: "Recordings" },
@@ -69,6 +69,13 @@ export function newOutputTarget(
   }
 }
 
+export function secretSet(secret: Secret | undefined): boolean {
+  if (secret === undefined) {
+    return false;
+  }
+  return typeof secret === "string" ? secret.trim() !== "" : secret.secret !== "";
+}
+
 export function eventOutputConfigured(target: EventOutputTarget): boolean {
   switch (target.service) {
     case "recordings":
@@ -83,12 +90,12 @@ export function eventOutputConfigured(target: EventOutputTarget): boolean {
     case "tunnel":
       return target.interface.trim() !== "";
     case "webhook":
-      return target.url.trim() !== "";
+      return secretSet(target.url);
     case "matrix":
       return (
         target.homeserver_url.trim() !== "" &&
         target.room_id.trim() !== "" &&
-        target.access_token.trim() !== ""
+        secretSet(target.access_token)
       );
     case "mqtt":
       return target.broker_url.trim() !== "" && target.topic.trim() !== "";

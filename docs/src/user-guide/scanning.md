@@ -19,7 +19,7 @@ keeps its settings, lockouts and priority frequencies.
 
 1. Add a channel in the mode you want to hear and wire it to a Speaker.
 2. Add **Scanner**, wire its `control` to the channel's `control` and the channel's Device `iq` to
-   its `iq`. A scanner watching another lane than its channel is refused. Removing the `control`
+   its `iq`. A scanner watching a different lane from its channel is refused. Removing the `control`
    wire stops the scan.
 3. Pick a **Band**, or set each range's **From**, **To** and **Step**. **Add range** adds another.
 4. Pick what to **Find** and press **Start scan**.
@@ -65,7 +65,8 @@ long each frequency was busy. Click **Frequency**, **Hits** or **Last** to sort,
 its latest call. The log node keeps its grouping.
 
 Radios that support it sweep in firmware, shown as **Firmware sweep** (on by default). Other
-channels on that radio pause while it runs. The **Sweep** readout shows `the radio's own` or
+channels on that radio pause while it runs. It is refused while the radio records IQ, holds a
+pre-roll or exports IQ. The **Sweep** readout shows `the radio's own` or
 `by retuning`.
 
 ## Identify a signal

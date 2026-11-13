@@ -2,9 +2,11 @@
 //! the built-in ones and indistinguishable from them to the rest of the server.
 //!
 //! A plugin runs in wasmtime. Each call gets an epoch budget, so a plugin stuck in a loop stops
-//! its own channel with an error instead of holding a DSP thread. The heavy `dsp` kernels run
-//! natively as host imports working on the plugin's memory.
+//! its own channel with an error instead of holding a DSP thread, and each instance a memory
+//! cap. The heavy `dsp` kernels run natively as host imports working on the plugin's memory.
+//! Compiled plugins are cached on disk, so a start only compiles what changed.
 
+mod cache;
 mod channel;
 mod decoder;
 mod engine;
@@ -15,6 +17,7 @@ mod samples;
 mod transmit;
 mod watch;
 
+pub use cache::ModuleCache;
 pub use decoder::WasmDecoder;
 pub use module::PluginModule;
 pub use processor::{WasmProcessor, WasmProcessors};

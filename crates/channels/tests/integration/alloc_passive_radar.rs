@@ -128,7 +128,7 @@ mod passive_radar {
     }
 
     fn dab_scene(frames: usize) -> Vec<Vec<C32>> {
-        let clean = sdrmm_channels::synth::dab::ensemble(frames);
+        let clean = sdrmm_channels::synth::dab::ensemble(frames).expect("a synthetic signal");
         let mut state = 7u64;
         let reference = clean
             .iter()

@@ -8,10 +8,10 @@ are enough. Phase calibration is only needed for echo bearings.
 
 1. Build an [Array](arrays.md) with at least two lanes, tuned **Together**.
 2. Add **Passive radar** and wire the Array's `array` to it.
-3. Point one antenna at the transmitter. Under **Ref**, pick it as **Reference**. The others are
-   **Surveillance**.
+3. Point one antenna at the transmitter and pick its lane under **Ref**. **Listen** picks the lanes
+   that hear echoes: **Others** or **Pick**.
 4. For the map, wire a GPS to the Array, and a GPS set to **Fixed** at the transmitter to `tx`.
-5. Optional: wire an ADS-B channel's `events` to `adsb`. Tracks that match an aircraft show its
+5. Optional: wire an ADS-B channel's `events` to `truth`. Tracks that match an aircraft show its
    call sign.
 
 ## Illuminators
@@ -60,13 +60,13 @@ match, gets a position.
 | Clutter | How the direct path and ground clutter are removed: ECA-B, ECA-S, NLMS, Block NLMS or Off |
 | Pfa | False alarm chance per cell |
 | Detect | The CFAR detector (CA, OS or GO) and **Min SNR** |
-| Track | How many looks start a track (**Start**), and how many misses end it (**Coast**) |
+| Track | Hits over looks that start a track (**Start hits**, **Start looks**), and misses that end it (**Coast**) |
 
 ## Limits
 
 - The lanes must see the transmitter and the sky. A strong direct path in the surveillance
   antennas limits range.
-- `no tx`, `No transmitter` or `No array position`: wire the GPS nodes from step 4.
+- `No transmitter` or `No array position`: wire the GPS nodes from step 4.
 - `Overloaded` means the host cannot keep up: shorten **Range** or **CPI**, or set **GPU** to
   **Auto**.
 - `Outside cal table` means the Array's measured table does not cover the carrier. Bearings then

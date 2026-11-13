@@ -2,19 +2,23 @@ use std::fmt::Write as _;
 
 use num_complex::Complex;
 use sdrmm_dsp::manifold::{Geometry, ManifoldError, ManifoldTable, Vec3, Winding as DspWinding};
+pub use sdrmm_wire::ProcessorAction;
 use sdrmm_wire::{
-    ArrayGeometry, ArrayTuningMode, CalPhase, CalSourceKind, Coherence, DfBearing, ProcessorParams,
-    ProcessorReading, SettingField, StreamKind, SurfaceFrame, Winding,
+    ArrayGeometry, ArrayTuningMode, CalPhase, CalSourceKind, Coherence, DfBearing, GpuUse,
+    PluginReading, ProcessorParams, ProcessorReading, SettingField, StreamKind, SurfaceFrame,
+    Winding,
 };
 use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use crate::ChannelError;
 
+mod enrich;
 mod plugins;
 #[cfg(feature = "probe")]
 pub mod probe;
 
-pub use plugins::{ProcessorFactory, install_processors, processor_plugin};
+pub use enrich::{ArrayPlace, EnrichCtx, MakeEnricher, Raised, Refusal, ReportEnricher};
+pub use plugins::{ProcessorFactory, install_processors, processor_plugin, processor_refusal};
 
 #[cfg(test)]
 pub(crate) mod bench;
@@ -26,6 +30,7 @@ pub const MAX_LANE_PORTS: usize = 2;
 pub const MAX_EVENTS_PER_BLOCK: usize = 8;
 pub const TUNING_TOLERANCE_HZ: f64 = 1.0;
 pub const INLINE_INPUT_LIMIT: f64 = 2e6;
+pub const EVENT_BYTES: usize = 16 * 1024;
 
 const ONE: Complex<f32> = Complex::new(1.0, 0.0);
 const NANOS_PER_MILLI: u64 = 1_000_000;
@@ -95,6 +100,28 @@ pub struct ProcessorDescriptor {
     pub lane_format: fn(&ProcessorParams, &ArrayCtx<'_>, usize) -> LaneFormat,
     pub execution: fn(&ProcessorParams, &ArrayCtx<'_>) -> Execution,
     pub in_place: fn(&ProcessorParams, &ProcessorParams) -> bool,
+    /// The actions an operator may send it; any other is refused before it reaches the DSP.
+    pub actions: &'static [ProcessorAction],
+    pub gpu: fn(&ProcessorParams) -> GpuUse,
+    /// Room for one block's events as JSON; zero for a processor that hands on none.
+    pub event_bytes: usize,
+    /// Control-plane work its reports need from the patch around the node.
+    pub enricher: Option<MakeEnricher>,
+    pub mission: Option<MissionShape>,
+}
+
+/// The mission a phone runs on a processor node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MissionShape {
+    Bearings,
+    Radar { transmitter: &'static str },
+}
+
+impl ProcessorDescriptor {
+    #[must_use]
+    pub fn takes(&self, action: ProcessorAction) -> bool {
+        self.actions.contains(&action)
+    }
 }
 
 pub struct ArrayCtx<'a> {
@@ -246,11 +273,6 @@ pub struct Steer {
     pub others_true_deg: [Option<f64>; 3],
     pub others: u8,
     pub wall_ms: u64,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ProcessorAction {
-    ClearTracks,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -589,6 +611,17 @@ pub fn descriptor_for(params: &ProcessorParams) -> Option<&'static ProcessorDesc
     }
 }
 
+/// The reading slot a processor of `params` fills: a plugin's carries the readouts its type
+/// declares. Built afresh for every slot, since a clone drops the room reserved in it.
+#[must_use]
+pub fn reserved_reading(params: &ProcessorParams) -> Option<ProcessorReading> {
+    match params {
+        ProcessorParams::Plugin(plugin) => processor_plugin(&plugin.type_id)
+            .map(|factory| ProcessorReading::Plugin(PluginReading::reserved(factory.kind()))),
+        _ => ProcessorReading::empty(params.type_id()),
+    }
+}
+
 pub fn create_processor(
     ctx: &ArrayCtx<'_>,
     params: &ProcessorParams,
@@ -709,6 +742,11 @@ pub fn banded_execution(ctx: &ArrayCtx<'_>) -> Execution {
             batch: ctx.max_block,
         }
     }
+}
+
+#[must_use]
+pub const fn no_gpu(_: &ProcessorParams) -> GpuUse {
+    GpuUse::Off
 }
 
 #[must_use]

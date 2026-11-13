@@ -1,0 +1,25 @@
+{
+  "name": "0d7d188c704a0090",
+  "test": "a plugin processor > says when no plugin brings its type",
+  "graph": {
+    "nodes": [
+      {
+        "id": "proc",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "processor",
+        "data": {
+          "processor_type": "gone_meter",
+          "settings": null
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

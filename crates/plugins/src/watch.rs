@@ -9,13 +9,14 @@ use std::{
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use sdrmm_channels::{
-    Decoder,
-    array_processor::{ProcessorFactory, install_processors},
-    install_plugins,
+    ChannelError, Decoder,
+    array_processor::{ProcessorFactory, install_processors, processor_refusal},
+    install_plugins, plugin_refusal,
 };
 
 use crate::{
     PluginError,
+    cache::ModuleCache,
     decoder::WasmDecoder,
     module::{PluginModule, plugin_name},
     processor::WasmProcessors,
@@ -25,10 +26,11 @@ use crate::{
 /// being written is not loaded half done.
 const SETTLE: Duration = Duration::from_millis(300);
 
-/// Every `.wasm` in `dir` as a decoder, with the reason for each file that would not load.
+/// Every `.wasm` in `dir` as a decoder, compiled without the cache, with the reason for each
+/// file that would not load.
 #[must_use]
 pub fn load_dir(dir: &Path) -> (Vec<Arc<dyn Decoder>>, Vec<PluginError>) {
-    let scan = PluginDir::new(dir.to_owned()).scan();
+    let scan = PluginDir::new(dir.to_owned()).with_cache(None).scan();
     (scan.decoders, scan.errors)
 }
 
@@ -51,15 +53,66 @@ pub struct Scan {
 
 #[derive(Clone)]
 struct Loaded {
+    name: String,
     fingerprint: u64,
     decoder: Arc<dyn Decoder>,
     processor: Option<Arc<dyn ProcessorFactory>>,
+}
+
+/// The type ids one scan has given out so far, each with the plugin that took it.
+#[derive(Default)]
+struct Taken {
+    decoders: Vec<(String, String)>,
+    processors: Vec<(String, String)>,
+}
+
+impl Taken {
+    /// Gives `loaded` its types, or refuses the whole plugin when one is built in or another
+    /// plugin took it first.
+    fn take(&mut self, loaded: &Loaded) -> Result<(), PluginError> {
+        let decoder = loaded.decoder.descriptor().type_id.clone();
+        let refusal = plugin_refusal(&decoder, &ids(&self.decoders))
+            .map(|refusal| explain(refusal, &self.decoders))
+            .or_else(|| {
+                let kind = loaded.processor.as_ref()?.kind();
+                processor_refusal(kind, &ids(&self.processors))
+                    .map(|refusal| explain(refusal, &self.processors))
+            });
+        if let Some(error) = refusal {
+            return Err(PluginError::Load {
+                plugin: loaded.name.clone(),
+                error,
+            });
+        }
+        self.decoders.push((decoder, loaded.name.clone()));
+        if let Some(processor) = &loaded.processor {
+            let kind = processor.kind().type_id.clone();
+            self.processors.push((kind, loaded.name.clone()));
+        }
+        Ok(())
+    }
+}
+
+fn ids(taken: &[(String, String)]) -> Vec<&str> {
+    taken.iter().map(|(id, _)| id.as_str()).collect()
+}
+
+fn explain(refusal: ChannelError, taken: &[(String, String)]) -> String {
+    let ChannelError::LoadedTwice(type_id) = &refusal else {
+        return refusal.to_string();
+    };
+    let owner = taken.iter().find(|(id, _)| id == type_id);
+    owner.map_or_else(
+        || refusal.to_string(),
+        |(_, plugin)| format!("{refusal}, {plugin} has it"),
+    )
 }
 
 /// A plugins directory and the decoders last loaded from it, so a file that did not change
 /// keeps its decoder and its running channels.
 pub struct PluginDir {
     dir: PathBuf,
+    cache: Option<ModuleCache>,
     loaded: HashMap<PathBuf, Loaded>,
 }
 
@@ -70,12 +123,21 @@ fn fingerprint(bytes: &[u8]) -> u64 {
 }
 
 impl PluginDir {
+    /// `dir`, its plugins compiled once into the user's cache.
     #[must_use]
     pub fn new(dir: PathBuf) -> Self {
         Self {
             dir,
+            cache: ModuleCache::user(),
             loaded: HashMap::new(),
         }
+    }
+
+    /// Keeps compiled plugins in `cache` instead, or nowhere.
+    #[must_use]
+    pub fn with_cache(mut self, cache: Option<ModuleCache>) -> Self {
+        self.cache = cache;
+        self
     }
 
     fn paths(&self) -> Result<Vec<PathBuf>, PluginError> {
@@ -104,10 +166,12 @@ impl PluginDir {
         {
             return Ok(loaded.clone());
         }
-        let module = PluginModule::from_bytes(plugin_name(&path), &bytes)?;
+        let name = plugin_name(&path);
+        let module = PluginModule::from_bytes(name.clone(), &bytes, self.cache.as_ref())?;
         let processor = WasmProcessors::of(&module)
             .map(|processors| Arc::new(processors) as Arc<dyn ProcessorFactory>);
         let loaded = Loaded {
+            name,
             fingerprint,
             decoder: Arc::new(WasmDecoder::new(module)),
             processor,
@@ -117,7 +181,8 @@ impl PluginDir {
     }
 
     /// Every `.wasm` in the directory as a decoder and maybe a processor, reusing each one whose
-    /// file is unchanged.
+    /// file is unchanged. A plugin taking a built-in's type or one an earlier file took is left
+    /// out with an error; the others load.
     pub fn scan(&mut self) -> Scan {
         let mut scan = Scan::default();
         let paths = match self.paths() {
@@ -128,8 +193,12 @@ impl PluginDir {
             }
         };
         self.loaded.retain(|path, _| paths.contains(path));
+        let mut taken = Taken::default();
         for path in paths {
-            match self.load(path) {
+            let admitted = self
+                .load(path)
+                .and_then(|loaded| taken.take(&loaded).map(|()| loaded));
+            match admitted {
                 Ok(loaded) => {
                     scan.decoders.push(loaded.decoder);
                     scan.processors.extend(loaded.processor);

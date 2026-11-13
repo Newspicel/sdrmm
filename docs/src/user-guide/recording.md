@@ -22,7 +22,9 @@ Wire Device `iq` to a **Recorder**, press **Record**, then **Stop**. On a multi-
 wired port picks the lane. Wire GPS `position` to store the location. The sample rate is locked
 while recording.
 
-A clean server shutdown finishes open recordings. Killing the process can leave one incomplete.
+A radio that restarts or drops samples leaves a gap, not an end: the recording goes on, and each
+gap starts a new capture segment in the metadata. A clean server shutdown finishes open
+recordings. Killing the process can leave one incomplete.
 
 ## Record on a schedule or a pass
 
@@ -55,8 +57,8 @@ smaller than full Device IQ and can be played back like any other recording. Cha
 the Device rate starts a new file. Removing the channel ends it.
 
 **Audio recorder** keeps what reaches it, after squelch and any Audio FX it is wired behind.
-Closed squelch writes silence so timing stays intact; **Skip silence** pauses instead. Mode and rate changes do not stop it. The
-file stays playable even if the server stops mid-recording.
+Closed squelch writes silence so timing stays intact; **Skip silence** pauses instead. Mode and
+rate changes do not stop it. The file stays playable if the server stops mid-recording.
 
 Both recorders take several channels and write one file per wired channel. Each Audio recorder
 keeps its own files, even when another one records the same channel.
@@ -78,13 +80,14 @@ What makes a call:
 | Digital voice, trunk system | One call, from header to end |
 | AM, NFM, SSB, DECT | One squelch opening. Gaps under 1.5 s stay in the call |
 
-An analog channel with squelch off has no calls. Use the Audio recorder for continuous audio.
+An analog channel with squelch off has no calls; use the Audio recorder for continuous audio.
 Calls longer than 10 minutes continue in a new file. Encrypted calls have no audio to save.
-Several channels can share one Event output. Add an **Event filter** between them to skip short
-calls or keep certain talkgroups. A [Spectrum monitor](scanning.md#monitor-a-band) wired here
-saves its clips the same way. A call brings its clip on the `events` wire. Clips are kept only
-when the events reach a Decoder log or an Event output that keeps them (Recordings, Matrix,
-Discord); the Decoder log plays them.
+Several channels can share one Event output. An **Event filter** between them skips short calls or
+keeps certain talkgroups. A [Spectrum monitor](scanning.md#monitor-a-band) wired here saves its
+clips the same way.
+
+A call carries its clip on the `events` wire. Clips are kept only when they reach a Decoder log,
+which plays them, or an Event output that keeps them: Recordings, Matrix or a Discord webhook.
 
 ## Record an array
 
@@ -107,11 +110,12 @@ A recording made with GPS wired plays its location back too. Wire the Device `po
 Device node shows it.
 
 **Upload SigMF** adds a recording from your computer, as a `.sigmf` archive or a
-`.sigmf-meta` and `.sigmf-data` pair. A downloaded array collection uploads whole.
+`.sigmf-meta` and `.sigmf-data` pair. A downloaded array collection uploads whole. An upload may be
+up to 16 GiB; archives stream to disk.
 
 ## Play an array recording
 
-Open a collection as a source. The Device node gets one output per lane, `iq1` to `iq5` for
+Open a collection as a source. The Device node gets one output per lane, `iq` to `iq5` for
 a five-lane array. Press **Make array**, or wire the outputs to an Array's lanes in order. Set the
 Array's geometry as it was when recording. Wire a GPS to the Array's `position` and add a
 processor, such as a [Direction finder](direction-finding.md). Each lane keeps its recorded

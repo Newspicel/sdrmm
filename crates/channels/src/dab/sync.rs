@@ -272,7 +272,10 @@ mod tests {
         for transmission in TRANSMISSION_MODES {
             let mode = Mode::new(transmission);
             let shift = 0.3 / mode.useful as f64;
-            let iq = turned(&synth::dab::ensemble_for_mode(transmission, 2), shift);
+            let iq = turned(
+                &synth::dab::ensemble_for_mode(transmission, 2).expect("a synthetic signal"),
+                shift,
+            );
             let (value, at) =
                 Aligner::default().align(mode, &iq, mode.null - SEARCH, 2 * SEARCH, 0.0);
             assert!(value > 0.9, "{transmission:?}: coherence {value}");
@@ -289,8 +292,11 @@ mod tests {
     fn the_cyclic_prefix_length_names_the_transmission_mode() {
         for transmission in TRANSMISSION_MODES {
             let mode = Mode::new(transmission);
-            let iq =
-                crate::testutil::at_snr(&synth::dab::ensemble_for_mode(transmission, 4), 6.0, 3);
+            let iq = crate::testutil::at_snr(
+                &synth::dab::ensemble_for_mode(transmission, 4).expect("a synthetic signal"),
+                6.0,
+                3,
+            );
             assert_eq!(
                 detect(&mut Aligner::default(), &iq, mode.null - SEARCH, 2 * SEARCH),
                 Some(transmission)

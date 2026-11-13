@@ -28,7 +28,13 @@ import { loadCatalog, useCatalogStore } from "./lib/catalog";
 import { useRefusalStore } from "./lib/refusals";
 import { activePatch, boundChannels, boundRadios, channelOwners } from "./lib/resolved";
 import { closeToast, pushToast } from "./lib/toasts";
-import type { NodeProblem, PatchApplyReport, PatchGraph, WorkspaceSettings } from "./lib/types";
+import type {
+  NodeProblem,
+  PatchApplyReport,
+  PatchCatalog,
+  PatchGraph,
+  WorkspaceSettings,
+} from "./lib/types";
 import { useChannelPatch } from "./lib/useChannelPatch";
 import { useNodeStateSync } from "./lib/useNodeStateSync";
 import { useNodeTune } from "./lib/useNodeTune";
@@ -36,6 +42,37 @@ import { useSdrSocket } from "./lib/useSdrSocket";
 import { ToolsDialog } from "./tools/ToolsDialog";
 
 const NO_PROBLEMS: readonly NodeProblem[] = [];
+
+function useCatalogLoader(catalog: PatchCatalog | undefined) {
+  useEffect(() => {
+    if (catalog !== undefined) {
+      loadCatalog(catalog);
+    }
+  }, [catalog]);
+}
+
+function useApplyToasts(applied: PatchApplyReport | null, nodes: PatchGraph["nodes"]) {
+  const announced = useRef<PatchApplyReport | null>(null);
+  useEffect(() => {
+    if (applied === null || applied === announced.current) {
+      return;
+    }
+    announced.current = applied;
+    for (const message of applyToasts(applied, nodes)) {
+      pushToast(message);
+    }
+    useRefusalStore.getState().fromReport(applied);
+  }, [applied, nodes]);
+}
+
+function useConnectedRadios(devices: ReadonlyMap<string, unknown>, nodes: PatchGraph["nodes"]) {
+  useEffect(() => {
+    useRefusalStore.getState().connected(devices.keys());
+    for (const node of devices.keys()) {
+      closeToast(notConnectedToast(nodes, node));
+    }
+  }, [devices, nodes]);
+}
 
 export function App() {
   const queryClient = useQueryClient();
@@ -52,11 +89,7 @@ export function App() {
   const resolvedState = useQuery(resolvedQuery());
   const workspace = useWorkspace();
   const activeId = workspace.active?.id ?? null;
-  useEffect(() => {
-    if (catalog.data !== undefined) {
-      loadCatalog(catalog.data);
-    }
-  }, [catalog.data]);
+  useCatalogLoader(catalog.data);
   const catalogReady = useCatalogStore((held) => held.catalog !== null);
   const [selected, setSelected] = useScopedState<string | null>(activeId, null);
   const [expanded, setExpanded] = useScopedState<string | null>(activeId, null);
@@ -78,17 +111,7 @@ export function App() {
     () => snapshot?.graph ?? { nodes: [], edges: [] },
     [snapshot?.graph],
   );
-  const announced = useRef<PatchApplyReport | null>(null);
-  useEffect(() => {
-    if (applied === null || applied === announced.current) {
-      return;
-    }
-    announced.current = applied;
-    for (const message of applyToasts(applied, graph.nodes)) {
-      pushToast(message);
-    }
-    useRefusalStore.getState().fromReport(applied);
-  }, [applied, graph.nodes]);
+  useApplyToasts(applied, graph.nodes);
 
   useNodeStateSync(activeId, graph.nodes, state.data?.arrays);
 
@@ -105,12 +128,7 @@ export function App() {
   );
 
   const devices = useMemo(() => boundRadios(resolved, deviceSets), [resolved, deviceSets]);
-  useEffect(() => {
-    useRefusalStore.getState().connected(devices.keys());
-    for (const node of devices.keys()) {
-      closeToast(notConnectedToast(graph.nodes, node));
-    }
-  }, [devices, graph.nodes]);
+  useConnectedRadios(devices, graph.nodes);
   const channels = useMemo(() => boundChannels(resolved, deviceSets), [resolved, deviceSets]);
   const owners = useMemo(() => channelOwners(resolved), [resolved]);
 

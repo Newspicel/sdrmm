@@ -46,6 +46,19 @@ impl FeedMark {
             Self::Center { at, .. } | Self::Gap { at, .. } => at,
         }
     }
+
+    const fn shifted(self, by: u64) -> Self {
+        match self {
+            Self::Center { at, center_hz } => Self::Center {
+                at: at + by,
+                center_hz,
+            },
+            Self::Gap { at, missing } => Self::Gap {
+                at: at + by,
+                missing,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -99,7 +112,7 @@ impl TimeMachineShared {
             })
     }
 
-    fn fail(&self, message: String) {
+    pub(crate) fn fail(&self, message: String) {
         self.error.store(Some(Arc::new(message)));
     }
 }
@@ -109,12 +122,42 @@ pub(crate) struct TimeMachineTap {
     marks: Producer<FeedMark>,
     shared: Arc<TimeMachineShared>,
     pushed: u64,
+    expected: Option<u64>,
     center_hz: f64,
 }
 
+pub(crate) struct Feed {
+    samples: Consumer<Complex<f32>>,
+    marks: Consumer<FeedMark>,
+}
+
+fn feed(
+    shared: &Arc<TimeMachineShared>,
+    sample_rate: f64,
+    center_hz: f64,
+) -> (TimeMachineTap, Feed) {
+    let (samples_tx, samples) = RingBuffer::<Complex<f32>>::new(feed_capacity(sample_rate));
+    let (marks_tx, marks) = RingBuffer::<FeedMark>::new(MARK_CAPACITY);
+    let tap = TimeMachineTap {
+        samples: samples_tx,
+        marks: marks_tx,
+        shared: shared.clone(),
+        pushed: 0,
+        expected: None,
+        center_hz,
+    };
+    (tap, Feed { samples, marks })
+}
+
 impl TimeMachineTap {
+    pub(crate) fn feeds(&self, shared: &Arc<TimeMachineShared>) -> bool {
+        Arc::ptr_eq(&self.shared, shared)
+    }
+
+    /// `total` is the lane's sample index of `samples[0]`; a jump in it is a capture loss the
+    /// keeper writes down as a gap.
     #[must_use]
-    pub(crate) fn push(&mut self, samples: &[Complex<f32>], center_hz: f64) -> bool {
+    pub(crate) fn push(&mut self, samples: &[Complex<f32>], total: u64, center_hz: f64) -> bool {
         if self.shared.feed_fault.load(Ordering::Acquire) >= FeedFault::MarkOverflow as u8 {
             return false;
         }
@@ -125,6 +168,15 @@ impl TimeMachineTap {
             self.shared
                 .feed_fault
                 .store(FeedFault::KeeperStopped as u8, Ordering::Release);
+            return false;
+        }
+        if let Some(expected) = self.expected.replace(total + samples.len() as u64)
+            && expected != total
+            && !self.mark(FeedMark::Gap {
+                at: self.pushed,
+                missing: total.saturating_sub(expected),
+            })
+        {
             return false;
         }
         if center_hz != self.center_hz {
@@ -168,6 +220,7 @@ pub(crate) enum TimeMachineCommand {
     Capture(Box<SigmfWriter>),
     Stop,
     Position(Option<Box<PositionFix>>),
+    Feed(Box<Feed>),
 }
 
 #[derive(Clone, Debug)]
@@ -180,6 +233,19 @@ impl TimeMachineControl {
         self.tx
             .send(command)
             .map_err(|_| EngineError::Recording("the history keeper stopped".to_owned()))
+    }
+
+    /// A new feed for a restarted runtime. The keeper drains the old one first, then picks this
+    /// one up and writes the seam down as a gap. It must be queued before the old feed is dropped.
+    /// Its first block always marks its tuning, since the keeper cannot know it.
+    pub(crate) fn refeed(
+        &self,
+        shared: &Arc<TimeMachineShared>,
+        sample_rate: f64,
+    ) -> Result<TimeMachineTap, EngineError> {
+        let (tap, next) = feed(shared, sample_rate, f64::NAN);
+        self.send(TimeMachineCommand::Feed(Box::new(next)))?;
+        Ok(tap)
     }
 }
 
@@ -214,14 +280,14 @@ impl Marks {
             .unwrap_or(self.base_hz)
     }
 
-    fn missing_at(&self, at: u64) -> u64 {
+    fn missing_at(&self, at: u64) -> Option<u64> {
         self.list
             .iter()
             .filter_map(|mark| match *mark {
                 FeedMark::Gap { at: when, missing } if when == at => Some(missing),
                 _ => None,
             })
-            .sum()
+            .reduce(|sum, missing| sum + missing)
     }
 
     fn next_after(&self, at: u64) -> Option<u64> {
@@ -248,30 +314,22 @@ struct Epoch {
 }
 
 impl Epoch {
-    fn time_of(&self, at: u64) -> String {
+    fn instant_of(&self, at: u64) -> jiff::Timestamp {
         let offset = (at as f64 - self.at as f64) / self.rate;
         let nanos = (offset * 1e9).clamp(i64::MIN as f64, i64::MAX as f64) as i64;
         self.time
             .checked_add(jiff::SignedDuration::from_nanos(nanos))
             .unwrap_or(self.time)
-            .to_string()
+    }
+
+    fn time_of(&self, at: u64) -> String {
+        self.instant_of(at).to_string()
     }
 }
 
 struct Capture {
     writer: SigmfWriter,
     center_hz: f64,
-    missing: u64,
-}
-
-impl Capture {
-    fn gap(&mut self, missing: u64, at: &str) {
-        self.missing += missing;
-        let global = self.writer.samples_written() + self.missing;
-        let capture = self.writer.capture_here();
-        capture.global_index = Some(global);
-        capture.datetime = Some(at.to_owned());
-    }
 }
 
 pub(crate) struct TimeMachineHandle {
@@ -340,17 +398,9 @@ pub(crate) fn start(
     })?;
     ring.resize(held, Complex::new(0.0, 0.0));
 
-    let (samples_tx, mut samples_rx) = RingBuffer::<Complex<f32>>::new(feed_capacity(sample_rate));
-    let (marks_tx, mut marks_rx) = RingBuffer::<FeedMark>::new(MARK_CAPACITY);
     let (control_tx, control_rx) = mpsc::channel();
     let shared = Arc::new(TimeMachineShared::default());
-    let tap = TimeMachineTap {
-        samples: samples_tx,
-        marks: marks_tx,
-        shared: shared.clone(),
-        pushed: 0,
-        center_hz,
-    };
+    let (tap, first) = feed(&shared, sample_rate, center_hz);
     let keeper_shared = shared.clone();
     let keeper = std::thread::Builder::new()
         .name("sdrmm-timemachine".to_owned())
@@ -369,8 +419,11 @@ pub(crate) fn start(
                 capture: None,
                 shared: keeper_shared,
                 position: None,
+                base: 0,
+                pending: VecDeque::new(),
+                seam: false,
             }
-            .run(&mut samples_rx, &mut marks_rx, &control_rx);
+            .run(first, &control_rx);
         })
         .map_err(|error| {
             EngineError::Recording(format!("spawn time machine keeper thread: {error}"))
@@ -394,26 +447,51 @@ struct Keeper {
     capture: Option<Capture>,
     shared: Arc<TimeMachineShared>,
     position: Option<PositionFix>,
+    base: u64,
+    pending: VecDeque<Feed>,
+    seam: bool,
 }
 
 impl Keeper {
-    fn run(
-        mut self,
-        samples: &mut Consumer<Complex<f32>>,
-        marks: &mut Consumer<FeedMark>,
-        control: &mpsc::Receiver<TimeMachineCommand>,
-    ) {
+    fn run(mut self, mut feed: Feed, control: &mpsc::Receiver<TimeMachineCommand>) {
         loop {
             self.drain_control(control);
-            if self.drain_samples(samples, marks) {
+            if self.drain_samples(&mut feed.samples, &mut feed.marks) {
                 continue;
             }
-            if samples.is_abandoned() {
+            if !feed.samples.is_abandoned() {
+                std::thread::sleep(IDLE_SLEEP);
+                continue;
+            }
+            self.drain_control(control);
+            if !feed.samples.is_empty() {
+                continue;
+            }
+            self.drain_marks(&mut feed.marks);
+            let Some(next) = self.pending.pop_front() else {
                 self.close();
                 return;
-            }
-            std::thread::sleep(IDLE_SLEEP);
+            };
+            self.base = self.next;
+            self.seam = true;
+            feed = next;
         }
+    }
+
+    /// Marks where the next feed joins on, once its first samples are in. The samples the swap
+    /// cost are estimated from the wall clock, and a capture opens a new segment there.
+    fn splice(&mut self) {
+        let now = jiff::Timestamp::now();
+        let lost = (now - self.epoch.instant_of(self.next))
+            .total(jiff::Unit::Second)
+            .unwrap_or(0.0)
+            .max(0.0);
+        self.marks.push(FeedMark::Gap {
+            at: self.next,
+            missing: (lost * self.epoch.rate).round() as u64,
+        });
+        self.epoch.at = self.next;
+        self.epoch.time = now;
     }
 
     fn drain_control(&mut self, control: &mpsc::Receiver<TimeMachineCommand>) {
@@ -427,13 +505,14 @@ impl Keeper {
                         capture.writer.set_position(self.position.as_ref());
                     }
                 }
+                TimeMachineCommand::Feed(feed) => self.pending.push_back(*feed),
             }
         }
     }
 
     fn drain_marks(&mut self, marks: &mut Consumer<FeedMark>) {
         while let Ok(mark) = marks.pop() {
-            self.marks.push(mark);
+            self.marks.push(mark.shifted(self.base));
         }
     }
 
@@ -449,6 +528,9 @@ impl Keeper {
         let Ok(chunk) = samples.read_chunk(available) else {
             return false;
         };
+        if std::mem::take(&mut self.seam) {
+            self.splice();
+        }
         self.drain_marks(marks);
         let (first, second) = chunk.as_slices();
         let mut written = Ok(());
@@ -494,7 +576,6 @@ impl Keeper {
         let mut capture = Capture {
             writer,
             center_hz: self.marks.center_at(first),
-            missing: 0,
         };
         capture.writer.stamp_capture(&self.epoch.time_of(first));
         capture.writer.set_position(self.position.as_ref());
@@ -578,9 +659,8 @@ fn emit(
     let mut offset = 0usize;
     while offset < samples.len() {
         let position = at + offset as u64;
-        let missing = marks.missing_at(position);
-        if missing > 0 {
-            capture.gap(missing, &epoch.time_of(position));
+        if let Some(missing) = marks.missing_at(position) {
+            capture.writer.skip(missing, &epoch.time_of(position));
         }
         let center_hz = marks.center_at(position);
         if center_hz != capture.center_hz {
@@ -620,11 +700,19 @@ mod tests {
                 marks,
                 shared: Arc::new(TimeMachineShared::default()),
                 pushed: 0,
+                expected: None,
                 center_hz: 100e6,
             },
             reader,
             marker,
         )
+    }
+
+    impl TimeMachineTap {
+        fn push_on(&mut self, samples: &[Complex<f32>], center_hz: f64) -> bool {
+            let total = self.expected.unwrap_or(0);
+            self.push(samples, total, center_hz)
+        }
     }
 
     fn keeper(capacity: usize, shared: Arc<TimeMachineShared>) -> Keeper {
@@ -642,6 +730,9 @@ mod tests {
             capture: None,
             shared,
             position: None,
+            base: 0,
+            pending: VecDeque::new(),
+            seam: false,
         }
     }
 
@@ -652,7 +743,7 @@ mod tests {
             let block = [Complex::new(0.25, -0.5); 2048];
             let total = (rate * 0.2) as usize;
             for at in (0..total).step_by(block.len()) {
-                assert!(tap.push(&block[..block.len().min(total - at)], 100e6));
+                assert!(tap.push_on(&block[..block.len().min(total - at)], 100e6));
             }
             assert_eq!(tap.shared.lost.load(Ordering::Relaxed), 0, "{rate} S/s");
             assert!(tap.shared.error().is_none());
@@ -661,7 +752,7 @@ mod tests {
             let (first, second) = chunk.as_slices();
             assert!(first.iter().chain(second).all(|sample| *sample == block[0]));
             chunk.commit_all();
-            assert!(tap.push(&block, 100e6));
+            assert!(tap.push_on(&block, 100e6));
             assert_eq!(samples.slots(), block.len());
         }
     }
@@ -678,12 +769,12 @@ mod tests {
     fn history_feed_failures_report_without_allocating_on_the_producer() {
         let (mut tap, reader, _) = feed(4, 1);
         let samples = ramp(0, 3);
-        assert!(tap.push(&samples, 100e6));
-        assert_no_alloc("history overflow", || assert!(tap.push(&samples, 100e6)));
+        assert!(tap.push_on(&samples, 100e6));
+        assert_no_alloc("history overflow", || assert!(tap.push_on(&samples, 100e6)));
         assert_eq!(tap.shared.lost.load(Ordering::Relaxed), 3);
         assert!(tap.shared.error().expect("overflow").contains("3 samples"));
         drop(reader);
-        assert_no_alloc("history stopped", || assert!(!tap.push(&samples, 100e6)));
+        assert_no_alloc("history stopped", || assert!(!tap.push_on(&samples, 100e6)));
         assert!(tap.shared.error().expect("stopped").contains("stopped"));
     }
 
@@ -691,12 +782,12 @@ mod tests {
     fn history_retune_overflow_stops_without_allocating_or_restarting() {
         let (mut tap, reader, mut marks) = feed(16, 1);
         let samples = ramp(0, 3);
-        assert!(tap.push(&samples, 101e6));
+        assert!(tap.push_on(&samples, 101e6));
         assert_no_alloc("history retune overflow", || {
-            assert!(!tap.push(&samples, 102e6))
+            assert!(!tap.push_on(&samples, 102e6))
         });
         marks.pop().expect("first retune");
-        assert!(!tap.push(&samples, 103e6));
+        assert!(!tap.push_on(&samples, 103e6));
         assert_eq!(reader.slots(), 3);
         assert!(tap.shared.error().expect("overflow").contains("mark"));
     }
@@ -708,10 +799,10 @@ mod tests {
         let (mut tap, mut samples, mut marks) = feed(4, 4);
         let mut keeper = keeper(16, tap.shared.clone());
         keeper.begin(SigmfWriter::create(&stem, RATE, 100e6, "test").expect("writer"));
-        assert!(tap.push(&ramp(0, 4), 100e6));
-        assert!(tap.push(&ramp(4, 3), 100e6));
+        assert!(tap.push_on(&ramp(0, 4), 100e6));
+        assert!(tap.push_on(&ramp(4, 3), 100e6));
         assert!(keeper.drain_samples(&mut samples, &mut marks));
-        assert!(tap.push(&ramp(7, 2), 100e6));
+        assert!(tap.push_on(&ramp(7, 2), 100e6));
         assert!(keeper.drain_samples(&mut samples, &mut marks));
         keeper.close();
         let reader = SigmfReader::open(&stem).expect("recording");
@@ -725,6 +816,75 @@ mod tests {
     }
 
     #[test]
+    fn a_capture_loss_in_the_lane_marks_a_gap_without_allocating() {
+        let dir = TempDir::new().expect("tempdir");
+        let stem = dir.path().join("lossy-history");
+        let (mut tap, mut samples, mut marks) = feed(16, 4);
+        let mut keeper = keeper(16, tap.shared.clone());
+        keeper.begin(SigmfWriter::create(&stem, RATE, 100e6, "test").expect("writer"));
+        let (first, second) = (ramp(0, 4), ramp(10, 3));
+        assert!(tap.push(&first, 0, 100e6));
+        assert_no_alloc("history capture loss", || {
+            assert!(tap.push(&second, 10, 100e6));
+        });
+        assert!(keeper.drain_samples(&mut samples, &mut marks));
+        keeper.close();
+        let reader = SigmfReader::open(&stem).expect("recording");
+        let captures = &reader.meta().captures;
+        assert_eq!(captures.len(), 2);
+        assert_eq!(captures[1].sample_start, 4);
+        assert_eq!(captures[1].global_index, Some(10));
+        assert!(captures[1].datetime.is_some());
+        assert_eq!(reader.total_samples(), 7);
+        assert!(
+            tap.shared.error().is_none(),
+            "a capture loss is no feed fault"
+        );
+    }
+
+    #[test]
+    fn a_refed_keeper_outlives_its_first_feed_and_marks_the_seam() {
+        let dir = TempDir::new().expect("tempdir");
+        let stem = dir.path().join("refed");
+        let mut handle = start(1_024, RATE, 100e6).expect("armed");
+        let mut tap = handle.take_tap().expect("tap");
+        let control = handle.control();
+        assert!(tap.push(&ramp(0, 256), 0, 100e6));
+        settle(&handle, 256);
+        let writer = SigmfWriter::create(&stem, RATE, 100e6, "test").expect("writer");
+        control
+            .send(TimeMachineCommand::Capture(Box::new(writer)))
+            .expect("capture");
+        wait_capture(&handle, 256);
+
+        let mut refed = control.refeed(handle.shared(), RATE).expect("refeed");
+        drop(tap);
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(refed.push(&ramp(256, 128), 0, 101e6));
+        wait_capture(&handle, 384);
+        assert!(handle.shared().capturing(), "the capture survived the swap");
+        control.send(TimeMachineCommand::Stop).expect("stop");
+        drop(refed);
+        handle.join();
+
+        let reader = SigmfReader::open(&stem).expect("read back");
+        assert_eq!(reader.total_samples(), 384);
+        let captures = &reader.meta().captures;
+        assert_eq!(captures.len(), 2, "{captures:?}");
+        assert_eq!(captures[1].sample_start, 256);
+        assert_eq!(captures[1].frequency, Some(101e6));
+        let global = captures[1]
+            .global_index
+            .expect("the seam has a global index");
+        assert!(
+            global >= 256 + (0.04 * RATE) as u64,
+            "50 ms of swap left only {} samples",
+            global - 256
+        );
+        assert!(captures[1].datetime.is_some());
+    }
+
+    #[test]
     fn retunes_published_with_new_samples_reach_the_same_recording_chunk() {
         let dir = TempDir::new().expect("tempdir");
         let stem = dir.path().join("concurrent-retune");
@@ -732,7 +892,7 @@ mod tests {
         let mut keeper = keeper(16, tap.shared.clone());
         keeper.begin(SigmfWriter::create(&stem, RATE, 100e6, "test").expect("writer"));
         keeper.drain_marks(&mut marks);
-        assert!(tap.push(&ramp(0, 3), 101e6));
+        assert!(tap.push_on(&ramp(0, 3), 101e6));
         assert!(keeper.drain_samples(&mut samples, &mut marks));
         keeper.close();
         let reader = SigmfReader::open(&stem).expect("recording");
@@ -747,8 +907,8 @@ mod tests {
         let (mut tap, mut samples, mut marks) = feed(16, 4);
         let mut keeper = keeper(4, tap.shared.clone());
         keeper.begin(SigmfWriter::create(&stem, RATE, 100e6, "test").expect("writer"));
-        assert!(tap.push(&ramp(0, 2), 100e6));
-        assert!(tap.push(&ramp(2, 6), 101e6));
+        assert!(tap.push_on(&ramp(0, 2), 100e6));
+        assert!(tap.push_on(&ramp(2, 6), 101e6));
         assert!(keeper.drain_samples(&mut samples, &mut marks));
         keeper.close();
         let mut reader = SigmfReader::open(&stem).expect("recording");
@@ -833,7 +993,7 @@ mod tests {
     fn the_window_keeps_only_the_last_n_samples() {
         let mut handle = start(1_024, RATE, 100e6).expect("armed");
         let mut tap = handle.take_tap().expect("tap");
-        assert!(tap.push(&ramp(0, 4_096), 100e6));
+        assert!(tap.push_on(&ramp(0, 4_096), 100e6));
         settle(&handle, 1_024);
         assert_eq!(handle.shared().held(), 1_024);
         assert_eq!(handle.capacity(), 1_024);
@@ -849,7 +1009,7 @@ mod tests {
         let mut tap = handle.take_tap().expect("tap");
         let control = handle.control();
 
-        assert!(tap.push(&ramp(0, 1_024), 100e6));
+        assert!(tap.push_on(&ramp(0, 1_024), 100e6));
         settle(&handle, 1_024);
         let writer = SigmfWriter::create(&stem, RATE, 100e6, "test").expect("writer");
         control
@@ -858,7 +1018,7 @@ mod tests {
         wait_capture(&handle, 1_024);
         assert!(handle.shared().capturing());
 
-        assert!(tap.push(&ramp(1_024, 512), 100e6));
+        assert!(tap.push_on(&ramp(1_024, 512), 100e6));
         wait_capture(&handle, 1_536);
         control.send(TimeMachineCommand::Stop).expect("stop");
         drop(tap);
@@ -877,8 +1037,8 @@ mod tests {
         let mut tap = handle.take_tap().expect("tap");
         let control = handle.control();
 
-        assert!(tap.push(&ramp(0, 256), 100e6));
-        assert!(tap.push(&ramp(256, 256), 101e6));
+        assert!(tap.push_on(&ramp(0, 256), 100e6));
+        assert!(tap.push_on(&ramp(256, 256), 101e6));
         settle(&handle, 512);
         let writer = SigmfWriter::create(&stem, RATE, 100e6, "test").expect("writer");
         control
@@ -905,7 +1065,7 @@ mod tests {
         let mut handle = start(48_000, RATE, 100e6).expect("armed");
         let mut tap = handle.take_tap().expect("tap");
         let control = handle.control();
-        assert!(tap.push(&ramp(0, 48_000), 100e6));
+        assert!(tap.push_on(&ramp(0, 48_000), 100e6));
         settle(&handle, 48_000);
         let asked = jiff::Timestamp::now();
         let writer = SigmfWriter::create(&stem, RATE, 100e6, "test").expect("writer");

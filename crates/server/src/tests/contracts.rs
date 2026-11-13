@@ -20,7 +20,7 @@ const WALKERS: [&str; 10] = [
     ".position_source(",
 ];
 
-const KIND_MATCHES: [&str; 9] = [
+const KIND_MATCHES: [&str; 8] = [
     "bearing_fix.rs",
     "calls/bindings.rs",
     "calls/tracker.rs",
@@ -28,7 +28,6 @@ const KIND_MATCHES: [&str; 9] = [
     "event_output/tunnel.rs",
     "fusion_routes.rs",
     "monitor.rs",
-    "radar.rs",
     "satellites.rs",
 ];
 

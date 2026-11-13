@@ -111,6 +111,9 @@ pub struct NodeTypeInfo {
     /// The form a face renders for this node's settings, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub settings: Vec<SettingField>,
+    /// What a built-in processor draws and offers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processor: Option<crate::processor::view::ProcessorFacets>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -154,6 +157,7 @@ impl NodeKind {
             needs_processor_type: matches!(default_body, NodeBody::Processor(_)),
             default_body,
             settings: self.settings(),
+            processor: self.processor_facets(),
         }
     }
 }
@@ -386,6 +390,7 @@ macro_rules! node_registry {
             $name:literal,
             $summary:literal,
             $face:expr,
+            $facets:expr,
             [$($port:ident $(($($arg:tt)*))?),* $(,)?]
         )),* $(,)?],
         probe: ($probe:ident, $probe_id:literal, $probe_params:ty) $(,)?
@@ -610,6 +615,7 @@ macro_rules! processor_nodes {
             $name:literal,
             $summary:literal,
             $face:expr,
+            $facets:expr,
             [$($port:tt)*]
         )),* $(,)?],
         probe: ($probe:ident, $probe_id:literal, $probe_params:ty) $(,)?
@@ -623,6 +629,15 @@ macro_rules! processor_nodes {
         )*
 
         impl NodeKind {
+            /// What a built-in processor declares about its face.
+            #[must_use]
+            pub fn processor_facets(self) -> Option<crate::processor::view::ProcessorFacets> {
+                match self {
+                    $(Self::$variant => Some($facets),)*
+                    _ => None,
+                }
+            }
+
             /// The settings form of a node that carries settings of its own.
             #[must_use]
             pub fn settings(self) -> Vec<SettingField> {

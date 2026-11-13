@@ -5,7 +5,11 @@ A plugin is a decoder compiled to WebAssembly. Drop the `.wasm` into the plugins
 built-in decoders: same palette entry, same settings form, same logs, maps and wires. The folder is
 watched, so a rebuilt plugin is loaded again on its own, and its running channels reopen on the new
 build with their settings and wires. A channel the new build refuses keeps the old one and the
-reason shows as an error.
+reason shows as an error. A plugin whose type id a built-in or another plugin already has is
+refused with an error; the others still load.
+
+Compiled plugins are cached in `sdrmm/plugins` in the user cache folder, so a start only compiles
+what changed.
 
 ## Write one
 
@@ -64,8 +68,8 @@ A plugin can also bring an array processor: it runs on every lane of an Array no
 the direction finder. Declare it as the manifest's `processor` (type id, name, lane range, needs,
 settings form, readouts, emitted kinds), implement `Processor` and call `export_processor!` once.
 `process()` gets one block of every lane and sets readouts by their declared order, the health
-footer and events. Its node has the same form and readouts as any other, without a plot. The
-example's `LaneMeter` reports each lane's power and phase against the first.
+footer and events. Its node gets the face every built-in processor has, drawn from what its type
+declares. The example's `LaneMeter` reports each lane's power and phase against the first.
 
 ## ABI
 
@@ -79,6 +83,7 @@ the plugin's own memory. Under `cargo test` they run in-process, so a plugin tes
 
 ## Safety
 
-Each call has a time budget. A plugin stuck in a loop stops its own channel, which then says so on
-its node, and never holds the receiver. A plugin is code you chose to install: it is isolated from
-crashing the server, not vetted.
+Each call has a time budget and each instance at most 256 MiB of memory. A plugin stuck in a loop
+stops its own channel, which then says so on its node, and never holds the receiver. One that
+grows past the cap fails its own allocation. A plugin is code you chose to install: it is
+isolated from crashing the server, not vetted.

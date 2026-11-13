@@ -17,6 +17,9 @@ const QUEUE_CAPACITY: usize = 256;
 struct Entry {
     target: EventOutputTarget,
     format: String,
+    address: String,
+    heartbeat: Option<Arc<[u8]>>,
+    listener: Option<Arc<TcpListener>>,
     frames: broadcast::Sender<Arc<[u8]>>,
     status: watch::Sender<FeedStatus>,
     worker: Option<JoinHandle<()>>,
@@ -36,11 +39,18 @@ pub(super) struct Outputs {
 }
 
 impl Outputs {
+    /// A feed that moves to another format or node on the same address keeps its socket: the
+    /// old worker is aborted but not yet gone, so binding afresh would find the port taken.
     pub fn configure(&mut self, bindings: &[Binding]) {
+        let mut released: HashMap<String, Arc<TcpListener>> = HashMap::new();
         self.entries.retain(|node, entry| {
-            bindings
+            let kept = bindings
                 .iter()
-                .any(|binding| binding.node == *node && binding.target == entry.target)
+                .any(|binding| binding.node == *node && binding.target == entry.target);
+            if !kept && let Some(listener) = entry.listener.take() {
+                released.insert(entry.address.clone(), listener);
+            }
+            kept
         });
         for binding in bindings {
             let EventOutputTarget::Feed {
@@ -51,9 +61,6 @@ impl Outputs {
             else {
                 continue;
             };
-            let heartbeat = sdrmm_wire::catalog()
-                .feed(format)
-                .map(|feed| Arc::<[u8]>::from(feed.heartbeat.as_slice()));
             if self.entries.contains_key(&binding.node) {
                 continue;
             }
@@ -64,39 +71,30 @@ impl Outputs {
                 address: address.clone(),
                 ..FeedStatus::default()
             });
-            let listener = std::net::TcpListener::bind(address).and_then(|listener| {
-                listener.set_nonblocking(true)?;
-                TcpListener::from_std(listener)
-            });
-            let worker = match (listener, heartbeat) {
-                (_, None) => {
-                    report(&status, format!("No decoder offers the {format} feed"));
-                    None
-                }
-                (Ok(listener), Some(heartbeat)) => {
-                    status.send_modify(|status| status.listening = true);
-                    Some(tokio::spawn(serve(
-                        listener,
-                        frames.clone(),
-                        status.clone(),
-                        heartbeat,
-                    )))
-                }
-                (Err(error), Some(_)) => {
-                    report(&status, format!("Cannot listen on {address}: {error}"));
-                    None
-                }
+            let mut entry = Entry {
+                target: binding.target.clone(),
+                format: format.clone(),
+                address: address.clone(),
+                heartbeat: sdrmm_wire::catalog()
+                    .feed(format)
+                    .map(|feed| Arc::<[u8]>::from(feed.heartbeat.as_slice())),
+                listener: released.remove(address),
+                frames,
+                status,
+                worker: None,
             };
-            self.entries.insert(
-                binding.node.clone(),
-                Entry {
-                    target: binding.target.clone(),
-                    format: format.clone(),
-                    frames,
-                    status,
-                    worker,
-                },
-            );
+            entry.start();
+            self.entries.insert(binding.node.clone(), entry);
+        }
+    }
+
+    /// Tries again to listen for every feed whose address was taken or whose listener stopped.
+    pub fn retry(&mut self) {
+        for entry in self.entries.values_mut() {
+            let stopped = entry.worker.as_ref().is_none_or(JoinHandle::is_finished);
+            if stopped && entry.heartbeat.is_some() {
+                entry.start();
+            }
         }
     }
 
@@ -134,13 +132,56 @@ impl Outputs {
     }
 }
 
+impl Entry {
+    fn start(&mut self) {
+        let Some(heartbeat) = self.heartbeat.clone() else {
+            report(
+                &self.status,
+                format!("No decoder offers the {} feed", self.format),
+            );
+            return;
+        };
+        let listener = match self
+            .listener
+            .clone()
+            .map_or_else(|| bind(&self.address), Ok)
+        {
+            Ok(listener) => listener,
+            Err(error) => {
+                let message = format!("Cannot listen on {}: {error}", self.address);
+                if self.status.borrow().error.as_deref() != Some(message.as_str()) {
+                    report(&self.status, message);
+                }
+                return;
+            }
+        };
+        self.status.send_modify(|status| {
+            status.listening = true;
+            status.error = None;
+        });
+        self.listener = Some(listener.clone());
+        self.worker = Some(tokio::spawn(serve(
+            listener,
+            self.frames.clone(),
+            self.status.clone(),
+            heartbeat,
+        )));
+    }
+}
+
+fn bind(address: &str) -> std::io::Result<Arc<TcpListener>> {
+    let listener = std::net::TcpListener::bind(address)?;
+    listener.set_nonblocking(true)?;
+    Ok(Arc::new(TcpListener::from_std(listener)?))
+}
+
 fn report(status: &watch::Sender<FeedStatus>, error: String) {
     tracing::error!(output = %status.borrow().node, %error, "feed export failed");
     status.send_modify(|status| status.error = Some(error));
 }
 
 async fn serve(
-    listener: TcpListener,
+    listener: Arc<TcpListener>,
     frames: broadcast::Sender<Arc<[u8]>>,
     status: watch::Sender<FeedStatus>,
     heartbeat: Arc<[u8]>,
@@ -268,7 +309,7 @@ mod tests {
         let (frames, _) = broadcast::channel(QUEUE_CAPACITY);
         let (status, observed) = watch::channel(FeedStatus::default());
         let worker = tokio::spawn(serve(
-            listener,
+            Arc::new(listener),
             frames.clone(),
             status.clone(),
             Arc::from([]),
@@ -278,6 +319,9 @@ mod tests {
             Entry {
                 target: beast(address.to_string()),
                 format: "beast".to_owned(),
+                address: address.to_string(),
+                heartbeat: Some(Arc::from([])),
+                listener: None,
                 frames,
                 status,
                 worker: Some(worker),
@@ -391,6 +435,61 @@ mod tests {
         assert!(error(&outputs, "busy").contains("Cannot listen"));
         outputs.lost(3);
         assert!(error(&outputs, "busy").contains("Lost 3"));
+    }
+
+    fn free_address() -> String {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .and_then(|listener| listener.local_addr())
+            .expect("free port")
+            .to_string()
+    }
+
+    fn binding(node: &str, address: &str) -> Binding {
+        Binding {
+            node: node.to_owned(),
+            target: beast(address.to_owned()),
+        }
+    }
+
+    fn listening(outputs: &Outputs, node: &str) -> bool {
+        outputs.entries[node].status.borrow().listening
+    }
+
+    #[tokio::test]
+    async fn a_feed_that_moves_on_its_address_keeps_listening() {
+        sdrmm_channels::registry::init();
+        let address = free_address();
+        let mut outputs = Outputs::default();
+        outputs.configure(&[binding("first", &address)]);
+        assert!(listening(&outputs, "first"));
+
+        outputs.configure(&[binding("second", &address)]);
+
+        assert!(
+            listening(&outputs, "second"),
+            "{}",
+            error(&outputs, "second")
+        );
+        let client = tokio::time::timeout(WAIT, TcpStream::connect(&address)).await;
+        assert!(matches!(client, Ok(Ok(_))));
+    }
+
+    #[tokio::test]
+    async fn a_feed_listens_once_its_address_frees_up() {
+        sdrmm_channels::registry::init();
+        let busy = std::net::TcpListener::bind("127.0.0.1:0").expect("busy");
+        let address = busy.local_addr().expect("address").to_string();
+        let mut outputs = Outputs::default();
+        outputs.configure(&[binding("late", &address)]);
+        assert!(error(&outputs, "late").contains("Cannot listen"));
+        outputs.retry();
+        assert!(!listening(&outputs, "late"));
+
+        drop(busy);
+        outputs.retry();
+
+        assert!(listening(&outputs, "late"));
+        assert_eq!(outputs.entries["late"].status.borrow().error, None);
     }
 
     #[tokio::test]

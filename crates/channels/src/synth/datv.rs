@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used)]
-
+use super::{Need, SynthError};
 use crate::datv::DatvCodeRate;
 use crate::datv::DatvParams;
 use crate::datv::DatvStandard;
@@ -81,7 +80,7 @@ impl Multiplex {
             let mut gop = 0u64;
             for (at, header) in video.windows(8).enumerate() {
                 if header[..4] == [0, 0, 1, 0xb8] {
-                    let code = u32::from_be_bytes(header[4..8].try_into().expect("GOP time code"));
+                    let code = u32::from_be_bytes([header[4], header[5], header[6], header[7]]);
                     gop = u64::from((code >> 7) & 63);
                 } else if header[..4] == [0, 0, 1, 0] {
                     starts.push(if starts.is_empty() { 0 } else { at });
@@ -164,22 +163,20 @@ pub fn dvbs_with(seconds: usize, p: &DatvParams) -> Vec<Complex<f32>> {
 pub const S2_MODULATION: Modulation = Modulation::Qpsk;
 pub const S2_RATE: Rate = Rate::R3_4;
 
-#[must_use]
-pub fn dvbs2(seconds: usize) -> Vec<Complex<f32>> {
+pub fn dvbs2(seconds: usize) -> Result<Vec<Complex<f32>>, SynthError> {
     dvbs2_mode(seconds, S2_MODULATION, S2_RATE, true, false)
 }
 
-#[must_use]
 pub fn dvbs2_mode(
     seconds: usize,
     modulation: Modulation,
     rate: Rate,
     short: bool,
     pilots: bool,
-) -> Vec<Complex<f32>> {
+) -> Result<Vec<Complex<f32>>, SynthError> {
     let wanted = seconds * SYMBOL_RATE as usize;
-    let modcod = ModCod::find_for_frame(modulation, rate, short).expect("a catalogued mode");
-    let mut encoder = Dvbs2Encoder::new(modcod, short, pilots).expect("a supported mode");
+    let modcod = ModCod::find_for_frame(modulation, rate, short).need("DVB-S2 mode")?;
+    let mut encoder = Dvbs2Encoder::new(modcod, short, pilots).need("DVB-S2 encoder")?;
     let mut multiplex = Multiplex::new();
     let mut symbols = Vec::with_capacity(wanted);
     while symbols.len() < wanted {
@@ -188,15 +185,14 @@ pub fn dvbs2_mode(
             .collect();
         encoder.frame(&packets, &mut symbols);
     }
-    shape(&symbols)
+    Ok(shape(&symbols))
 }
 
-#[must_use]
-pub fn dvbs2_superframes(seconds: usize) -> Vec<Complex<f32>> {
+pub fn dvbs2_superframes(seconds: usize) -> Result<Vec<Complex<f32>>, SynthError> {
     use crate::datv::dvbs2::{pl, superframe};
     let count = (seconds * SYMBOL_RATE as usize).div_ceil(superframe::LENGTH);
-    let mode = ModCod::from_index(214).expect("256APSK mode");
-    let mut encoder = Dvbs2Encoder::new(mode, false, false).expect("256APSK encoder");
+    let mode = ModCod::from_index(214).need("256APSK mode")?;
+    let mut encoder = Dvbs2Encoder::new(mode, false, false).need("256APSK encoder")?;
     let mut header = Vec::new();
     pl::header(
         pl::Signalling {
@@ -216,11 +212,10 @@ pub fn dvbs2_superframes(seconds: usize) -> Vec<Complex<f32>> {
         encoder.frame(&packets, &mut payload);
         payload[start..start + pl::HEADER].copy_from_slice(&header);
     }
-    shape(&superframe::wrap(&payload, 0, true, count))
+    Ok(shape(&superframe::wrap(&payload, 0, true, count)))
 }
 
-#[must_use]
-pub fn dvbs2_annex_e(format: u8, superframes: usize) -> Vec<Complex<f32>> {
+pub fn dvbs2_annex_e(format: u8, superframes: usize) -> Result<Vec<Complex<f32>>, SynthError> {
     use crate::datv::dvbs2::{
         superframe::{
             coding::Coding,
@@ -232,7 +227,7 @@ pub fn dvbs2_annex_e(format: u8, superframes: usize) -> Vec<Complex<f32>> {
         modcod: 4,
         short: format == 3,
     };
-    let codec = Xfec::new(coding).expect("QPSK 1/2");
+    let codec = Xfec::new(coding).need("QPSK 1/2 codec")?;
     let mut multiplex = Multiplex::new();
     let mut carry = 0x47;
     let mut baseband = || {
@@ -242,7 +237,7 @@ pub fn dvbs2_annex_e(format: u8, superframes: usize) -> Vec<Complex<f32>> {
         codec
             .baseband
             .build(&packets, &mut carry)
-            .expect("a base band frame")
+            .need("base band frame")
     };
     let transmitter = Transmitter::new(Codes::default());
     let mut symbols = Vec::new();
@@ -253,28 +248,30 @@ pub fn dvbs2_annex_e(format: u8, superframes: usize) -> Vec<Complex<f32>> {
             } else {
                 (16_200, 32 | 4)
             };
-            let per = coding.bundled(size).expect("whole frames");
+            let per = coding.bundled(size).need("whole frames in a bundle")?;
             for _ in 0..superframes {
-                let bundles: Vec<(u8, Vec<Complex<f32>>)> = (0..8)
+                let bundles = (0..8)
                     .map(|_| {
-                        let basebands: Vec<Vec<bool>> = (0..per).map(|_| baseband()).collect();
+                        let basebands = (0..per)
+                            .map(|_| baseband())
+                            .collect::<Result<Vec<_>, _>>()?;
                         let mut payload = Vec::new();
                         codec.encode_bundle(&basebands, &mut payload);
-                        (code, payload)
+                        Ok((code, payload))
                     })
-                    .collect();
+                    .collect::<Result<Vec<_>, SynthError>>()?;
                 symbols.extend(transmitter.bundled(format, &bundles));
             }
         }
         _ => {
             let per = if matches!(format, 6 | 7) { 4 } else { 18 };
-            let plframes: Vec<Plframe> = (0..per * superframes)
+            let plframes = (0..per * superframes)
                 .map(|_| {
                     let mut frame = Vec::new();
-                    codec.encode(&baseband(), false, &mut frame);
-                    Plframe::data(coding, 1, frame)
+                    codec.encode(&baseband()?, false, &mut frame);
+                    Ok(Plframe::data(coding, 1, frame))
                 })
-                .collect();
+                .collect::<Result<Vec<_>, SynthError>>()?;
             let options = Options {
                 frames: per,
                 dwell: (format == 5).then_some(Dwell {
@@ -288,7 +285,7 @@ pub fn dvbs2_annex_e(format: u8, superframes: usize) -> Vec<Complex<f32>> {
             symbols = transmitter.flexible(format, &plframes, options);
         }
     }
-    shape(&symbols)
+    Ok(shape(&symbols))
 }
 
 #[must_use]
@@ -300,11 +297,10 @@ pub fn datagram(protocol: u16, label: &[u8], len: usize, seed: u32) -> GsePdu {
     }
 }
 
-#[must_use]
-pub fn dvbs2_generic(seconds: usize, streams: &[u8]) -> Vec<Complex<f32>> {
+pub fn dvbs2_generic(seconds: usize, streams: &[u8]) -> Result<Vec<Complex<f32>>, SynthError> {
     let wanted = seconds * SYMBOL_RATE as usize;
-    let modcod = ModCod::find(Modulation::Apsk16, Rate::R3_4).expect("a catalogued mode");
-    let mut encoder = Dvbs2Encoder::new(modcod, false, true).expect("a supported mode");
+    let modcod = ModCod::find(Modulation::Apsk16, Rate::R3_4).need("16APSK 3/4 mode")?;
+    let mut encoder = Dvbs2Encoder::new(modcod, false, true).need("16APSK encoder")?;
     let mut writer = GseWriter::new();
     let mut symbols = Vec::with_capacity(wanted);
     let mut round = 0u32;
@@ -322,14 +318,13 @@ pub fn dvbs2_generic(seconds: usize, streams: &[u8]) -> Vec<Complex<f32>> {
         }
         round += 1;
     }
-    shape(&symbols)
+    Ok(shape(&symbols))
 }
 
-#[must_use]
-pub fn dvbs2_very_low(seconds: usize, header: u8) -> Vec<Complex<f32>> {
+pub fn dvbs2_very_low(seconds: usize, header: u8) -> Result<Vec<Complex<f32>>, SynthError> {
     let wanted = seconds * SYMBOL_RATE as usize;
-    let mode = VlMode::from_header(header).expect("a catalogued VL-SNR mode");
-    let mut encoder = VlSnrEncoder::new(mode).expect("a supported mode");
+    let mode = VlMode::from_header(header).need("VL-SNR mode")?;
+    let mut encoder = VlSnrEncoder::new(mode).need("VL-SNR encoder")?;
     let mut multiplex = Multiplex::new();
     let mut symbols = Vec::with_capacity(wanted);
     while symbols.len() < wanted {
@@ -338,14 +333,17 @@ pub fn dvbs2_very_low(seconds: usize, header: u8) -> Vec<Complex<f32>> {
             .collect();
         encoder.frame(&packets, &mut symbols);
     }
-    shape(&symbols)
+    Ok(shape(&symbols))
 }
 
-#[must_use]
-pub fn dvbs2_very_low_generic(seconds: usize, header: u8, streams: &[u8]) -> Vec<Complex<f32>> {
+pub fn dvbs2_very_low_generic(
+    seconds: usize,
+    header: u8,
+    streams: &[u8],
+) -> Result<Vec<Complex<f32>>, SynthError> {
     let wanted = seconds * SYMBOL_RATE as usize;
-    let mode = VlMode::from_header(header).expect("a catalogued VL-SNR mode");
-    let mut encoder = VlSnrEncoder::new(mode).expect("a supported mode");
+    let mode = VlMode::from_header(header).need("VL-SNR mode")?;
+    let mut encoder = VlSnrEncoder::new(mode).need("VL-SNR encoder")?;
     let mut symbols = Vec::with_capacity(wanted);
     let mut round = 0u32;
     while symbols.len() < wanted {
@@ -358,7 +356,7 @@ pub fn dvbs2_very_low_generic(seconds: usize, header: u8, streams: &[u8]) -> Vec
         }
         round += 1;
     }
-    shape(&symbols)
+    Ok(shape(&symbols))
 }
 
 fn shape(symbols: &[Complex<f32>]) -> Vec<Complex<f32>> {

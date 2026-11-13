@@ -5,16 +5,18 @@ mod publish;
 mod tests;
 mod worker;
 
-use std::{any::Any, num::NonZeroUsize, sync::Arc, thread::JoinHandle};
+use std::{num::NonZeroUsize, sync::Arc};
 
 use sdrmm_channels::{
     ChannelError,
-    array_processor::{ArrayBlock, ArrayCtx, ProcessorAction, ProcessorFaults, ProcessorOutput},
+    array_processor::ArrayCtx,
     passive_radar::{
-        CafBackend, CpuCaf, LiveParams, PlanChange, RadarPlan as StagePlan, change, plan_for,
+        CafBackend, CpuCaf, PlanChange, REGISTRATION, RadarPlan as StagePlan, change, plan_for,
     },
 };
 use sdrmm_wire::{GpuUse, ProcessorParams};
+
+use super::dedicated::{Dedicated, DedicatedPlan, Prepared};
 
 pub(crate) use worker::RadarWorker;
 use worker::Shared;
@@ -46,59 +48,42 @@ impl RadarPlan {
     }
 }
 
-pub(crate) enum Prepared {
-    Same,
-    Live(Box<LiveParams>),
-    Rebuild(Box<dyn DedicatedRunner>),
-}
+pub(crate) static DEDICATED: Dedicated = Dedicated {
+    descriptor: REGISTRATION.descriptor,
+    build: |ctx, params, gpu| {
+        let (worker, plan) = build(ctx, params, gpu)?;
+        Ok((Box::new(worker), plan))
+    },
+};
 
-pub(crate) trait DedicatedRunner: Send {
-    fn push(&mut self, block: &ArrayBlock<'_>);
-    fn poll(&mut self, out: &mut ProcessorOutput<'_>);
-    fn commit(&mut self, prepared: Prepared) -> Option<Box<dyn DedicatedRunner>>;
-    fn action(&mut self, action: ProcessorAction) -> Result<(), ChannelError>;
-    fn faults(&self) -> ProcessorFaults;
-    fn dropped_samples(&self) -> u64;
-    fn running(&self) -> bool;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-    fn retire(self: Box<Self>) -> Retired;
-}
-
-pub(crate) struct Retired {
-    threads: Vec<JoinHandle<()>>,
-}
-
-impl Retired {
-    pub(crate) const fn new(threads: Vec<JoinHandle<()>>) -> Self {
-        Self { threads }
+impl DedicatedPlan for RadarPlan {
+    fn prepare(
+        &self,
+        ctx: &ArrayCtx<'_>,
+        params: &ProcessorParams,
+        gpu: GpuUse,
+    ) -> Result<(Prepared, Arc<dyn DedicatedPlan>), ChannelError> {
+        let (prepared, plan) = prepare(self, ctx, params, gpu)?;
+        Ok((prepared, plan))
     }
 
-    pub(crate) fn join(self) -> Result<(), String> {
-        let panicked = self
-            .threads
-            .into_iter()
-            .map(JoinHandle::join)
-            .filter(Result::is_err)
-            .count();
-        if panicked == 0 {
-            Ok(())
-        } else {
-            Err(format!("{panicked} radar threads panicked"))
-        }
+    #[cfg(test)]
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
-pub(crate) fn build_dedicated(
+pub(crate) fn build(
     ctx: &ArrayCtx<'_>,
     params: &ProcessorParams,
     gpu: GpuUse,
-) -> Result<(Box<dyn DedicatedRunner>, Arc<RadarPlan>), ChannelError> {
+) -> Result<(RadarWorker, Arc<RadarPlan>), ChannelError> {
     let stage = plan_for(ctx, params)?;
     let (worker, backend) = launch(&stage, ctx.max_block, gpu)?;
-    Ok((Box::new(worker), Arc::new(RadarPlan { stage, backend })))
+    Ok((worker, Arc::new(RadarPlan { stage, backend })))
 }
 
-pub(crate) fn prepare_dedicated(
+pub(crate) fn prepare(
     plan: &RadarPlan,
     ctx: &ArrayCtx<'_>,
     params: &ProcessorParams,

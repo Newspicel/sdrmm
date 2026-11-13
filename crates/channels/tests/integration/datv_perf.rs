@@ -93,32 +93,38 @@ fn dvb_s2_modes_against_the_realtime_budget() {
         measure(
             "dvbs2_qpsk_3/4_short",
             DatvStandard::DvbS2,
-            &synth::datv::dvbs2_mode(SECONDS, Modulation::Qpsk, Rate::R3_4, true, false),
+            &synth::datv::dvbs2_mode(SECONDS, Modulation::Qpsk, Rate::R3_4, true, false)
+                .expect("a synthetic signal"),
         ),
         measure(
             "dvbs2_qpsk_3/4_normal",
             DatvStandard::DvbS2,
-            &synth::datv::dvbs2_mode(SECONDS, Modulation::Qpsk, Rate::R3_4, false, true),
+            &synth::datv::dvbs2_mode(SECONDS, Modulation::Qpsk, Rate::R3_4, false, true)
+                .expect("a synthetic signal"),
         ),
         measure(
             "dvbs2_qpsk_1/4_normal",
             DatvStandard::DvbS2,
-            &synth::datv::dvbs2_mode(SECONDS, Modulation::Qpsk, Rate::R1_4, false, true),
+            &synth::datv::dvbs2_mode(SECONDS, Modulation::Qpsk, Rate::R1_4, false, true)
+                .expect("a synthetic signal"),
         ),
         measure(
             "dvbs2_8psk_3/4_normal",
             DatvStandard::DvbS2,
-            &synth::datv::dvbs2_mode(SECONDS, Modulation::Psk8, Rate::R3_4, false, true),
+            &synth::datv::dvbs2_mode(SECONDS, Modulation::Psk8, Rate::R3_4, false, true)
+                .expect("a synthetic signal"),
         ),
         measure(
             "dvbs2_16apsk_3/4_normal",
             DatvStandard::DvbS2,
-            &synth::datv::dvbs2_mode(SECONDS, Modulation::Apsk16, Rate::R3_4, false, true),
+            &synth::datv::dvbs2_mode(SECONDS, Modulation::Apsk16, Rate::R3_4, false, true)
+                .expect("a synthetic signal"),
         ),
         measure(
             "dvbs2_32apsk_5/6_normal",
             DatvStandard::DvbS2,
-            &synth::datv::dvbs2_mode(SECONDS, Modulation::Apsk32, Rate::R5_6, false, true),
+            &synth::datv::dvbs2_mode(SECONDS, Modulation::Apsk32, Rate::R5_6, false, true)
+                .expect("a synthetic signal"),
         ),
     ];
     println!(

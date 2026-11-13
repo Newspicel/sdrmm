@@ -35,6 +35,10 @@ export class FrameTween {
     this.arrived = now;
   }
 
+  settled(now: number): boolean {
+    return now - this.arrived >= this.interval;
+  }
+
   sample(now: number): Float32Array {
     const t = Math.min(1, Math.max(0, (now - this.arrived) / this.interval));
     const { from, to, shown } = this;

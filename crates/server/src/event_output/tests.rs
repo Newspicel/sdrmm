@@ -54,7 +54,7 @@ fn edge(from: (&str, &str), to: (&str, &str)) -> PatchEdge {
 
 fn discord_webhook() -> EventOutputTarget {
     EventOutputTarget::Webhook {
-        url: "https://discord.com/api/webhooks/1/token".to_owned(),
+        url: Secret::Inline("https://discord.com/api/webhooks/1/token".to_owned()),
         format: WebhookFormat::Discord,
     }
 }
@@ -218,6 +218,14 @@ async fn capture(State(captures): State<Captures>, request: Request) -> AxumResp
         )
             .into_response();
     }
+    if uri == "/rate-limited-past-duration" {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(reqwest::header::RETRY_AFTER, "1e30")],
+            r#"{"retry_after_ms":1e300}"#,
+        )
+            .into_response();
+    }
     if uri.contains("/_matrix/media/v3/upload") {
         return (
             StatusCode::OK,
@@ -327,7 +335,16 @@ fn resolve_maps_configured_outputs_and_the_events_port() {
 
     assert_eq!(bindings.len(), 1);
     assert_eq!(bindings[0].node, "configured");
-    assert_eq!(bindings[0].target, configured);
+    let Some((_, Secret::Stored { secret })) = bindings[0].target.secret() else {
+        panic!(
+            "the saved webhook names a stored URL: {:?}",
+            bindings[0].target
+        );
+    };
+    assert_eq!(
+        store.secret(secret).expect("read").as_deref(),
+        configured.secret().and_then(|(_, url)| url.inline())
+    );
 }
 
 fn routing_for() -> Routing {
@@ -587,6 +604,54 @@ async fn an_absurd_retry_after_is_capped() {
         error,
         DeliveryError::RateLimited(wait) if wait == MAX_RETRY_DELAY
     ));
+}
+
+#[tokio::test]
+async fn a_retry_after_beyond_any_duration_is_capped_without_a_panic() {
+    let (base, _captures) = server().await;
+    let response = Client::new()
+        .get(format!("{base}/rate-limited-past-duration"))
+        .send()
+        .await
+        .expect("rate limited response");
+
+    let error = checked_response("Test", response)
+        .await
+        .expect_err("rate limited");
+
+    assert!(matches!(
+        error,
+        DeliveryError::RateLimited(wait) if wait == MAX_RETRY_DELAY
+    ));
+    assert_eq!(seconds_to_delay(f64::MAX), Some(MAX_RETRY_DELAY));
+    assert_eq!(
+        retry_after_body(r#"{"retry_after_ms":1e308}"#),
+        Some(MAX_RETRY_DELAY)
+    );
+}
+
+#[tokio::test]
+async fn a_panicking_delivery_fails_its_batch_and_spares_the_worker() {
+    let crashed = guarded(async { panic!("boom") }).await;
+    assert!(
+        matches!(&crashed, Err(DeliveryError::Failed(reason)) if reason == "Delivery crashed: boom"),
+        "{crashed:?}"
+    );
+    assert!(guarded(async { Ok(()) }).await.is_ok());
+}
+
+#[test]
+fn a_stopped_delivery_worker_is_reported_on_every_output() {
+    let statuses = status::Statuses::default();
+    statuses.configure(&[Binding {
+        node: "hook".to_owned(),
+        target: json_webhook("https://a.test/".to_owned()),
+    }]);
+
+    worker_ended(Ok(()), &statuses);
+
+    let error = statuses.get("hook").and_then(|status| status.error);
+    assert_eq!(error.as_deref(), Some("Delivery worker stopped, restarted"));
 }
 
 #[tokio::test]
@@ -886,7 +951,7 @@ async fn a_json_webhook_error_does_not_expose_the_endpoint() {
 
 fn json_webhook(url: String) -> EventOutputTarget {
     EventOutputTarget::Webhook {
-        url,
+        url: Secret::Inline(url),
         format: WebhookFormat::Json,
     }
 }
@@ -933,10 +998,97 @@ async fn delivery_outcomes_reach_the_output_status() {
 }
 
 fn senders(shell: Option<Arc<dyn NativeShell>>) -> Senders {
+    senders_over(shell, Arc::new(crate::Store::open(None).expect("store")))
+}
+
+fn senders_over(shell: Option<Arc<dyn NativeShell>>, store: Arc<crate::Store>) -> Senders {
     Senders {
         client: Client::new(),
         engine: std::sync::Weak::new(),
         shell,
+        store,
+    }
+}
+
+fn influx_with(url: String, token: Secret) -> EventOutputTarget {
+    EventOutputTarget::Influx {
+        url,
+        bucket: "radio".to_owned(),
+        org: String::new(),
+        token,
+    }
+}
+
+#[tokio::test]
+async fn a_stored_credential_is_read_from_this_servers_store() {
+    let (base, captures) = server().await;
+    let store = Arc::new(crate::Store::open(None).expect("store"));
+    let id = store.create_secret("kept-token").expect("kept");
+    let target = influx_with(format!("{base}/influx"), Secret::stored(id));
+    let statuses = status::Statuses::default();
+    let binding = Binding {
+        node: "influx".to_owned(),
+        target: target.clone(),
+    };
+    statuses.configure(std::slice::from_ref(&binding));
+    let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
+    sender
+        .send(delivery_to("influx", target, &decoded()))
+        .await
+        .expect("queued");
+    drop(sender);
+
+    deliver_all(senders_over(None, store), receiver, statuses.clone()).await;
+
+    assert_eq!(statuses.get("influx").expect("status").delivered, 1);
+    let captured = captures.lock().expect("captures");
+    assert_eq!(
+        captured[0].authorization.as_deref(),
+        Some("Token kept-token")
+    );
+}
+
+#[tokio::test]
+async fn a_credential_missing_on_this_server_shows_until_it_is_set() {
+    let store = Arc::new(crate::Store::open(None).expect("store"));
+    let binding = Binding {
+        node: "influx".to_owned(),
+        target: influx_with("http://127.0.0.1:9".to_owned(), Secret::stored("elsewhere")),
+    };
+    let statuses = status::Statuses::default();
+    statuses.configure(std::slice::from_ref(&binding));
+
+    check_secrets(&store, std::slice::from_ref(&binding), &statuses).await;
+    let error = statuses.get("influx").and_then(|status| status.error);
+    assert_eq!(
+        error.as_deref(),
+        Some("InfluxDB token is not set on this server")
+    );
+
+    let changes = store.subscribe_secrets();
+    store.put_secret("elsewhere", "token").expect("set");
+    assert!(changes.has_changed().expect("open"));
+    check_secrets(&store, std::slice::from_ref(&binding), &statuses).await;
+    assert_eq!(statuses.get("influx").and_then(|status| status.error), None);
+}
+
+#[tokio::test]
+async fn a_stored_webhook_url_still_has_to_be_https() {
+    let store = Arc::new(crate::Store::open(None).expect("store"));
+    let id = store
+        .create_secret("http://plain.example/hook")
+        .expect("kept");
+    let target = json_webhook_secret(Secret::stored(id));
+
+    let error = reveal(&store, &target).await.expect_err("plain http");
+
+    assert_eq!(error.to_string(), "Webhook URL is not valid");
+}
+
+fn json_webhook_secret(url: Secret) -> EventOutputTarget {
+    EventOutputTarget::Webhook {
+        url,
+        format: WebhookFormat::Json,
     }
 }
 
@@ -1317,7 +1469,7 @@ fn spectrum_monitor_audio_is_attached_to_event_deliveries() {
     };
     let mut plain = routing_for();
     plain.bindings[0].target = EventOutputTarget::Webhook {
-        url: "https://example.com/hook".to_owned(),
+        url: Secret::Inline("https://example.com/hook".to_owned()),
         format: WebhookFormat::Json,
     };
     let unkept = decoded_deliveries(&plain, &record, 1, &calls);
@@ -1390,7 +1542,7 @@ fn influx_target() -> EventOutputTarget {
         url: "http://127.0.0.1:8086".to_owned(),
         bucket: "radio".to_owned(),
         org: "home".to_owned(),
-        token: "influx-token".to_owned(),
+        token: Secret::Inline("influx-token".to_owned()),
     }
 }
 
@@ -1399,7 +1551,7 @@ fn postgres_target(url: &str, table: &str) -> EventOutputTarget {
         url: url.to_owned(),
         table: table.to_owned(),
         username: "radio".to_owned(),
-        password: "secret".to_owned(),
+        password: Secret::Inline("secret".to_owned()),
     }
 }
 
@@ -1552,13 +1704,44 @@ fn postgres_takes_credentials_beside_the_url() {
     assert_eq!(config.get_ports(), [5433]);
 }
 
+#[test]
+fn a_remote_postgres_must_speak_tls_unless_the_url_says_otherwise() {
+    use tokio_postgres::config::SslMode;
+    let mode = |url| {
+        postgres::config(&postgres::PostgresTarget {
+            url,
+            table: "sdrmm_events",
+            username: "radio",
+            password: "secret",
+        })
+        .expect("config")
+        .get_ssl_mode()
+    };
+    assert_eq!(mode("postgres://db.example/radio"), SslMode::Require);
+    assert_eq!(
+        mode("postgres://localhost,db.example/radio"),
+        SslMode::Require
+    );
+    assert_eq!(
+        mode("postgres://localhost/radio?hostaddr=192.0.2.7"),
+        SslMode::Require
+    );
+    assert_eq!(mode("postgres://127.0.0.1/radio"), SslMode::Prefer);
+    assert_eq!(mode("postgres://localhost/radio"), SslMode::Prefer);
+    assert_eq!(
+        mode("postgres://db.example/radio?sslmode=disable"),
+        SslMode::Disable
+    );
+    assert_eq!(mode("host=db.example sslmode=prefer"), SslMode::Prefer);
+}
+
 #[tokio::test]
 async fn postgres_refuses_an_unsafe_table_before_connecting() {
     let target = postgres_target("postgres://127.0.0.1:1/radio", "events; drop");
     let batch = [delivery_to("archive", target.clone(), &decoded())];
 
     let error = postgres::Connections::default()
-        .insert("archive", &target, &batch)
+        .insert("archive", &target, "secret", &batch)
         .await
         .expect_err("unsafe table")
         .to_string();
@@ -1580,7 +1763,7 @@ async fn an_unreachable_postgres_surfaces_the_failure() {
     let batch = [delivery_to("archive", target.clone(), &decoded())];
 
     let error = postgres::Connections::default()
-        .insert("archive", &target, &batch)
+        .insert("archive", &target, "secret", &batch)
         .await
         .expect_err("connection failure")
         .to_string();

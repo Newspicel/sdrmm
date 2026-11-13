@@ -70,3 +70,25 @@ pub fn burst(tx: &mut dyn ChannelTx) -> Vec<Complex<f32>> {
         }
     }
 }
+
+/// Why a synthetic signal could not be built from what it was asked for.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct SynthError(String);
+
+/// Turns a missing or failed building block into a [`SynthError`] naming it.
+pub(crate) trait Need<T> {
+    fn need(self, what: &str) -> Result<T, SynthError>;
+}
+
+impl<T> Need<T> for Option<T> {
+    fn need(self, what: &str) -> Result<T, SynthError> {
+        self.ok_or_else(|| SynthError(format!("no {what}")))
+    }
+}
+
+impl<T, E: std::fmt::Display> Need<T> for Result<T, E> {
+    fn need(self, what: &str) -> Result<T, SynthError> {
+        self.map_err(|error| SynthError(format!("{what}: {error}")))
+    }
+}

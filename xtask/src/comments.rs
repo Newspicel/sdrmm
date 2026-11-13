@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
 
@@ -7,11 +7,7 @@ const TREES: [&str; 4] = ["crates", "apps", "xtask", "fuzz"];
 pub(crate) fn check(root: &Path) -> Result<()> {
     let mut offenders = Vec::new();
     for tree in TREES {
-        let dir = root.join(tree);
-        if !dir.is_dir() {
-            continue;
-        }
-        for source in sources(&dir)? {
+        for source in crate::sources::files(&root.join(tree), &["rs"])? {
             let text = std::fs::read_to_string(&source)
                 .with_context(|| format!("read {}", source.display()))?;
             let relative = source.strip_prefix(root).unwrap_or(&source).to_path_buf();
@@ -28,25 +24,6 @@ pub(crate) fn check(root: &Path) -> Result<()> {
         offenders.join("\n  ")
     );
     Ok(())
-}
-
-fn sources(dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
-        let path = entry
-            .with_context(|| format!("read {}", dir.display()))?
-            .path();
-        if path.is_dir() {
-            if path.file_name().is_some_and(|name| name == "target") {
-                continue;
-            }
-            out.extend(sources(&path)?);
-        } else if path.extension().is_some_and(|extension| extension == "rs") {
-            out.push(path);
-        }
-    }
-    out.sort();
-    Ok(out)
 }
 
 fn non_doc_comments(text: &str) -> Vec<usize> {

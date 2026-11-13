@@ -1,7 +1,7 @@
 import type { SpectrumFrame } from "./frame";
 import { AUDIO_RATE_HZ } from "./limits";
 import type { Listener, Unsubscribe } from "./listeners";
-import { type PortHub, portHub, portKey, sourceKey } from "./ports";
+import { type PortHold, type PortHub, portHub, portKey, sourceKey } from "./ports";
 
 export interface SpectrumSocket {
   on<K extends "spectrum">(kind: K, listener: Listener<K>): Unsubscribe;
@@ -167,7 +167,7 @@ interface Watched {
   release: number;
   bins: number;
   fps: number;
-  hold: (() => void) | null;
+  hold: PortHold | null;
 }
 
 export class SpectrumHub {
@@ -314,7 +314,7 @@ export class SpectrumHub {
     if (watched.hold === null) {
       watched.hold = this.ports.hold(node, port, params);
     } else {
-      this.ports.tune(node, port, params);
+      watched.hold.tune(params);
     }
   }
 }

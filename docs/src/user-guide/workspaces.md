@@ -40,9 +40,8 @@ clipboard works across workspaces while the tab stays open.
 
 ### Notes
 
-A **Note** node, under Tools, holds markdown: headings, bold, code, lists, quotes, rules, and
-links. Double-click it to write, click away to keep. It travels with the workspace, so an exported
-file carries its own instructions. Pin it to the rack to keep it in view.
+A **Note** node, under Tools, holds markdown. Double-click it to write, click away to keep. It
+travels with the workspace and its exports. Pin it to the rack to keep it in view.
 
 ### Export and import
 
@@ -62,19 +61,13 @@ Undo removes the added nodes but leaves the radio's new frequency and rate.
 ## Examples
 
 **Library → Examples** holds whole workspaces. **Import** adds one as a new workspace and switches
-to it, leaving the open one alone. A template changes the radio you already have; an example
-arrives with its own.
+to it. A template changes the radio you have; an example brings its own.
 
-Each row says what the example needs, and names the nodes it uses, so you can go the other way and
-find the example that shows a node you have not used. Nothing is greyed out: an example you lack
-the radios for still imports, and its Device nodes stand empty and say so, ready for
-you to pick replacements.
+Each row names what the example needs and the nodes it uses, so you can find one that shows a node
+you have not used. An example imports even without its radios: its Device nodes stay empty until
+you pick replacements. Each carries a **Note** explaining its nodes.
 
-Every example carries a **Note** naming each of its nodes and why it is there. The note travels
-with the workspace, so it survives your changes and an export.
-
-**No radio** runs on a Device node pinned to the signal generator, so there is something to take
-apart before any hardware arrives.
+**No radio** runs on the signal generator, so it works before any hardware arrives.
 
 ## Presets
 

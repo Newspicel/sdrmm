@@ -727,7 +727,7 @@ mod tests {
 
     #[test]
     fn a_generated_second_generation_stream_reaches_the_program_table() {
-        let iq = synth::datv::dvbs2(3);
+        let iq = synth::datv::dvbs2(3).expect("a synthetic signal");
         let mut channel = second_generation();
         let statuses = drive(&mut channel, &iq);
         let status = statuses.last().expect("a broadcast status");
@@ -748,7 +748,8 @@ mod tests {
             (Modulation::Apsk16, Rate::R3_4, "16APSK 3/4"),
             (Modulation::Apsk32, Rate::R5_6, "32APSK 5/6"),
         ] {
-            let iq = synth::datv::dvbs2_mode(3, modulation, rate, false, true);
+            let iq = synth::datv::dvbs2_mode(3, modulation, rate, false, true)
+                .expect("a synthetic signal");
             let mut channel = second_generation();
             let statuses = drive(&mut channel, &iq);
             let status = statuses.last().expect("a broadcast status");
@@ -774,7 +775,8 @@ mod tests {
             (Modulation::Apsk128, Rate::R135_180),
             (Modulation::Apsk256, Rate::R116_180),
         ] {
-            let iq = synth::datv::dvbs2_mode(2, modulation, rate, false, true);
+            let iq = synth::datv::dvbs2_mode(2, modulation, rate, false, true)
+                .expect("a synthetic signal");
             let mut channel = second_generation();
             let started = std::time::Instant::now();
             let statuses = drive(&mut channel, &iq);
@@ -800,7 +802,7 @@ mod tests {
 
     #[test]
     fn an_encapsulated_stream_is_named_and_its_input_streams_listed() {
-        let iq = synth::datv::dvbs2_generic(3, &[4, 11]);
+        let iq = synth::datv::dvbs2_generic(3, &[4, 11]).expect("a synthetic signal");
         let mut channel = second_generation();
         let statuses = drive(&mut channel, &iq);
         let status = statuses.last().expect("a broadcast status");
@@ -821,7 +823,7 @@ mod tests {
 
     #[test]
     fn only_the_chosen_input_stream_is_read() {
-        let iq = synth::datv::dvbs2_generic(3, &[4, 11]);
+        let iq = synth::datv::dvbs2_generic(3, &[4, 11]).expect("a synthetic signal");
         let mut channel = open(DatvParams {
             standard: DatvStandard::DvbS2,
             symbol_rate: synth::datv::SYMBOL_RATE,
@@ -843,7 +845,7 @@ mod tests {
     #[test]
     fn a_very_low_signal_stream_reaches_the_program_table() {
         for (header, label) in [(9u8, "VL-SNR BPSK 1/5"), (0, "VL-SNR QPSK 2/9")] {
-            let iq = synth::datv::dvbs2_very_low(8, header);
+            let iq = synth::datv::dvbs2_very_low(8, header).expect("a synthetic signal");
             let mut channel = second_generation();
             let statuses = drive(&mut channel, &iq);
             let status = statuses.last().expect("a broadcast status");
@@ -884,7 +886,8 @@ mod tests {
     fn the_higher_order_constellations_keep_ahead_of_the_channel_rate() {
         use crate::datv::dvbs2::{frame::Modulation, ldpc::Rate};
 
-        let iq = synth::datv::dvbs2_mode(2, Modulation::Apsk32, Rate::R5_6, false, true);
+        let iq = synth::datv::dvbs2_mode(2, Modulation::Apsk32, Rate::R5_6, false, true)
+            .expect("a synthetic signal");
         let mut channel = second_generation();
         let started = std::time::Instant::now();
         let statuses = drive(&mut channel, &iq);
@@ -902,7 +905,7 @@ mod tests {
 
     #[test]
     fn a_very_low_signal_frame_keeps_ahead_of_the_channel_rate() {
-        let iq = synth::datv::dvbs2_very_low(2, 0);
+        let iq = synth::datv::dvbs2_very_low(2, 0).expect("a synthetic signal");
         let mut channel = second_generation();
         let started = std::time::Instant::now();
         let statuses = drive(&mut channel, &iq);
@@ -939,7 +942,8 @@ mod tests {
         esn0_db: f32,
         offset: f32,
     ) -> (u32, u32) {
-        let clean = synth::datv::dvbs2_mode(2, modulation, rate, false, pilots);
+        let clean = synth::datv::dvbs2_mode(2, modulation, rate, false, pilots)
+            .expect("a synthetic signal");
         let power = clean.iter().map(|s| s.norm_sqr()).sum::<f32>() / clean.len() as f32;
         let deviation = (power * 4.0 / 10f32.powf(esn0_db / 10.0) / 2.0).sqrt();
         let mut state = 0x2468_ace1u32;
@@ -1047,7 +1051,7 @@ mod tests {
 
     #[test]
     fn superframed_second_generation_keeps_decoding() {
-        let iq = synth::datv::dvbs2_superframes(4);
+        let iq = synth::datv::dvbs2_superframes(4).expect("a synthetic signal");
         let mut channel = open(DatvParams {
             standard: DatvStandard::DvbS2,
             superframes: true,
@@ -1062,7 +1066,8 @@ mod tests {
     #[test]
     fn every_annex_e_format_decodes_through_the_channel() {
         for format in 2..=7u8 {
-            let iq = synth::datv::dvbs2_annex_e(format, if format < 6 { 3 } else { 6 });
+            let iq = synth::datv::dvbs2_annex_e(format, if format < 6 { 3 } else { 6 })
+                .expect("a synthetic signal");
             let mut channel = open(DatvParams {
                 standard: DatvStandard::DvbS2,
                 superframes: true,

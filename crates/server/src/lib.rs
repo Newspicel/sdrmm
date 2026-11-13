@@ -56,10 +56,10 @@ pub mod phones;
 mod placement;
 mod presence;
 mod problems;
-mod radar;
 mod rebind;
 mod recorders;
 mod reference;
+mod reports;
 mod resolved;
 mod rest;
 mod rotators;
@@ -127,7 +127,7 @@ pub(crate) struct AppState {
     pub(crate) fusion: df_fusion::SharedFusion,
     pub(crate) shell: Option<Arc<dyn NativeShell>>,
     pub(crate) arrays: Arc<array::ArrayHub>,
-    pub(crate) radar: Arc<radar::RadarHub>,
+    pub(crate) reports: Arc<reports::ReportHub>,
     pub(crate) surfaces: Arc<surfaces::SurfaceHub>,
     pub(crate) survey: Arc<survey::SurveyHub>,
     pub(crate) transmit: Arc<transmit::TransmitHub>,
@@ -181,7 +181,7 @@ impl AppState {
             fusion: Arc::new(df_fusion::FusionHub::default()),
             shell: None,
             arrays: Arc::default(),
-            radar: Arc::default(),
+            reports: Arc::default(),
             surfaces: Arc::default(),
             survey: Arc::default(),
             transmit: Arc::default(),
@@ -331,7 +331,7 @@ fn start_runtime(state: &AppState) -> Background {
     schedules::follow(state);
     audio_fx::follow(state);
     array::start_pump(state);
-    radar::start(state);
+    reports::start(state);
     df_fusion::start(state);
     fusion_routes::start(state);
     bearing_fix::start(state);
@@ -447,8 +447,9 @@ fn start_background(state: &AppState) -> Background {
         let calls = state.calls.clone();
         let records = state.decoded.subscribe();
         let shell = state.shell.clone();
+        let store = state.store.clone();
         spawn_task("sdrmm-event-output", move || {
-            event_output::run(records, engine, patch, calls, shell)
+            event_output::run(records, engine, patch, calls, shell, store)
         })
     };
     Background {
@@ -527,6 +528,7 @@ pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<Serve
     engine.start_level_meter(LEVEL_INTERVAL)?;
     engine.start_occupancy_collector(HOTPLUG_INTERVAL)?;
     log_start(&config, &engine);
+    sweep_import_spools(&engine);
     let store = Store::open(config.db_path.as_deref()).map_err(std::io::Error::other)?;
     workspace::adopt_named_devices(&engine, &store);
     let mut state = AppState::new(engine, Arc::new(store));
@@ -623,6 +625,22 @@ fn log_start(config: &Config, engine: &Engine) {
     match &config.options.token {
         Some(_) => tracing::info!("shared-token auth enabled"),
         None => tracing::info!("no token: LAN-trusted, unauthenticated"),
+    }
+}
+
+fn sweep_import_spools(engine: &Engine) {
+    let Some(dir) = engine.recordings_dir() else {
+        return;
+    };
+    match sdrmm_recorder::sweep_spools(dir) {
+        Ok(removed) => {
+            for path in removed {
+                tracing::info!(path = %path.display(), "removed a spool a crashed import left");
+            }
+        }
+        Err(error) => {
+            tracing::warn!(dir = %dir.display(), %error, "could not clear old import spools");
+        }
     }
 }
 

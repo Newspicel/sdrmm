@@ -1,9 +1,8 @@
-use std::{
-    path::{Path as FsPath, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::path::{Path as FsPath, PathBuf};
 
-use sdrmm_recorder::{BYTES_PER_SAMPLE, CollectionReader, SigmfReader, collection_path, data_path};
+use sdrmm_recorder::{
+    BYTES_PER_SAMPLE, CollectionReader, SigmfReader, claim_spool, collection_path, data_path,
+};
 
 use super::*;
 
@@ -492,17 +491,12 @@ impl Drop for Spooled {
 
 impl Spooled {
     async fn fill(dir: &std::path::Path, field: &mut Field<'_>) -> Result<Self, AppError> {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let spooled = Self {
-            path: dir.join(format!(
-                ".upload-{}-{}.tmp",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            )),
-        };
-        let mut file = tokio::fs::File::create(&spooled.path)
-            .await
+        let target = dir.to_path_buf();
+        let (path, file) = tokio::task::spawn_blocking(move || claim_spool(&target))
+            .await?
             .map_err(|err| AppError::internal(format!("spool upload: {err}")))?;
+        let spooled = Self { path };
+        let mut file = tokio::fs::File::from_std(file);
         let mut written = 0u64;
         while let Some(chunk) = next_chunk(field).await? {
             written += chunk.len() as u64;

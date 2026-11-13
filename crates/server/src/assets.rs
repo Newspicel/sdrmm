@@ -19,6 +19,33 @@ static ASSETS: &[Asset] = include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
 const API_DOCS: &str = "api-docs.html";
 
 pub(crate) async fn static_handler(uri: Uri, headers: HeaderMap) -> Response {
+    unframeable(serve_path(&uri, &headers))
+}
+
+pub(crate) async fn api_docs(headers: HeaderMap) -> Response {
+    unframeable(match find(API_DOCS) {
+        Some(asset) => respond(asset, &headers),
+        None => (StatusCode::SERVICE_UNAVAILABLE, Html(NOT_BUILT)).into_response(),
+    })
+}
+
+/// The desktop shell and phone apps load the UI top level and nothing frames it, so refusing every
+/// frame closes clickjacking at no cost.
+fn unframeable(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("frame-ancestors 'none'"),
+    );
+    response
+}
+
+fn serve_path(uri: &Uri, headers: &HeaderMap) -> Response {
     let raw = uri.path().trim_start_matches('/');
 
     if raw == "api" || raw.starts_with("api/") {
@@ -32,14 +59,7 @@ pub(crate) async fn static_handler(uri: Uri, headers: HeaderMap) -> Response {
 
     let path = if raw.is_empty() { "index.html" } else { raw };
     match find(path).or_else(|| find("index.html")) {
-        Some(asset) => respond(asset, &headers),
-        None => (StatusCode::SERVICE_UNAVAILABLE, Html(NOT_BUILT)).into_response(),
-    }
-}
-
-pub(crate) async fn api_docs(headers: HeaderMap) -> Response {
-    match find(API_DOCS) {
-        Some(asset) => respond(asset, &headers),
+        Some(asset) => respond(asset, headers),
         None => (StatusCode::SERVICE_UNAVAILABLE, Html(NOT_BUILT)).into_response(),
     }
 }
@@ -125,6 +145,24 @@ mod tests {
         match env!("SDRMM_WEB_UI") {
             "embedded" => assert!(find("index.html").is_some(), "no page to serve"),
             empty => assert!(ASSETS.is_empty(), "{empty} build holds {}", ASSETS.len()),
+        }
+    }
+
+    #[tokio::test]
+    async fn every_page_refuses_framing_and_sniffing() {
+        let pages = [
+            static_handler(Uri::from_static("/"), HeaderMap::new()).await,
+            static_handler(Uri::from_static("/api/nope"), HeaderMap::new()).await,
+            api_docs(HeaderMap::new()).await,
+        ];
+        for page in pages {
+            let headers = page.headers();
+            assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+            assert_eq!(headers[header::X_FRAME_OPTIONS], "DENY");
+            assert_eq!(
+                headers[header::CONTENT_SECURITY_POLICY],
+                "frame-ancestors 'none'"
+            );
         }
     }
 

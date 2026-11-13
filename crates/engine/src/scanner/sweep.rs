@@ -5,6 +5,7 @@ use tokio::sync::broadcast;
 
 use crate::{
     CaptureRuntime, DeviceSetStatus, Engine, EngineError, RebuildEntry, dc_block, lock_runtime,
+    reattach::Handover,
     runtime::{DeviceRuntime, SpectrumSnapshot},
 };
 
@@ -63,8 +64,14 @@ pub(crate) fn enter(engine: &Engine, ds: u32, plan: &SweepPlan) -> Result<(), En
                 array: array.to_owned(),
             });
         }
+        if state.holds_iq_sinks() {
+            return Err(EngineError::Scan(
+                "IQ is being recorded or exported, and a firmware sweep carries none".to_string(),
+            ));
+        }
         (state.runtime.clone(), state.settings.offset())
     };
+    let handover = engine.prepare_handover(ds);
     let (device, taps) = {
         let mut current = lock_runtime(&runtime);
         if current.is_sweeping() {
@@ -83,9 +90,9 @@ pub(crate) fn enter(engine: &Engine, ds: u32, plan: &SweepPlan) -> Result<(), En
         fault_handler(engine, ds),
     );
     match started {
-        Ok(sweeping) => swap_runtime(engine, ds, sweeping),
+        Ok(sweeping) => swap_runtime(engine, ds, sweeping, handover),
         Err((device, refused)) => {
-            restore_receiving(engine, ds, device, taps)?;
+            restore_receiving(engine, ds, device, taps, handover)?;
             Err(EngineError::Device(refused))
         }
     }
@@ -97,6 +104,7 @@ fn restore_receiving(
     ds: u32,
     mut device: Box<dyn SdrDevice>,
     taps: Vec<broadcast::Sender<SpectrumSnapshot>>,
+    handover: Handover,
 ) -> Result<(), EngineError> {
     let settings = {
         let inner = engine.lock();
@@ -119,7 +127,7 @@ fn restore_receiving(
         fault_handler(engine, ds),
     )
     .map_err(EngineError::Device)?;
-    swap_runtime(engine, ds, receiving)?;
+    swap_runtime(engine, ds, receiving, handover)?;
     rebuild_channels(engine, ds);
     Ok(())
 }
@@ -135,6 +143,7 @@ pub(crate) fn leave(engine: &Engine, ds: u32) -> Result<(), EngineError> {
             .runtime
             .clone()
     };
+    let handover = engine.prepare_handover(ds);
     let device = {
         let mut current = lock_runtime(&runtime);
         if !current.is_sweeping() {
@@ -145,13 +154,16 @@ pub(crate) fn leave(engine: &Engine, ds: u32) -> Result<(), EngineError> {
     let device =
         device.ok_or_else(|| EngineError::Scan("the radio is already down".to_string()))?;
     let taps = lock_runtime(&runtime).taps();
-    restore_receiving(engine, ds, device, taps)
+    restore_receiving(engine, ds, device, taps, handover)
 }
 
+/// Installs `runtime` in place of the current one and hands it the IQ sinks prepared in
+/// `handover` before the old runtime let go of its device.
 pub(crate) fn swap_runtime(
     engine: &Engine,
     ds: u32,
     runtime: CaptureRuntime,
+    handover: Handover,
 ) -> Result<(), EngineError> {
     let cmd_txs = runtime.command_senders();
     let overruns = runtime.overruns_counters();
@@ -166,14 +178,14 @@ pub(crate) fn swap_runtime(
             return Err(EngineError::DeviceSetNotFound(ds));
         };
         state.cmd_txs = cmd_txs;
-        state.overruns = overruns;
-        state.overruns_seen = 0;
+        state.adopt_overruns(overruns);
         state.overruns_polled = None;
         state.loss = None;
         state.stalls = stalls;
         state.clip_meters = clip_meters;
         state.clipping.clear();
         let replaced = std::mem::replace(&mut state.runtime, runtime);
+        state.reattach_iq_sinks(handover);
         inner.revision += 1;
         replaced
     };

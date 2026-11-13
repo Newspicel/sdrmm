@@ -75,10 +75,41 @@ impl SdrDevice for LanesDevice {
 }
 
 fn lanes_engine() -> (Arc<Engine>, Started) {
+    lanes_engine_in(None)
+}
+
+fn lanes_engine_in(recordings: Option<&Path>) -> (Arc<Engine>, Started) {
     let started = Started::default();
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(LanesDriver(started.clone())));
-    (Engine::with_registry(registry, None), started)
+    (
+        Engine::with_registry(registry, recordings.map(Path::to_path_buf)),
+        started,
+    )
+}
+
+fn set_of(engine: &Engine, ds: u32) -> sdrmm_wire::DeviceSet {
+    engine
+        .snapshot()
+        .device_sets
+        .into_iter()
+        .find(|set| set.id == ds)
+        .expect("set listed")
+}
+
+async fn until(what: &str, mut done: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !done() {
+        assert!(Instant::now() < deadline, "{what}");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn both_lanes_drained(engine: &Engine, ds: u32) {
+    until("the first capture never counted its gaps", || {
+        set_of(engine, ds).overruns >= 2_000_000
+    })
+    .await;
 }
 
 fn inputs(picked: &[u32]) -> DeviceSettings {
@@ -138,6 +169,137 @@ async fn drops_counted_before_a_lane_restart_do_not_upset_the_next_poll() {
     engine.hotplug_tick_for_test(&mut known, &mut missing_once);
     let set = &engine.snapshot().device_sets[0];
     assert!(set.overruns < 2_000_000, "{}", set.overruns);
+    engine.remove_device_set(ds).unwrap();
+}
+
+fn udp_export(receiver: &std::net::UdpSocket) -> sdrmm_wire::NetworkExportSettings {
+    sdrmm_wire::NetworkExportSettings {
+        address: receiver.local_addr().expect("address").to_string(),
+        transport: sdrmm_wire::NetworkTransport::Udp,
+        format: sdrmm_wire::NetworkSampleFormat::Cf32Le,
+    }
+}
+
+#[tokio::test]
+async fn sinks_count_overruns_from_their_own_start_across_a_lane_restart() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let receiver = std::net::UdpSocket::bind("127.0.0.1:0").expect("receiver");
+    let (engine, _) = lanes_engine_in(Some(dir.path()));
+    let ds = engine.create_device_set("rtlsdr:lanes").unwrap();
+    both_lanes_drained(&engine, ds).await;
+    engine.start_recording(ds, 0, None).expect("recording");
+    engine
+        .arm_pre_roll(ds, "tm".to_owned(), 0, 1)
+        .expect("armed");
+    engine
+        .start_network_export(ds, "net".to_owned(), 0, udp_export(&receiver))
+        .expect("exporting");
+
+    engine.patch_device(ds, inputs(&[0])).expect("one lane");
+    let set = set_of(&engine, ds);
+    assert_eq!(set.overruns, 1_000_000, "the radio counts its own run");
+    let recording = set.recording.expect("still recording");
+    assert_eq!((recording.overruns, recording.error), (1_000_000, None));
+    let history = set.pre_roll.expect("still holding");
+    assert_eq!((history.overruns, history.error), (1_000_000, None));
+    let export = set.network_export.expect("still exporting");
+    assert_eq!((export.overruns, export.error), (1_000_000, None));
+    assert_eq!(
+        engine.stop_recording(ds).expect("stopped").overruns,
+        1_000_000
+    );
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
+async fn a_recording_holds_its_lane_against_an_input_change() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let (engine, _) = lanes_engine_in(Some(dir.path()));
+    let ds = engine.create_device_set("rtlsdr:lanes").unwrap();
+    engine.start_recording(ds, 1, None).expect("recording iq2");
+    let refused = engine.patch_device(ds, inputs(&[0])).unwrap_err();
+    assert!(refused.to_string().contains("iq2"), "{refused}");
+    let recording = set_of(&engine, ds).recording.expect("still recording");
+    assert_eq!(recording.error, None);
+    engine.remove_device_set(ds).unwrap();
+}
+
+async fn recorded_past(engine: &Engine, ds: u32, samples: u64) -> u64 {
+    let mut now = 0;
+    until("the recording stopped growing", || {
+        now = set_of(engine, ds).recording.map_or(0, |r| r.samples);
+        now > samples
+    })
+    .await;
+    now
+}
+
+#[tokio::test]
+async fn an_iq_recording_carries_on_across_a_runtime_restart_and_marks_the_seam() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let engine = recording_engine(dir.path());
+    let ds = engine.create_device_set("virtual:band").unwrap();
+    engine.start_recording(ds, 0, None).expect("recording");
+    let before = recorded_past(&engine, ds, 0).await;
+
+    engine.restart_lanes(ds).expect("restarted");
+    recorded_past(&engine, ds, before + 100_000).await;
+    let finalized = engine.stop_recording(ds).expect("stopped");
+
+    assert_eq!(finalized.error, None);
+    let reader = sdrmm_recorder::SigmfReader::open(&finalized.stem).unwrap();
+    let captures = &reader.meta().captures;
+    let seam = captures
+        .iter()
+        .find(|capture| capture.global_index.is_some())
+        .expect("the restart is a capture segment");
+    assert!(seam.sample_start >= before, "{captures:?}");
+    assert!(seam.global_index >= Some(seam.sample_start));
+    assert!(seam.datetime.is_some());
+    assert_eq!(seam.frequency, captures[0].frequency);
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
+async fn a_time_machine_and_a_network_export_carry_on_across_a_runtime_restart() {
+    let receiver = std::net::UdpSocket::bind("127.0.0.1:0").expect("receiver");
+    let dir = tempfile::TempDir::new().unwrap();
+    let engine = recording_engine(dir.path());
+    let ds = engine.create_device_set("virtual:band").unwrap();
+    engine
+        .arm_pre_roll(ds, "tm".to_owned(), 0, 1)
+        .expect("armed");
+    engine
+        .start_network_export(ds, "net".to_owned(), 0, udp_export(&receiver))
+        .expect("exporting");
+    let mut sent = 0;
+    until("the export never sent", || {
+        sent = set_of(&engine, ds).network_export.map_or(0, |e| e.samples);
+        sent > 0
+    })
+    .await;
+
+    engine.restart_lanes(ds).expect("restarted");
+    engine.start_pre_roll_capture(ds, "tm").expect("capture");
+    until("the export stopped after the restart", || {
+        set_of(&engine, ds)
+            .network_export
+            .is_some_and(|e| e.samples > sent + 100_000)
+    })
+    .await;
+    until("the time machine stopped after the restart", || {
+        set_of(&engine, ds)
+            .pre_roll
+            .and_then(|history| history.capture)
+            .is_some_and(|capture| capture.samples > 100_000)
+    })
+    .await;
+
+    let export = engine.stop_network_export(ds, "net").expect("stopped");
+    assert_eq!(export.error, None);
+    engine.stop_pre_roll_capture(ds, "tm").expect("captured");
+    let history = engine.drop_pre_roll(ds, "tm").expect("disarmed");
+    assert_eq!(history.error, None);
     engine.remove_device_set(ds).unwrap();
 }
 

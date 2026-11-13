@@ -6,7 +6,7 @@ import { Chips, ChoiceChip, ToggleChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { formatMhz } from "../../components/format";
-import { MapPanel } from "../../components/MapPanel";
+import { MapPanel } from "../../components/LazyMapPanel";
 import { clearSink, ionosondeQuery } from "../../lib/api";
 import {
   type CellComparison,

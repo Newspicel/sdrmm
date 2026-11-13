@@ -318,10 +318,13 @@ fn append(conn: &Connection, id: i64, entry: &Appended<'_>) -> Result<(), StoreE
         ],
     )?;
     if entry.kind == EDIT {
-        conn.execute(
+        let pruned = conn.execute(
             "DELETE FROM workspace_history WHERE workspace_id = ?1 AND seq <= ?2",
             params![id, entry.seq - WORKSPACE_HISTORY_DEPTH],
         )?;
+        if pruned > 0 {
+            super::secrets::collect(conn)?;
+        }
     }
     Ok(())
 }

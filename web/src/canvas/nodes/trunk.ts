@@ -17,7 +17,6 @@ export const MAX_SEARCH_RANGES = 8;
 export const MAX_SEARCH_CANDIDATES = 512;
 export const MIN_SEARCH_STEP_HZ = 1_250;
 export const MAX_CHANNEL_MAP = 512;
-export const MAX_LOGICAL_CHANNEL = 4095;
 export const MAX_TALKGROUPS = 256;
 export const MAX_VOICE_KEYS = 256;
 export const AUTO_PROTOCOL = "auto";
@@ -37,6 +36,11 @@ export function trunkSpec(types: readonly ChannelDescriptor[], decoder: string):
     (type) => type.trunking != null && (decoder === "" || type.type_id === decoder),
   );
   return found?.trunking ?? null;
+}
+
+/** The highest logical channel the protocol numbers, or any channel while none is known. */
+export function maxChannel(spec: TrunkSpec | null): number {
+  return spec?.max_channel ?? 65_535;
 }
 
 export function trunkProtocols(spec: TrunkSpec | null): { value: string; label: string }[] {
@@ -95,8 +99,8 @@ export function formatVoiceKeys(keys: readonly VoiceKey[] | undefined): string {
 }
 
 /** Where a call runs: the slot only when a carrier holds more than one call. */
-export function slotLabel(slot: number, slots: number): string {
-  return slots > 1 ? `TS ${slot}` : "Call";
+export function slotLabel(slot: number | null | undefined, slots: number): string {
+  return slots > 1 && slot != null ? `TS ${slot}` : "Call";
 }
 
 export function followerCall(follower: TrunkFollower): string {
@@ -186,12 +190,16 @@ export function formatSearchRanges(ranges: readonly TrunkSearchRange[] | undefin
     .join("; ");
 }
 
-export function channelEntry(lcn: number | null, mhz: number | null): TrunkChannelEntry | null {
+export function channelEntry(
+  lcn: number | null,
+  mhz: number | null,
+  max: number,
+): TrunkChannelEntry | null {
   if (lcn === null || mhz === null || !Number.isInteger(lcn)) {
     return null;
   }
   const freq_hz = Math.round(mhz * 1e6);
-  if (lcn < 0 || lcn > MAX_LOGICAL_CHANNEL || !Number.isFinite(freq_hz) || freq_hz <= 0) {
+  if (lcn < 0 || lcn > max || !Number.isFinite(freq_hz) || freq_hz <= 0) {
     return null;
   }
   return { lcn, freq_hz };

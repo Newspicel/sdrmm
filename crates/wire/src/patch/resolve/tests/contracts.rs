@@ -225,7 +225,7 @@ fn an_event_output_takes_what_its_target_sends() {
         enabled: true,
     };
     let webhook = EventOutputTarget::Webhook {
-        url: "https://example.com/hook".to_owned(),
+        url: crate::event_output::Secret::Inline("https://example.com/hook".to_owned()),
         format: WebhookFormat::Json,
     };
     let graph = |target: EventOutputTarget, decoder: &str| PatchGraph {
@@ -260,7 +260,7 @@ fn only_an_event_output_that_sends_audio_keeps_clips() {
             .any(|port| port.keeps.contains(&Keeps::Clips))
     };
     let webhook = |format| EventOutputTarget::Webhook {
-        url: "https://example.com/hook".to_owned(),
+        url: crate::event_output::Secret::Inline("https://example.com/hook".to_owned()),
         format,
     };
     assert!(keeps(EventOutputTarget::Recordings));
@@ -334,7 +334,7 @@ fn outputs_know_what_their_sinks_keep() {
             output(
                 "out",
                 EventOutputTarget::Webhook {
-                    url: "https://example.com/hook".to_owned(),
+                    url: crate::event_output::Secret::Inline("https://example.com/hook".to_owned()),
                     format: WebhookFormat::Discord,
                 },
             ),

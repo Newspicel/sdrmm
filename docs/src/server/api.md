@@ -8,6 +8,7 @@ connected client.
 | `/api/docs` | Swagger UI |
 | `/api/openapi.json` | OpenAPI schema |
 | `/api/ws` | WebSocket |
+| `/api/wt` | [WebTransport](#webtransport) |
 | `/mcp` | MCP over streamable HTTP |
 
 The [OpenAPI schema](https://github.com/Newspicel/sdrmm/blob/main/openapi.json) is also in
@@ -23,16 +24,17 @@ curl -H "Authorization: Bearer $SDRMM_TOKEN" http://receiver.local:8080/api/stat
 
 | Area | Routes |
 |---|---|
-| State and discovery | `/api/state`, `/api/devices`, `/api/saved-radios`, `/api/channeltypes`, `/api/clients`, `/api/patch/catalog` |
-| Nodes | `/api/workspaces/active/nodes/{node}`: `channel` and `device` settings, `actions` (tune, retype, scan, hunt, playback, network export); `/api/devices/network` adds a network radio |
-| Workspaces | `/api/workspaces`: activate, apply, undo, redo, export, import |
-| Saved setups | `/api/templates`, `/api/presets`, `/api/bookmarks` |
-| Data | `/api/decoderlog`, `/api/recordings`, `/api/audiorecordings`, `/api/calls`, `/api/images`, `/api/occupancy` |
-| Processing nodes | `/api/arrays`, `/api/radar`, `/api/fusion`, `/api/survey`, `/api/missions` |
-| Tools | `/api/tools`, `/api/cps` (radio programmer), `/api/denoise-models` |
-| Reference | `/api/bandplan`, `/api/satellites`, `/api/ionosonde`, `/api/position/nmea-devices` |
+| State and discovery | `/api/state`, `/api/devices`, `/api/saved-radios`, `/api/channeltypes`, `/api/clients`, `/api/patch/catalog`, `/api/serial/ports`, `/api/position/nmea-devices` |
+| Nodes | `/api/workspaces/active/nodes/{node}`: `channel` and `device` settings, `actions` (tune, retype, scan, hunt, playback, network export, transmit, send); `/api/devices/network` and `/api/devices/serial` add a radio; `/api/patch/wiring` lists where a wire fits |
+| Workspaces | `/api/workspaces`: activate, apply, undo, redo, export, import; `/api/workspaces/active/resolved` |
+| Saved setups | `/api/templates`, `/api/examples`, `/api/presets`, `/api/bookmarks` |
+| Data | `/api/decoderlog`, `/api/recordings`, `/api/audiorecordings`, `/api/calls`, `/api/images`, `/api/occupancy`, `/api/sinks` |
+| Processing nodes | `/api/arrays`, `/api/processors`, `/api/fusion`, `/api/survey`, `/api/missions` |
+| Tools | `/api/tools`, `/api/nanovna`, `/api/cps` (radio programmer), `/api/denoise-models` |
+| Reference | `/api/bandplan`, `/api/satellites`, `/api/ionosonde` |
 | Access | `/api/auth`, `/api/phones` |
-| Server | `/api/status`, `/api/about`, `/api/doctor`, `/api/diagnostics` |
+| Credentials | `/api/secrets`: `POST` stores an [Event output](../user-guide/network-iq.md#credentials) credential and returns its id, `PUT /api/secrets/{id}` sets one a workspace names. Values are never read back |
+| Server | `/api/status`, `/api/about`, `/api/doctor`, `/api/diagnostics`, `/api/transport` |
 
 Errors are JSON with `error`, an optional `detail`, and an optional stable `code` such as
 `not_found` or `auth`.
@@ -69,7 +71,7 @@ OpenAPI schema; the web client in `web/src` is the reference implementation.
 
 ## MCP
 
-Point an MCP client at `http://<server>:8080/mcp`, with the bearer header if a token is set. Its
+Point an MCP client at `/mcp` on the server, with the bearer header if a token is set. Its
 tools edit the open canvas the way a user does: add, change and remove nodes, draw and cut wires,
 tune radios, set channels, scan, and undo. Every change shows up on the canvas. It also reads the
 decoder log and spectrum, and runs the [tools](../user-guide/tools.md). Tool arguments use the

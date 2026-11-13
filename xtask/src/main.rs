@@ -24,6 +24,8 @@ mod licenses;
 mod mobile;
 #[cfg(test)]
 mod site;
+mod size;
+mod sources;
 mod units;
 
 #[derive(Parser)]
@@ -504,6 +506,7 @@ fn check(root: &Path) -> Result<()> {
     units::check(root)?;
     check_toolchain_pins(root)?;
     comments::check(root)?;
+    size::check(root)?;
     check_windows_rs_alignment(root)?;
     check_baked_in_fixtures(root)?;
     mobile::check(root)?;
@@ -766,7 +769,7 @@ fn locked_package<'a>(lock: &'a str, package: &str) -> Option<&'a str> {
 fn check_baked_in_fixtures(root: &Path) -> Result<()> {
     let mut sources = Vec::new();
     for dir in ["crates", "apps", "xtask"] {
-        sources.extend(rust_sources(&root.join(dir))?);
+        sources.extend(sources::files(&root.join(dir), &["rs"])?);
     }
     for source in sources {
         let text = std::fs::read_to_string(&source)
@@ -795,21 +798,6 @@ fn check_baked_in_fixtures(root: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn rust_sources(dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
-        let path = entry
-            .with_context(|| format!("read {}", dir.display()))?
-            .path();
-        if path.is_dir() {
-            out.extend(rust_sources(&path)?);
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            out.push(path);
-        }
-    }
-    Ok(out)
 }
 
 fn slice_between<'a>(haystack: &'a str, open: &str, close: &str) -> Option<&'a str> {
@@ -1266,11 +1254,7 @@ fn fuzz(root: &Path, target: Option<&str>, seconds: u64, jobs: u8, minimize: boo
 
 fn audit(root: &Path) -> Result<()> {
     ensure_tool("deny", "cargo-deny")?;
-    run(
-        "cargo",
-        &["deny", "check", "advisories", "licenses", "bans", "sources"],
-        root,
-    )
+    run("cargo", &["deny", "check", "advisories"], root)
 }
 
 /// Playwright starts the server with `cargo run -p sdrmm` under a fixed webServer timeout, and
@@ -1282,12 +1266,7 @@ fn build_smoke_server(root: &Path) -> Result<()> {
 
 fn smoke(root: &Path) -> Result<()> {
     ensure_web_deps(root)?;
-    run_with_env(
-        PNPM,
-        &["--dir", "web", "build"],
-        root,
-        &[("VITE_ENABLE_SYNTHETIC_DEVICES", "true")],
-    )?;
+    run(PNPM, &["--dir", "web", "build"], root)?;
     run(
         "cargo",
         &[

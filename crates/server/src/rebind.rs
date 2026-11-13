@@ -1,7 +1,7 @@
 use sdrmm_wire::{PatchGraph, ServerEvent, StateScope, StateSnapshot};
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::{AppState, rest, workspace};
+use crate::{AppState, rest, rest::AppError, workspace};
 
 /// The active workspace and its revision when the server started.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -65,16 +65,20 @@ async fn bring_up_saved(state: AppState, saved: Option<Saved>) {
     }
 }
 
-async fn bind_new_radios(state: AppState) {
-    let bound = tokio::task::spawn_blocking(move || {
+/// The resolved patch only says whether binding is worth the gate. Which workspace to bring up
+/// is read under the gate, so a switch that finished while this waited is not undone.
+pub(crate) async fn bind_new_radios(state: AppState) {
+    let bound = tokio::task::spawn_blocking(move || -> Result<bool, AppError> {
         let resolved = state.resolved.current();
-        let Some(id) = resolved.patch.workspace else {
-            return Ok(false);
-        };
-        if !waits_for_a_radio(&resolved.graph, &state.engine.snapshot()) {
+        if resolved.patch.workspace.is_none()
+            || !waits_for_a_radio(&resolved.graph, &state.engine.snapshot())
+        {
             return Ok(false);
         }
         let _serialized = rest::lock_gate(&state.apply_gate);
+        let Some(id) = state.store.active_workspace_id()? else {
+            return Ok(false);
+        };
         crate::apply::bring_up_active(&state, id).map(|report| report.opened > 0)
     })
     .await;

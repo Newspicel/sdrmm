@@ -144,6 +144,9 @@ export function useMapDrawLoop(
     const painter: Painter = { table: paletteTable(HEAT_COLORMAP), scratch: { pixels: null } };
     const state = { drawn: freshDrawn(-1) };
     const timer = setInterval(() => {
+      if (document.hidden) {
+        return;
+      }
       const core = readyCore(coreRef.current);
       if (core === null) {
         return;

@@ -6,7 +6,7 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 
 | Type | Carries |
 |---|---|
-| IQ | Decoders on a lane retune it unless the lane is locked |
+| IQ | One radio lane, retuned by its decoders unless locked |
 | Baseband | One channel, filtered and decimated |
 | Audio | Live audio |
 | Events | Decoded events. Calls and transmissions bring their clip |

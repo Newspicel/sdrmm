@@ -1,6 +1,6 @@
 {
   "name": "ffad9c6e0d47e4e4",
-  "test": "processorSubtitle > says no array, the gate, stale or the lane count",
+  "test": "processorSubtitle > puts a warning headline before staleness and a plain one after",
   "graph": {
     "nodes": [
       {

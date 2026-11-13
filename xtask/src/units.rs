@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
 
@@ -57,7 +57,7 @@ const CHECKER: &str = "xtask/src/units.rs";
 pub(crate) fn check(root: &Path) -> Result<()> {
     let mut offences = Vec::new();
     for directory in DIRECTORIES {
-        for source in sources(&root.join(directory))? {
+        for source in crate::sources::files(&root.join(directory), EXTENSIONS)? {
             let relative = source.strip_prefix(root).unwrap_or(&source).to_owned();
             if relative.ends_with(CHECKER) {
                 continue;
@@ -132,24 +132,6 @@ fn literals(line: &str) -> Vec<&str> {
         rest = &body[close + 1..];
     }
     out
-}
-
-fn sources(dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
-        let path = entry
-            .with_context(|| format!("read {}", dir.display()))?
-            .path();
-        if path.is_dir() {
-            out.extend(sources(&path)?);
-        } else if path
-            .extension()
-            .is_some_and(|e| EXTENSIONS.iter().any(|allowed| e == *allowed))
-        {
-            out.push(path);
-        }
-    }
-    Ok(out)
 }
 
 #[cfg(test)]

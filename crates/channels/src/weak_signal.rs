@@ -792,7 +792,7 @@ mod tests {
                 settings(ChannelParams::new("ft8", &WsjtParams::default()).expect("ft8 settings")),
             )
             .unwrap(),
-            &synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0)
+            &synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0).expect("a synthetic signal")
         );
         let message = events
             .iter()
@@ -813,7 +813,7 @@ mod tests {
                 settings(ChannelParams::new("ft4", &WsjtParams::default()).expect("ft4 settings")),
             )
             .unwrap(),
-            &synth::weak_signal::ft4_slot("JA1ABC", "PM95", 1_000.0)
+            &synth::weak_signal::ft4_slot("JA1ABC", "PM95", 1_000.0).expect("a synthetic signal")
         );
         let message = events
             .iter()
@@ -835,6 +835,7 @@ mod tests {
             )
             .unwrap(),
             &synth::weak_signal::wspr_slot("K1ABC", "FN42", 37, 1_500.0)
+                .expect("a synthetic signal")
         );
         let spot = events
             .iter()
@@ -850,7 +851,9 @@ mod tests {
     fn windows_stay_aligned_after_the_audio_buffer_compacts() {
         let hop = Mode::Ft8.hop_samples();
         let mut iq = vec![Complex::new(0.0, 0.0); 9 * hop];
-        iq.extend(synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0));
+        iq.extend(
+            synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0).expect("a synthetic signal"),
+        );
         let mut channel = Ft8Channel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
@@ -897,7 +900,7 @@ mod tests {
 
     #[test]
     fn a_slot_decode_never_blocks_the_sample_path() {
-        let iq = synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0);
+        let iq = synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0).expect("a synthetic signal");
         let mut channel = Ft8Channel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,

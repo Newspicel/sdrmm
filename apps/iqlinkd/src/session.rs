@@ -6,10 +6,10 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
-use sdrmm_iqlink::{Reply, Start};
+use sdrmm_iqlink::{MAX_LINE_BYTES, Reply, Start};
 
 use crate::{
     cpu,
@@ -23,6 +23,7 @@ use crate::{
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(200);
 const SEND_CPU: usize = 1;
+const LATE: &str = "no request in time";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
@@ -87,11 +88,55 @@ fn read_start(
     reader: &mut BufReader<TcpStream>,
     control: &TcpStream,
 ) -> Result<Start, SessionError> {
-    control.set_read_timeout(Some(REQUEST_TIMEOUT))?;
-    let mut line = String::new();
-    reader.read_line(&mut line)?;
+    let line = read_request(reader, control, Instant::now() + REQUEST_TIMEOUT)?;
     control.set_read_timeout(None)?;
     Ok(Start::parse(&line)?)
+}
+
+/// Reads one line within `deadline` and `MAX_LINE_BYTES`, so a peer trickling bytes cannot hold
+/// the radio's only session open.
+fn read_request(
+    reader: &mut BufReader<TcpStream>,
+    control: &TcpStream,
+    deadline: Instant,
+) -> Result<String, SessionError> {
+    let mut line = Vec::new();
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(refused(LATE));
+        }
+        control.set_read_timeout(Some(left))?;
+        let available = match reader.fill_buf() {
+            Ok(available) => available,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                return Err(refused(LATE));
+            }
+            Err(e) => return Err(e.into()),
+        };
+        if available.is_empty() {
+            return Err(refused("closed before a request"));
+        }
+        let end = available.iter().position(|&byte| byte == b'\n');
+        let taken = end.map_or(available.len(), |at| at + 1);
+        line.extend_from_slice(&available[..taken]);
+        reader.consume(taken);
+        if line.len() > MAX_LINE_BYTES {
+            return Err(refused("request line too long"));
+        }
+        if end.is_some() {
+            return String::from_utf8(line).map_err(|_| refused("request is not UTF-8"));
+        }
+    }
+}
+
+fn refused(reason: &str) -> SessionError {
+    SessionError::Refused(reason.to_owned())
 }
 
 fn open(paths: &Paths, start: &Start, peer: SocketAddr) -> Result<(Buffer, Sender), SessionError> {
@@ -272,6 +317,40 @@ mod tests {
         };
         assert!(reason.contains("missing"), "{reason}");
         assert!(handle.join().expect("session thread").is_err());
+    }
+
+    #[test]
+    fn an_endless_request_line_is_refused() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let (addr, handle) = server(fake::radio(root.path(), &[]));
+        let mut control = TcpStream::connect(addr).expect("connect");
+        control
+            .write_all(&vec![b'x'; MAX_LINE_BYTES + 1])
+            .expect("flood");
+        let mut line = String::new();
+        BufReader::new(control.try_clone().expect("clone"))
+            .read_line(&mut line)
+            .expect("reply");
+        assert_eq!(
+            Reply::parse(&line).expect("reply line"),
+            Reply::Refused("request line too long".to_owned())
+        );
+        assert!(handle.join().expect("session thread").is_err());
+    }
+
+    #[test]
+    fn a_trickled_request_runs_out_of_time() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let mut client = TcpStream::connect(listener.local_addr().expect("addr")).expect("connect");
+        let (control, _) = listener.accept().expect("accept");
+        let mut reader = BufReader::new(control.try_clone().expect("clone"));
+        client.write_all(b"START").expect("partial");
+        let deadline = Instant::now() + Duration::from_millis(100);
+        let read = read_request(&mut reader, &control, deadline);
+        assert!(
+            matches!(&read, Err(SessionError::Refused(reason)) if reason == LATE),
+            "{read:?}"
+        );
     }
 
     #[cfg(unix)]

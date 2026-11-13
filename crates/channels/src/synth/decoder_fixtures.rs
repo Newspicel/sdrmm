@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used)]
-
 use crate::aprs::AprsMode;
 use crate::aprs::AprsParams;
 use crate::atv::AtvParams;
@@ -9,8 +7,8 @@ use num_complex::Complex;
 use sdrmm_wire::{ChannelParams, ChannelSettings, Squelch};
 
 use super::{
-    acars, adsb, ais, atv, dect, dv, ermes, flex, gnss, morse, navtex, pocsag, radio_clock, rds,
-    rtty, selcall, sstv,
+    Need, SynthError, acars, adsb, ais, atv, dect, dv, ermes, flex, gnss, morse, navtex, pocsag,
+    radio_clock, rds, rtty, selcall, sstv,
 };
 use crate::{AprsTx, ChannelCtx, ChannelTx, NativeTx, TxPayload};
 
@@ -28,7 +26,7 @@ pub struct Recipe {
     pub stem: &'static str,
     pub rate: f64,
     pub note: &'static str,
-    pub iq: fn() -> Vec<Complex<f32>>,
+    pub iq: fn() -> Result<Vec<Complex<f32>>, SynthError>,
 }
 
 #[must_use]
@@ -41,19 +39,19 @@ pub const RECIPES: &[Recipe] = &[
         stem: "pocsag_1200_240k",
         rate: NARROW,
         note: "pocsag channel at +50 kHz -> address 1234567 \"SDRmm FIXTURE\"",
-        iq: pocsag_page,
+        iq: || Ok(pocsag_page()),
     },
     Recipe {
         stem: "flex_1600_2_240k",
         rate: NARROW,
         note: "flex channel at +30 kHz -> address 1234567 \"SDRmm FLEX FIXTURE\", cycle 7 frame 83",
-        iq: flex_page,
+        iq: || Ok(flex_page()),
     },
     Recipe {
         stem: "ermes_alpha_240k",
         rate: NARROW,
         note: "ermes channel at -30 kHz -> address 234567 \"SDRmm ERMES FIXTURE\", urgent alert 5",
-        iq: ermes_page,
+        iq: || Ok(ermes_page()),
     },
     Recipe {
         stem: "selcall_ccir1_48k",
@@ -71,7 +69,7 @@ pub const RECIPES: &[Recipe] = &[
         stem: "ais_position_240k",
         rate: NARROW,
         note: "ais channel at +25 kHz -> MMSI 211234560 at 53.5413, 9.9846",
-        iq: ais_position,
+        iq: || Ok(ais_position()),
     },
     Recipe {
         stem: "aprs_afsk1200_240k",
@@ -83,85 +81,85 @@ pub const RECIPES: &[Recipe] = &[
         stem: "rtty_45_170_48k",
         rate: AUDIO,
         note: "rtty channel at +5 kHz (45.45 baud, 170 Hz) -> \"CQ CQ DE DL1ABC K\"",
-        iq: rtty_call,
+        iq: || Ok(rtty_call()),
     },
     Recipe {
         stem: "morse_20wpm_48k",
         rate: AUDIO,
         note: "morse channel at -5 kHz -> \"CQ DE DL1ABC K\" at 20 wpm",
-        iq: morse_call,
+        iq: || Ok(morse_call()),
     },
     Recipe {
         stem: "cw_skimmer_dual_48k",
         rate: AUDIO,
         note: "cw_skimmer channel -> simultaneous DL1AAA at -3.5 kHz/18 wpm and G4BBB at +4.2 kHz/27 wpm",
-        iq: cw_pair,
+        iq: || Ok(cw_pair()),
     },
     Recipe {
         stem: "adsb_squitters_2m",
         rate: ADSB_RATE,
         note: "adsb channel at 0 Hz, device at 2 MS/s -> 3C6444/DLH123 at FL380",
-        iq: adsb_squitters,
+        iq: || Ok(adsb_squitters()),
     },
     Recipe {
         stem: "dcf77_2026_2k",
         rate: radio_clock::RATE,
         note: "radio_clock (DCF77) -> 2026-08-15 12:34 CET with valid parity",
-        iq: radio_clock::dcf77,
+        iq: || Ok(radio_clock::dcf77()),
     },
     Recipe {
         stem: "gps_l1_ca_prn7_2m048",
         rate: gnss::RATE,
         note: "gnss channel -> GPS L1 C/A PRN 7, +1000 Hz Doppler, code phase 158.3 chips",
-        iq: gps_prn7,
+        iq: || Ok(gps_prn7()),
     },
     Recipe {
         stem: "rds_station_960k",
         rate: RDS_RATE,
         note: "wfm channel at +200 kHz with rds on -> PI D3C2 \"SDR-M4\" + a 1 kHz tone",
-        iq: rds_station,
+        iq: || Ok(rds_station()),
     },
     Recipe {
         stem: "navtex_518_48k",
         rate: AUDIO,
         note: "navtex channel at +3 kHz -> DA07 navigational warning, \"GALE WARNING\"",
-        iq: navtex_warning,
+        iq: || Ok(navtex_warning()),
     },
     Recipe {
         stem: "acars_downlink_240k",
         rate: NARROW,
         note: "acars channel at -40 kHz -> D-AIBC / LH0400 [H1] \"SDRmm FIXTURE\"",
-        iq: acars_downlink,
+        iq: || Ok(acars_downlink()),
     },
     Recipe {
         stem: "ysf_callsigns_48k",
         rate: AUDIO,
         note: "ysf channel at 0 Hz -> DL1ABC to ALL via DB0XYZ and DB0ABC",
-        iq: ysf_callsigns,
+        iq: || Ok(ysf_callsigns()),
     },
     Recipe {
         stem: "dect_base_2m304",
         rate: DECT_RATE,
         note: "dect channel -> RFPI 01234D5E6D, carrier 4, standard authentication and ciphering",
-        iq: dect_base,
+        iq: || Ok(dect_base()),
     },
     Recipe {
         stem: "dect_call_2m304",
         rate: DECT_RATE,
         note: "dect channel -> clear call on RFPI 01234D5E6D, 1 kHz from the base, 600 Hz from the handset",
-        iq: dect_call,
+        iq: || Ok(dect_call()),
     },
     Recipe {
         stem: "atv_ccir625_2m4",
         rate: ATV_RATE,
         note: "atv channel at +200 kHz -> 625/25 AM, five vertical bars black to white",
-        iq: atv_bars,
+        iq: || Ok(atv_bars()),
     },
     Recipe {
         stem: "sstv_robot36_48k",
         rate: AUDIO,
         note: "sstv channel at +4 kHz -> Robot 36, eight colour bars white to black",
-        iq: sstv_bars,
+        iq: || Ok(sstv_bars()),
     },
 ];
 
@@ -204,22 +202,14 @@ fn ermes_page() -> Vec<Complex<f32>> {
     at(ermes::transmission(&page, NARROW), -30_000.0, NARROW)
 }
 
-fn selcall_ccir1() -> Vec<Complex<f32>> {
-    at(
-        selcall::transmission(SelcallSystem::Ccir1, "12234", AUDIO)
-            .expect("CCIR-1 fixture code is valid"),
-        5_000.0,
-        AUDIO,
-    )
+fn selcall_ccir1() -> Result<Vec<Complex<f32>>, SynthError> {
+    let iq = selcall::transmission(SelcallSystem::Ccir1, "12234", AUDIO).need("CCIR-1 code")?;
+    Ok(at(iq, 5_000.0, AUDIO))
 }
 
-fn selcall_zvei1() -> Vec<Complex<f32>> {
-    at(
-        selcall::transmission(SelcallSystem::Zvei1, "A11D0", AUDIO)
-            .expect("ZVEI-1 fixture code is valid"),
-        -5_000.0,
-        AUDIO,
-    )
+fn selcall_zvei1() -> Result<Vec<Complex<f32>>, SynthError> {
+    let iq = selcall::transmission(SelcallSystem::Zvei1, "A11D0", AUDIO).need("ZVEI-1 code")?;
+    Ok(at(iq, -5_000.0, AUDIO))
 }
 
 fn ais_position() -> Vec<Complex<f32>> {
@@ -239,7 +229,7 @@ fn ais_position() -> Vec<Complex<f32>> {
     )
 }
 
-fn aprs_packet() -> Vec<Complex<f32>> {
+fn aprs_packet() -> Result<Vec<Complex<f32>>, SynthError> {
     let settings = ChannelSettings {
         frequency_hz: 0.0,
         squelch: Squelch::Off,
@@ -247,7 +237,7 @@ fn aprs_packet() -> Vec<Complex<f32>> {
             mode: AprsMode::Afsk1200,
             ..AprsParams::default()
         })
-        .unwrap_or_else(|e| panic!("aprs settings: {e}")),
+        .need("APRS settings")?,
         blanker: Default::default(),
         if_filter: Default::default(),
     };
@@ -257,19 +247,19 @@ fn aprs_packet() -> Vec<Complex<f32>> {
         },
         settings,
     )
-    .expect("aprs modulator at its own channel rate");
+    .need("APRS modulator")?;
     tx.submit(TxPayload::Frame(AprsTx::ui_frame(
         "DL1ABC-9",
         "APRS",
         &["WIDE1-1"],
         "!5230.00N/01324.00E>SDRmm fixture",
     )))
-    .expect("a ui frame is a payload the modulator carries");
-    at(
+    .need("APRS UI frame")?;
+    Ok(at(
         super::resample(&super::burst(&mut tx), AUDIO, NARROW),
         -40_000.0,
         NARROW,
-    )
+    ))
 }
 
 fn rtty_call() -> Vec<Complex<f32>> {

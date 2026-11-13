@@ -167,10 +167,11 @@ pub(super) fn dsp_loop(
             for (_, monitor) in &mut monitors {
                 monitor.push(slice, total, snapshot);
             }
+            let captured = clock.at(total);
             if tap.as_ref().is_some_and(|t| {
-                recording_publisher
-                    .as_mut()
-                    .is_none_or(|publisher| !publisher.publish(t, slice, total, snapshot.center_hz))
+                recording_publisher.as_mut().is_none_or(|publisher| {
+                    !publisher.publish(t, slice, total, snapshot.center_hz, captured)
+                })
             }) && let Some(slot) = retirement.slot()
             {
                 slot.retire(Retired::Recording(tap.take(), recording_publisher.take()));
@@ -191,13 +192,12 @@ pub(super) fn dsp_loop(
             }
             if history
                 .as_mut()
-                .is_some_and(|keeper| !keeper.push(slice, snapshot.center_hz))
+                .is_some_and(|keeper| !keeper.push(slice, total, snapshot.center_hz))
                 && let Some(slot) = retirement.slot()
                 && let Some(keeper) = history.take()
             {
                 slot.retire(Retired::History(keeper));
             }
-            let captured = clock.at(total);
             for (_, host) in &mut channels {
                 host.captured_at(captured);
                 let selected = host
@@ -499,7 +499,7 @@ mod tests {
             assert!(tap.push(&samples, (index * DSP_BLOCK) as u64, 100e6));
         }
         let mut publisher = RecordingPublisher::new(rate).expect("a publisher");
-        assert!(publisher.publish(&tap, &samples, (depth * DSP_BLOCK) as u64, 100e6));
+        assert!(publisher.publish(&tap, &samples, (depth * DSP_BLOCK) as u64, 100e6, None));
         let retired = tap.clone();
         let (done, finished) = mpsc::channel();
         let retirement = std::thread::spawn(move || {

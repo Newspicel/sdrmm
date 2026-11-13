@@ -15,10 +15,9 @@ docker compose pull
 docker compose up -d
 ```
 
-Set a [token](#token) first: the container binds every interface and refuses to start without
-one. Open `http://<host>:8080`. The service restarts automatically and keeps `sdrmm.db`,
-`recordings` and the self-signed certificate in `tls` under `/data`, in the `sdrmm-data` volume.
-Keep and back up that volume.
+Open `https://<host>:8080` and sign in with the [token](#token). The service restarts
+automatically and keeps `sdrmm.db`, `recordings`, `access-token` and the self-signed certificate
+in `tls` under `/data`, in the `sdrmm-data` volume. Back up that volume.
 
 The image is `ghcr.io/newspicel/sdrmm`. `:latest` is the newest release; version tags such as
 `:2.0` pin one. Use `:nightly` only to test unreleased changes.
@@ -74,8 +73,8 @@ ipc: host
 
 ### Token
 
-The container listens on `https://<host>:8080`. Without a token it makes one on first start, keeps it in
-`/data/access-token` and logs a sign-in link:
+Without a token, the container makes one on first start, keeps it in `/data/access-token` and
+logs a sign-in link:
 
 ```sh
 docker compose logs sdrmm | grep token

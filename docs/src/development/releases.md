@@ -147,6 +147,7 @@ Uploads are cached as immutable. Never replace a file; publish a new prefix inst
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | R2 uploads | A tagged release fails |
 | `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Updater signatures, passed to cargo-packager | The release fails |
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | macOS signing and notarization | The release fails |
+| `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_PRIVATE_KEY` | iPhone uploads | The iPhone job fails |
 | `AUR_SSH_KEY` | Pushing to the AUR | The AUR job is skipped |
 | `WINGET_TOKEN` | WinGet submission | The WinGet job is skipped |
 | `PACKAGES_GPG_KEY` | Signing the APT and RPM repository | The repository job is skipped |

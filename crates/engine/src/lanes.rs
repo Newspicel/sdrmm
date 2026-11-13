@@ -19,6 +19,7 @@ impl Engine {
                 dc_block(&state.capabilities, &state.settings),
             )
         };
+        let handover = self.prepare_handover(ds);
         let (device, taps) = {
             let mut current = lock_runtime(&runtime);
             let taps = current.taps();
@@ -33,7 +34,7 @@ impl Engine {
             taps,
             fault_handler(self, ds),
         )?;
-        swap_runtime(self, ds, receiving)?;
+        swap_runtime(self, ds, receiving, handover)?;
         rebuild_channels(self, ds);
         Ok(())
     }

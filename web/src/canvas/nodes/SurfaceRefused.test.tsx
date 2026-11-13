@@ -4,7 +4,7 @@ import { ListenerRegistry } from "../../lib/listeners";
 import { surfaceHub } from "../../lib/surface";
 import type { SurfaceRefusal } from "../../lib/types";
 import { FusionHeat } from "./FusionHeat";
-import { RadarPlot } from "./RadarPlot";
+import { RangeDopplerPlot } from "./views/RangeDopplerPlot";
 
 const stops: (() => void)[] = [];
 
@@ -44,7 +44,14 @@ describe("a refused surface", () => {
   it("shows its reason on the radar plot", () => {
     refuse("radar", "no_stream_ids");
     const html = renderToStaticMarkup(
-      <RadarPlot node="radar" known update={null} dim={false} colormap="classic" selected={null} />,
+      <RangeDopplerPlot
+        node="radar"
+        known
+        marks={[]}
+        dim={false}
+        colormap="classic"
+        picked={null}
+      />,
     );
     expect(html).toContain('role="status"');
     expect(html).toContain("Too many streams");

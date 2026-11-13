@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MapPanel } from "../components/MapPanel";
+import { MapPanel } from "../components/LazyMapPanel";
 import { recordEvent } from "../lib/diagnostics";
 import type { FusionGridFrame } from "../lib/frame";
 import { useSinkFeed } from "../lib/sinks";

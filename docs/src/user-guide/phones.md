@@ -20,7 +20,8 @@ Phones need a direct HTTPS endpoint whose key they pin at pairing.
 
 - Open **Library → Phones** and turn on **Allow phones**. This opens a phone **Port**, `8443` by
   default, with the server's own self-signed certificate.
-- A server started with `--tls-self-signed` on a LAN address also takes phones on its main port.
+- A server on a LAN address with its own self-signed certificate, the default, also takes phones
+  on its main port.
 
 The status line reads `Ready on 8443` when phones can reach the server, and `Discovery on` when
 nearby phones can find it. Your firewall must let the port in.

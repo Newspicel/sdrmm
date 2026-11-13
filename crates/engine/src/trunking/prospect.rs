@@ -128,7 +128,7 @@ struct Sighting {
 #[derive(Clone, Copy, Debug)]
 struct PendingGrant {
     logical_channel: u16,
-    slot: u8,
+    slot: Option<u8>,
     destination: u32,
     source: Option<u32>,
     expires: Instant,
@@ -137,7 +137,7 @@ struct PendingGrant {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Match {
     pub logical_channel: u16,
-    pub slot: u8,
+    pub slot: Option<u8>,
     pub freq_hz: u64,
     pub confirmed: bool,
 }
@@ -156,7 +156,7 @@ pub(crate) struct Prospector {
     dwell: HashMap<u64, Instant>,
     busy: HashMap<u64, Sighting>,
     plan: Option<BandPlan>,
-    color_code: Option<u8>,
+    color_code: Option<u16>,
     probes: u8,
     enabled: bool,
     spanning: bool,
@@ -349,11 +349,11 @@ impl Prospector {
         self.candidates.len() as u32
     }
 
-    pub(crate) fn color_code(&self) -> Option<u8> {
+    pub(crate) fn color_code(&self) -> Option<u16> {
         self.color_code
     }
 
-    pub(crate) fn note_site(&mut self, color_code: u8) {
+    pub(crate) fn note_site(&mut self, color_code: u16) {
         if self.color_code == Some(color_code) {
             return;
         }
@@ -372,7 +372,7 @@ impl Prospector {
         let mut found: Vec<u64> = self
             .control
             .iter()
-            .filter(|freq_hz| self.colours.get(freq_hz) == Some(&u16::from(site)))
+            .filter(|freq_hz| self.colours.get(freq_hz) == Some(&site))
             .copied()
             .collect();
         found.sort_unstable();
@@ -427,7 +427,7 @@ impl Prospector {
     pub(crate) fn note_grant(
         &mut self,
         logical_channel: u16,
-        slot: u8,
+        slot: Option<u8>,
         destination: u32,
         source: Option<u32>,
         now: Instant,
@@ -485,7 +485,7 @@ impl Prospector {
             return None;
         }
         if let Some(site) = self.color_code
-            && frame.color_code != Some(u16::from(site))
+            && frame.color_code != Some(site)
         {
             return None;
         }
@@ -520,14 +520,14 @@ impl Prospector {
         if self.frequency_of(logical_channel).is_some() {
             return None;
         }
-        let slot = frame.slot.unwrap_or(1);
+        let slot = frame.slot;
         Some(self.credit(logical_channel, slot, freq_hz, ANONYMOUS_WEIGHT, now))
     }
 
     fn credit(
         &mut self,
         logical_channel: u16,
-        slot: u8,
+        slot: Option<u8>,
         freq_hz: u64,
         weight: i32,
         now: Instant,
@@ -554,10 +554,12 @@ impl Prospector {
         }
     }
 
-    fn sole_candidate(&self, frame: &DvFrame, destination: u32) -> Option<(u16, u8)> {
-        let mut found: Option<(u16, u8)> = None;
+    fn sole_candidate(&self, frame: &DvFrame, destination: u32) -> Option<(u16, Option<u8>)> {
+        let mut found: Option<(u16, Option<u8>)> = None;
         for grant in &self.pending {
-            if frame.slot.is_some_and(|slot| slot != grant.slot) {
+            if let (Some(heard), Some(granted)) = (frame.slot, grant.slot)
+                && heard != granted
+            {
                 continue;
             }
             if !answers(grant, frame, destination) {
@@ -998,7 +1000,7 @@ mod tests {
         );
         let now = Instant::now();
         prospector.cover(460_137_500, &(459_612_500..=461_012_500));
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         let chosen = prospector.schedule(now, &[], |_| true);
 
@@ -1032,7 +1034,7 @@ mod tests {
     fn a_carrier_that_holds_for_two_snapshots_asks_for_an_early_look() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         assert!(
             !prospector.note_carriers(&[loud(TRAFFIC_HZ)], now),
@@ -1050,7 +1052,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.probes = 1;
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         prospector.note_carriers(&[loud(451_037_600)], now);
 
@@ -1065,7 +1067,7 @@ mod tests {
     fn a_voice_header_matching_a_pending_grant_learns_the_frequency() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         let outcome = bind(&mut prospector, &voice(91, 4001), now);
 
@@ -1073,7 +1075,7 @@ mod tests {
             outcome,
             Some(Match {
                 logical_channel: LCN,
-                slot: 1,
+                slot: Some(1),
                 freq_hz: TRAFFIC_HZ,
                 confirmed: true,
             })
@@ -1086,7 +1088,7 @@ mod tests {
     fn one_sighting_is_not_enough_to_learn_a_frequency() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         let outcome = prospector.note_probe(TRAFFIC_HZ, &voice(91, 4001), now);
 
@@ -1098,8 +1100,8 @@ mod tests {
     fn two_grants_sharing_a_destination_bind_nothing() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
-        prospector.note_grant(LCN + 1, 1, 91, Some(4002), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
+        prospector.note_grant(LCN + 1, Some(1), 91, Some(4002), now);
 
         let outcome = bind(&mut prospector, &voice(91, 0), now);
 
@@ -1112,7 +1114,7 @@ mod tests {
     fn a_probe_that_lands_on_a_control_channel_binds_nothing_and_drops_the_frequency() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         let mut announced = grant(LCN, 91, 4001);
         announced.control_channel = Some(true);
 
@@ -1132,7 +1134,7 @@ mod tests {
     fn a_traffic_channel_that_announces_its_own_call_places_itself() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         let mut cach = DvFrame::new("DMR", DvFrameKind::Control);
         cach.trunk_protocol = Some("tier_three".to_owned());
         cach.control_channel = Some(false);
@@ -1147,7 +1149,7 @@ mod tests {
             last,
             Some(Match {
                 logical_channel: LCN,
-                slot: 1,
+                slot: Some(1),
                 freq_hz: TRAFFIC_HZ,
                 confirmed: true,
             })
@@ -1159,7 +1161,7 @@ mod tests {
     fn an_announcement_naming_another_channel_places_nothing() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         let mut cach = DvFrame::new("DMR", DvFrameKind::Control);
         cach.trunk_protocol = Some("tier_three".to_owned());
         cach.control_channel = Some(false);
@@ -1178,7 +1180,7 @@ mod tests {
     fn a_channel_announced_before_the_cach_names_the_channel_kind_is_not_placed() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         for _ in 0..CONFIRM_SCORE * 2 {
             prospector.note_probe(TRAFFIC_HZ, &grant(LCN, 91, 4001), now);
@@ -1191,7 +1193,7 @@ mod tests {
     fn a_control_frame_never_counts_as_traffic() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         let mut control = voice(91, 4001);
         control.kind = DvFrameKind::Control;
 
@@ -1202,7 +1204,7 @@ mod tests {
     fn a_site_that_checksums_its_own_way_still_places_a_channel() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         let mut unchecked = voice(91, 4001);
         unchecked.crc_verified = Some(false);
 
@@ -1218,7 +1220,7 @@ mod tests {
     fn a_traffic_channel_that_repeats_a_grant_is_not_taken_for_a_control_channel() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         let mut payload = DvFrame::new("DMR", DvFrameKind::Control);
         payload.trunk_protocol = Some("tier_three".to_owned());
         payload.control_channel = Some(false);
@@ -1247,7 +1249,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.note_site(10);
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         prospector.note_probe(TRAFFIC_HZ, &control_channel_at(10), now);
 
@@ -1259,7 +1261,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.note_site(10);
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         prospector.note_probe(TRAFFIC_HZ, &control_channel_at(3), now);
 
@@ -1276,7 +1278,7 @@ mod tests {
     fn a_neighbouring_control_channel_leaves_the_search() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         let mut control = DvFrame::new("DMR", DvFrameKind::Control);
         control.trunk_protocol = Some("tier_three".to_owned());
         control.control_channel = Some(true);
@@ -1296,9 +1298,9 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         for _ in 0..MAX_PENDING * 2 {
-            prospector.note_grant(LCN, 1, 91, None, now);
+            prospector.note_grant(LCN, Some(1), 91, None, now);
         }
-        prospector.note_grant(LCN + 1, 2, 92, Some(4002), now);
+        prospector.note_grant(LCN + 1, Some(2), 92, Some(4002), now);
 
         assert_eq!(
             prospector.pending.len(),
@@ -1312,8 +1314,8 @@ mod tests {
     fn a_repeated_grant_keeps_the_radio_it_learned_the_first_time() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
-        prospector.note_grant(LCN, 1, 91, None, now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, None, now);
 
         assert_eq!(prospector.pending.len(), 1);
         assert_eq!(prospector.pending[0].source, Some(4001));
@@ -1323,7 +1325,7 @@ mod tests {
     fn a_sighting_after_the_grant_window_binds_nothing() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         let late = now + GRANT_WINDOW + Duration::from_secs(1);
         assert!(
@@ -1357,7 +1359,7 @@ mod tests {
         );
         let now = Instant::now();
 
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         assert_eq!(prospector.searching(), 0);
         assert!(prospector.schedule(now, &[], |_| true).is_empty());
@@ -1369,7 +1371,7 @@ mod tests {
         let now = Instant::now();
         assert!(prospector.schedule(now, &[], |_| true).is_empty());
 
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         assert_eq!(prospector.schedule(now, &[], |_| true).len(), 4);
     }
@@ -1378,7 +1380,7 @@ mod tests {
     fn the_search_stops_once_the_grants_go_quiet() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         assert!(!prospector.schedule(now, &[], |_| true).is_empty());
 
         let later = now + SEARCH_IDLE + Duration::from_secs(1);
@@ -1391,7 +1393,7 @@ mod tests {
     fn the_search_walks_the_whole_raster() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         let mut seen: HashSet<u64> = HashSet::new();
         for _ in 0..2 {
             seen.extend(prospector.schedule(now, &[], |_| true));
@@ -1404,7 +1406,7 @@ mod tests {
     fn frequencies_outside_the_sampled_band_are_never_probed() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         let chosen = prospector.schedule(now, &[], |freq_hz| freq_hz <= 451_012_500);
 
@@ -1470,7 +1472,7 @@ mod tests {
         let now = Instant::now();
         prospector.probes = 1;
 
-        prospector.note_grant(4, 1, 91, Some(4001), now);
+        prospector.note_grant(4, Some(1), 91, Some(4001), now);
 
         assert_eq!(prospector.schedule(now, &[], |_| true), vec![451_037_500]);
     }
@@ -1479,7 +1481,7 @@ mod tests {
     fn a_prediction_is_never_followed_until_traffic_confirms_it() {
         let mut prospector = a_plan_over(&[(1, 451_000_000), (2, 451_012_500), (3, 451_025_000)]);
         let now = Instant::now();
-        prospector.note_grant(4, 1, 91, Some(4001), now);
+        prospector.note_grant(4, Some(1), 91, Some(4001), now);
 
         assert_eq!(
             prospector.frequency_of(4),
@@ -1502,7 +1504,7 @@ mod tests {
         let now = Instant::now();
         assert_eq!(prospector.plan, None);
 
-        prospector.note_grant(3, 1, 91, Some(4001), now);
+        prospector.note_grant(3, Some(1), 91, Some(4001), now);
         bind_at(&mut prospector, 451_025_000, &voice(91, 4001), now);
 
         assert_eq!(prospector.predicted(4), Some(451_037_500));
@@ -1513,7 +1515,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.note_site(3);
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         let mut neighbour = voice(91, 4001);
         neighbour.color_code = Some(7);
@@ -1530,7 +1532,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.note_site(3);
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         let mut here = voice(91, 4001);
         here.color_code = Some(3);
@@ -1547,7 +1549,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.note_site(3);
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         let mut here = voice(91, 4001);
         here.color_code = Some(3);
         prospector.note_probe(TRAFFIC_HZ, &here, now);
@@ -1582,7 +1584,7 @@ mod tests {
     fn a_saved_plan_never_overwrites_what_the_search_confirmed_itself() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         bind(&mut prospector, &voice(91, 4001), now);
 
         prospector.adopt(&[TrunkChannelEntry {
@@ -1606,7 +1608,7 @@ mod tests {
     fn a_system_that_only_carries_data_can_still_be_placed() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 9_999, Some(9_998), now);
+        prospector.note_grant(LCN, Some(1), 9_999, Some(9_998), now);
 
         let found = bind(&mut prospector, &data_call(9_999, 9_998), now);
 
@@ -1618,7 +1620,7 @@ mod tests {
     fn a_data_call_that_names_no_radio_places_nothing() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 9_999, None, now);
+        prospector.note_grant(LCN, Some(1), 9_999, None, now);
 
         assert!(
             bind(&mut prospector, &data_call(9_999, 9_998), now).is_none(),
@@ -1632,7 +1634,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.probes = 1;
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         prospector.note_carriers(&[loud(451_037_600)], now);
         prospector.note_carriers(&[loud(451_037_600)], now);
@@ -1648,7 +1650,7 @@ mod tests {
     fn a_carrier_between_two_raster_steps_is_left_alone() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         prospector.note_carriers(&[loud(451_006_250)], now);
 
@@ -1673,7 +1675,7 @@ mod tests {
         let mut prospector = prospector();
         let now = Instant::now();
         prospector.probes = 1;
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         prospector.note_carriers(&[loud(451_037_500)], now);
 
         let later = now + CARRIER_MEMORY + Duration::from_secs(1);
@@ -1685,7 +1687,7 @@ mod tests {
     fn a_disabled_search_probes_nothing() {
         let mut prospector = Prospector::new(&TrunkDiscovery::default(), &[]);
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
         assert!(prospector.schedule(now, &[], |_| true).is_empty());
         assert_eq!(prospector.searching(), 0);
@@ -1695,13 +1697,13 @@ mod tests {
     fn a_competing_frequency_loses_its_score_when_the_call_shows_up_elsewhere() {
         let mut prospector = prospector();
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         prospector.note_probe(451_000_000, &voice(91, 4001), now);
         prospector.note_probe(451_000_000, &voice(91, 4001), now);
 
         assert_eq!(prospector.frequency_of(LCN), Some(451_000_000));
 
-        prospector.note_grant(LCN + 1, 1, 92, Some(4002), now);
+        prospector.note_grant(LCN + 1, Some(1), 92, Some(4002), now);
         prospector.note_probe(451_000_000, &voice(92, 4002), now);
 
         assert_eq!(
@@ -1720,7 +1722,7 @@ mod tests {
             }],
         );
         let now = Instant::now();
-        prospector.note_grant(LCN, 1, 91, Some(4001), now);
+        prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
         bind(&mut prospector, &voice(91, 4001), now);
 
         let map = prospector.channel_map();

@@ -4,6 +4,7 @@ use std::{
     sync::{
         Arc, OnceLock,
         atomic::{AtomicU8, AtomicU64, Ordering},
+        mpsc,
     },
     thread::JoinHandle,
     time::Duration,
@@ -80,7 +81,7 @@ impl NetworkExportShared {
             })
     }
 
-    fn fail(&self, message: String) {
+    pub(crate) fn fail(&self, message: String) {
         let _ = self.error.set(message);
     }
 }
@@ -91,6 +92,10 @@ pub(crate) struct NetworkExportTap {
 }
 
 impl NetworkExportTap {
+    pub(crate) fn feeds(&self, shared: &Arc<NetworkExportShared>) -> bool {
+        Arc::ptr_eq(&self.shared, shared)
+    }
+
     #[must_use]
     pub(crate) fn push(&mut self, samples: &[Complex<f32>]) -> bool {
         if self.shared.feed_fault.load(Ordering::Acquire) != 0 {
@@ -117,15 +122,43 @@ impl NetworkExportTap {
     }
 }
 
+type Feed = Consumer<Complex<f32>>;
+
+/// Hands the writer a new feed when the runtime behind the export restarts.
+pub(crate) struct NetworkRefeed {
+    feeds: mpsc::Sender<Feed>,
+    shared: Arc<NetworkExportShared>,
+}
+
+impl NetworkRefeed {
+    /// The writer drains the current feed, then moves on to this one. It must be queued before the
+    /// current feed is dropped, or the writer ends with it.
+    pub(crate) fn tap(&self) -> Result<NetworkExportTap, EngineError> {
+        let (samples, feed) = RingBuffer::new(NETWORK_RING_CAPACITY);
+        self.feeds
+            .send(feed)
+            .map_err(|_| EngineError::NetworkExport("the export writer stopped".to_owned()))?;
+        Ok(NetworkExportTap {
+            samples,
+            shared: self.shared.clone(),
+        })
+    }
+}
+
+pub(crate) struct Started {
+    pub(crate) tap: NetworkExportTap,
+    pub(crate) refeed: NetworkRefeed,
+    pub(crate) shared: Arc<NetworkExportShared>,
+    pub(crate) writer: JoinHandle<()>,
+}
+
 enum Connection {
     Udp(UdpSocket),
     Tcp(TcpStream),
     RtlTcp(rtl_tcp::Server),
 }
 
-pub(crate) fn start(
-    settings: &NetworkExportSettings,
-) -> Result<(NetworkExportTap, Arc<NetworkExportShared>, JoinHandle<()>), EngineError> {
+pub(crate) fn start(settings: &NetworkExportSettings) -> Result<Started, EngineError> {
     let connection = connect(settings)?;
     let (producer, consumer) = RingBuffer::new(NETWORK_RING_CAPACITY);
     let shared = Arc::new(NetworkExportShared::new(settings.format));
@@ -133,16 +166,25 @@ pub(crate) fn start(
         samples: producer,
         shared: shared.clone(),
     };
+    let (feeds, refeeds) = mpsc::channel();
     let worker_shared = shared.clone();
     let format = settings.format;
     let writer = std::thread::Builder::new()
         .name("sdrmm-network-export".to_owned())
         .spawn(move || {
-            write_loop(connection, format, consumer, &worker_shared);
+            write_loop(connection, format, consumer, &refeeds, &worker_shared);
             worker_shared.clients.store(0, Ordering::Relaxed);
         })
         .map_err(|error| EngineError::NetworkExport(format!("spawn writer thread: {error}")))?;
-    Ok((tap, shared, writer))
+    Ok(Started {
+        tap,
+        refeed: NetworkRefeed {
+            feeds,
+            shared: shared.clone(),
+        },
+        shared,
+        writer,
+    })
 }
 
 fn connect(settings: &NetworkExportSettings) -> Result<Connection, EngineError> {
@@ -215,7 +257,8 @@ fn connect(settings: &NetworkExportSettings) -> Result<Connection, EngineError> 
 fn write_loop(
     mut connection: Connection,
     format: NetworkSampleFormat,
-    mut samples: Consumer<Complex<f32>>,
+    mut samples: Feed,
+    refeeds: &mpsc::Receiver<Feed>,
     shared: &NetworkExportShared,
 ) {
     let mut encoded = Vec::new();
@@ -228,10 +271,14 @@ fn write_loop(
         }
         let available = samples.slots();
         if available == 0 {
-            if samples.is_abandoned() {
-                return;
+            if !samples.is_abandoned() {
+                std::thread::sleep(Duration::from_millis(1));
+            } else if samples.is_empty() {
+                let Ok(next) = refeeds.try_recv() else {
+                    return;
+                };
+                samples = next;
             }
-            std::thread::sleep(Duration::from_millis(1));
             continue;
         }
         let Ok(chunk) = samples.read_chunk(available) else {
@@ -407,6 +454,42 @@ mod tests {
         let mut bytes = Vec::new();
         encode(NetworkSampleFormat::Cu8, &VECTOR, &mut bytes);
         assert_eq!(bytes, [0, 255, 128, 64, 255, 0]);
+    }
+
+    #[test]
+    fn a_refed_export_keeps_sending_after_its_first_feed_ends() {
+        let receiver = UdpSocket::bind("127.0.0.1:0").expect("receiver");
+        receiver
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("timeout");
+        let settings = NetworkExportSettings {
+            address: receiver.local_addr().expect("address").to_string(),
+            transport: NetworkTransport::Udp,
+            format: NetworkSampleFormat::Cf32Le,
+        };
+        let Started {
+            mut tap,
+            refeed,
+            shared,
+            writer,
+        } = start(&settings).expect("export");
+        assert!(tap.push(&VECTOR[..1]));
+        let mut refed = refeed.tap().expect("refeed");
+        drop(tap);
+        assert!(refed.push(&VECTOR[1..]));
+        let mut received = Vec::new();
+        let mut packet = [0u8; UDP_PAYLOAD_BYTES];
+        while received.len() < VECTOR.len() * 8 {
+            let len = receiver.recv(&mut packet).expect("a packet");
+            received.extend_from_slice(&packet[..len]);
+        }
+        let mut expected = Vec::new();
+        encode(NetworkSampleFormat::Cf32Le, &VECTOR, &mut expected);
+        assert_eq!(received, expected);
+        drop(refed);
+        writer.join().expect("the writer ends with its last feed");
+        assert_eq!(shared.error(), None);
+        drop(refeed);
     }
 
     #[test]

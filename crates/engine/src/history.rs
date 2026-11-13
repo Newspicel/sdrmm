@@ -5,7 +5,9 @@ use sdrmm_wire::{
 
 use crate::{
     DEFAULT_CENTER_HZ, DeviceSetState, Engine, EngineError, TIME_MACHINE_STOP_POLL,
-    TIME_MACHINE_STOP_POLLS, recording,
+    TIME_MACHINE_STOP_POLLS,
+    reattach::SWEEPING,
+    recording,
     runtime::DspCommand,
     sample_rate_of, time_machine,
     time_machine::{TimeMachineCommand, TimeMachineControl, TimeMachineHandle, TimeMachineShared},
@@ -150,6 +152,9 @@ impl Engine {
                 return Err(EngineError::Recording(
                     "a recorder is already holding this radio's pre-roll".to_owned(),
                 ));
+            }
+            if state.runtime.sweeping() {
+                return Err(EngineError::Recording(SWEEPING.to_owned()));
             }
             if state.status != DeviceSetStatus::Running {
                 return Err(EngineError::Recording(

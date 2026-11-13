@@ -26,6 +26,8 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 flate2.workspace = true
+syn.workspace = true
+proc-macro2.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

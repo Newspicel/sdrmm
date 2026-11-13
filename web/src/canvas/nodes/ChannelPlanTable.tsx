@@ -7,7 +7,6 @@ import { Unit } from "../../components/Unit";
 import type { TrunkChannel, TrunkChannelEntry } from "../../lib/types";
 import {
   channelEntry,
-  MAX_LOGICAL_CHANNEL,
   planSummary,
   trunkChannelSourceHint,
   trunkChannelSourceLabel,
@@ -23,6 +22,7 @@ export function ChannelPlanTable({
   entries,
   found,
   following,
+  maxChannel,
   onChange,
 }: {
   label: string;
@@ -30,11 +30,12 @@ export function ChannelPlanTable({
   entries: readonly TrunkChannelEntry[];
   found: readonly TrunkChannelEntry[];
   following: ReadonlySet<number>;
+  maxChannel: number;
   onChange: (entries: TrunkChannelEntry[]) => void;
 }) {
   const [lcn, setLcn] = useState<number | null>(null);
   const [mhz, setMhz] = useState<number | null>(null);
-  const pending = channelEntry(lcn, mhz);
+  const pending = channelEntry(lcn, mhz, maxChannel);
   const add = () => {
     if (pending === null) {
       return;
@@ -111,7 +112,7 @@ export function ChannelPlanTable({
           placeholder="LCN"
           value={lcn}
           min={0}
-          max={MAX_LOGICAL_CHANNEL}
+          max={maxChannel}
           step={1}
           className="w-16"
           onCommit={setLcn}

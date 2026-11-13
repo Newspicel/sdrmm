@@ -1,18 +1,13 @@
 import { create } from "zustand";
 import { omitNodes } from "./byNode";
-import type {
-  ChannelStatus,
-  Field,
-  ProcessorKind,
-  ProcessorReading,
-  ReadingOf,
-  ServerEvent,
-} from "./types";
+import type { ChannelStatus, Field, ProcessorView, ServerEvent } from "./types";
 
 export interface ProcessorState {
-  reading: ProcessorReading;
+  view: ProcessorView;
   status?: ChannelStatus;
   receivedAt: number;
+  /** The gap before this reading, so staleness follows each processor's own pace. */
+  periodMs: number;
 }
 
 export interface ProcessorStore {
@@ -23,6 +18,7 @@ export interface ProcessorStore {
 }
 
 export const STALE_FLOOR_MS = 2_000;
+const NO_VIEW: ProcessorView = {};
 
 export const useProcessorStore = create<ProcessorStore>((set) => ({
   byNode: {},
@@ -30,24 +26,22 @@ export const useProcessorStore = create<ProcessorStore>((set) => ({
     if (event.type !== "ProcessorUpdate") {
       return;
     }
-    const { node, reading, status } = event.data;
-    set((state) => ({
-      byNode: { ...state.byNode, [node]: { reading, status, receivedAt: Date.now() } },
-    }));
+    const { node, status, view } = event.data;
+    const receivedAt = Date.now();
+    set((state) => {
+      const previous = state.byNode[node];
+      const periodMs = previous === undefined ? 0 : receivedAt - previous.receivedAt;
+      return {
+        byNode: {
+          ...state.byNode,
+          [node]: { view: view ?? NO_VIEW, status, receivedAt, periodMs },
+        },
+      };
+    });
   },
   forget: (nodes) => set((state) => ({ byNode: omitNodes(state.byNode, nodes) })),
   reset: () => set({ byNode: {} }),
 }));
-
-export function readingOf<T extends ProcessorKind>(
-  state: ProcessorState | undefined,
-  type: T,
-): ReadingOf<T> | null {
-  if (state === undefined || state.reading.type !== type) {
-    return null;
-  }
-  return state.reading.reading as ReadingOf<T>;
-}
 
 export function isStale(receivedAt: number, now: number, periodMs: number): boolean {
   return now - receivedAt > Math.max(3 * periodMs, STALE_FLOOR_MS);

@@ -1,5 +1,6 @@
 import { token } from "../lib/tokens";
 import { COLORMAP_GLSL, CUSTOM_STOPS, type Palette, paletteIndex, type Rgb } from "./colormap";
+import { watchRepaint } from "./drawLoop";
 import { watchOnScreen } from "./onScreen";
 import {
   advanceRing,
@@ -132,9 +133,7 @@ export function attachWaterfall(
     plot.attach(context);
   }
   plots.add(plot);
-  if (frame === 0) {
-    frame = requestAnimationFrame(draw);
-  }
+  requestDraw();
   return plot;
 }
 
@@ -187,16 +186,25 @@ class Plot implements WaterfallView {
   private ratio = 1;
   private onScreen = false;
   private dirty = true;
+  width = 0;
+  height = 0;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly onStatus: WaterfallStatus,
   ) {
     this.ctx = canvas.getContext("2d");
-    this.unwatch = watchOnScreen(canvas, (visible) => {
+    const unwatch = watchOnScreen(canvas, (visible) => {
       this.onScreen = visible;
-      this.dirty ||= visible;
+      if (visible) {
+        this.invalidate();
+      }
     });
+    const unrepaint = watchRepaint(canvas, () => this.invalidate());
+    this.unwatch = () => {
+      unwatch();
+      unrepaint();
+    };
   }
 
   attach(context: Shared): void {
@@ -258,7 +266,7 @@ class Plot implements WaterfallView {
       bins,
     );
     this.writeRow = advanceRing(this.writeRow, HISTORY_ROWS);
-    this.dirty = true;
+    this.invalidate();
   }
 
   seed(rows: Uint8Array, count: number, bins: number, levels: readonly RowLevel[] = []): void {
@@ -300,7 +308,7 @@ class Plot implements WaterfallView {
       this.rowData[at] = (this.rowData[at] ?? 0) + delta;
     }
     this.rowsDirty = true;
-    this.dirty = true;
+    this.invalidate();
   }
 
   private storeRow(row: number, level: RowLevel): void {
@@ -314,7 +322,9 @@ class Plot implements WaterfallView {
   }
 
   setWindow(start: number, width: number): void {
-    this.dirty ||= this.windowStart !== start || this.windowWidth !== width;
+    if (this.windowStart !== start || this.windowWidth !== width) {
+      this.invalidate();
+    }
     this.windowStart = start;
     this.windowWidth = width;
   }
@@ -322,7 +332,9 @@ class Plot implements WaterfallView {
   setColormap(palette: Palette): void {
     const map = paletteIndex(palette);
     const stopsChanged = typeof palette !== "string" && this.storeCustom(palette);
-    this.dirty ||= this.map !== map || stopsChanged;
+    if (this.map !== map || stopsChanged) {
+      this.invalidate();
+    }
     this.map = map;
   }
 
@@ -350,37 +362,41 @@ class Plot implements WaterfallView {
     }
   }
 
-  measure(): { w: number; h: number } | null {
-    if (!this.onScreen) {
-      return null;
+  invalidate(): void {
+    this.dirty = true;
+    requestDraw();
+  }
+
+  /// Sizes the backing store and reports whether this plot has something new to paint.
+  measure(): boolean {
+    if (!(this.dirty && this.onScreen)) {
+      return false;
     }
     const cssWidth = this.canvas.clientWidth;
     const cssHeight = this.canvas.clientHeight;
     if (cssWidth === 0 || cssHeight === 0) {
-      return null;
+      return false;
     }
     const rect = this.canvas.getBoundingClientRect();
     const ratio = pixelRatio(window.devicePixelRatio, zoomOf(rect.width, cssWidth));
-    this.dirty ||= this.ratio !== ratio;
     this.ratio = ratio;
     const w = backingPx(cssWidth, this.ratio);
     const h = backingPx(cssHeight, this.ratio);
     if (w === 0 || h === 0) {
-      return null;
+      return false;
     }
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
-      this.dirty = true;
     }
-    return { w, h };
+    this.width = w;
+    this.height = h;
+    return true;
   }
 
-  needsPaint(): boolean {
-    return this.dirty;
-  }
-
-  paint(w: number, h: number): void {
+  paint(): void {
+    const w = this.width;
+    const h = this.height;
     const live = this.live;
     if (live === null) {
       return;
@@ -448,7 +464,7 @@ class Plot implements WaterfallView {
     this.rowData.fill(0);
     this.times.fill(Number.NaN);
     this.rowsDirty = true;
-    this.dirty = true;
+    this.invalidate();
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, live.texture);
     gl.texImage2D(
@@ -465,26 +481,30 @@ class Plot implements WaterfallView {
   }
 }
 
+const pending: Plot[] = [];
+
+function requestDraw(): void {
+  if (frame === 0 && plots.size > 0) {
+    frame = requestAnimationFrame(draw);
+  }
+}
+
 function draw(): void {
-  frame = requestAnimationFrame(draw);
+  frame = 0;
   const context = shared;
   if (context === null) {
     return;
   }
-  const pending: { plot: Plot; w: number; h: number }[] = [];
+  pending.length = 0;
   let width = 0;
   let height = 0;
   for (const plot of plots) {
     plot.attach(context);
-    const size = plot.measure();
-    if (size === null) {
-      continue;
+    if (plot.measure()) {
+      pending.push(plot);
+      width = Math.max(width, plot.width);
+      height = Math.max(height, plot.height);
     }
-    if (plot.needsPaint()) {
-      pending.push({ plot, ...size });
-    }
-    width = Math.max(width, size.w);
-    height = Math.max(height, size.h);
   }
   if (pending.length === 0) {
     return;
@@ -497,9 +517,10 @@ function draw(): void {
   }
   context.gl.useProgram(context.program);
   context.gl.bindVertexArray(context.vao);
-  for (const entry of pending) {
-    entry.plot.paint(entry.w, entry.h);
+  for (const plot of pending) {
+    plot.paint();
   }
+  pending.length = 0;
 }
 
 function acquire(): Shared {
@@ -591,6 +612,7 @@ function onContextRestored(event: Event): void {
   recovering = null;
   try {
     shared = build(context.canvas, context.gl);
+    requestDraw();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     for (const plot of plots) {

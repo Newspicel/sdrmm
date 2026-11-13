@@ -24,19 +24,18 @@ reaches it. A bind other machines can reach always needs a [token](#token) and s
 | `--doctor-rates` | | Probe connected radios' sample rates and exit |
 
 `SDRMM_TOKEN`, `SDRMM_NO_AUTH`, `SDRMM_TLS_NAMES` and `SDRMM_NO_TLS` set `--token`, `--no-auth`,
-`--tls-name` and `--no-tls`. The platform data folder is
-`~/.local/share` on Linux,
+`--tls-name` and `--no-tls`. The platform data folder is `~/.local/share` on Linux,
 `~/Library/Application Support` on macOS and `%APPDATA%` on Windows. For a service, use absolute
-paths for `--db` and `--recordings-dir`.
+paths.
 
 Subcommand: [`sdrmm phone`](#phones) pairs a phone.
 
 ## Data
 
 The database holds workspaces, presets, bookmarks, saved radios, the recording index, the decoder
-log and paired phones. The `tls` folder beside it holds the
-self-signed certificate. Recording files hold the signals. Back up all three. Stop the server
-before copying the database, or use SQLite's backup, and finish recordings before copying them.
+log, paired phones and [Event output](../user-guide/network-iq.md#credentials) credentials. The `tls` folder beside it holds the self-signed certificate, and
+`access-token` the generated token. Recording files hold the signals. Back up all of them. Stop
+the server before copying the database, or use SQLite's backup, and finish recordings first.
 
 ## Logs
 
@@ -60,9 +59,10 @@ sdrmm
 
 The environment variable keeps the token out of the process list; `--token` works too. A network
 bind without one makes a token on first start, keeps it in `access-token` beside the database and
-logs a sign-in link. `--no-auth` runs it open instead, for a port only trusted machines reach. The
-browser asks for the token once and remembers it. API clients send `Authorization: Bearer <token>`.
-WebSocket and download URLs can use `?token=...`.
+logs a sign-in link. `--no-auth` runs it open instead, for a port only trusted machines reach. An
+open server answers only to IP addresses, `localhost`, `--tls-name` names and, off loopback, its
+own `<host>.local`. The browser asks for the token once and remembers it. API clients send
+`Authorization: Bearer <token>`. WebSocket and download URLs can use `?token=...`.
 
 Everything needs the token except the page itself, `/api/auth`, `/api/status`, `/api/about`,
 `/api/openapi.json` and `/api/docs`. Every client with the token can do everything. There are no
@@ -130,8 +130,7 @@ list it under **Nearby**. Let the phone port through your firewall.
 ## Reverse proxy
 
 - Bind SDRmm to loopback, or pass `--no-tls` and firewall its port.
-- Set a token. Without one, the server answers only requests addressed to an IP literal, a
-  `localhost` or `.local` name, or a `--tls-name`.
+- Set a token. Without one, the server answers only to the names under [Token](#token).
 - Serve it at the root of the origin.
 - Pass the original `Host` header. Browser requests whose `Origin` differs are refused.
 - Forward WebSocket upgrades on `/api/ws`, and `/mcp` for MCP clients.

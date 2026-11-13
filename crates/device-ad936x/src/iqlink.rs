@@ -9,7 +9,9 @@ use sdrmm_device::{
     Block, BlockGap, BlockPool, DeviceError, Next, StreamFailure, lock,
     net::{Connection, Endpoint, Read, udp_receiver},
 };
-use sdrmm_iqlink::{CONTROL_PORT, DATAGRAM_BYTES, HEADER_BYTES, Header, Reply, Start};
+use sdrmm_iqlink::{
+    CONTROL_PORT, DATAGRAM_BYTES, HEADER_BYTES, Header, MAX_LINE_BYTES, Reply, Start,
+};
 
 use crate::iio::Stopper;
 
@@ -100,6 +102,11 @@ fn read_line(control: &Connection, timeout: Duration) -> Result<String, DeviceEr
         match control.read(&mut byte, deadline - Instant::now()) {
             Read::Got(_) if byte[0] == b'\n' => {
                 return Ok(String::from_utf8_lossy(&line).into_owned());
+            }
+            Read::Got(_) if line.len() + 1 >= MAX_LINE_BYTES => {
+                return Err(DeviceError::Io(
+                    "iqlink answered with an endless line".into(),
+                ));
             }
             Read::Got(_) => line.push(byte[0]),
             Read::Idle => {}
@@ -654,5 +661,27 @@ mod tests {
                 .is_none()
         );
         refuser.join().expect("refuser");
+    }
+
+    #[test]
+    fn an_endless_reply_is_an_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let flooder = thread::spawn(move || {
+            let (mut control, _) = listener.accept().expect("accept");
+            let mut line = String::new();
+            BufReader::new(control.try_clone().expect("clone"))
+                .read_line(&mut line)
+                .expect("start");
+            control
+                .write_all(&vec![b'x'; MAX_LINE_BYTES * 2])
+                .expect("flood");
+        });
+        let at = Endpoint::parse(&format!("127.0.0.1:{port}"), 1).expect("endpoint");
+        let Err(error) = connect(&at, request(), BlockPool::default()) else {
+            panic!("an endless line was accepted");
+        };
+        assert!(error.to_string().contains("endless"), "{error}");
+        flooder.join().expect("flooder");
     }
 }

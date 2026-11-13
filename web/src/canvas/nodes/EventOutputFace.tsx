@@ -16,6 +16,7 @@ import {
 import { FeedOutputControls } from "./FeedOutputControls";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 import { OutputDelivery } from "./OutputDelivery";
+import { SecretChip } from "./SecretChip";
 
 export function EventOutputFace({ node }: { node: PatchNode }) {
   if (node.kind !== "event_output") {
@@ -189,13 +190,12 @@ function WebhookChips({
 }) {
   return (
     <>
-      <TextChip
+      <SecretChip
         label="Endpoint"
         name="Webhook URL"
-        title="Webhook URL"
-        value={target.url}
-        secret
-        onCommit={(url) => onEdit({ ...target, url })}
+        title="Webhook URL, kept on this server"
+        secret={target.url}
+        onSet={(url) => onEdit({ ...target, url })}
       />
       <ChoiceChip
         label="Format"
@@ -229,12 +229,11 @@ function MatrixChips({
         value={target.room_id}
         onCommit={(room_id) => onEdit({ ...target, room_id })}
       />
-      <TextChip
+      <SecretChip
         label="Token"
-        title="Matrix access token"
-        value={target.access_token}
-        secret
-        onCommit={(access_token) => onEdit({ ...target, access_token })}
+        title="Matrix access token, kept on this server"
+        secret={target.access_token}
+        onSet={(access_token) => onEdit({ ...target, access_token })}
       />
     </>
   );
@@ -269,12 +268,11 @@ function PostgresChips({
         value={target.username ?? ""}
         onCommit={(username) => onEdit({ ...target, username })}
       />
-      <TextChip
+      <SecretChip
         label="Password"
-        title="PostgreSQL password"
-        value={target.password ?? ""}
-        secret
-        onCommit={(password) => onEdit({ ...target, password })}
+        title="PostgreSQL password, kept on this server"
+        secret={target.password}
+        onSet={(password) => onEdit({ ...target, password })}
       />
     </>
   );
@@ -309,12 +307,11 @@ function InfluxChips({
         value={target.org ?? ""}
         onCommit={(org) => onEdit({ ...target, org })}
       />
-      <TextChip
+      <SecretChip
         label="Token"
-        title="InfluxDB token"
-        value={target.token ?? ""}
-        secret
-        onCommit={(token) => onEdit({ ...target, token })}
+        title="InfluxDB token, kept on this server"
+        secret={target.token}
+        onSet={(token) => onEdit({ ...target, token })}
       />
     </>
   );
@@ -347,12 +344,11 @@ function MqttChips({
         value={target.username ?? ""}
         onCommit={(username) => onEdit({ ...target, username })}
       />
-      <TextChip
+      <SecretChip
         label="Password"
-        title="MQTT password"
-        value={target.password ?? ""}
-        secret
-        onCommit={(password) => onEdit({ ...target, password })}
+        title="MQTT password, kept on this server"
+        secret={target.password}
+        onSet={(password) => onEdit({ ...target, password })}
       />
     </>
   );

@@ -67,7 +67,8 @@ the toolchain. xtask retries Cargo up to three times on Windows, since the
 ## Feature flags
 
 The server enables `soapy`, `sdrplay`, `aaronia`, `cr8`, `rtlsdr`, `hackrf`, `airspy`, `airspyhf`,
-`espsdr`, `ad936x`, `net-client`, and `gpu-fft` by default. Packaged releases leave out `cr8`.
+`funcube`, `espsdr`, `ad936x`, `net-client`, and `gpu-fft` by default. Packaged releases leave out
+`cr8`. `dvsi` adds AMBE vocoder chips and is off by default.
 
 ```sh
 cargo run -p sdrmm --no-default-features                        # no radio drivers
@@ -80,8 +81,7 @@ Recording playback and the signal generator work in every build.
 
 Add a **Signal generator** node, pick a signal, and wire it to a matching channel and a Speaker.
 
-Debug builds also offer synthetic radios on the Device node. The UI shows them when it runs from
-`cargo xtask dev` or was built with `VITE_ENABLE_SYNTHETIC_DEVICES=true`.
+Debug builds also offer synthetic radios on the Device node.
 
 | Radio | Key | Is |
 |---|---|---|
@@ -105,7 +105,7 @@ The bench radios hear one FM emitter at 137° and its echo at 250°.
 | `cargo xtask audit` | RustSec advisories through cargo-deny |
 | `cargo xtask desktop` | Clippy and tests on the desktop app, no installers |
 | `cargo xtask sanitize` | Channel tests, with the vendored C, under AddressSanitizer and UBSan |
-| `cargo xtask fuzz` | libFuzzer on every channel type, channel settings, and dPMR voice |
+| `cargo xtask fuzz` | libFuzzer on decoders, parsers and importers |
 
 ```sh
 cargo install --locked cargo-nextest cargo-deny cargo-fuzz
@@ -113,13 +113,28 @@ pnpm --dir web exec playwright install chromium
 ```
 
 `test` needs cargo-nextest, `audit` cargo-deny, `fuzz` cargo-fuzz, and `sanitize` clang.
-`fuzz` takes `--target <channel_chain|channel_settings|dv_voice>`, `--seconds` (default 60),
-`--jobs`, and `--minimize`. Automated tests never need real hardware.
+Automated tests never need real hardware.
 
-CI runs `check`, `perf`, `smoke`, and `test` on every push and pull request. `test` builds once
-per architecture (`test archive`) and runs the archive in four slices (`test shard`). The nightly
-workflow runs the rest: macOS tests, array realtime, desktop, mobile, iPhone, Android, container image, Nix,
-advisories, sanitizers, four hours of fuzzing per target, and measurement suites.
+`fuzz` runs every target in `fuzz/fuzz_targets/`, or the one `--target` names, for `--seconds`
+(default 60) on `--jobs` workers. `--minimize` shrinks the corpus instead.
+
+| Target | Feeds |
+|---|---|
+| `channel_chain` | IQ into every decoder |
+| `channel_settings` | Random settings into every decoder |
+| `dv_voice` | IQ into the digital voice decoders |
+| `media_bitstream` | Audio codec bitstreams |
+| `net_radio_proto` | rtl_tcp, SpyServer, KiwiSDR and SDRconnect messages |
+| `iqlink_header` | iqlink packets |
+| `recorder_import` | SigMF archives |
+| `workspace_import` | Workspace exports |
+| `cps_image` | Codeplug images |
+
+CI runs `check`, `perf`, `smoke`, `test`, GPU parity, SIMD kernels, the ETSI table check and
+cargo-deny's licenses, bans and sources on every push and pull request. `test` builds once per
+architecture (`test archive`) and runs the archive in four slices (`test shard`). The nightly
+workflow runs the rest: macOS tests, array realtime, desktop, mobile, iPhone, Android, container
+image, Nix, advisories, sanitizers, four hours of fuzzing per target, and measurement suites.
 
 ## Performance baselines
 
@@ -153,12 +168,9 @@ host shifts the expectation instead of failing the gate. Run a gate on a machine
 idle: the kernel is cache resident and barely notices a busy host, while a decoder reading tens of
 megabytes does.
 
-The modem gate allows 10% below the expectation on its one bench. The channel survey allows 35%,
-because it compares every registered channel at once, so a wobble anywhere fails it, and because
-`ft8`, `ft4`, `wspr` and `stanag` are timed over a single pass whose deferred decode slot may or may
-not fire inside the measured window: four consecutive runs on one host read `ft8` at 1588, 1697,
-1724 and 4294 MS/s. Tightening it means timing those four over several passes first, which moves
-their numbers and needs both hosts recorded again.
+The modem gate allows 10% below the expectation. The channel survey allows 35%: it compares
+every channel at once, and `ft8`, `ft4`, `wspr` and `stanag` are timed over one pass whose
+deferred decode may or may not land inside the window.
 
 ## Generated files
 

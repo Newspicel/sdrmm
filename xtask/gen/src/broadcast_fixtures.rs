@@ -11,7 +11,7 @@ pub fn run(out: &Path) -> Result<()> {
         (
             "broadcast-dab",
             2_048_000.0,
-            synth::dab::ensemble_with_data(DabTransmissionMode::I, 48),
+            synth::dab::ensemble_with_data(DabTransmissionMode::I, 48)?,
         ),
         (
             "broadcast-dvbt",
@@ -21,10 +21,10 @@ pub fn run(out: &Path) -> Result<()> {
         (
             "broadcast-dvbs2sf",
             2_000_000.0,
-            synth::datv::dvbs2_superframes(4),
+            synth::datv::dvbs2_superframes(4)?,
         ),
         ("broadcast-dvbs", 2_000_000.0, synth::datv::dvbs(4)),
-        ("broadcast-dvbs2", 2_000_000.0, synth::datv::dvbs2(4)),
+        ("broadcast-dvbs2", 2_000_000.0, synth::datv::dvbs2(4)?),
         (
             "broadcast-dvbs2x",
             2_000_000.0,
@@ -34,7 +34,7 @@ pub fn run(out: &Path) -> Result<()> {
                 sdrmm_channels::Dvbs2Rate::R135_180,
                 false,
                 true,
-            ),
+            )?,
         ),
     ] {
         let stem = out.join(name);

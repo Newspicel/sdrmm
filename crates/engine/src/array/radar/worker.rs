@@ -23,10 +23,8 @@ use sdrmm_channels::{
 };
 use sdrmm_device::{Latency, schedule::claim};
 
-use super::{
-    DedicatedRunner, Prepared, Retired,
-    publish::{self, Mailbox, Publisher},
-};
+use super::publish::{self, Mailbox, Publisher};
+use crate::array::dedicated::{DedicatedRunner, Prepared, Retired};
 
 type C32 = Complex<f32>;
 
@@ -895,7 +893,10 @@ impl DedicatedRunner for RadarWorker {
         match prepared {
             Prepared::Same => None,
             Prepared::Live(live) => {
-                self.outbox.tune(live);
+                match live.downcast::<LiveParams>() {
+                    Ok(live) => self.outbox.tune(live),
+                    Err(_) => tracing::error!("radar tune skipped: the settings are not a radar's"),
+                }
                 None
             }
             Prepared::Rebuild(mut next) => {

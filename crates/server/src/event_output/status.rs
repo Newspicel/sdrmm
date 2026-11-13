@@ -9,6 +9,7 @@ use super::Binding;
 struct Entry {
     target: EventOutputTarget,
     status: EventOutputStatus,
+    blocked: bool,
 }
 
 #[derive(Clone)]
@@ -37,6 +38,7 @@ impl Statuses {
                     .entry(binding.node.clone())
                     .or_insert_with(|| Entry {
                         target: binding.target.clone(),
+                        blocked: false,
                         status: EventOutputStatus {
                             node: binding.node.clone(),
                             ..EventOutputStatus::default()
@@ -61,9 +63,35 @@ impl Statuses {
     }
 
     pub fn lost(&self, count: u64) {
+        self.fault(&format!("Missed {count} decoder events"));
+    }
+
+    /// Shows what keeps an output from delivering at all, and clears it once that is fixed.
+    pub fn unresolved(&self, node: &str, problem: Option<String>) {
+        self.entries.send_if_modified(|entries| {
+            let Some(entry) = entries.get_mut(node) else {
+                return false;
+            };
+            match problem {
+                Some(problem) => {
+                    entry.blocked = true;
+                    entry.status.error = Some(problem);
+                    true
+                }
+                None if entry.blocked => {
+                    entry.blocked = false;
+                    entry.status.error = None;
+                    true
+                }
+                None => false,
+            }
+        });
+    }
+
+    pub fn fault(&self, error: &str) {
         self.entries.send_modify(|entries| {
             for entry in entries.values_mut() {
-                entry.status.error = Some(format!("Missed {count} decoder events"));
+                entry.status.error = Some(error.to_owned());
             }
         });
     }

@@ -758,29 +758,53 @@ fn navtex() -> Vec<Complex<f32>> {
     synth::navtex::transmission("ZCZC FA01 SDRmm SIGNAL GENERATOR NNNN", AUDIO)
 }
 
+/// What a render that failed leaves: silence, which the generator refuses, with the reason
+/// logged here where it is known.
+fn rendered<E: std::fmt::Display>(
+    signal: &str,
+    iq: Result<Vec<Complex<f32>>, E>,
+) -> Vec<Complex<f32>> {
+    iq.unwrap_or_else(|error| {
+        tracing::error!(signal, %error, "synthetic signal not rendered");
+        Vec::new()
+    })
+}
+
 fn psk31() -> Vec<Complex<f32>> {
     let iq = synth::psk::transmission("CQ CQ DE SDRmm \n", PskBaud::Psk31.rate());
-    synth::resample(&iq, 8_000.0, AUDIO)
+    synth::resample(&rendered("psk31", iq), 8_000.0, AUDIO)
 }
 
 fn selcall() -> Vec<Complex<f32>> {
-    synth::selcall::transmission(SelcallSystem::Ccir1, "12234", AUDIO).unwrap_or_default()
+    rendered(
+        "selcall",
+        synth::selcall::transmission(SelcallSystem::Ccir1, "12234", AUDIO),
+    )
 }
 
-fn weak(slot: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
-    synth::resample(&slot, 12_000.0, AUDIO)
+fn weak(slot: &[Complex<f32>]) -> Vec<Complex<f32>> {
+    synth::resample(slot, 12_000.0, AUDIO)
 }
 
 fn ft8() -> Vec<Complex<f32>> {
-    weak(weak_signal::ft8_slot("W1AW", "FN42", 1_500.0))
+    weak(&rendered(
+        "ft8",
+        weak_signal::ft8_slot("W1AW", "FN42", 1_500.0),
+    ))
 }
 
 fn ft4() -> Vec<Complex<f32>> {
-    weak(weak_signal::ft4_slot("W1AW", "FN42", 1_500.0))
+    weak(&rendered(
+        "ft4",
+        weak_signal::ft4_slot("W1AW", "FN42", 1_500.0),
+    ))
 }
 
 fn wspr() -> Vec<Complex<f32>> {
-    weak(weak_signal::wspr_slot("W1AW", "FN42", 33, 1_500.0))
+    weak(&rendered(
+        "wspr",
+        weak_signal::wspr_slot("W1AW", "FN42", 33, 1_500.0),
+    ))
 }
 
 fn sstv() -> Vec<Complex<f32>> {
@@ -876,7 +900,7 @@ fn remote_id_bluetooth() -> Vec<Complex<f32>> {
 }
 
 fn remote_id_wifi() -> Vec<Complex<f32>> {
-    synth::remote_id::wifi_scene().unwrap_or_default()
+    rendered("remote_id_wifi", synth::remote_id::wifi_scene())
 }
 
 fn ble_beacons() -> Vec<Complex<f32>> {
@@ -918,7 +942,10 @@ fn gnss() -> Vec<Complex<f32>> {
 }
 
 fn dab() -> Vec<Complex<f32>> {
-    synth::dab::ensemble_for_mode(DabTransmissionMode::I, 16)
+    rendered(
+        "dab",
+        synth::dab::ensemble_for_mode(DabTransmissionMode::I, 16),
+    )
 }
 
 fn dvbs() -> Vec<Complex<f32>> {
@@ -926,7 +953,7 @@ fn dvbs() -> Vec<Complex<f32>> {
 }
 
 fn dvbs2() -> Vec<Complex<f32>> {
-    synth::datv::dvbs2(4)
+    rendered("dvbs2", synth::datv::dvbs2(4))
 }
 
 fn dvbt() -> Vec<Complex<f32>> {

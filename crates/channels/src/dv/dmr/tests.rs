@@ -1858,7 +1858,7 @@ fn a_key_of_the_wrong_length_is_refused() {
 
 #[test]
 fn a_followed_call_plays_through_the_trunks_vocoder_chip() {
-    let params: DmrParams = dmr_follow(2, false, &[], Some("/dev/ttyUSB0"))
+    let params: DmrParams = trunk::follow(Some(2), false, &[], Some("/dev/ttyUSB0"))
         .expect("follow")
         .parse()
         .expect("dmr params");

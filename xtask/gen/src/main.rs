@@ -172,7 +172,7 @@ fn fixtures(dir: &Path) -> Result<()> {
         write_fixture(
             dir,
             recipe.stem,
-            &(recipe.iq)(),
+            &(recipe.iq)()?,
             recipe.rate,
             CENTER_HZ,
             "SDRmm reference modulator",

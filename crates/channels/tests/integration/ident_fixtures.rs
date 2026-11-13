@@ -22,7 +22,7 @@ fn synthesized_iq(fixture: &Fixture) -> Vec<Complex<f32>> {
     let Some(recipe) = recipe(fixture.stem) else {
         panic!("{}: no recipe", fixture.stem)
     };
-    (recipe.iq)()
+    (recipe.iq)().unwrap_or_else(|error| panic!("{}: {error}", fixture.stem))
 }
 
 fn judge_all(

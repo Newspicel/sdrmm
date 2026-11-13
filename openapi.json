@@ -3782,14 +3782,14 @@
         }
       }
     },
-    "/api/radar/{node}": {
+    "/api/processors/{node}": {
       "get": {
-        "operationId": "get_radar",
+        "operationId": "get_processor",
         "parameters": [
           {
             "name": "node",
             "in": "path",
-            "description": "Passive radar node id",
+            "description": "Array processor node id",
             "required": true,
             "schema": {
               "type": "string"
@@ -3798,58 +3798,17 @@
         ],
         "responses": {
           "200": {
-            "description": "The latest radar picture",
+            "description": "The reading the processor shows now",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RadarUpdate"
+                  "$ref": "#/components/schemas/ProcessorReading"
                 }
               }
             }
           },
           "404": {
-            "description": "No radar with that id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/radar/{node}/tracks": {
-      "delete": {
-        "operationId": "clear_radar_tracks",
-        "parameters": [
-          {
-            "name": "node",
-            "in": "path",
-            "description": "Passive radar node id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Every track dropped"
-          },
-          "404": {
-            "description": "No radar with that id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The radar cannot drop its tracks now",
+            "description": "No reading from that node",
             "content": {
               "application/json": {
                 "schema": {
@@ -4349,6 +4308,104 @@
           },
           "404": {
             "description": "Saved radio not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/secrets": {
+      "post": {
+        "operationId": "create_secret",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretValue"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Kept on this server under a fresh id. A workspace names the id, never the value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Secret"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty or too long",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/secrets/{id}": {
+      "put": {
+        "operationId": "put_secret",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Secret id a workspace names",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretValue"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Kept on this server under that id"
+          },
+          "400": {
+            "description": "Unusable id, or the value is empty or too long",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
             "content": {
               "application/json": {
                 "schema": {
@@ -5597,6 +5654,26 @@
             "type": "string"
           },
           "version": {
+            "type": "string"
+          }
+        }
+      },
+      "ActionSpec": {
+        "type": "object",
+        "description": "A button a processor face shows for one of its actions.",
+        "required": [
+          "action",
+          "label",
+          "title"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ProcessorAction"
+          },
+          "label": {
+            "type": "string"
+          },
+          "title": {
             "type": "string"
           }
         }
@@ -8735,6 +8812,46 @@
           "mark"
         ]
       },
+      "BearingView": {
+        "type": "object",
+        "description": "Bearings relative to the array; `heading_deg` turns them to true north.",
+        "required": [
+          "spectrum",
+          "needles"
+        ],
+        "properties": {
+          "heading_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "needles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Needle"
+            }
+          },
+          "sigma_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "The spread of the first needle."
+          },
+          "spectrum": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "description": "Levels round the circle from the array's forward direction, clockwise."
+          }
+        }
+      },
       "Bookmark": {
         "type": "object",
         "required": [
@@ -9099,6 +9216,26 @@
           },
           "tle": {
             "type": "string"
+          }
+        }
+      },
+      "Cell": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "faint": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -13485,6 +13622,29 @@
           "full"
         ]
       },
+      "EllipseView": {
+        "type": "object",
+        "required": [
+          "angle_deg",
+          "ellipticity_deg",
+          "v"
+        ],
+        "properties": {
+          "angle_deg": {
+            "type": "number",
+            "format": "float"
+          },
+          "ellipticity_deg": {
+            "type": "number",
+            "format": "float"
+          },
+          "v": {
+            "type": "number",
+            "format": "float",
+            "description": "Its sign gives the sense of rotation."
+          }
+        }
+      },
       "Entity": {
         "type": "object",
         "required": [
@@ -13912,7 +14072,7 @@
                 ]
               },
               "url": {
-                "type": "string"
+                "$ref": "#/components/schemas/Secret"
               }
             }
           },
@@ -13926,7 +14086,7 @@
             ],
             "properties": {
               "access_token": {
-                "type": "string"
+                "$ref": "#/components/schemas/Secret"
               },
               "homeserver_url": {
                 "type": "string"
@@ -13954,7 +14114,7 @@
                 "type": "string"
               },
               "password": {
-                "type": "string"
+                "$ref": "#/components/schemas/Secret"
               },
               "service": {
                 "type": "string",
@@ -13979,7 +14139,7 @@
             ],
             "properties": {
               "password": {
-                "type": "string"
+                "$ref": "#/components/schemas/Secret"
               },
               "service": {
                 "type": "string",
@@ -14019,7 +14179,7 @@
                 ]
               },
               "token": {
-                "type": "string"
+                "$ref": "#/components/schemas/Secret"
               },
               "url": {
                 "type": "string"
@@ -14589,6 +14749,25 @@
           "drop"
         ]
       },
+      "Flag": {
+        "type": "object",
+        "description": "A condition a face shows as a chip.",
+        "required": [
+          "label",
+          "title"
+        ],
+        "properties": {
+          "danger": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "FmChannel": {
         "type": "object",
         "properties": {
@@ -14906,6 +15085,21 @@
           "gnss",
           "sensor"
         ]
+      },
+      "Headline": {
+        "type": "object",
+        "description": "The face's subtitle when a reading has more to say than the lane count.",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "warn": {
+            "type": "boolean"
+          }
+        }
       },
       "Held": {
         "oneOf": [
@@ -15721,6 +15915,34 @@
           }
         }
       },
+      "Layer": {
+        "type": "object",
+        "description": "One of several layers a surface holds, such as a baseline.",
+        "required": [
+          "label",
+          "text",
+          "title"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "phase_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "description": "Followed over time while the layer is shown."
+          },
+          "text": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "LicenseTextResponse": {
         "type": "object",
         "required": [
@@ -15856,6 +16078,79 @@
             "type": "string"
           }
         }
+      },
+      "Mark": {
+        "type": "object",
+        "description": "A point on a surface, in the surface's own axes.",
+        "required": [
+          "x",
+          "y",
+          "shape"
+        ],
+        "properties": {
+          "faint": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shape": {
+            "$ref": "#/components/schemas/MarkShape"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trail": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "description": "Where it was before, oldest first."
+          },
+          "true_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "`y` from true north, for a surface with a bearing axis."
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "MarkShape": {
+        "type": "string",
+        "enum": [
+          "dot",
+          "cross",
+          "square",
+          "triangle"
+        ]
       },
       "MdnsState": {
         "oneOf": [
@@ -17554,6 +17849,37 @@
           "estimate"
         ]
       },
+      "Needle": {
+        "type": "object",
+        "required": [
+          "relative_deg",
+          "weight"
+        ],
+        "properties": {
+          "relative_deg": {
+            "type": "number",
+            "format": "float"
+          },
+          "true_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "weight": {
+            "$ref": "#/components/schemas/NeedleWeight"
+          }
+        }
+      },
+      "NeedleWeight": {
+        "type": "string",
+        "enum": [
+          "primary",
+          "secondary",
+          "mirror"
+        ]
+      },
       "NetworkExportAction": {
         "type": "string",
         "enum": [
@@ -17826,6 +18152,20 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "processed"
+                ]
+              }
+            }
           }
         ]
       },
@@ -17989,6 +18329,26 @@
               },
               "with": {
                 "$ref": "#/components/schemas/ModulatorMessage"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One of the actions a processor declares.",
+            "required": [
+              "with",
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "processor"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/ProcessorAction",
+                "description": "One of the actions a processor declares."
               }
             }
           }
@@ -18841,6 +19201,17 @@
               "$ref": "#/components/schemas/PortSpec"
             }
           },
+          "processor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ProcessorFacets",
+                "description": "What a built-in processor draws and offers."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "role": {
             "$ref": "#/components/schemas/Role"
           },
@@ -19665,6 +20036,45 @@
           },
           "reason": {
             "type": "string"
+          }
+        }
+      },
+      "PatternView": {
+        "type": "object",
+        "required": [
+          "pattern",
+          "nulls_deg",
+          "weights"
+        ],
+        "properties": {
+          "nulls_deg": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "pattern": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "description": "Levels round the circle from the array's forward direction, clockwise."
+          },
+          "steer_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "weights": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LaneWeight"
+            }
           }
         }
       },
@@ -21224,6 +21634,46 @@
           "transmit"
         ]
       },
+      "ProcessorAction": {
+        "type": "string",
+        "description": "Something an operator asks a running processor to do.",
+        "enum": [
+          "clear_tracks"
+        ]
+      },
+      "ProcessorFacets": {
+        "type": "object",
+        "description": "What a processor declares about its face.",
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActionSpec"
+            },
+            "default": []
+          },
+          "tuning": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ArrayTuningMode",
+                "description": "How the wired array must tune its lanes, when the processor cares."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ViewSpec"
+            },
+            "description": "Widgets in the order the face draws them.",
+            "default": []
+          }
+        }
+      },
       "ProcessorGate": {
         "type": "string",
         "enum": [
@@ -21499,6 +21949,9 @@
             },
             "description": "Kinds of the events it emits, each one the plugin declares."
           },
+          "facets": {
+            "$ref": "#/components/schemas/ProcessorFacets"
+          },
           "max_lanes": {
             "type": "integer",
             "format": "int32",
@@ -21533,6 +21986,78 @@
           },
           "type_id": {
             "type": "string"
+          }
+        }
+      },
+      "ProcessorView": {
+        "type": "object",
+        "description": "What one reading puts on its processor's face.",
+        "properties": {
+          "bearing": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BearingView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ellipse": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EllipseView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Flag"
+            }
+          },
+          "headline": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Headline"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pattern": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatternView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surface": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SurfaceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "table": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TableView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -24522,6 +25047,38 @@
           }
         }
       },
+      "Secret": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "secret"
+            ],
+            "properties": {
+              "secret": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "string",
+            "description": "A value written in place, as older workspaces held it. Saving the workspace moves it\ninto the server's store."
+          }
+        ],
+        "description": "A credential an output needs. The server keeps the value in its own store and a workspace\nnames it by id, so an export never carries it and another server asks for it again."
+      },
+      "SecretValue": {
+        "type": "object",
+        "description": "A credential to keep in the server's store.",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "SerialDeviceInfo": {
         "type": "object",
         "required": [
@@ -25282,6 +25839,10 @@
                   "status": {
                     "$ref": "#/components/schemas/ChannelStatus",
                     "description": "Readouts and health derived from `reading`, for any face to show."
+                  },
+                  "view": {
+                    "$ref": "#/components/schemas/ProcessorView",
+                    "description": "What `reading` puts on the face, derived from it."
                   }
                 }
               },
@@ -27029,6 +27590,30 @@
           "no_stream_ids"
         ]
       },
+      "SurfaceView": {
+        "type": "object",
+        "properties": {
+          "heading_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Layer"
+            }
+          },
+          "marks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Mark"
+            }
+          }
+        }
+      },
       "SurveillanceSet": {
         "oneOf": [
           {
@@ -27380,6 +27965,61 @@
           "drifting",
           "lost"
         ]
+      },
+      "TableRow": {
+        "type": "object",
+        "required": [
+          "key",
+          "cells"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cell"
+            }
+          },
+          "dim": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Ties the row to the surface mark with the same key.",
+            "minimum": 0
+          },
+          "pick": {
+            "type": "boolean",
+            "description": "The row can be picked to pick its mark."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TableView": {
+        "type": "object",
+        "required": [
+          "heads",
+          "rows"
+        ],
+        "properties": {
+          "heads": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TableRow"
+            }
+          }
+        }
       },
       "Tap": {
         "oneOf": [
@@ -28327,7 +28967,6 @@
         "required": [
           "device_set",
           "channel",
-          "slot",
           "freq_hz"
         ],
         "properties": {
@@ -28370,8 +29009,12 @@
             "minimum": 0
           },
           "slot": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
+            "description": "The timeslot, on a protocol that shares a carrier between calls.",
             "minimum": 0
           },
           "source": {
@@ -28471,7 +29114,6 @@
         "type": "object",
         "required": [
           "freq_hz",
-          "slot",
           "reason",
           "since",
           "attempts"
@@ -28502,7 +29144,10 @@
             "type": "string"
           },
           "slot": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "minimum": 0
           }
@@ -28554,7 +29199,7 @@
       },
       "TrunkSite": {
         "type": "object",
-        "description": "The identity a site broadcasts on its control channel.",
+        "description": "The identity a site broadcasts on its control channel, each part as wide as the protocol\nnumbers it.",
         "properties": {
           "network_id": {
             "type": [
@@ -28584,12 +29229,18 @@
       },
       "TrunkSpec": {
         "type": "object",
-        "description": "How a decoder trunks: the protocols it recognises and how many calls share a carrier.",
+        "description": "How a decoder trunks: the protocols it recognises, how many calls share a carrier and how\nfar its logical channels are numbered.",
         "required": [
           "slots",
           "schemes"
         ],
         "properties": {
+          "max_channel": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The highest logical channel number the protocol can name.",
+            "minimum": 0
+          },
           "schemes": {
             "type": "array",
             "items": {
@@ -28599,6 +29250,7 @@
           "slots": {
             "type": "integer",
             "format": "int32",
+            "description": "Timeslots per carrier; one on a protocol that gives every call a carrier of its own.",
             "minimum": 0
           },
           "vocoder": {
@@ -28639,6 +29291,7 @@
               "null"
             ],
             "format": "int32",
+            "description": "The code the site keys its bursts with: a colour code, NAC or RAN, as the protocol names it.",
             "minimum": 0
           },
           "control": {
@@ -28853,6 +29506,90 @@
             "minimum": 0
           }
         }
+      },
+      "ViewSpec": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Bearings on a compass rose.",
+            "required": [
+              "view"
+            ],
+            "properties": {
+              "view": {
+                "type": "string",
+                "enum": [
+                  "bearing"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A polar beam pattern beside the weight of each lane.",
+            "required": [
+              "view"
+            ],
+            "properties": {
+              "view": {
+                "type": "string",
+                "enum": [
+                  "pattern"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A polarisation ellipse.",
+            "required": [
+              "view"
+            ],
+            "properties": {
+              "view": {
+                "type": "string",
+                "enum": [
+                  "ellipse"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The surface the processor streams, its marks drawn over it.",
+            "required": [
+              "stream",
+              "view"
+            ],
+            "properties": {
+              "stream": {
+                "$ref": "#/components/schemas/StreamKind"
+              },
+              "view": {
+                "type": "string",
+                "enum": [
+                  "surface"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Rows of a table.",
+            "required": [
+              "view"
+            ],
+            "properties": {
+              "view": {
+                "type": "string",
+                "enum": [
+                  "table"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "A widget on a processor face."
       },
       "VirtualLane": {
         "type": "object",

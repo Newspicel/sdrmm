@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::atomic::Ordering};
+use std::path::PathBuf;
 
 use sdrmm_wire::{
     AudioRecordingStatus, AudioRoute, DeviceSetStatus, NetworkExportSettings, NetworkExportStatus,
@@ -9,7 +9,7 @@ use crate::{
     AudioTake, ChannelAudioRecording, DEFAULT_CENTER_HZ, Engine, EngineError, FinalizedRecording,
     NetworkExportCommit, NetworkExportState, RecordingState, audio_recording, check_export_request,
     join_network_writer, join_recording_writer, network_export, planning::descriptor_for,
-    recording, remove_recording_files, runtime::DspCommand, sample_rate_of,
+    reattach::SWEEPING, recording, remove_recording_files, runtime::DspCommand, sample_rate_of,
 };
 
 impl Engine {
@@ -29,6 +29,9 @@ impl Engine {
                 state.check_physical(stream)?;
                 if state.recording.is_some() {
                     return Err(EngineError::Recording("already recording".to_string()));
+                }
+                if state.runtime.sweeping() {
+                    return Err(EngineError::Recording(SWEEPING.to_owned()));
                 }
                 if state.status != DeviceSetStatus::Running {
                     return Err(EngineError::Recording(
@@ -131,7 +134,7 @@ impl Engine {
                 return Err(EngineError::Recording("not recording".to_string()));
             };
             state.send_dsp(recording.stream, DspCommand::StopRecording);
-            let overruns = state.overruns.clone();
+            let overruns = state.overrun_meter();
             inner.revision += 1;
             (recording, overruns)
         };
@@ -150,17 +153,14 @@ impl Engine {
         self.emit(ServerEvent::StateChanged {
             scope: StateScope::DeviceSet(ds),
         });
-        let overruns_now: u64 = overruns
-            .iter()
-            .map(|counter| counter.load(Ordering::Relaxed))
-            .sum();
+        let overruns_now = overruns.total();
         Ok(FinalizedRecording {
             stem,
             stream,
             started_at,
             samples: shared.samples(),
             bytes: shared.bytes(),
-            overruns: overruns_now - overruns_at_start,
+            overruns: overruns_now.saturating_sub(overruns_at_start),
             error: shared.error(),
         })
     }
@@ -400,6 +400,9 @@ impl Engine {
                         "another network export is already active".to_owned(),
                     ));
                 }
+                if state.runtime.sweeping() {
+                    return Err(EngineError::NetworkExport(SWEEPING.to_owned()));
+                }
                 if state.status != DeviceSetStatus::Running {
                     return Err(EngineError::NetworkExport(
                         "device set is not running".to_owned(),
@@ -407,7 +410,12 @@ impl Engine {
                 }
                 sample_rate_of(&state.settings)
             };
-            let (tap, shared, writer) = network_export::start(&settings)?;
+            let network_export::Started {
+                tap,
+                refeed,
+                shared,
+                writer,
+            } = network_export::start(&settings)?;
             let commit = {
                 let mut inner = self.lock();
                 match inner.device_sets.get_mut(&ds) {
@@ -431,6 +439,7 @@ impl Engine {
                             sample_rate: rate.round() as u64,
                             center_hz: center.round() as i64,
                             shared,
+                            refeed: Some(refeed),
                             writer: Some(writer),
                             overruns_at_start: state.overruns_total(),
                             samples_seen: 0,
@@ -506,14 +515,11 @@ impl Engine {
                 ));
             };
             state.send_dsp(export.stream, DspCommand::StopNetworkExport);
-            let overruns = state.overruns.clone();
+            let overruns = state.overrun_meter();
             inner.revision += 1;
             (export, overruns)
         };
-        let overruns_now: u64 = overruns
-            .iter()
-            .map(|counter| counter.load(Ordering::Relaxed))
-            .sum();
+        let overruns_now = overruns.total();
         let mut export = export;
         export.join();
         let status = export.status(overruns_now);

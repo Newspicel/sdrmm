@@ -1,14 +1,14 @@
 # Keyboard controls
 
-Shortcuts act on the selected node or its connected Device. They are inactive while editing a
-text field or control. Press `?` or the help button in the top bar to see them in the app.
+Shortcuts act on the selected node and pause while you type in a field. Press `?` or the help
+button in the top bar to list them.
 
 | Keys | Action |
 |---|---|
 | Left / Right | Tune down or up one step |
 | Shift + Left / Right | Tune ten steps |
 | `[` / `]` | Choose a smaller or larger tuning step |
-| `f` | Focus the device dial; press Enter to type a frequency |
+| `f` | Focus the selected node's dial; press Enter to type a frequency |
 | `,` / `.` | Select the previous or next channel |
 | `m` / `M` | Cycle the selected channel's analog mode forward or backward |
 | `-` / `+` or `=` | Lower or raise squelch by 2 dB |

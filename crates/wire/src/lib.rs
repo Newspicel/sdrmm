@@ -165,18 +165,17 @@ pub use patch::{
     FaceSize, Feed, Held, Hue, HuntNode, IQ_PORT, IqOrigin, Keeps, LaneWire,
     MAX_CHANNELS_PER_RADIO, MAX_EDGES, MAX_MONITORS_PER_RADIO, MAX_NODES,
     MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_SPEAKER_OUTPUT_LEN, MAX_STREAMS,
-    MAX_TRUNK_CHANNEL_MAP, MAX_TRUNK_LOGICAL_CHANNEL, MAX_TRUNK_PROBES,
-    MAX_TRUNK_SEARCH_CANDIDATES, MAX_TRUNK_SEARCH_RANGES, MIN_TRUNK_SEARCH_STEP_HZ, Multi,
-    NodeBody, NodeCategory, NodeKind, NodeProblem, NodeTypeInfo, POSITION_PORT, PassiveRadarNode,
-    PatchCatalog, PatchEdge, PatchError, PatchGraph, PatchNode, Payload, PolarimeterNode,
-    PortDirection, PortRef, PortRepeat, PortSpec, PortType, PortTypeInfo, Position, ProblemSource,
-    RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT, RADAR_TX_PORT, REFUSALS, RackCell, RackLayout,
-    RackSlot, Reach, RecorderNode, Refusal, RefusedEdge, ResolveCtx, ResolvedEdge, ResolvedNode,
-    ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs, STEER_PORT, STITCH_WIDE_PORT,
-    ScannerNode, SignalMapNode, Size, SpatialSpectrumNode, SpeakerNode, StitchNode, TRANSMIT_PORT,
-    Tap, TriangulationNode, TrunkChannelEntry, TrunkDiscovery, TrunkNode, TrunkSearchRange,
-    UnboundReason, VIDEO_PORT, channel_ports, generator_key, port_index, port_lane, port_stream,
-    stream_port,
+    MAX_TRUNK_CHANNEL_MAP, MAX_TRUNK_PROBES, MAX_TRUNK_SEARCH_CANDIDATES, MAX_TRUNK_SEARCH_RANGES,
+    MIN_TRUNK_SEARCH_STEP_HZ, Multi, NodeBody, NodeCategory, NodeKind, NodeProblem, NodeTypeInfo,
+    POSITION_PORT, PassiveRadarNode, PatchCatalog, PatchEdge, PatchError, PatchGraph, PatchNode,
+    Payload, PolarimeterNode, PortDirection, PortRef, PortRepeat, PortSpec, PortType, PortTypeInfo,
+    Position, ProblemSource, RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT, RADAR_TX_PORT, REFUSALS,
+    RackCell, RackLayout, RackSlot, Reach, RecorderNode, Refusal, RefusedEdge, ResolveCtx,
+    ResolvedEdge, ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs, STEER_PORT,
+    STITCH_WIDE_PORT, ScannerNode, SignalMapNode, Size, SpatialSpectrumNode, SpeakerNode,
+    StitchNode, TRANSMIT_PORT, Tap, TriangulationNode, TrunkChannelEntry, TrunkDiscovery,
+    TrunkNode, TrunkSearchRange, UnboundReason, VIDEO_PORT, channel_ports, generator_key,
+    port_index, port_lane, port_stream, stream_port,
 };
 #[cfg(feature = "pin")]
 pub use phone::PinError;
@@ -214,6 +213,11 @@ pub use processor::{
     polarimeter::{Hand, PolarimeterParams, PolarimeterReading},
     spatial::{SpatialMethod, SpatialPeak, SpatialReading, SpatialSpectrumParams},
     stitch::{StitchBlend, StitchLane, StitchParams, StitchReading},
+    view::{
+        ActionSpec, BearingView, Cell, EllipseView, Flag, Headline, Layer, Mark, MarkShape, Needle,
+        NeedleWeight, PatternView, ProcessorAction, ProcessorFacets, ProcessorView, SurfaceView,
+        TableRow, TableView, ViewSpec,
+    },
 };
 pub use propagation::{
     DEFAULT_PROPAGATION_HALF_LIFE_MIN, DEFAULT_REFLECTION_HEIGHT_KM, IONOSONDE_MAX_STATIONS,

@@ -2,6 +2,7 @@ mod assemble;
 mod caf;
 mod cpi;
 mod dab_remod;
+mod enrich;
 mod front;
 mod plan;
 mod reference;
@@ -10,12 +11,12 @@ mod surface;
 #[cfg(test)]
 mod tests;
 
-use sdrmm_wire::StreamKind;
+use sdrmm_wire::{GpuUse, ProcessorParams, RADAR_TX_PORT, StreamKind};
 use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};
 
 use crate::array_processor::{
-    Execution, ProcessorDescriptor, ProcessorNeeds, Registration, TuningNeed, never_in_place,
-    no_lane_format,
+    Execution, MissionShape, ProcessorAction, ProcessorDescriptor, ProcessorNeeds, Registration,
+    TuningNeed, never_in_place, no_lane_format,
 };
 
 pub use assemble::{CpiAssembler, CpiJob};
@@ -53,7 +54,18 @@ static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     lane_format: no_lane_format,
     execution: |_, _| Execution::Dedicated,
     in_place: never_in_place,
+    actions: &[ProcessorAction::ClearTracks],
+    gpu,
+    event_bytes: 0,
+    enricher: Some(enrich::enricher),
+    mission: Some(MissionShape::Radar {
+        transmitter: RADAR_TX_PORT,
+    }),
 };
+
+fn gpu(params: &ProcessorParams) -> GpuUse {
+    params_of(params).map_or(GpuUse::Off, |radar| radar.gpu)
+}
 
 pub const REGISTRATION: Registration = Registration {
     descriptor: &DESCRIPTOR,
