@@ -100,6 +100,6 @@ test("draws range and Doppler with axes, tracks and echoes on the map", async ({
   await expect(map.getByText(/ · Sites$/)).toBeVisible();
 
   await deleteWire(page, edgeKey(["tx", "position"], ["radar", "tx"]));
-  await expect(radar.locator("header")).toContainText("no tx");
+  await expect(radar.locator("header")).toContainText("No transmitter");
   await expect(map.getByText(/ · Sites$/)).toHaveCount(0);
 });
