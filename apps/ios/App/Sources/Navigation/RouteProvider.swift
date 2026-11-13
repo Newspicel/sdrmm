@@ -56,10 +56,7 @@ final class MapKitRouteProvider: RouteProviding {
     }
 
     private static func item(_ point: LatLon) -> MKMapItem {
-        if #available(iOS 26.0, *) {
-            return MKMapItem(location: CLLocation(latitude: point.lat, longitude: point.lon), address: nil)
-        }
-        return MKMapItem(placemark: MKPlacemark(coordinate: point.coordinate))
+        MKMapItem(location: CLLocation(latitude: point.lat, longitude: point.lon), address: nil)
     }
 
     nonisolated static func map(_ error: Error) -> RouteError {

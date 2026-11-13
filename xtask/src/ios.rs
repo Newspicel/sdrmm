@@ -39,20 +39,12 @@ pub(crate) enum IosAction {
         #[arg(long)]
         ui: bool,
         #[arg(long)]
-        floor: bool,
-        #[arg(long)]
         only: Vec<String>,
     },
     Lint,
     E2e,
     Archive,
     Upload,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Device {
-    Primary,
-    Floor,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,25 +55,17 @@ struct Simulator {
 }
 
 impl Simulator {
-    fn of(device: Device, custom: Option<&str>) -> Self {
-        match device {
-            Device::Primary => Self {
-                name: custom.unwrap_or("iPhone 17").to_owned(),
-                device_type: "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
-                runtime: "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
-            },
-            Device::Floor => Self {
-                name: custom.map_or_else(|| "iPhone 16".to_owned(), |name| format!("{name} 18")),
-                device_type: "com.apple.CoreSimulator.SimDeviceType.iPhone-16",
-                runtime: "com.apple.CoreSimulator.SimRuntime.iOS-18-1",
-            },
+    fn named(custom: Option<&str>) -> Self {
+        Self {
+            name: custom.unwrap_or("iPhone 17").to_owned(),
+            device_type: "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+            runtime: "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct TestRun {
-    device: Device,
     label: &'static str,
     selection: Vec<String>,
 }
@@ -92,7 +76,7 @@ pub(crate) fn run(root: &Path, action: &IosAction) -> Result<()> {
         IosAction::E2e => on_mac(|| e2e(root)),
         IosAction::Generate => on_mac(|| generate(root)),
         IosAction::Build => on_mac(|| build(root)),
-        IosAction::Test { ui, floor, only } => on_mac(|| test(root, &test_runs(*ui, *floor, only))),
+        IosAction::Test { ui, only } => on_mac(|| test(root, &test_runs(*ui, only))),
         IosAction::Archive => on_mac(|| archive(root)),
         IosAction::Upload => on_mac(|| distribution::upload(root)),
     }
@@ -299,35 +283,27 @@ fn build(root: &Path) -> Result<()> {
     )
 }
 
-fn test_runs(ui: bool, floor: bool, only: &[String]) -> Vec<TestRun> {
-    let run = |device, label, selection: &[String]| TestRun {
-        device,
+fn test_runs(ui: bool, only: &[String]) -> Vec<TestRun> {
+    let run = |label, selection: &[String]| TestRun {
         label,
         selection: selection.to_vec(),
     };
     if !only.is_empty() {
-        let mut runs = vec![run(Device::Primary, "only", only)];
-        if floor {
-            runs.push(run(Device::Floor, "floor", only));
-        }
-        return runs;
+        return vec![run("only", only)];
     }
-    let unit = [UNIT_TESTS.to_owned()];
-    let mut runs = vec![run(Device::Primary, "unit", &unit)];
+    let mut runs = vec![run("unit", &[UNIT_TESTS.to_owned()])];
     if ui {
-        runs.push(run(Device::Primary, "ui", &[UI_TESTS.to_owned()]));
-    }
-    if floor {
-        runs.push(run(Device::Floor, "floor", &unit));
+        runs.push(run("ui", &[UI_TESTS.to_owned()]));
     }
     runs
 }
 
 fn test(root: &Path, runs: &[TestRun]) -> Result<()> {
     build(root)?;
-    let custom = std::env::var(SIMULATOR_ENV).ok();
+    let udid = ensure_simulator(&Simulator::named(
+        std::env::var(SIMULATOR_ENV).ok().as_deref(),
+    ))?;
     for run in runs {
-        let udid = ensure_simulator(&Simulator::of(run.device, custom.as_deref()))?;
         run_tests(root, &udid, run.label, &run.selection, &[])?.require_tests(&run.selection)?;
     }
     Ok(())
@@ -336,8 +312,9 @@ fn test(root: &Path, runs: &[TestRun]) -> Result<()> {
 fn e2e(root: &Path) -> Result<()> {
     build(root)?;
     let custom = std::env::var(SIMULATOR_ENV).ok();
-    let udid = ensure_simulator(&Simulator::of(Device::Primary, custom.as_deref()))?;
+    let udid = ensure_simulator(&Simulator::named(custom.as_deref()))?;
     let server = e2e::Server::start(root, &target_dir(root))?;
+    boot(root, &udid)?;
     let link = server.pairing_link(root)?;
     println!("pairing link {link}");
     let selection = [e2e::SELECTION.to_owned()];
@@ -490,6 +467,12 @@ fn ensure_simulator(simulator: &Simulator) -> Result<String> {
     Ok(String::from_utf8_lossy(&created.stdout).trim().to_owned())
 }
 
+/// A first boot on a fresh runner outlasts a pairing code, so the e2e mints its code only after
+/// this returns.
+fn boot(root: &Path, udid: &str) -> Result<()> {
+    crate::run("xcrun", &["simctl", "bootstatus", udid, "-b"], root)
+}
+
 fn find_device(listing: &serde_json::Value, simulator: &Simulator) -> Option<String> {
     listing["devices"][simulator.runtime]
         .as_array()?
@@ -581,20 +564,19 @@ mod tests {
     }
 
     #[test]
-    fn default_runs_are_unit_then_ui_then_floor() {
-        let runs: Vec<_> = test_runs(true, true, &[])
+    fn default_runs_are_unit_then_ui() {
+        let runs: Vec<_> = test_runs(true, &[])
             .into_iter()
-            .map(|run| (run.device, run.label, run.selection))
+            .map(|run| (run.label, run.selection))
             .collect();
         assert_eq!(
             runs,
             vec![
-                (Device::Primary, "unit", vec![UNIT_TESTS.to_owned()]),
-                (Device::Primary, "ui", vec![UI_TESTS.to_owned()]),
-                (Device::Floor, "floor", vec![UNIT_TESTS.to_owned()]),
+                ("unit", vec![UNIT_TESTS.to_owned()]),
+                ("ui", vec![UI_TESTS.to_owned()]),
             ]
         );
-        assert_eq!(test_runs(false, false, &[]).len(), 1);
+        assert_eq!(test_runs(false, &[]).len(), 1);
     }
 
     #[test]
@@ -603,35 +585,28 @@ mod tests {
             "SDRmmTests/KeychainVaultTests".to_owned(),
             "SDRmmTests/AppLaunchTests".to_owned(),
         ];
-        let runs = test_runs(true, false, &only);
+        let runs = test_runs(true, &only);
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].selection, only);
-        assert_eq!(test_runs(false, true, &only)[1].device, Device::Floor);
     }
 
     #[test]
     fn a_custom_simulator_name_keeps_device_type_and_runtime() {
-        let primary = Simulator::of(Device::Primary, Some("SDRmm-X"));
         assert_eq!(
-            primary,
+            Simulator::named(Some("SDRmm-X")),
             Simulator {
                 name: "SDRmm-X".to_owned(),
-                ..Simulator::of(Device::Primary, None)
+                ..Simulator::named(None)
             }
         );
-        assert_eq!(
-            Simulator::of(Device::Floor, Some("SDRmm-X")).name,
-            "SDRmm-X 18"
-        );
-        assert_eq!(Simulator::of(Device::Floor, None).name, "iPhone 16");
     }
 
     #[test]
     fn find_device_matches_name_within_runtime() {
-        let simulator = Simulator::of(Device::Primary, None);
+        let simulator = Simulator::named(None);
         let listing = serde_json::json!({
             "devices": {
-                "com.apple.CoreSimulator.SimRuntime.iOS-18-1": [{"name": "iPhone 17", "udid": "OLD"}],
+                "com.apple.CoreSimulator.SimRuntime.iOS-26-0": [{"name": "iPhone 17", "udid": "OLD"}],
                 "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
                     {"name": "iPhone 17 Pro", "udid": "PRO"},
                     {"name": "iPhone 17", "udid": "NEW"}

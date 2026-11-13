@@ -298,7 +298,7 @@ fn gmsk_alternating_curves_still_reproduce_the_historical_baselines() {
 
 #[test]
 #[ignore = "full sweep; run in release to (re)generate the alternating framing curves"]
-fn measure_gmsk_alternating_full() {
+fn write_gmsk_alternating_curves() {
     for (bt, seed, stem) in [
         (0.3, gmsk::BT03_SEED, gmsk::BT03_AWGN_ALTERNATING),
         (0.5, gmsk::BT05_SEED, gmsk::BT05_AWGN_ALTERNATING),
@@ -845,10 +845,11 @@ fn compare_afsk_perf_baseline() {
 }
 
 fn remeasure_curve(link: &Link, template: &ChannelSpec, grid: &[f64], seed: u64, name: &str) {
-    let curve = sweep::sweep_ber(link, template, grid, seed, FULL_ERRORS, FULL_CAP);
-    for p in &curve.points {
+    let measured = sweep::measure_ber(link, template, grid, seed, FULL_ERRORS, FULL_CAP);
+    let curve = &measured.curve;
+    for (p, clumping) in curve.points.iter().zip(&measured.clumping) {
         println!(
-            "{:>5.1} dB  {:>7} / {:<9} BER {:.3e}",
+            "{:>5.1} dB  {:>7} / {:<9} BER {:.3e}  clumps of {clumping:.1}",
             p.ebn0_db,
             p.errors,
             p.trials,
@@ -858,10 +859,10 @@ fn remeasure_curve(link: &Link, template: &ChannelSpec, grid: &[f64], seed: u64,
     let path = baseline_path(name);
     if path.exists() {
         let committed: Curve = sweep::load_json(&path).unwrap();
-        sweep::assert_curve_matches(name, &curve, &committed);
+        sweep::assert_curve_matches(name, &measured, &committed);
     } else {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        sweep::save_json(&curve, &path).unwrap();
+        sweep::save_json(curve, &path).unwrap();
         println!("baseline created at {}", path.display());
     }
 }

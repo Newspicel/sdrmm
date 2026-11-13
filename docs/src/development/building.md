@@ -204,7 +204,7 @@ them, and `cargo xtask test` regenerates them.
 ## Desktop app
 
 The desktop app embeds Chromium through [cef-rs](https://github.com/tauri-apps/cef-rs). It is a
-workspace member but not a default member. Its build downloads CEF into `target/cef` and needs
+workspace member but not a default member. Its build downloads CEF into `.cef` and needs
 CMake and Ninja. On Linux, Chromium also needs its runtime libraries:
 
 ```sh

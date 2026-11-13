@@ -443,6 +443,22 @@ mod tests {
     }
 
     #[test]
+    fn a_control_byte_name_is_no_channel() {
+        let model = Rt4D;
+        let mut image = model.blank_image();
+        model.encode(&sample(), &mut image).expect("encode");
+        let record = CHANNELS.whole_mut(&mut image).expect("channels");
+        record[0x30 + 0x20] = 0x05;
+        record[0x30 + 0x21] = 0xff;
+        let decoded = model.decode(&image).expect("decode");
+        assert_eq!(decoded.channels.len(), 1);
+        let mut written = model.blank_image();
+        let report = model.encode(&decoded, &mut written).expect("encode");
+        let again = model.decode(&written).expect("decode");
+        assert_eq!(report.after.channels as usize, again.channels.len());
+    }
+
+    #[test]
     fn the_descriptor_names_the_radio() {
         let descriptor = Rt4D.descriptor();
         assert_eq!(descriptor.id, MODEL_ID);

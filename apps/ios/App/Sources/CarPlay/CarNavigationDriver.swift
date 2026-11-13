@@ -130,11 +130,8 @@ final class CarNavigationDriver: NSObject, CPMapTemplateDelegate {
         present(alert)
     }
 
-    func setOptionsPanel(_ panel: AnyObject?) {
-        guard #available(iOS 27.0, *), let session else {
-            return
-        }
-        session.optionsPanel = panel as? CPMapPanel
+    func setOptionsPanel(_ panel: CPMapPanel) {
+        session?.optionsPanel = panel
     }
 
     func teardown() {
@@ -384,12 +381,10 @@ final class CarNavigationDriver: NSObject, CPMapTemplateDelegate {
         true
     }
 
-    @available(iOS 26.0, *)
     func mapTemplateDidBeginZoomGesture(_ mapTemplate: CPMapTemplate) {
         map.beginZoomGesture()
     }
 
-    @available(iOS 26.0, *)
     func mapTemplate(
         _ mapTemplate: CPMapTemplate,
         didUpdateZoomGestureWithCenter center: CGPoint,
@@ -399,7 +394,6 @@ final class CarNavigationDriver: NSObject, CPMapTemplateDelegate {
         map.updateZoomGesture(scale: Double(scale))
     }
 
-    @available(iOS 26.0, *)
     func mapTemplate(_ mapTemplate: CPMapTemplate, didEndZoomGestureWithVelocity velocity: CGFloat) {
         map.endZoomGesture()
     }

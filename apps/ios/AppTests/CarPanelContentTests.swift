@@ -14,7 +14,6 @@ final class CarPanelContentTests: XCTestCase {
         )
         XCTAssertEqual(content.bearing, "047\u{00B0}")
         XCTAssertEqual(content.bearingDetail, "Bearing 62%")
-        XCTAssertEqual(content.infoBearing, "047\u{00B0} 62%")
         XCTAssertEqual(content.guidance, "215\u{00B0}")
         XCTAssertEqual(content.guidanceDetail, "Cross 1.2 km")
         XCTAssertTrue(content.canNavigate)
@@ -53,7 +52,7 @@ final class CarPanelContentTests: XCTestCase {
         XCTAssertFalse(content.canNavigate)
     }
 
-    @MainActor func testOnlyTheMissionsControlsAreOffered() {
+    func testOnlyTheMissionsControlsAreOffered() {
         let full = CarPanelContent.make(
             df: Fixtures.df(),
             pose: nil,
@@ -72,9 +71,6 @@ final class CarPanelContentTests: XCTestCase {
         )
         XCTAssertFalse(fusion.canCalibrate)
         XCTAssertFalse(fusion.canClear)
-        let info = CarDfInfo(onNavigate: {}, onCalibrate: {}, onClear: {})
-        XCTAssertEqual(info.template(full).actions.map(\.title), ["Calibrate", "Clear", "Navigate"])
-        XCTAssertEqual(info.template(fusion).actions.map(\.title), ["Navigate"])
     }
 
     func testEstimateKindReadsApproach() {

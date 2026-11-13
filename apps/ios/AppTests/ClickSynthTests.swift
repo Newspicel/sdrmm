@@ -107,7 +107,7 @@ final class ClickSynthTests: XCTestCase {
         try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 4_800)
         let source = synth.sourceNode(format: format)
         engine.attach(source)
-        engine.connect(source, to: engine.mainMixerNode, format: format)
+        try engine.connectNode(source, to: engine.mainMixerNode, format: format)
         try engine.start()
         defer { engine.stop() }
         XCTAssertEqual(try engine.renderOffline(4_800, to: buffer), .success)
@@ -118,21 +118,11 @@ final class ClickSynthTests: XCTestCase {
         XCTAssertEqual(runs(samples).count, 4)
     }
 
-    func testShouldResumeNeedsEndedAndResume() {
-        let ended = AVAudioSession.InterruptionType.ended.rawValue
-        let began = AVAudioSession.InterruptionType.began.rawValue
-        let resume = AVAudioSession.InterruptionOptions.shouldResume.rawValue
-        XCTAssertTrue(
-            AudioSessionController.shouldResume([
-                AVAudioSessionInterruptionTypeKey: ended, AVAudioSessionInterruptionOptionKey: resume,
-            ])
-        )
-        XCTAssertFalse(AudioSessionController.shouldResume([AVAudioSessionInterruptionTypeKey: ended]))
-        XCTAssertFalse(
-            AudioSessionController.shouldResume([
-                AVAudioSessionInterruptionTypeKey: began, AVAudioSessionInterruptionOptionKey: resume,
-            ])
-        )
+    func testShouldResumeFollowsTheRecommendation() {
+        let key = AVAudioSession.resumptionContextKey
+        XCTAssertTrue(AudioSessionController.shouldResume([key: Advice(recommendation: .shouldResume)]))
+        XCTAssertFalse(AudioSessionController.shouldResume([key: Advice(recommendation: .shouldNotResume)]))
+        XCTAssertFalse(AudioSessionController.shouldResume([key: "resume"]))
         XCTAssertFalse(AudioSessionController.shouldResume(nil))
     }
 
@@ -183,16 +173,17 @@ final class ClickSynthTests: XCTestCase {
         var resumed = 0
         controller.onInterruptionEnded = { resumed += 1 }
         center.post(
-            name: AVAudioSession.interruptionNotification,
+            name: AVAudioSession.resumptionRecommendationNotification,
             object: nil,
-            userInfo: [
-                AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.ended.rawValue,
-                AVAudioSessionInterruptionOptionKey: AVAudioSession.InterruptionOptions.shouldResume.rawValue,
-            ]
+            userInfo: [AVAudioSession.resumptionContextKey: Advice(recommendation: .shouldResume)]
         )
         await eventually { resumed == 1 }
         XCTAssertEqual(resumed, 1)
     }
+}
+
+struct Advice: ResumptionAdvice {
+    let recommendation: AVAudioSession.ResumptionRecommendation
 }
 
 @MainActor

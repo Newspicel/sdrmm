@@ -21,7 +21,7 @@ The app lives in `apps/ios` and needs Xcode 27.
 |---|---|
 | `cargo xtask ios generate` | The core and the Xcode project, through XcodeGen |
 | `cargo xtask ios build` | The app for the simulator |
-| `cargo xtask ios test` | Unit tests; `--ui` adds UI tests, `--floor` an iOS 18.1 run, `--only <test>` a subset |
+| `cargo xtask ios test` | Unit tests; `--ui` adds UI tests, `--only <test>` a subset |
 | `cargo xtask ios lint` | swift-format and the comment check |
 | `cargo xtask ios e2e` | The app against a real `sdrmm` |
 | `cargo xtask ios archive` | A Release archive in `target/ios/`, after a privacy manifest check |
@@ -126,5 +126,5 @@ Check that **Missions** lists over the map, the DF panel updates about once a se
 All phone jobs run nightly. The `mobile` job runs `mobile check --android` and `mobile bindings`.
 The `ios` job runs `mobile check --ios`, `ios lint`, and `ios test`. The `android` job runs the
 `build-logic` tests, the Gradle checks, unit tests, `assembleDebug`, and the alignment check.
-`ios-ui` runs `ios test --ui --floor`, `ios-e2e` runs `ios e2e`, and `android-device` runs
+`ios-ui` runs `ios test --ui`, `ios-e2e` runs `ios e2e`, and `android-device` runs
 `connectedDebugAndroidTest` on an API 36 emulator.

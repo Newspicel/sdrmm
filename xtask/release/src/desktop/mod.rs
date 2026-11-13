@@ -114,9 +114,10 @@ pub fn run(root: &Path) -> Result<()> {
     run_with_env(utf8(&exe)?, &[], root, &[])
 }
 
-/// Where `cef-dll-sys` downloads Chromium, shared by every build of the workspace.
+/// Where `cef-dll-sys` downloads Chromium, shared by every build of the workspace. Outside
+/// `target`, because CI's Rust cache keeps the folders there but deletes their files.
 pub fn cef_path(root: &Path) -> PathBuf {
-    root.join("target").join("cef")
+    root.join(".cef")
 }
 
 /// The extracted CEF distribution the build linked against.
@@ -135,7 +136,7 @@ pub fn cef_dir(root: &Path, platform: &Platform) -> Result<PathBuf> {
     Ok(dir)
 }
 
-fn cef_version(lock: &str) -> Result<&str> {
+pub fn cef_version(lock: &str) -> Result<&str> {
     let mut lines = lock.lines();
     lines
         .find(|line| *line == format!("name = \"{CEF_SYS}\""))

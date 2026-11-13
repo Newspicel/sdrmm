@@ -12,15 +12,16 @@ use sdrmm_device::{DeviceError, Sample, TxStream, lock};
 use sdrmm_dsp::Nco;
 
 const PREFILL_S: f64 = 0.03;
-const BUFFER_S: f64 = 0.25;
+pub(crate) const BUFFER_S: f64 = 0.25;
 const BACKLOG_S: f64 = 2.0;
 
 static LISTENERS: LazyLock<Mutex<Vec<Weak<Antenna>>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 static NEXT_CARRIER: AtomicU64 = AtomicU64::new(1);
 static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
 
-pub(crate) fn now_ns() -> u64 {
-    u64::try_from(EPOCH.elapsed().as_nanos()).unwrap_or(u64::MAX)
+/// `at` on the bench's shared clock, which both sides of a half-duplex turn read.
+pub(crate) fn ns_at(at: Instant) -> u64 {
+    u64::try_from(at.saturating_duration_since(*EPOCH).as_nanos()).unwrap_or(u64::MAX)
 }
 
 struct Heard {
@@ -203,6 +204,14 @@ impl VirtualTx {
         release();
     }
 
+    /// Holds a half-duplex receiver off until `until_ns`. A write first holds it off indefinitely,
+    /// so no block due after the burst starts slips through before the burst's end is known.
+    fn hold_receiver(&self, until_ns: u64) {
+        if let Some(quiet_until) = &self.quiet_until {
+            quiet_until.store(until_ns, Ordering::Release);
+        }
+    }
+
     fn room(&mut self, rate: f64, timeout: Duration) -> usize {
         let buffer = Duration::from_secs_f64(BUFFER_S);
         let now = Instant::now();
@@ -242,7 +251,10 @@ impl TxStream for VirtualTx {
             ));
         }
         let drive = (self.drive)();
+        self.hold_receiver(u64::MAX);
         let accepted = len.min(self.room(drive.rate, timeout));
+        self.airs_until += Duration::from_secs_f64(accepted as f64 / drive.rate);
+        self.hold_receiver(ns_at(self.airs_until));
         let ended = end_burst && accepted == len;
         for (carrier, samples) in self.carriers.iter().zip(channels) {
             self.scaled.clear();
@@ -255,12 +267,6 @@ impl TxStream for VirtualTx {
                 ended,
             };
             emit(&emission, &self.deaf);
-        }
-        self.airs_until += Duration::from_secs_f64(accepted as f64 / drive.rate);
-        if let Some(quiet_until) = &self.quiet_until {
-            let airs_in = self.airs_until.saturating_duration_since(Instant::now());
-            let until = now_ns().saturating_add(airs_in.as_nanos() as u64);
-            quiet_until.store(until, Ordering::Release);
         }
         Ok(accepted)
     }

@@ -1,4 +1,4 @@
-use std::{ffi::c_uint, ptr::NonNull};
+use std::ptr::NonNull;
 
 use ffmpeg_the_third::{
     self as av, codec, ffi, frame, software,
@@ -10,14 +10,13 @@ use crate::{AUDIO_RATE, VideoPicture};
 
 unsafe extern "C" {
     /// FFmpeg 9 types the argument as `enum AVCodecID` where earlier releases take an `int`, so
-    /// the generated binding changes with the installed library. Both share one C ABI, and this
-    /// declaration builds against either.
-    fn av_parser_init(codec_id: c_uint) -> *mut ffi::AVCodecParserContext;
+    /// the generated binding changes with the installed library. Both share one C ABI, and the
+    /// transparent `AVCodecID` wrapper matches it on every target, whatever integer the enum is.
+    fn av_parser_init(codec_id: ffi::AVCodecID) -> *mut ffi::AVCodecParserContext;
 }
 
 fn parser_for(id: codec::Id) -> Option<NonNull<ffi::AVCodecParserContext>> {
-    let raw: ffi::AVCodecID = id.into();
-    NonNull::new(unsafe { av_parser_init(raw.0) })
+    NonNull::new(unsafe { av_parser_init(id.into()) })
 }
 
 pub struct Decoder {

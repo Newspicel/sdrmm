@@ -26,9 +26,8 @@ final class CarPlayController {
     private var shownAlert: String?
     private var alert: CPAlertTemplate?
     private var retargetSeen = 0
-    private var panelBox: AnyObject?
-    private var panel: AnyObject?
-    private var info: CPInformationTemplate?
+    private var panelBox: CarBearingPanel?
+    private var panel: CPMapPanel?
     private var lastContent: CarPanelContent?
     private var bar: CarBar?
 
@@ -141,7 +140,7 @@ final class CarPlayController {
     private func sessionChanged() {
         refreshBar()
         observeScene()
-        if #available(iOS 27.0, *), driver.navigating {
+        if driver.navigating {
             driver.setOptionsPanel(panel ?? makePanel())
         }
     }
@@ -253,9 +252,6 @@ final class CarPlayController {
             presentNotice()
             return
         }
-        if let info, interface.topTemplate === info {
-            pop()
-        }
         if model.navigation.isNavigating, let target = model.df.view?.target {
             model.navigation.start(to: target)
             return
@@ -363,15 +359,6 @@ extension CarPlayController {
     }
 
     private func toggleDf() {
-        if #available(iOS 27.0, *) {
-            togglePanel()
-        } else {
-            pushInfo()
-        }
-    }
-
-    @available(iOS 27.0, *)
-    private func togglePanel() {
         if bearingPanel().visible, panel != nil {
             template.hidePanel(completion: done("hide panel"))
             return
@@ -381,7 +368,6 @@ extension CarPlayController {
         template.showPanel(shown, completion: done("show panel"))
     }
 
-    @available(iOS 27.0, *)
     private func makePanel() -> CPMapPanel {
         let shown = bearingPanel().panel(content, units: model.settings.unitSystem)
         panel = shown
@@ -389,9 +375,8 @@ extension CarPlayController {
         return shown
     }
 
-    @available(iOS 27.0, *)
     private func bearingPanel() -> CarBearingPanel {
-        if let existing = panelBox as? CarBearingPanel {
+        if let existing = panelBox {
             return existing
         }
         let made = actions()
@@ -404,32 +389,15 @@ extension CarPlayController {
         return builder
     }
 
-    private func pushInfo() {
-        let made = actions()
-        let builder = CarDfInfo(onNavigate: made.navigate, onCalibrate: made.calibrate, onClear: made.clear)
-        panelBox = builder
-        let shown = builder.template(content)
-        info = shown
-        lastContent = content
-        interface.pushTemplate(shown, animated: true, completion: done("push DF"))
-    }
-
     private func refreshDf() {
         let next = content
         guard next != lastContent else {
             return
         }
         lastContent = next
-        if #available(iOS 27.0, *), let shown = panel as? CPMapPanel,
-            let builder = panelBox as? CarBearingPanel
-        {
+        if let shown = panel, let builder = panelBox {
             builder.update(shown, with: next, units: model.settings.unitSystem)
             driver.setOptionsPanel(shown)
-        }
-        if let info, interface.templates.contains(where: { $0 === info }),
-            let builder = panelBox as? CarDfInfo
-        {
-            builder.update(info, with: next)
         }
     }
 

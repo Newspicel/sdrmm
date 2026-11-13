@@ -29,23 +29,34 @@ let
 
   # The Chromium build `cef-dll-sys` in Cargo.lock was generated for. Nix has no network in the
   # sandbox, so the archive is pinned here by the SHA-1 the CEF index publishes.
-  cefVersion = "156.0.15";
+  cefVersion = "156.0.26";
+  cefRevision = "8ea0c73";
+  chromiumVersion = "156.0.8078.88";
   cefArchive = {
     x86_64-linux = {
       platform = "linux64";
-      hash = "sha1-CSNUJyIuAmpPNDmXQt8nxdmKT4o=";
+      hash = "sha1-ys+7fXJh/qaC+2fBCN5+Q0dRn/c=";
     };
     aarch64-linux = {
       platform = "linuxarm64";
-      hash = "sha1-hWAtuOgTrYJLRa5UIYR2qj2R1WE=";
+      hash = "sha1-HmbFXKGn5N58N7PAVkNZmcdCDr8=";
     };
   };
-  cef = cef-binary.override {
-    version = cefVersion;
-    gitRevision = "cf671c0";
-    chromiumVersion = "156.0.8078.80";
-    srcHashes = lib.mapAttrs (_: archive: archive.hash) cefArchive;
-  };
+  # CEF 156 ships no libEGL.so or libGLESv2.so on Linux, which nixpkgs still patches.
+  cef =
+    (cef-binary.override {
+      version = cefVersion;
+      inherit chromiumVersion;
+      gitRevision = cefRevision;
+      srcHashes = lib.mapAttrs (_: archive: archive.hash) cefArchive;
+    }).overrideAttrs
+      (old: {
+        installPhase = lib.concatLines (
+          lib.filter (line: !lib.hasInfix "/libEGL.so" line && !lib.hasInfix "/libGLESv2.so" line) (
+            lib.splitString "\n" old.installPhase
+          )
+        );
+      });
   archive = cefArchive.${stdenv.hostPlatform.system};
   # The layout `cef-dll-sys` reads from CEF_PATH: the runtime beside the SDK.
   cefDir = runCommand "sdrmm-cef-${cefVersion}" { } ''
@@ -53,7 +64,7 @@ let
     ln -s ${cef}/Release/* ${cef}/Resources/* $out/
     ln -s ${cef}/{CMakeLists.txt,cmake,include,libcef_dll,CREDITS.html} $out/
     cat > $out/archive.json <<EOF
-    {"type":"minimal","name":"cef_binary_${cefVersion}+gcf671c0+chromium-156.0.8078.80_${archive.platform}_minimal.tar.bz2","sha1":""}
+    {"type":"minimal","name":"cef_binary_${cefVersion}+g${cefRevision}+chromium-${chromiumVersion}_${archive.platform}_minimal.tar.bz2","sha1":""}
     EOF
   '';
 in
@@ -67,6 +78,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
       path: type:
       !builtins.elem (baseNameOf path) [
         "target"
+        ".cef"
         "node_modules"
       ];
   };
@@ -157,7 +169,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
       --set-default SDRMM_SOAPY_LIBRARY "${soapysdr}/lib/libSoapySDR${stdenv.hostPlatform.extensions.sharedLibrary}"
       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibraries}"
     )
-  '' + lib.optionalString (soapyPlugins != [ ]) ''
+  ''
+  + lib.optionalString (soapyPlugins != [ ]) ''
     gappsWrapperArgs+=(
       --prefix SOAPY_SDR_PLUGIN_PATH : "${lib.makeSearchPath soapysdr.searchPath soapyPlugins}"
     )

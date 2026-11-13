@@ -58,7 +58,7 @@ final class DfDriveUITests: XCTestCase {
         let app = Drive.app()
         Drive.openDf(app)
         XCTAssertEqual(app.staticTexts["df.bearing"].label, "047\u{00B0}")
-        XCTAssertEqual(app.staticTexts["df.guidance"].label, "Cross 215\u{00B0} \u{00B7} 1.2 km")
+        XCTAssertEqual(app.staticTexts["df.guidance"].label, "Cross 125\u{00B0} right \u{00B7} 1.2 km")
         XCTAssertEqual(app.staticTexts["df.confidence"].label, "62%")
         XCTAssertFalse(app.staticTexts["df.northup"].exists)
         XCTAssertTrue(app.buttons["df.navigate"].isEnabled)

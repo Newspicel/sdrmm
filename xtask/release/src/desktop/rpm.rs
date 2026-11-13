@@ -14,7 +14,7 @@ pub fn from_deb(root: &Path, platform: &Platform, packages: &Path) -> Result<()>
     let version = env!("CARGO_PKG_VERSION");
     let deb = find_deb(packages, version)?;
     let work = stage::fresh(&packages.join("rpm-build"))?;
-    let tree = work.join("SOURCES/root");
+    let tree = stage::fresh(&work.join("SOURCES/root"))?;
     run("dpkg-deb", &["-x", utf8(&deb)?, utf8(&tree)?], root)?;
     let spec = work.join(format!("{NAME}.spec"));
     let text = spec_text(version, &tree, &files(&tree)?, &private(&tree)?);

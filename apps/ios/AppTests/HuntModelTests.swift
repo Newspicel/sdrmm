@@ -183,12 +183,9 @@ final class HuntModelTests: XCTestCase {
         await eventually { harness.clicks.starts == 2 }
         XCTAssertEqual(harness.session.active, [true])
         harness.center.post(
-            name: AVAudioSession.interruptionNotification,
+            name: AVAudioSession.resumptionRecommendationNotification,
             object: nil,
-            userInfo: [
-                AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.ended.rawValue,
-                AVAudioSessionInterruptionOptionKey: AVAudioSession.InterruptionOptions.shouldResume.rawValue,
-            ]
+            userInfo: [AVAudioSession.resumptionContextKey: Advice(recommendation: .shouldResume)]
         )
         await eventually { harness.clicks.starts == 3 }
         XCTAssertEqual(harness.clicks.starts, 3)

@@ -9,7 +9,7 @@ Neither app is in a store. Build it from source.
 
 | Phone | Needs | Install |
 |---|---|---|
-| iPhone | iOS 18 | Build with Xcode, see [Phone apps](../development/phone-apps.md#iphone) |
+| iPhone | iOS 27 | Build with Xcode, see [Phone apps](../development/phone-apps.md#iphone) |
 | Android | Android 10 | Build the APK, see [Phone apps](../development/phone-apps.md#android), then `adb install` it or open the file on the phone |
 
 To look around without a server, pick **Try without a server** under **Demo**.

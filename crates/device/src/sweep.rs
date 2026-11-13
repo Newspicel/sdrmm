@@ -76,6 +76,7 @@ type SweepFatalFn = Box<dyn FnOnce(DeviceError) + Send>;
 pub struct SweepSink {
     push_fn: SweepPushFn,
     fatal_fn: Option<SweepFatalFn>,
+    missed: u64,
 }
 
 impl SweepSink {
@@ -84,6 +85,7 @@ impl SweepSink {
         Self {
             push_fn: Box::new(push_fn),
             fatal_fn: None,
+            missed: 0,
         }
     }
 
@@ -95,11 +97,30 @@ impl SweepSink {
         Self {
             push_fn: Box::new(push_fn),
             fatal_fn: Some(Box::new(fatal_fn)),
+            missed: 0,
         }
     }
 
     pub fn push(&mut self, center_hz: f64, samples: &[Sample]) {
         (self.push_fn)(center_hz, samples);
+    }
+
+    /// Dwells the sweep fell too far behind to deliver, so the band showed stale power there.
+    pub fn missed(&mut self, dwells: u64) {
+        if dwells == 0 {
+            return;
+        }
+        self.missed += dwells;
+        tracing::warn!(
+            dwells,
+            total = self.missed,
+            "sweep fell behind and skipped tunings"
+        );
+    }
+
+    #[must_use]
+    pub fn missed_total(&self) -> u64 {
+        self.missed
     }
 
     pub fn fail(&mut self, err: DeviceError) {
@@ -140,6 +161,15 @@ mod tests {
                 .check()
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn missed_dwells_add_up() {
+        let mut sink = SweepSink::new(|_, _: &[Sample]| {});
+        sink.missed(0);
+        sink.missed(3);
+        sink.missed(2);
+        assert_eq!(sink.missed_total(), 5);
     }
 
     #[test]

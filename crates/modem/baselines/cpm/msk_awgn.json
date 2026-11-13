@@ -3,8 +3,8 @@
   "points": [
     {
       "ebn0_db": 7.0,
-      "errors": 2067,
-      "trials": 9216
+      "errors": 2025,
+      "trials": 13312
     },
     {
       "ebn0_db": 8.0,
@@ -13,37 +13,37 @@
     },
     {
       "ebn0_db": 9.0,
-      "errors": 2037,
-      "trials": 31744
+      "errors": 2001,
+      "trials": 30720
     },
     {
       "ebn0_db": 10.0,
-      "errors": 2013,
+      "errors": 2017,
       "trials": 134144
     },
     {
       "ebn0_db": 11.0,
-      "errors": 2001,
+      "errors": 2006,
       "trials": 325632
     },
     {
       "ebn0_db": 12.0,
       "errors": 2000,
-      "trials": 989184
+      "trials": 990208
     },
     {
       "ebn0_db": 13.0,
-      "errors": 2038,
+      "errors": 2029,
       "trials": 3123200
     },
     {
       "ebn0_db": 14.0,
-      "errors": 361,
+      "errors": 363,
       "trials": 4000768
     },
     {
       "ebn0_db": 15.0,
-      "errors": 40,
+      "errors": 39,
       "trials": 4000768
     }
   ]

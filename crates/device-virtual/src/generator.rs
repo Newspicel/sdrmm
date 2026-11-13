@@ -1,6 +1,6 @@
 use std::{
     sync::{Arc, atomic::Ordering},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use arc_swap::ArcSwap;
@@ -11,6 +11,8 @@ use sdrmm_wire::{
     Agc, ArgumentOption, Capabilities, Coherence, DcArtifact, DeviceSettings, Duplex, ExtraSetting,
     ExtraValue, NoiseSource, Range, StreamScope,
 };
+
+use crate::pace::SampleClock;
 
 pub const SIGNAL_SETTING: &str = "signal";
 pub const OFFSET_SETTING: &str = "offset_hz";
@@ -299,7 +301,7 @@ impl SdrDevice for SignalGen {
         self.worker.start("sdrmm-generator-rx", move |running| {
             let mut rendered: Option<(Params, Vec<Complex<f32>>)> = None;
             let mut at = 0usize;
-            let mut next_wake = Instant::now();
+            let mut clock = SampleClock::start();
             while running.load(Ordering::Acquire) {
                 let params = *shared.load_full();
                 let stale = rendered
@@ -314,11 +316,19 @@ impl SdrDevice for SignalGen {
                         }
                     }
                     at = 0;
-                    next_wake = Instant::now();
+                    clock = SampleClock::start();
                 }
                 let Some((_, block)) = rendered.as_ref() else {
                     return;
                 };
+                let gap = (params.gap_s * params.rate_hz) as u64;
+                let lost = clock.overrun(params.rate_hz);
+                let (dropped, gap_left) = skip_replay(&mut at, block.len(), gap, lost);
+                sink.dropped(dropped);
+                if gap_left > 0 {
+                    clock.step_for(Duration::from_secs_f64(gap_left as f64 / params.rate_hz));
+                    continue;
+                }
                 let step = ((params.rate_hz * BLOCK_SECS).round() as usize).max(1);
                 let end = (at + step).min(block.len());
                 sink.push(&block[at..end]);
@@ -329,19 +339,34 @@ impl SdrDevice for SignalGen {
                     at = 0;
                     idle = params.gap_s;
                 }
-                next_wake += Duration::from_secs_f64(sent as f64 / params.rate_hz + idle);
-                let now = Instant::now();
-                if next_wake > now {
-                    std::thread::sleep(next_wake - now);
-                } else {
-                    next_wake = now;
-                }
+                clock.step_for(Duration::from_secs_f64(sent as f64 / params.rate_hz + idle));
             }
         })
     }
 
     fn rx_stop(&mut self) {
         self.worker.stop();
+    }
+}
+
+/// Moves a replay at `at` in a signal of `len` samples, each pass followed by `gap` idle
+/// samples, through `lost` samples of time. Returns the signal samples passed over and the idle
+/// samples still left of the gap it lands in.
+fn skip_replay(at: &mut usize, len: usize, gap: u64, lost: u64) -> (u64, u64) {
+    let len = len as u64;
+    let period = len + gap;
+    if lost == 0 || period == 0 {
+        return (0, 0);
+    }
+    let reached = *at as u64 + lost;
+    let into = reached % period;
+    let dropped = reached / period * len + into.min(len) - *at as u64;
+    if into < len {
+        *at = into as usize;
+        (dropped, 0)
+    } else {
+        *at = 0;
+        (dropped, period - into)
     }
 }
 
@@ -392,6 +417,18 @@ mod tests {
     use sdrmm_wire::{GENERATOR_PREFIX, generator_key};
 
     use super::*;
+
+    #[test]
+    fn a_late_replay_skips_signal_and_gap_alike() {
+        let mut at = 2;
+        assert_eq!(skip_replay(&mut at, 10, 5, 0), (0, 0));
+        assert_eq!(skip_replay(&mut at, 10, 5, 3), (3, 0));
+        assert_eq!(at, 5);
+        assert_eq!(skip_replay(&mut at, 10, 5, 7), (5, 3));
+        assert_eq!(at, 0);
+        assert_eq!(skip_replay(&mut at, 10, 5, 32), (22, 0));
+        assert_eq!(at, 2);
+    }
     use crate::VirtualDriver;
 
     fn tone() -> Vec<Complex<f32>> {

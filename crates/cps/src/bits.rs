@@ -104,6 +104,7 @@ pub fn set_bcd8_le(data: &mut [u8], offset: usize, value: u32) {
     set_u32_le(data, offset, to_bcd(value));
 }
 
+/// Drops control bytes the way [`write_ascii`] does, so a name read back is one it can store.
 pub fn read_ascii(data: &[u8], offset: usize, max_len: usize, eos: u8) -> String {
     let mut text = String::with_capacity(max_len);
     for index in 0..max_len {
@@ -111,9 +112,15 @@ pub fn read_ascii(data: &[u8], offset: usize, max_len: usize, eos: u8) -> String
         if byte == 0 || byte == eos {
             break;
         }
-        text.push(char::from(byte));
+        if is_printable(byte) {
+            text.push(char::from(byte));
+        }
     }
     text.trim().to_owned()
+}
+
+fn is_printable(byte: u8) -> bool {
+    byte >= 0x20
 }
 
 pub fn write_ascii(data: &mut [u8], offset: usize, text: &str, max_len: usize, eos: u8) {
@@ -121,7 +128,7 @@ pub fn write_ascii(data: &mut [u8], offset: usize, text: &str, max_len: usize, e
     for byte in text
         .chars()
         .filter_map(|c| u8::try_from(u32::from(c)).ok())
-        .filter(|byte| *byte >= 0x20)
+        .filter(|byte| is_printable(*byte))
         .take(max_len)
     {
         set_u8(data, offset + written, byte);
@@ -202,6 +209,15 @@ mod tests {
         let mut wide = [0u8; 16];
         write_utf16(&mut wide, 0, "OE1XYZ", 8);
         assert_eq!(read_utf16(&wide, 0, 8), "OE1XYZ");
+    }
+
+    #[test]
+    fn control_bytes_read_as_nothing_since_they_cannot_be_written() {
+        assert_eq!(read_ascii(&[0x05, 0xff], 0, 2, 0xff), "");
+        assert_eq!(read_ascii(&[0x05, b'A', 0x09, b'B'], 0, 4, 0xff), "AB");
+        let mut buffer = [0xffu8; 4];
+        write_ascii(&mut buffer, 0, "\u{5}A", 4, 0xff);
+        assert_eq!(read_ascii(&buffer, 0, 4, 0xff), "A");
     }
 
     #[test]

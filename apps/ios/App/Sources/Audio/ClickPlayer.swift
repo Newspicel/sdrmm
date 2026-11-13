@@ -54,10 +54,10 @@ final class ClickPlayer: ClickPlaying {
         synth.setStrength(strength)
         let source = synth.sourceNode(format: format)
         engine.attach(source)
-        engine.connect(source, to: engine.mainMixerNode, format: format)
-        engine.mainMixerNode.outputVolume = 1
-        engine.prepare()
         do {
+            try engine.connectNode(source, to: engine.mainMixerNode, format: format)
+            engine.mainMixerNode.outputVolume = 1
+            engine.prepare()
             try engine.start()
         } catch {
             throw AudioOff(reason: error.localizedDescription)

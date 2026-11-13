@@ -5,15 +5,14 @@ use std::sync::OnceLock;
 use libfuzzer_sys::fuzz_target;
 use num_complex::Complex;
 use sdrmm_channels::{ChannelCtx, ChannelOutputs};
-use sdrmm_wire::{ChannelDescriptor, ChannelSettings};
+use sdrmm_wire::ChannelDescriptor;
 
 const MAX_SAMPLES: usize = 1 << 16;
 
-static BY_TYPE_ID: OnceLock<Vec<&'static ChannelDescriptor>> = OnceLock::new();
+static BY_TYPE_ID: OnceLock<Vec<ChannelDescriptor>> = OnceLock::new();
 
-fn by_type_id() -> Vec<&'static ChannelDescriptor> {
-    let mut sorted: Vec<&'static ChannelDescriptor> =
-        sdrmm_channels::descriptor_table().iter().collect();
+fn by_type_id() -> Vec<ChannelDescriptor> {
+    let mut sorted = sdrmm_channels::descriptors();
     sorted.sort_unstable_by(|left, right| left.type_id.cmp(&right.type_id));
     sorted
 }
@@ -21,7 +20,7 @@ fn by_type_id() -> Vec<&'static ChannelDescriptor> {
 fn pick(name: &str) -> Option<&'static ChannelDescriptor> {
     let sorted = BY_TYPE_ID.get_or_init(by_type_id);
     let at = sorted.partition_point(|descriptor| descriptor.type_id.as_str() < name);
-    sorted.get(at).or_else(|| sorted.last()).copied()
+    sorted.get(at).or_else(|| sorted.last())
 }
 
 fn sample(byte: u8) -> f32 {
@@ -49,13 +48,13 @@ fuzz_target!(|data: &[u8]| {
     let Some(descriptor) = pick(name) else {
         return;
     };
-    let Some(settings) = ChannelSettings::default_for(&descriptor.type_id) else {
+    let Some(settings) = &descriptor.defaults else {
         return;
     };
     let ctx = ChannelCtx {
         input_rate: descriptor.input_rate_hz,
     };
-    let Ok(mut channel) = sdrmm_channels::create(ctx, &settings) else {
+    let Ok(mut channel) = sdrmm_channels::create(ctx, settings) else {
         return;
     };
     let mut out = ChannelOutputs::default();

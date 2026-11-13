@@ -5,48 +5,40 @@ use std::sync::OnceLock;
 use libfuzzer_sys::fuzz_target;
 use num_complex::Complex;
 use sdrmm_channels::{ChannelCtx, ChannelOutputs};
-use sdrmm_wire::{
-    AisChannel, ChannelDescriptor, ChannelParams, ChannelSettings, DatvStandard, DectBand,
-    DectSides, DectSpan, LoraBandwidth, LoraSpreadingFactor,
-};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, Control, ParamOption, SettingField};
+use serde_json::{Map, Value};
 
 const MAX_SAMPLES: usize = 1 << 16;
 
-const SPREADING: [LoraSpreadingFactor; 7] = [
-    LoraSpreadingFactor::All,
-    LoraSpreadingFactor::Sf7,
-    LoraSpreadingFactor::Sf8,
-    LoraSpreadingFactor::Sf9,
-    LoraSpreadingFactor::Sf10,
-    LoraSpreadingFactor::Sf11,
-    LoraSpreadingFactor::Sf12,
-];
-
 static DESCRIPTORS: OnceLock<Vec<ChannelDescriptor>> = OnceLock::new();
 
-fn pick<T: Copy>(choices: &[T], knob: u8) -> T {
-    choices[usize::from(knob) % choices.len()]
+fn options(control: &Control) -> Option<&[ParamOption]> {
+    match control {
+        Control::Choice { options } if !options.is_empty() => Some(options),
+        Control::Live { fallback } => options(fallback),
+        _ => None,
+    }
 }
 
-fn steer(params: &mut ChannelParams, knob: u8) {
-    match params {
-        ChannelParams::Dect(dect) => {
-            dect.span = pick(&[DectSpan::Carrier, DectSpan::Band], knob);
-            dect.band = pick(&[DectBand::Eu, DectBand::Us], knob >> 1);
-            dect.sides = pick(&[DectSides::Both, DectSides::Rfp, DectSides::Pp], knob >> 2);
-        }
-        ChannelParams::Lora(lora) => {
-            lora.bandwidth = pick(&LoraBandwidth::ALL, knob);
-            lora.spreading_factor = pick(&SPREADING, knob >> 4);
-        }
-        ChannelParams::Datv(datv) => {
-            datv.standard = pick(&[DatvStandard::DvbS, DatvStandard::DvbS2], knob);
-        }
-        ChannelParams::Ais(ais) => {
-            ais.ais_channel = pick(&[AisChannel::A, AisChannel::B], knob);
-        }
-        _ => {}
+/// Sets each choice of the form from one knob byte, so every enum variant is reached even
+/// when the JSON names none. Returns how many knobs it used.
+fn steer(settings: &mut Value, form: &[SettingField], knobs: &[u8]) -> usize {
+    if settings.is_null() {
+        *settings = Value::Object(Map::new());
     }
+    let Value::Object(values) = settings else {
+        return 0;
+    };
+    let choices = form
+        .iter()
+        .filter_map(|field| options(&field.control).map(|options| (&field.key, options)));
+    let mut used = 0;
+    for ((key, options), knob) in choices.zip(knobs) {
+        let option = &options[usize::from(*knob) % options.len()];
+        values.insert(key.clone(), option.value.clone());
+        used += 1;
+    }
+    used
 }
 
 fn sample(byte: u8) -> f32 {
@@ -71,11 +63,6 @@ fuzz_target!(|data: &[u8]| {
     let Ok(mut settings) = serde_json::from_slice::<ChannelSettings>(&data[..split]) else {
         return;
     };
-    let tail = data.get(split + 1..).unwrap_or_default();
-    steer(
-        &mut settings.params,
-        tail.first().copied().unwrap_or_default(),
-    );
     let descriptors = DESCRIPTORS.get_or_init(sdrmm_channels::descriptors);
     let Some(descriptor) = descriptors
         .iter()
@@ -83,6 +70,8 @@ fuzz_target!(|data: &[u8]| {
     else {
         return;
     };
+    let tail = data.get(split + 1..).unwrap_or_default();
+    let used = steer(&mut settings.params.settings, &descriptor.settings, tail);
     let ctx = ChannelCtx {
         input_rate: descriptor.input_rate_hz,
     };
@@ -92,7 +81,7 @@ fuzz_target!(|data: &[u8]| {
     let _ = sdrmm_channels::channel_filter(&settings.params);
     let _ = sdrmm_channels::occupied_band(&settings.params);
     let mut out = ChannelOutputs::default();
-    let iq = samples(tail.get(1..).unwrap_or_default());
+    let iq = samples(tail.get(used..).unwrap_or_default());
     for block in iq.chunks(512) {
         out.reset();
         channel.process(block, &mut out);

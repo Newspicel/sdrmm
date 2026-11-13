@@ -564,7 +564,7 @@ fn the_frequency_selective_rows_are_fade_limited_not_delay_limited() {
 }
 
 fn remeasure_curve(link: &Link, grid: &[f64], seed: u64, name: &str) -> Curve {
-    let curve = sweep::sweep_ber(
+    let measured = sweep::measure_ber(
         link,
         &ChannelSpec::default(),
         grid,
@@ -572,7 +572,7 @@ fn remeasure_curve(link: &Link, grid: &[f64], seed: u64, name: &str) -> Curve {
         FULL_ERRORS,
         FULL_CAP,
     );
-    for p in &curve.points {
+    for p in &measured.curve.points {
         println!(
             "{:>5.1} dB  {:>8} / {:<10} BER {:.3e}",
             p.ebn0_db,
@@ -584,13 +584,13 @@ fn remeasure_curve(link: &Link, grid: &[f64], seed: u64, name: &str) -> Curve {
     let path = baseline_path(name);
     if path.exists() {
         let committed: Curve = sweep::load_json(&path).unwrap();
-        sweep::assert_curve_matches(name, &curve, &committed);
+        sweep::assert_curve_matches(name, &measured, &committed);
     } else {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        sweep::save_json(&curve, &path).unwrap();
+        sweep::save_json(&measured.curve, &path).unwrap();
         println!("baseline created at {}", path.display());
     }
-    curve
+    measured.curve
 }
 
 #[test]

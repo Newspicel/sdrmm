@@ -626,7 +626,29 @@ fn check_toolchain_pins(root: &Path) -> Result<()> {
 
     agree("pnpm", &pnpm)?;
     agree("the Node major", &node)?;
-    check_ndk_pin(root)
+    check_ndk_pin(root)?;
+    check_cef_pin(root)
+}
+
+const NIX_PACKAGE: &str = "packaging/nix/package.nix";
+
+/// Nix pins the CEF archive by hash, so a `cef` bump in Cargo.lock has to bring it along.
+fn check_cef_pin(root: &Path) -> Result<()> {
+    let lock = std::fs::read_to_string(root.join("Cargo.lock")).context("read Cargo.lock")?;
+    let nix = std::fs::read_to_string(root.join(NIX_PACKAGE))
+        .with_context(|| format!("read {NIX_PACKAGE}"))?;
+    let pinned = slice_between(&nix, "cefVersion = \"", "\"")
+        .with_context(|| format!("{NIX_PACKAGE} declares no cefVersion"))?;
+    agree(
+        "the CEF build",
+        &[
+            (
+                "Cargo.lock".to_owned(),
+                xtask_release::desktop::cef_version(&lock)?.to_owned(),
+            ),
+            (NIX_PACKAGE.to_owned(), pinned.to_owned()),
+        ],
+    )
 }
 
 const ANDROID_PROPERTIES: &str = "apps/android/gradle.properties";

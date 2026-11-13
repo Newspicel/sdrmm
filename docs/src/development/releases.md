@@ -73,7 +73,7 @@ needs `dpkg-deb` and `rpmbuild`. Installers use system SoapySDR at runtime. Linu
 bundles are built on x86-64 and ARM64, each on a native machine. Windows ARM64 builds `nsis` alone,
 because WiX 3 emits no arm64 package.
 
-The build fetches Chromium (CEF) into `target/cef` and needs CMake and Ninja.
+The build fetches Chromium (CEF) into `.cef` and needs CMake and Ninja.
 `cargo xtask desktop --run` builds the app and starts it.
 
 ## Desktop updates

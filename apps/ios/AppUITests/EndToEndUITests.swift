@@ -20,7 +20,9 @@ final class EndToEndUITests: XCTestCase {
         XCTAssertTrue(trust.waitForExistence(timeout: patience))
         trust.tap()
         let hunt = app.buttons["missions.row.hunt"]
-        XCTAssertTrue(hunt.waitForExistence(timeout: patience))
+        let refusal = app.staticTexts["pair.error"]
+        let paired = hunt.waitForExistence(timeout: patience)
+        XCTAssertTrue(paired, refusal.exists ? refusal.label : "No mission list")
         XCTAssertTrue(hunt.label.contains("Fox"), hunt.label)
         hunt.tap()
         let run = app.buttons["hunt.run"]

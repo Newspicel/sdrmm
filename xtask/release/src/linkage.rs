@@ -1,21 +1,11 @@
-use std::{
-    collections::BTreeSet,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
 
+mod macho;
 mod pe;
 
 const SYSTEM_PREFIXES: [&str; 3] = ["/usr/lib/", "/System/", "/Library/Frameworks/"];
-
-const MAGICS: [[u8; 4]; 4] = [
-    [0xcf, 0xfa, 0xed, 0xfe],
-    [0xfe, 0xed, 0xfa, 0xcf],
-    [0xca, 0xfe, 0xba, 0xbe],
-    [0xbe, 0xba, 0xfe, 0xca],
-];
 
 pub fn check(path: &Path, external: &[String]) -> Result<()> {
     ensure!(path.exists(), "{} does not exist", path.display());
@@ -23,7 +13,7 @@ pub fn check(path: &Path, external: &[String]) -> Result<()> {
     if !portable.is_empty() {
         return pe::check(path, &portable, external);
     }
-    let images = images_under(path, |head| MAGICS.contains(head))?;
+    let images = images_under(path, macho::is_macho)?;
     ensure!(
         !images.is_empty(),
         "{} holds no Mach-O or PE files",
@@ -32,7 +22,8 @@ pub fn check(path: &Path, external: &[String]) -> Result<()> {
     let mut edges = 0usize;
     let mut failures = Vec::new();
     for image in &images {
-        let loaded = Image::read(image)?;
+        let data = std::fs::read(image).with_context(|| format!("read {}", image.display()))?;
+        let loaded = macho::read(&data).with_context(|| format!("parse {}", image.display()))?;
         let loader_dir = image.parent().unwrap_or(Path::new("."));
         let executable_dir = executable_dir(path, image);
         for dependency in &loaded.dependencies {
@@ -155,65 +146,6 @@ fn leaf(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-struct Image {
-    dependencies: Vec<String>,
-    rpaths: Vec<String>,
-}
-
-impl Image {
-    fn read(path: &Path) -> Result<Self> {
-        let out = Command::new("otool")
-            .arg("-l")
-            .arg(path)
-            .output()
-            .with_context(|| format!("otool -l {}", path.display()))?;
-        ensure!(
-            out.status.success(),
-            "otool -l {} failed: {}",
-            path.display(),
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-        Ok(Self::parse(&String::from_utf8_lossy(&out.stdout)))
-    }
-
-    fn parse(listing: &str) -> Self {
-        let mut dependencies = BTreeSet::new();
-        let mut rpaths = Vec::new();
-        let mut command = "";
-        for line in listing.lines() {
-            let line = line.trim();
-            if let Some(name) = line.strip_prefix("cmd ") {
-                command = name.trim();
-            } else if let Some(value) = line.strip_prefix("name ") {
-                if matches!(
-                    command,
-                    "LC_LOAD_DYLIB" | "LC_LOAD_WEAK_DYLIB" | "LC_REEXPORT_DYLIB"
-                ) {
-                    dependencies.insert(strip_offset(value));
-                }
-            } else if let Some(value) = line.strip_prefix("path ")
-                && command == "LC_RPATH"
-            {
-                let path = strip_offset(value);
-                if !rpaths.contains(&path) {
-                    rpaths.push(path);
-                }
-            }
-        }
-        Self {
-            dependencies: dependencies.into_iter().collect(),
-            rpaths,
-        }
-    }
-}
-
-fn strip_offset(value: &str) -> String {
-    match value.rfind(" (offset ") {
-        Some(at) => value[..at].to_string(),
-        None => value.trim().to_string(),
-    }
-}
-
 fn images_under(path: &Path, accept: fn(&[u8; 4]) -> bool) -> Result<Vec<PathBuf>> {
     let mut found = Vec::new();
     collect(path, accept, &mut found)?;
@@ -252,57 +184,6 @@ fn head(path: &Path) -> Result<Option<[u8; 4]>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const LISTING: &str = "
-Load command 8
-          cmd LC_ID_DYLIB
-      cmdsize 56
-         name @rpath/libSoapySDR.0.8.dylib (offset 24)
-Load command 9
-          cmd LC_LOAD_DYLIB
-      cmdsize 56
-         name /usr/lib/libSystem.B.dylib (offset 24)
-Load command 10
-          cmd LC_LOAD_DYLIB
-      cmdsize 56
-         name @rpath/libiconv.2.dylib (offset 24)
-Load command 11
-          cmd LC_LOAD_WEAK_DYLIB
-      cmdsize 56
-         name @rpath/libusb-1.0.0.dylib (offset 24)
-Load command 12
-          cmd LC_RPATH
-      cmdsize 48
-         path @executable_path/../Frameworks (offset 12)
-Load command 13
-          cmd LC_RPATH
-      cmdsize 48
-         path @loader_path/.. (offset 12)
-";
-
-    #[test]
-    fn reads_what_an_image_loads_and_ignores_its_own_name() {
-        let image = Image::parse(LISTING);
-        assert_eq!(
-            image.dependencies,
-            [
-                "/usr/lib/libSystem.B.dylib",
-                "@rpath/libiconv.2.dylib",
-                "@rpath/libusb-1.0.0.dylib",
-            ]
-        );
-        assert_eq!(
-            image.rpaths,
-            ["@executable_path/../Frameworks", "@loader_path/.."]
-        );
-    }
-
-    #[test]
-    fn dedupes_the_slices_of_a_universal_binary() {
-        let image = Image::parse(&format!("{LISTING}{LISTING}"));
-        assert_eq!(image.dependencies.len(), 3);
-        assert_eq!(image.rpaths.len(), 2);
-    }
 
     #[test]
     fn shared_cache_paths_need_no_file() {

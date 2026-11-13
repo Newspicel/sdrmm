@@ -13,6 +13,12 @@ nonisolated protocol AudioSessionPort: AnyObject, Sendable {
 
 extension AVAudioSession: AudioSessionPort {}
 
+nonisolated protocol ResumptionAdvice {
+    var recommendation: AVAudioSession.ResumptionRecommendation { get }
+}
+
+extension AVAudioSession.ResumptionContext: ResumptionAdvice {}
+
 nonisolated struct AudioOff: Error, Equatable {
     let reason: String
 }
@@ -54,7 +60,7 @@ final class AudioSessionController {
         self.session = session
         interruptions = ObserverToken(
             center: center,
-            name: AVAudioSession.interruptionNotification,
+            name: AVAudioSession.resumptionRecommendationNotification,
             object: nil
         ) { [weak self] notification in
             let resume = Self.shouldResume(notification.userInfo)
@@ -101,12 +107,7 @@ final class AudioSessionController {
     }
 
     nonisolated static func shouldResume(_ info: [AnyHashable: Any]?) -> Bool {
-        guard let raw = info?[AVAudioSessionInterruptionTypeKey] as? UInt,
-            AVAudioSession.InterruptionType(rawValue: raw) == .ended,
-            let options = info?[AVAudioSessionInterruptionOptionKey] as? UInt
-        else {
-            return false
-        }
-        return AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume)
+        let advice = info?[AVAudioSession.resumptionContextKey] as? any ResumptionAdvice
+        return advice?.recommendation == .shouldResume
     }
 }

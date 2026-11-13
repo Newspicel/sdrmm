@@ -1,13 +1,11 @@
 mod air;
 pub mod bench;
 pub mod generator;
+mod pace;
 
-use std::{
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::{Duration, Instant},
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
 };
 
 use arc_swap::ArcSwap;
@@ -34,6 +32,7 @@ pub use generator::{
     GAP_SETTING, LEVEL_SETTING, MAX_GENERATORS, NOISE_OFF_DB, NOISE_SETTING, OFFSET_SETTING,
     SIGNAL_SETTING,
 };
+use pace::SampleClock;
 
 const DRIVER_ID: DeviceBackend = DeviceBackend::Virtual;
 const MAX_GENERATOR_KEY_LEN: usize = 64;
@@ -403,21 +402,15 @@ impl SdrDevice for BandGen {
         self.worker.start("sdrmm-band-rx", move |running| {
             let mut generator = Generator::new();
             let mut block: Vec<Complex<f32>> = Vec::new();
-            let mut next = Instant::now();
+            let mut clock = SampleClock::start();
             while running.load(Ordering::Acquire) {
                 let params = *shared.load_full();
                 let n = ((params.sample_rate * BLOCK_SECS).round() as usize).max(1);
+                sink.dropped(clock.overrun(params.sample_rate));
                 block.resize(n, Complex::new(0.0, 0.0));
                 generator.fill(&mut block, params.sample_rate);
                 sink.push(&block);
-
-                next += Duration::from_secs_f64(n as f64 / params.sample_rate);
-                let now = Instant::now();
-                if next > now {
-                    std::thread::sleep(next - now);
-                } else {
-                    next = now;
-                }
+                clock.step(n, params.sample_rate);
             }
         })
     }
@@ -438,22 +431,18 @@ impl SdrDevice for BandGen {
         self.sweeper.start("sdrmm-band-sweep", move |running| {
             let mut generator = Generator::stream_marker(0);
             let mut block = vec![Complex::new(0.0f32, 0.0); SWEEP_BLOCK_SAMPLES];
-            let mut next = Instant::now();
+            let mut clock = SampleClock::start();
             let mut at = 0usize;
             while running.load(Ordering::Acquire) {
+                let skipped = clock.overrun(sample_rate);
+                sink.missed(skipped / SWEEP_BLOCK_SAMPLES as u64);
+                at = swept_past(at, centers.len(), skipped);
                 let center = centers[at];
                 at = (at + 1) % centers.len();
                 generator.set_marker_offset_hz(SWEEP_MARKER_HZ - center);
                 generator.fill(&mut block, sample_rate);
                 sink.push(center, &block);
-
-                next += Duration::from_secs_f64(block.len() as f64 / sample_rate);
-                let now = Instant::now();
-                if next > now {
-                    std::thread::sleep(next - now);
-                } else {
-                    next = now;
-                }
+                clock.step(block.len(), sample_rate);
             }
         })
     }
@@ -461,6 +450,13 @@ impl SdrDevice for BandGen {
     fn sweep_stop(&mut self) {
         self.sweeper.stop();
     }
+}
+
+/// The sweep cursor after `skipped` samples of dwells the sweep was too late to deliver.
+fn swept_past(at: usize, centers: usize, skipped: u64) -> usize {
+    let dwells = skipped / SWEEP_BLOCK_SAMPLES as u64;
+    let centers = centers.max(1) as u64;
+    ((at as u64 + dwells % centers) % centers) as usize
 }
 
 pub struct MarkerShape {
@@ -707,10 +703,15 @@ impl SdrDevice for MarkerGen {
                 .map(|(stream, sink)| (Generator::stream_marker(stream as u32), sink))
                 .collect();
             let mut block: Vec<Complex<f32>> = Vec::new();
-            let mut next = Instant::now();
+            let mut clock = SampleClock::start();
             while running.load(Ordering::Acquire) {
                 let params = shared.load_full();
                 let n = ((params.sample_rate * BLOCK_SECS).round() as usize).max(1);
+                let skipped = clock.overrun(params.sample_rate);
+                for (_, sink) in &mut lanes {
+                    sink.dropped(skipped);
+                }
+                let quiet = air::ns_at(clock.due()) < quiet_until.load(Ordering::Acquire);
                 block.resize(n, Complex::new(0.0, 0.0));
                 for (stream, (generator, sink)) in lanes.iter_mut().enumerate() {
                     let offset = params
@@ -720,7 +721,7 @@ impl SdrDevice for MarkerGen {
                         .unwrap_or_else(|| stream_marker_offset_hz(stream as u32));
                     generator.set_marker_offset_hz(offset);
                     generator.fill(&mut block, params.sample_rate);
-                    if air::now_ns() < quiet_until.load(Ordering::Acquire) {
+                    if quiet {
                         sink.dropped(n as u64);
                         continue;
                     }
@@ -731,14 +732,7 @@ impl SdrDevice for MarkerGen {
                     }
                     sink.push(&block);
                 }
-
-                next += Duration::from_secs_f64(n as f64 / params.sample_rate);
-                let now = Instant::now();
-                if next > now {
-                    std::thread::sleep(next - now);
-                } else {
-                    next = now;
-                }
+                clock.step(n, params.sample_rate);
             }
         });
         if started.is_err() {
@@ -921,7 +915,7 @@ mod tests {
     use std::{
         f64::consts::TAU,
         sync::{OnceLock, mpsc},
-        time::Duration,
+        time::{Duration, Instant},
     };
 
     use sdrmm_wire::{BandwidthSetting, GainKind, GainValue, StreamSettings};
@@ -1159,45 +1153,99 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_late_sweep_moves_past_the_dwells_it_missed() {
+        let dwell = SWEEP_BLOCK_SAMPLES as u64;
+        assert_eq!(swept_past(1, 4, 0), 1);
+        assert_eq!(swept_past(1, 4, dwell * 2 + 1), 3);
+        assert_eq!(swept_past(3, 4, dwell * 6), 1);
+    }
+
+    const AUDIBLE: f32 = 0.01;
+
+    fn level_at(block: &[Complex<f32>], offset_hz: f64) -> f32 {
+        block
+            .iter()
+            .enumerate()
+            .map(|(n, sample)| {
+                let phase = -std::f64::consts::TAU * offset_hz * n as f64 / DEFAULT_SAMPLE_RATE_HZ;
+                sample * Complex::new(phase.cos() as f32, phase.sin() as f32)
+            })
+            .sum::<Complex<f32>>()
+            .norm()
+            / block.len() as f32
+    }
+
     fn loudest_at(heard: &Heard, offset_hz: f64) -> f32 {
         lock(heard)
             .iter()
-            .map(|(_, block)| {
-                block
-                    .iter()
-                    .enumerate()
-                    .map(|(n, sample)| {
-                        let phase =
-                            -std::f64::consts::TAU * offset_hz * n as f64 / DEFAULT_SAMPLE_RATE_HZ;
-                        sample * Complex::new(phase.cos() as f32, phase.sin() as f32)
-                    })
-                    .sum::<Complex<f32>>()
-                    .norm()
-                    / block.len() as f32
-            })
+            .map(|(_, block)| level_at(block, offset_hz))
             .fold(0.0, f32::max)
+    }
+
+    fn wait_for<T>(what: &str, mut probe: impl FnMut() -> Option<T>) -> T {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            if let Some(found) = probe() {
+                return found;
+            }
+            assert!(Instant::now() < deadline, "timed out waiting for {what}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Waits until a burst at `offset_hz` has come and gone, and returns its peak level.
+    fn burst_peak(heard: &Heard, offset_hz: f64) -> f32 {
+        let mut seen = 0;
+        let mut peak = 0.0f32;
+        wait_for("a burst to pass", || {
+            let fresh: Vec<Vec<Complex<f32>>> = lock(heard)[seen..]
+                .iter()
+                .map(|(_, block)| block.clone())
+                .collect();
+            seen += fresh.len();
+            for block in fresh {
+                let level = level_at(&block, offset_hz);
+                if level > AUDIBLE {
+                    peak = peak.max(level);
+                } else if peak > 0.0 {
+                    return Some(peak);
+                }
+            }
+            None
+        })
+    }
+
+    /// Waits until receive resumes after a gap, and returns the gap in samples.
+    fn resumed_gap(heard: &Heard) -> u64 {
+        wait_for("receive to resume", || {
+            lock(heard)
+                .windows(2)
+                .map(|pair| pair[1].0 - (pair[0].0 + pair[0].1.len() as u64))
+                .find(|gap| *gap > 0)
+        })
     }
 
     #[test]
     fn a_full_duplex_radio_hears_its_own_transmitter_at_the_set_gain() {
-        const TONE_HZ: f64 = 410_000.0;
+        const LOUD_HZ: f64 = 410_000.0;
+        const SOFT_HZ: f64 = -250_000.0;
         let mut dev = tuned("transceiver", 433_000_000.0);
         let heard = listening(dev.as_mut());
         let mut tx = dev.tx_start().expect("transmit beside receive");
-        transmit(tx.as_mut(), &carrier(TONE_HZ, 0.3));
-        std::thread::sleep(Duration::from_millis(400));
-        let full = loudest_at(&heard, TONE_HZ);
-        assert!((0.45..0.55).contains(&full), "loopback level {full}");
-
-        lock(&heard).clear();
+        transmit(tx.as_mut(), &carrier(LOUD_HZ, 0.3));
+        tx.stop().expect("stop");
         dev.apply(&DeviceSettings {
             gains: vec![sdrmm_wire::GainValue::new(GainKind::Tx, -20.0)],
             ..DeviceSettings::default()
         })
         .expect("tx gain");
-        transmit(tx.as_mut(), &carrier(TONE_HZ, 0.3));
-        std::thread::sleep(Duration::from_millis(400));
-        let backed_off = loudest_at(&heard, TONE_HZ);
+        let mut tx = dev.tx_start().expect("transmit again");
+        transmit(tx.as_mut(), &carrier(SOFT_HZ, 0.3));
+
+        let full = burst_peak(&heard, LOUD_HZ);
+        assert!((0.45..0.55).contains(&full), "loopback level {full}");
+        let backed_off = burst_peak(&heard, SOFT_HZ);
         assert!(
             (0.045..0.055).contains(&backed_off),
             "level at -20 dB {backed_off}"
@@ -1215,29 +1263,23 @@ mod tests {
         let own = listening(talker.as_mut());
         let other = listening(listener.as_mut());
         let mut tx = talker.tx_start().expect("takes turns with the receiver");
-        std::thread::sleep(Duration::from_millis(100));
+        wait_for("receive before the burst", || {
+            (!lock(&own).is_empty()).then_some(())
+        });
         transmit(tx.as_mut(), &carrier(TONE_HZ, 0.3));
-        std::thread::sleep(Duration::from_millis(500));
+
+        let heard = burst_peak(&other, TONE_HZ);
+        assert!(heard > 0.45, "the other radio heard {heard}");
+        let gap = resumed_gap(&own);
         tx.stop().expect("stop");
         talker.rx_stop();
         listener.rx_stop();
 
-        assert!(
-            loudest_at(&other, TONE_HZ) > 0.45,
-            "the other radio is deaf"
-        );
-        assert!(loudest_at(&own, TONE_HZ) < 0.01, "the talker heard itself");
-        let blocks = lock(&own);
-        let gap = blocks
-            .windows(2)
-            .map(|pair| pair[1].0 - (pair[0].0 + pair[0].1.len() as u64))
-            .max()
-            .expect("blocks");
         let burst = (0.25 * DEFAULT_SAMPLE_RATE_HZ) as u64;
         assert!(gap >= burst, "receive gap of {gap} samples");
         assert!(
-            blocks.last().expect("blocks").0 > blocks[0].0 + gap,
-            "receive did not resume"
+            loudest_at(&own, TONE_HZ) < AUDIBLE,
+            "the talker heard itself"
         );
     }
 

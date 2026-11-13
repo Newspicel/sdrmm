@@ -3,42 +3,42 @@
   "points": [
     {
       "ebn0_db": 8.0,
-      "errors": 2015,
-      "trials": 18432
+      "errors": 2008,
+      "trials": 17408
     },
     {
       "ebn0_db": 9.0,
-      "errors": 2026,
-      "trials": 37888
+      "errors": 2022,
+      "trials": 40960
     },
     {
       "ebn0_db": 10.0,
-      "errors": 2004,
-      "trials": 94208
+      "errors": 2003,
+      "trials": 93184
     },
     {
       "ebn0_db": 11.0,
-      "errors": 2000,
-      "trials": 274432
+      "errors": 2003,
+      "trials": 277504
     },
     {
       "ebn0_db": 12.0,
-      "errors": 2003,
-      "trials": 569344
+      "errors": 2000,
+      "trials": 748544
     },
     {
       "ebn0_db": 13.0,
-      "errors": 2001,
-      "trials": 2522112
+      "errors": 2047,
+      "trials": 1993728
     },
     {
       "ebn0_db": 14.0,
-      "errors": 1656,
+      "errors": 1659,
       "trials": 4000768
     },
     {
       "ebn0_db": 15.0,
-      "errors": 249,
+      "errors": 248,
       "trials": 4000768
     },
     {

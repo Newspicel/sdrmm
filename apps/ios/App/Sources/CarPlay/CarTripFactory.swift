@@ -8,28 +8,19 @@ enum CarTripFactory {
             choice(plan, index: index, units: units)
         }
         let name = DfMapStyle.targetLabel(target.kind)
-        let trip: CPTrip
-        if #available(iOS 26.4, *) {
-            trip = CPTrip(
-                originWaypoint: CPNavigationWaypoint(
-                    mapItem: item(origin, name: nil),
-                    locationThreshold: nil,
-                    entryPoints: []
-                ),
-                destinationWaypoint: CPNavigationWaypoint(
-                    mapItem: item(target.at, name: name),
-                    locationThreshold: nil,
-                    entryPoints: []
-                ),
-                routeChoices: choices
-            )
-        } else {
-            trip = CPTrip(
-                origin: item(origin, name: nil),
-                destination: item(target.at, name: name),
-                routeChoices: choices
-            )
-        }
+        let trip = CPTrip(
+            originWaypoint: CPNavigationWaypoint(
+                mapItem: item(origin, name: nil),
+                locationThreshold: nil,
+                entryPoints: []
+            ),
+            destinationWaypoint: CPNavigationWaypoint(
+                mapItem: item(target.at, name: name),
+                locationThreshold: nil,
+                entryPoints: []
+            ),
+            routeChoices: choices
+        )
         trip.userInfo = plans.first?.id.uuidString
         return trip
     }
@@ -54,12 +45,7 @@ enum CarTripFactory {
     }
 
     private static func item(_ point: LatLon, name: String?) -> MKMapItem {
-        let item: MKMapItem
-        if #available(iOS 26.0, *) {
-            item = MKMapItem(location: CLLocation(latitude: point.lat, longitude: point.lon), address: nil)
-        } else {
-            item = MKMapItem(placemark: MKPlacemark(coordinate: point.coordinate))
-        }
+        let item = MKMapItem(location: CLLocation(latitude: point.lat, longitude: point.lon), address: nil)
         item.name = name
         return item
     }

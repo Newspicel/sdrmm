@@ -10,6 +10,7 @@
 /.media
 /.media-build
 /.llvm
+/.cef
 
 # Python
 __pycache__/

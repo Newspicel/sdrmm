@@ -2,7 +2,7 @@ name: SDRmm
 options:
   bundleIdPrefix: dev.newspicel
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "27.0"
   xcodeVersion: "27.0"
   developmentLanguage: en
   createIntermediateGroups: true

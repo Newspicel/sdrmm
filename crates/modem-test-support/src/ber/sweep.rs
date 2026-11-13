@@ -27,35 +27,104 @@ pub fn sweep_ber(
     min_errors: u64,
     max_trial_bits: u64,
 ) -> Curve {
+    measure_ber(
+        link,
+        channel_template,
+        points_db,
+        seed,
+        min_errors,
+        max_trial_bits,
+    )
+    .curve
+}
+
+/// A swept curve with how its errors clumped. A trial that loses frame sync takes hundreds of
+/// bits with it at once, so a point's spread follows its independent error events, not its bits.
+pub struct Measured {
+    pub curve: Curve,
+    /// Errors per independent event at each point: 1 for scattered bit errors, far more when
+    /// whole trials fail together.
+    pub clumping: Vec<f64>,
+}
+
+impl Measured {
+    /// A curve whose errors are taken as independent, as its counts alone suggest.
+    #[must_use]
+    pub fn scattered(curve: Curve) -> Self {
+        let clumping = vec![1.0; curve.points.len()];
+        Self { curve, clumping }
+    }
+}
+
+pub fn measure_ber(
+    link: &Link,
+    channel_template: &ChannelSpec,
+    points_db: &[f64],
+    seed: u64,
+    min_errors: u64,
+    max_trial_bits: u64,
+) -> Measured {
     let mut points = Vec::with_capacity(points_db.len());
+    let mut clumping = Vec::with_capacity(points_db.len());
     for (index, &ebn0_db) in points_db.iter().enumerate() {
         let mut rng = Rng::new(point_seed(seed, index));
         let channel = channel_template
             .awgn(Awgn::for_ebn0(ebn0_db, link.bits_per_trial as u64))
             .build();
-        let mut errors = 0u64;
-        let mut trials = 0u64;
-        while errors < min_errors && trials < max_trial_bits {
+        let mut tally = TrialTally::default();
+        while tally.errors < min_errors && tally.bits < max_trial_bits {
             let payload = random_bits(&mut rng, link.bits_per_trial);
             let mut wave = (link.modulate)(&payload);
             channel.apply(&mut wave, &mut rng);
             let decoded = (link.demodulate)(&wave);
-            for (i, &sent) in payload.iter().enumerate() {
-                trials += 1;
-                if decoded.get(i) != Some(&sent) {
-                    errors += 1;
-                }
-            }
+            let wrong = payload
+                .iter()
+                .enumerate()
+                .filter(|&(i, &sent)| decoded.get(i) != Some(&sent))
+                .count() as u64;
+            tally.add(payload.len() as u64, wrong);
         }
         points.push(CurvePoint {
             ebn0_db,
-            errors,
-            trials,
+            errors: tally.errors,
+            trials: tally.bits,
         });
+        clumping.push(tally.clumping());
     }
-    Curve {
-        label: format!("{}, uncoded BER, seed {seed:#x}", link.label),
-        points,
+    Measured {
+        curve: Curve {
+            label: format!("{}, uncoded BER, seed {seed:#x}", link.label),
+            points,
+        },
+        clumping,
+    }
+}
+
+#[derive(Default)]
+struct TrialTally {
+    bits: u64,
+    errors: u64,
+    trials: u64,
+    squared_errors: f64,
+}
+
+impl TrialTally {
+    fn add(&mut self, bits: u64, errors: u64) {
+        self.bits += bits;
+        self.errors += errors;
+        self.trials += 1;
+        self.squared_errors += (errors as f64).powi(2);
+    }
+
+    /// How many times the count's relative variance, read from its spread across trials,
+    /// exceeds the `1 / errors` of independent errors.
+    fn clumping(&self) -> f64 {
+        if self.errors == 0 || self.trials < 2 {
+            return 1.0;
+        }
+        let errors = self.errors as f64;
+        let relative_variance = self.squared_errors / errors.powi(2) - 1.0 / self.trials as f64;
+        (relative_variance * errors).max(1.0)
     }
 }
 
@@ -77,32 +146,39 @@ fn random_bits(rng: &mut Rng, n: usize) -> Vec<bool> {
 }
 
 /// A curve point stops at a fixed trial cap, so its tail carries few errors and its own Poisson
-/// spread is wider than any flat tolerance. Both counts are drawn from the same physics, so the
-/// ratio is allowed the spread the two counts actually support, never less than the flat floor.
+/// spread is wider than any flat tolerance, and errors that clump into failed trials spread
+/// wider still. Both counts are drawn from the same physics, so the committed count is taken to
+/// clump as the measured one does, and the ratio is allowed the spread the two counts actually
+/// support, never less than the flat floor.
 const CURVE_SIGMAS: f64 = 5.0;
 const CURVE_FLOOR_LOG10: f64 = 0.1;
 
 #[must_use]
-pub fn curve_tolerance_log10(measured_errors: u64, committed_errors: u64) -> f64 {
-    let spread = |errors: u64| 1.0 / errors.max(1) as f64;
+pub fn curve_tolerance_log10(measured_errors: u64, committed_errors: u64, clumping: f64) -> f64 {
+    let spread = |errors: u64| clumping.max(1.0) / errors.max(1) as f64;
     let sigma = (spread(measured_errors) + spread(committed_errors)).sqrt();
     (1.0 + CURVE_SIGMAS * sigma).log10().max(CURVE_FLOOR_LOG10)
 }
 
-pub fn assert_curve_matches(name: &str, measured: &Curve, committed: &Curve) {
+pub fn assert_curve_matches(name: &str, measured: &Measured, committed: &Curve) {
+    let Measured {
+        curve: measured,
+        clumping,
+    } = measured;
     assert_eq!(
         measured.points.len(),
         committed.points.len(),
         "{name}: grid changed"
     );
-    for (m, c) in measured.points.iter().zip(&committed.points) {
+    for ((m, c), &clumping) in measured.points.iter().zip(&committed.points).zip(clumping) {
         assert!((m.ebn0_db - c.ebn0_db).abs() < 1e-9, "{name}: grid changed");
         let ratio = (m.rate().max(1e-12) / c.rate().max(1e-12)).log10().abs();
-        let allowed = curve_tolerance_log10(m.errors, c.errors);
+        let allowed = curve_tolerance_log10(m.errors, c.errors, clumping);
         assert!(
             ratio < allowed,
             "{name} at {} dB: committed BER {:.3e} over {} errors, measured {:.3e} over {} \
-             errors, {ratio:.3} decades apart against {allowed:.3} allowed",
+             errors in clumps of {clumping:.1}, {ratio:.3} decades apart against {allowed:.3} \
+             allowed",
             c.ebn0_db,
             c.rate(),
             c.errors,
@@ -474,17 +550,17 @@ mod tests {
 
     #[test]
     fn a_well_measured_point_keeps_the_flat_tolerance() {
-        assert!((curve_tolerance_log10(2_000, 2_000) - CURVE_FLOOR_LOG10).abs() < 1e-12);
-        assert!((curve_tolerance_log10(946, 946) - CURVE_FLOOR_LOG10).abs() < 1e-12);
+        assert!((curve_tolerance_log10(2_000, 2_000, 1.0) - CURVE_FLOOR_LOG10).abs() < 1e-12);
+        assert!((curve_tolerance_log10(946, 946, 1.0) - CURVE_FLOOR_LOG10).abs() < 1e-12);
     }
 
     #[test]
     fn a_tail_point_is_allowed_the_spread_its_error_count_supports() {
-        let tail = curve_tolerance_log10(73, 73);
+        let tail = curve_tolerance_log10(73, 73, 1.0);
         assert!(tail > CURVE_FLOOR_LOG10, "{tail}");
         assert!(tail < 0.3, "{tail}");
         assert!(
-            curve_tolerance_log10(73, 73) > curve_tolerance_log10(287, 287),
+            curve_tolerance_log10(73, 73, 1.0) > curve_tolerance_log10(287, 287, 1.0),
             "fewer errors have to be allowed more spread"
         );
     }
@@ -493,7 +569,39 @@ mod tests {
     fn a_tail_that_only_resampled_its_marginal_decisions_still_matches() {
         let committed = curve_of(vec![point(16.0, 73, 6_008_832)]);
         let measured = curve_of(vec![point(16.0, 95, 6_008_832)]);
-        assert_curve_matches("cpm/mfsk4_cpfsk_awgn", &measured, &committed);
+        assert_curve_matches(
+            "cpm/mfsk4_cpfsk_awgn",
+            &Measured::scattered(measured),
+            &committed,
+        );
+    }
+
+    #[test]
+    fn scattered_errors_do_not_clump() {
+        let mut tally = TrialTally::default();
+        for errors in [3, 1, 2, 4, 2, 3, 1, 2, 3, 2, 4, 1] {
+            tally.add(1_024, errors);
+        }
+        assert!(tally.clumping() < 1.5, "{}", tally.clumping());
+    }
+
+    #[test]
+    fn a_lost_frame_counts_as_one_event() {
+        let mut tally = TrialTally::default();
+        for errors in [512, 0, 0, 0, 515, 0, 0, 0, 509, 0, 0, 0] {
+            tally.add(1_024, errors);
+        }
+        assert!(tally.clumping() > 300.0, "{}", tally.clumping());
+    }
+
+    #[test]
+    fn a_curve_that_resampled_its_lost_frames_still_matches() {
+        let committed = curve_of(vec![point(8.0, 2_044, 13_312)]);
+        let measured = Measured {
+            curve: curve_of(vec![point(8.0, 2_051, 19_456)]),
+            clumping: vec![250.0],
+        };
+        assert_curve_matches("cpm/gmsk_bt05_datalike_awgn", &measured, &committed);
     }
 
     #[test]
@@ -501,7 +609,11 @@ mod tests {
     fn a_decoder_that_doubled_its_errors_is_still_caught() {
         let committed = curve_of(vec![point(12.0, 2_001, 1_462_272)]);
         let measured = curve_of(vec![point(12.0, 4_002, 1_462_272)]);
-        assert_curve_matches("cpm/mfsk4_cpfsk_awgn", &measured, &committed);
+        assert_curve_matches(
+            "cpm/mfsk4_cpfsk_awgn",
+            &Measured::scattered(measured),
+            &committed,
+        );
     }
 
     #[test]
@@ -509,6 +621,10 @@ mod tests {
     fn a_tail_that_moved_further_than_its_counts_allow_is_caught() {
         let committed = curve_of(vec![point(16.0, 73, 6_008_832)]);
         let measured = curve_of(vec![point(16.0, 400, 6_008_832)]);
-        assert_curve_matches("cpm/mfsk4_cpfsk_awgn", &measured, &committed);
+        assert_curve_matches(
+            "cpm/mfsk4_cpfsk_awgn",
+            &Measured::scattered(measured),
+            &committed,
+        );
     }
 }

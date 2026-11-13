@@ -1,4 +1,3 @@
-import CarPlay
 import SdrmmCore
 
 nonisolated struct CarPanelContent: Equatable, Sendable {
@@ -52,66 +51,10 @@ nonisolated struct CarPanelContent: Equatable, Sendable {
         }
     }
 
-    var infoBearing: String {
-        guard let confidence else {
-            return "\(bearing) \(bearingDetail)"
-        }
-        return "\(bearing) \(confidence)"
-    }
-
     private static func zip<A, B>(_ first: A?, _ second: B?) -> (A, B)? {
         guard let first, let second else {
             return nil
         }
         return (first, second)
-    }
-}
-
-final class CarDfInfo {
-    private let onNavigate: @MainActor () -> Void
-    private let onCalibrate: @MainActor () -> Void
-    private let onClear: @MainActor () -> Void
-
-    init(
-        onNavigate: @escaping @MainActor () -> Void,
-        onCalibrate: @escaping @MainActor () -> Void,
-        onClear: @escaping @MainActor () -> Void
-    ) {
-        self.onNavigate = onNavigate
-        self.onCalibrate = onCalibrate
-        self.onClear = onClear
-    }
-
-    func template(_ content: CarPanelContent) -> CPInformationTemplate {
-        CPInformationTemplate(title: "DF", layout: .leading, items: items(content), actions: actions(content))
-    }
-
-    func update(_ template: CPInformationTemplate, with content: CarPanelContent) {
-        template.items = items(content)
-        template.actions = actions(content)
-    }
-
-    private func items(_ content: CarPanelContent) -> [CPInformationItem] {
-        [
-            CPInformationItem(title: "Bearing", detail: content.infoBearing),
-            CPInformationItem(title: "Guidance", detail: content.guidanceDetail),
-        ]
-    }
-
-    private func actions(_ content: CarPanelContent) -> [CPTextButton] {
-        let calibrate = onCalibrate
-        let clear = onClear
-        let navigate = onNavigate
-        var buttons: [CPTextButton] = []
-        if content.canCalibrate {
-            buttons.append(CPTextButton(title: "Calibrate", textStyle: .normal) { _ in calibrate() })
-        }
-        if content.canClear {
-            buttons.append(CPTextButton(title: "Clear", textStyle: .cancel) { _ in clear() })
-        }
-        if content.canNavigate {
-            buttons.append(CPTextButton(title: "Navigate", textStyle: .confirm) { _ in navigate() })
-        }
-        return buttons
     }
 }

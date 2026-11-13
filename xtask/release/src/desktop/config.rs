@@ -12,13 +12,7 @@ const HOMEPAGE: &str = "https://sdrmm.com";
 const AUTHOR: &str = "Julian Haag";
 /// Chromium's shared libraries, which `libcef` brings beside itself in `/usr/lib/sdrmm-app`
 /// and the AppImage must not copy a second time into `usr/lib`.
-const CHROMIUM_LIBRARIES: &[&str] = &[
-    "libcef.so",
-    "libEGL.so",
-    "libGLESv2.so",
-    "libvk_swiftshader.so",
-    "libvulkan.so.1",
-];
+const CHROMIUM_LIBRARIES: &[&str] = &["libcef.so", "libvk_swiftshader.so", "libvulkan.so.1"];
 /// What Chromium links on Debian and Ubuntu; the `t64` names are Ubuntu 24.04's.
 const DEB_DEPENDS: &[&str] = &[
     "libasound2t64 | libasound2",

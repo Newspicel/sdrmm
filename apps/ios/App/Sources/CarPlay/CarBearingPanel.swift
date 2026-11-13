@@ -1,7 +1,6 @@
 import CarPlay
 import os
 
-@available(iOS 27.0, *)
 final class CarBearingPanel: NSObject, CPMapPanel.Delegate {
     static let wantedItems = 3
 

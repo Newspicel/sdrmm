@@ -127,7 +127,7 @@ mod tests {
     use crate::ber::{
         impair::{Awgn, ChannelSpec, Impairment, signal_energy},
         rng::Rng,
-        sweep::{load_json, save_json, sweep_ber, worst_penalty_db, worst_penalty_db_vs_curve},
+        sweep::{load_json, sweep_ber, worst_penalty_db, worst_penalty_db_vs_curve},
         theory,
     };
 
@@ -221,7 +221,10 @@ mod tests {
     }
 
     fn baseline_path() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("baselines/bpsk_ideal_awgn.json")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(crate::ber::catalog::BASELINE_DIR)
+            .join("bpsk_ideal_awgn.json")
     }
 
     #[test]
@@ -253,16 +256,9 @@ mod tests {
         println!("worst penalty vs erfc: {worst:+.4} dB");
         assert!(worst.abs() < 0.2, "worst penalty {worst} dB");
 
-        let path = baseline_path();
-        if path.exists() {
-            let baseline = load_json(&path).unwrap();
-            let drift = worst_penalty_db_vs_curve(&curve, &baseline, 0.0, 10.0);
-            println!("worst drift vs committed baseline: {drift:+.4} dB");
-            assert!(drift.abs() < 0.1, "drift vs baseline {drift} dB");
-        } else {
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            save_json(&curve, &path).unwrap();
-            println!("baseline created at {}", path.display());
-        }
+        let baseline = load_json(&baseline_path()).unwrap();
+        let drift = worst_penalty_db_vs_curve(&curve, &baseline, 0.0, 10.0);
+        println!("worst drift vs committed baseline: {drift:+.4} dB");
+        assert!(drift.abs() < 0.1, "drift vs baseline {drift} dB");
     }
 }

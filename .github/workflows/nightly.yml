@@ -359,9 +359,9 @@ jobs:
         run: docker run --detach --name sdrmm-ci --env SDRMM_TOKEN --publish 8080:8080 sdrmm:ci
       - name: Serve UI
         run: |
-          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null \
-            -H "Authorization: Bearer $SDRMM_TOKEN" http://127.0.0.1:8080/api/status
-          curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root"'
+          curl -fsSk --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null \
+            -H "Authorization: Bearer $SDRMM_TOKEN" https://127.0.0.1:8080/api/status
+          curl -fsSk https://127.0.0.1:8080/ | grep -q '<div id="root"'
       - if: failure()
         run: docker logs sdrmm-ci
 
@@ -371,12 +371,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select -s /Applications/Xcode_27.app
-      - run: xcrun simctl list runtimes | grep -q 'iOS 18.1 ' || xcodebuild -downloadPlatform iOS -buildVersion 18.1 -architectureVariant universal
       - uses: ./.github/actions/rust
         with:
           cache: ios
           save: false
-      - run: cargo xtask ios test --ui --floor
+      - run: cargo xtask ios test --ui
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
