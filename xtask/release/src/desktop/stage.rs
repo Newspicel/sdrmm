@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use super::{Os, Platform, cef_dir, mac};
 use crate::bundled;
 use crate::pack::copy_tree;
+use crate::proc::{run, utf8};
 
 const APP: &str = "sdrmm-desktop";
 const HELPER: &str = "sdrmm-desktop-helper";
@@ -58,10 +59,14 @@ pub fn stage(root: &Path, platform: &Platform, release: &Path, stage: &Path) -> 
             resources: vec![root.join(NOTICES), cef.join(CREDITS)],
         });
     }
+    let dir = runtime(root, platform, release, &cef, stage)?;
+    if platform.os == Os::Linux {
+        strip_shared_objects(&dir)?;
+    }
     Ok(Staged {
         bin_dir,
         main,
-        runtime: Some(runtime(root, platform, release, &cef, stage)?),
+        runtime: Some(dir),
         frameworks: Vec::new(),
         resources: Vec::new(),
     })
@@ -105,6 +110,20 @@ fn runtime(
     Ok(dir)
 }
 
+/// CEF ships `libcef.so` for Linux with its debug info, which is over a gigabyte of it.
+fn strip_shared_objects(dir: &Path) -> Result<()> {
+    for entry in std::fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
+        let path = entry?.path();
+        let shared = path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().contains(".so"));
+        if shared && path.is_file() {
+            run("strip", &["--strip-unneeded", utf8(&path)?], dir)?;
+        }
+    }
+    Ok(())
+}
+
 /// The files Chromium loads at runtime, as opposed to the headers, build scripts and static
 /// libraries the distribution also carries.
 fn is_runtime(name: &str) -> bool {
@@ -123,6 +142,17 @@ pub fn copy(from: &Path, to: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn shared_objects_lose_their_debug_info() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = dir.path().join("libdemo.so");
+        std::fs::copy(std::env::current_exe().unwrap(), &library).unwrap();
+        let before = std::fs::metadata(&library).unwrap().len();
+        strip_shared_objects(dir.path()).unwrap();
+        assert!(std::fs::metadata(&library).unwrap().len() < before);
+    }
 
     #[test]
     fn ships_what_chromium_loads_and_leaves_the_sdk_behind() {
