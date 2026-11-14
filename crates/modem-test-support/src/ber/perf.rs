@@ -144,9 +144,22 @@ pub fn compare_perf(
     committed: &[PerfBaseline],
     regression_fraction: f64,
 ) -> Result<Vec<PerfChange>, Vec<PerfChange>> {
+    let host_calibration = calibration_of(committed).map(|_| calibrate());
+    compare_perf_calibrated(measured, committed, regression_fraction, host_calibration)
+}
+
+/// `host_calibration` is this host's current `calibrate()` reading; `None` gates unscaled.
+pub fn compare_perf_calibrated(
+    measured: &[PerfBaseline],
+    committed: &[PerfBaseline],
+    regression_fraction: f64,
+    host_calibration: Option<f64>,
+) -> Result<Vec<PerfChange>, Vec<PerfChange>> {
     let mut changes = Vec::new();
     let mut regressions = Vec::new();
-    let scale = calibration_of(committed).map_or(1.0, |recorded| calibrate() / recorded);
+    let scale = calibration_of(committed)
+        .zip(host_calibration)
+        .map_or(1.0, |(recorded, current)| current / recorded);
     for reference in committed {
         if reference.bench == CALIBRATION_BENCH {
             continue;
@@ -320,15 +333,15 @@ mod tests {
 
     #[test]
     fn a_host_calibration_scales_the_expectation() {
-        let committed = vec![
-            baseline("cpm_demod_m4_48k", 100.0),
-            calibration_row(2.0 * calibrate()),
-        ];
+        let committed = vec![baseline("cpm_demod_m4_48k", 100.0), calibration_row(2.0)];
+        let halved_host = Some(1.0);
         let halved = vec![baseline("cpm_demod_m4_48k", 55.0)];
-        assert!(compare_perf(&halved, &committed, REGRESSION_FRACTION).is_ok());
+        assert!(
+            compare_perf_calibrated(&halved, &committed, REGRESSION_FRACTION, halved_host).is_ok()
+        );
         let slower = vec![baseline("cpm_demod_m4_48k", 40.0)];
         assert_eq!(
-            compare_perf(&slower, &committed, REGRESSION_FRACTION)
+            compare_perf_calibrated(&slower, &committed, REGRESSION_FRACTION, halved_host)
                 .unwrap_err()
                 .len(),
             1
