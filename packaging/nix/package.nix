@@ -2,6 +2,7 @@
   lib,
   stdenv,
   rustPlatform,
+  aws-lc,
   pkg-config,
   cmake,
   copyDesktopItems,
@@ -15,6 +16,7 @@
   libopus,
   ffmpeg,
   soapysdr,
+  sqlite,
   vulkan-loader,
   soapyPlugins ? [ ],
   sdrplayApi ? null,
@@ -106,6 +108,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
   env.CEF_PATH = cefDir;
 
   buildInputs = [
+    aws-lc
     gtk3
     libopus
     (ffmpeg.override {
@@ -113,6 +116,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
       withVersion3 = false;
       withFdkAac = true;
     })
+    sqlite
   ];
 
   # Nix fetches nothing without a pinned hash, so the web bundle comes prebuilt: the release

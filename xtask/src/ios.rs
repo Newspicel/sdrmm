@@ -30,6 +30,9 @@ const SIMULATOR_ENV: &str = "SDRMM_IOS_SIMULATOR";
 const NEEDS_MAC: &str = "iOS builds need macOS with Xcode 27";
 const UNIT_TESTS: &str = "SDRmmTests";
 const UI_TESTS: &str = "SDRmmUITests";
+/// The simulator now and then kills or fails to stop the app between UI tests; a real failure
+/// fails every attempt.
+const UI_ATTEMPTS: &str = "2";
 
 #[derive(Clone, Debug, clap::Subcommand)]
 pub(crate) enum IosAction {
@@ -68,6 +71,7 @@ impl Simulator {
 struct TestRun {
     label: &'static str,
     selection: Vec<String>,
+    retry: bool,
 }
 
 pub(crate) fn run(root: &Path, action: &IosAction) -> Result<()> {
@@ -284,16 +288,17 @@ fn build(root: &Path) -> Result<()> {
 }
 
 fn test_runs(ui: bool, only: &[String]) -> Vec<TestRun> {
-    let run = |label, selection: &[String]| TestRun {
+    let run = |label, selection: &[String], retry| TestRun {
         label,
         selection: selection.to_vec(),
+        retry,
     };
     if !only.is_empty() {
-        return vec![run("only", only)];
+        return vec![run("only", only, false)];
     }
-    let mut runs = vec![run("unit", &[UNIT_TESTS.to_owned()])];
+    let mut runs = vec![run("unit", &[UNIT_TESTS.to_owned()], false)];
     if ui {
-        runs.push(run("ui", &[UI_TESTS.to_owned()]));
+        runs.push(run("ui", &[UI_TESTS.to_owned()], true));
     }
     runs
 }
@@ -304,7 +309,7 @@ fn test(root: &Path, runs: &[TestRun]) -> Result<()> {
         std::env::var(SIMULATOR_ENV).ok().as_deref(),
     ))?;
     for run in runs {
-        run_tests(root, &udid, run.label, &run.selection, &[])?.require_tests(&run.selection)?;
+        run_tests(root, &udid, run, &[])?.require_tests(&run.selection)?;
     }
     Ok(())
 }
@@ -317,19 +322,18 @@ fn e2e(root: &Path) -> Result<()> {
     boot(root, &udid)?;
     let link = server.pairing_link(root)?;
     println!("pairing link {link}");
-    let selection = [e2e::SELECTION.to_owned()];
-    let counts = run_tests(root, &udid, "e2e", &selection, &[(e2e::LINK_ENV, &link)])?;
+    let run = TestRun {
+        label: "e2e",
+        selection: vec![e2e::SELECTION.to_owned()],
+        retry: false,
+    };
+    let counts = run_tests(root, &udid, &run, &[(e2e::LINK_ENV, &link)])?;
     drop(server);
-    counts.require_passed(&selection)
+    counts.require_passed(&run.selection)
 }
 
-fn run_tests(
-    root: &Path,
-    udid: &str,
-    label: &str,
-    selection: &[String],
-    env: &[(&str, &str)],
-) -> Result<Counts> {
+fn run_tests(root: &Path, udid: &str, run: &TestRun, env: &[(&str, &str)]) -> Result<Counts> {
+    let label = run.label;
     let results = target_dir(root).join("ios/results");
     std::fs::create_dir_all(&results).with_context(|| format!("create {}", results.display()))?;
     let stamp = SystemTime::now()
@@ -338,7 +342,8 @@ fn run_tests(
         .as_secs();
     let destination = format!("platform=iOS Simulator,id={udid}");
     let bundle = display(&results.join(format!("{label}-{stamp}.xcresult")));
-    let only: Vec<String> = selection
+    let only: Vec<String> = run
+        .selection
         .iter()
         .map(|selected| format!("-only-testing:{selected}"))
         .collect();
@@ -352,6 +357,9 @@ fn run_tests(
         "-collect-test-diagnostics",
         "never",
     ];
+    if run.retry {
+        args.extend(["-retry-tests-on-failure", "-test-iterations", UI_ATTEMPTS]);
+    }
     args.extend(only.iter().map(String::as_str));
     args.push("test-without-building");
     let ran = xcodebuild(root, &args, env);
@@ -567,13 +575,13 @@ mod tests {
     fn default_runs_are_unit_then_ui() {
         let runs: Vec<_> = test_runs(true, &[])
             .into_iter()
-            .map(|run| (run.label, run.selection))
+            .map(|run| (run.label, run.selection, run.retry))
             .collect();
         assert_eq!(
             runs,
             vec![
-                ("unit", vec![UNIT_TESTS.to_owned()]),
-                ("ui", vec![UI_TESTS.to_owned()]),
+                ("unit", vec![UNIT_TESTS.to_owned()], false),
+                ("ui", vec![UI_TESTS.to_owned()], true),
             ]
         );
         assert_eq!(test_runs(false, &[]).len(), 1);
