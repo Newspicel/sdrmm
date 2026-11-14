@@ -278,8 +278,15 @@ jobs:
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
+          # The Git context default would drop the stamped Cargo.toml and ship 0.0.0.
+          context: .
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+      - name: Version
+        env:
+          IMAGE: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: test "$(docker run --rm "$IMAGE" --version)" = "sdrmm $VERSION"
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
