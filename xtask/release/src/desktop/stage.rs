@@ -46,7 +46,10 @@ pub fn stage(root: &Path, platform: &Platform, release: &Path, stage: &Path) -> 
     if platform.os == Os::Mac {
         let mut frameworks = vec![cef.join(mac::FRAMEWORK)];
         frameworks.extend(mac::helpers(&release.join(HELPER), stage, &main)?);
-        frameworks.extend(bundled::libraries(root, Some(&platform.triple))?);
+        frameworks.extend(mac::presigned(
+            &bundled::libraries(root, Some(&platform.triple))?,
+            stage,
+        )?);
         return Ok(Staged {
             bin_dir,
             main,

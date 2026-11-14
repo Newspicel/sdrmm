@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use super::IDENTIFIER;
 use super::stage::copy;
 use crate::pack::copy_tree;
+use crate::proc::{run, utf8};
 
 pub const FRAMEWORK: &str = "Chromium Embedded Framework.framework";
 pub const MINIMUM_SYSTEM: &str = "12.0";
@@ -25,6 +26,29 @@ pub fn helpers(helper: &Path, stage: &Path, product: &str) -> Result<Vec<PathBuf
             let name = format!("{product} Helper{suffix}");
             let identifier = format!("{IDENTIFIER}.{id}");
             bundle(&dir, &name, &identifier, helper, true)
+        })
+        .collect()
+}
+
+/// Copies the libraries into the stage with an ad-hoc signature. cargo-packager orders signing
+/// by path depth alone, so the main executable may be signed before a library beside it in
+/// `Frameworks`, and codesign refuses an unsigned one there. The packager re-signs each library
+/// with the real identity afterwards. Only x86_64 needs this: arm64 links in a signature.
+pub fn presigned(libraries: &[PathBuf], stage: &Path) -> Result<Vec<PathBuf>> {
+    let dir = stage.join("libraries");
+    std::fs::create_dir_all(&dir)?;
+    libraries
+        .iter()
+        .map(|library| {
+            let name = library.file_name().context("library has no file name")?;
+            let staged = dir.join(name);
+            copy(library, &staged)?;
+            run(
+                "codesign",
+                &["--force", "--sign", "-", utf8(&staged)?],
+                stage,
+            )?;
+            Ok(staged)
         })
         .collect()
 }
@@ -127,5 +151,23 @@ mod tests {
         let plist = std::fs::read_to_string(renderer.join("Contents/Info.plist")).unwrap();
         assert!(plist.contains("<string>dev.newspicel.sdrmm.helper.renderer</string>"));
         assert!(plist.contains("LSUIElement"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn staged_libraries_pass_codesign_verification() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = dir.path().join("libdemo.1.dylib");
+        std::fs::copy(std::env::current_exe().unwrap(), &library).unwrap();
+        std::process::Command::new("codesign")
+            .args(["--remove-signature", library.to_str().unwrap()])
+            .status()
+            .unwrap();
+        let staged = presigned(&[library], &dir.path().join("stage")).unwrap();
+        let verified = std::process::Command::new("codesign")
+            .args(["--verify", staged[0].to_str().unwrap()])
+            .status()
+            .unwrap();
+        assert!(verified.success());
     }
 }
