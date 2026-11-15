@@ -388,7 +388,111 @@ pub const SIGNALS: &[Signal] = &[
             args: &["-fy", "-i", INPUT, "-o", "null"],
             exit_codes: &[0],
             tail: true,
-            keys: parse::dsd_fme_ysf,
+            keys: parse::dsd_fme_source,
+        }],
+    },
+    Signal {
+        id: "p25",
+        name: "P25",
+        fixture: "p25_calls_48k",
+        channel: "p25",
+        offset_hz: 0.0,
+        speed_seconds: 30.0,
+        tail_seconds: 0.5,
+        cu8_rate: None,
+        unique: false,
+        decodes: Show::Hidden,
+        speed: Show::Plain,
+        noise: Ladder {
+            high_db: 20.0,
+            low_db: 0.0,
+        },
+        key: addresses,
+        references: &[Reference {
+            program: &DSD_FME,
+            format: fm(1_944.0, 48_000, Container::Wav),
+            args: &["-f1", "-i", INPUT, "-o", "null"],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::dsd_fme_p25,
+        }],
+    },
+    Signal {
+        id: "m17",
+        name: "M17",
+        fixture: "m17_calls_48k",
+        channel: "m17",
+        offset_hz: 0.0,
+        speed_seconds: 30.0,
+        tail_seconds: 0.5,
+        cu8_rate: None,
+        unique: false,
+        decodes: Show::Hidden,
+        speed: Show::Plain,
+        noise: Ladder {
+            high_db: 20.0,
+            low_db: 0.0,
+        },
+        key: callsign,
+        references: &[Reference {
+            program: &DSD_FME,
+            format: fm(2_400.0, 48_000, Container::Wav),
+            args: &["-fz", "-i", INPUT, "-o", "null"],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::dsd_fme_source,
+        }],
+    },
+    Signal {
+        id: "dstar",
+        name: "D-STAR",
+        fixture: "dstar_calls_48k",
+        channel: "dstar",
+        offset_hz: 0.0,
+        speed_seconds: 30.0,
+        tail_seconds: 0.5,
+        cu8_rate: None,
+        unique: false,
+        decodes: Show::Hidden,
+        speed: Show::Plain,
+        noise: Ladder {
+            high_db: 20.0,
+            low_db: 0.0,
+        },
+        key: header_callsign,
+        references: &[Reference {
+            program: &DSD_FME,
+            format: fm(1_200.0, 48_000, Container::Wav),
+            args: &["-fd", "-i", INPUT, "-o", "null"],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::dsd_fme_source,
+        }],
+    },
+    Signal {
+        id: "dpmr",
+        name: "dPMR",
+        fixture: "dpmr_calls_48k",
+        channel: "dpmr",
+        offset_hz: 0.0,
+        speed_seconds: 30.0,
+        tail_seconds: 0.5,
+        cu8_rate: None,
+        unique: false,
+        decodes: Show::Hidden,
+        speed: Show::Plain,
+        noise: Ladder {
+            high_db: 20.0,
+            low_db: 0.0,
+        },
+        key: addresses,
+        references: &[Reference {
+            program: &DSD_FME,
+            format: fm(1_050.0, 48_000, Container::Wav),
+            args: &["-fm", "-i", INPUT, "-o", "null"],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::dsd_fme_dpmr,
         }],
     },
 ];
@@ -440,6 +544,11 @@ fn addresses(event: &DecoderEvent) -> Option<String> {
     let frame = event.read::<sdrmm_wire::DvFrame>()?;
     let (source, destination) = (frame.source?, frame.destination?);
     Some(format!("{source} {destination}"))
+}
+
+fn header_callsign(event: &DecoderEvent) -> Option<String> {
+    let frame = event.read::<sdrmm_wire::DvFrame>()?;
+    (frame.kind == sdrmm_wire::DvFrameKind::Header).then_some(frame.source_call?)
 }
 
 fn callsign(event: &DecoderEvent) -> Option<String> {

@@ -1,4 +1,7 @@
-use std::{path::Path, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Args, ValueEnum};
@@ -109,7 +112,7 @@ fn launched(
     let work = root.join("target/compare/apps/work");
     let mut measured = Vec::new();
     for &program in programs {
-        let (tool, version) = prepare(root, program)?;
+        let (tool, version, app) = prepare(root, program)?;
         for receivers in cases(program) {
             println!("{tool} {version}: {}", merge::case_id(receivers));
             let repeated = (0..runs)
@@ -117,8 +120,8 @@ fn launched(
                     std::fs::remove_dir_all(&work).ok();
                     std::fs::create_dir_all(&work)
                         .with_context(|| format!("create {}", work.display()))?;
-                    let usage =
-                        session(root, program, &signal, receivers, &work)?.measure(timing)?;
+                    let usage = session(root, program, app.as_deref(), &signal, receivers, &work)?
+                        .measure(timing)?;
                     println!(
                         "  {:.1} % core, {:.1} MiB",
                         usage.cpu_percent, usage.peak_memory_mib
@@ -173,6 +176,7 @@ impl Session {
 fn session(
     root: &Path,
     program: Program,
+    app: Option<&Path>,
     signal: &Signal,
     receivers: usize,
     work: &Path,
@@ -183,7 +187,12 @@ fn session(
             feeder: None,
         }),
         Program::SdrmmApp => Ok(Session {
-            running: vec![desktop::launch(root, signal, receivers, work)?],
+            running: vec![desktop::launch(
+                app.context("the desktop app was not built")?,
+                signal,
+                receivers,
+                work,
+            )?],
             feeder: None,
         }),
         Program::Sdrpp => {
@@ -200,23 +209,24 @@ fn session(
     }
 }
 
-fn prepare(root: &Path, program: Program) -> Result<(&'static str, String)> {
+/// The tool's name, its version and, for the desktop app, the staged executable to start.
+fn prepare(root: &Path, program: Program) -> Result<(&'static str, String, Option<PathBuf>)> {
     match program {
         Program::Sdrmm => {
             sdrmm::build(root)?;
-            Ok((sdrmm::HEADLESS, report::version(root)?))
+            Ok((sdrmm::HEADLESS, report::version(root)?, None))
         }
         Program::SdrmmApp => {
-            desktop::build(root)?;
-            Ok((desktop::TOOL, report::version(root)?))
+            let app = desktop::build(root)?;
+            Ok((desktop::TOOL, report::version(root)?, Some(app)))
         }
         Program::Sdrpp => {
             sdrpp::install(root)?;
-            Ok((sdrpp::TOOL, sdrpp::version(root)?))
+            Ok((sdrpp::TOOL, sdrpp::version(root)?, None))
         }
         Program::Gqrx => {
             gqrx::install()?;
-            Ok((gqrx::TOOL, gqrx::version()?))
+            Ok((gqrx::TOOL, gqrx::version()?, None))
         }
     }
 }

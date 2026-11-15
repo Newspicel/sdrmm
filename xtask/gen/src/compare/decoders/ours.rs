@@ -2,7 +2,7 @@ use std::{thread, time::Duration};
 
 use anyhow::{Context, Result, anyhow, bail};
 use sdrmm_channels::{ChannelCtx, ChannelFilter, ChannelOutputs, ChannelRx};
-use sdrmm_dsp::Ddc;
+use sdrmm_dsp::{Ddc, Decimator, design_lowpass};
 use sdrmm_wire::{ChannelParams, ChannelSettings, Squelch};
 
 use super::{convert::Fixture, signals::Signal, usage};
@@ -50,6 +50,18 @@ impl FrontEnd {
 
     pub fn filter(&self) -> Result<ChannelFilter> {
         Ok(sdrmm_channels::channel_filter(&self.settings.params)?)
+    }
+
+    /// What a reference hears: the signal's occupied band, not our decoder's own filter, which
+    /// may leave room for its AFC.
+    pub fn reference_filter(&self) -> ChannelFilter {
+        const TAPS: usize = 129;
+        let (low, high) = sdrmm_channels::occupied_band(&self.settings.params);
+        let half = low.abs().max(high.abs());
+        ChannelFilter::Symmetric(Decimator::new(
+            &design_lowpass(TAPS, half / self.input_rate),
+            1,
+        ))
     }
 }
 

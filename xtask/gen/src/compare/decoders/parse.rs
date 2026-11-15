@@ -122,10 +122,26 @@ pub fn dsd_fme_nxdn(text: &str) -> Vec<String> {
         .collect()
 }
 
-pub fn dsd_fme_ysf(text: &str) -> Vec<String> {
+pub fn dsd_fme_source(text: &str) -> Vec<String> {
     strip_ansi(text)
         .lines()
         .filter_map(|line| word_after(line, "SRC:"))
+        .collect()
+}
+
+pub fn dsd_fme_p25(text: &str) -> Vec<String> {
+    strip_ansi(text)
+        .lines()
+        .filter_map(|line| line.split_once("Group Voice Channel User - Group "))
+        .map(|(_, call)| call.trim().to_owned())
+        .collect()
+}
+
+pub fn dsd_fme_dpmr(text: &str) -> Vec<String> {
+    strip_ansi(text)
+        .lines()
+        .filter(|line| line.contains("TG=") && line.contains("Src=") && !line.contains("CRC ERR"))
+        .map(|line| line.trim().to_owned())
         .collect()
 }
 
@@ -224,8 +240,14 @@ mod tests {
     }
 
     #[test]
-    fn dsd_fme_ysf_keeps_source_calls() {
+    fn dsd_fme_keeps_source_calls() {
         let out = "Sync: +YSF FN: 2/6 SRC: DL1ABC    \nSync: +YSF FN: 1/6 DST: ALL SRC: DL1ABC U/L: DB0ABC\n";
-        assert_eq!(dsd_fme_ysf(out), ["DL1ABC", "DL1ABC"]);
+        assert_eq!(dsd_fme_source(out), ["DL1ABC", "DL1ABC"]);
+    }
+
+    #[test]
+    fn dsd_fme_p25_keeps_the_group_and_source() {
+        let out = "Sync: +P25p1 LDU1  Group Voice Channel User - Group 4609 Source 11259375 \nSync: +P25p1 LDU2\n";
+        assert_eq!(dsd_fme_p25(out), ["4609 Source 11259375"]);
     }
 }

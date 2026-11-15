@@ -5,9 +5,9 @@ use anyhow::{Context, Result};
 use super::running::Running;
 
 #[cfg(target_os = "macos")]
-use macos::{Control, find, raise};
+use macos::{Control, expose, find, raise};
 #[cfg(not(target_os = "macos"))]
-use other::{Control, find, raise};
+use other::{Control, expose, find, raise};
 
 const TIMEOUT: Duration = Duration::from_secs(60);
 const PLAY: Control = Control::toggle("Play");
@@ -18,7 +18,7 @@ pub fn listen(running: &mut Running, receivers: usize) -> Result<()> {
     let pid = running.pid();
     let mut seen = String::from("nothing");
     let shown = running.wait_for("show every input on the speaker", TIMEOUT, || {
-        let found = find(pid, PLAY);
+        let found = expose(pid, true).and_then(|()| find(pid, PLAY));
         seen = match &found {
             Ok(found) => format!("{} Play toggles", found.len()),
             Err(err) => format!("{err:#}"),
@@ -33,7 +33,8 @@ pub fn listen(running: &mut Running, receivers: usize) -> Result<()> {
     running.wait_for("play every input", TIMEOUT, || {
         find(pid, STOP).is_ok_and(|found| found.len() == receivers)
             && find(pid, RESUME).is_ok_and(|found| found.is_empty())
-    })
+    })?;
+    expose(pid, false)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -66,6 +67,10 @@ mod other {
 
     pub fn raise(_: u32) -> Result<()> {
         bail!("raising a window needs macOS Accessibility")
+    }
+
+    pub fn expose(_: u32, _: bool) -> Result<()> {
+        bail!("reading controls needs macOS Accessibility")
     }
 }
 
@@ -127,6 +132,23 @@ mod macos {
         ensure!(
             error == AXError::Success,
             "raising the app failed: {error:?}"
+        );
+        Ok(())
+    }
+
+    /// Asks the app for its accessibility tree the way UI automation does: Chromium builds it
+    /// only on request. Asking again with `false` stops the work it adds before measuring.
+    pub fn expose(pid: u32, on: bool) -> Result<()> {
+        let app = application(pid)?;
+        let error = unsafe {
+            app.set_attribute_value(
+                &CFString::from_static_str("AXManualAccessibility"),
+                CFBoolean::new(on),
+            )
+        };
+        ensure!(
+            matches!(error, AXError::Success | AXError::AttributeUnsupported),
+            "asking the app for its accessibility tree failed: {error:?}"
         );
         Ok(())
     }

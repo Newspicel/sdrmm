@@ -273,7 +273,7 @@ impl AudioChain {
         let ratio = f64::from(rate) / source_rate;
         Ok(Self {
             ddc: tuned.then(|| front.ddc(fixture.rate)).transpose()?,
-            filter: tuned.then(|| front.filter()).transpose()?,
+            filter: tuned.then(|| front.reference_filter()),
             demod,
             fm,
             carrier: fixture.mean_magnitude().max(f32::MIN_POSITIVE),

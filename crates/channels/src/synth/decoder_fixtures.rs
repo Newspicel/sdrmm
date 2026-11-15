@@ -138,6 +138,30 @@ pub const RECIPES: &[Recipe] = &[
         iq: || Ok(ysf_callsigns()),
     },
     Recipe {
+        stem: "p25_calls_48k",
+        rate: AUDIO,
+        note: "p25 channel at 0 Hz -> NAC 293, talkgroup 4609 from unit 11259375, eight calls",
+        iq: || Ok(calls(|_| dv::p25::transmission(0x125, AUDIO))),
+    },
+    Recipe {
+        stem: "m17_calls_48k",
+        rate: AUDIO,
+        note: "m17 channel at 0 Hz -> DL1ABA to DL1ABH, each to ALL, eight calls",
+        iq: || Ok(calls(m17_call)),
+    },
+    Recipe {
+        stem: "dstar_calls_48k",
+        rate: AUDIO,
+        note: "dstar channel at 0 Hz -> DL1ABA to DL1ABH, each to CQCQCQ via DB0ABC B, eight calls",
+        iq: || Ok(calls(dstar_call)),
+    },
+    Recipe {
+        stem: "dpmr_calls_48k",
+        rate: AUDIO,
+        note: "dpmr channel at 0 Hz -> units 1193040 to 1193047, each to 65535, eight calls",
+        iq: || Ok(calls(dpmr_call)),
+    },
+    Recipe {
         stem: "dect_base_2m304",
         rate: DECT_RATE,
         note: "dect channel -> RFPI 01234D5E6D, carrier 4, standard authentication and ciphering",
@@ -355,6 +379,45 @@ fn acars_downlink() -> Vec<Complex<f32>> {
         more: false,
     };
     at(acars::transmission(&block, NARROW), -40_000.0, NARROW)
+}
+
+/// Eight keyed calls with dead air between, so a benchmark in noise scores many calls, not one.
+fn calls(call: fn(usize) -> Vec<Complex<f32>>) -> Vec<Complex<f32>> {
+    const CALLS: usize = 8;
+    const GAP_SECONDS: f64 = 0.3;
+    let gap = vec![Complex::default(); (GAP_SECONDS * AUDIO) as usize];
+    let mut iq = gap.clone();
+    for index in 0..CALLS {
+        iq.extend(call(index));
+        iq.extend_from_slice(&gap);
+    }
+    iq
+}
+
+fn caller(index: usize) -> String {
+    format!("DL1AB{}", char::from(b'A' + index as u8))
+}
+
+fn m17_call(index: usize) -> Vec<Complex<f32>> {
+    const FRAMES: usize = 12;
+    let voice = [dv::m17::CODEC2_SILENCE_PAIR; FRAMES];
+    dv::m17::transmission_with_voice("ALL", &caller(index), &voice, AUDIO)
+}
+
+fn dpmr_call(index: usize) -> Vec<Complex<f32>> {
+    let call = dv::dpmr::Call {
+        own: 0x12_3450 + index as u32,
+        ..dv::dpmr::Call::default()
+    };
+    dv::dpmr::transmission(&call, AUDIO)
+}
+
+fn dstar_call(index: usize) -> Vec<Complex<f32>> {
+    let call = dv::dstar::Call {
+        mycall: caller(index),
+        ..dv::dstar::Call::default()
+    };
+    dv::dstar::transmission(&call, AUDIO)
 }
 
 fn ysf_callsigns() -> Vec<Complex<f32>> {

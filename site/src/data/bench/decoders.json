@@ -2,7 +2,7 @@
   "machine": {
     "cpu": "Apple M4 Max",
     "os": "macOS 27.0.1",
-    "date": "2026-10-06"
+    "date": "2026-11-15"
   },
   "groups": [
     {
@@ -14,18 +14,18 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 68.50558491781044
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 70.84912678451238
         },
         {
           "tool": "dump1090-fa",
           "version": "11.1",
-          "value": 74.48290244974268
+          "value": 74.47874190509177
         },
         {
           "tool": "readsb",
-          "version": "3.16.17",
-          "value": 77.46713456815942
+          "version": "3.16.21",
+          "value": 76.26659751828493
         }
       ]
     },
@@ -39,7 +39,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
+          "version": "2.4.4-9-g798253a1-dirty",
           "value": 67.7579365079365
         },
         {
@@ -49,7 +49,7 @@
         },
         {
           "tool": "readsb",
-          "version": "3.16.17",
+          "version": "3.16.21",
           "value": 56.25
         }
       ]
@@ -63,13 +63,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 182.3812439479947
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 197.53106227154507
         },
         {
           "tool": "AIS-catcher",
           "version": "0.70",
-          "value": 154.46354429380744
+          "value": 154.1493521058271
         }
       ]
     },
@@ -83,7 +83,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
+          "version": "2.4.4-9-g798253a1-dirty",
           "value": 54.166666666666664
         },
         {
@@ -102,18 +102,18 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 830.8817770258635
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 945.133442762476
         },
         {
           "tool": "Dire Wolf",
           "version": "1.8.1",
-          "value": 34.20759698741488
+          "value": 34.17143635868085
         },
         {
           "tool": "multimon-ng",
           "version": "1.6.2",
-          "value": 6917.506712696023
+          "value": 6988.599020337818
         }
       ]
     },
@@ -127,13 +127,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
+          "version": "2.4.4-9-g798253a1-dirty",
           "value": 81.25
         },
         {
           "tool": "Dire Wolf",
           "version": "1.8.1",
-          "value": 81.25
+          "value": 77.08333333333333
         },
         {
           "tool": "multimon-ng",
@@ -151,13 +151,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 972.0894847048572
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 1028.8604519057237
         },
         {
           "tool": "multimon-ng",
           "version": "1.6.2",
-          "value": 19142.3179160001
+          "value": 18313.954671221527
         }
       ]
     },
@@ -171,7 +171,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
+          "version": "2.4.4-9-g798253a1-dirty",
           "value": 72.91666666666667
         },
         {
@@ -190,13 +190,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 786.0639257681324
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 778.6861665632773
         },
         {
           "tool": "multimon-ng",
           "version": "1.6.2",
-          "value": 5022.048032765982
+          "value": 4769.584307116579
         }
       ]
     },
@@ -210,8 +210,8 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 91.66666666666667
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 89.58333333333333
         },
         {
           "tool": "multimon-ng",
@@ -229,13 +229,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 468.42576154318095
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 469.46005833823637
         },
         {
           "tool": "multimon-ng",
           "version": "1.6.2",
-          "value": 3494.752047342363
+          "value": 3535.9011833480995
         }
       ]
     },
@@ -249,7 +249,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
+          "version": "2.4.4-9-g798253a1-dirty",
           "value": 70.83333333333333
         },
         {
@@ -268,7 +268,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
+          "version": "2.4.4-9-g798253a1-dirty",
           "value": 2.0
         },
         {
@@ -287,13 +287,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 2350.0070254320185
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 2603.810792343846
         },
         {
           "tool": "acarsdec",
           "version": "3.7",
-          "value": 4333.338131359809
+          "value": 4312.913670095679
         }
       ]
     },
@@ -307,13 +307,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
+          "version": "2.4.4-9-g798253a1-dirty",
           "value": 51.041666666666664
         },
         {
           "tool": "acarsdec",
           "version": "3.7",
-          "value": 40.625
+          "value": 28.125
         }
       ]
     },
@@ -327,7 +327,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
+          "version": "2.4.4-9-g798253a1-dirty",
           "value": 21.0
         },
         {
@@ -347,13 +347,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 45.538446592510034
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 48.54604592455947
         },
         {
           "tool": "ft8_lib",
           "version": "9fec6ca",
-          "value": 1151.2779184892524
+          "value": 1153.6686663583753
         }
       ]
     },
@@ -367,7 +367,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
+          "version": "2.4.4-9-g798253a1-dirty",
           "value": 55.8531746031746
         },
         {
@@ -387,8 +387,8 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 5.0
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 6.0
         },
         {
           "tool": "dsd-fme",
@@ -406,13 +406,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 368.7324520707938
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 426.0592305871547
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
-          "value": 33.472839962633095
+          "value": 32.83896031422396
         }
       ]
     },
@@ -426,8 +426,8 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 80.83333333333333
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 90.97222222222223
         },
         {
           "tool": "dsd-fme",
@@ -445,13 +445,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 424.1175322955578
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 508.4493041749725
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
-          "value": 42.04270267955447
+          "value": 40.11093216228748
         }
       ]
     },
@@ -465,7 +465,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
+          "version": "2.4.4-9-g798253a1-dirty",
           "value": 66.66666666666667
         },
         {
@@ -484,13 +484,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
-          "value": 383.9818666197497
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 455.34117664588615
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
-          "value": 53.075089236861764
+          "value": 49.801526506051204
         }
       ]
     },
@@ -504,13 +504,169 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.1.0-8-gee242c51-dirty",
+          "version": "2.4.4-9-g798253a1-dirty",
           "value": 83.33333333333333
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
           "value": 68.75
+        }
+      ]
+    },
+    {
+      "id": "p25-speed",
+      "subject": "P25",
+      "title": "P25 speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 514.2788628194227
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 52.92965991401479
+        }
+      ]
+    },
+    {
+      "id": "p25-noise",
+      "subject": "P25",
+      "title": "P25 in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 20 to 0 dB.",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 84.89583333333333
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 77.08333333333333
+        }
+      ]
+    },
+    {
+      "id": "m17-speed",
+      "subject": "M17",
+      "title": "M17 speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 487.13054543352945
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 61.95749074904438
+        }
+      ]
+    },
+    {
+      "id": "m17-noise",
+      "subject": "M17",
+      "title": "M17 in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 20 to 0 dB.",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 98.69791666666667
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 51.785714285714285
+        }
+      ]
+    },
+    {
+      "id": "dstar-speed",
+      "subject": "D-STAR",
+      "title": "D-STAR speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 181.7528872617246
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 57.57671399957711
+        }
+      ]
+    },
+    {
+      "id": "dstar-noise",
+      "subject": "D-STAR",
+      "title": "D-STAR in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 20 to 0 dB.",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 93.22916666666667
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 83.33333333333333
+        }
+      ]
+    },
+    {
+      "id": "dpmr-speed",
+      "subject": "dPMR",
+      "title": "dPMR speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 557.7143618514302
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 50.77979449265307
+        }
+      ]
+    },
+    {
+      "id": "dpmr-noise",
+      "subject": "dPMR",
+      "title": "dPMR in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 20 to 0 dB.",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 91.66666666666667
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 86.80555555555556
         }
       ]
     }

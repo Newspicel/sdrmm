@@ -107,11 +107,17 @@ pub fn package(root: &Path, target: Option<&str>, formats: &str) -> Result<()> {
 
 /// Builds the app as a runnable bundle and starts it, the way `cargo run` would.
 pub fn run(root: &Path) -> Result<()> {
+    let exe = runnable_app(root)?;
+    run_with_env(utf8(&exe)?, &[], root, &[])
+}
+
+/// Builds the app and stages it the way it runs here: inside its bundle on macOS, beside
+/// Chromium elsewhere. Returns the executable to start.
+pub fn runnable_app(root: &Path) -> Result<PathBuf> {
     let platform = build(root, None)?;
     let release = release_dir(root, None);
     let stage = stage::fresh(&release.join("desktop"))?;
-    let exe = stage::runnable(root, &platform, &release, &stage)?;
-    run_with_env(utf8(&exe)?, &[], root, &[])
+    stage::runnable(root, &platform, &release, &stage)
 }
 
 /// Where `cef-dll-sys` downloads Chromium, shared by every build of the workspace. Outside

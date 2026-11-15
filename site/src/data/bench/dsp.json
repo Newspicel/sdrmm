@@ -2,7 +2,7 @@
   "machine": {
     "cpu": "Apple M4 Max",
     "os": "macOS 27.0.1",
-    "date": "2026-10-04"
+    "date": "2026-11-15"
   },
   "groups": [
     {
@@ -12,11 +12,6 @@
       "unit": "Msps",
       "better": "higher",
       "results": [
-        {
-          "tool": "SDRmm",
-          "version": "nightly-34-gfca2368b",
-          "value": 199.313525
-        },
         {
           "tool": "GNU Radio",
           "version": "3.10.12.0 (VOLK 3.3.0)",
@@ -31,6 +26,11 @@
           "tool": "FutureSDR",
           "version": "futuredsp 0.8.0",
           "value": 72.723086
+        },
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 214.64762
         }
       ]
     },
@@ -41,11 +41,6 @@
       "unit": "Msps",
       "better": "higher",
       "results": [
-        {
-          "tool": "SDRmm",
-          "version": "nightly-34-gfca2368b",
-          "value": 734.216582
-        },
         {
           "tool": "GNU Radio",
           "version": "3.10.12.0 (VOLK 3.3.0)",
@@ -60,6 +55,11 @@
           "tool": "FutureSDR",
           "version": "futuredsp 0.8.0",
           "value": 280.714276
+        },
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 771.59979
         }
       ]
     },
@@ -71,11 +71,6 @@
       "better": "higher",
       "note": "Each library's default filter design.",
       "results": [
-        {
-          "tool": "SDRmm",
-          "version": "nightly-34-gfca2368b",
-          "value": 187.360724
-        },
         {
           "tool": "GNU Radio",
           "version": "3.10.12.0 (VOLK 3.3.0)",
@@ -90,6 +85,11 @@
           "tool": "FutureSDR",
           "version": "futuredsp 0.8.0",
           "value": 115.216525
+        },
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 174.886844
         }
       ]
     },
@@ -100,11 +100,6 @@
       "unit": "Msps",
       "better": "higher",
       "results": [
-        {
-          "tool": "SDRmm",
-          "version": "nightly-34-gfca2368b",
-          "value": 5028.105269
-        },
         {
           "tool": "GNU Radio",
           "version": "3.10.12.0 (VOLK 3.3.0)",
@@ -119,6 +114,11 @@
           "tool": "FutureSDR",
           "version": "futuredsp 0.8.0",
           "value": 637.346448
+        },
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 4916.002511
         }
       ]
     },
@@ -130,11 +130,6 @@
       "better": "higher",
       "note": "Each library's own chain, same passband.",
       "results": [
-        {
-          "tool": "SDRmm",
-          "version": "nightly-34-gfca2368b",
-          "value": 1257.077319
-        },
         {
           "tool": "GNU Radio",
           "version": "3.10.12.0 (VOLK 3.3.0)",
@@ -149,6 +144,11 @@
           "tool": "FutureSDR",
           "version": "futuredsp 0.8.0",
           "value": 318.750419
+        },
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 1267.259054
         }
       ]
     },
@@ -159,11 +159,6 @@
       "unit": "Msps",
       "better": "higher",
       "results": [
-        {
-          "tool": "SDRmm",
-          "version": "nightly-34-gfca2368b",
-          "value": 602.692124
-        },
         {
           "tool": "GNU Radio",
           "version": "3.10.12.0 (VOLK 3.3.0)",
@@ -178,6 +173,11 @@
           "tool": "FFTW",
           "version": "3.3.11",
           "value": 380.642889
+        },
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 641.379922
         }
       ]
     },
@@ -189,11 +189,6 @@
       "better": "higher",
       "results": [
         {
-          "tool": "SDRmm",
-          "version": "nightly-34-gfca2368b",
-          "value": 1234.908986
-        },
-        {
           "tool": "GNU Radio",
           "version": "3.10.12.0 (VOLK 3.3.0)",
           "value": 291.443144
@@ -202,6 +197,11 @@
           "tool": "liquid-dsp",
           "version": "1.8.3",
           "value": 344.855416
+        },
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-9-g798253a1-dirty",
+          "value": 1209.126979
         }
       ]
     }

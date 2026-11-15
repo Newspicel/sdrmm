@@ -1,6 +1,10 @@
-use std::{path::Path, process::Command, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+    time::Duration,
+};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 
 use super::{accessibility, disclaim, running::Running, sdrmm, signal::Signal};
 
@@ -8,25 +12,16 @@ pub const TOOL: &str = "SDRmm app";
 
 const IDENTIFIER: &str = "dev.newspicel.sdrmm";
 
-pub fn build(root: &Path) -> Result<()> {
-    crate::web_build(root)?;
-    let status = Command::new("cargo")
-        .args(["build", "-p", "sdrmm-desktop", "--release"])
-        .current_dir(root)
-        .status()
-        .context("run cargo build")?;
-    ensure!(
-        status.success(),
-        "cargo build -p sdrmm-desktop --release failed"
-    );
-    Ok(())
+/// The app as users run it: Chromium only starts from inside the staged bundle.
+pub fn build(root: &Path) -> Result<PathBuf> {
+    xtask_release::desktop::runnable_app(root)
 }
 
-pub fn launch(root: &Path, signal: &Signal, receivers: usize, work: &Path) -> Result<Running> {
+pub fn launch(app: &Path, signal: &Signal, receivers: usize, work: &Path) -> Result<Running> {
     let home = work.join("home");
     link_recordings(signal, &home)?;
     let process = disclaim::spawn(
-        &root.join("target/release/sdrmm-desktop"),
+        app,
         &[],
         &[("HOME", home.as_os_str())],
         &work.join("desktop.log"),
