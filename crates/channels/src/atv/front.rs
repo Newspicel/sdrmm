@@ -27,7 +27,7 @@ const IF_HALF_WIDTHS_HZ: [f64; 5] = [
 ];
 const IF_TAPS: usize = 63;
 /// Share of the rate a filter must stay under to be worth running.
-const IF_MAX_SHARE: f64 = 0.3;
+const IF_MAX_SHARE: f64 = 0.4;
 /// Bins of the spectrum the occupied band is read from, and samples between looks.
 const IF_BINS: usize = 256;
 const IF_EVERY: usize = 2_048;
