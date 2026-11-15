@@ -7,6 +7,7 @@ use sdrmm_dsp::blackman_harris;
 use crate::runtime::Watch;
 
 pub(crate) use cpu::CpuSpectrum;
+use cpu::cpu_budget;
 
 mod cpu;
 mod history;
@@ -15,8 +16,8 @@ mod history;
 const GPU_MIN_FFT_SIZE: usize = 32_768;
 const TARGET_FPS: f64 = 30.0;
 const MAX_AVERAGES: u32 = 64;
-/// Transformed samples per second the DSP thread spends on the display. At 245.76 MS/s this
-/// keeps the 16 averages a frame the CPU path always had; slower rates get overlap for free.
+/// Most transformed samples per second the DSP thread spends on the display, however fast the
+/// core. At 245.76 MS/s this keeps the 16 averages a frame the CPU path always had.
 const CPU_BUDGET: f64 = 128e6;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -84,6 +85,7 @@ impl Cadence {
 
 pub(crate) struct SpectrumPlan {
     size: usize,
+    cpu_budget: f64,
     #[cfg(feature = "gpu-fft")]
     gpu: Option<(Arc<gpu::Context>, f64)>,
 }
@@ -95,13 +97,20 @@ impl SpectrumPlan {
             let gpu = should_use_gpu(size, lanes)
                 .then(|| gpu_context(size, lanes))
                 .flatten();
-            Self { size, gpu }
+            Self {
+                size,
+                cpu_budget: cpu_budget(size),
+                gpu,
+            }
         }
 
         #[cfg(not(feature = "gpu-fft"))]
         {
             let _ = lanes;
-            Self { size }
+            Self {
+                size,
+                cpu_budget: cpu_budget(size),
+            }
         }
     }
 
@@ -117,7 +126,7 @@ impl SpectrumPlan {
                     return SpectrumAnalyzer::Gpu {
                         stream: Some(Box::new(stream)),
                         budget: *budget,
-                        fallback: CpuSpectrum::new(self.size),
+                        fallback: CpuSpectrum::new(self.size, self.cpu_budget),
                     };
                 }
                 Err(error) => {
@@ -126,7 +135,7 @@ impl SpectrumPlan {
             }
         }
 
-        SpectrumAnalyzer::Cpu(CpuSpectrum::new(self.size))
+        SpectrumAnalyzer::Cpu(CpuSpectrum::new(self.size, self.cpu_budget))
     }
 }
 
@@ -168,13 +177,17 @@ impl SpectrumAnalyzer {
 
     fn viewed_cadence(&self, sample_rate: f64, size: usize) -> Cadence {
         match self {
-            Self::Cpu(_) => Cadence::new(sample_rate, size, CPU_BUDGET),
+            Self::Cpu(spectrum) => Cadence::new(sample_rate, size, spectrum.budget()),
             #[cfg(feature = "gpu-fft")]
-            Self::Gpu { stream, budget, .. } => {
+            Self::Gpu {
+                stream,
+                budget,
+                fallback,
+            } => {
                 let budget = if stream.is_some() {
                     *budget
                 } else {
-                    CPU_BUDGET
+                    fallback.budget()
                 };
                 Cadence::new(sample_rate, size, budget)
             }
