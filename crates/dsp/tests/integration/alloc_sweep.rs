@@ -1,4 +1,6 @@
-use sdrmm_dsp::sweep::{HeadingSample, LevelSample, SweepBearing, SweepConfig, SweepEstimator};
+use sdrmm_dsp::array::sweep::{
+    HeadingSample, LevelSample, SweepBearing, SweepConfig, SweepEstimator,
+};
 use sdrmm_test_support::assert_no_alloc;
 
 fn heading(t: f64) -> f64 {

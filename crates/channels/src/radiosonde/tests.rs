@@ -3,6 +3,7 @@ use crate::radiosonde::RadiosondeFrame;
 use crate::radiosonde::RadiosondeParams;
 use crate::radiosonde::SondeType;
 use num_complex::Complex;
+use sdrmm_dsp::math::geodesy::{WGS84_A_M, WGS84_E2};
 use sdrmm_wire::ChannelParams;
 
 use super::{
@@ -543,9 +544,9 @@ fn wrong_params_and_rate_are_rejected() {
 #[test]
 fn ecef_converts_to_geodetic_and_local_velocity() {
     let (lat, lon, alt) = (48.0f64, 11.0f64, 5_000.0);
-    let e2 = 1.0 - (6_356_752.314_245_18f64 / 6_378_137.0).powi(2);
+    let e2 = WGS84_E2;
     let (phi, lam) = (lat.to_radians(), lon.to_radians());
-    let n = 6_378_137.0 / (1.0 - e2 * phi.sin().powi(2)).sqrt();
+    let n = WGS84_A_M / (1.0 - e2 * phi.sin().powi(2)).sqrt();
     let x = (n + alt) * phi.cos() * lam.cos();
     let y = (n + alt) * phi.cos() * lam.sin();
     let z = (n * (1.0 - e2) + alt) * phi.sin();

@@ -7,9 +7,9 @@ use crate::dv::NxdnParams;
 use crate::dv::VoiceKey;
 use num_complex::Complex;
 use sdrmm_dsp::{
-    Viterbi5, crc_msb_bits,
-    fec::conv::{CONFIDENT, ERASURE},
-    word_msb,
+    Viterbi5,
+    coding::fec::conv::{CONFIDENT, ERASURE},
+    crc_msb_bits, word_msb,
 };
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{

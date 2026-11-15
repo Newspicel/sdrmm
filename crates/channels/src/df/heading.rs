@@ -1,4 +1,4 @@
-use sdrmm_dsp::special::circular_mean_deg;
+use sdrmm_dsp::math::special::circular_mean_deg;
 
 use crate::array_processor::Pose;
 

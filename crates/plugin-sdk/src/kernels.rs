@@ -112,7 +112,7 @@ pub struct Fft {
     #[cfg(target_arch = "wasm32")]
     handle: i32,
     #[cfg(not(target_arch = "wasm32"))]
-    inner: sdrmm_dsp::fft::Transform,
+    inner: sdrmm_dsp::math::fft::Transform,
 }
 
 impl Fft {
@@ -140,9 +140,9 @@ impl Fft {
         Ok(Self {
             len,
             inner: if inverse {
-                sdrmm_dsp::fft::Transform::inverse(len)
+                sdrmm_dsp::math::fft::Transform::inverse(len)
             } else {
-                sdrmm_dsp::fft::Transform::forward(len)
+                sdrmm_dsp::math::fft::Transform::forward(len)
             },
         })
     }

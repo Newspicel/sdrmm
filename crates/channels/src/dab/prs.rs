@@ -2,7 +2,7 @@ use std::{f64::consts::TAU, ops::RangeInclusive};
 
 use crate::dab::DabTransmissionMode;
 use num_complex::Complex;
-use sdrmm_dsp::fft::Transform;
+use sdrmm_dsp::math::fft::Transform;
 
 use super::{mode::Mode, ofdm::reference_symbol_for_mode};
 

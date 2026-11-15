@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use sdrmm_modem_test_support::ber::{
     Curve,
     catalog::{
@@ -14,18 +12,13 @@ use sdrmm_modem_test_support::ber::{
     },
     e2e::{Payloads, channel_at_margin, loopback},
     impair::{Cfo, ChannelSpec, ClockError, Drift, TimingOffset},
-    limits::{self, CompositeProfile, Criterion, LimitRow, LimitsTable},
+    limits::{self, CompositeProfile, LimitRow, LimitsTable},
     sweep::{self, Link},
     theory,
 };
 
-fn baseline_path(stem: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
-}
-
-fn load_curve(stem: &str) -> Curve {
-    sweep::load_json(&baseline_path(stem)).unwrap()
-}
+use crate::baselines::{baseline_path, load_curve};
+use crate::limit_rows::axis_row;
 
 fn oracle(m: u32) -> impl Fn(f64) -> f64 {
     move |db| theory::mfsk_noncoherent_ber(m, db)
@@ -127,23 +120,6 @@ fn mfsk8_loops_back_clean_at_6db_margin() {
 
 fn probe(link: &Link, spec: &ChannelSpec, op_db: f64) -> f64 {
     limits::measure_ber(link, spec, op_db, M4_SEED ^ 0xbe5, 150, 40_000)
-}
-
-fn axis_row(
-    axis: &str,
-    unit: &str,
-    max_axis: f64,
-    tolerance: f64,
-    ber_at: impl Fn(f64) -> f64,
-) -> LimitRow {
-    limits::measure_axis_row(
-        axis,
-        unit,
-        Criterion::FailureBer,
-        max_axis,
-        tolerance,
-        ber_at,
-    )
 }
 
 const PROFILE_GRID: [f64; 4] = [8.0, 9.0, 10.0, 11.0];

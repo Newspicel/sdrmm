@@ -3,7 +3,7 @@ use sdrmm_compare_dsp::{
     CUTOFF, DDC_INPUT_RATE, DDC_OFFSET, DDC_OUTPUT_RATE, DECIMATION, FFT, RESAMPLE_RATIO, TAPS,
     Timing, keep, ratio, run, signal, taps,
 };
-use sdrmm_dsp::{Ddc, Decimator, FmDemod, FracResampler, Nco, fft::FftPair};
+use sdrmm_dsp::{Ddc, Decimator, FmDemod, FracResampler, Nco, math::fft::FftPair};
 
 fn filters(timing: &Timing, input: &[Complex32]) {
     let taps = taps(TAPS, CUTOFF);

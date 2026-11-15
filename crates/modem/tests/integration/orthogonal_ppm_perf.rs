@@ -16,6 +16,8 @@ use sdrmm_modem_test_support::ber::{
     },
 };
 
+use crate::baselines::baseline_path;
+
 const MFSK_RATE: f64 = orthogonal::RATE;
 const MFSK_SYMBOLS: usize = 1_200;
 const PPM_SYMBOLS: usize = 2_048;
@@ -80,10 +82,6 @@ fn measured_ppm() -> Vec<PerfBaseline> {
         }
     })
     .collect()
-}
-
-fn path(stem: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
 }
 
 #[test]
@@ -161,7 +159,7 @@ fn write_phase5_perf_baselines() {
         (orthogonal::PERF, measured_mfsk()),
         (ppm_catalog::PERF, measured_ppm()),
     ] {
-        let path = path(stem);
+        let path = baseline_path(stem);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         save_baselines(&path, &rows).unwrap();
         for row in &rows {
@@ -185,7 +183,7 @@ fn compare_phase5_perf_baselines() {
         (ppm_catalog::PERF, measured_ppm()),
     ] {
         let committed = committed_for_host(
-            &load_baselines(&path(stem)).unwrap(),
+            &load_baselines(&baseline_path(stem)).unwrap(),
             stem,
             "cargo test -p sdrmm-modem --release --test integration orthogonal_ppm_perf::write_phase5_perf_baselines -- --ignored",
         );

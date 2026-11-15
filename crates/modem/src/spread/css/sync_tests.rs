@@ -1,10 +1,12 @@
 use num_complex::Complex;
+use sdrmm_dsp::Decibels;
 use sdrmm_modem_test_support::ber::{
     impair::{Cfo, ClockError, Impairment, TimingOffset},
     rng::Rng,
 };
 
 use super::{CssDemod, CssMod, CssParams};
+use crate::testutil::draws;
 
 const PREAMBLE: usize = 16;
 
@@ -15,13 +17,6 @@ const LEAD: usize = 23;
 const EU_CARRIER_HZ: f64 = 868.1e6;
 
 const BANDWIDTH_HZ: f64 = 125e3;
-
-fn symbols(n: usize, count: usize, seed: u64) -> Vec<u32> {
-    let mut rng = Rng::new(seed);
-    (0..count)
-        .map(|_| (rng.next_u64() % n as u64) as u32)
-        .collect()
-}
 
 struct Burst {
     params: CssParams,
@@ -34,8 +29,8 @@ impl Burst {
     fn new(spreading_factor: u32, seed: u64) -> Self {
         let params = CssParams::new(spreading_factor);
         let n = params.chips();
-        let preamble = symbols(n, PREAMBLE, seed);
-        let payload = symbols(n, PAYLOAD, seed ^ 0xa5a5);
+        let preamble = draws(PREAMBLE, n, seed);
+        let payload = draws(PAYLOAD, n, seed ^ 0xa5a5);
         let mut wave = vec![Complex::new(0.0, 0.0); LEAD];
         CssMod::new(params.clone()).frame(&preamble, &payload, &mut wave);
         wave.resize(wave.len() + LEAD, Complex::new(0.0, 0.0));
@@ -54,7 +49,7 @@ impl Burst {
 
     fn noisy(mut self, es_n0_db: f64, seed: u64) -> Self {
         let n = self.params.chips() as f64;
-        let sigma = (0.5 / (n * 10f64.powf(es_n0_db / 10.0))).sqrt();
+        let sigma = (0.5 / (n * es_n0_db.db_to_power())).sqrt();
         let mut rng = Rng::new(seed);
         for s in &mut self.wave {
             *s += Complex::new((rng.normal() * sigma) as f32, (rng.normal() * sigma) as f32);

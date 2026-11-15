@@ -1,10 +1,10 @@
 use num_complex::Complex;
-use sdrmm_dsp::beamform::{
+use sdrmm_dsp::array::beamform::{
     BlockSolver, Constraints, LaneNoise, WeightRamp, WeightSet, beam_metrics, pattern,
 };
-use sdrmm_dsp::covariance::SampleCovariance;
-use sdrmm_dsp::linalg::CMat;
-use sdrmm_dsp::manifold::{Direction, Geometry, GridSpec, Manifold, SteeringGrid, Winding};
+use sdrmm_dsp::array::covariance::SampleCovariance;
+use sdrmm_dsp::array::manifold::{Direction, Geometry, GridSpec, Manifold, SteeringGrid, Winding};
+use sdrmm_dsp::math::linalg::CMat;
 use sdrmm_test_support::assert_no_alloc;
 
 const FREQ: f64 = 433.92e6;

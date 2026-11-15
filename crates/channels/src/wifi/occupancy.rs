@@ -7,8 +7,8 @@ use crate::airtime::WifiOccupancyParams;
 use crate::airtime::WifiOccupancyReport;
 use num_complex::Complex;
 use sdrmm_dsp::{
-    airtime::{PowerFrames, QuietFloor, band_degrees},
-    fastmath::fast_power_db,
+    math::fastmath::fast_power_db,
+    measure::airtime::{PowerFrames, QuietFloor, band_degrees},
 };
 use sdrmm_modem::wifi::channel::{self as plan, Channel, WifiBand as PlanBand};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};

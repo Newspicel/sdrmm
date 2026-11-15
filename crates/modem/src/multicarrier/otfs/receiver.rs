@@ -6,40 +6,13 @@ use super::{
 };
 use crate::{
     constellation::Constellation,
-    ofdm::{Acquisition, MIN_NOISE_VAR, OfdmDemod, OfdmMod, OfdmParams, PilotFit},
+    multicarrier::mmse::{mmse, unbias},
+    ofdm::{Acquisition, MIN_NOISE_VAR, OfdmDemod, OfdmParams, PilotFit},
 };
 
 pub const DEFAULT_ITERATIONS: usize = 8;
 pub const LEAD_TAPS: i32 = 2;
 pub const DOPPLER_ORDER: usize = 3;
-
-#[derive(Clone)]
-pub struct OtfsMod {
-    carrier: OfdmMod,
-    precoder: OtfsPrecoder,
-    tf: Vec<Complex<f32>>,
-}
-
-impl OtfsMod {
-    #[must_use]
-    pub fn new(params: OfdmParams, grid: OtfsGrid) -> Self {
-        assert_eq!(
-            grid.delay,
-            params.data_subcarriers(),
-            "the delay axis spans the data subcarriers"
-        );
-        Self {
-            carrier: OfdmMod::new(params),
-            precoder: OtfsPrecoder::new(grid),
-            tf: vec![Complex::new(0.0, 0.0); grid.points()],
-        }
-    }
-
-    pub fn frame(&mut self, dd: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
-        self.precoder.spread(dd, &mut self.tf);
-        self.carrier.frame(&self.tf, out);
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Slot {
@@ -201,17 +174,12 @@ impl OtfsReceiver {
         for symbol in 0..self.grid.doppler {
             for (k, slot) in self.slots.iter().enumerate() {
                 let Slot::Data(index) = *slot else { continue };
-                let h = self.channel[symbol * o + k];
-                let gain = h.norm_sqr();
-                let y = self.received[symbol * o + k];
-                self.tf[symbol * data + index] = y * h.conj() / (gain + nv);
-                bias += f64::from(gain / (gain + nv));
+                let (weight, kept) = mmse(self.channel[symbol * o + k], nv);
+                self.tf[symbol * data + index] = self.received[symbol * o + k] * weight;
+                bias += f64::from(kept);
             }
         }
-        let mean = (bias / self.tf.len() as f64).max(f64::MIN_POSITIVE) as f32;
-        for v in &mut self.tf {
-            *v /= mean;
-        }
+        unbias(&mut self.tf, bias);
     }
 
     fn refine(&mut self) {
@@ -275,7 +243,11 @@ mod tests {
     };
 
     use super::*;
-    use crate::constellation::tables;
+    use crate::{
+        constellation::tables,
+        multicarrier::OtfsMod,
+        testutil::{points, symbol_errors},
+    };
 
     const SYMBOLS: usize = 16;
 
@@ -291,20 +263,11 @@ mod tests {
         tables::qam_square(4).unwrap()
     }
 
-    fn payload(seed: u32) -> Vec<Complex<f32>> {
-        let table = qpsk();
-        let mut state = seed | 1;
-        (0..grid().points())
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                table.points()[(state % 4) as usize]
-            })
-            .collect()
+    fn payload(seed: u64) -> Vec<Complex<f32>> {
+        points(&qpsk(), grid().points(), seed)
     }
 
-    fn burst(lead: usize, seed: u32) -> (Vec<Complex<f32>>, Vec<Complex<f32>>) {
+    fn burst(lead: usize, seed: u64) -> (Vec<Complex<f32>>, Vec<Complex<f32>>) {
         let sent = payload(seed);
         let mut wave = vec![Complex::new(0.0, 0.0); lead];
         OtfsMod::new(params(), grid()).frame(&sent, &mut wave);
@@ -327,13 +290,7 @@ mod tests {
     }
 
     fn errors(sent: &[Complex<f32>], got: &[Complex<f32>]) -> usize {
-        let table = qpsk();
-        let wrong = sent
-            .iter()
-            .zip(got)
-            .filter(|(a, b)| table.hard_slice(**a) != table.hard_slice(**b))
-            .count();
-        wrong + sent.len().saturating_sub(got.len())
+        symbol_errors(&qpsk(), sent, got)
     }
 
     fn decode(rx: &mut OtfsReceiver, wave: &[Complex<f32>]) -> Vec<Complex<f32>> {

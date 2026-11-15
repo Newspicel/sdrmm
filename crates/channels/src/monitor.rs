@@ -162,7 +162,7 @@ impl SpectrumMonitor {
 
     fn survey(&mut self, end: u64, output: &mut Vec<MonitorOutput>) {
         let bands = self.detector.measure(&self.window);
-        let clipping = sdrmm_dsp::clip::clips(&self.window);
+        let clipping = sdrmm_dsp::audio::clip::clips(&self.window);
         let forget = (self.rate * FORGET_SECONDS) as u64;
         self.rejected
             .retain(|rejected| rejected.until.saturating_add(forget) > end);

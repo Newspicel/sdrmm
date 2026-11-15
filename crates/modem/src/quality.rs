@@ -1,4 +1,5 @@
 use num_complex::Complex;
+use sdrmm_dsp::Decibels;
 
 use crate::{constellation::Constellation, cpm::Mapping};
 
@@ -7,6 +8,18 @@ pub struct Quality {
     pub evm: f64,
     pub mer_db: f64,
     pub margin: f64,
+}
+
+/// A decision grid that received samples are measured against.
+trait Reference {
+    type Sample: Copy;
+
+    fn is_empty(&self) -> bool;
+    fn power(sample: Self::Sample) -> f64;
+    fn ideal_power(&self) -> f64;
+    fn half_spacing(&self) -> f64;
+    /// Squared error and ideal power of `sample` scaled by `gain`, against its decision.
+    fn decide(&self, sample: Self::Sample, gain: f32) -> (f64, f64);
 }
 
 impl Quality {
@@ -19,7 +32,7 @@ impl Quality {
         Some(Self {
             evm,
             mer_db: if evm > 0.0 {
-                -20.0 * evm.log10()
+                -evm.amplitude_to_db()
             } else {
                 f64::INFINITY
             },
@@ -32,95 +45,112 @@ impl Quality {
     }
 }
 
+impl Reference for Constellation {
+    type Sample = Complex<f32>;
+
+    fn is_empty(&self) -> bool {
+        Constellation::is_empty(self)
+    }
+
+    fn power(sample: Complex<f32>) -> f64 {
+        f64::from(sample.norm_sqr())
+    }
+
+    fn ideal_power(&self) -> f64 {
+        self.points()
+            .iter()
+            .map(|p| f64::from(p.norm_sqr()))
+            .sum::<f64>()
+            / self.len() as f64
+    }
+
+    fn half_spacing(&self) -> f64 {
+        self.min_distance() / 2.0
+    }
+
+    fn decide(&self, sample: Complex<f32>, gain: f32) -> (f64, f64) {
+        let scaled = sample * gain;
+        let ideal = self.nearest(scaled);
+        (
+            f64::from((scaled - ideal).norm_sqr()),
+            f64::from(ideal.norm_sqr()),
+        )
+    }
+}
+
+impl Reference for Mapping {
+    type Sample = f32;
+
+    fn is_empty(&self) -> bool {
+        false
+    }
+
+    fn power(sample: f32) -> f64 {
+        f64::from(sample) * f64::from(sample)
+    }
+
+    fn ideal_power(&self) -> f64 {
+        self.levels()
+            .iter()
+            .map(|&l| f64::from(l) * f64::from(l))
+            .sum::<f64>()
+            / self.m() as f64
+    }
+
+    fn half_spacing(&self) -> f64 {
+        f64::from(self.min_spacing()) / 2.0
+    }
+
+    fn decide(&self, sample: f32, gain: f32) -> (f64, f64) {
+        let scaled = sample * gain;
+        let ideal = f64::from(self.level(self.slice(scaled)));
+        let error = f64::from(scaled) - ideal;
+        (error * error, ideal * ideal)
+    }
+}
+
+#[must_use]
+pub fn measure_complex(symbols: &[Complex<f32>], table: &Constellation) -> Option<Quality> {
+    measure(symbols, table)
+}
+
+#[must_use]
+pub fn measure_levels(symbols: &[f32], mapping: &Mapping) -> Option<Quality> {
+    measure(symbols, mapping)
+}
+
+/// Fits the gain blind to mean power, refines it on the decisions it yields, then measures.
+fn measure<R: Reference>(symbols: &[R::Sample], reference: &R) -> Option<Quality> {
+    if symbols.is_empty() || reference.is_empty() {
+        return None;
+    }
+    let n = symbols.len() as f64;
+    let measured = symbols.iter().map(|&y| R::power(y)).sum::<f64>() / n;
+    let blind = scale_to(measured, reference.ideal_power());
+    let decided = symbols
+        .iter()
+        .map(|&y| reference.decide(y, blind as f32).1)
+        .sum::<f64>()
+        / n;
+    let gain = blind * scale_to(measured * blind * blind, decided);
+
+    let (error_power, reference_power) = symbols.iter().fold((0.0, 0.0), |(error, ideal), &y| {
+        let (e, i) = reference.decide(y, gain as f32);
+        (error + e, ideal + i)
+    });
+    Quality::from_errors(
+        error_power / n,
+        reference_power / n,
+        reference.half_spacing(),
+    )
+}
+
 fn scale_to(measured: f64, reference: f64) -> f64 {
     if measured > 0.0 {
         (reference / measured).sqrt()
     } else {
         1.0
     }
-}
-
-#[must_use]
-pub fn measure_complex(symbols: &[Complex<f32>], table: &Constellation) -> Option<Quality> {
-    if symbols.is_empty() || table.is_empty() {
-        return None;
-    }
-    let n = symbols.len() as f64;
-    let measured = symbols.iter().map(|y| f64::from(y.norm_sqr())).sum::<f64>() / n;
-    let ideal_power = table
-        .points()
-        .iter()
-        .map(|p| f64::from(p.norm_sqr()))
-        .sum::<f64>()
-        / table.len() as f64;
-    let blind = scale_to(measured, ideal_power);
-
-    let decided = symbols
-        .iter()
-        .map(|y| f64::from(table.nearest(y * blind as f32).norm_sqr()))
-        .sum::<f64>()
-        / n;
-    let gain = blind * scale_to(measured * blind * blind, decided);
-
-    let mut error_power = 0.0;
-    let mut reference_power = 0.0;
-    for &y in symbols {
-        let scaled = y * gain as f32;
-        let ideal = table.nearest(scaled);
-        error_power += f64::from((scaled - ideal).norm_sqr());
-        reference_power += f64::from(ideal.norm_sqr());
-    }
-    Quality::from_errors(
-        error_power / n,
-        reference_power / n,
-        table.min_distance() / 2.0,
-    )
-}
-
-#[must_use]
-pub fn measure_levels(symbols: &[f32], mapping: &Mapping) -> Option<Quality> {
-    if symbols.is_empty() {
-        return None;
-    }
-    let level_of = |y: f32| f64::from(mapping.level(mapping.slice(y)));
-    let n = symbols.len() as f64;
-    let measured = symbols
-        .iter()
-        .map(|&y| f64::from(y) * f64::from(y))
-        .sum::<f64>()
-        / n;
-    let ideal_power = mapping
-        .levels()
-        .iter()
-        .map(|&l| f64::from(l) * f64::from(l))
-        .sum::<f64>()
-        / mapping.m() as f64;
-    let blind = scale_to(measured, ideal_power);
-
-    let decided = symbols
-        .iter()
-        .map(|&y| {
-            let ideal = level_of(y * blind as f32);
-            ideal * ideal
-        })
-        .sum::<f64>()
-        / n;
-    let gain = blind * scale_to(measured * blind * blind, decided);
-
-    let mut error_power = 0.0;
-    let mut reference_power = 0.0;
-    for &y in symbols {
-        let scaled = y * gain as f32;
-        let ideal = level_of(scaled);
-        let error = f64::from(scaled) - ideal;
-        error_power += error * error;
-        reference_power += ideal * ideal;
-    }
-    Quality::from_errors(
-        error_power / n,
-        reference_power / n,
-        f64::from(mapping.min_spacing()) / 2.0,
-    )
 }
 
 #[cfg(test)]

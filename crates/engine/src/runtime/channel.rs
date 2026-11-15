@@ -998,7 +998,7 @@ pub(crate) mod tests {
             }
             let center = CENTER + stage as f64 * 1000.0;
             let offset = if stage >= 2 { 1_700_000.0 } else { 100_000.0 };
-            let plan = sdrmm_dsp::subband::SubbandPlan::new(rate).unwrap();
+            let plan = sdrmm_dsp::tuning::subband::SubbandPlan::new(rate).unwrap();
             let target = plan.select(offset, 48_000.0).unwrap();
             for (index, (_, host)) in channels.iter_mut().enumerate() {
                 let offset = if count >= 7 && index > 0 {

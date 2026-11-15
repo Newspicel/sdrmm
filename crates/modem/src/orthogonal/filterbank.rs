@@ -15,14 +15,9 @@ impl ToneBank {
     pub fn new(params: &MfskParams) -> Self {
         let window = params.window();
         let m = params.m();
-        let mut rotors = Vec::with_capacity(m * window);
-        for k in 0..m {
-            let omega = -std::f64::consts::TAU * params.tone_cycles_per_sample(k);
-            for n in 0..window {
-                let (sin, cos) = (omega * n as f64).sin_cos();
-                rotors.push(Complex::new(cos as f32, sin as f32));
-            }
-        }
+        let rotors = (0..m)
+            .flat_map(|k| params.tone(k).map(|rotor| rotor.conj()))
+            .collect();
         Self {
             m,
             window,
@@ -70,14 +65,13 @@ impl ToneBank {
 mod tests {
     use sdrmm_modem_test_support::ber::rng::Rng;
 
-    use super::{super::modulator::MfskMod, *};
-    use crate::orthogonal::modulator::TonePhase;
+    use super::{
+        super::{modulator::TonePhase, testutil::wave},
+        *,
+    };
 
     fn tone(params: &MfskParams, index: u8, symbols: usize) -> Vec<Complex<f32>> {
-        let mut m = MfskMod::new(params.clone(), TonePhase::Continuous);
-        let mut out = Vec::new();
-        m.modulate(&vec![index; symbols], &mut out);
-        out
+        wave(params, TonePhase::Continuous, &vec![index; symbols])
     }
 
     #[test]

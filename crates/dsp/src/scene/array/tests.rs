@@ -1,14 +1,14 @@
 use std::f64::consts::TAU;
 
 use super::*;
-use crate::manifold::Winding;
-use crate::scene::wave::History;
+use crate::math::complex::widen;
+use crate::math::db::Decibels;
+use crate::scene::fixtures::inner;
+use crate::scene::fractional::DelayPlan;
+use crate::scene::history::History;
+use crate::testutil::kraken;
 
 const FREQ: f64 = 433.92e6;
-
-fn kraken() -> Geometry {
-    Geometry::uca(0.35, 5, 0.0, Winding::Clockwise).unwrap()
-}
 
 fn noisy_scene(seed: u64) -> ArrayScene {
     ArrayScene::new(kraken(), FREQ, 2.4e6)
@@ -52,13 +52,6 @@ fn scene_is_reproducible_from_its_seed() {
     assert_eq!(second.rendered(), 3000);
     let other = noisy_scene(6).render(3000).unwrap();
     assert_ne!(whole, other);
-}
-
-fn inner(a: &[Complex<f32>], b: &[Complex<f32>]) -> f32 {
-    let dot: Complex<f32> = a.iter().zip(b).map(|(x, y)| x.conj() * y).sum();
-    let norms =
-        a.iter().map(Complex::norm_sqr).sum::<f32>() * b.iter().map(Complex::norm_sqr).sum::<f32>();
-    dot.norm() / norms.sqrt()
 }
 
 fn snapshot(lanes: &[Vec<Complex<f32>>], index: usize) -> Vec<Complex<f32>> {
@@ -114,7 +107,7 @@ fn scene_single_source_matches_the_steering_vector() {
         for (value, want) in x.iter().zip(&expected) {
             assert!((value - want * ratio).norm() < 1e-4, "{index}");
         }
-        assert!((ratio.norm() - 10f32.powf(0.3)).abs() < 1e-3);
+        assert!((ratio.norm() - 6.0f32.db_to_amplitude()).abs() < 1e-3);
     }
     let step = snapshot(&lanes, 1)[0] / snapshot(&lanes, 0)[0];
     assert!((f64::from(step.arg()) - TAU * offset / 1e6).abs() < 1e-5);
@@ -210,7 +203,7 @@ fn copies_dc_gain_and_distortion_shape_the_lanes() {
     let mean: Complex<f32> = lanes[0].iter().sum::<Complex<f32>>() / 100.0;
     assert!((mean - Complex::new(0.5, 0.0)).norm() < 0.05);
     let ratio = lanes[1][10] / (lanes[0][10] - Complex::new(0.5, 0.0));
-    assert!((ratio.norm() - 10f32.powf(0.3)).abs() < 1e-3);
+    assert!((ratio.norm() - 6.0f32.db_to_amplitude()).abs() < 1e-3);
     assert!((ratio.arg() - (std::f32::consts::FRAC_PI_2 + 0.1)).abs() < 1e-3);
     let table = scene.distortion_table(&[1e8], 10.0).unwrap();
     let mut response = [Complex::new(0.0f32, 0.0); 2];
@@ -265,9 +258,9 @@ fn a_source_power_and_noise_power_are_per_sample() {
         .with_seed(2);
     let lanes = scene.render(40_000).unwrap();
     let power = lanes[2].iter().map(Complex::norm_sqr).sum::<f32>() / 40_000.0;
-    assert!((10.0 * power.log10() + 3.0).abs() < 0.2, "{power}");
+    assert!((power.power_to_db() + 3.0).abs() < 0.2, "{power}");
     let mut quiet = ArrayScene::new(kraken(), FREQ, 1e6).with_noise_db(-10.0);
     let lanes = quiet.render(40_000).unwrap();
     let power = lanes[4].iter().map(Complex::norm_sqr).sum::<f32>() / 40_000.0;
-    assert!((10.0 * power.log10() + 10.0).abs() < 0.2, "{power}");
+    assert!((power.power_to_db() + 10.0).abs() < 0.2, "{power}");
 }

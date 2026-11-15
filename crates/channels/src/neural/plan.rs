@@ -127,7 +127,7 @@ pub(super) fn compile(graph: &Graph) -> Result<Net, NetError> {
         }
     }
     Ok(Net {
-        vector: sdrmm_dsp::vector::Vector::detect(),
+        vector: sdrmm_dsp::math::vector::Vector::detect(),
         meta: graph.meta.clone(),
         consts: builder.consts,
         buffers: builder.buffers,
@@ -541,7 +541,7 @@ fn einsum(
     };
     let out_tables = [batch.c.as_slice(), rows.c.as_slice(), cols.c.as_slice()];
     Ok(EinSum {
-        shape: sdrmm_dsp::vector::GemmShape {
+        shape: sdrmm_dsp::math::vector::GemmShape {
             rows: rows.len,
             depth: k.len,
             cols: cols.len,

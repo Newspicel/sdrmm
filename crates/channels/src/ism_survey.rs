@@ -11,8 +11,8 @@ use crate::airtime::{
 };
 use num_complex::Complex;
 use sdrmm_dsp::{
-    airtime::{Burst, Bursts, PowerFrames, QuietFloor, band_degrees},
-    fastmath::{fast_db_to_power, fast_power_db},
+    math::fastmath::{fast_db_to_power, fast_power_db},
+    measure::airtime::{Burst, Bursts, PowerFrames, QuietFloor, band_degrees},
 };
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 

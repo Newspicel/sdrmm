@@ -942,7 +942,7 @@ mod tests {
                 Complex::new(f64::from(s.re) * w, f64::from(s.im) * w)
             })
             .collect();
-        sdrmm_dsp::fft::Transform::forward(n).process(&mut buf);
+        sdrmm_dsp::math::fft::Transform::forward(n).process(&mut buf);
         buf.iter().map(|c| c.norm_sqr()).collect()
     }
 

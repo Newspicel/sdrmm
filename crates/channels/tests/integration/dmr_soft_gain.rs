@@ -10,7 +10,7 @@ use num_complex::Complex;
 use sdrmm_channels::synth::dv as tg;
 use sdrmm_dsp::{
     Bptc196,
-    fec::conv::{CONFIDENT, Soft},
+    coding::fec::conv::{CONFIDENT, Soft},
 };
 use sdrmm_modem::cpm::TIMING_BW_BURST;
 use sdrmm_modem_test_support::ber::{

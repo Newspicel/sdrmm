@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::fir::design_rrc;
+use sdrmm_dsp::filter::fir::design_rrc;
 
 use super::{Impairment, mean_power};
 use crate::ber::rng::Rng;

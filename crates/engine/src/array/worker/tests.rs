@@ -6,9 +6,9 @@ use std::{
 use num_complex::Complex;
 use rtrb::RingBuffer;
 use sdrmm_dsp::{
-    array_sync::FastConvolver,
-    fft::FftPair,
-    manifold::{Direction, Vec3, steer},
+    array::array_sync::FastConvolver,
+    array::manifold::{Direction, Vec3, steer},
+    math::fft::FftPair,
 };
 use sdrmm_wire::{CalSourceKind, LaneKey, LaneSolution};
 

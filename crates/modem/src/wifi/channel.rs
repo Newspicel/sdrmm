@@ -3,6 +3,12 @@ pub const OCCUPIED_HZ: f64 = 16_562_500.0;
 const GRID_HZ: f64 = 5_000_000.0;
 const ON_GRID_HZ: f64 = 2_500_000.0;
 const CHANNEL_14_HZ: f64 = 2_484_000_000.0;
+/// Japan's 2.4 GHz channel 14 sits off the 5 MHz grid.
+const CHANNEL_14: u8 = 14;
+const LAST_GRID_2_4: u8 = 13;
+const LAST_CHANNEL: u8 = 233;
+/// 20 MHz channels sit every fourth channel number.
+const TWENTY_MHZ_STEP: usize = 4;
 const GHZ_2_4: Plan = Plan {
     band: WifiBand::Ghz2_4,
     start_hz: 2_407_000_000.0,
@@ -59,7 +65,7 @@ pub fn channel_at(frequency_hz: f64) -> Option<Channel> {
     if (frequency_hz - CHANNEL_14_HZ).abs() < ON_GRID_HZ {
         return Some(Channel {
             band: WifiBand::Ghz2_4,
-            number: 14,
+            number: CHANNEL_14,
             centre_hz: CHANNEL_14_HZ,
         });
     }
@@ -67,22 +73,26 @@ pub fn channel_at(frequency_hz: f64) -> Option<Channel> {
         .into_iter()
         .find(|plan| (plan.low_hz..plan.high_hz).contains(&frequency_hz))?;
     let number = ((frequency_hz - plan.start_hz) / GRID_HZ).round();
-    (1.0..=233.0)
+    (1.0..=f64::from(LAST_CHANNEL))
         .contains(&number)
         .then(|| plan.at(number as u8))
 }
 
 pub fn twenty_mhz() -> impl Iterator<Item = Channel> {
-    let low = (1..=13).map(|number| GHZ_2_4.at(number)).chain([Channel {
-        band: WifiBand::Ghz2_4,
-        number: 14,
-        centre_hz: CHANNEL_14_HZ,
-    }]);
+    let low = (1..=LAST_GRID_2_4)
+        .map(|number| GHZ_2_4.at(number))
+        .chain([Channel {
+            band: WifiBand::Ghz2_4,
+            number: CHANNEL_14,
+            centre_hz: CHANNEL_14_HZ,
+        }]);
     let mid = TWENTY_MHZ_5
         .into_iter()
-        .flat_map(|range| range.step_by(4))
+        .flat_map(|range| range.step_by(TWENTY_MHZ_STEP))
         .map(|number| GHZ_5.at(number));
-    let high = (1..=233).step_by(4).map(|number| GHZ_6.at(number));
+    let high = (1..=LAST_CHANNEL)
+        .step_by(TWENTY_MHZ_STEP)
+        .map(|number| GHZ_6.at(number));
     low.chain(mid).chain(high)
 }
 

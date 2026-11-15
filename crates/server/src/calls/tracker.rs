@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_dsp::{decim::RealDecimator, fir::design_lowpass};
+use sdrmm_dsp::{filter::decim::RealDecimator, filter::fir::design_lowpass};
 use sdrmm_engine::{Engine, PcmBlock, PcmPayload};
 use sdrmm_wire::{
     DecodedRecord, DecoderEvent, DvFrame, DvFrameKind, EventOrigin, TrunkSystemStatus,

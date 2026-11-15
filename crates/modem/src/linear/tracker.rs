@@ -68,6 +68,7 @@ impl PhaseTracker {
     }
 }
 
+/// Folds a phase into (-pi, pi], kept in `f32` beside the tracker's own state.
 fn wrap(phase: f32) -> f32 {
     if phase > PI || phase <= -PI {
         phase - TAU * ((phase + PI) / TAU).floor()

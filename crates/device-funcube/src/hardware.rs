@@ -4,7 +4,7 @@ use std::{
 };
 
 use sdrmm_device::{CaptureStream, Next, Sample, SampleConverter};
-use sdrmm_dsp::fft::FftPair;
+use sdrmm_dsp::math::fft::FftPair;
 use sdrmm_wire::{BandwidthSetting, ExtraValue, GainKind, GainValue};
 
 use super::*;

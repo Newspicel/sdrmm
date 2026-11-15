@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::array_sync::{Boxcar, FastConvolver, design_correction};
+use sdrmm_dsp::array::array_sync::{Boxcar, FastConvolver, design_correction};
 use sdrmm_test_support::assert_no_alloc;
 
 fn ramp(len: usize) -> Vec<Complex<f32>> {

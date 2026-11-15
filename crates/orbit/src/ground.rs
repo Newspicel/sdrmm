@@ -1,11 +1,12 @@
+use sdrmm_dsp::math::geodesy::geodetic;
+
 use crate::{
     OrbitError, Satellite, State,
-    observer::{WGS84_A_KM, WGS84_F, earth_fixed},
+    observer::{METRES_PER_KM, earth_fixed},
     time::{SECONDS_PER_DAY, julian_date, sidereal_angle},
 };
 
 const MEAN_EARTH_RADIUS_KM: f64 = 6_371.0;
-const LATITUDE_ITERATIONS: usize = 6;
 const MAX_TRACK_STEPS: usize = 100_000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -19,13 +20,22 @@ impl Subpoint {
     #[must_use]
     pub fn of(state: &State, julian_date: f64) -> Self {
         let (position, _) = earth_fixed(state, sidereal_angle(julian_date));
-        geodetic(position)
+        Self::below(position)
     }
 
     #[must_use]
     pub fn footprint_km(&self) -> f64 {
         let radius = MEAN_EARTH_RADIUS_KM;
         radius * (radius / (radius + self.altitude_km.max(0.0))).acos()
+    }
+
+    fn below(earth_fixed_km: [f64; 3]) -> Self {
+        let ground = geodetic(earth_fixed_km.map(|km| km * METRES_PER_KM));
+        Self {
+            latitude_deg: ground.lat_deg,
+            longitude_deg: ground.lon_deg,
+            altitude_km: ground.alt_m / METRES_PER_KM,
+        }
     }
 }
 
@@ -65,28 +75,13 @@ impl Satellite {
     }
 }
 
-fn geodetic([x, y, z]: [f64; 3]) -> Subpoint {
-    let e2 = WGS84_F * (2.0 - WGS84_F);
-    let p = x.hypot(y);
-    let mut latitude = z.atan2(p * (1.0 - e2));
-    let mut n = WGS84_A_KM;
-    for _ in 0..LATITUDE_ITERATIONS {
-        let sin = latitude.sin();
-        n = WGS84_A_KM / (1.0 - e2 * sin * sin).sqrt();
-        latitude = (z + e2 * n * sin).atan2(p);
-    }
-    let (sin, cos) = latitude.sin_cos();
-    Subpoint {
-        latitude_deg: latitude.to_degrees(),
-        longitude_deg: y.atan2(x).to_degrees(),
-        altitude_km: p * cos + z * sin - WGS84_A_KM * WGS84_A_KM / n,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{Observer, Tle, time::unix_seconds};
+    use sdrmm_dsp::math::geodesy::{WGS84_A_M, WGS84_F};
+
+    const EQUATOR_KM: f64 = WGS84_A_M / METRES_PER_KM;
 
     const ISS: &str = "ISS (ZARYA)
 1 25544U 98067A   24001.50000000  .00016717  00000-0  30306-3 0  9999
@@ -98,7 +93,7 @@ mod tests {
 
     #[test]
     fn a_point_on_the_equator_reads_back() {
-        let ground = geodetic([WGS84_A_KM + 400.0, 0.0, 0.0]);
+        let ground = Subpoint::below([EQUATOR_KM + 400.0, 0.0, 0.0]);
         assert!(ground.latitude_deg.abs() < 1e-9, "{ground:?}");
         assert!(ground.longitude_deg.abs() < 1e-9, "{ground:?}");
         assert!((ground.altitude_km - 400.0).abs() < 1e-9, "{ground:?}");
@@ -106,8 +101,8 @@ mod tests {
 
     #[test]
     fn a_point_over_the_pole_reads_back() {
-        let polar = WGS84_A_KM * (1.0 - WGS84_F);
-        let ground = geodetic([0.0, 0.0, polar + 800.0]);
+        let polar = EQUATOR_KM * (1.0 - WGS84_F);
+        let ground = Subpoint::below([0.0, 0.0, polar + 800.0]);
         assert!((ground.latitude_deg - 90.0).abs() < 1e-9, "{ground:?}");
         assert!((ground.altitude_km - 800.0).abs() < 1e-6, "{ground:?}");
     }

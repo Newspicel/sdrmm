@@ -159,7 +159,7 @@ fn spread_uses_auto_offsets() {
         &tune(433.92e6, 30.0),
     )
     .expect("a bank tunes every lane on its own");
-    let offsets = sdrmm_dsp::stitch::auto_offsets(5, 2_400_000.0);
+    let offsets = sdrmm_dsp::measure::stitch::auto_offsets(5, 2_400_000.0);
     for (lane, center) in planned.lane_centers_hz.iter().enumerate() {
         assert!((center - (433.92e6 + offsets[lane])).abs() < 1e-6);
         assert_eq!(planned.deltas[0].1.streams[lane].center_hz, Some(*center));

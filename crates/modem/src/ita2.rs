@@ -2,6 +2,8 @@ pub const LTRS: u8 = 0x1F;
 pub const FIGS: u8 = 0x1B;
 pub const SPACE: u8 = 0x04;
 
+const CODE_MASK: u8 = 0x1F;
+
 pub const LETTERS: [char; 32] = [
     '\0', 'E', '\n', 'A', ' ', 'S', 'I', 'U', '\r', 'D', 'R', 'J', 'N', 'F', 'C', 'K', 'T', 'Z',
     'L', 'W', 'H', 'Y', 'P', 'Q', 'O', 'B', 'G', '\0', 'M', 'X', 'V', '\0',
@@ -38,7 +40,7 @@ impl ShiftDecoder {
 
     /// The character a five-bit code prints, or `None` for a shift, which only changes rows.
     pub fn decode(&mut self, code: u8) -> Option<char> {
-        let code = code & 0x1F;
+        let code = code & CODE_MASK;
         match code {
             LTRS => self.figures = false,
             FIGS => self.figures = true,

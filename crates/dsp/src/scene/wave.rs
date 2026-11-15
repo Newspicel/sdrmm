@@ -1,114 +1,19 @@
-use std::f64::consts::{PI, TAU};
+use std::f64::consts::{PI, SQRT_2, TAU};
 
 use num_complex::Complex;
 
-use super::{
-    array::SceneSignal,
-    delay::{self, KAISER_BETA, KaiserSinc},
-    rng::Rng,
-};
-use crate::special::sinc;
+use super::array::SceneSignal;
+use super::fractional::{DelayPlan, read_quantised};
+use super::history::History;
+use crate::{math::rng::Rng, math::special::sinc};
 
-pub(super) const DELAY_TAPS: usize = 129;
-pub(super) const DELAY_CENTRE: i64 = 64;
 const NOISE_TAPS: usize = 63;
 const WAVE_PRE_ROLL: i64 = 1024;
-pub(super) const ECHO_FRACTIONS: usize = 256;
+const BLACKMAN: [f64; 3] = [0.42, 0.5, 0.08];
 
 type C64 = Complex<f64>;
 
-#[derive(Clone, Debug)]
-pub(super) struct History {
-    pub(super) base: i64,
-    pub(super) data: Vec<C64>,
-}
-
-impl History {
-    pub(super) const fn starting_at(base: i64) -> Self {
-        Self {
-            base,
-            data: Vec::new(),
-        }
-    }
-
-    pub(super) fn end(&self) -> i64 {
-        self.base + self.data.len() as i64
-    }
-
-    pub(super) fn get(&self, index: i64) -> C64 {
-        usize::try_from(index - self.base)
-            .ok()
-            .and_then(|offset| self.data.get(offset))
-            .copied()
-            .unwrap_or_default()
-    }
-
-    pub(super) fn trim(&mut self, keep_from: i64) {
-        let drop = (keep_from - self.base).clamp(0, self.data.len() as i64) as usize;
-        if drop > 0 {
-            self.data.drain(..drop);
-            self.base += drop as i64;
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(super) struct DelayPlan {
-    pub(super) delay: f64,
-    pub(super) whole: i64,
-    taps: Option<Vec<f64>>,
-}
-
-impl DelayPlan {
-    pub(super) fn new(delay: f64) -> Self {
-        let whole = delay.floor();
-        let fraction = delay - whole;
-        let taps = (fraction > 0.0).then(|| fractional_taps(fraction));
-        Self {
-            delay,
-            whole: whole as i64,
-            taps,
-        }
-    }
-
-    pub(super) fn reach(&self, n: i64) -> i64 {
-        let reach = n - self.whole;
-        if self.taps.is_some() {
-            reach + DELAY_CENTRE
-        } else {
-            reach
-        }
-    }
-
-    pub(super) fn read(&self, history: &History, n: i64) -> C64 {
-        let at = n - self.whole;
-        match &self.taps {
-            None => history.get(at),
-            Some(taps) => taps
-                .iter()
-                .enumerate()
-                .map(|(k, &tap)| history.get(at - k as i64 + DELAY_CENTRE) * tap)
-                .sum(),
-        }
-    }
-}
-
-fn fractional_taps(fraction: f64) -> Vec<f64> {
-    let centre = DELAY_CENTRE as f64 + fraction;
-    let design = KaiserSinc::new(DELAY_CENTRE as f64 + 1.0, KAISER_BETA);
-    let mut taps: Vec<f64> = (0..DELAY_TAPS)
-        .map(|k| design.tap(k as f64 - centre))
-        .collect();
-    delay::normalise(&mut taps);
-    taps
-}
-
-pub(super) fn fraction_table() -> Vec<Vec<f64>> {
-    (0..ECHO_FRACTIONS)
-        .map(|step| fractional_taps(step as f64 / ECHO_FRACTIONS as f64))
-        .collect()
-}
-
+/// One source signal: tones and FM computed exactly at any delay, noise kept as history.
 #[derive(Clone, Debug)]
 pub(super) struct Wave {
     pub(super) signal: SceneSignal,
@@ -166,7 +71,7 @@ impl Wave {
         };
         let mix = TAU * self.signal.offset_hz() * n as f64 / sample_rate;
         if let SceneSignal::NoiseFm { deviation_hz, .. } = self.signal {
-            let message = shaped.re * std::f64::consts::SQRT_2;
+            let message = shaped.re * SQRT_2;
             self.phase = (self.phase + TAU * deviation_hz * message / sample_rate).rem_euclid(TAU);
             return C64::from_polar(1.0, self.phase + mix);
         }
@@ -179,22 +84,8 @@ impl Wave {
     }
 
     pub(super) fn at(&self, n: i64, delay: f64, sample_rate: f64, fractions: &[Vec<f64>]) -> C64 {
-        if let Some(value) = self.analytic(n, delay, sample_rate) {
-            return value;
-        }
-        let steps = ECHO_FRACTIONS as f64;
-        let quantised = (delay * steps).round() / steps;
-        let whole = quantised.floor();
-        let step = ((quantised - whole) * steps).round() as usize;
-        let at = n - whole as i64;
-        match fractions.get(step).filter(|_| step > 0) {
-            None => self.history.get(at),
-            Some(taps) => taps
-                .iter()
-                .enumerate()
-                .map(|(k, &tap)| self.history.get(at - k as i64 + DELAY_CENTRE) * tap)
-                .sum(),
-        }
+        self.analytic(n, delay, sample_rate)
+            .unwrap_or_else(|| read_quantised(&self.history, n, delay, fractions))
     }
 
     fn analytic(&self, n: i64, delay: f64, sample_rate: f64) -> Option<C64> {
@@ -230,7 +121,8 @@ fn lowpass_taps(cutoff: f64) -> Vec<f64> {
     let mut taps: Vec<f64> = (0..NOISE_TAPS)
         .map(|k| {
             let x = k as f64 - middle;
-            let window = 0.42 + 0.5 * (PI * x / middle).cos() + 0.08 * (TAU * x / middle).cos();
+            let [a0, a1, a2] = BLACKMAN;
+            let window = a0 + a1 * (PI * x / middle).cos() + a2 * (TAU * x / middle).cos();
             2.0 * cutoff * sinc(2.0 * cutoff * x) * window
         })
         .collect();

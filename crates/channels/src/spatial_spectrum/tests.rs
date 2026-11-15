@@ -1,6 +1,6 @@
-use sdrmm_dsp::manifold::Direction;
+use sdrmm_dsp::array::manifold::Direction;
+use sdrmm_dsp::math::special::wrap_deg;
 use sdrmm_dsp::scene::{ArrayScene, SceneSignal, SceneSource};
-use sdrmm_dsp::special::wrap_deg;
 use sdrmm_wire::{ArrayGeometry, ArrayTuningMode, Coherence, SpatialSpectrumFrame, Winding};
 
 use super::*;

@@ -23,7 +23,7 @@ pub enum NetError {
 }
 
 pub struct Net {
-    vector: sdrmm_dsp::vector::Vector,
+    vector: sdrmm_dsp::math::vector::Vector,
     meta: Vec<(String, String)>,
     consts: Vec<Vec<f32>>,
     buffers: Vec<usize>,

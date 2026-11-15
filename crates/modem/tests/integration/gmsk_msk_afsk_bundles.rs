@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use sdrmm_dsp::Nco;
 use sdrmm_modem::cpm::{CpmDemod, MlseDetector, TIMING_BW_BURST};
 use sdrmm_modem_test_support::ber::{
@@ -13,35 +11,17 @@ use sdrmm_modem_test_support::ber::{
     },
     e2e::{Payloads, channel_at_margin, loopback},
     impair::{Awgn, Cfo, ChannelSpec, ClockError, Drift, Impairment, TimingOffset},
-    limits::{self, Criterion, LimitRow, LimitsTable},
+    limits::{self, LimitRow, LimitsTable},
     perf::{self, PerfBaseline},
     rng::Rng,
     sweep::{self, Link},
 };
 
-fn baseline_path(stem: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
-}
+use crate::baselines::baseline_path;
+use crate::limit_rows::axis_row;
 
 const PROBE_ERRORS: u64 = 100;
 const PROBE_CAP: u64 = 30_000;
-
-fn axis_row(
-    axis: &str,
-    unit: &str,
-    max_axis: f64,
-    tolerance: f64,
-    ber_at: impl Fn(f64) -> f64,
-) -> LimitRow {
-    limits::measure_axis_row(
-        axis,
-        unit,
-        Criterion::FailureBer,
-        max_axis,
-        tolerance,
-        ber_at,
-    )
-}
 
 fn probe(link: &Link, spec: &ChannelSpec, op_db: f64, seed: u64) -> f64 {
     limits::measure_ber(link, spec, op_db, seed, PROBE_ERRORS, PROBE_CAP)

@@ -1,9 +1,17 @@
+use std::f64::consts::TAU;
+
+use num_complex::Complex;
+
 use crate::{
     cpm::{CpmParams, Mapping},
     pulse::{self, Norm},
 };
 
 pub const MAX_TONES: usize = 64;
+
+const MIN_SPS: f64 = 2.0;
+
+const WHOLE_TOLERANCE: f64 = 1e-9;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MfskParams {
@@ -20,11 +28,11 @@ impl MfskParams {
             "M must be a power of two in 2..={MAX_TONES}, got {m}"
         );
         assert!(
-            sps.is_finite() && sps >= 2.0 && (sps - sps.round()).abs() < 1e-9,
+            sps.is_finite() && sps >= MIN_SPS && is_whole(sps),
             "samples per symbol must be a whole number of at least two, got {sps}"
         );
         assert!(
-            spacing.is_finite() && spacing >= 1.0 && (spacing - spacing.round()).abs() < 1e-9,
+            spacing.is_finite() && spacing >= 1.0 && is_whole(spacing),
             "tone spacing must be a whole number of cycles per symbol, got {spacing}"
         );
         assert!(
@@ -70,6 +78,15 @@ impl MfskParams {
         self.spacing * (index as f64 - (self.m - 1) as f64 / 2.0) / self.sps
     }
 
+    /// One symbol of tone `index` as unit phasors, starting at phase zero.
+    pub(super) fn tone(&self, index: usize) -> impl Iterator<Item = Complex<f32>> {
+        let step = TAU * self.tone_cycles_per_sample(index);
+        (0..self.window()).map(move |n| {
+            let (sin, cos) = (step * n as f64).sin_cos();
+            Complex::new(cos as f32, sin as f32)
+        })
+    }
+
     #[must_use]
     pub fn as_cpm(&self) -> CpmParams {
         CpmParams::from_h(
@@ -79,6 +96,10 @@ impl MfskParams {
             self.sps,
         )
     }
+}
+
+fn is_whole(value: f64) -> bool {
+    (value - value.round()).abs() < WHOLE_TOLERANCE
 }
 
 #[cfg(test)]

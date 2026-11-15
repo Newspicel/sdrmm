@@ -1,28 +1,36 @@
 mod demap;
+mod plateau;
 pub mod tables;
 
 use std::f32::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::{ConvCode, Soft, ViterbiK7, depuncture, fft::FftPair};
+use sdrmm_dsp::{ConvCode, Soft, ViterbiK7, depuncture, math::fft::FftPair};
 
-use self::tables::{
-    CP, FFT, PILOT_CARRIERS, PILOT_VALUES, RATES, Rate, SERVICE_BITS, SHORT, SYMBOL, bin,
-    interleave_table, long_training, polarity, rate_for,
+use self::{
+    plateau::{PLATEAU_SAMPLES, PROBE, Plateau, Probe, WINDOW},
+    tables::{
+        CONV_POLYS, CP, EDGE, FFT, OCCUPIED, PILOT_CARRIERS, PILOT_VALUES, POLARITY_LEN, RATES,
+        Rate, SERVICE_BITS, SHORT, SYMBOL, bin, interleave_table, long_training, occupied_carriers,
+        polarity, rate_for,
+    },
 };
-use super::{Frame, MAX_MPDU_BYTES, Sink, WifiPhy, byte, fcs_ok, level_dbfs};
+use super::{
+    Frame, MAX_MPDU_BYTES, Sink, WifiPhy, byte, fcs_ok, level_dbfs, scrambler::descramble,
+};
 
 pub use self::demap::map as map_point;
 
-const WINDOW: usize = 48;
-const PLATEAU: f32 = 0.7;
-const PLATEAU_SAMPLES: usize = 24;
-const PROBE: usize = WINDOW / 2;
-const _: () = assert!(PROBE <= PLATEAU_SAMPLES && 2 * PROBE == WINDOW);
-const MIN_POWER: f32 = 1e-10;
 const LTF_SEARCH: usize = 320;
 const BACKOFF: usize = 3;
 const SIGNAL_BITS: usize = 24;
+const RATE_BITS: usize = 4;
+const LENGTH_BITS: usize = 12;
+/// SIGNAL bits the even parity covers: rate, reserved bit and length.
+const PARITY_BITS: usize = RATE_BITS + 1 + LENGTH_BITS + 1;
+const LONG_TRAINING_REPEATS: usize = 2;
+/// The outer pilot pair spans three times the inner pair's carriers.
+const PILOT_SPAN_RATIO: i32 = 3;
 const MIN_LENGTH: usize = 14;
 const LOOKAHEAD: usize = WINDOW + SHORT + LTF_SEARCH + 2 * FFT + SYMBOL;
 const MAX_HISTORY: usize = 600_000;
@@ -68,121 +76,6 @@ impl Scratch {
     }
 }
 
-/// The short training detector: lag-16 autocorrelation against power over a sliding window.
-#[derive(Clone, Copy, Default)]
-struct Plateau {
-    correlation: Complex<f32>,
-    energy: f32,
-    run: usize,
-    holding: bool,
-    primed: bool,
-}
-
-impl Plateau {
-    fn slide(&mut self, h: &[Complex<f32>], at: usize) {
-        let span = at
-            .checked_sub(1)
-            .and_then(|from| h[from..].first_chunk::<{ WINDOW + SHORT + 1 }>());
-        match span {
-            Some(span) if self.primed => {
-                let (leaving, entering) = (span[0], span[WINDOW]);
-                let (leaving_lag, entering_lag) = (span[SHORT], span[WINDOW + SHORT]);
-                self.correlation += entering * entering_lag.conj() - leaving * leaving_lag.conj();
-                self.energy += entering_lag.norm_sqr() - leaving_lag.norm_sqr();
-            }
-            _ => {
-                self.correlation = (0..WINDOW)
-                    .map(|k| h[at + k] * h[at + k + SHORT].conj())
-                    .sum();
-                self.energy = (0..WINDOW).map(|k| h[at + k + SHORT].norm_sqr()).sum();
-                self.primed = true;
-            }
-        }
-    }
-
-    fn step(&mut self) -> bool {
-        if !on_plateau(self.correlation, self.energy) {
-            self.run = 0;
-            self.holding = false;
-            return false;
-        }
-        if self.holding {
-            return false;
-        }
-        self.run += 1;
-        self.run == PLATEAU_SAMPLES
-    }
-}
-
-fn on_plateau(correlation: Complex<f32>, energy: f32) -> bool {
-    energy > MIN_POWER * WINDOW as f32
-        && correlation.norm_sqr() > PLATEAU * PLATEAU * energy * energy
-}
-
-/// Plateau probes on a fixed grid of `PROBE` samples. A window spans two grid blocks, so each
-/// block is summed once and serves two probes.
-#[derive(Clone, Copy, Default)]
-struct Probe {
-    block: Option<u64>,
-    correlation: Complex<f32>,
-    energy: f32,
-}
-
-impl Probe {
-    /// Whether the window at `at`, the grid point `absolute`, sits on the plateau.
-    fn on(&mut self, h: &[Complex<f32>], at: usize, absolute: u64) -> bool {
-        let block = absolute / PROBE as u64;
-        let (correlation, energy) = match self.block {
-            Some(cached) if cached == block => (self.correlation, self.energy),
-            _ => block_sums(h, at),
-        };
-        let (next_correlation, next_energy) = block_sums(h, at + PROBE);
-        *self = Self {
-            block: Some(block + 1),
-            correlation: next_correlation,
-            energy: next_energy,
-        };
-        on_plateau(correlation + next_correlation, energy + next_energy)
-    }
-}
-
-/// The lag-`SHORT` correlation and energy of the `PROBE` samples from `at`. The samples are
-/// read as interleaved floats, so every sum is a plain lane-wise multiply-add.
-fn block_sums(h: &[Complex<f32>], at: usize) -> (Complex<f32>, f32) {
-    const LANES: usize = 8;
-    const SIGNS: [f32; LANES] = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
-    let (Some(early), Some(late)) = (
-        h.get(at..).and_then(|h| h.first_chunk::<PROBE>()),
-        h.get(at + SHORT..).and_then(|h| h.first_chunk::<PROBE>()),
-    ) else {
-        return (Complex::default(), 0.0);
-    };
-    let (early, late) = (floats(early), floats(late));
-    let (mut re, mut im, mut energy) = ([0.0f32; LANES], [0.0f32; LANES], [0.0f32; LANES]);
-    for (x, y) in early
-        .as_chunks::<LANES>()
-        .0
-        .iter()
-        .zip(late.as_chunks::<LANES>().0)
-    {
-        for lane in 0..LANES {
-            re[lane] += x[lane] * y[lane];
-            im[lane] += x[lane ^ 1] * y[lane] * SIGNS[lane];
-            energy[lane] += y[lane] * y[lane];
-        }
-    }
-    let sum = |lanes: [f32; LANES]| lanes.iter().sum::<f32>();
-    (Complex::new(sum(re), sum(im)), sum(energy))
-}
-
-fn floats(z: &[Complex<f32>; PROBE]) -> [f32; 2 * PROBE] {
-    let mut out = [0.0; 2 * PROBE];
-    for (pair, z) in out.as_chunks_mut::<2>().0.iter_mut().zip(z) {
-        *pair = [z.re, z.im];
-    }
-    out
-}
-
 pub struct Ofdm {
     history: Vec<Complex<f32>>,
     plateau: Plateau,
@@ -193,7 +86,7 @@ pub struct Ofdm {
     state: State,
     fft: FftPair,
     reference: [Complex<f32>; FFT],
-    polarity: [f32; 127],
+    polarity: [f32; POLARITY_LEN],
     viterbi: ViterbiK7,
     scratch: Scratch,
     rejected: u32,
@@ -218,7 +111,7 @@ impl Ofdm {
     pub fn new() -> Self {
         let mut fft = FftPair::new(FFT);
         let mut reference = [Complex::new(0.0, 0.0); FFT];
-        for carrier in -26..=26 {
+        for carrier in -EDGE..=EDGE {
             reference[bin(carrier)] = Complex::new(long_training(carrier), 0.0);
         }
         fft.inverse(&mut reference);
@@ -234,7 +127,7 @@ impl Ofdm {
             reference,
             polarity: polarity(),
             viterbi: ViterbiK7::with_capacity(
-                ConvCode::new(&[0o133, 0o171]),
+                ConvCode::new(&CONV_POLYS),
                 MAX_DATA_BITS + MAX_CODED_BITS,
             ),
             scratch: Scratch::new(),
@@ -368,21 +261,20 @@ impl Ofdm {
             .sum();
         let cfo = coarse_cfo - fine.arg() / (TAU * FFT as f32);
         let mut channel = [Complex::new(0.0, 0.0); FFT];
-        for repeat in 0..2 {
+        for repeat in 0..LONG_TRAINING_REPEATS {
             let spectrum = self.spectrum(origin, cfo, ltf + repeat * FFT - BACKOFF);
-            for carrier in (-26..=26).filter(|&carrier| carrier != 0) {
+            for carrier in occupied_carriers() {
                 channel[bin(carrier)] += spectrum[bin(carrier)] * 0.5 * long_training(carrier);
             }
         }
-        let gain = (-26..=26)
-            .filter(|&carrier| carrier != 0)
+        let gain = occupied_carriers()
             .map(|carrier| channel[bin(carrier)].norm_sqr())
             .sum::<f32>()
-            / 52.0;
+            / OCCUPIED as f32;
         (gain > 0.0).then_some(Lock {
             origin,
             cfo,
-            signal: ltf + 2 * FFT,
+            signal: ltf + LONG_TRAINING_REPEATS * FFT,
             channel,
             gain,
         })
@@ -414,9 +306,9 @@ impl Ofdm {
         let common = pilots.iter().sum::<Complex<f32>>().arg();
         let unit = |z: Complex<f32>| z / z.norm().max(f32::EPSILON);
         let outer = unit(pilots[3] * pilots[0].conj());
-        let inner = unit(pilots[2] * pilots[1].conj()).powi(3);
-        let slope = (outer + inner).arg() / 42.0;
-        for carrier in -26..=26 {
+        let inner = unit(pilots[2] * pilots[1].conj()).powi(PILOT_SPAN_RATIO);
+        let slope = (outer + inner).arg() / (PILOT_CARRIERS[3] - PILOT_CARRIERS[0]) as f32;
+        for carrier in -EDGE..=EDGE {
             points[bin(carrier)] *= Complex::from_polar(1.0, -(common + slope * carrier as f32));
         }
         points
@@ -460,17 +352,17 @@ impl Ofdm {
     fn signal(&mut self, lock: &Lock) -> Option<(Rate, usize)> {
         self.decode(lock, RATES[0], 1, 0);
         let bits = self.scratch.bits.get(..SIGNAL_BITS)?;
-        let parity = bits[..18].iter().filter(|&&bit| bit).count() % 2 == 0;
-        let tail = bits[18..].iter().all(|&bit| !bit);
-        let code = bits[..4]
+        let parity = bits[..PARITY_BITS].iter().filter(|&&bit| bit).count() % 2 == 0;
+        let tail = bits[PARITY_BITS..].iter().all(|&bit| !bit);
+        let code = bits[..RATE_BITS]
             .iter()
             .fold(0u8, |acc, &bit| acc << 1 | u8::from(bit));
-        let length = bits[5..17]
+        let length = bits[RATE_BITS + 1..RATE_BITS + 1 + LENGTH_BITS]
             .iter()
             .enumerate()
             .fold(0usize, |acc, (bit, &value)| acc | usize::from(value) << bit);
         let rate = rate_for(code)?;
-        (parity && tail && !bits[4] && length >= MIN_LENGTH).then_some((rate, length))
+        (parity && tail && !bits[RATE_BITS] && length >= MIN_LENGTH).then_some((rate, length))
     }
 
     fn demodulate(&mut self, start: usize, sink: &impl Sink) -> Outcome {
@@ -537,19 +429,6 @@ impl Ofdm {
         if let State::Pending(start) = &mut self.state {
             *start = start.saturating_sub(drop);
         }
-    }
-}
-
-pub(crate) fn descramble(bits: &mut [bool]) {
-    let seed = bits.len().min(7);
-    let mut register = bits[..seed]
-        .iter()
-        .fold(0u8, |acc, &bit| acc << 1 | u8::from(bit));
-    bits[..seed].fill(false);
-    for bit in bits.iter_mut().skip(seed) {
-        let next = (register >> 6 ^ register >> 3) & 1;
-        register = (register << 1 | next) & 0x7F;
-        *bit ^= next == 1;
     }
 }
 

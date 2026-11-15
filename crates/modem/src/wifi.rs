@@ -2,16 +2,19 @@ pub mod channel;
 pub mod dsss;
 pub mod ofdm;
 mod receiver;
+mod scrambler;
 pub mod transmit;
 
 use num_complex::Complex;
-use sdrmm_dsp::crc32_ieee;
+use sdrmm_dsp::{crc32_ieee, math::complex::mean_power, power_db};
 
 pub use self::receiver::Receiver;
 
 pub const RATE_HZ: f64 = 20_000_000.0;
 pub const MAX_MPDU_BYTES: usize = 4_095;
 const FCS_BYTES: usize = 4;
+/// What a silent block reads as.
+const LEVEL_FLOOR_DBFS: f32 = -200.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WifiPhy {
@@ -52,8 +55,7 @@ pub fn append_fcs(mut mpdu: Vec<u8>) -> Vec<u8> {
 }
 
 pub(crate) fn level_dbfs(samples: &[Complex<f32>]) -> f32 {
-    let mean = samples.iter().map(Complex::norm_sqr).sum::<f32>() / samples.len().max(1) as f32;
-    10.0 * mean.max(1e-20).log10()
+    power_db(mean_power(samples), LEVEL_FLOOR_DBFS)
 }
 
 pub(crate) fn byte(bits: &[bool]) -> u8 {

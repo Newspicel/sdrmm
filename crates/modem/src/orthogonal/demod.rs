@@ -1,12 +1,15 @@
 use num_complex::Complex;
 
-use super::{filterbank::ToneBank, params::MfskParams};
+use super::{
+    filterbank::ToneBank,
+    params::{MAX_TONES, MfskParams},
+};
 use crate::{
     constellation::demap::energy_llrs,
     soft::{Llr, argmax},
 };
 
-const SCRATCH: usize = super::params::MAX_TONES;
+const SCRATCH: usize = MAX_TONES;
 
 #[derive(Clone, Debug)]
 pub struct MfskDemod {
@@ -129,12 +132,11 @@ pub fn noise_var_from_energies(energies: &[f32], m: usize) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_modem_test_support::ber::rng::Rng;
-
     use super::{
-        super::modulator::{MfskMod, TonePhase},
+        super::{modulator::TonePhase, testutil::wave as modulate},
         *,
     };
+    use crate::testutil::{add_noise, draws};
 
     const SPS: f64 = 10.0;
 
@@ -142,39 +144,11 @@ mod tests {
         MfskParams::orthogonal(m, SPS)
     }
 
-    fn modulate(params: &MfskParams, policy: TonePhase, symbols: &[u8]) -> Vec<Complex<f32>> {
-        let mut m = MfskMod::new(params.clone(), policy);
-        let mut out = Vec::new();
-        m.modulate(symbols, &mut out);
-        m.flush(&mut out);
-        out
-    }
-
-    fn payload(m: usize, len: usize) -> Vec<u8> {
-        let mut state = 0x9e37_79b9u32;
-        (0..len)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                (state as usize % m) as u8
-            })
-            .collect()
-    }
-
-    fn add_noise(wave: &mut [Complex<f32>], seed: u64, noise_var: f64) {
-        let mut rng = Rng::new(seed);
-        let sigma = (noise_var / 2.0).sqrt();
-        for s in wave.iter_mut() {
-            *s += Complex::new((rng.normal() * sigma) as f32, (rng.normal() * sigma) as f32);
-        }
-    }
-
     #[test]
     fn every_alphabet_round_trips_clean() {
         for m in [2usize, 4, 8, 16] {
             let p = MfskParams::orthogonal(m, (2 * m) as f64);
-            let symbols = payload(m, 200);
+            let symbols = draws(200, m, 0x9e37_79b9);
             let wave = modulate(&p, TonePhase::Continuous, &symbols);
             let mut out = Vec::new();
             MfskDemod::new(p).demodulate(&wave, 0, symbols.len(), &mut out);
@@ -185,7 +159,7 @@ mod tests {
     #[test]
     fn both_phase_policies_decode_identically() {
         let p = params(4);
-        let symbols = payload(4, 2_000);
+        let symbols = draws(2_000, 4, 0x9e37_79b9);
         let demod = MfskDemod::new(p.clone());
         let errors = |policy| {
             let mut wave = modulate(&p, policy, &symbols);
@@ -209,7 +183,7 @@ mod tests {
     #[test]
     fn the_timing_estimate_finds_the_offset_the_burst_was_sent_at() {
         let p = params(4);
-        let symbols = payload(4, 64);
+        let symbols = draws(64, 4, 2);
         let demod = MfskDemod::new(p.clone());
         for shift in [0usize, 1, 3, 7, 9] {
             let mut wave = vec![Complex::new(0.0, 0.0); shift];
@@ -225,7 +199,7 @@ mod tests {
     fn a_truncated_buffer_decides_only_the_whole_symbols() {
         let p = params(8);
         let window = p.window();
-        let symbols = payload(8, 16);
+        let symbols = draws(16, 8, 0x9e37_79b9);
         let wave = modulate(&p, TonePhase::Continuous, &symbols);
         let demod = MfskDemod::new(p);
         let short = &wave[..10 * window + 1];
@@ -240,7 +214,7 @@ mod tests {
     #[test]
     fn a_half_symbol_offset_loses_most_of_the_energy() {
         let p = params(8);
-        let symbols = payload(8, 64);
+        let symbols = draws(64, 8, 0x9e37_79b9);
         let wave = modulate(&p, TonePhase::Continuous, &symbols);
         let demod = MfskDemod::new(p);
         let mut energies = [0.0f32; 8];
@@ -260,7 +234,7 @@ mod tests {
     #[test]
     fn the_noise_estimate_recovers_a_known_n0() {
         let p = params(8);
-        let symbols = payload(8, 3_000);
+        let symbols = draws(3_000, 8, 0x9e37_79b9);
         let mut wave = modulate(&p, TonePhase::Continuous, &symbols);
         add_noise(&mut wave, 0x9711, 2.0);
         let demod = MfskDemod::new(p);
@@ -279,7 +253,7 @@ mod tests {
     #[test]
     fn llr_magnitudes_predict_their_own_error_rate() {
         let p = params(4);
-        let symbols = payload(4, 40_000);
+        let symbols = draws(40_000, 4, 0x9e37_79b9);
         let mut wave = modulate(&p, TonePhase::Continuous, &symbols);
         add_noise(&mut wave, 0x11cb, 1.0);
         let demod = MfskDemod::new(p);

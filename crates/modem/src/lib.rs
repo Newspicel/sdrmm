@@ -19,5 +19,8 @@ pub mod synth;
 pub mod wifi;
 
 #[cfg(test)]
+mod testutil;
+
+#[cfg(test)]
 #[global_allocator]
 static ALLOC: sdrmm_test_support::CountingAlloc = sdrmm_test_support::CountingAlloc::new();

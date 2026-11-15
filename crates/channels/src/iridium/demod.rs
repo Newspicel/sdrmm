@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
 use num_complex::Complex;
-use sdrmm_dsp::{fast_arg, fft::Transform};
+use sdrmm_dsp::{fast_arg, math::fft::Transform};
 
 use super::frame::{ACCESS_DL, ACCESS_UL, FrameKind, classify};
 use super::lcw::decode_lcw;

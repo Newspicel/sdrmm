@@ -1,5 +1,7 @@
+mod allocation;
 pub mod fbmc;
 pub mod gfdm;
+mod mmse;
 pub mod otfs;
 pub mod transform;
 pub mod ufmc;

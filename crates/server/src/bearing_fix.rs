@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use sdrmm_dsp::bearing_fix::{BearingLine, LineFix, cross};
+use sdrmm_dsp::array::bearing_fix::{BearingLine, LineFix, cross};
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
     BearingFix, DecodedRecord, DecoderEvent, EventOrigin, NO_CHANNEL, NodeBody, PatchGraph,

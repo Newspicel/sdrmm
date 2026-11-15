@@ -1,7 +1,7 @@
 use num_complex::Complex;
 
 use super::{Need, SynthError};
-use sdrmm_dsp::fft::Transform;
+use sdrmm_dsp::math::fft::Transform;
 
 use crate::drm::{
     aac::{AudioConfig, AudioMode, Coding, MAX_CONFIG, drm_frame_padded},

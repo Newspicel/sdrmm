@@ -1,4 +1,6 @@
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+mod cost;
+
+use cost::Cost;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum AssignError {
@@ -13,75 +15,7 @@ pub enum AssignError {
     Output { held: usize, rows: usize },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-struct Cost {
-    forbidden: f64,
-    total: f64,
-}
-
-impl Cost {
-    const OPEN: Self = Self {
-        forbidden: 0.0,
-        total: 0.0,
-    };
-    const FORBIDDEN: Self = Self {
-        forbidden: 1.0,
-        total: 0.0,
-    };
-    const UNBOUNDED: Self = Self {
-        forbidden: f64::INFINITY,
-        total: f64::INFINITY,
-    };
-
-    fn of(value: Option<f64>) -> Self {
-        match value {
-            Some(total) if total.is_finite() => Self {
-                forbidden: 0.0,
-                total,
-            },
-            _ => Self::FORBIDDEN,
-        }
-    }
-
-    fn allowed(self) -> bool {
-        self.forbidden == 0.0
-    }
-}
-
-impl Add for Cost {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self {
-            forbidden: self.forbidden + other.forbidden,
-            total: self.total + other.total,
-        }
-    }
-}
-
-impl Sub for Cost {
-    type Output = Self;
-
-    fn sub(self, other: Self) -> Self {
-        Self {
-            forbidden: self.forbidden - other.forbidden,
-            total: self.total - other.total,
-        }
-    }
-}
-
-impl AddAssign for Cost {
-    fn add_assign(&mut self, other: Self) {
-        *self = *self + other;
-    }
-}
-
-impl SubAssign for Cost {
-    fn sub_assign(&mut self, other: Self) {
-        *self = *self - other;
-    }
-}
-
+/// Hungarian assignment: most pairs matched first, lowest total cost second.
 pub struct Assignment {
     max_rows: usize,
     max_cols: usize,
@@ -241,17 +175,7 @@ impl Assignment {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct Rng(u64);
-
-    impl Rng {
-        fn next(&mut self) -> f64 {
-            self.0 ^= self.0 << 13;
-            self.0 ^= self.0 >> 7;
-            self.0 ^= self.0 << 17;
-            (self.0 >> 11) as f64 / (1u64 << 53) as f64
-        }
-    }
+    use crate::math::rng::Rng;
 
     type Table = Vec<Vec<Option<f64>>>;
 
@@ -260,8 +184,8 @@ mod tests {
             .map(|_| {
                 (0..cols)
                     .map(|_| {
-                        let value = rng.next() * 20.0 - 5.0;
-                        (rng.next() >= forbid).then_some(value)
+                        let value = rng.uniform() * 20.0 - 5.0;
+                        (rng.uniform() >= forbid).then_some(value)
                     })
                     .collect()
             })
@@ -331,7 +255,7 @@ mod tests {
 
     #[test]
     fn hungarian_matches_brute_force() {
-        let mut rng = Rng(0x1234_5678_9abc_def1);
+        let mut rng = Rng::mixed(0x1234_5678_9abc_def1);
         let mut assignment = Assignment::new(6, 6);
         for case in 0..200 {
             let forbid = [0.0, 0.2, 0.5][case % 3];
@@ -366,7 +290,7 @@ mod tests {
 
     #[test]
     fn rectangular_problems_are_solved() {
-        let mut rng = Rng(0x0dd_ba11_cafe_f00d);
+        let mut rng = Rng::mixed(0x0dd_ba11_cafe_f00d);
         let mut assignment = Assignment::new(7, 7);
         for (rows, cols) in [(3, 5), (5, 3), (1, 7), (7, 1), (4, 6), (6, 2)] {
             for case in 0..40 {

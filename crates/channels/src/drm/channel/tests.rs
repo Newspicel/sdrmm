@@ -169,8 +169,8 @@ fn displace_time_references(iq: &mut [Complex<f32>], mode: Robustness) {
     let oversample = (synth::drm::RATE_HZ / mode.rate_hz()) as usize;
     let (size, guard) = (mode.useful() * oversample, mode.guard() * oversample);
     let frame = mode.symbols() * (size + guard);
-    let mut forward = sdrmm_dsp::fft::Transform::forward(size);
-    let mut inverse = sdrmm_dsp::fft::Transform::inverse(size);
+    let mut forward = sdrmm_dsp::math::fft::Transform::forward(size);
+    let mut inverse = sdrmm_dsp::math::fft::Transform::inverse(size);
     let refs = mode.time_refs();
     for start in (0..iq.len() / frame).map(|index| index * frame) {
         let symbol = &mut iq[start..start + size + guard];

@@ -5,7 +5,7 @@ pub use model::*;
 use std::{f32::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
-use sdrmm_dsp::fft::FftPair;
+use sdrmm_dsp::math::fft::FftPair;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
 use crate::{

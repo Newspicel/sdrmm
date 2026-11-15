@@ -1,16 +1,26 @@
 mod demod;
-mod equalize;
+mod error;
+mod estimate;
+mod interpolate;
+pub(crate) mod line_fit;
 mod modulator;
 mod params;
+mod pilot;
+mod preamble;
+mod smoother;
+mod subcarrier;
 mod sync;
+mod tracker;
 
 pub use demod::{DELAY_GUARD_TAPS, OfdmDemod};
-pub use equalize::{
-    ChannelEstimate, ChannelEstimator, DelaySmoother, MIN_NOISE_VAR, PilotFit, PilotTracker,
-    interpolate, noise_var_from_repeats,
-};
+pub use error::OfdmError;
+pub use estimate::{ChannelEstimate, ChannelEstimator, MIN_NOISE_VAR, noise_var_from_repeats};
+pub use interpolate::interpolate;
 pub use modulator::{OfdmMod, long_training_time};
-pub use params::{
-    Domain, OfdmError, OfdmParams, PilotPattern, Preamble, Subcarrier, SubcarrierMap,
-};
+pub use params::{Domain, OfdmParams};
+pub use pilot::PilotPattern;
+pub use preamble::Preamble;
+pub use smoother::DelaySmoother;
+pub use subcarrier::{Subcarrier, SubcarrierMap};
 pub use sync::{Acquisition, PreambleSync};
+pub use tracker::{PilotFit, PilotTracker};

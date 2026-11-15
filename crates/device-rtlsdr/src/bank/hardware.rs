@@ -9,13 +9,13 @@ use sdrmm_device::{
     DeviceError, LaneEvent, LaneMark, MarkPoster, RxSink, SdrDevice, SinkItem, lock,
 };
 use sdrmm_dsp::{
-    array_sync::{
+    array::array_sync::{
         BinSolver, Boxcar, COARSE_FRAME, COARSE_LAGS, CoarseSearch, NOISE_CLIPPED_MAX,
         NOISE_COHERENCE_MIN, NOISE_PURITY_MIN, NOISE_XCORR_MIN, coarse_decimation,
     },
-    doa::{DOMINANT_WITHIN_DB, NOISE_ABOVE_DB, dominance_count, mdl_count},
-    linalg::{CMat, Eigen, HermitianEigen},
-    xcorr::XCorr,
+    array::doa::{DOMINANT_WITHIN_DB, NOISE_ABOVE_DB, dominance_count, mdl_count},
+    array::xcorr::XCorr,
+    math::linalg::{CMat, Eigen, HermitianEigen},
 };
 use sdrmm_wire::{AgcSetting, DeviceSettings, GainKind, GainValue};
 

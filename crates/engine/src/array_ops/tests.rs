@@ -1142,7 +1142,7 @@ fn a_tuning_mode_change_spreads_the_lanes_and_rebuilds_the_processors() {
     let centers: Vec<f64> = (0..5)
         .filter_map(|stream| held_lane_center(&engine, ds, stream))
         .collect();
-    let offsets = sdrmm_dsp::stitch::auto_offsets(5, status.sample_rate);
+    let offsets = sdrmm_dsp::measure::stitch::auto_offsets(5, status.sample_rate);
     assert_eq!(centers.len(), 5);
     assert!(offsets[0] < 0.0 && offsets[4] > 0.0);
     for (center, offset) in centers.iter().zip(&offsets) {

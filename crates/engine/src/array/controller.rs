@@ -12,8 +12,8 @@ use num_complex::Complex;
 use rtrb::Consumer;
 use sdrmm_channels::array_processor::MAX_LANES;
 use sdrmm_dsp::{
-    array_sync::{COARSE_LAGS, coarse_decimation},
-    manifold::{Direction, Vec3, steer},
+    array::array_sync::{COARSE_LAGS, coarse_decimation},
+    array::manifold::{Direction, Vec3, steer},
 };
 use sdrmm_wire::{
     ArrayCal, ArrayCalRecord, ArrayCalSource, ArrayFailure, ArrayGain, CalPhase, Coherence,

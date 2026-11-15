@@ -1,4 +1,4 @@
-use sdrmm_dsp::fec::{
+use sdrmm_dsp::coding::fec::{
     ccsds_rs::{Basis, CcsdsReedSolomon},
     conv7::ConvCode,
 };

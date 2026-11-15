@@ -1,6 +1,6 @@
 use core::ops::Range;
 
-use sdrmm_dsp::correlator::{BandVisibility, CorrelatorError, FxCorrelator};
+use sdrmm_dsp::array::correlator::{BandVisibility, CorrelatorError, FxCorrelator};
 use sdrmm_wire::{
     Baseline, CorrelatorParams, CorrelatorReading, ProcessorParams, ProcessorReading, StreamKind,
     SurfaceFrame, VisibilityOwned,

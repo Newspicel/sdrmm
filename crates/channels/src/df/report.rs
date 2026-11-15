@@ -1,9 +1,9 @@
-use sdrmm_dsp::doa::{
+use sdrmm_dsp::array::doa::{
     ANTENNA_PHASE_SIGMA_DEG, DEFAULT_CAL_SIGMA_DEG, DoaError, DoaReport, LIKELIHOOD_POINTS,
     MEASURED_PHASE_SIGMA_DEG, Peak, quantize_likelihood,
 };
-use sdrmm_dsp::manifold::AzimuthSpan;
-use sdrmm_dsp::special::norm_deg;
+use sdrmm_dsp::array::manifold::AzimuthSpan;
+use sdrmm_dsp::math::special::norm_deg;
 use sdrmm_wire::{
     BearingSource, CalPhase, CalSourceKind, DfAlgorithm, DfBearing, DfOtherPeak, DfPeak, DfReading,
     LatLon, ProcessorReading,

@@ -3,7 +3,7 @@ use sdrmm_channels::array_processor::{
     ArrayBlock, ArrayCtx, ArrayProcessor, CalView, CorrectionView, LaneBuffer, OutputSlots, Pose,
     ProcessorOutput, ResetCause, Steer, create_processor, processor_descriptor,
 };
-use sdrmm_dsp::manifold::{Direction, Geometry, Winding as DspWinding};
+use sdrmm_dsp::array::manifold::{Direction, Geometry, Winding as DspWinding};
 use sdrmm_dsp::scene::{ArrayScene, SceneSignal, SceneSource};
 use sdrmm_test_support::assert_no_alloc;
 use sdrmm_wire::{

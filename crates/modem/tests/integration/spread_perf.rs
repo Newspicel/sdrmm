@@ -22,6 +22,8 @@ use sdrmm_modem_test_support::ber::{
     rng::Rng,
 };
 
+use crate::baselines::baseline_path;
+
 const SYMBOLS: usize = 512;
 const CSS_SF: u32 = 7;
 const CLOCKED_PPM: f64 = 1_000.0;
@@ -195,10 +197,6 @@ fn measured() -> Vec<PerfBaseline> {
     ]
 }
 
-fn path(stem: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
-}
-
 #[test]
 fn the_direct_sequence_receive_path_allocates_nothing() {
     let mut burst = dsss_burst();
@@ -330,7 +328,7 @@ fn write_spread_perf_baseline() {
         panic!("a debug-profile number must never become the committed baseline");
     }
     let rows = measured();
-    let path = path(spread::PERF);
+    let path = baseline_path(spread::PERF);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     save_baselines(&path, &rows).unwrap();
     for row in &rows {
@@ -349,7 +347,7 @@ fn compare_spread_perf_baseline() {
         return;
     }
     let committed = committed_for_host(
-        &load_baselines(&path(spread::PERF)).unwrap(),
+        &load_baselines(&baseline_path(spread::PERF)).unwrap(),
         spread::PERF,
         "cargo test -p sdrmm-modem --release --test integration spread_perf::write_spread_perf_baseline -- --ignored",
     );

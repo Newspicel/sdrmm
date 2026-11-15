@@ -1,6 +1,6 @@
 use blip25_vocoder::halfrate::pack_natural;
 use num_complex::Complex;
-use sdrmm_dsp::{crc_msb_bits, fec::conv};
+use sdrmm_dsp::{coding::fec::conv, crc_msb_bits};
 
 use super::{bits, c4fm, dibits, filler, half_rate_air};
 use crate::dv::nxdn::privacy::{CipherKey, FRAME_BITS, FRAMES_PER_SUPERFRAME, STREAM_BYTES};

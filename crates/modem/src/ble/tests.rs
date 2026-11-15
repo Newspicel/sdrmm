@@ -1,4 +1,5 @@
 use num_complex::Complex;
+use sdrmm_dsp::{Decibels, math::rng::Rng};
 
 use super::{
     BlePhy, Lane, Packet, RATE_HZ, Sink, Whitener, channel_index, crc_ok, crc24, rf_channel_at,
@@ -23,20 +24,9 @@ pub(crate) fn pdu(length: usize) -> Vec<u8> {
 }
 
 pub(crate) fn noise(iq: &mut [Complex<f32>], seed: u64, sigma: f32) {
-    let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
-    let mut uniform = move || {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        ((state >> 11) as f64 / (1u64 << 53) as f64).max(1e-300)
-    };
+    let mut rng = Rng::mixed(seed);
     for sample in iq {
-        let radius = (-2.0 * uniform().ln()).sqrt();
-        let angle = std::f64::consts::TAU * uniform();
-        *sample += Complex::new(
-            (radius * angle.cos()) as f32 * sigma,
-            (radius * angle.sin()) as f32 * sigma,
-        );
+        *sample += rng.normal_pair(sigma);
     }
 }
 
@@ -55,7 +45,7 @@ pub(crate) fn on_air(
     for (n, sample) in iq.iter_mut().enumerate() {
         *sample *= Complex::from_polar(1.0, (step * n as f64) as f32);
     }
-    let sigma = (10f64.powf(-snr_db / 10.0) / 2.0).sqrt() as f32;
+    let sigma = ((-snr_db).db_to_power() / 2.0).sqrt() as f32;
     noise(&mut iq, seed, sigma);
     iq
 }

@@ -1,8 +1,12 @@
-use std::f64::consts::TAU;
+use num_complex::Complex;
 
 use super::*;
-use crate::fft::FftPair;
+use crate::math::fft::FftPair;
+use crate::math::rng::Rng;
+use crate::radar::RadarDspError;
 use crate::radar::batch::DopplerTaper;
+use crate::radar::fixtures::{fm_reference, unit_noise};
+use crate::radar::threshold::{CfarStatistic, alpha};
 
 const PFA: f64 = 1e-3;
 const STATS: [CfarStatistic; 3] = [
@@ -11,30 +15,11 @@ const STATS: [CfarStatistic; 3] = [
     CfarStatistic::Go,
 ];
 
-struct Rng(u64);
-
-impl Rng {
-    fn uniform(&mut self) -> f64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        (self.0 >> 11) as f64 / (1u64 << 53) as f64
-    }
-
-    fn exponential(&mut self) -> f32 {
-        -(1.0 - self.uniform()).ln() as f32
-    }
-
-    fn complex(&mut self) -> Complex<f32> {
-        let radius = (-(1.0 - self.uniform()).ln()).sqrt();
-        let angle = TAU * self.uniform();
-        Complex::new((radius * angle.cos()) as f32, (radius * angle.sin()) as f32)
-    }
-}
-
 fn exponential_map(rows: usize, gates: usize, seed: u64) -> Vec<f32> {
-    let mut rng = Rng(seed);
-    (0..rows * gates).map(|_| rng.exponential()).collect()
+    let mut rng = Rng::mixed(seed);
+    (0..rows * gates)
+        .map(|_| -(1.0 - rng.uniform()).ln() as f32)
+        .collect()
 }
 
 fn shape(stat: CfarStatistic, plane: bool) -> CfarSpec {
@@ -144,10 +129,10 @@ fn go_on_a_plane_designs_for_its_two_side_rectangles() {
 }
 
 fn oversampled_rows(rows: usize, gates: usize, seed: u64) -> Vec<Vec<Complex<f32>>> {
-    let mut rng = Rng(seed);
+    let mut rng = Rng::mixed(seed);
     (0..rows)
         .map(|_| {
-            let white: Vec<Complex<f32>> = (0..=gates).map(|_| rng.complex()).collect();
+            let white: Vec<Complex<f32>> = (0..=gates).map(|_| unit_noise(&mut rng)).collect();
             white
                 .windows(2)
                 .map(|pair| (pair[0] + pair[1]) * std::f32::consts::FRAC_1_SQRT_2)
@@ -197,15 +182,15 @@ fn oversampled_noise_keeps_pfa_within_3x() {
 #[test]
 fn correlated_lanes_keep_pfa_within_3x() {
     let (rows, gates, lanes) = (500, 1000, 4);
-    let mut rng = Rng(33);
+    let mut rng = Rng::mixed(33);
     let share = 0.5f32;
     let mut coherence = LaneCoherence::new(lanes).unwrap();
     let mut power = vec![0.0f32; rows * gates];
     let mut snapshot = [Complex::default(); 4];
     for cell in &mut power {
-        let common = rng.complex();
+        let common = unit_noise(&mut rng);
         for value in &mut snapshot {
-            *value = common * share.sqrt() + rng.complex() * (1.0 - share).sqrt();
+            *value = common * share.sqrt() + unit_noise(&mut rng) * (1.0 - share).sqrt();
         }
         coherence.add(&snapshot);
         *cell = snapshot.iter().map(Complex::norm_sqr).sum::<f32>() / lanes as f32;
@@ -224,24 +209,11 @@ fn correlated_lanes_keep_pfa_within_3x() {
     }
 }
 
-fn fm_reference(len: usize, seed: u64) -> Vec<Complex<f32>> {
-    let mut rng = Rng(seed);
-    let mut phase = 0.0f64;
-    let mut drive = 0.0f64;
-    (0..len)
-        .map(|_| {
-            drive = 0.995 * drive + 0.1 * (rng.uniform() - 0.5);
-            phase += drive;
-            Complex::from_polar(1.0, phase as f32)
-        })
-        .collect()
-}
-
 #[test]
 fn a_narrow_fm_reference_keeps_pfa_within_3x() {
     let (rows, gates, batch) = (1000, 256, 512);
     let reference = fm_reference(rows * batch + 1, 5);
-    let mut rng = Rng(77);
+    let mut rng = Rng::mixed(77);
     let mut fft = FftPair::new(1024);
     let mut spectrum = vec![Complex::default(); 1024];
     let mut profile = vec![Complex::default(); 1024];
@@ -251,7 +223,7 @@ fn a_narrow_fm_reference_keeps_pfa_within_3x() {
         spectrum[..batch].copy_from_slice(&reference[row * batch..(row + 1) * batch]);
         fft.forward(&mut spectrum);
         for value in &mut profile[..batch + gates] {
-            *value = rng.complex();
+            *value = unit_noise(&mut rng);
         }
         profile[batch + gates..].fill(Complex::default());
         fft.forward(&mut profile);
@@ -567,11 +539,16 @@ fn an_unreachable_correlated_column_holds_the_strictest_alpha() {
 
 #[test]
 fn lane_coherence_counts_independent_lanes() {
-    let mut rng = Rng(8);
+    let mut rng = Rng::mixed(8);
     let mut independent = LaneCoherence::new(4).unwrap();
     let mut identical = LaneCoherence::new(4).unwrap();
     for _ in 0..20_000 {
-        let lanes = [rng.complex(), rng.complex(), rng.complex(), rng.complex()];
+        let lanes = [
+            unit_noise(&mut rng),
+            unit_noise(&mut rng),
+            unit_noise(&mut rng),
+            unit_noise(&mut rng),
+        ];
         independent.add(&lanes);
         identical.add(&[lanes[0]; 4]);
     }

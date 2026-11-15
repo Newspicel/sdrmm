@@ -2,7 +2,12 @@ use std::f64::consts::TAU;
 
 use num_complex::Complex;
 
-use crate::fft::Transform;
+use crate::{
+    array::manifold::{Geometry, Winding},
+    math::fft::Transform,
+    math::rng::Rng,
+    scene::KRAKEN_RADIUS_M,
+};
 
 pub(crate) fn complex_tone(freq_norm: f64, len: usize) -> Vec<Complex<f32>> {
     (0..len)
@@ -50,7 +55,7 @@ pub(crate) fn tone_peak_and_snr(x: &[Complex<f32>]) -> (usize, f32) {
 pub(crate) struct XorShift32(pub(crate) u32);
 
 impl XorShift32 {
-    fn next_u32(&mut self) -> u32 {
+    pub(crate) fn next_u32(&mut self) -> u32 {
         let mut x = self.0;
         x ^= x << 13;
         x ^= x >> 17;
@@ -62,4 +67,21 @@ impl XorShift32 {
     pub(crate) fn next_f32(&mut self) -> f32 {
         (self.next_u32() as f64 / f64::from(u32::MAX) * 2.0 - 1.0) as f32
     }
+}
+
+pub(crate) const KRAKEN_ELEMENTS: usize = 5;
+
+pub(crate) fn uca5(radius_m: f64) -> Geometry {
+    Geometry::uca(radius_m, KRAKEN_ELEMENTS, 0.0, Winding::Clockwise).unwrap()
+}
+
+pub(crate) fn kraken() -> Geometry {
+    uca5(KRAKEN_RADIUS_M)
+}
+
+/// Complex white Gaussian noise of mean power `power`.
+pub(crate) fn complex_noise(len: usize, power: f32, seed: u64) -> Vec<Complex<f32>> {
+    let mut rng = Rng::mixed(seed);
+    let sigma = (power / 2.0).sqrt();
+    (0..len).map(|_| rng.normal_pair(sigma)).collect()
 }

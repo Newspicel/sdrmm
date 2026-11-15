@@ -1,21 +1,24 @@
 use num_complex::Complex;
 
-use super::Constellation;
+use super::{Constellation, MAX_BITS_PER_SYMBOL, squared_distance};
 use crate::soft::Llr;
 
-const MAX_BITS: usize = 32;
+const MAX_BITS: usize = MAX_BITS_PER_SYMBOL as usize;
+
+#[derive(Clone, Copy)]
+struct LogSum {
+    max: f64,
+    sum: f64,
+}
 
 pub fn max_log_llrs(y: Complex<f32>, c: &Constellation, noise_var: f64, out: &mut [Llr]) {
     let bits = c.bits_per_symbol();
     assert_eq!(bits, out.len(), "one LLR slot per label bit");
-    assert!(
-        noise_var.is_finite() && noise_var > 0.0,
-        "noise_var is a measured variance; {noise_var} is not one"
-    );
+    assert_variance(noise_var);
     let mut min0 = [f64::INFINITY; MAX_BITS];
     let mut min1 = [f64::INFINITY; MAX_BITS];
     for (p, &label) in c.points().iter().zip(c.labels()) {
-        let d2 = dist2(y, *p);
+        let d2 = squared_distance(y, *p);
         for k in 0..bits {
             if (label >> k) & 1 == 1 {
                 min1[k] = min1[k].min(d2);
@@ -32,14 +35,11 @@ pub fn max_log_llrs(y: Complex<f32>, c: &Constellation, noise_var: f64, out: &mu
 pub fn exact_llrs(y: Complex<f32>, c: &Constellation, noise_var: f64, out: &mut [Llr]) {
     let bits = c.bits_per_symbol();
     assert_eq!(bits, out.len(), "one LLR slot per label bit");
-    assert!(
-        noise_var.is_finite() && noise_var > 0.0,
-        "noise_var is a measured variance; {noise_var} is not one"
-    );
+    assert_variance(noise_var);
     let mut sum0 = [LogSum::EMPTY; MAX_BITS];
     let mut sum1 = [LogSum::EMPTY; MAX_BITS];
     for (p, &label) in c.points().iter().zip(c.labels()) {
-        let exponent = -dist2(y, *p) / noise_var;
+        let exponent = -squared_distance(y, *p) / noise_var;
         for k in 0..bits {
             if (label >> k) & 1 == 1 {
                 sum1[k].add(exponent);
@@ -61,10 +61,7 @@ pub fn energy_llrs(energies: &[f32], noise_var: f64, out: &mut [Llr]) {
     );
     let bits = m.trailing_zeros() as usize;
     assert_eq!(bits, out.len(), "one LLR slot per tone-index bit");
-    assert!(
-        noise_var.is_finite() && noise_var > 0.0,
-        "noise_var is a measured variance; {noise_var} is not one"
-    );
+    assert_variance(noise_var);
     let mut max0 = [f64::NEG_INFINITY; MAX_BITS];
     let mut max1 = [f64::NEG_INFINITY; MAX_BITS];
     for (tone, &e) in energies.iter().enumerate() {
@@ -93,21 +90,16 @@ pub fn noise_var_from_known(received: &[Complex<f32>], expected: &[Complex<f32>]
     received
         .iter()
         .zip(expected)
-        .map(|(&r, &e)| dist2(r, e))
+        .map(|(&r, &e)| squared_distance(r, e))
         .sum::<f64>()
         / received.len() as f64
 }
 
-fn dist2(a: Complex<f32>, b: Complex<f32>) -> f64 {
-    let dr = f64::from(a.re) - f64::from(b.re);
-    let di = f64::from(a.im) - f64::from(b.im);
-    dr * dr + di * di
-}
-
-#[derive(Clone, Copy)]
-struct LogSum {
-    max: f64,
-    sum: f64,
+fn assert_variance(noise_var: f64) {
+    assert!(
+        noise_var.is_finite() && noise_var > 0.0,
+        "noise_var is a measured variance; {noise_var} is not one"
+    );
 }
 
 impl LogSum {
@@ -139,24 +131,12 @@ mod tests {
     };
 
     use super::*;
+    use crate::constellation::fixtures::gray_4pam;
 
     fn bpsk() -> Constellation {
         Constellation::from_points(
             vec![Complex::new(-1.0, 0.0), Complex::new(1.0, 0.0)],
             vec![0, 1],
-        )
-        .unwrap()
-    }
-
-    fn gray_4pam() -> Constellation {
-        Constellation::from_points(
-            vec![
-                Complex::new(-3.0, 0.0),
-                Complex::new(-1.0, 0.0),
-                Complex::new(1.0, 0.0),
-                Complex::new(3.0, 0.0),
-            ],
-            vec![0b00, 0b01, 0b11, 0b10],
         )
         .unwrap()
     }

@@ -63,7 +63,7 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use num_complex::Complex;
-    use sdrmm_dsp::fec::conv::{self, Viterbi5};
+    use sdrmm_dsp::coding::fec::conv::{self, Viterbi5};
 
     use super::*;
     use crate::ber::{

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use num_complex::Complex;
-use sdrmm_dsp::manifold::Geometry;
+use sdrmm_dsp::array::manifold::Geometry;
 use sdrmm_wire::processor::PROCESSOR_TYPE_IDS;
 use sdrmm_wire::{
     ArrayElement, ArrayGeometry, BeamformerParams, DfParams, NodeBody, NodeKind,

@@ -1,8 +1,24 @@
+mod demod;
+mod modulator;
+
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
+use sdrmm_dsp::{Decibels, math::complex::narrow};
 
+pub use self::{demod::FbmcDemod, modulator::FbmcMod};
+use super::allocation::centred_bin;
+
+/// PHYDYAS prototype coefficients for an overlap of four.
 const PHYDYAS_K4: [f64; 3] = [0.971_960, std::f64::consts::FRAC_1_SQRT_2, 0.235_147];
+const REFERENCE_SUBCARRIERS: usize = 64;
+const REFERENCE_ALLOCATED: usize = 48;
+const QUARTER_TURNS: [Complex<f32>; 4] = [
+    Complex::new(1.0, 0.0),
+    Complex::new(0.0, 1.0),
+    Complex::new(-1.0, 0.0),
+    Complex::new(0.0, -1.0),
+];
 
 pub const MAX_SUBCARRIERS: usize = 1_024;
 
@@ -18,11 +34,10 @@ impl FbmcParams {
     #[must_use]
     pub fn reference() -> Self {
         Self {
-            subcarriers: 64,
-            allocated: 48,
+            subcarriers: REFERENCE_SUBCARRIERS,
+            allocated: REFERENCE_ALLOCATED,
         }
     }
-
     #[must_use]
     pub fn prototype_len(&self) -> usize {
         Self::OVERLAP * self.subcarriers
@@ -72,14 +87,11 @@ impl FbmcParams {
 
     #[must_use]
     pub fn bin(&self, index: usize) -> usize {
-        let half = (self.allocated / 2) as isize;
-        let offset = index as isize - half;
-        let signed = if offset < 0 { offset } else { offset + 1 };
-        signed.rem_euclid(self.subcarriers as isize) as usize
+        centred_bin(index, self.allocated, self.subcarriers)
     }
 
     #[must_use]
-    fn kernels(&self) -> Vec<Vec<Complex<f32>>> {
+    pub(super) fn kernels(&self) -> Vec<Vec<Complex<f32>>> {
         let p = self.prototype();
         let len = self.prototype_len();
         let delay = (len / 2) as f64;
@@ -89,123 +101,21 @@ impl FbmcParams {
                 (0..len)
                     .map(|u| {
                         let phase = TAU * m * (u as f64 - delay) / self.subcarriers as f64;
-                        let z = Complex::from_polar(p[u], phase);
-                        Complex::new(z.re as f32, z.im as f32)
+                        narrow(Complex::from_polar(p[u], phase))
                     })
                     .collect()
             })
             .collect()
     }
 
-    fn oqam_phase(&self, index: usize, slot: usize) -> Complex<f32> {
+    pub(super) fn oqam_phase(&self, index: usize, slot: usize) -> Complex<f32> {
         let m = self.bin(index);
-        let quarter = (m + slot) % 4;
-        let base = [
-            Complex::new(1.0f32, 0.0),
-            Complex::new(0.0, 1.0),
-            Complex::new(-1.0, 0.0),
-            Complex::new(0.0, -1.0),
-        ][quarter];
+        let base = QUARTER_TURNS[(m + slot) % QUARTER_TURNS.len()];
         if (m * slot).is_multiple_of(2) {
             base
         } else {
             -base
         }
-    }
-}
-
-#[derive(Clone)]
-pub struct FbmcMod {
-    params: FbmcParams,
-    kernels: Vec<Vec<Complex<f32>>>,
-}
-
-impl FbmcMod {
-    #[must_use]
-    pub fn new(params: FbmcParams) -> Self {
-        Self {
-            kernels: params.kernels(),
-            params,
-        }
-    }
-
-    #[must_use]
-    pub fn params(&self) -> &FbmcParams {
-        &self.params
-    }
-
-    pub fn modulate(&mut self, points: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
-        let allocated = self.params.allocated;
-        let stride = self.params.slot_stride();
-        let start = out.len();
-        out.resize(
-            start + self.params.frame_samples(points.len()),
-            Complex::new(0.0, 0.0),
-        );
-        for (symbol, chunk) in points.chunks_exact(allocated).enumerate() {
-            for (index, &point) in chunk.iter().enumerate() {
-                let kernel = &self.kernels[index];
-                for (half, value) in [point.re, point.im].into_iter().enumerate() {
-                    let slot = 2 * symbol + half;
-                    let phase = self.params.oqam_phase(index, slot) * value;
-                    let base = start + slot * stride;
-                    for (u, &tap) in kernel.iter().enumerate() {
-                        out[base + u] += phase * tap;
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct FbmcDemod {
-    params: FbmcParams,
-    kernels: Vec<Vec<Complex<f32>>>,
-}
-
-impl FbmcDemod {
-    #[must_use]
-    pub fn new(params: FbmcParams) -> Self {
-        Self {
-            kernels: params.kernels(),
-            params,
-        }
-    }
-
-    #[must_use]
-    pub fn params(&self) -> &FbmcParams {
-        &self.params
-    }
-
-    pub fn demodulate(
-        &mut self,
-        x: &[Complex<f32>],
-        symbols: usize,
-        out: &mut Vec<Complex<f32>>,
-    ) -> usize {
-        let (allocated, stride) = (self.params.allocated, self.params.slot_stride());
-        let len = self.params.prototype_len();
-        for symbol in 0..symbols {
-            if (2 * symbol + 1) * stride + len > x.len() {
-                return symbol;
-            }
-            for index in 0..allocated {
-                let kernel = &self.kernels[index];
-                let mut halves = [0.0f32; 2];
-                for (half, slot_value) in halves.iter_mut().enumerate() {
-                    let slot = 2 * symbol + half;
-                    let base = slot * stride;
-                    let mut acc = Complex::new(0.0f32, 0.0);
-                    for (u, &tap) in kernel.iter().enumerate() {
-                        acc += x[base + u] * tap.conj();
-                    }
-                    *slot_value = (acc * self.params.oqam_phase(index, slot).conj()).re;
-                }
-                out.push(Complex::new(halves[0], halves[1]));
-            }
-        }
-        symbols
     }
 }
 
@@ -220,25 +130,18 @@ pub fn prototype_response_db(params: &FbmcParams, offset: f64) -> f64 {
             .sum::<Complex<f64>>()
             .norm_sqr()
     };
-    10.0 * (at(offset) / at(0.0)).log10()
+    (at(offset) / at(0.0)).power_to_db()
 }
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_dsp::math::complex::widen;
+
     use super::*;
+    use crate::testutil::qpsk;
 
     fn points(count: usize) -> Vec<Complex<f32>> {
-        let mut state = 0x0_fb3cu32;
-        (0..count)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                let i = if state & 1 == 0 { 1.0 } else { -1.0 };
-                let q = if state & 2 == 0 { 1.0 } else { -1.0 };
-                Complex::new(i, q) / 2f32.sqrt()
-            })
-            .collect()
+        qpsk(count, 0x0_fb3c)
     }
 
     #[test]
@@ -317,13 +220,10 @@ mod tests {
         let inner: Complex<f64> = kernels[10]
             .iter()
             .zip(&kernels[11])
-            .map(|(a, b)| {
-                Complex::new(f64::from(a.re), f64::from(a.im))
-                    * Complex::new(f64::from(b.re), f64::from(b.im)).conj()
-            })
+            .map(|(a, b)| widen(*a) * widen(*b).conj())
             .sum();
         let phase = params.oqam_phase(10, 0) * params.oqam_phase(11, 0).conj();
-        let projected = inner * Complex::new(f64::from(phase.re), f64::from(phase.im));
+        let projected = inner * widen(phase);
         assert!(inner.norm() > 0.1, "neighbours do not overlap: {inner}");
         assert!(
             projected.re.abs() < 1e-3,

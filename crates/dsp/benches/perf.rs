@@ -9,7 +9,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput};
 use num_complex::Complex;
-use sdrmm_dsp::{fft::FftPair, xcorr::XCorr};
+use sdrmm_dsp::{array::xcorr::XCorr, math::fft::FftPair};
 
 fn resampling(c: &mut Criterion) {
     let input = pseudo(2048, 0xF12);
@@ -125,7 +125,7 @@ fn tuning(c: &mut Criterion) {
 
 struct SharedBand {
     index: usize,
-    decimator: sdrmm_dsp::subband::SubbandDecimator,
+    decimator: sdrmm_dsp::tuning::subband::SubbandDecimator,
     output: Vec<Complex<f32>>,
 }
 
@@ -166,7 +166,7 @@ fn shared_tuning(c: &mut Criterion) {
 
 fn shared_tuning_at_rate(c: &mut Criterion, input_rate: f64, block_len: usize, name: &str) {
     let input = pseudo(block_len, 0x5B);
-    let plan = sdrmm_dsp::subband::SubbandPlan::new(input_rate).expect("rate");
+    let plan = sdrmm_dsp::tuning::subband::SubbandPlan::new(input_rate).expect("rate");
     let mut output = Vec::new();
     let mut group = c.benchmark_group(name);
     group.throughput(Throughput::Elements(input.len() as u64));
@@ -249,11 +249,11 @@ fn shared_tuning_at_rate(c: &mut Criterion, input_rate: f64, block_len: usize, n
     group.finish();
 }
 
-fn protected_offset(plan: sdrmm_dsp::subband::SubbandPlan, offset: f64, rate: f64) -> f64 {
+fn protected_offset(plan: sdrmm_dsp::tuning::subband::SubbandPlan, offset: f64, rate: f64) -> f64 {
     if plan.select(offset, rate).is_some() {
         return offset;
     }
-    let center = (0..sdrmm_dsp::subband::SUBBANDS)
+    let center = (0..sdrmm_dsp::tuning::subband::SUBBANDS)
         .map(|band| plan.center(band))
         .min_by(|a, b| (a - offset).abs().total_cmp(&(b - offset).abs()))
         .expect("subbands");

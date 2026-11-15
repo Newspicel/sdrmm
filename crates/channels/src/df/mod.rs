@@ -9,15 +9,15 @@ pub use report::reserved_bearing;
 use std::sync::Arc;
 
 use num_complex::Complex;
-use sdrmm_dsp::covariance::{CovarianceError, SampleCovariance};
-use sdrmm_dsp::doa::{
+use sdrmm_dsp::array::covariance::{CovarianceError, SampleCovariance};
+use sdrmm_dsp::array::doa::{
     Doa, DoaConfig, DoaError, DoaReport, ELEVATION_NEEDS_2D, Estimator, FB_NEEDS_SYMMETRY,
     LIKELIHOOD_POINTS, NEEDS_LINE_OR_CIRCLE, OrderRule, Reconfigure, SourceCount, SquelchConfig,
     TOO_FEW_ELEMENTS, UlaSide as DoaSide,
 };
-use sdrmm_dsp::linalg::CMat;
-use sdrmm_dsp::manifold::{AliasReport, ElevationSpan, Manifold, ManifoldError};
-use sdrmm_dsp::special::wrap_deg;
+use sdrmm_dsp::array::manifold::{AliasReport, ElevationSpan, Manifold, ManifoldError};
+use sdrmm_dsp::math::linalg::CMat;
+use sdrmm_dsp::math::special::wrap_deg;
 use sdrmm_wire::processor::df::DF_POINTS;
 use sdrmm_wire::{DfAlgorithm, DfParams, ProcessorParams, SourceRule, UlaSide};
 use sdrmm_wire::{array::MAX_ARRAY_LANES, array::MIN_ARRAY_LANES};

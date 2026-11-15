@@ -15,12 +15,12 @@ use rtrb::{Consumer, Producer, PushError};
 use sdrmm_channels::array_processor::MAX_LANES;
 use sdrmm_dsp::{
     Ddc,
-    array_sync::{
+    array::array_sync::{
         BinError, BinSolution, BinSolver, COARSE_FRAME, COARSE_LAGS, CoarseError, CoarseSearch,
         FIT_BAND, NOISE_CLIPPED_MAX, NOISE_COHERENCE_MIN, NOISE_PURITY_MIN, NOISE_XCORR_MIN,
         POWER_ITERATIONS, design_correction, dominant,
     },
-    xcorr::{XCorr, straddled_coherence},
+    array::xcorr::{XCorr, straddled_coherence},
 };
 use sdrmm_wire::{ArrayCalRecord, ArrayCalSource};
 

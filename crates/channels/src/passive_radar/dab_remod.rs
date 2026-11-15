@@ -2,7 +2,7 @@ use std::f64::consts::TAU;
 
 use crate::dab::DabTransmissionMode;
 use num_complex::Complex;
-use sdrmm_dsp::fft::FftPair;
+use sdrmm_dsp::math::fft::FftPair;
 use sdrmm_wire::{radar::DAB_SAMPLE_RATE_HZ, radar::ReferenceHealth, radar::ReferenceMode};
 
 use super::plan::DAB_FRAME_LATENCY;

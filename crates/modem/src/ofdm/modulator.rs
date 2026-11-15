@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::fft::Transform;
+use sdrmm_dsp::math::fft::Transform;
 
 use super::params::{Domain, OfdmParams};
 
@@ -47,9 +47,8 @@ impl OfdmMod {
             self.place(bin, value);
         }
         self.transform();
-        let short_samples = preamble.short_repeats * preamble.short_period(fft);
-        out.reserve(short_samples + preamble.long_guard + preamble.long_repeats * fft);
-        for n in 0..short_samples {
+        out.reserve(preamble.samples(fft));
+        for n in 0..preamble.short_samples(fft) {
             out.push(self.grid[n % fft]);
         }
 
@@ -124,29 +123,14 @@ pub fn long_training_time(params: &OfdmParams) -> Vec<Complex<f32>> {
     let mut modulator = OfdmMod::new(params.clone());
     let mut preamble = Vec::new();
     modulator.preamble(&mut preamble);
-    let start = params.preamble().short_repeats * params.preamble().short_period(params.fft())
-        + params.preamble().long_guard;
+    let start = params.preamble().short_samples(params.fft()) + params.preamble().long_guard;
     preamble[start..start + params.fft()].to_vec()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ofdm::params::Domain;
-
-    fn points(n: usize, seed: u32) -> Vec<Complex<f32>> {
-        let mut state = seed | 1;
-        (0..n)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                let re = if state & 1 == 0 { 1.0 } else { -1.0 };
-                let im = if state & 2 == 0 { 1.0 } else { -1.0 };
-                Complex::new(re, im) * std::f32::consts::FRAC_1_SQRT_2
-            })
-            .collect()
-    }
+    use crate::testutil::qpsk as points;
 
     #[test]
     fn a_frame_is_exactly_as_long_as_the_geometry_says() {
@@ -208,7 +192,10 @@ mod tests {
             for trial in 0..trials {
                 let mut wave = Vec::new();
                 m.frame(
-                    &points(params.data_subcarriers() * symbols, 0x4e2 + trial),
+                    &points(
+                        params.data_subcarriers() * symbols,
+                        0x4e2 + u64::from(trial),
+                    ),
                     &mut wave,
                 );
                 total += wave.iter().map(|s| f64::from(s.norm_sqr())).sum::<f64>();
@@ -238,7 +225,7 @@ mod tests {
         );
         let mut complex = OfdmMod::new(OfdmParams::wifi_like());
         let mut wave = Vec::new();
-        complex.frame(&points(48 * 4, 0xd07), &mut wave);
+        complex.frame(&points(48 * 4, 0xd08), &mut wave);
         let quadrature: f64 = wave.iter().map(|s| f64::from(s.im * s.im)).sum();
         let total: f64 = wave.iter().map(|s| f64::from(s.norm_sqr())).sum();
         assert!((quadrature / total - 0.5).abs() < 0.05);

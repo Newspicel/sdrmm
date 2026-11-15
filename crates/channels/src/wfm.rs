@@ -9,8 +9,8 @@ use stereo::StereoDemux;
 
 use num_complex::Complex;
 use sdrmm_dsp::{
-    Decimator, Deemphasis, RealDecimator, ddc::STOPBAND_DB, design_lowpass,
-    fir::design_lowpass_kaiser,
+    Decimator, Deemphasis, RealDecimator, design_lowpass, filter::fir::design_lowpass_kaiser,
+    tuning::ddc::STOPBAND_DB,
 };
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily};

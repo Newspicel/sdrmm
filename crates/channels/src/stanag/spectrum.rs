@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::{fft::Transform, hann};
+use sdrmm_dsp::{hann, math::fft::Transform};
 
 use super::{NOMINAL_CARRIER_HZ, PASSBAND_HIGH_HZ, PASSBAND_LOW_HZ, RATE_HZ};
 

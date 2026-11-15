@@ -1,13 +1,11 @@
 use num_complex::Complex;
 
 use super::{
-    ACCESS_ADDRESS, BlePhy, CRC_BYTES, SYMBOL_RATE_HZ, Whitener,
+    BlePhy, CRC_BYTES, SYMBOL_RATE_HZ, Whitener, access_address_bits,
     coded::{Encoder, PREAMBLE_PERIOD, PREAMBLE_REPEATS, TERM_BITS, ci_bits, s8_pattern},
-    crc24, gfsk,
+    crc24, gfsk, le1m_preamble,
 };
 use crate::cpm::CpmMod;
-
-const PREAMBLE_BITS: usize = 8;
 
 fn with_crc(pdu: &[u8], channel_index: u8) -> Vec<u8> {
     let crc = crc24(pdu);
@@ -26,10 +24,6 @@ fn lsb_bits(bytes: &[u8]) -> impl Iterator<Item = bool> + '_ {
         .flat_map(|&byte| (0..8).map(move |bit| byte >> bit & 1 == 1))
 }
 
-fn access_address() -> impl Iterator<Item = bool> {
-    (0..32).map(|bit| ACCESS_ADDRESS >> bit & 1 == 1)
-}
-
 fn encode_s8(encoder: &mut Encoder, bits: impl Iterator<Item = bool>, out: &mut Vec<bool>) {
     for bit in bits {
         for coded in encoder.push(bit) {
@@ -43,8 +37,8 @@ pub fn symbols(pdu: &[u8], channel_index: u8, phy: BlePhy) -> Vec<bool> {
     let payload = with_crc(pdu, channel_index);
     let mut out = Vec::new();
     if phy == BlePhy::Le1m {
-        out.extend((0..PREAMBLE_BITS).map(|bit| bit % 2 == 1));
-        out.extend(access_address());
+        out.extend(le1m_preamble());
+        out.extend(access_address_bits());
         out.extend(lsb_bits(&payload));
         return out;
     }
@@ -56,7 +50,7 @@ pub fn symbols(pdu: &[u8], channel_index: u8, phy: BlePhy) -> Vec<bool> {
             .take(PREAMBLE_PERIOD.len() * PREAMBLE_REPEATS),
     );
     let mut encoder = Encoder::default();
-    let first = access_address()
+    let first = access_address_bits()
         .chain(ci_bits(phy))
         .chain(std::iter::repeat_n(false, TERM_BITS));
     encode_s8(&mut encoder, first, &mut out);

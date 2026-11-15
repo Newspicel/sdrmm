@@ -1,7 +1,8 @@
 use num_complex::Complex;
 
 use super::RadarDspError;
-use super::nlms::WindowRatio;
+use super::ratio::WindowRatio;
+use super::regressor::{Regressor, filter};
 
 type C32 = Complex<f32>;
 
@@ -14,12 +15,11 @@ const AGC_ATTACK: f32 = 16.0;
 const SILENCE_POWER: f32 = 1e-20;
 const REGRESSOR_FLOOR: f32 = 1e-6;
 
+/// Constant-modulus equaliser that strips multipath from an FM reference.
 pub struct ReferenceCma {
-    taps: usize,
     step: f32,
     weights: Vec<C32>,
-    history: Vec<C32>,
-    head: usize,
+    regressor: Regressor,
     power: f32,
     primed: bool,
     silent: bool,
@@ -33,11 +33,9 @@ impl ReferenceCma {
             return Err(RadarDspError::Setting);
         }
         let mut cma = Self {
-            taps,
             step,
             weights: vec![C32::default(); taps],
-            history: vec![C32::default(); 2 * taps],
-            head: 0,
+            regressor: Regressor::new(taps),
             power: 0.0,
             primed: false,
             silent: false,
@@ -66,12 +64,6 @@ impl ReferenceCma {
         !self.silent && (self.gain_db() > LOCK_GAIN_DB || self.clean())
     }
 
-    fn clean(&self) -> bool {
-        self.dispersion
-            .denominator_mean()
-            .is_some_and(|dispersion| dispersion <= CLEAN_DISPERSION)
-    }
-
     #[must_use]
     pub const fn fallback_frames(&self) -> u64 {
         self.fallback_frames
@@ -90,11 +82,16 @@ impl ReferenceCma {
         self.dispersion.clear();
     }
 
+    fn clean(&self) -> bool {
+        self.dispersion
+            .denominator_mean()
+            .is_some_and(|dispersion| dispersion <= CLEAN_DISPERSION)
+    }
+
     fn reset_weights(&mut self) {
         self.weights.fill(C32::default());
         self.weights[0] = C32::new(1.0, 0.0);
-        self.history.fill(C32::default());
-        self.head = 0;
+        self.regressor.clear();
     }
 
     fn normalise(&mut self, sample: C32) -> Option<C32> {
@@ -136,18 +133,9 @@ impl ReferenceCma {
             return C32::default();
         };
         self.silent = false;
-        let taps = self.taps;
-        self.head = (self.head + taps - 1) % taps;
-        self.history[self.head] = x;
-        self.history[self.head + taps] = x;
-        let regressor = &self.history[self.head..self.head + taps];
-        let (y, norm) = self
-            .weights
-            .iter()
-            .zip(regressor)
-            .fold((C32::default(), 0.0f32), |(sum, norm), (w, value)| {
-                (sum + w.conj() * value, norm + value.norm_sqr())
-            });
+        self.regressor.push(x);
+        let regressor = self.regressor.window();
+        let (y, norm) = filter(&self.weights, regressor);
         let modulus = y.norm_sqr();
         let gain = y.conj() * (self.step * (modulus - 1.0) / (REGRESSOR_FLOOR + norm));
         let mut energy = 0.0f32;
@@ -169,8 +157,10 @@ impl ReferenceCma {
 
 #[cfg(test)]
 mod tests {
-    use super::super::nlms::tests::{Noise, fm_reference};
     use super::*;
+    use crate::math::db::Decibels;
+    use crate::radar::fixtures::fm_reference;
+    use crate::testutil::complex_noise;
 
     const FS: f64 = 266_666.67;
 
@@ -211,7 +201,7 @@ mod tests {
         let tail = received.len() - FS as usize / 2;
         let before = dispersion(&received[tail..]);
         let after = dispersion(&out[tail..]);
-        let gain = 10.0 * (before / after).log10();
+        let gain = (before / after).power_to_db();
         assert!(gain >= 10.0, "{gain}");
         assert!(cma.gain_db() >= 10.0, "{}", cma.gain_db());
         assert!(cma.locked());
@@ -232,8 +222,7 @@ mod tests {
 
     #[test]
     fn noise_is_never_clean() {
-        let mut noise = Noise(21);
-        let received: Vec<C32> = (0..FS as usize).map(|_| noise.complex()).collect();
+        let received = complex_noise(FS as usize, 1.0, 21);
         let mut cma = ReferenceCma::new(16, 1e-3, FS).unwrap();
         let mut out = vec![C32::default(); received.len()];
         cma.process(&received, &mut out);
@@ -270,8 +259,7 @@ mod tests {
         cma.process(&zeros, &mut out);
         assert!(out.iter().all(|y| *y == C32::default()));
         assert_eq!(cma.fallback_frames(), 1);
-        let mut noise = Noise(4);
-        let mut burst: Vec<C32> = (0..5000).map(|_| noise.complex() * 1e3).collect();
+        let mut burst = complex_noise(5000, 1e6, 4);
         burst[100] = C32::new(f32::INFINITY, 0.0);
         let mut out = vec![C32::default(); burst.len()];
         cma.process(&burst, &mut out);

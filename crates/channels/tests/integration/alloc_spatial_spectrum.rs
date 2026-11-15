@@ -6,7 +6,7 @@ mod spatial_spectrum {
         ProcessorOutput, ResetCause, create_processor, geometry_of,
     };
     use sdrmm_channels::spatial_spectrum::surface_cells;
-    use sdrmm_dsp::manifold::Direction;
+    use sdrmm_dsp::array::manifold::Direction;
     use sdrmm_dsp::scene::{ArrayScene, SceneSignal, SceneSource};
     use sdrmm_test_support::assert_no_alloc;
     use sdrmm_wire::{

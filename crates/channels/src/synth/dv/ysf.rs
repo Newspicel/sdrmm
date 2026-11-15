@@ -1,6 +1,6 @@
 use blip25_vocoder::fullrate;
 use num_complex::Complex;
-use sdrmm_dsp::{CyclicCode, crc16_msb, fec::conv};
+use sdrmm_dsp::{CyclicCode, coding::fec::conv, crc16_msb};
 
 use super::{bits, c4fm, dibits, filler};
 

@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::fft::Transform;
+use sdrmm_dsp::math::fft::Transform;
 
 const BLOCKS: u32 = 2;
 

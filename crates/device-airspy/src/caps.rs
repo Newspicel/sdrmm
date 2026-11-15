@@ -1,5 +1,5 @@
 use sdrmm_device::{DeviceError, check_stream_settings};
-use sdrmm_dsp::realiq;
+use sdrmm_dsp::tuning::realiq;
 use sdrmm_wire::{
     Agc, AgcReach, AgcSetting, ArgumentOption, Capabilities, Coherence, DcArtifact, DeviceSettings,
     Duplex, GainKind, GainStage, GainUnit, GainValue, Range, StreamScope, any_range_holds,

@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::stitch::auto_offsets;
+use sdrmm_dsp::measure::stitch::auto_offsets;
 use sdrmm_wire::DfParams;
 
 use super::*;

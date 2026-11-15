@@ -5,6 +5,9 @@ use super::tables::{FFT, Modulation, bin, data_carriers};
 
 const SCALE: f32 = 32.0;
 const LIMIT: f32 = 127.0;
+/// Mean energy of the unnormalised 16-QAM and 64-QAM grids.
+const QAM16_ENERGY: f32 = 10.0;
+const QAM64_ENERGY: f32 = 42.0;
 
 pub fn demap(
     points: &[Complex<f32>; FFT],
@@ -26,12 +29,12 @@ pub fn demap(
                 slot[1] = point.im * scale;
             }
             Modulation::Qam16 => {
-                let scale = 10.0f32.sqrt();
+                let scale = QAM16_ENERGY.sqrt();
                 axis16(point.re * scale, &mut slot[..2]);
                 axis16(point.im * scale, &mut slot[2..]);
             }
             Modulation::Qam64 => {
-                let scale = 42.0f32.sqrt();
+                let scale = QAM64_ENERGY.sqrt();
                 axis64(point.re * scale, &mut slot[..3]);
                 axis64(point.im * scale, &mut slot[3..]);
             }
@@ -84,7 +87,11 @@ pub fn map(modulation: Modulation, bits: &[bool]) -> Complex<f32> {
     match modulation {
         Modulation::Bpsk => Complex::new(level(&bits[..1]), 0.0),
         Modulation::Qpsk => Complex::new(level(&bits[..1]), level(&bits[1..2])) / 2.0f32.sqrt(),
-        Modulation::Qam16 => Complex::new(level(&bits[..2]), level(&bits[2..4])) / 10.0f32.sqrt(),
-        Modulation::Qam64 => Complex::new(level(&bits[..3]), level(&bits[3..6])) / 42.0f32.sqrt(),
+        Modulation::Qam16 => {
+            Complex::new(level(&bits[..2]), level(&bits[2..4])) / QAM16_ENERGY.sqrt()
+        }
+        Modulation::Qam64 => {
+            Complex::new(level(&bits[..3]), level(&bits[3..6])) / QAM64_ENERGY.sqrt()
+        }
     }
 }

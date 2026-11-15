@@ -1,9 +1,9 @@
 use num_complex::Complex;
-use sdrmm_dsp::doa::{Doa, DoaConfig, DoaReport, Estimator, LIKELIHOOD_POINTS, Reconfigure};
-use sdrmm_dsp::linalg::{CMat, LinalgError};
-use sdrmm_dsp::manifold::{
+use sdrmm_dsp::array::doa::{Doa, DoaConfig, DoaReport, Estimator, LIKELIHOOD_POINTS, Reconfigure};
+use sdrmm_dsp::array::manifold::{
     Direction, ElevationSpan, Geometry, Manifold, ManifoldError, Vec3, Winding,
 };
+use sdrmm_dsp::math::linalg::{CMat, LinalgError};
 use sdrmm_test_support::assert_no_alloc;
 
 const FREQ: f64 = 433.92e6;

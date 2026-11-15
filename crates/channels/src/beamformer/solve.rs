@@ -1,8 +1,10 @@
 use num_complex::Complex;
-use sdrmm_dsp::beamform::{BeamError, BeamMetrics, LaneNoise, WeightSet, beam_metrics, pattern};
-use sdrmm_dsp::linalg::MAX_ORDER;
-use sdrmm_dsp::manifold::Direction;
-use sdrmm_dsp::special::{norm_deg, wrap_deg};
+use sdrmm_dsp::array::beamform::{
+    BeamError, BeamMetrics, LaneNoise, WeightSet, beam_metrics, pattern,
+};
+use sdrmm_dsp::array::manifold::Direction;
+use sdrmm_dsp::math::linalg::MAX_ORDER;
+use sdrmm_dsp::math::special::{norm_deg, wrap_deg};
 use sdrmm_wire::processor::beamformer::MAX_BEAM_NULLS;
 use sdrmm_wire::{BeamMode, NoiseModel, SteerSource};
 

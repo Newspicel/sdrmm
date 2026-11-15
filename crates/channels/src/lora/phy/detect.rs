@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::special::gamma::gamma_q;
+use sdrmm_dsp::math::special::gamma::gamma_q;
 
 use super::chirp::{Dechirper, fraction_of};
 

@@ -1,10 +1,11 @@
-use std::f64::consts::PI;
+mod spread;
 
 use num_complex::Complex;
+use spread::Spread;
 
 use super::RadarDspError;
-use crate::manifold::{Direction, MAX_ELEMENTS, Manifold};
-use crate::special::norm_deg;
+use crate::array::manifold::{Direction, MAX_ELEMENTS, Manifold};
+use crate::math::special::{norm_deg, parabolic_peak};
 
 pub const MIN_SIGMA_DEG: f32 = 0.1;
 pub const MAX_SIGMA_DEG: f32 = 90.0;
@@ -18,6 +19,7 @@ pub struct AoaEstimate {
     pub mirror_deg: Option<f32>,
 }
 
+/// Bartlett beam scan over the azimuth ring, with a Cramer-Rao style bearing sigma.
 pub struct Beamscan {
     elements: usize,
     step_deg: f64,
@@ -132,13 +134,12 @@ impl Beamscan {
         }
         let minus = self.response[(peak + points - 1) % points];
         let plus = self.response[(peak + 1) % points];
-        let curvature = minus - 2.0 * top + plus;
-        if points < 3 || curvature >= 0.0 {
+        if points < 3 {
             return Some((peak as f64, top));
         }
-        let delta = ((minus - plus) / (2.0 * curvature)).clamp(-0.5, 0.5);
-        let value = top - 0.25 * (minus - plus) * delta;
-        Some((peak as f64 + f64::from(delta), value))
+        let delta = parabolic_peak(f64::from(minus), f64::from(top), f64::from(plus));
+        let value = top - 0.25 * (minus - plus) * delta as f32;
+        Some((peak as f64 + delta, value))
     }
 
     fn sigma_deg(&self, azimuth_deg: f64, snr: f32) -> f32 {
@@ -149,50 +150,25 @@ impl Beamscan {
         if !(denominator > 0.0 && denominator.is_finite()) {
             return MAX_SIGMA_DEG;
         }
-        ((180.0 / PI / denominator) as f32).clamp(MIN_SIGMA_DEG, MAX_SIGMA_DEG)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-struct Spread {
-    count: f64,
-    sum: f64,
-    squares: f64,
-}
-
-impl Spread {
-    fn push(self, value: f64) -> Self {
-        Self {
-            count: self.count + 1.0,
-            sum: self.sum + value,
-            squares: self.squares + value * value,
-        }
-    }
-
-    fn rms(self) -> f64 {
-        if self.count == 0.0 {
-            return 0.0;
-        }
-        let mean = self.sum / self.count;
-        (self.squares / self.count - mean * mean).max(0.0).sqrt()
+        (denominator.recip().to_degrees() as f32).clamp(MIN_SIGMA_DEG, MAX_SIGMA_DEG)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::f64::consts::TAU;
+    use std::f64::consts::{PI, TAU};
     use std::sync::Arc;
 
     use super::*;
-    use crate::manifold::{Geometry, LIGHT_SPEED_M_S, Winding};
+    use crate::array::manifold::{Geometry, Winding, wavelength_m};
+    use crate::math::special::wrap_deg;
     use crate::scene::{ArrayScene, SceneSignal, SceneSource};
-    use crate::special::wrap_deg;
 
     const FREQ: f64 = 100e6;
     const SKEW_DEG: [f64; 4] = [0.0, 25.0, -20.0, 15.0];
 
     fn lambda() -> f64 {
-        LIGHT_SPEED_M_S / FREQ
+        wavelength_m(FREQ)
     }
 
     fn uca() -> Geometry {

@@ -17,7 +17,7 @@ use sdrmm_device_virtual::{
     BenchWorld, Emitter, ReportedGap, Ripple, Slip, VirtualDriver, Waveform, default_devices,
     default_scene,
 };
-use sdrmm_dsp::array_sync::{
+use sdrmm_dsp::array::array_sync::{
     Boxcar, COARSE_FRAME, COARSE_LAGS, CoarseSearch, EQ_POINTS, coarse_decimation,
 };
 use sdrmm_engine::{ArrayEvent, ArraySpec};

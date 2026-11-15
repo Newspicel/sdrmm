@@ -1,124 +1,43 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::fft::FftPair;
+use sdrmm_dsp::math::{complex::widen, fft::FftPair, special::wrap_rad};
 
-use super::{
-    GfdmDemod, GfdmDetector, GfdmParams,
-    preamble::{GfdmAcquisition, GfdmSync},
-};
+use super::{CarrierTracker, GfdmAcquisition, GfdmDemod, GfdmDetector, GfdmParams, GfdmSync};
 use crate::{
     constellation::Constellation,
     framesync::{derotate, derotate_from},
-    ofdm::MIN_NOISE_VAR,
+    multicarrier::mmse::{mmse, unbias},
+    ofdm::{MIN_NOISE_VAR, line_fit::LineFit},
 };
 
 pub const LEAK_TAPS: usize = 2;
 pub const TAP_SIGNIFICANCE: f32 = 9.0;
 pub const SEGMENTS: usize = 8;
 pub const PULL_IN_PASSES: usize = 1;
-pub const FREQ_GAIN: f64 = 1.0;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct CarrierTracker {
-    phase: f64,
-    cfo: f64,
-}
-
-impl CarrierTracker {
-    #[must_use]
-    pub fn new(cfo: f64, first_sample: usize) -> Self {
-        Self {
-            phase: (TAU * cfo * first_sample as f64).rem_euclid(TAU),
-            cfo,
-        }
-    }
-
-    #[must_use]
-    pub fn phase(&self) -> f64 {
-        self.phase
-    }
-
-    #[must_use]
-    pub fn cfo(&self) -> f64 {
-        self.cfo
-    }
-
-    pub fn correct(
-        &mut self,
-        points: &mut [Complex<f32>],
-        table: &Constellation,
-        window: usize,
-        span: usize,
-    ) -> f64 {
-        let error = decision_phase(points, table);
-        rotate(points, -error);
-        let centre = window as f64 / 2.0;
-        let span = span as f64;
-        let before = self.cfo;
-        self.cfo += FREQ_GAIN * error / (TAU * span);
-        let advance = TAU * (before * centre + self.cfo * (span - centre));
-        self.phase = (self.phase + error + advance).rem_euclid(TAU);
-        error
-    }
-}
-
+/// Phases of successive segments, unwrapped as they come, on a line weighted by magnitude.
 #[derive(Clone, Copy, Debug, Default)]
 struct PhaseLine {
     last: Option<f64>,
     unwrapped: f64,
-    sw: f64,
-    sx: f64,
-    sy: f64,
-    sxx: f64,
-    sxy: f64,
+    fit: LineFit,
 }
 
 impl PhaseLine {
     fn push(&mut self, x: f64, value: Complex<f64>) {
         let angle = value.arg();
         self.unwrapped = match self.last {
-            Some(last) => self.unwrapped + wrap(angle - last),
+            Some(last) => self.unwrapped + wrap_rad(angle - last),
             None => angle,
         };
         self.last = Some(angle);
-        let w = value.norm();
-        self.sw += w;
-        self.sx += w * x;
-        self.sy += w * self.unwrapped;
-        self.sxx += w * x * x;
-        self.sxy += w * x * self.unwrapped;
+        self.fit.push(x, self.unwrapped, value.norm());
     }
 
     fn slope(&self) -> f64 {
-        let det = self.sw * self.sxx - self.sx * self.sx;
-        if det.abs() <= f64::EPSILON {
-            0.0
-        } else {
-            (self.sw * self.sxy - self.sx * self.sy) / det
-        }
+        self.fit.line(f64::EPSILON).1
     }
-}
-
-fn wrap(rad: f64) -> f64 {
-    (rad + std::f64::consts::PI).rem_euclid(TAU) - std::f64::consts::PI
-}
-
-fn rotate(points: &mut [Complex<f32>], rad: f64) {
-    let turn = Complex::from_polar(1.0f32, rad as f32);
-    for p in points {
-        *p *= turn;
-    }
-}
-
-fn decision_phase(points: &[Complex<f32>], table: &Constellation) -> f64 {
-    let mut acc = Complex::new(0.0f64, 0.0);
-    for &p in points {
-        let d = table.nearest(p);
-        let v = p * d.conj();
-        acc += Complex::new(f64::from(v.re), f64::from(v.im));
-    }
-    acc.arg()
 }
 
 #[derive(Clone)]
@@ -308,10 +227,7 @@ impl GfdmReceiver {
             .enumerate()
         {
             let sum: Complex<f32> = got.iter().zip(want).map(|(y, r)| y * r.conj()).sum();
-            fit.push(
-                index as f64,
-                Complex::new(f64::from(sum.re), f64::from(sum.im)),
-            );
+            fit.push(index as f64, widen(sum));
         }
         fit.slope() / (TAU * segment as f64)
     }
@@ -363,15 +279,12 @@ impl GfdmReceiver {
     fn mmse_weights(&mut self) {
         let nv = self.noise_var as f32;
         let mut bias = 0.0f64;
-        for (w, h) in self.weights.iter_mut().zip(&self.channel) {
-            let gain = h.norm_sqr();
-            *w = h.conj() / (gain + nv);
-            bias += f64::from(gain / (gain + nv));
+        for (w, &h) in self.weights.iter_mut().zip(&self.channel) {
+            let (weight, kept) = mmse(h, nv);
+            *w = weight;
+            bias += f64::from(kept);
         }
-        let bias = (bias / self.weights.len() as f64).max(f64::MIN_POSITIVE) as f32;
-        for w in &mut self.weights {
-            *w /= bias;
-        }
+        unbias(&mut self.weights, bias);
     }
 }
 
@@ -384,7 +297,11 @@ mod tests {
     };
 
     use super::*;
-    use crate::{constellation::tables, multicarrier::GfdmMod};
+    use crate::{
+        constellation::tables,
+        multicarrier::GfdmMod,
+        testutil::{points, symbol_errors},
+    };
 
     const BLOCKS: usize = 8;
 
@@ -398,20 +315,11 @@ mod tests {
         tables::qam_square(4).unwrap()
     }
 
-    fn payload(seed: u32) -> Vec<Complex<f32>> {
-        let table = qpsk();
-        let mut state = seed | 1;
-        (0..BLOCKS * params().block())
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                table.points()[(state % 4) as usize]
-            })
-            .collect()
+    fn payload(seed: u64) -> Vec<Complex<f32>> {
+        points(&qpsk(), BLOCKS * params().block(), seed)
     }
 
-    fn burst(lead: usize, seed: u32) -> (Vec<Complex<f32>>, Vec<Complex<f32>>) {
+    fn burst(lead: usize, seed: u64) -> (Vec<Complex<f32>>, Vec<Complex<f32>>) {
         let sent = payload(seed);
         let mut wave = vec![Complex::new(0.0, 0.0); lead];
         GfdmMod::new(params()).frame(&sent, &mut wave);
@@ -424,13 +332,7 @@ mod tests {
     }
 
     fn errors(sent: &[Complex<f32>], got: &[Complex<f32>]) -> usize {
-        let table = qpsk();
-        let wrong = sent
-            .iter()
-            .zip(got)
-            .filter(|(a, b)| table.hard_slice(**a) != table.hard_slice(**b))
-            .count();
-        wrong + sent.len().saturating_sub(got.len())
+        symbol_errors(&qpsk(), sent, got)
     }
 
     fn decode(rx: &mut GfdmReceiver, wave: &[Complex<f32>]) -> Vec<Complex<f32>> {

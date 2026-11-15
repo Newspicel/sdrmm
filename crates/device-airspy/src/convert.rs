@@ -1,5 +1,5 @@
 use sdrmm_device::{Sample, SampleConverter};
-use sdrmm_dsp::{RealToIq, iir::DcBlocker};
+use sdrmm_dsp::{RealToIq, filter::iir::DcBlocker};
 
 /// The ADC delivers unsigned 12-bit codes, so mid-scale is the zero of the signal.
 const MID_SCALE: f32 = 2048.0;
@@ -74,7 +74,7 @@ fn code_to_f32(word: u16) -> f32 {
 mod tests {
     use std::f64::consts::TAU;
 
-    use sdrmm_dsp::fft::FftPair;
+    use sdrmm_dsp::math::fft::FftPair;
 
     use super::*;
 

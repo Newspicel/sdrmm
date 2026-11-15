@@ -13,6 +13,8 @@ use sdrmm_modem_test_support::ber::{
     },
 };
 
+use crate::baselines::baseline_path;
+
 const STEM: &str = "multicarrier/multicarrier_perf";
 
 const BLOCKS: usize = 8;
@@ -175,10 +177,6 @@ fn measured_baselines() -> Vec<PerfBaseline> {
     ]
 }
 
-fn path(stem: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
-}
-
 #[test]
 fn the_gfdm_paths_allocate_nothing() {
     let params = gfdm_params();
@@ -287,7 +285,7 @@ fn write_multicarrier_perf_baseline() {
     if cfg!(debug_assertions) {
         panic!("a debug-profile number must never become the committed baseline");
     }
-    let path = path(STEM);
+    let path = baseline_path(STEM);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let rows = measured_baselines();
     for row in &rows {
@@ -310,7 +308,7 @@ fn compare_multicarrier_perf_baseline() {
         return;
     }
     let committed = committed_for_host(
-        &load_baselines(&path(STEM)).unwrap(),
+        &load_baselines(&baseline_path(STEM)).unwrap(),
         STEM,
         "cargo test -p sdrmm-modem --release --test integration multicarrier_perf::write_multicarrier_perf_baseline -- --ignored",
     );

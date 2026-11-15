@@ -1,0 +1,168 @@
+use crate::filter::iir::one_pole_coeff;
+
+const ENV_TAU_MIN_S: f64 = 4e-4;
+const ENV_TAU_MAX_S: f64 = 8e-3;
+/// How many times faster the level detector settles than the quicker of attack and release.
+const ENV_SPEEDUP: f64 = 4.0;
+
+#[derive(Clone, Debug)]
+pub struct Agc {
+    target: f32,
+    max_gain: f32,
+    gain: f32,
+    env: f32,
+    env_coeff: f32,
+    attack_coeff: f32,
+    release_coeff: f32,
+}
+
+impl Agc {
+    #[must_use]
+    pub fn new(rate: f64, target_rms: f32, attack_s: f32, release_s: f32, max_gain: f32) -> Self {
+        assert!(
+            rate > 0.0 && target_rms > 0.0 && attack_s > 0.0 && release_s > 0.0 && max_gain > 0.0,
+            "agc parameters must be positive"
+        );
+        let env_tau =
+            f64::from(attack_s.min(release_s)).clamp(ENV_TAU_MIN_S, ENV_TAU_MAX_S) / ENV_SPEEDUP;
+        Self {
+            target: target_rms,
+            max_gain,
+            gain: 1.0,
+            env: 0.0,
+            env_coeff: one_pole_coeff(rate, env_tau),
+            attack_coeff: one_pole_coeff(rate, f64::from(attack_s)),
+            release_coeff: one_pole_coeff(rate, f64::from(release_s)),
+        }
+    }
+
+    #[must_use]
+    pub fn gain(&self) -> f32 {
+        self.gain
+    }
+
+    pub fn process(&mut self, samples: &mut [f32]) {
+        if !self.env.is_finite() {
+            self.env = 0.0;
+        }
+        if !self.gain.is_finite() {
+            self.gain = 1.0;
+        }
+        for s in samples {
+            if !s.is_finite() {
+                *s = 0.0;
+            }
+            self.env += self.env_coeff * (*s * *s - self.env);
+            let rms = self.env.max(0.0).sqrt();
+            let desired = if rms > f32::MIN_POSITIVE {
+                (self.target / rms).min(self.max_gain)
+            } else {
+                self.max_gain
+            };
+            let coeff = if desired < self.gain {
+                self.attack_coeff
+            } else {
+                self.release_coeff
+            };
+            self.gain += coeff * (desired - self.gain);
+            *s *= self.gain;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        math::db::Decibels,
+        testutil::{real_tone, rms_r},
+    };
+
+    const RATE: f64 = 48_000.0;
+    const TARGET: f32 = 0.25;
+    const ATTACK: f32 = 0.005;
+    const RELEASE: f32 = 0.05;
+    const MAX_GAIN: f32 = 100.0;
+
+    fn agc() -> Agc {
+        Agc::new(RATE, TARGET, ATTACK, RELEASE, MAX_GAIN)
+    }
+
+    fn within_3_db_of_target(rms: f32) -> bool {
+        let lo = TARGET * (-3.0f32).db_to_amplitude();
+        let hi = TARGET * 3.0f32.db_to_amplitude();
+        (lo..hi).contains(&rms)
+    }
+
+    fn tone(rms: f32, len: usize) -> Vec<f32> {
+        real_tone(1_000.0 / RATE, len)
+            .iter()
+            .map(|v| v * rms * std::f32::consts::SQRT_2)
+            .collect()
+    }
+
+    #[test]
+    fn quiet_tone_converges_within_4_release_time_constants() {
+        let mut agc = agc();
+        let mut x = tone(0.01, 48_000);
+        agc.process(&mut x);
+        let four_tau = (4.0 * RELEASE * RATE as f32) as usize;
+        let rms = rms_r(&x[four_tau..four_tau + 2_400]);
+        assert!(within_3_db_of_target(rms), "rms {rms} after 4 release tau");
+    }
+
+    #[test]
+    fn sudden_loud_tone_pulled_down_within_attack_window() {
+        let mut agc = agc();
+        let mut quiet = tone(0.01, 48_000);
+        agc.process(&mut quiet);
+
+        let mut loud = tone(0.5, 9_600);
+        agc.process(&mut loud);
+        let window = (8.0 * ATTACK * RATE as f32) as usize;
+        let rms = rms_r(&loud[window..window + 480]);
+        assert!(within_3_db_of_target(rms), "rms {rms} after attack window");
+    }
+
+    #[test]
+    fn recovers_after_non_finite_sample() {
+        let mut agc = agc();
+        let mut poisoned = vec![0.1f32; 480];
+        poisoned[0] = f32::NAN;
+        agc.process(&mut poisoned);
+
+        let mut loud = tone(0.5, 9_600);
+        agc.process(&mut loud);
+        assert!(loud.iter().all(|v| v.is_finite()), "state still poisoned");
+        assert!(agc.gain().is_finite());
+        let rms = rms_r(&loud[4_800..7_200]);
+        assert!(within_3_db_of_target(rms), "rms {rms} after recovery");
+    }
+
+    #[test]
+    fn a_non_finite_sample_does_not_blast_the_rest_of_its_block() {
+        let mut agc = agc();
+        let mut block = vec![0.1f32; 480];
+        block[0] = f32::NAN;
+        agc.process(&mut block);
+
+        assert!(block.iter().all(|v| v.is_finite()), "{:?}", block[0]);
+        let peak = block[1..].iter().fold(0.0f32, |peak, v| peak.max(v.abs()));
+        assert!(peak < 0.5, "peak {peak} inside the poisoned block");
+        assert!(agc.gain() < 5.0, "gain {} ran toward max", agc.gain());
+    }
+
+    #[test]
+    fn silence_stays_silent_and_gain_clamps() {
+        let mut agc = agc();
+        let mut x = vec![0.0f32; 20_000];
+        agc.process(&mut x);
+        assert!(x.iter().all(|v| *v == 0.0), "silence must stay silent");
+        assert!(agc.gain().is_finite());
+        assert!(
+            (0.99 * MAX_GAIN..=MAX_GAIN).contains(&agc.gain()),
+            "gain {} not clamped at max",
+            agc.gain()
+        );
+    }
+}

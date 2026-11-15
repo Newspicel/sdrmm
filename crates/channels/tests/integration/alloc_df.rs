@@ -5,7 +5,7 @@ mod df {
         ArrayBlock, ArrayCtx, ArrayProcessor, CalView, CorrectionView, GeoFix, OutputSlots, Pose,
         ProcessorOutput, ResetCause, create_processor, geometry_of,
     };
-    use sdrmm_dsp::manifold::Direction;
+    use sdrmm_dsp::array::manifold::Direction;
     use sdrmm_dsp::scene::{ArrayScene, SceneSignal, SceneSource};
     use sdrmm_test_support::assert_no_alloc;
     use sdrmm_wire::processor::df::MAX_DF_PEAKS;

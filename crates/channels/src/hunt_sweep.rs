@@ -1,11 +1,11 @@
 use std::f64::consts::SQRT_2;
 
 use sdrmm_dsp::{
-    special::{erf, norm_deg},
-    sweep::{
+    array::sweep::{
         HeadingSample, LevelSample, SweepBearing, SweepConfig, SweepEstimator, SweepPhase,
         SweepReject,
     },
+    math::special::{erf, norm_deg},
 };
 use sdrmm_wire::{
     BearingSource, DfBearing, HuntSweep, HuntSweepParams, PositionFix, SweepState,
@@ -333,7 +333,7 @@ fn quantized(likelihood: &[f32]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_dsp::special::wrap_deg;
+    use sdrmm_dsp::math::special::wrap_deg;
     use sdrmm_wire::Attitude;
 
     use super::*;

@@ -1,7 +1,8 @@
+use sdrmm_dsp::math::geodesy::{Geodetic, ecef, ecef_vector_to_enu};
+
 use crate::{State, time::sidereal_angle};
 
-pub(crate) const WGS84_A_KM: f64 = 6_378.137;
-pub(crate) const WGS84_F: f64 = 1.0 / 298.257_223_563;
+pub(crate) const METRES_PER_KM: f64 = 1_000.0;
 const EARTH_ROTATION_RAD_S: f64 = 7.292_115_146_706_979e-5;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -26,13 +27,9 @@ impl Observer {
         let site = self.earth_fixed();
         let rho = [0, 1, 2].map(|i| position[i] - site[i]);
         let range = rho.iter().map(|v| v * v).sum::<f64>().sqrt();
-        let (sin_lat, cos_lat) = self.latitude_deg.to_radians().sin_cos();
-        let (sin_lon, cos_lon) = self.longitude_deg.to_radians().sin_cos();
-        let south = sin_lat * cos_lon * rho[0] + sin_lat * sin_lon * rho[1] - cos_lat * rho[2];
-        let east = -sin_lon * rho[0] + cos_lon * rho[1];
-        let up = cos_lat * cos_lon * rho[0] + cos_lat * sin_lon * rho[1] + sin_lat * rho[2];
+        let [east, north, up] = ecef_vector_to_enu(self.geodetic(), rho);
         Look {
-            azimuth_deg: east.atan2(-south).to_degrees().rem_euclid(360.0),
+            azimuth_deg: east.atan2(north).to_degrees().rem_euclid(360.0),
             elevation_deg: (up / range).clamp(-1.0, 1.0).asin().to_degrees(),
             range_km: range,
             range_rate_km_s: (0..3).map(|i| rho[i] * velocity[i]).sum::<f64>() / range,
@@ -40,16 +37,15 @@ impl Observer {
     }
 
     fn earth_fixed(&self) -> [f64; 3] {
-        let e2 = WGS84_F * (2.0 - WGS84_F);
-        let (sin_lat, cos_lat) = self.latitude_deg.to_radians().sin_cos();
-        let (sin_lon, cos_lon) = self.longitude_deg.to_radians().sin_cos();
-        let n = WGS84_A_KM / (1.0 - e2 * sin_lat * sin_lat).sqrt();
-        let h = self.altitude_m / 1_000.0;
-        [
-            (n + h) * cos_lat * cos_lon,
-            (n + h) * cos_lat * sin_lon,
-            (n * (1.0 - e2) + h) * sin_lat,
-        ]
+        ecef(self.geodetic()).map(|metres| metres / METRES_PER_KM)
+    }
+
+    fn geodetic(&self) -> Geodetic {
+        Geodetic {
+            lat_deg: self.latitude_deg,
+            lon_deg: self.longitude_deg,
+            alt_m: self.altitude_m,
+        }
     }
 }
 

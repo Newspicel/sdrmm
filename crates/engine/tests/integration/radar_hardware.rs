@@ -16,7 +16,7 @@ use sdrmm_channels::passive_radar::{
     CafBackend, CpiJob, CpiStage, CpuCaf, FrontStage, InLanes, JobSink, RadarCtx,
     RadarPlan as StagePlan, RadarPod, plan,
 };
-use sdrmm_dsp::manifold::{Geometry, Winding};
+use sdrmm_dsp::array::manifold::{Geometry, Winding};
 use sdrmm_engine::{ArrayEvent, Engine};
 use sdrmm_wire::{
     ArrayGain, ArrayTune, ProcessorParams, ProcessorReading, radar::GpuUse, radar::Illuminator,

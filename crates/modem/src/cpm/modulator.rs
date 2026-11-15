@@ -121,6 +121,7 @@ impl CpmMod {
     }
 }
 
+/// One-step fold back into (-pi, pi]: cheaper than `wrap_rad` for a phase at most a turn out.
 fn wrap(phase: f64) -> f64 {
     if phase > PI {
         phase - TAU
@@ -133,8 +134,9 @@ fn wrap(phase: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{super::params::Mapping, *};
+    use super::{super::mapping::Mapping, *};
     use crate::pulse::{self, Norm};
+    use crate::testutil::draws;
 
     fn dmr_params() -> CpmParams {
         CpmParams::from_deviation(
@@ -146,23 +148,11 @@ mod tests {
         )
     }
 
-    fn symbols(len: usize, seed: u32) -> Vec<u8> {
-        let mut state = seed | 1;
-        (0..len)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                (state & 3) as u8
-            })
-            .collect()
-    }
-
     #[test]
     fn every_sample_is_unit_magnitude_and_phase_continuous() {
         let mut m = CpmMod::new(dmr_params());
         let mut out = Vec::new();
-        m.modulate(&symbols(200, 7), &mut out);
+        m.modulate(&draws(200, 4, 7), &mut out);
         m.flush(&mut out);
         assert!(!out.is_empty());
         for (n, s) in out.iter().enumerate() {
@@ -207,7 +197,7 @@ mod tests {
 
     #[test]
     fn block_splits_do_not_change_the_waveform() {
-        let syms = symbols(300, 41);
+        let syms = draws(300, 4, 41);
         let mut whole = CpmMod::new(dmr_params());
         let mut expected = Vec::new();
         whole.modulate(&syms, &mut expected);
@@ -231,9 +221,9 @@ mod tests {
     #[test]
     fn keyed_gaps_are_silent_and_edges_ramp() {
         let m = CpmMod::new(dmr_params());
-        let mut syms: Vec<Option<u8>> = symbols(60, 9).into_iter().map(Some).collect();
+        let mut syms: Vec<Option<u8>> = draws(60, 4, 9).into_iter().map(Some).collect();
         syms.extend(std::iter::repeat_n(None, 60));
-        syms.extend(symbols(60, 10).into_iter().map(Some));
+        syms.extend(draws(60, 4, 10).into_iter().map(Some));
         let out = m.keyed(&syms);
         assert_eq!(out.len(), 180 * 10 + dmr_params().freq_pulse().len());
 
@@ -256,7 +246,7 @@ mod tests {
 
     #[test]
     fn reset_restarts_the_stream_exactly() {
-        let syms = symbols(80, 3);
+        let syms = draws(80, 4, 3);
         let mut m = CpmMod::new(dmr_params());
         let mut first = Vec::new();
         m.modulate(&syms, &mut first);

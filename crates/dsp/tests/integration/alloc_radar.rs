@@ -245,7 +245,7 @@ mod radar {
     }
 
     mod aoa {
-        use sdrmm_dsp::manifold::{Geometry, LIGHT_SPEED_M_S, Manifold, Winding};
+        use sdrmm_dsp::array::manifold::{Geometry, LIGHT_SPEED_M_S, Manifold, Winding};
         use sdrmm_dsp::radar::aoa::Beamscan;
 
         use super::super::*;

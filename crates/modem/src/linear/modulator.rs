@@ -1,6 +1,9 @@
 use num_complex::Complex;
 
-use super::params::LinearParams;
+use super::{
+    params::LinearParams,
+    rotation::{phasor, schedule_phase},
+};
 
 #[derive(Clone, Debug)]
 pub struct LinearMod {
@@ -37,8 +40,7 @@ impl LinearMod {
         if self.params.rotation_rad() == 0.0 {
             return p;
         }
-        let theta = (k as f64 * self.params.rotation_rad()) % std::f64::consts::TAU;
-        p * Complex::new(theta.cos() as f32, theta.sin() as f32)
+        p * phasor(schedule_phase(k as f64, self.params.rotation_rad()))
     }
 
     pub fn modulate(&mut self, labels: &[u32], out: &mut Vec<Complex<f32>>) {
@@ -84,29 +86,28 @@ impl LinearMod {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_modem_test_support::ber::{impair::signal_energy, rng::Rng};
+    use crate::testutil::draws;
+    use std::f64::consts::{FRAC_PI_4, TAU};
+
+    use sdrmm_dsp::math::special::wrap_rad;
+    use sdrmm_modem_test_support::ber::impair::signal_energy;
 
     use super::*;
     use crate::{
         constellation::tables,
-        pulse::{self, Norm},
+        linear::testutil::{SPS, rrc},
     };
-
-    const SPS: usize = 8;
-
-    fn rrc() -> Vec<f32> {
-        pulse::root_raised_cosine(SPS as f64, 0.35, 8, Norm::Energy)
-    }
 
     fn params(m: u32) -> LinearParams {
         LinearParams::new(tables::qam_square(m).unwrap(), rrc(), SPS).unwrap()
     }
 
-    fn random_labels(n: usize, m: u32, seed: u64) -> Vec<u32> {
-        let mut rng = Rng::new(seed);
-        (0..n)
-            .map(|_| (rng.next_u64() % u64::from(m)) as u32)
-            .collect()
+    fn peak_index(wave: &[Complex<f32>], rail: fn(&Complex<f32>) -> f32) -> usize {
+        wave.iter()
+            .enumerate()
+            .max_by(|a, b| rail(a.1).abs().total_cmp(&rail(b.1).abs()))
+            .map(|(i, _)| i)
+            .unwrap()
     }
 
     #[test]
@@ -119,7 +120,7 @@ mod tests {
     #[test]
     fn block_energy_is_one_per_symbol() {
         for m in [4u32, 16, 64] {
-            let labels = random_labels(2048, m, 0xe9e);
+            let labels = draws(2048, m as usize, 0xe9e);
             let wave = LinearMod::transmission(&params(m), &labels);
             let es = signal_energy(&wave) / labels.len() as f64;
             assert!((es - 1.0).abs() < 0.02, "M={m}: Es = {es}");
@@ -129,7 +130,7 @@ mod tests {
     #[test]
     fn any_block_split_gives_the_same_waveform() {
         let p = params(16);
-        let labels = random_labels(300, 16, 0x5137);
+        let labels = draws(300, 16, 0x5137);
         let whole = LinearMod::transmission(&p, &labels);
         let mut m = LinearMod::new(p);
         let mut split = Vec::new();
@@ -146,10 +147,9 @@ mod tests {
         let m = LinearMod::new(p);
         let base = m.point(0, 0);
         for k in [1u64, 2, 7, 1_000_003] {
-            let want = (k as f64 * std::f64::consts::FRAC_PI_4) % std::f64::consts::TAU;
+            let want = (k as f64 * FRAC_PI_4) % TAU;
             let got = f64::from((m.point(k, 0) / base).arg());
-            let diff = (got - want + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
-                - std::f64::consts::PI;
+            let diff = wrap_rad(got - want);
             assert!(diff.abs() < 1e-5, "k={k}: {got} vs {want}");
         }
     }
@@ -158,29 +158,20 @@ mod tests {
     fn the_stagger_delays_the_quadrature_rail_by_half_a_symbol() {
         let p = params(4).with_offset(true).unwrap();
         let wave = LinearMod::transmission(&p, &[0b11]);
-        let peak = |f: fn(&Complex<f32>) -> f32| {
-            wave.iter()
-                .enumerate()
-                .max_by(|a, b| f(a.1).abs().total_cmp(&f(b.1).abs()))
-                .map(|(i, _)| i)
-                .unwrap()
-        };
-        assert_eq!(peak(|s| s.im) - peak(|s| s.re), SPS / 2);
+        assert_eq!(
+            peak_index(&wave, |s| s.im) - peak_index(&wave, |s| s.re),
+            SPS / 2
+        );
         let aligned = LinearMod::transmission(&params(4), &[0b11]);
-        let peak_a = |f: fn(&Complex<f32>) -> f32| {
-            aligned
-                .iter()
-                .enumerate()
-                .max_by(|a, b| f(a.1).abs().total_cmp(&f(b.1).abs()))
-                .map(|(i, _)| i)
-                .unwrap()
-        };
-        assert_eq!(peak_a(|s| s.im), peak_a(|s| s.re));
+        assert_eq!(
+            peak_index(&aligned, |s| s.im),
+            peak_index(&aligned, |s| s.re)
+        );
     }
 
     #[test]
     fn the_stagger_keeps_the_trajectory_off_the_origin() {
-        let labels = random_labels(512, 4, 0x0f5e7);
+        let labels = draws(512, 4, 0x0f5e7);
         let plain = LinearMod::transmission(&params(4), &labels);
         let staggered = LinearMod::transmission(&params(4).with_offset(true).unwrap(), &labels);
         let near_origin = |w: &[Complex<f32>], frac: f64| {

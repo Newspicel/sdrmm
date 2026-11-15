@@ -1,4 +1,4 @@
-use sdrmm_dsp::fec::{ccsds_rs::CcsdsReedSolomon, conv7::ViterbiK7};
+use sdrmm_dsp::coding::fec::{ccsds_rs::CcsdsReedSolomon, conv7::ViterbiK7};
 
 use super::link::{
     ASM_BYTES, ASM_CODED_BITS, AsmPattern, CODED_BITS, CODED_BYTES, INTERLEAVE, PairMap,

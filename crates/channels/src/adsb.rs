@@ -1080,7 +1080,7 @@ mod tests {
     fn noisy_frames_decode_through_every_protected_shared_subband_without_crc_repair() {
         use sdrmm_dsp::{
             Ddc,
-            subband::{SUBBANDS, SubbandPlan},
+            tuning::subband::{SUBBANDS, SubbandPlan},
         };
 
         let rate = 20_000_000.0;

@@ -1,8 +1,8 @@
 use num_complex::Complex;
-use sdrmm_dsp::beamform::{LaneNoise, WeightRamp, WeightSet};
-use sdrmm_dsp::covariance::SampleCovariance;
-use sdrmm_dsp::linalg::{CMat, Eigen, HermitianEigen};
-use sdrmm_dsp::polar::{Hand as PolarHand, Stokes, matched_weights};
+use sdrmm_dsp::array::beamform::{LaneNoise, WeightRamp, WeightSet};
+use sdrmm_dsp::array::covariance::SampleCovariance;
+use sdrmm_dsp::array::polar::{Hand as PolarHand, Stokes, matched_weights};
+use sdrmm_dsp::math::linalg::{CMat, Eigen, HermitianEigen};
 use sdrmm_dsp::power_db;
 use sdrmm_wire::{
     BEAM_PORT, Hand, PolarimeterParams, PolarimeterReading, ProcessorParams, ProcessorReading,

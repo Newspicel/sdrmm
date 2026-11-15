@@ -1,10 +1,10 @@
 use num_complex::Complex;
-use sdrmm_dsp::covariance::{
+use sdrmm_dsp::array::covariance::{
     CovarianceBank, CovarianceError, PhaseMode, SampleCovariance, forward_backward, load_diagonal,
     smooth, smooth_diagonal,
 };
-use sdrmm_dsp::linalg::CMat;
-use sdrmm_dsp::manifold::{Geometry, Permutation, Winding};
+use sdrmm_dsp::array::manifold::{Geometry, Permutation, Winding};
+use sdrmm_dsp::math::linalg::CMat;
 use sdrmm_test_support::assert_no_alloc;
 
 fn lane(index: usize, len: usize) -> Vec<Complex<f32>> {

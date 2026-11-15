@@ -1,4 +1,4 @@
-use sdrmm_dsp::vector::{GemmShape, Vector};
+use sdrmm_dsp::math::vector::{GemmShape, Vector};
 
 use super::{
     format::{Binary, Unary},

@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use num_complex::Complex;
 use sdrmm_modem::{
     constellation::tables,
@@ -21,13 +19,7 @@ use sdrmm_modem_test_support::ber::{
     sweep::{self, Link},
 };
 
-fn baseline_path(stem: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
-}
-
-fn load_curve(stem: &str) -> Curve {
-    sweep::load_json(&baseline_path(stem)).unwrap()
-}
+use crate::baselines::{baseline_path, load_curve};
 
 fn linear_entries() -> Vec<&'static Entry> {
     catalog::ENTRIES

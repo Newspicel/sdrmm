@@ -4,10 +4,32 @@ mod nyquist;
 pub use cpm::{gaussian, gaussian_freq, half_sine, lrc, lrec, phase_pulse, rect};
 pub use nyquist::{raised_cosine, root_raised_cosine};
 
+/// How far from one a pulse's energy may sit and still count as `Norm::Energy`.
+pub(crate) const UNIT_ENERGY_TOLERANCE: f64 = 1e-3;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Norm {
     Energy,
     Area,
+}
+
+#[must_use]
+pub(crate) fn energy(taps: &[f32]) -> f64 {
+    taps.iter().map(|&h| f64::from(h) * f64::from(h)).sum()
+}
+
+#[must_use]
+pub(crate) fn is_unit_energy(taps: &[f32]) -> bool {
+    !(taps.is_empty() || (energy(taps) - 1.0).abs() > UNIT_ENERGY_TOLERANCE)
+}
+
+pub(crate) fn assert_unit_energy(receive_filter: &[f32]) {
+    assert!(!receive_filter.is_empty(), "receive filter must have taps");
+    let energy = energy(receive_filter);
+    assert!(
+        (energy - 1.0).abs() < UNIT_ENERGY_TOLERANCE,
+        "receive filter must be unit-energy (pulse::Norm::Energy), got Σh² = {energy}"
+    );
 }
 
 fn normalise(mut h: Vec<f64>, norm: Norm) -> Vec<f32> {
@@ -29,8 +51,7 @@ fn renorm_designed(taps: Vec<f32>, norm: Norm) -> Vec<f32> {
     match norm {
         Norm::Area => taps,
         Norm::Energy => {
-            let energy: f64 = taps.iter().map(|&h| f64::from(h) * f64::from(h)).sum();
-            let scale = energy.sqrt().recip();
+            let scale = energy(&taps).sqrt().recip();
             taps.iter()
                 .map(|&h| (f64::from(h) * scale) as f32)
                 .collect()
@@ -70,8 +91,7 @@ mod tests {
     #[test]
     fn every_pulse_is_unit_energy_under_energy_norm() {
         for (name, build) in catalog() {
-            let taps = build(Norm::Energy);
-            let energy: f64 = taps.iter().map(|&h| f64::from(h) * f64::from(h)).sum();
+            let energy = energy(&build(Norm::Energy));
             assert!((energy - 1.0).abs() < 1e-5, "{name}: Σh² = {energy}");
         }
     }

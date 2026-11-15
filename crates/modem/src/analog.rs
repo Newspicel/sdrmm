@@ -2,6 +2,7 @@ pub mod am;
 pub mod angle;
 pub mod filter;
 pub mod ssb;
+mod stage;
 
 pub use am::{AmDemod, AmDetector, AmMod, AmMode, AmParams, AmRx};
 pub use angle::{AngleDemod, AngleDetector, AngleKind, AngleMod, AngleParams, AngleRx};

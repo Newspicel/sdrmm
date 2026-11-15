@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::{array_sync::BinSolver, fft::FftPair};
+use sdrmm_dsp::{array::array_sync::BinSolver, math::fft::FftPair};
 
 use super::{
     stage::{STAGE_JOBS, StageJob},

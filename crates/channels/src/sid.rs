@@ -8,7 +8,7 @@ mod tracker;
 use std::{ops::Range, sync::LazyLock};
 
 use num_complex::Complex;
-use sdrmm_dsp::airtime::PowerFrames;
+use sdrmm_dsp::measure::airtime::PowerFrames;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use crate::{

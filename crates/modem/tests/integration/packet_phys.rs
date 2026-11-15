@@ -1,9 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use sdrmm_modem_test_support::ber::{
-    Curve,
     catalog::{
         FULL_ERRORS,
         ble::{
@@ -16,6 +13,8 @@ use sdrmm_modem_test_support::ber::{
     limits,
     sweep::{self, Link},
 };
+
+use crate::baselines::{baseline_path, load_curve, sensitivity};
 
 type Row = (
     &'static str,
@@ -68,18 +67,6 @@ const ROWS: &[Row] = &[
         wifi::FULL_CAP,
     ),
 ];
-
-fn baseline_path(stem: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
-}
-
-fn load_curve(stem: &str) -> Curve {
-    sweep::load_json(&baseline_path(stem)).unwrap()
-}
-
-fn sensitivity(stem: &str) -> f64 {
-    limits::ebn0_at_ber(&load_curve(stem), 1e-3).expect("committed curve must bracket BER 1e-3")
-}
 
 #[test]
 fn every_packet_link_round_trips_clean_at_high_ebn0() {

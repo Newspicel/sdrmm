@@ -1,5 +1,5 @@
 use sdrmm_channels::array_processor::MAX_LANES;
-use sdrmm_dsp::array_sync::{
+use sdrmm_dsp::array::array_sync::{
     DRIFT_MIN_POINTS, DRIFT_MIN_SPAN_S, DriftClass, DriftTrack, SLIP_SAMPLES,
 };
 use sdrmm_wire::SyncState;

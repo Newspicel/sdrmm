@@ -1,167 +1,25 @@
 use std::f64::consts::TAU;
 
+use num_complex::Complex;
+
 use super::*;
-use crate::manifold::{Direction, Geometry};
-use crate::radar::wiener::{GroupPlan, GroupSums, SolveStats, WienerSolver};
+use crate::array::manifold::{Direction, Geometry};
+use crate::math::db::Decibels;
+use crate::math::special::sinc;
+use crate::radar::RadarDspError;
+use crate::radar::fixtures::{correlate, run_caf};
 use crate::scene::{ArrayScene, SceneEcho, SceneSignal, SceneSource};
+use crate::testutil::complex_noise;
 
-pub(crate) struct Rng(pub(crate) u64);
-
-impl Rng {
-    pub(crate) fn uniform(&mut self) -> f64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        (self.0 >> 11) as f64 / (1u64 << 53) as f64
-    }
-
-    pub(crate) fn complex(&mut self) -> C32 {
-        let radius = (-(1.0 - self.uniform()).ln()).sqrt();
-        let angle = TAU * self.uniform();
-        C32::new((radius * angle.cos()) as f32, (radius * angle.sin()) as f32)
-    }
-
-    pub(crate) fn noise(&mut self, len: usize) -> Vec<C32> {
-        (0..len).map(|_| self.complex()).collect()
-    }
-}
-
-pub(crate) struct Caf {
-    pub(crate) gates: Vec<C32>,
-    pub(crate) cube: Vec<C32>,
-    pub(crate) stats: Option<SolveStats>,
-    pub(crate) table: Option<WeightTable>,
-}
-
-impl Caf {
-    pub(crate) fn gate(&self, shape: &BatchShape, lane: usize, batch: usize, tau: usize) -> C32 {
-        self.gates[(lane * shape.batches + batch) * shape.gates + tau]
-    }
-
-    pub(crate) fn cell(&self, shape: &BatchShape, lane: usize, tau: usize, row: usize) -> C32 {
-        self.cube[(lane * shape.gates + tau) * shape.batches + row]
-    }
-
-    pub(crate) fn peak(&self, shape: &BatchShape, lane: usize, from_gate: usize) -> (usize, usize) {
-        let mut best = (0, 0, 0.0f32);
-        for tau in from_gate..shape.gates {
-            for row in 0..shape.batches {
-                let power = self.cell(shape, lane, tau, row).norm_sqr();
-                if power > best.2 {
-                    best = (tau, row, power);
-                }
-            }
-        }
-        (best.0, best.1)
-    }
-}
-
-pub(crate) fn run_caf(
-    shape: BatchShape,
-    plan: Option<&GroupPlan>,
-    lanes: &[Vec<C32>],
-    taper: DopplerTaper,
-) -> Caf {
-    let (m, nb, k) = (shape.fft_len, shape.batches, shape.lanes);
-    let mut kernel = BatchKernel::new(shape);
-    let mut spectra = vec![C32::default(); nb * m];
-    let mut models = vec![C32::default(); nb * m];
-    let mut products = vec![C32::default(); nb * k * m];
-    let mut energy = vec![0.0f64; nb * k];
-    for b in 0..nb {
-        let spectrum = &mut spectra[b * m..(b + 1) * m];
-        kernel
-            .reference(&lanes[0], b, spectrum, &mut models[b * m..(b + 1) * m])
-            .unwrap();
-        for lane in 0..k {
-            let at = (b * k + lane) * m;
-            kernel
-                .surveillance(&lanes[lane + 1], b, spectrum, &mut products[at..at + m])
-                .unwrap();
-            energy[b * k + lane] = shape.energy(&lanes[lane + 1], b);
-        }
-    }
-    let solved = plan.map(|plan| {
-        let mut solver = WienerSolver::new(shape, plan, 1e-4).unwrap();
-        let mut sums = GroupSums::new(&shape, plan);
-        for b in 0..nb {
-            solver
-                .accumulate(
-                    &mut sums,
-                    b,
-                    &models[b * m..(b + 1) * m],
-                    &products[b * k * m..(b + 1) * k * m],
-                    &energy[b * k..(b + 1) * k],
-                )
-                .unwrap();
-        }
-        let mut table = WeightTable::new(&shape, plan).unwrap();
-        let stats = solver.solve(&sums, &mut table).unwrap();
-        (stats, table)
-    });
-    let mut gates = vec![C32::default(); k * nb * shape.gates];
-    for lane in 0..k {
-        for b in 0..nb {
-            let weights = solved
-                .as_ref()
-                .map_or(WeightsAt::none(), |(_, table)| table.at(lane, b));
-            let at = (lane * nb + b) * shape.gates;
-            kernel
-                .residual(
-                    &products[(b * k + lane) * m..(b * k + lane + 1) * m],
-                    &models[b * m..(b + 1) * m],
-                    weights,
-                    &mut gates[at..at + shape.gates],
-                )
-                .unwrap();
-        }
-    }
-    let mut window = vec![0.0f32; nb];
-    taper.fill(&mut window);
-    let mut cube = vec![C32::default(); k * shape.gates * nb];
-    for lane in 0..k {
-        for tau in 0..shape.gates {
-            let series =
-                &mut cube[(lane * shape.gates + tau) * nb..(lane * shape.gates + tau + 1) * nb];
-            for (b, value) in series.iter_mut().enumerate() {
-                *value = gates[(lane * nb + b) * shape.gates + tau];
-            }
-            kernel.doppler(series, &window).unwrap();
-        }
-    }
-    let (stats, table) = match solved {
-        Some((stats, table)) => (Some(stats), Some(table)),
-        None => (None, None),
-    };
-    Caf {
-        gates,
-        cube,
-        stats,
-        table,
-    }
-}
-
-pub(crate) fn correlate(
-    shape: &BatchShape,
-    reference: &[C32],
-    surveillance: &[C32],
-    batch: usize,
-    lag: i64,
-) -> C32 {
-    let pre = shape.pre() as i64;
-    (0..shape.batch_len)
-        .map(|n| {
-            let at = pre + (batch * shape.batch_len + n) as i64;
-            surveillance[(at + lag) as usize] * reference[at as usize].conj()
-        })
-        .sum()
-}
+type C32 = Complex<f32>;
 
 #[test]
 fn batch_correlation_equals_direct_sum_at_every_gate() {
     let shape = BatchShape::new(32, 100, 40, 0, 0, 1).unwrap();
-    let mut rng = Rng(3);
-    let lanes = vec![rng.noise(shape.window()), rng.noise(shape.window())];
+    let lanes = vec![
+        complex_noise(shape.window(), 1.0, 3),
+        complex_noise(shape.window(), 1.0, 4),
+    ];
     let caf = run_caf(shape, None, &lanes, DopplerTaper::Rectangular);
     let mut worst = 0.0f32;
     let mut scale = 0.0f32;
@@ -240,8 +98,7 @@ fn shifted_copy(reference: &[C32], delay: usize, doppler: f64, fs: f64) -> Vec<C
 fn straddle_loss_follows_sinc() {
     let fs = 100e3;
     let shape = BatchShape::new(64, 100, 16, 0, 0, 1).unwrap();
-    let mut rng = Rng(5);
-    let reference = rng.noise(shape.window() + 64);
+    let reference = complex_noise(shape.window() + 64, 1.0, 5);
     let doppler = shape.batches as f64 / (4.0 * shape.samples() as f64 / fs);
     let still = run_caf(
         shape,
@@ -257,10 +114,9 @@ fn straddle_loss_follows_sinc() {
     );
     let row = 32 + shape.batches / 4;
     assert_eq!(moving.peak(&shape, 0, 0), (7, row));
-    let loss = 20.0
-        * (moving.cell(&shape, 0, 7, row).norm() / still.cell(&shape, 0, 7, 32).norm()).log10();
-    let expected =
-        20.0 * ((std::f32::consts::PI * 0.25).sin() / (std::f32::consts::PI * 0.25)).log10();
+    let loss = (moving.cell(&shape, 0, 7, row).norm() / still.cell(&shape, 0, 7, 32).norm())
+        .amplitude_to_db();
+    let expected = (sinc(0.25) as f32).amplitude_to_db();
     assert!((loss - expected).abs() < 0.3, "{loss} vs {expected}");
 }
 
@@ -290,7 +146,7 @@ fn hann_sidelobes_stay_below_31_db() {
             .filter(|(row, _)| row.abs_diff(peak) > 2)
             .map(|(_, value)| value.norm())
             .fold(0.0f32, f32::max);
-        assert!(20.0 * (sidelobe / top).log10() < -31.0, "{offset}");
+        assert!((sidelobe / top).amplitude_to_db() < -31.0, "{offset}");
     }
     assert_eq!(DopplerTaper::Hann.enbw(), 1.5);
     let mut flat = vec![0.0f32; 8];
@@ -311,7 +167,7 @@ fn inverse(kernel: &mut BatchKernel, spectrum: &[C32]) -> Vec<C32> {
 
 #[test]
 fn sizes_cover_every_lag_without_aliasing() {
-    let mut rng = Rng(17);
+    let mut seed = 17;
     let mut checked = 0;
     for lead in 0..=3usize {
         for taps in 0..=5usize {
@@ -323,8 +179,9 @@ fn sizes_cover_every_lag_without_aliasing() {
                 for batch_len in [1usize, 3, 8] {
                     let shape = BatchShape::new(3, batch_len, gates, lead, taps, 1).unwrap();
                     assert!(shape.fft_len.is_power_of_two() && shape.fft_len >= MIN_FFT);
-                    let reference = rng.noise(shape.window());
-                    let surveillance = rng.noise(shape.window());
+                    seed += 2;
+                    let reference = complex_noise(shape.window(), 1.0, seed);
+                    let surveillance = complex_noise(shape.window(), 1.0, seed + 1);
                     let mut kernel = BatchKernel::new(shape);
                     let m = shape.fft_len;
                     let (mut spectrum, mut model, mut product) = (

@@ -1,58 +1,19 @@
-use std::f64::consts::{PI, TAU};
+mod detector;
+
+use std::f64::consts::{FRAC_1_SQRT_2, TAU};
 
 use num_complex::Complex;
-use sdrmm_dsp::{LoopFilter, fast_arg};
+use sdrmm_dsp::{LoopFilter, fast_arg, math::special::wrap_rad};
 
+pub use detector::PhaseDetector;
+use detector::unit_power;
+
+use super::rotation::phasor;
 use crate::constellation::Constellation;
 
-pub const DAMPING: f64 = std::f64::consts::FRAC_1_SQRT_2;
+pub const DAMPING: f64 = FRAC_1_SQRT_2;
 
 pub const FREQ_LIMIT_CYCLES_PER_SYMBOL: f64 = 0.25;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PhaseDetector {
-    DecisionDirected,
-    MthPower { m: u32 },
-}
-
-impl PhaseDetector {
-    #[must_use]
-    pub fn error(self, y: Complex<f32>, table: &Constellation) -> f64 {
-        if y.re == 0.0 && y.im == 0.0 {
-            return 0.0;
-        }
-        match self {
-            Self::DecisionDirected => {
-                let x = table.nearest(y);
-                if x.re == 0.0 && x.im == 0.0 {
-                    return 0.0;
-                }
-                f64::from(fast_arg(y * x.conj()))
-            }
-            Self::MthPower { m } => {
-                let reference = unit_power(table.points()[0], m);
-                let stripped = unit_power(y, m);
-                if reference.norm_sqr() <= 0.0 || stripped.norm_sqr() <= 0.0 {
-                    return 0.0;
-                }
-                f64::from(fast_arg(stripped * reference.conj())) / f64::from(m)
-            }
-        }
-    }
-}
-
-fn unit_power(y: Complex<f32>, m: u32) -> Complex<f32> {
-    let norm = y.norm_sqr().sqrt();
-    if norm <= 0.0 || !norm.is_finite() {
-        return Complex::new(0.0, 0.0);
-    }
-    let unit = y / norm;
-    let mut acc = Complex::new(1.0f32, 0.0);
-    for _ in 0..m {
-        acc *= unit;
-    }
-    acc
-}
 
 #[derive(Clone, Debug)]
 pub struct CarrierLoop {
@@ -105,7 +66,7 @@ impl CarrierLoop {
 
     #[must_use]
     pub fn rotation(&self) -> Complex<f32> {
-        Complex::new((-self.phase).cos() as f32, (-self.phase).sin() as f32)
+        phasor(-self.phase)
     }
 
     pub fn steer(&mut self, out: Complex<f32>, table: &Constellation) {
@@ -123,7 +84,7 @@ impl CarrierLoop {
         if self.fll_gain > 0.0 {
             inc += self.advance_frequency_aid(out);
         }
-        self.phase = wrap(self.phase + inc);
+        self.phase = wrap_rad(self.phase + inc);
     }
 
     pub fn smooth(
@@ -154,10 +115,9 @@ impl CarrierLoop {
         for (y, &behind) in symbols.iter_mut().zip(backward.iter()) {
             let ahead = self.phase;
             let _ = self.advance(*y, table);
-            let gap = wrap(behind - ahead);
+            let gap = wrap_rad(behind - ahead);
             let aligned = gap - branch * (gap / branch).round();
-            let theta = -(ahead + 0.5 * aligned);
-            *y *= Complex::new(theta.cos() as f32, theta.sin() as f32);
+            *y *= phasor(-(ahead + 0.5 * aligned));
         }
     }
 
@@ -214,66 +174,47 @@ impl CarrierLoop {
     }
 }
 
-fn wrap(theta: f64) -> f64 {
-    let t = (theta + PI).rem_euclid(TAU);
-    t - PI
-}
-
 #[cfg(test)]
 mod tests {
-    use sdrmm_modem_test_support::ber::{perf::assert_no_alloc, rng::Rng};
+    use sdrmm_modem_test_support::ber::perf::assert_no_alloc;
 
     use super::*;
-    use crate::constellation::tables;
+    use crate::{constellation::tables, linear::testutil::rotate, testutil::points};
 
-    fn stream(m: u32, n: usize, seed: u64, table: &Constellation) -> Vec<Complex<f32>> {
-        let mut rng = Rng::new(seed);
-        (0..n)
-            .map(|_| table.points()[(rng.next_u64() % u64::from(m)) as usize])
-            .collect()
-    }
-
-    fn rotate(w: &mut [Complex<f32>], cycles_per_symbol: f64, phase0: f64) {
-        for (k, s) in w.iter_mut().enumerate() {
-            let theta = phase0 + TAU * cycles_per_symbol * k as f64;
-            *s *= Complex::new(theta.cos() as f32, theta.sin() as f32);
-        }
+    fn residual_turns(y: Complex<f32>, table: &Constellation) -> f64 {
+        f64::from((y * table.nearest(y).conj()).arg()).abs() / TAU
     }
 
     fn worst_residual_turns(out: &[Complex<f32>], table: &Constellation) -> f64 {
         out[out.len() * 3 / 4..]
             .iter()
-            .map(|&y| f64::from((y * table.nearest(y).conj()).arg()).abs() / TAU)
+            .map(|&y| residual_turns(y, table))
             .fold(0.0, f64::max)
     }
 
     #[test]
     fn both_detectors_acquire_a_static_phase_offset() {
-        for (name, table, detector, m) in [
+        for (name, table, detector) in [
             (
                 "qpsk mth-power",
                 tables::psk(4).unwrap(),
                 PhaseDetector::MthPower { m: 4 },
-                4u32,
             ),
             (
                 "qpsk decision-directed",
                 tables::psk(4).unwrap(),
                 PhaseDetector::DecisionDirected,
-                4,
             ),
             (
                 "16-qam decision-directed",
                 tables::qam_square(16).unwrap(),
                 PhaseDetector::DecisionDirected,
-                4,
             ),
         ] {
-            let mut wave = stream(table.len() as u32, 4_000, 0xca47, &table);
+            let mut wave = points(&table, 4_000, 0xca47);
             rotate(&mut wave, 0.0, 0.7);
             let mut loop_ = CarrierLoop::new(detector, 0.01);
             let out: Vec<Complex<f32>> = wave.iter().map(|&y| loop_.advance(y, &table)).collect();
-            let _ = m;
             let residual = worst_residual_turns(&out, &table);
             assert!(residual < 0.01, "{name}: worst residual {residual} turns");
         }
@@ -283,7 +224,7 @@ mod tests {
     fn the_integrator_reads_back_a_static_frequency_offset() {
         let table = tables::psk(4).unwrap();
         let offset = 1.5e-3;
-        let mut wave = stream(4, 6_000, 0xf5e9, &table);
+        let mut wave = points(&table, 6_000, 0xf5e9);
         rotate(&mut wave, offset, 0.0);
         let mut loop_ = CarrierLoop::new(PhaseDetector::MthPower { m: 4 }, 0.01);
         let out: Vec<Complex<f32>> = wave.iter().map(|&y| loop_.advance(y, &table)).collect();
@@ -297,10 +238,13 @@ mod tests {
 
     fn symbols_to_lock(out: &[Complex<f32>], table: &Constellation, tol: f64) -> Option<usize> {
         const WINDOW: usize = 200;
-        let error = |y: Complex<f32>| f64::from((y * table.nearest(y).conj()).arg()).abs() / TAU;
         let mut run = 0usize;
         for (k, &y) in out.iter().enumerate() {
-            run = if error(y) < tol { run + 1 } else { 0 };
+            run = if residual_turns(y, table) < tol {
+                run + 1
+            } else {
+                0
+            };
             if run == WINDOW {
                 return Some(k + 1 - WINDOW);
             }
@@ -312,7 +256,7 @@ mod tests {
     fn the_frequency_aid_acquires_far_sooner_than_the_phase_loop_alone() {
         let table = tables::psk(4).unwrap();
         let lock_after = |aided: bool| {
-            let mut wave = stream(4, 20_000, 0x7011, &table);
+            let mut wave = points(&table, 20_000, 0x7011);
             rotate(&mut wave, 0.1, 0.0);
             let base = CarrierLoop::new(PhaseDetector::MthPower { m: 4 }, 0.002);
             let mut loop_ = if aided {
@@ -350,7 +294,7 @@ mod tests {
     #[test]
     fn reset_returns_the_loop_to_a_cold_start() {
         let table = tables::psk(4).unwrap();
-        let mut wave = stream(4, 2_000, 0x1e5, &table);
+        let mut wave = points(&table, 2_000, 0x1e5);
         rotate(&mut wave, 1e-3, 0.4);
         let mut loop_ = CarrierLoop::new(PhaseDetector::MthPower { m: 4 }, 0.01);
         for &y in &wave {

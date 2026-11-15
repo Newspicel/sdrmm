@@ -1,7 +1,9 @@
 use std::fmt::Write as _;
 
 use num_complex::Complex;
-use sdrmm_dsp::manifold::{Geometry, ManifoldError, ManifoldTable, Vec3, Winding as DspWinding};
+use sdrmm_dsp::array::manifold::{
+    Geometry, ManifoldError, ManifoldTable, Vec3, Winding as DspWinding,
+};
 pub use sdrmm_wire::ProcessorAction;
 use sdrmm_wire::{
     ArrayGeometry, ArrayTuningMode, CalPhase, CalSourceKind, Coherence, DfBearing, GpuUse,

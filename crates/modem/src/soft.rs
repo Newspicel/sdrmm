@@ -1,4 +1,8 @@
-use sdrmm_dsp::fec::conv;
+use sdrmm_dsp::coding::fec::conv;
+
+pub const LLR_SATURATION: f32 = 8.0;
+
+const SOFTBIT_FULL_SCALE: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SoftBit(pub f32);
@@ -6,41 +10,43 @@ pub struct SoftBit(pub f32);
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Llr(pub f32);
 
-pub const LLR_SATURATION: f32 = 8.0;
-
 impl SoftBit {
     #[must_use]
     pub fn bit(self) -> bool {
-        self.0 > 0.0
+        is_one(self.0)
     }
 
     #[must_use]
     pub fn is_erasure(self) -> bool {
-        self.0 == 0.0
+        is_erased(self.0)
     }
 
     #[must_use]
     pub fn to_fec(self) -> conv::Soft {
-        let full = f32::from(conv::CONFIDENT);
-        (self.0 * full).clamp(-full, full) as conv::Soft
+        to_fec(self.0, SOFTBIT_FULL_SCALE)
     }
 }
 
 impl Llr {
     #[must_use]
     pub fn bit(self) -> bool {
-        self.0 > 0.0
+        is_one(self.0)
     }
 
     #[must_use]
     pub fn is_erasure(self) -> bool {
-        self.0 == 0.0
+        is_erased(self.0)
     }
 
     #[must_use]
     pub fn to_fec(self) -> conv::Soft {
-        let full = f32::from(conv::CONFIDENT);
-        (self.0 * full / LLR_SATURATION).clamp(-full, full) as conv::Soft
+        to_fec(self.0, LLR_SATURATION)
+    }
+}
+
+impl From<Llr> for SoftBit {
+    fn from(llr: Llr) -> Self {
+        Self(llr.0)
     }
 }
 
@@ -56,15 +62,23 @@ pub fn argmax(statistics: &[f32]) -> u8 {
     best as u8
 }
 
-impl From<Llr> for SoftBit {
-    fn from(llr: Llr) -> Self {
-        Self(llr.0)
-    }
+fn is_one(value: f32) -> bool {
+    value > 0.0
+}
+
+fn is_erased(value: f32) -> bool {
+    value == 0.0
+}
+
+/// Scales `value` so `full_scale` lands on the decoder's confident level, then saturates.
+fn to_fec(value: f32, full_scale: f32) -> conv::Soft {
+    let full = f32::from(conv::CONFIDENT);
+    (value * full / full_scale).clamp(-full, full) as conv::Soft
 }
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_dsp::fec::conv::{CONFIDENT, ERASURE};
+    use sdrmm_dsp::coding::fec::conv::{CONFIDENT, ERASURE};
 
     use super::*;
 

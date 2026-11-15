@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use num_complex::Complex;
 use sdrmm_modem::ofdm::OfdmParams;
 use sdrmm_modem_test_support::ber::{
@@ -22,13 +20,7 @@ use sdrmm_modem_test_support::ber::{
     sweep::{self, Link, sweep_ber},
 };
 
-fn baseline_path(stem: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
-}
-
-fn load_curve(stem: &str) -> Curve {
-    sweep::load_json(&baseline_path(stem)).unwrap()
-}
+use crate::baselines::{baseline_path, load_curve, sensitivity};
 
 fn measurements() -> Vec<&'static Measurement> {
     ["gfdm", "ufmc", "fbmc", "otfs"]
@@ -47,10 +39,6 @@ fn measure(m: &Measurement, full: bool) -> Curve {
         tier.min_errors,
         tier.max_trial_bits,
     )
-}
-
-fn sensitivity(stem: &str) -> f64 {
-    limits::ebn0_at_ber(&load_curve(stem), 1e-3).expect("committed curve must bracket BER 1e-3")
 }
 
 #[test]

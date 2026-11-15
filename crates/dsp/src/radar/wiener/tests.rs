@@ -1,50 +1,25 @@
+use std::ops::Range;
+
+use num_complex::Complex;
+
 use super::*;
-use crate::radar::batch::DopplerTaper;
-use crate::radar::batch::tests::{Caf, Rng, correlate, run_caf};
-use crate::radar::nlms::tests::fm_reference;
+use crate::math::complex::widen;
+use crate::math::db::Decibels;
+use crate::radar::RadarDspError;
+use crate::radar::batch::{BatchKernel, BatchShape, DopplerTaper};
+use crate::radar::fixtures::{
+    Caf, Path, Spectra, channel, correlate, direct_paths, fm_reference, run_caf, spectra_of,
+};
+use crate::testutil::complex_noise;
 
-type Path = (usize, C32);
-
-fn channel(
-    reference: &[C32],
-    paths: &[Path],
-    drift_hz: f64,
-    fs: f64,
-    noise: f32,
-    seed: u64,
-) -> Vec<C32> {
-    let mut rng = Rng(seed);
-    (0..reference.len())
-        .map(|n| {
-            let direct: C32 = paths
-                .iter()
-                .filter(|(delay, _)| n >= *delay)
-                .map(|(delay, gain)| reference[n - delay] * gain)
-                .sum();
-            let turn = C32::from_polar(1.0, (TAU * drift_hz * n as f64 / fs) as f32);
-            direct * turn + rng.complex() * noise
-        })
-        .collect()
-}
-
-fn direct_paths() -> Vec<Path> {
-    vec![
-        (0, C32::new(3.0, 1.0)),
-        (1, C32::new(-0.8, 0.5)),
-        (4, C32::new(0.3, -0.6)),
-        (9, C32::new(0.1, 0.2)),
-    ]
-}
+type C32 = Complex<f32>;
+type C64 = Complex<f64>;
 
 fn gate_energy(caf: &Caf, shape: &BatchShape, lane: usize, gates: Range<usize>) -> f64 {
     (0..shape.batches)
         .flat_map(|b| gates.clone().map(move |tau| (b, tau)))
         .map(|(b, tau)| f64::from(caf.gate(shape, lane, b, tau).norm_sqr()))
         .sum()
-}
-
-fn db(ratio: f64) -> f64 {
-    10.0 * ratio.log10()
 }
 
 fn phase(plan: &GroupPlan, group: usize, tap: usize, batch: usize) -> C64 {
@@ -60,7 +35,6 @@ fn direct_residual(
     batch: usize,
     tau: usize,
 ) -> C64 {
-    let widen = |value: C32| C64::new(f64::from(value.re), f64::from(value.im));
     let mut value = widen(correlate(shape, reference, surveillance, batch, tau as i64));
     let (first, second, share) = plan.blend(batch);
     let share = f64::from(share);
@@ -114,8 +88,7 @@ fn batch_domain_eca_equals_time_domain_eca() {
             for tau in 0..shape.gates {
                 let direct =
                     direct_residual(&shape, plan, table, &reference, &surveillance, batch, tau);
-                let fast = caf.gate(&shape, 0, batch, tau);
-                let fast = C64::new(f64::from(fast.re), f64::from(fast.im));
+                let fast = widen(caf.gate(&shape, 0, batch, tau));
                 worst = worst.max((fast - direct).norm());
                 peak = peak.max(f64::from(
                     correlate(&shape, &reference, &surveillance, batch, tau as i64).norm(),
@@ -157,7 +130,8 @@ fn a_direct_path_is_suppressed_by_40_db() {
         stats.suppression_db[0]
     );
     assert_eq!(stats.unsuppressed_groups, 0);
-    let drop = db(gate_energy(&raw, &shape, 0, 0..15) / gate_energy(&cleaned, &shape, 0, 0..15));
+    let drop = (gate_energy(&raw, &shape, 0, 0..15) / gate_energy(&cleaned, &shape, 0, 0..15))
+        .power_to_db();
     assert!(drop >= 40.0, "{drop}");
 }
 
@@ -214,7 +188,8 @@ fn eca_s_follows_a_drifting_direct_path() {
     let sliding = GroupPlan::split(128, 3, 6, 0, false, true).unwrap();
     let batched = run_caf(shape, Some(&batch), &lanes, DopplerTaper::Hann);
     let slid = run_caf(shape, Some(&sliding), &lanes, DopplerTaper::Hann);
-    let gain = db(gate_energy(&batched, &shape, 0, 0..20) / gate_energy(&slid, &shape, 0, 0..20));
+    let gain = (gate_energy(&batched, &shape, 0, 0..20) / gate_energy(&slid, &shape, 0, 0..20))
+        .power_to_db();
     assert!(gain >= 6.0, "{gain}");
 }
 
@@ -239,7 +214,8 @@ fn taper_removes_group_edge_residue() {
     };
     let hard = run_caf(shape, Some(&stepped), &lanes, DopplerTaper::Hann);
     let soft = run_caf(shape, Some(&smooth), &lanes, DopplerTaper::Hann);
-    let gain = db(off_zero_doppler(&hard, &shape, 0..4) / off_zero_doppler(&soft, &shape, 0..4));
+    let gain = (off_zero_doppler(&hard, &shape, 0..4) / off_zero_doppler(&soft, &shape, 0..4))
+        .power_to_db();
     assert!(gain >= 6.0, "{gain}");
 }
 
@@ -264,17 +240,17 @@ fn doppler_taps_cancel_swaying_clutter() {
     for row in [64 - rows, 64 + rows] {
         let before = f64::from(raw.cell(&shape, 0, 3, row).norm_sqr());
         let after = f64::from(cleaned.cell(&shape, 0, 3, row).norm_sqr());
-        assert!(db(before / after) >= 20.0, "{row}: {}", db(before / after));
+        let drop = (before / after).power_to_db();
+        assert!(drop >= 20.0, "{row}: {drop}");
     }
 }
 
 #[test]
 fn a_singular_gram_is_loaded_then_counted() {
     let shape = BatchShape::new(16, 64, 10, 1, 4, 1).unwrap();
-    let mut rng = Rng(2);
     let lanes = [
         vec![C32::default(); shape.window()],
-        rng.noise(shape.window()),
+        complex_noise(shape.window(), 1.0, 2),
     ];
     let plan = GroupPlan::split(16, 4, 0, 0, true, false).unwrap();
     let cleaned = run_caf(shape, Some(&plan), &lanes, DopplerTaper::Hann);
@@ -385,46 +361,6 @@ fn taper_blends_between_group_centres() {
     assert_eq!(sliding.estimation(0), 0..15);
 }
 
-struct Spectra {
-    models: Vec<C32>,
-    products: Vec<C32>,
-    energy: Vec<f64>,
-}
-
-fn spectra_of(shape: &BatchShape, lanes: &[Vec<C32>]) -> Spectra {
-    let (m, nb, k) = (shape.fft_len, shape.batches, shape.lanes);
-    let mut kernel = crate::radar::batch::BatchKernel::new(*shape);
-    let mut spectrum = vec![C32::default(); m];
-    let mut out = Spectra {
-        models: vec![C32::default(); nb * m],
-        products: vec![C32::default(); nb * k * m],
-        energy: vec![0.0; nb * k],
-    };
-    for b in 0..nb {
-        kernel
-            .reference(
-                &lanes[0],
-                b,
-                &mut spectrum,
-                &mut out.models[b * m..(b + 1) * m],
-            )
-            .unwrap();
-        for lane in 0..k {
-            let at = (b * k + lane) * m;
-            kernel
-                .surveillance(
-                    &lanes[lane + 1],
-                    b,
-                    &spectrum,
-                    &mut out.products[at..at + m],
-                )
-                .unwrap();
-            out.energy[b * k + lane] = shape.energy(&lanes[lane + 1], b);
-        }
-    }
-    out
-}
-
 fn summed_on_f32(
     solver: &WienerSolver,
     shape: &BatchShape,
@@ -468,7 +404,7 @@ fn group_sums_loaded_from_f32_solve_like_accumulated_ones() {
     let shape = BatchShape::new(32, 260, 40, 2, 10, 2).unwrap();
     let channels = [direct_paths(), vec![(0, C32::new(-1.0, 2.0))]];
     let lanes = fm_scene(&shape, &channels, 0.3, fs);
-    let spectra = spectra_of(&shape, &lanes);
+    let spectra = spectra_of(&mut BatchKernel::new(shape), &lanes);
     let (m, k) = (shape.fft_len, shape.lanes);
     for plan in [
         GroupPlan::split(32, 8, 0, 1, true, false).unwrap(),

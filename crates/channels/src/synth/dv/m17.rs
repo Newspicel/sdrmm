@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::{crc16_msb, fec::conv};
+use sdrmm_dsp::{coding::fec::conv, crc16_msb};
 
 use super::{bits, c4fm, dibits, filler};
 

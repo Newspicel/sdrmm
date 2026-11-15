@@ -502,7 +502,7 @@ mod tests {
 
     fn band_limited(center_hz: f64, width_hz: f64, len: usize, amp: f32) -> Vec<Complex<f32>> {
         let mut spectrum = complex_noise(0x0b5e, amp, len);
-        sdrmm_dsp::fft::Transform::forward(len).process(&mut spectrum);
+        sdrmm_dsp::math::fft::Transform::forward(len).process(&mut spectrum);
         let bin_hz = RATE / len as f64;
         for (bin, value) in spectrum.iter_mut().enumerate() {
             let hz = if bin < len / 2 {
@@ -514,7 +514,7 @@ mod tests {
                 *value = Complex::new(0.0, 0.0);
             }
         }
-        sdrmm_dsp::fft::Transform::inverse(len).process(&mut spectrum);
+        sdrmm_dsp::math::fft::Transform::inverse(len).process(&mut spectrum);
         let scale = 1.0 / len as f32;
         spectrum.iter().map(|value| value * scale).collect()
     }

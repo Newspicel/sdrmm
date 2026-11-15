@@ -12,7 +12,7 @@ use crate::common::array::{calibrated, df, processor_status, status, wait_status
 use crate::kraken::{
     ARRAY, Kraken, RADIUS_M, append_csv, csv_path, env_f64, uca, wrap_deg, write_csv,
 };
-use sdrmm_dsp::doa::{dominance_count, mdl_count};
+use sdrmm_dsp::array::doa::{dominance_count, mdl_count};
 use sdrmm_engine::{ArrayEvent, Engine, ProcessorSpec};
 use sdrmm_wire::{
     ArrayCal, ArrayCalSource, ArrayFailure, ArrayGain, ArrayStatus, ArrayTuneRequest, CalPhase,

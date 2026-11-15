@@ -17,6 +17,8 @@ use sdrmm_modem_test_support::ber::{
     },
 };
 
+use crate::baselines::baseline_path;
+
 const BLOCK: usize = 4_096;
 const TONE_HZ: f64 = 1_000.0;
 
@@ -185,10 +187,6 @@ fn measured_baselines() -> Vec<PerfBaseline> {
     ]
 }
 
-fn path(stem: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
-}
-
 #[test]
 fn the_am_envelope_path_allocates_nothing() {
     let params = voice_am(AmMode::FullCarrier { depth: 0.8 });
@@ -299,7 +297,7 @@ fn write_analog_perf_baseline() {
     if cfg!(debug_assertions) {
         panic!("a debug-profile number must never become the committed baseline");
     }
-    let path = path(AM_STEM);
+    let path = baseline_path(AM_STEM);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let measured = measured_baselines();
     save_baselines(&path, &measured).unwrap();
@@ -319,7 +317,7 @@ fn compare_analog_perf_baseline() {
         return;
     }
     let committed = committed_for_host(
-        &load_baselines(&path(AM_STEM)).unwrap(),
+        &load_baselines(&baseline_path(AM_STEM)).unwrap(),
         AM_STEM,
         "cargo test -p sdrmm-modem --release --test integration analog_perf::write_analog_perf_baseline -- --ignored",
     );

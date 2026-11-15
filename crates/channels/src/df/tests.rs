@@ -1,8 +1,8 @@
 use num_complex::Complex;
-use sdrmm_dsp::doa::rate_spread;
-use sdrmm_dsp::manifold::{Direction, ManifoldTable};
+use sdrmm_dsp::array::doa::rate_spread;
+use sdrmm_dsp::array::manifold::{Direction, ManifoldTable};
+use sdrmm_dsp::math::special::wrap_deg;
 use sdrmm_dsp::scene::{ArrayScene, SceneSignal, SceneSource};
-use sdrmm_dsp::special::wrap_deg;
 use sdrmm_wire::{
     ArrayElement, ArrayGeometry, ArrayTuningMode, BearingSource, CalPhase, CalSourceKind,
     Coherence, DfBearing, DfPeak, DfReading, ProcessorReading, Winding,

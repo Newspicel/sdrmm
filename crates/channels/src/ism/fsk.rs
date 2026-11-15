@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::fastmath::fast_arg;
+use sdrmm_dsp::math::fastmath::fast_arg;
 
 use super::pulse::{MAX_PULSE, MAX_PULSES};
 

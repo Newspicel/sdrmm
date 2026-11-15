@@ -1,5 +1,7 @@
 use std::fmt;
 
+use sdrmm_dsp::Decibels;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PnError {
     NotBipolar(i8),
@@ -117,7 +119,7 @@ impl PnSequence {
 
     #[must_use]
     pub fn processing_gain_db(&self) -> f64 {
-        10.0 * (self.len() as f64).log10()
+        (self.len() as f64).power_to_db()
     }
 
     #[must_use]

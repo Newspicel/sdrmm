@@ -1,8 +1,8 @@
 use num_complex::Complex;
-use sdrmm_dsp::beamform::WeightSet;
-use sdrmm_dsp::correlator::FxCorrelator;
-use sdrmm_dsp::linalg::{CMat, Eigen, HermitianEigen};
-use sdrmm_dsp::polar::{Stokes, matched_weights};
+use sdrmm_dsp::array::beamform::WeightSet;
+use sdrmm_dsp::array::correlator::FxCorrelator;
+use sdrmm_dsp::array::polar::{Stokes, matched_weights};
+use sdrmm_dsp::math::linalg::{CMat, Eigen, HermitianEigen};
 use sdrmm_test_support::assert_no_alloc;
 
 const LANES: usize = 5;

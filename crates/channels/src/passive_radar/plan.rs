@@ -2,7 +2,7 @@ use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
 
-use sdrmm_dsp::manifold::{Geometry, Manifold, ManifoldTable, Vec3};
+use sdrmm_dsp::array::manifold::{Geometry, Manifold, ManifoldTable, Vec3};
 use sdrmm_dsp::radar::RadarDspError;
 use sdrmm_dsp::radar::batch::{BatchShape, DopplerTaper, MAX_SURVEILLANCE};
 use sdrmm_dsp::radar::cfar::{AlphaTable, CfarSpec, RHO_TABLE};

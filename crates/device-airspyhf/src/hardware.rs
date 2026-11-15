@@ -4,7 +4,7 @@ use std::{
 };
 
 use sdrmm_device::{DeviceDriver, RxSink, Sample, SampleConverter};
-use sdrmm_dsp::fft::FftPair;
+use sdrmm_dsp::math::fft::FftPair;
 use sdrmm_wire::{AgcSetting, DcArtifact, DeviceSettings, GainKind, GainValue};
 
 use super::*;

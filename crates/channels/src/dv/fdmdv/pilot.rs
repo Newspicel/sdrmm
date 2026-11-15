@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use sdrmm_dsp::fft::Transform;
+use sdrmm_dsp::math::fft::Transform;
 
 use super::{SYMBOL_SAMPLES, SYMBOL_SPAN, Sample, fir, shaped, tables};
 

@@ -16,7 +16,7 @@ use sdrmm_channels::{
     },
     df::reserved_bearing,
 };
-use sdrmm_dsp::manifold::ManifoldTable;
+use sdrmm_dsp::array::manifold::ManifoldTable;
 use sdrmm_wire::{
     ArrayGeometry, ArrayTuningMode, Coherence, DecodedRecord, DecoderEvent, DfBearing, EventOrigin,
     NO_CHANNEL, ProcessorGate, ProcessorParams, ProcessorReading, ProcessorStatus,

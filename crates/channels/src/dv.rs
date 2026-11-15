@@ -31,7 +31,7 @@ pub use freedv::FreeDvChannel;
 pub use m17::M17Channel;
 pub use nxdn::NxdnChannel;
 pub use p25::P25Channel;
-use sdrmm_dsp::{Decimator, design_lowpass, fec::conv::CONFIDENT, word_msb};
+use sdrmm_dsp::{Decimator, coding::fec::conv::CONFIDENT, design_lowpass, word_msb};
 use sdrmm_modem::{
     cpm::{CpmDemod, CpmParams, KnownSymbols, Mapping, TIMING_BW_BURST},
     pulse::{self, Norm},

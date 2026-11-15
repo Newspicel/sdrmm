@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use num_complex::Complex;
 use sdrmm_modem::{
     constellation::tables,
@@ -27,23 +25,14 @@ use sdrmm_modem_test_support::ber::{
     impair::{
         Cfo, ChannelSpec, ClockError, Drift, IqImbalance, Multipath, MultipathProfile, TimingOffset,
     },
-    limits::{self, CompositeProfile, Criterion, LimitRow, LimitsTable},
+    limits::{self, CompositeProfile, LimitRow, LimitsTable},
     rng::Rng,
     sweep::{self, Link},
     theory,
 };
 
-fn baseline_path(stem: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
-}
-
-fn load_curve(stem: &str) -> Curve {
-    sweep::load_json(&baseline_path(stem)).unwrap()
-}
-
-fn sensitivity(stem: &str) -> f64 {
-    limits::ebn0_at_ber(&load_curve(stem), 1e-3).expect("committed curve must bracket BER 1e-3")
-}
+use crate::baselines::{baseline_path, load_curve, sensitivity};
+use crate::limit_rows::axis_row;
 
 #[test]
 fn every_chain_round_trips_clean_at_high_ebn0() {
@@ -369,23 +358,6 @@ fn dmt_loops_back_clean_at_6db_margin() {
 
 fn probe(link: &Link, spec: &ChannelSpec, op_db: f64) -> f64 {
     limits::measure_ber(link, spec, op_db, QPSK_SEED ^ 0x11e5, 150, 40_000)
-}
-
-fn axis_row(
-    axis: &str,
-    unit: &str,
-    max_axis: f64,
-    tolerance: f64,
-    ber_at: impl Fn(f64) -> f64,
-) -> LimitRow {
-    limits::measure_axis_row(
-        axis,
-        unit,
-        Criterion::FailureBer,
-        max_axis,
-        tolerance,
-        ber_at,
-    )
 }
 
 const PROFILE_ERRORS: u64 = 250;

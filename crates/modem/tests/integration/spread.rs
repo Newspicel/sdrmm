@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use sdrmm_modem::spread::FhssDemod;
 use sdrmm_modem_test_support::ber::{
     Curve,
@@ -22,22 +20,13 @@ use sdrmm_modem_test_support::ber::{
     },
     e2e::{Payloads, channel_at_margin, loopback},
     impair::{Cfo, ChannelSpec, ClockError, Drift, Interferer, IqImbalance, TimingOffset},
-    limits::{self, CompositeProfile, Criterion, LimitRow, LimitsTable},
+    limits::{self, CompositeProfile, LimitRow, LimitsTable},
     sweep::{self, Link},
     theory,
 };
 
-fn baseline_path(stem: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
-}
-
-fn load_curve(stem: &str) -> Curve {
-    sweep::load_json(&baseline_path(stem)).unwrap()
-}
-
-fn sensitivity(stem: &str) -> f64 {
-    limits::ebn0_at_ber(&load_curve(stem), 1e-3).expect("committed curve must bracket BER 1e-3")
-}
+use crate::baselines::{baseline_path, load_curve, sensitivity};
+use crate::limit_rows::axis_row;
 
 type Row = (
     &'static str,
@@ -359,23 +348,6 @@ const CSS_CLOCK_AXIS_PPM: f64 = 2_000.0;
 
 fn probe(link: &Link, spec: &ChannelSpec, op_db: f64, seed: u64) -> f64 {
     limits::measure_ber(link, spec, op_db, seed, PROBE_ERRORS, PROBE_BITS)
-}
-
-fn axis_row(
-    axis: &str,
-    unit: &str,
-    max_axis: f64,
-    tolerance: f64,
-    ber_at: impl Fn(f64) -> f64,
-) -> LimitRow {
-    limits::measure_axis_row(
-        axis,
-        unit,
-        Criterion::FailureBer,
-        max_axis,
-        tolerance,
-        ber_at,
-    )
 }
 
 fn jammer_row(link: &Link, op_db: f64, seed: u64, half_band_cycles: f64) -> LimitRow {

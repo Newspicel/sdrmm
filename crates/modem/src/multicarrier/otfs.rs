@@ -1,11 +1,17 @@
 mod estimate;
+mod inverse;
+mod modulator;
+mod projector;
 mod receiver;
 
-pub use estimate::{DelayDopplerFit, Support};
 use num_complex::Complex;
-pub use receiver::{OtfsMod, OtfsReceiver};
+use sdrmm_dsp::math::fft::FftPair;
 
-use sdrmm_dsp::fft::FftPair;
+pub use self::{
+    estimate::{DelayDopplerFit, Support},
+    modulator::OtfsMod,
+    receiver::OtfsReceiver,
+};
 
 pub const MAX_GRID: usize = 4_096;
 
@@ -99,23 +105,14 @@ impl OtfsPrecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::qpsk;
 
     fn grid() -> OtfsGrid {
         OtfsGrid::new(48, 16)
     }
 
     fn points(count: usize) -> Vec<Complex<f32>> {
-        let mut state = 0x0_07f5u32;
-        (0..count)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                let i = if state & 1 == 0 { 1.0 } else { -1.0 };
-                let q = if state & 2 == 0 { 1.0 } else { -1.0 };
-                Complex::new(i, q) / 2f32.sqrt()
-            })
-            .collect()
+        qpsk(count, 0x0_07f5)
     }
 
     #[test]

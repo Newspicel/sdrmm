@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::stitch::{STITCH_FFT, StitchOptions, Stitcher, auto_offsets};
+use sdrmm_dsp::measure::stitch::{STITCH_FFT, StitchOptions, Stitcher, auto_offsets};
 use sdrmm_test_support::assert_no_alloc;
 
 const LANES: usize = 3;

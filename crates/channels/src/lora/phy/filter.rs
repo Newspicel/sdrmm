@@ -2,8 +2,8 @@ use std::{f64::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
 use sdrmm_dsp::{
-    fir::kaiser_beta,
-    special::{bessel_i0, sinc},
+    filter::fir::kaiser_beta,
+    math::special::{bessel_i0, sinc},
 };
 
 use super::ring::Ring;

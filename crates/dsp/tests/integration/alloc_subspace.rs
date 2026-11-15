@@ -1,7 +1,7 @@
 use num_complex::Complex;
-use sdrmm_dsp::doa::{Doa, DoaConfig, DoaError, DoaReport, Estimator, Reconfigure};
-use sdrmm_dsp::linalg::{CMat, LinalgError};
-use sdrmm_dsp::manifold::{Direction, Geometry, Manifold, Winding, wavenumber};
+use sdrmm_dsp::array::doa::{Doa, DoaConfig, DoaError, DoaReport, Estimator, Reconfigure};
+use sdrmm_dsp::array::manifold::{Direction, Geometry, Manifold, Winding, wavenumber};
+use sdrmm_dsp::math::linalg::{CMat, LinalgError};
 use sdrmm_test_support::assert_no_alloc;
 
 const FREQ: f64 = 433.92e6;

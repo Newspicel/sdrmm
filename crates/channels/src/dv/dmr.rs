@@ -7,7 +7,7 @@ use crate::dv::DmrSlots;
 use crate::dv::VoiceKey;
 use num_complex::Complex;
 use sdrmm_dsp::{
-    Bptc128, Bptc196, CyclicCode, ParityCode, crc_msb_bits, crc16_msb, fec::conv::Soft,
+    Bptc128, Bptc196, CyclicCode, ParityCode, coding::fec::conv::Soft, crc_msb_bits, crc16_msb,
     pack_msb_into, rs129_parity,
 };
 use sdrmm_modem::cpm::CpmDemod;

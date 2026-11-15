@@ -1,5 +1,7 @@
 use num_complex::Complex;
 
+use super::assert_slot_timing;
+
 #[derive(Clone, Copy, Debug)]
 struct Slot {
     start: usize,
@@ -19,14 +21,7 @@ pub struct SlotGrid {
 impl SlotGrid {
     #[must_use]
     pub fn new(samples_per_slot: f64, slots: usize, phase: f64) -> Self {
-        assert!(
-            samples_per_slot.is_finite() && samples_per_slot > 0.0,
-            "samples per slot must be positive, got {samples_per_slot}"
-        );
-        assert!(
-            phase.is_finite() && (0.0..1.0).contains(&phase),
-            "phase is a sub-sample offset in [0, 1), got {phase}"
-        );
+        assert_slot_timing(samples_per_slot, phase);
         assert!(slots > 0, "a grid needs at least one slot");
         let mut weights = Vec::with_capacity((slots + 1) * (samples_per_slot as usize + 2));
         let mut table = Vec::with_capacity(slots + 1);
@@ -141,13 +136,6 @@ impl SlotGrid {
     }
 }
 
-pub fn magnitudes(iq: &[Complex<f32>], out: &mut Vec<f32>) {
-    out.extend(
-        iq.iter()
-            .map(|s| sdrmm_dsp::madd(s.re, s.re, s.im * s.im).sqrt()),
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,13 +244,5 @@ mod tests {
         assert_eq!(grid.energy(&window, 1), 2.0);
         assert_eq!(grid.energy(&window, 2), 0.0);
         assert_eq!(grid.energy(&window, 9), 0.0);
-    }
-
-    #[test]
-    fn magnitudes_are_the_envelope() {
-        let iq = [Complex::new(3.0f32, 4.0), Complex::new(0.0, -2.0)];
-        let mut mag = Vec::new();
-        magnitudes(&iq, &mut mag);
-        assert_eq!(mag, vec![5.0, 2.0]);
     }
 }

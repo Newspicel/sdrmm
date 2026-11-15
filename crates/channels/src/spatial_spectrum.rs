@@ -1,9 +1,11 @@
 use num_complex::Complex;
-use sdrmm_dsp::covariance::{CovarianceBank, CovarianceError};
-use sdrmm_dsp::doa::{bartlett, capon, music};
-use sdrmm_dsp::linalg::{CMat, Cholesky, Eigen, HermitianEigen};
-use sdrmm_dsp::manifold::{GridSpec, LIGHT_SPEED_M_S, Manifold, ManifoldError, SteeringGrid};
-use sdrmm_dsp::special::norm_deg;
+use sdrmm_dsp::array::covariance::{CovarianceBank, CovarianceError};
+use sdrmm_dsp::array::doa::{bartlett, capon, music};
+use sdrmm_dsp::array::manifold::{
+    GridSpec, LIGHT_SPEED_M_S, Manifold, ManifoldError, SteeringGrid,
+};
+use sdrmm_dsp::math::linalg::{CMat, Cholesky, Eigen, HermitianEigen};
+use sdrmm_dsp::math::special::norm_deg;
 use sdrmm_wire::processor::spatial::MAX_SPATIAL_PEAKS;
 use sdrmm_wire::{
     ProcessorParams, ProcessorReading, SpatialMethod, SpatialPeak, SpatialReading,

@@ -1,5 +1,8 @@
 use num_complex::Complex;
 
+/// A pivot smaller than this leaves the matrix singular.
+const SINGULAR_PIVOT: f64 = 1e-12;
+
 #[must_use]
 pub fn invert(a: &mut [Complex<f64>], n: usize) -> Option<()> {
     assert_eq!(a.len(), n * n, "matrix is not {n}×{n}");
@@ -16,7 +19,7 @@ pub fn invert(a: &mut [Complex<f64>], n: usize) -> Option<()> {
                 (best, mag)
             }
         });
-        if magnitude < 1e-12 {
+        if magnitude < SINGULAR_PIVOT {
             return None;
         }
         if pivot != col {

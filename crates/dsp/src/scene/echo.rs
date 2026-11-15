@@ -2,7 +2,8 @@ use std::f64::consts::TAU;
 
 use num_complex::Complex;
 
-use crate::manifold::{Direction, LIGHT_SPEED_M_S};
+use crate::array::manifold::{Direction, LIGHT_SPEED_M_S};
+use crate::math::db::Decibels;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SceneEcho {
@@ -58,7 +59,7 @@ impl SceneEcho {
     #[must_use]
     pub fn rotation(&self, n: i64, sample_rate: f64) -> Complex<f64> {
         let cycles = (self.doppler_hz * n as f64 / sample_rate).rem_euclid(1.0);
-        Complex::from_polar(10f64.powf(f64::from(self.gain_db) / 20.0), TAU * cycles)
+        Complex::from_polar(f64::from(self.gain_db).db_to_amplitude(), TAU * cycles)
     }
 
     pub(super) fn is_valid(&self) -> bool {
@@ -73,15 +74,13 @@ impl SceneEcho {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifold::{Geometry, Winding, steer};
+    use crate::array::manifold::steer;
+    use crate::scene::fixtures::inner;
     use crate::scene::{ArrayScene, SceneSignal, SceneSource};
+    use crate::testutil::kraken;
 
     const FREQ: f64 = 433.92e6;
     const FS: f64 = 1e6;
-
-    fn kraken() -> Geometry {
-        Geometry::uca(0.35, 5, 0.0, Winding::Clockwise).unwrap()
-    }
 
     fn direct(signal: SceneSignal) -> ArrayScene {
         ArrayScene::new(kraken(), FREQ, FS)
@@ -100,13 +99,6 @@ mod tests {
             .zip(&without)
             .map(|(a, b)| a.iter().zip(b).map(|(x, y)| x - y).collect())
             .collect()
-    }
-
-    fn inner(a: &[Complex<f32>], b: &[Complex<f32>]) -> f32 {
-        let dot: Complex<f32> = a.iter().zip(b).map(|(x, y)| x.conj() * y).sum();
-        let norms = a.iter().map(Complex::norm_sqr).sum::<f32>()
-            * b.iter().map(Complex::norm_sqr).sum::<f32>();
-        dot.norm() / norms.sqrt()
     }
 
     #[test]
@@ -129,7 +121,7 @@ mod tests {
             assert!(inner(&steering, &snapshot) > 0.9999, "{n}");
             assert!(inner(&emitted, &snapshot) > 0.9999, "{n}");
             let power: f32 = snapshot.iter().map(Complex::norm_sqr).sum::<f32>() / 5.0;
-            assert!((10.0 * power.log10() + 10.0).abs() < 0.01);
+            assert!((power.power_to_db() + 10.0).abs() < 0.01);
         }
         let step = lanes[0][1001] / lanes[0][1000];
         let expected = TAU * (2e4 + 50.0) / FS;

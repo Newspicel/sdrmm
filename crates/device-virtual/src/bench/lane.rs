@@ -10,8 +10,9 @@ use std::{
 use arc_swap::ArcSwap;
 use num_complex::Complex;
 use sdrmm_device::{GapScope, LaneMark, RxSink, UNKNOWN_ERROR, Uncertainty};
-use sdrmm_dsp::scene::{
-    LaneImpairments, LaneRenderer, LaneSetup, ReportedGap, Scene, mix, mix_key,
+use sdrmm_dsp::{
+    math::rng::{mix, mix_key},
+    scene::{LaneImpairments, LaneRenderer, LaneSetup, ReportedGap, Scene},
 };
 use sdrmm_wire::NoiseSource;
 

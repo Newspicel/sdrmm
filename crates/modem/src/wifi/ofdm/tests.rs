@@ -1,24 +1,8 @@
 use num_complex::Complex;
 use sdrmm_modem_test_support::ber::rng::Rng;
 
-use super::{LOOKAHEAD, Ofdm, PLATEAU_SAMPLES, Plateau, State, descramble, tables::RATES};
+use super::{LOOKAHEAD, Ofdm, PLATEAU_SAMPLES, Plateau, State, tables::RATES};
 use crate::wifi::{WifiPhy, byte, transmit};
-
-#[test]
-fn the_service_field_seeds_the_descrambler() {
-    let mut register = 0b101_1101u8;
-    let data: Vec<bool> = (0..64).map(|k| k % 3 == 0 && k >= 16).collect();
-    let mut scrambled: Vec<bool> = data
-        .iter()
-        .map(|&bit| {
-            let next = (register >> 6 ^ register >> 3) & 1;
-            register = (register << 1 | next) & 0x7F;
-            bit ^ (next == 1)
-        })
-        .collect();
-    descramble(&mut scrambled);
-    assert_eq!(scrambled, data);
-}
 
 #[test]
 fn bytes_are_least_significant_bit_first() {

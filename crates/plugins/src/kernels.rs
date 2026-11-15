@@ -1,7 +1,7 @@
 //! The native `dsp` kernels a plugin imports, working on the plugin's own memory.
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, FracResampler, fft::Transform};
+use sdrmm_dsp::{Decimator, FracResampler, math::fft::Transform};
 use sdrmm_wire::plugin::{IMPORT_MODULE, import};
 use wasmtime::{Caller, Linker, Memory, StoreLimits};
 

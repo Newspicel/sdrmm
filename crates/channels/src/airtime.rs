@@ -2,7 +2,7 @@ mod model;
 pub use model::*;
 use std::ops::Range;
 
-use sdrmm_dsp::fastmath::fast_db_to_power;
+use sdrmm_dsp::math::fastmath::fast_db_to_power;
 use sdrmm_wire::{Control, NumberSpec, SettingField};
 
 use crate::{ChannelError, ChannelFilter};

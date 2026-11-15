@@ -1,6 +1,6 @@
 use std::f64::consts::TAU;
 
-use sdrmm_dsp::manifold::{Direction, Geometry, Winding as DspWinding};
+use sdrmm_dsp::array::manifold::{Direction, Geometry, Winding as DspWinding};
 use sdrmm_dsp::scene::{ArrayScene, SceneSignal, SceneSource};
 use sdrmm_wire::{ArrayElement, ArrayGeometry, BeamformerReading, ProcessorReading, Winding};
 
@@ -138,11 +138,11 @@ fn peak_deg(pattern: &[u8]) -> f64 {
         .filter(|(_, level)| **level == top)
         .map(|(index, _)| (index as f64).to_radians().sin_cos())
         .fold((0.0, 0.0), |(sin, cos), (s, c)| (sin + s, cos + c));
-    sdrmm_dsp::special::norm_deg(sin.atan2(cos).to_degrees())
+    sdrmm_dsp::math::special::norm_deg(sin.atan2(cos).to_degrees())
 }
 
 fn circular_gap(a: f64, b: f64) -> f64 {
-    sdrmm_dsp::special::wrap_deg(a - b).abs()
+    sdrmm_dsp::math::special::wrap_deg(a - b).abs()
 }
 
 fn dc_amplitude(blocks: &[Vec<Complex<f32>>]) -> f64 {

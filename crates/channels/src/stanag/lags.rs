@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::fft::FftPair;
+use sdrmm_dsp::math::fft::FftPair;
 
 use super::RATE_HZ;
 

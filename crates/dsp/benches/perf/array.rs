@@ -4,13 +4,13 @@ use criterion::{Criterion, Throughput};
 use num_complex::Complex;
 use sdrmm_dsp::{
     Ddc, IqDcBlocker,
-    array_sync::{FastConvolver, design_correction},
-    beamform::{Adaptation, BlockSolver, Constraints, TdlCanceller, WeightSet},
-    correlator::FxCorrelator,
-    covariance::{CovarianceBank, SampleCovariance},
-    doa::{Doa, DoaConfig, DoaReport, Estimator},
-    linalg::{CMat, Eigen, HermitianEigen},
-    manifold::{Direction, Geometry, Manifold, Winding},
+    array::array_sync::{FastConvolver, design_correction},
+    array::beamform::{Adaptation, BlockSolver, Constraints, TdlCanceller, WeightSet},
+    array::correlator::FxCorrelator,
+    array::covariance::{CovarianceBank, SampleCovariance},
+    array::doa::{Doa, DoaConfig, DoaReport, Estimator},
+    array::manifold::{Direction, Geometry, Manifold, Winding},
+    math::linalg::{CMat, Eigen, HermitianEigen},
 };
 
 use super::pseudo;

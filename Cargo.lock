@@ -5743,6 +5743,7 @@ dependencies = [
 name = "sdrmm-orbit"
 version = "0.0.0"
 dependencies = [
+ "sdrmm-dsp",
  "sgp4",
  "thiserror 2.0.21",
 ]

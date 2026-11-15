@@ -1,38 +1,25 @@
 pub mod demap;
+mod error;
+#[cfg(test)]
+mod fixtures;
 pub mod tables;
 
-use std::fmt;
+use std::f64::consts::TAU;
 
 use num_complex::Complex;
+use sdrmm_dsp::math::complex::{narrow, widen};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConstellationError {
-    SizeNotPowerOfTwo(usize),
-    LabelCountMismatch { points: usize, labels: usize },
-    BadLabel(u32),
-    ZeroPower,
-    UnsupportedOrder { family: &'static str, m: u32 },
-}
+pub use error::ConstellationError;
 
-impl fmt::Display for ConstellationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::SizeNotPowerOfTwo(n) => {
-                write!(f, "constellation size {n} is not 2^k with 1 <= k <= 32")
-            }
-            Self::LabelCountMismatch { points, labels } => {
-                write!(f, "{points} points but {labels} labels")
-            }
-            Self::BadLabel(l) => write!(f, "label {l:#b} repeats or does not fit the bit width"),
-            Self::ZeroPower => write!(f, "all-zero constellation cannot be normalised"),
-            Self::UnsupportedOrder { family, m } => {
-                write!(f, "{family} is not defined at order {m}")
-            }
-        }
-    }
-}
+/// The largest rotational symmetry looked for; no table in use has more points on a ring.
+const MAX_ROTATIONAL_ORDER: u32 = 64;
 
-impl std::error::Error for ConstellationError {}
+/// Share of the minimum distance a rotated point may miss its neighbour by and still count as
+/// landing on it.
+const SYMMETRY_TOLERANCE: f64 = 1e-3;
+
+/// Widest label a table may carry.
+const MAX_BITS_PER_SYMBOL: u32 = 32;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Constellation {
@@ -48,7 +35,7 @@ impl Constellation {
         labels: Vec<u32>,
     ) -> Result<Self, ConstellationError> {
         let n = points.len();
-        if !n.is_power_of_two() || n < 2 || n.trailing_zeros() > 32 {
+        if !n.is_power_of_two() || n < 2 || n.trailing_zeros() > MAX_BITS_PER_SYMBOL {
             return Err(ConstellationError::SizeNotPowerOfTwo(n));
         }
         if labels.len() != n {
@@ -64,23 +51,14 @@ impl Constellation {
                 _ => return Err(ConstellationError::BadLabel(label)),
             }
         }
-        let power = points
-            .iter()
-            .map(|p| f64::from(p.re) * f64::from(p.re) + f64::from(p.im) * f64::from(p.im))
-            .sum::<f64>()
-            / n as f64;
+        let power = points.iter().map(|&p| widen(p).norm_sqr()).sum::<f64>() / n as f64;
         if !(power.is_finite() && power > 0.0) {
             return Err(ConstellationError::ZeroPower);
         }
         let scale = power.sqrt().recip();
         let points = points
             .into_iter()
-            .map(|p| {
-                Complex::new(
-                    (f64::from(p.re) * scale) as f32,
-                    (f64::from(p.im) * scale) as f32,
-                )
-            })
+            .map(|p| narrow(widen(p) * scale))
             .collect();
         let mut index_of_label = vec![0usize; n];
         for (index, &label) in labels.iter().enumerate() {
@@ -128,10 +106,8 @@ impl Constellation {
     pub fn nearest_index(&self, y: Complex<f32>) -> usize {
         let mut best = 0usize;
         let mut best_d2 = f64::INFINITY;
-        for (i, p) in self.points.iter().enumerate() {
-            let dr = f64::from(y.re) - f64::from(p.re);
-            let di = f64::from(y.im) - f64::from(p.im);
-            let d2 = dr * dr + di * di;
+        for (i, &p) in self.points.iter().enumerate() {
+            let d2 = squared_distance(y, p);
             if d2 < best_d2 {
                 best_d2 = d2;
                 best = i;
@@ -158,30 +134,36 @@ impl Constellation {
 
     #[must_use]
     pub fn rotational_order(&self) -> u32 {
-        const MAX_ORDER: u32 = 64;
-        let tolerance = 1e-3 * self.min_distance().max(f64::MIN_POSITIVE);
-        (1..=MAX_ORDER)
+        let tolerance = SYMMETRY_TOLERANCE * self.min_distance().max(f64::MIN_POSITIVE);
+        (1..=MAX_ROTATIONAL_ORDER)
             .rev()
-            .find(|&m| self.is_invariant_under(std::f64::consts::TAU / f64::from(m), tolerance))
+            .find(|&m| self.is_invariant_under(TAU / f64::from(m), tolerance))
             .unwrap_or(1)
-    }
-
-    fn is_invariant_under(&self, theta: f64, tolerance: f64) -> bool {
-        let rot = Complex::new(theta.cos() as f32, theta.sin() as f32);
-        self.points
-            .iter()
-            .all(|&p| f64::from((self.nearest(p * rot) - p * rot).norm()) <= tolerance)
     }
 
     #[must_use]
     pub fn hard_slice(&self, y: Complex<f32>) -> u32 {
         self.labels[self.nearest_index(y)]
     }
+
+    fn is_invariant_under(&self, theta: f64, tolerance: f64) -> bool {
+        let rot = narrow(Complex::from_polar(1.0, theta));
+        self.points
+            .iter()
+            .all(|&p| f64::from((self.nearest(p * rot) - p * rot).norm()) <= tolerance)
+    }
+}
+
+/// Squared distance between two points, taken in `f64` so near ties keep their order.
+#[must_use]
+pub(crate) fn squared_distance(a: Complex<f32>, b: Complex<f32>) -> f64 {
+    (widen(a) - widen(b)).norm_sqr()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constellation::fixtures::gray_4pam;
 
     #[test]
     fn the_rotational_order_is_the_table_symmetry() {
@@ -197,19 +179,6 @@ mod tests {
         ] {
             assert_eq!(table.rotational_order(), want, "{name}");
         }
-    }
-
-    fn gray_4pam() -> Constellation {
-        Constellation::from_points(
-            vec![
-                Complex::new(-3.0, 0.0),
-                Complex::new(-1.0, 0.0),
-                Complex::new(1.0, 0.0),
-                Complex::new(3.0, 0.0),
-            ],
-            vec![0b00, 0b01, 0b11, 0b10],
-        )
-        .unwrap()
     }
 
     #[test]
@@ -236,12 +205,7 @@ mod tests {
     #[test]
     fn construction_normalises_to_unit_mean_energy() {
         let c = gray_4pam();
-        let power = c
-            .points()
-            .iter()
-            .map(|p| f64::from(p.re) * f64::from(p.re) + f64::from(p.im) * f64::from(p.im))
-            .sum::<f64>()
-            / c.len() as f64;
+        let power = fixtures::mean_energy(&c);
         assert!((power - 1.0).abs() < 1e-6, "mean Es {power}");
         let a = 5f64.sqrt().recip();
         assert!((f64::from(c.points()[3].re) - 3.0 * a).abs() < 1e-7);

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use num_complex::Complex;
-use sdrmm_dsp::manifold::{
+use sdrmm_dsp::array::manifold::{
     Direction, Geometry, GridSpec, Manifold, ManifoldError, ManifoldTable, SteeringGrid, Winding,
     alias_check, steer,
 };

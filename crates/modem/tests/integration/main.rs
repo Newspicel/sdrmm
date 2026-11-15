@@ -6,8 +6,10 @@ static ALLOC: CountingAlloc = CountingAlloc::new();
 
 mod analog;
 mod analog_perf;
+mod baselines;
 mod ft8_tones;
 mod gmsk_msk_afsk_bundles;
+mod limit_rows;
 mod linear_bundles;
 mod mfsk_cpfsk;
 mod mfsk_perf;

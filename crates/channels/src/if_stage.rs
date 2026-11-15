@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::{FirC, IqNotch, fir::design_lowpass_kaiser, fir::kaiser_taps};
+use sdrmm_dsp::{FirC, IqNotch, filter::fir::design_lowpass_kaiser, filter::fir::kaiser_taps};
 use sdrmm_wire::{IfFilter, IfNotch};
 
 use crate::ChannelError;

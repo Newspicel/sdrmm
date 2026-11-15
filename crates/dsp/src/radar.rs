@@ -10,6 +10,13 @@ pub mod threshold;
 pub mod track;
 pub mod wiener;
 
+mod ratio;
+mod regressor;
+mod strongest;
+
+#[cfg(test)]
+mod fixtures;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum RadarDspError {
     #[error("radar batch shape is invalid")]

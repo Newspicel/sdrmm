@@ -8,6 +8,9 @@ mod equaliser;
 mod frontend;
 mod modulator;
 mod params;
+mod rotation;
+#[cfg(test)]
+mod testutil;
 mod timing;
 mod tracker;
 

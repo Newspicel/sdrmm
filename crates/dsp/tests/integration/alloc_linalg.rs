@@ -1,9 +1,9 @@
 use num_complex::Complex;
-use sdrmm_dsp::linalg::{
+use sdrmm_dsp::math::linalg::{
     CMat, Cholesky, Eigen, GeneralEigen, HermitianEigen, LinalgError, MAX_ORDER, MAX_POLY_DEGREE,
     Qr, Roots,
 };
-use sdrmm_dsp::special::{bessel_j, brent_max, erf, wrap_deg};
+use sdrmm_dsp::math::special::{bessel_j, brent_max, erf, wrap_deg};
 use sdrmm_test_support::assert_no_alloc;
 
 fn element(row: usize, col: usize) -> Complex<f32> {

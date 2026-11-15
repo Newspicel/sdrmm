@@ -1,11 +1,21 @@
+mod demod;
+mod modulator;
 mod preamble;
 mod receiver;
+mod sync;
+mod tracker;
 
 use num_complex::Complex;
-pub use preamble::{GfdmAcquisition, GfdmPreamble, GfdmSync};
-pub use receiver::{CarrierTracker, GfdmReceiver};
 
-use super::transform::{invert, matvec};
+pub use self::{
+    demod::{GfdmDemod, GfdmDetector},
+    modulator::GfdmMod,
+    preamble::GfdmPreamble,
+    receiver::GfdmReceiver,
+    sync::{GfdmAcquisition, GfdmSync},
+    tracker::CarrierTracker,
+};
+use sdrmm_dsp::filter::fir::rrc_pulse;
 
 pub const MAX_BLOCK: usize = 512;
 
@@ -50,7 +60,7 @@ impl GfdmParams {
             .map(|i| {
                 let half = n as f64 / 2.0;
                 let offset = (i as f64 + half).rem_euclid(n as f64) - half;
-                rrc(offset / k, self.rolloff)
+                rrc_pulse(offset / k, self.rolloff)
             })
             .collect();
         let energy: f64 = g.iter().map(|v| v * v).sum();
@@ -80,183 +90,17 @@ impl GfdmParams {
     }
 }
 
-fn rrc(t: f64, alpha: f64) -> f64 {
-    use std::f64::consts::PI;
-    if alpha <= 0.0 {
-        return if t.abs() < 1e-12 {
-            1.0
-        } else {
-            (PI * t).sin() / (PI * t)
-        };
-    }
-    if t.abs() < 1e-12 {
-        return 1.0 + alpha * (4.0 / PI - 1.0);
-    }
-    let singular = 1.0 / (4.0 * alpha);
-    if (t.abs() - singular).abs() < 1e-9 {
-        let a = (1.0 + 2.0 / PI) * (PI / (4.0 * alpha)).sin();
-        let b = (1.0 - 2.0 / PI) * (PI / (4.0 * alpha)).cos();
-        return alpha / 2f64.sqrt() * (a + b);
-    }
-    let numerator =
-        (PI * t * (1.0 - alpha)).sin() + 4.0 * alpha * t * (PI * t * (1.0 + alpha)).cos();
-    numerator / (PI * t * (1.0 - (4.0 * alpha * t).powi(2)))
-}
-
-#[derive(Clone)]
-pub struct GfdmMod {
-    params: GfdmParams,
-    matrix: Vec<Complex<f32>>,
-    block: Vec<Complex<f32>>,
-    preamble: Vec<Complex<f32>>,
-}
-
-impl GfdmMod {
-    #[must_use]
-    pub fn new(params: GfdmParams) -> Self {
-        assert!(
-            params.cp <= params.block(),
-            "a cyclic prefix is a copy of the block's tail; {} samples of a {}-sample block is \
-             not one",
-            params.cp,
-            params.block()
-        );
-        let matrix = params
-            .matrix()
-            .into_iter()
-            .map(|v| Complex::new(v.re as f32, v.im as f32))
-            .collect();
-        Self {
-            matrix,
-            block: vec![Complex::new(0.0, 0.0); params.block()],
-            preamble: GfdmPreamble::new(&params).block().to_vec(),
-            params,
-        }
-    }
-
-    #[must_use]
-    pub fn params(&self) -> &GfdmParams {
-        &self.params
-    }
-
-    pub fn preamble(&self, out: &mut Vec<Complex<f32>>) {
-        let n = self.params.block();
-        out.extend_from_slice(&self.preamble[n - self.params.cp..]);
-        out.extend_from_slice(&self.preamble);
-    }
-
-    pub fn frame(&mut self, points: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
-        self.preamble(out);
-        self.modulate(points, out);
-    }
-
-    pub fn modulate(&mut self, points: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
-        let n = self.params.block();
-        for chunk in points.chunks_exact(n) {
-            matvec(&self.matrix, n, n, chunk, &mut self.block);
-            out.extend_from_slice(&self.block[n - self.params.cp..]);
-            out.extend_from_slice(&self.block);
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GfdmDetector {
-    ZeroForcing,
-    Matched,
-}
-
-#[derive(Clone)]
-pub struct GfdmDemod {
-    params: GfdmParams,
-    matrix: Vec<Complex<f32>>,
-    amplification: Vec<f32>,
-    block: Vec<Complex<f32>>,
-}
-
-impl GfdmDemod {
-    #[must_use]
-    pub fn new(params: GfdmParams, detector: GfdmDetector) -> Self {
-        let n = params.block();
-        let mut a = params.matrix();
-        let receive: Vec<Complex<f64>> = match detector {
-            GfdmDetector::ZeroForcing => {
-                assert!(
-                    invert(&mut a, n).is_some(),
-                    "the GFDM prototype at roll-off {} over a {}×{} block has no inverse",
-                    params.rolloff,
-                    params.subcarriers,
-                    params.subsymbols
-                );
-                a
-            }
-            GfdmDetector::Matched => (0..n * n).map(|i| a[(i % n) * n + i / n].conj()).collect(),
-        };
-        let amplification = receive
-            .chunks_exact(n)
-            .map(|row| row.iter().map(|v| v.norm_sqr()).sum::<f64>() as f32)
-            .collect();
-        Self {
-            matrix: receive
-                .into_iter()
-                .map(|v| Complex::new(v.re as f32, v.im as f32))
-                .collect(),
-            amplification,
-            block: vec![Complex::new(0.0, 0.0); n],
-            params,
-        }
-    }
-
-    #[must_use]
-    pub fn params(&self) -> &GfdmParams {
-        &self.params
-    }
-
-    #[must_use]
-    pub fn amplification(&self) -> &[f32] {
-        &self.amplification
-    }
-
-    pub fn detect_block(&self, window: &[Complex<f32>], out: &mut [Complex<f32>]) {
-        let n = self.params.block();
-        matvec(&self.matrix, n, n, window, out);
-    }
-
-    pub fn demodulate(&mut self, x: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
-        let n = self.params.block();
-        for chunk in x.chunks_exact(self.params.samples()) {
-            matvec(
-                &self.matrix,
-                n,
-                n,
-                &chunk[self.params.cp..],
-                &mut self.block,
-            );
-            out.extend_from_slice(&self.block);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::qpsk;
 
     fn reference() -> GfdmParams {
         GfdmParams::new(16, 5, 0.5)
     }
 
     fn points(count: usize) -> Vec<Complex<f32>> {
-        let mut state = 0x9f_d0u32;
-        (0..count)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                let i = if state & 1 == 0 { 1.0 } else { -1.0 };
-                let q = if state & 2 == 0 { 1.0 } else { -1.0 };
-                Complex::new(i, q) / 2f32.sqrt()
-            })
-            .collect()
+        qpsk(count, 0x9f_d0)
     }
 
     #[test]

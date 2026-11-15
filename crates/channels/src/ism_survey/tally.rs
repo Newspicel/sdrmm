@@ -2,7 +2,7 @@ use crate::airtime::AirtimeSpan;
 use crate::airtime::IsmKind;
 use crate::airtime::IsmKindLoad;
 use crate::airtime::SURVEY_CENTRES;
-use sdrmm_dsp::{airtime::Burst, fastmath::fast_power_db};
+use sdrmm_dsp::{math::fastmath::fast_power_db, measure::airtime::Burst};
 
 use crate::airtime::{bin_offset_hz, fft_len, frame_s};
 

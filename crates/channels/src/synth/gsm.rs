@@ -1,7 +1,7 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, design_lowpass, fec::conv::encode_with};
+use sdrmm_dsp::{Decimator, coding::fec::conv::encode_with, design_lowpass};
 use sdrmm_modem::pulse::{self, Norm};
 
 use crate::gsm::{

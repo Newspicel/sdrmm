@@ -1,4 +1,4 @@
-use crate::special::{bessel_i0, sinc};
+use crate::math::special::{bessel_i0, sinc};
 
 pub const KAISER_BETA: f64 = 8.0;
 

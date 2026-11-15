@@ -1,5 +1,7 @@
 use num_complex::Complex;
-use sdrmm_dsp::{BitSync, Decimator, Nco, RealDecimator, design_lowpass, fft::Transform, hann};
+use sdrmm_dsp::{
+    BitSync, Decimator, Nco, RealDecimator, design_lowpass, hann, math::fft::Transform,
+};
 
 pub(crate) const RATE: f64 = 24_000.0;
 pub(crate) const BIT_RATE: f64 = 400.0;

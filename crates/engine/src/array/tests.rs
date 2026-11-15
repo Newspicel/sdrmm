@@ -9,7 +9,7 @@ use std::{
 
 use num_complex::Complex;
 use sdrmm_device::lock;
-use sdrmm_dsp::fft::FftPair;
+use sdrmm_dsp::math::fft::FftPair;
 use sdrmm_wire::{ArrayCal, ArrayCalSource, ArrayGain, CalPhase, Coherence, SyncState};
 use tokio::sync::broadcast;
 

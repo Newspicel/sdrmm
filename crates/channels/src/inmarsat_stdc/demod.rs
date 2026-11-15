@@ -1,7 +1,7 @@
 use std::f32::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::{design_lowpass_blackman_harris, design_rrc_unit_energy, fft::Transform};
+use sdrmm_dsp::{design_lowpass_blackman_harris, design_rrc_unit_energy, math::fft::Transform};
 
 pub const RATE: f64 = 12_000.0;
 pub const SYMBOL_RATE: f64 = 1_200.0;

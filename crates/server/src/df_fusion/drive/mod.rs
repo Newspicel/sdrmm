@@ -3,7 +3,7 @@ use sdrmm_channels::array_processor::{
     ArrayBlock, ArrayCtx, ArrayProcessor, CalView, CorrectionView, GeoFix, OutputSlots, Pose,
     ProcessorOutput, create_processor, geometry_of,
 };
-use sdrmm_dsp::manifold::Direction;
+use sdrmm_dsp::array::manifold::Direction;
 use sdrmm_dsp::scene::{ArrayScene, HeadingTrack, SceneCopy, SceneSignal, SceneSource};
 use sdrmm_wire::{
     ArrayGeometry, ArrayTuningMode, Attitude, Coherence, DfBearing, DfEstimate, DfParams,

@@ -12,6 +12,7 @@ publish = false
 workspace = true
 
 [dependencies]
+sdrmm-dsp.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

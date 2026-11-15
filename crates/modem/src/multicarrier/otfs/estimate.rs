@@ -1,6 +1,12 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
+use sdrmm_dsp::math::{
+    complex::{narrow, widen},
+    linalg::{cholesky_c64, cholesky_solve_c64},
+};
+
+use super::{inverse::inverse_diagonal, projector::polynomial_projector};
 
 pub const RIDGE: f64 = 1e-6;
 pub const TAP_SIGNIFICANCE: f64 = 9.0;
@@ -28,6 +34,7 @@ pub struct DelayDopplerFit {
     basis: Vec<Complex<f64>>,
     smoother: Vec<f64>,
     normal: Vec<Complex<f64>>,
+    factor: Vec<Complex<f64>>,
     rhs: Vec<Complex<f64>>,
     gains: Vec<Complex<f64>>,
     smoothed: Vec<Complex<f64>>,
@@ -40,7 +47,7 @@ impl DelayDopplerFit {
     #[must_use]
     pub fn new(offsets: &[i32], fft: usize, symbols: usize, support: Support) -> Self {
         let taps = support.taps();
-        let (smoother, doppler_dof) = smoother(symbols, support.doppler_order);
+        let (smoother, doppler_dof) = polynomial_projector(symbols, support.doppler_order);
         Self {
             occupied: offsets.len(),
             taps,
@@ -48,6 +55,7 @@ impl DelayDopplerFit {
             basis: basis(offsets, fft, support),
             smoother,
             normal: vec![Complex::new(0.0, 0.0); taps * taps],
+            factor: vec![Complex::new(0.0, 0.0); taps * taps],
             rhs: vec![Complex::new(0.0, 0.0); taps],
             gains: vec![Complex::new(0.0, 0.0); symbols * taps],
             smoothed: vec![Complex::new(0.0, 0.0); symbols * taps],
@@ -117,15 +125,12 @@ impl DelayDopplerFit {
         let ridge = (noise_var * a as f64)
             .max(RIDGE * scale)
             .max(f64::MIN_POSITIVE);
-        for k in 0..a {
-            self.normal[k * a + k] += ridge;
-        }
-        cholesky(&mut self.normal[..a * a], a)?;
-        solve(&self.normal[..a * a], a, &mut self.rhs[..a]);
+        cholesky_c64(&self.normal[..a * a], a, ridge, &mut self.factor[..a * a]).ok()?;
+        cholesky_solve_c64(&self.factor[..a * a], a, &mut self.rhs[..a]);
         let t = self.taps;
         for (k, &tap) in self.active.iter().enumerate() {
             self.gains[symbol * t + tap] = self.rhs[k];
-            self.tap_noise[tap] += noise_var * inverse_diagonal(&self.normal[..a * a], a, k);
+            self.tap_noise[tap] += noise_var * inverse_diagonal(&self.factor[..a * a], a, k);
         }
         Some(())
     }
@@ -189,15 +194,10 @@ impl DelayDopplerFit {
                 .iter_mut()
                 .zip(self.basis.chunks_exact(t))
             {
-                let h: Complex<f64> = row.iter().zip(gains).map(|(f, g)| f * g).sum();
-                *slot = Complex::new(h.re as f32, h.im as f32);
+                *slot = narrow(row.iter().zip(gains).map(|(f, g)| f * g).sum());
             }
         }
     }
-}
-
-fn widen(v: Complex<f32>) -> Complex<f64> {
-    Complex::new(f64::from(v.re), f64::from(v.im))
 }
 
 fn basis(offsets: &[i32], fft: usize, support: Support) -> Vec<Complex<f64>> {
@@ -209,42 +209,6 @@ fn basis(offsets: &[i32], fft: usize, support: Support) -> Vec<Complex<f64>> {
         }
     }
     basis
-}
-
-fn smoother(symbols: usize, order: usize) -> (Vec<f64>, f64) {
-    let columns = (order + 1).min(symbols).max(1);
-    let mut q: Vec<Vec<f64>> = Vec::with_capacity(columns);
-    for power in 0..columns {
-        let mut v: Vec<f64> = (0..symbols)
-            .map(|n| {
-                let t = if symbols > 1 {
-                    2.0 * n as f64 / (symbols - 1) as f64 - 1.0
-                } else {
-                    0.0
-                };
-                t.powi(power as i32)
-            })
-            .collect();
-        for u in &q {
-            let dot: f64 = v.iter().zip(u).map(|(a, b)| a * b).sum();
-            for (a, b) in v.iter_mut().zip(u) {
-                *a -= dot * b;
-            }
-        }
-        let norm = v.iter().map(|a| a * a).sum::<f64>().sqrt();
-        if norm > 1e-9 {
-            q.push(v.into_iter().map(|a| a / norm).collect());
-        }
-    }
-    let mut p = vec![0.0; symbols * symbols];
-    for u in &q {
-        for n in 0..symbols {
-            for m in 0..symbols {
-                p[n * symbols + m] += u[n] * u[m];
-            }
-        }
-    }
-    (p, q.len() as f64)
 }
 
 fn residual_noise(
@@ -263,66 +227,10 @@ fn residual_noise(
     sum / (count - dof).max(1.0)
 }
 
-fn cholesky(a: &mut [Complex<f64>], n: usize) -> Option<()> {
-    for j in 0..n {
-        let mut diag = a[j * n + j].re;
-        for k in 0..j {
-            diag -= a[j * n + k].norm_sqr();
-        }
-        if diag <= 0.0 {
-            return None;
-        }
-        let root = diag.sqrt();
-        a[j * n + j] = Complex::new(root, 0.0);
-        for i in j + 1..n {
-            let mut v = a[i * n + j];
-            for k in 0..j {
-                v -= a[i * n + k] * a[j * n + k].conj();
-            }
-            a[i * n + j] = v / root;
-        }
-    }
-    Some(())
-}
-
-fn solve(l: &[Complex<f64>], n: usize, b: &mut [Complex<f64>]) {
-    for i in 0..n {
-        let mut v = b[i];
-        for k in 0..i {
-            v -= l[i * n + k] * b[k];
-        }
-        b[i] = v / l[i * n + i].re;
-    }
-    for i in (0..n).rev() {
-        let mut v = b[i];
-        for k in i + 1..n {
-            v -= l[k * n + i].conj() * b[k];
-        }
-        b[i] = v / l[i * n + i].re;
-    }
-}
-
-fn inverse_diagonal(l: &[Complex<f64>], n: usize, k: usize) -> f64 {
-    let mut total = 0.0;
-    let mut column = [Complex::new(0.0f64, 0.0); 64];
-    if n > column.len() {
-        return 1.0 / l[k * n + k].re.powi(2);
-    }
-    column[k] = Complex::new(1.0 / l[k * n + k].re, 0.0);
-    total += column[k].norm_sqr();
-    for i in k + 1..n {
-        let mut v = Complex::new(0.0, 0.0);
-        for j in k..i {
-            v -= l[i * n + j] * column[j];
-        }
-        column[i] = v / l[i * n + i].re;
-        total += column[i].norm_sqr();
-    }
-    total
-}
-
 #[cfg(test)]
 mod tests {
+    use sdrmm_dsp::math::rng::Rng;
+
     use super::*;
 
     fn offsets() -> Vec<i32> {
@@ -338,14 +246,9 @@ mod tests {
     }
 
     fn symbols_of(n: usize) -> Vec<Complex<f32>> {
-        let mut state = 0x3c1u32;
+        let mut rng = Rng::mixed(0x3c1);
         (0..n)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                Complex::from_polar(1.0, (state % 628) as f32 / 100.0)
-            })
+            .map(|_| Complex::from_polar(1.0, (TAU * rng.uniform()) as f32))
             .collect()
     }
 
@@ -394,58 +297,5 @@ mod tests {
         assert_eq!(fit.fit(&received, &known, 1e-3, &mut channel), None);
         assert_eq!(fit.active_taps(), 0);
         assert!(channel.iter().all(|&h| h == kept), "the channel was erased");
-    }
-
-    #[test]
-    fn cholesky_solves_a_hermitian_system() {
-        let n = 3;
-        let mut a = vec![
-            Complex::new(4.0, 0.0),
-            Complex::new(1.0, 1.0),
-            Complex::new(0.0, 0.5),
-            Complex::new(1.0, -1.0),
-            Complex::new(3.0, 0.0),
-            Complex::new(0.2, 0.0),
-            Complex::new(0.0, -0.5),
-            Complex::new(0.2, 0.0),
-            Complex::new(2.0, 0.0),
-        ];
-        let original = a.clone();
-        let want = [
-            Complex::new(1.0, 0.0),
-            Complex::new(-1.0, 2.0),
-            Complex::new(0.5, 0.5),
-        ];
-        let mut b: Vec<Complex<f64>> = (0..n)
-            .map(|i| (0..n).map(|j| original[i * n + j] * want[j]).sum())
-            .collect();
-        cholesky(&mut a, n).unwrap();
-        solve(&a, n, &mut b);
-        for (got, want) in b.iter().zip(want) {
-            assert!((got - want).norm() < 1e-12);
-        }
-    }
-
-    #[test]
-    fn the_smoother_keeps_a_polynomial_and_rejects_a_fast_tone() {
-        let (p, dof) = smoother(16, 3);
-        assert!((dof - 4.0).abs() < 1e-12);
-        let cubic: Vec<f64> = (0..16).map(|n| (n as f64 / 15.0).powi(3) - 0.2).collect();
-        for n in 0..16 {
-            let v: f64 = (0..16).map(|m| p[n * 16 + m] * cubic[m]).sum();
-            assert!((v - cubic[n]).abs() < 1e-9);
-        }
-        let fast: Vec<f64> = (0..16)
-            .map(|n| if n % 2 == 0 { 1.0 } else { -1.0 })
-            .collect();
-        let kept: f64 = (0..16)
-            .map(|n| {
-                (0..16)
-                    .map(|m| p[n * 16 + m] * fast[m])
-                    .sum::<f64>()
-                    .powi(2)
-            })
-            .sum();
-        assert!(kept < 1.0, "a Nyquist tone kept {kept} of 16");
     }
 }

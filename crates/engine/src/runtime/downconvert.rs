@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::{Ddc, DdcError, subband::SubbandPlan};
+use sdrmm_dsp::{Ddc, DdcError, tuning::subband::SubbandPlan};
 
 use super::dsp_block_len;
 

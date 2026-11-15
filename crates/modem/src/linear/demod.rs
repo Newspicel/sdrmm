@@ -1,18 +1,28 @@
+mod burst;
+mod decision_timing;
+mod stage;
+mod unstagger;
+
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, SymbolSync};
 
+pub use burst::LinearBurstDemod;
+use stage::SymbolStage;
+use unstagger::Unstagger;
+
 use super::{
-    acquire::{Chirp, FrequencyAcquisition},
     carrier::CarrierLoop,
     equaliser::{Equaliser, EqualiserConfig, EqualiserError},
-    frontend::{FrontCorrection, FrontEstimator},
     params::LinearParams,
-    timing::{FeedforwardTiming, TimingMetric},
 };
+use crate::pulse::assert_unit_energy;
 
 pub const TIMING_BW_CONTINUOUS: f64 = 0.003;
 
 pub const TIMING_BW_BURST: f64 = 0.015;
+
+/// Symbols the continuous level average spans.
+const CONTINUOUS_POWER_SYMBOLS: f64 = 1_000.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LinearTiming {
@@ -23,215 +33,13 @@ pub struct LinearTiming {
 impl LinearTiming {
     pub const CONTINUOUS: Self = Self {
         timing_bw: TIMING_BW_CONTINUOUS,
-        power_symbols: 1_000.0,
+        power_symbols: CONTINUOUS_POWER_SYMBOLS,
     };
 
     pub const BURST: Self = Self {
         timing_bw: TIMING_BW_BURST,
         power_symbols: f64::INFINITY,
     };
-}
-
-const INITIAL_POWER: f32 = 1.0;
-
-const TIMING_MISFIT_SYMBOLS: f32 = 64.0;
-
-const TRUST_MISFIT: f32 = 0.08;
-
-const DISTRUST_MISFIT: f32 = 0.11;
-
-struct DecisionTiming {
-    previous: Complex<f32>,
-    previous_decision: Complex<f32>,
-    misfit: f32,
-    trusted: bool,
-    spacing: f32,
-}
-
-impl DecisionTiming {
-    fn new(params: &LinearParams) -> Self {
-        Self {
-            previous: Complex::new(0.0, 0.0),
-            previous_decision: Complex::new(0.0, 0.0),
-            misfit: 1.0,
-            trusted: false,
-            spacing: params.constellation().min_distance().max(f64::MIN_POSITIVE) as f32,
-        }
-    }
-
-    fn error(&mut self, z: Complex<f32>, decision: Complex<f32>) -> Option<f64> {
-        let miss = (z - decision).norm_sqr() / (self.spacing * self.spacing);
-        self.misfit += (miss - self.misfit) / TIMING_MISFIT_SYMBOLS;
-        self.trusted = if self.trusted {
-            self.misfit < DISTRUST_MISFIT
-        } else {
-            self.misfit < TRUST_MISFIT
-        };
-        let raw = (self.previous_decision.conj() * z - decision.conj() * self.previous).re;
-        self.previous = z;
-        self.previous_decision = decision;
-        self.trusted
-            .then(|| -f64::from(raw) / std::f64::consts::PI)
-            .filter(|e| e.is_finite())
-    }
-
-    fn reset(&mut self) {
-        self.previous = Complex::new(0.0, 0.0);
-        self.previous_decision = Complex::new(0.0, 0.0);
-        self.misfit = 1.0;
-        self.trusted = false;
-    }
-}
-
-struct SymbolStage {
-    carrier: Option<CarrierLoop>,
-    equaliser: Option<Equaliser>,
-    params: LinearParams,
-    power: f32,
-    power_alpha: f32,
-    symbols_out: u64,
-    timing: DecisionTiming,
-}
-
-impl SymbolStage {
-    fn new(params: &LinearParams, power_symbols: f64, carrier: Option<CarrierLoop>) -> Self {
-        Self {
-            carrier,
-            equaliser: None,
-            params: params.clone(),
-            power: INITIAL_POWER,
-            power_alpha: if power_symbols.is_finite() {
-                (1.0 / power_symbols) as f32
-            } else {
-                0.0
-            },
-            symbols_out: 0,
-            timing: DecisionTiming::new(params),
-        }
-    }
-
-    fn push_steering(&mut self, y: Complex<f32>) -> (Complex<f32>, Option<f64>) {
-        let z = self.push(y);
-        if self.carrier.is_none() {
-            return (z, None);
-        }
-        let decision = self.params.constellation().nearest(z);
-        (z, self.timing.error(z, decision))
-    }
-
-    fn push(&mut self, y: Complex<f32>) -> Complex<f32> {
-        let symbol = self.prepare(y);
-        self.track(symbol)
-    }
-
-    fn prepare(&mut self, y: Complex<f32>) -> Complex<f32> {
-        self.power += self.power_alpha * (y.norm_sqr() - self.power);
-        let scale = self.power.max(f32::MIN_POSITIVE).sqrt().recip();
-        let symbol = derotate(
-            y * scale,
-            self.symbols_out as f64,
-            self.params.rotation_rad(),
-        );
-        self.symbols_out += 1;
-        symbol
-    }
-
-    fn push_spaced(
-        &mut self,
-        y: Complex<f32>,
-        at_symbol: bool,
-    ) -> Option<(Complex<f32>, Option<f64>)> {
-        let Some(equaliser) = &mut self.equaliser else {
-            return at_symbol.then(|| self.push_steering(y));
-        };
-        let rotation = self.params.rotation_rad();
-        if !at_symbol {
-            equaliser.push(derotate(y, self.symbols_out as f64 - 0.5, rotation));
-            return None;
-        }
-        equaliser.push(derotate(y, self.symbols_out as f64, rotation));
-        self.symbols_out += 1;
-        let z = equaliser.symbol(self.carrier.as_mut(), self.params.constellation());
-        Some((z, None))
-    }
-
-    fn equalise(&mut self, config: EqualiserConfig) -> Result<(), EqualiserError> {
-        self.equaliser = Some(Equaliser::new(config, self.params.constellation())?);
-        Ok(())
-    }
-
-    fn equaliser_resets(&self) -> u64 {
-        self.equaliser.as_ref().map_or(0, Equaliser::resets)
-    }
-
-    fn track(&mut self, symbol: Complex<f32>) -> Complex<f32> {
-        match &mut self.carrier {
-            Some(carrier) => carrier.advance(symbol, self.params.constellation()),
-            None => symbol,
-        }
-    }
-
-    fn acquisition_order(&self) -> Option<u32> {
-        self.carrier
-            .as_ref()
-            .map(|c| c.acquisition_order(self.params.constellation()))
-    }
-
-    fn reset(&mut self) {
-        if let Some(carrier) = &mut self.carrier {
-            carrier.reset();
-        }
-        if let Some(equaliser) = &mut self.equaliser {
-            equaliser.reset();
-        }
-        self.power = INITIAL_POWER;
-        self.symbols_out = 0;
-        self.timing.reset();
-    }
-}
-
-fn derotate(y: Complex<f32>, symbol_time: f64, rotation_rad: f64) -> Complex<f32> {
-    if rotation_rad == 0.0 {
-        return y;
-    }
-    let theta = -((symbol_time * rotation_rad) % std::f64::consts::TAU);
-    y * Complex::new(theta.cos() as f32, theta.sin() as f32)
-}
-
-#[derive(Clone, Debug, Default)]
-struct Unstagger {
-    line: Vec<f32>,
-    at: usize,
-}
-
-impl Unstagger {
-    fn new(len: usize) -> Self {
-        Self {
-            line: vec![0.0; len],
-            at: 0,
-        }
-    }
-
-    fn apply(&mut self, iq: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
-        out.clear();
-        out.reserve(iq.len());
-        if self.line.is_empty() {
-            out.extend_from_slice(iq);
-            return;
-        }
-        let n = self.line.len();
-        for &s in iq {
-            let delayed = self.line[self.at];
-            self.line[self.at] = s.re;
-            self.at = (self.at + 1) % n;
-            out.push(Complex::new(delayed, s.im));
-        }
-    }
-
-    fn reset(&mut self) {
-        self.line.fill(0.0);
-        self.at = 0;
-    }
 }
 
 pub struct LinearDemod {
@@ -316,204 +124,19 @@ impl LinearDemod {
     }
 }
 
-pub struct LinearBurstDemod {
-    front: FrontEstimator,
-    correction: FrontCorrection,
-    corrected: Vec<Complex<f32>>,
-    timing: FeedforwardTiming,
-    acquisition: FrequencyAcquisition,
-    chirp: Chirp,
-    backward: Vec<f64>,
-    stage: SymbolStage,
-    stagger: Unstagger,
-    aligned: Vec<Complex<f32>>,
-    retimed: Vec<Complex<f32>>,
-    on_time: Vec<Complex<f32>>,
-    equalised: Vec<Complex<f32>>,
-}
-
-impl LinearBurstDemod {
-    #[must_use]
-    pub fn new(
-        params: &LinearParams,
-        receive_filter: &[f32],
-        power_symbols: f64,
-        carrier: Option<CarrierLoop>,
-    ) -> Self {
-        Self {
-            front: FrontEstimator::for_params(params),
-            correction: FrontCorrection::default(),
-            corrected: Vec::new(),
-            timing: FeedforwardTiming::new(params, receive_filter),
-            acquisition: FrequencyAcquisition::new(),
-            chirp: Chirp::default(),
-            backward: Vec::new(),
-            stage: SymbolStage::new(params, power_symbols, carrier),
-            stagger: Unstagger::new(params.stagger_samples()),
-            aligned: Vec::new(),
-            retimed: Vec::new(),
-            on_time: Vec::new(),
-            equalised: Vec::new(),
-        }
-    }
-
-    pub fn with_equaliser(mut self, config: EqualiserConfig) -> Result<Self, EqualiserError> {
-        self.stage.equalise(config)?;
-        Ok(self)
-    }
-
-    #[must_use]
-    pub fn equaliser(&self) -> Option<&Equaliser> {
-        self.stage.equaliser.as_ref()
-    }
-
-    #[must_use]
-    pub fn equaliser_resets(&self) -> u64 {
-        self.stage.equaliser_resets()
-    }
-
-    #[must_use]
-    pub fn params(&self) -> &LinearParams {
-        &self.stage.params
-    }
-
-    pub fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<Complex<f32>>) -> f64 {
-        self.correction = self.front.estimate(iq);
-        self.corrected.clear();
-        self.corrected.extend_from_slice(iq);
-        self.correction.apply(&mut self.corrected);
-        self.stagger.apply(&self.corrected, &mut self.aligned);
-        self.retimed.clear();
-        if self.stage.equaliser.is_some() {
-            return self.process_equalised(out);
-        }
-        let offset = self.timing.process(&self.aligned, &mut self.retimed);
-        for y in &mut self.retimed {
-            *y = self.stage.prepare(*y);
-        }
-        self.chirp = self
-            .stage
-            .acquisition_order()
-            .and_then(|order| self.acquisition.estimate(&self.retimed, order))
-            .unwrap_or_default();
-        self.chirp.remove(&mut self.retimed);
-        if let Some(carrier) = &mut self.stage.carrier {
-            carrier.smooth(
-                &mut self.retimed,
-                self.stage.params.constellation(),
-                &mut self.backward,
-            );
-        }
-        out.extend_from_slice(&self.retimed);
-        offset
-    }
-
-    fn process_equalised(&mut self, out: &mut Vec<Complex<f32>>) -> f64 {
-        let offset = self
-            .timing
-            .process_spaced(&self.aligned, 2, &mut self.retimed);
-        let rotation = self.stage.params.rotation_rad();
-        for (i, y) in self.retimed.iter_mut().enumerate() {
-            *y = derotate(*y, i as f64 / 2.0, rotation);
-        }
-        self.on_time.clear();
-        self.on_time.extend(self.retimed.iter().step_by(2));
-        self.chirp = self
-            .stage
-            .acquisition_order()
-            .and_then(|order| self.acquisition.estimate(&self.on_time, order))
-            .unwrap_or_default();
-        self.chirp.remove_spaced(&mut self.retimed, 2);
-        self.equalised.clear();
-        let table = self.stage.params.constellation();
-        if let Some(equaliser) = &mut self.stage.equaliser {
-            equaliser.equalise_burst(
-                &self.retimed,
-                self.stage.carrier.as_ref(),
-                table,
-                &mut self.equalised,
-            );
-        }
-        if let Some(carrier) = &mut self.stage.carrier {
-            carrier.smooth(&mut self.equalised, table, &mut self.backward);
-        }
-        out.extend_from_slice(&self.equalised);
-        offset
-    }
-
-    #[must_use]
-    pub fn carrier_freq_cycles_per_symbol(&self) -> f64 {
-        self.chirp.centre_cycles_per_symbol
-            + self
-                .stage
-                .carrier
-                .as_ref()
-                .map_or(0.0, CarrierLoop::freq_cycles_per_symbol)
-    }
-
-    #[must_use]
-    pub fn with_timing_metric(mut self, metric: TimingMetric) -> Self {
-        self.timing = self.timing.with_metric(metric);
-        self
-    }
-
-    #[must_use]
-    pub fn front_correction(&self) -> FrontCorrection {
-        self.correction
-    }
-
-    #[must_use]
-    pub fn chirp(&self) -> Chirp {
-        self.chirp
-    }
-}
-
-fn assert_unit_energy(receive_filter: &[f32]) {
-    assert!(!receive_filter.is_empty(), "receive filter must have taps");
-    let energy: f64 = receive_filter
-        .iter()
-        .map(|&h| f64::from(h) * f64::from(h))
-        .sum();
-    assert!(
-        (energy - 1.0).abs() < 1e-3,
-        "receive filter must be unit-energy (pulse::Norm::Energy), got Σh² = {energy}"
-    );
-}
-
 #[cfg(test)]
 mod tests {
-    use sdrmm_modem_test_support::ber::{perf::assert_no_alloc, rng::Rng};
+    use crate::testutil::draws;
+    use sdrmm_modem_test_support::ber::perf::assert_no_alloc;
 
     use super::*;
     use crate::{
-        constellation::{Constellation, tables},
-        linear::{LinearMod, PhaseDetector},
-        pulse::{self, Norm},
+        constellation::tables,
+        linear::{
+            LinearMod, PhaseDetector,
+            testutil::{SPS, evm, mis_sliced, rotate, rrc},
+        },
     };
-
-    const SPS: usize = 8;
-
-    fn rrc() -> Vec<f32> {
-        pulse::root_raised_cosine(SPS as f64, 0.35, 8, Norm::Energy)
-    }
-
-    fn min_distance(table: &Constellation) -> f64 {
-        let p = table.points();
-        let mut min = f64::INFINITY;
-        for i in 0..p.len() {
-            for j in (i + 1)..p.len() {
-                min = min.min(f64::from((p[i] - p[j]).norm()));
-            }
-        }
-        min
-    }
-
-    fn labels(n: usize, m: u32, seed: u64) -> Vec<u32> {
-        let mut rng = Rng::new(seed);
-        (0..n)
-            .map(|_| (rng.next_u64() % u64::from(m)) as u32)
-            .collect()
-    }
 
     fn settled(
         params: &LinearParams,
@@ -538,20 +161,10 @@ mod tests {
         ] {
             let m = table.len() as u32;
             let p = LinearParams::new(table.clone(), rrc(), SPS).unwrap();
-            let sent = labels(12_000, m, 0xd0d0);
+            let sent = draws(12_000, m as usize, 0xd0d0);
             let wave = LinearMod::transmission(&p, &sent);
-            let got = settled(&p, &wave, None);
-            let rms = (got
-                .iter()
-                .map(|&y| {
-                    let l = table.hard_slice(y);
-                    let i = table.labels().iter().position(|&x| x == l).unwrap();
-                    f64::from((y - table.points()[i]).norm_sqr())
-                })
-                .sum::<f64>()
-                / got.len() as f64)
-                .sqrt();
-            let margin = min_distance(&table) / 2.0;
+            let rms = evm(&table, &settled(&p, &wave, None));
+            let margin = table.min_distance() / 2.0;
             assert!(
                 rms < 0.1 * margin,
                 "{name}: residual {rms} RMS, slicing margin {margin}"
@@ -563,33 +176,22 @@ mod tests {
     fn every_noiseless_symbol_slices_back_to_its_label() {
         let table = tables::qam_square(16).unwrap();
         let p = LinearParams::new(table.clone(), rrc(), SPS).unwrap();
-        let sent = labels(4_000, 16, 0x51ce);
+        let sent = draws(4_000, 16, 0x51ce);
         let wave = LinearMod::transmission(&p, &sent);
         let got = settled(&p, &wave, None);
-        let offset = sent.len() - got.len();
-        let wrong = got
-            .iter()
-            .zip(&sent[offset..])
-            .filter(|&(&y, &want)| table.hard_slice(y) != want)
-            .count();
+        let wrong = mis_sliced(&table, &got, &sent);
         assert_eq!(wrong, 0, "{wrong} of {} symbols mis-sliced", got.len());
     }
 
     #[test]
     fn oqpsk_recovers_through_the_unstagger() {
         let table = tables::qam_square(4).unwrap();
-        let sent = labels(3_000, 4, 0x0954);
+        let sent = draws(3_000, 4, 0x0954);
         let plain = LinearParams::new(table.clone(), rrc(), SPS).unwrap();
         let offset = plain.clone().with_offset(true).unwrap();
         for (name, p) in [("qpsk", plain), ("oqpsk", offset)] {
             let wave = LinearMod::transmission(&p, &sent);
-            let got = settled(&p, &wave, None);
-            let start = sent.len() - got.len();
-            let wrong = got
-                .iter()
-                .zip(&sent[start..])
-                .filter(|&(&y, &want)| table.hard_slice(y) != want)
-                .count();
+            let wrong = mis_sliced(&table, &settled(&p, &wave, None), &sent);
             assert_eq!(wrong, 0, "{name}: {wrong} mis-sliced");
         }
     }
@@ -597,7 +199,7 @@ mod tests {
     #[test]
     fn ignoring_the_stagger_wrecks_the_constellation() {
         let table = tables::qam_square(4).unwrap();
-        let sent = labels(2_000, 4, 0x0954);
+        let sent = draws(2_000, 4, 0x0954);
         let staggered = LinearParams::new(table.clone(), rrc(), SPS)
             .unwrap()
             .with_offset(true)
@@ -605,12 +207,7 @@ mod tests {
         let wave = LinearMod::transmission(&staggered, &sent);
         let plain = LinearParams::new(table.clone(), rrc(), SPS).unwrap();
         let got = settled(&plain, &wave, None);
-        let start = sent.len() - got.len();
-        let wrong = got
-            .iter()
-            .zip(&sent[start..])
-            .filter(|&(&y, &want)| table.hard_slice(y) != want)
-            .count();
+        let wrong = mis_sliced(&table, &got, &sent);
         assert!(
             wrong > got.len() / 5,
             "only {wrong} of {} mis-sliced without the unstagger",
@@ -625,15 +222,9 @@ mod tests {
             .unwrap()
             .with_rotation(tables::PI_2_ROTATION)
             .unwrap();
-        let sent = labels(3_000, 2, 0x9020);
+        let sent = draws(3_000, 2, 0x9020);
         let wave = LinearMod::transmission(&p, &sent);
-        let got = settled(&p, &wave, None);
-        let start = sent.len() - got.len();
-        let wrong = got
-            .iter()
-            .zip(&sent[start..])
-            .filter(|&(&y, &want)| table.hard_slice(y) != want)
-            .count();
+        let wrong = mis_sliced(&table, &settled(&p, &wave, None), &sent);
         assert_eq!(wrong, 0, "{wrong} mis-sliced");
     }
 
@@ -641,20 +232,13 @@ mod tests {
     fn the_carrier_loop_recovers_an_offset_the_open_chain_cannot() {
         let table = tables::psk(4).unwrap();
         let p = LinearParams::new(table.clone(), rrc(), SPS).unwrap();
-        let sent = labels(6_000, 4, 0x0ff5);
+        let sent = draws(6_000, 4, 0x0ff5);
         let mut wave = LinearMod::transmission(&p, &sent);
-        for (n, s) in wave.iter_mut().enumerate() {
-            let theta = std::f64::consts::TAU * 1e-4 * n as f64;
-            *s *= Complex::new(theta.cos() as f32, theta.sin() as f32);
-        }
+        rotate(&mut wave, 1e-4, 0.0);
         let spread = |symbols: &[Complex<f32>]| -> f64 {
             symbols
                 .iter()
-                .map(|&y| {
-                    let l = table.hard_slice(y);
-                    let i = table.labels().iter().position(|&x| x == l).unwrap();
-                    f64::from((y - table.points()[i]).norm())
-                })
+                .map(|&y| f64::from((y - table.nearest(y)).norm()))
                 .sum::<f64>()
                 / symbols.len() as f64
         };
@@ -675,7 +259,7 @@ mod tests {
             .unwrap()
             .with_offset(true)
             .unwrap();
-        let wave = LinearMod::transmission(&p, &labels(1_500, 16, 0x5b17));
+        let wave = LinearMod::transmission(&p, &draws(1_500, 16, 0x5b17));
         let carrier = || Some(CarrierLoop::new(PhaseDetector::DecisionDirected, 0.01));
         let mut whole = LinearDemod::new(&p, &rrc(), LinearTiming::CONTINUOUS, carrier());
         let mut a = Vec::new();
@@ -695,7 +279,7 @@ mod tests {
                 .unwrap()
                 .with_offset(offset)
                 .unwrap();
-            let wave = LinearMod::transmission(&p, &labels(2_048, 16, 0x0a11));
+            let wave = LinearMod::transmission(&p, &draws(2_048, 16, 0x0a11));
             let mut demod = LinearDemod::new(
                 &p,
                 &rrc(),

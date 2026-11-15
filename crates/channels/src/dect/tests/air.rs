@@ -380,7 +380,7 @@ fn decodes_two_real_base_stations_off_air() {
 
 fn relocate(iq: &[Complex<f32>], rate: f64, band: DectBand, carrier: u8) -> Vec<Complex<f32>> {
     let wide = crate::dect::wideband::input_rate(band);
-    let taps = sdrmm_dsp::fir::design_lowpass_kaiser(255, 650_000.0 / rate, 80.0);
+    let taps = sdrmm_dsp::filter::fir::design_lowpass_kaiser(255, 650_000.0 / rate, 80.0);
     let mut limited = Vec::new();
     sdrmm_dsp::Decimator::new(&taps, 1).process(iq, &mut limited);
     let mut ddc = sdrmm_dsp::Ddc::new(rate, wide, 0.0).expect("ddc");

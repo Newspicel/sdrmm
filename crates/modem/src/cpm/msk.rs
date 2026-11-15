@@ -5,6 +5,9 @@ use num_complex::Complex;
 const TRACK_RANGE_HZ: f64 = 7.6;
 const TRACK_POLE: f64 = 0.52;
 
+/// Keeps the matched-filter normalisation finite on silence.
+const MATCHED_FLOOR: f32 = 1e-8;
+
 /// Coherent MSK bit detector for a real-valued subcarrier. A bit repeats the previous one while the
 /// upper tone is sent and flips on the lower tone; the absolute polarity is ambiguous.
 pub struct MskDetector {
@@ -113,7 +116,7 @@ impl MskDetector {
             .fold(Complex::new(0.0f32, 0.0), |v, (&sample, &tap)| {
                 v + sample * tap
             });
-        v / (v.norm_sqr().sqrt() + 1e-8)
+        v / (v.norm_sqr().sqrt() + MATCHED_FLOOR)
     }
 
     fn decide(&mut self, v: Complex<f32>) -> bool {

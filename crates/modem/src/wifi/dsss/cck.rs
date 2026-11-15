@@ -5,12 +5,17 @@ use super::{
 };
 use crate::{
     linear::PhaseTracker,
-    spread::{CckMode, Codebook, integrate_chips},
+    spread::{
+        CckMode, Codebook,
+        cck::{CHIPS, MAX_WORDS},
+        integrate_chips,
+    },
     wifi::Sink,
 };
 
-pub const CHIPS: usize = 8;
-const MAX_WORDS: usize = 64;
+/// Bits a CCK symbol carries in its DQPSK phase; the rest pick the codeword.
+const PHASE_BITS: usize = 2;
+const MAX_LABEL_BITS: usize = 6;
 const SYMBOL_SAMPLES: f64 = CHIPS as f64 * CHIP_SAMPLES;
 const TIMING_GAIN: f64 = 0.1;
 const TIMING_SPREAD: f64 = CHIP_SAMPLES / 2.0;
@@ -30,11 +35,11 @@ fn mode(phy: WifiPhy) -> CckMode {
 }
 
 fn label_bits(phy: WifiPhy) -> usize {
-    mode(phy).bits_per_symbol() - 2
+    mode(phy).bits_per_symbol() - PHASE_BITS
 }
 
 pub(crate) fn duration(phy: WifiPhy, bytes: usize) -> usize {
-    let symbols = (bytes * 8).div_ceil(label_bits(phy) + 2);
+    let symbols = (bytes * 8).div_ceil(label_bits(phy) + PHASE_BITS);
     ((symbols * CHIPS) as f64 * CHIP_SAMPLES).ceil() as usize
 }
 
@@ -50,7 +55,7 @@ fn word_index(phy: WifiPhy, bits: &[bool]) -> u32 {
     }
 }
 
-fn word_bits(phy: WifiPhy, index: u32, out: &mut [bool; 6]) {
+fn word_bits(phy: WifiPhy, index: u32, out: &mut [bool; MAX_LABEL_BITS]) {
     if phy == WifiPhy::Cck11m {
         for pair in 0..3 {
             let value = index >> (2 * pair) & 3;
@@ -142,7 +147,7 @@ impl Cck {
         };
         let words = book.words().len();
         let label_bits = label_bits(header.phy);
-        let symbols = (header.bytes * 8).div_ceil(label_bits + 2);
+        let symbols = (header.bytes * 8).div_ceil(label_bits + PHASE_BITS);
         let history = reader.history();
         let mut start = reader.chip_start();
         let end = start + symbols as f64 * SYMBOL_SAMPLES;
@@ -150,7 +155,7 @@ impl Cck {
         tracker.advance((0.5 * (SYMBOL as f64 + SYMBOL_SAMPLES)) as f32);
         let mut pending = [false; 8];
         let mut filled = 0;
-        let mut labels = [false; 6];
+        let mut labels = [false; MAX_LABEL_BITS];
         for symbol in 0..symbols {
             let turns = derotators(&tracker);
             let on_time = chips(history, start, &turns);

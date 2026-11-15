@@ -3,8 +3,9 @@ use std::sync::LazyLock;
 use crate::dv::M17Params;
 use num_complex::Complex;
 use sdrmm_dsp::{
-    CyclicCode, Viterbi5, crc16_msb,
-    fec::conv::{ERASURE, Soft},
+    CyclicCode, Viterbi5,
+    coding::fec::conv::{ERASURE, Soft},
+    crc16_msb,
 };
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{

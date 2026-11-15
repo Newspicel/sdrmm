@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use num_complex::Complex;
-use sdrmm_dsp::clip::{clipped_and_peak, clipping};
+use sdrmm_dsp::audio::clip::{clipped_and_peak, clipping};
 
 pub(crate) const SILENT_DB: f32 = -140.0;
 

@@ -13,6 +13,8 @@ use sdrmm_modem_test_support::ber::{
     },
 };
 
+use crate::baselines::baseline_path;
+
 fn frame() -> (OfdmParams, Vec<Complex<f32>>) {
     let params = OfdmParams::wifi_like();
     let table = tables::qam_square(4).unwrap();
@@ -77,10 +79,6 @@ fn measured() -> Vec<PerfBaseline> {
             host: host_id(),
         },
     ]
-}
-
-fn path(stem: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
 }
 
 #[test]
@@ -152,7 +150,7 @@ fn write_ofdm_perf_baseline() {
         panic!("a debug-profile number must never become the committed baseline");
     }
     let rows = measured();
-    let path = path(ofdm::PERF);
+    let path = baseline_path(ofdm::PERF);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     save_baselines(&path, &rows).unwrap();
     for row in &rows {
@@ -171,7 +169,7 @@ fn compare_ofdm_perf_baseline() {
         return;
     }
     let committed = committed_for_host(
-        &load_baselines(&path(ofdm::PERF)).unwrap(),
+        &load_baselines(&baseline_path(ofdm::PERF)).unwrap(),
         ofdm::PERF,
         "cargo test -p sdrmm-modem --release --test integration ofdm_perf::write_ofdm_perf_baseline -- --ignored",
     );

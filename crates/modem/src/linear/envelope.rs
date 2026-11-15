@@ -1,8 +1,12 @@
+mod levels;
+
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, SymbolSync, one_pole_coeff};
 
+use levels::LevelTracker;
+
 use super::params::LinearParams;
-use crate::constellation::Constellation;
+use crate::{constellation::Constellation, pulse::assert_unit_energy};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EnvelopeTiming {
@@ -17,76 +21,6 @@ impl EnvelopeTiming {
         warmup_symbols: 32,
         dc_symbols: 50.0,
     };
-}
-
-#[derive(Clone, Debug)]
-struct LevelTracker {
-    mean: f32,
-    mean_square: f32,
-    alpha: f32,
-    warmup: usize,
-    seen: usize,
-    seed_sum: f32,
-    seed_square: f32,
-    table_mean: f32,
-    table_sd: f32,
-}
-
-impl LevelTracker {
-    fn new(timing: EnvelopeTiming, table_mean: f32, table_sd: f32) -> Self {
-        Self {
-            mean: 0.0,
-            mean_square: 0.0,
-            alpha: one_pole_coeff(1.0, timing.mean_symbols),
-            warmup: timing.warmup_symbols.max(2),
-            seen: 0,
-            seed_sum: 0.0,
-            seed_square: 0.0,
-            table_mean,
-            table_sd,
-        }
-    }
-
-    fn push(&mut self, envelope: f32) -> Option<f32> {
-        if !envelope.is_finite() {
-            return None;
-        }
-        if self.seen < self.warmup {
-            self.seed_sum += envelope;
-            self.seed_square += envelope * envelope;
-            self.seen += 1;
-            if self.seen == self.warmup {
-                let n = self.warmup as f32;
-                self.mean = self.seed_sum / n;
-                self.mean_square = self.seed_square / n;
-            }
-            return None;
-        }
-        self.mean += self.alpha * (envelope - self.mean);
-        self.mean_square += self.alpha * (envelope * envelope - self.mean_square);
-        let variance = (self.mean_square - self.mean * self.mean).max(0.0);
-        let gain = variance.sqrt() / self.table_sd;
-        if gain <= f32::MIN_POSITIVE {
-            return Some(self.table_mean);
-        }
-        let pedestal = self.mean - gain * self.table_mean;
-        Some((envelope - pedestal) / gain)
-    }
-
-    fn snr(&self) -> f32 {
-        let variance = (self.mean_square - self.mean * self.mean).max(0.0);
-        let gain = variance.sqrt() / self.table_sd;
-        let pedestal = self.mean - gain * self.table_mean;
-        self.mean / pedestal.max(f32::MIN_POSITIVE)
-    }
-
-    fn reset(&mut self) {
-        self.mean = 0.0;
-        self.mean_square = 0.0;
-        self.seen = 0;
-        self.seed_sum = 0.0;
-        self.seed_square = 0.0;
-    }
 }
 
 pub struct EnvelopeDemod {
@@ -110,39 +44,8 @@ impl EnvelopeDemod {
         timing_bw: f64,
         timing: EnvelopeTiming,
     ) -> Self {
-        assert!(!receive_filter.is_empty(), "receive filter must have taps");
-        let energy: f64 = receive_filter
-            .iter()
-            .map(|&h| f64::from(h) * f64::from(h))
-            .sum();
-        assert!(
-            (energy - 1.0).abs() < 1e-3,
-            "receive filter must be unit-energy (pulse::Norm::Energy), got Σh² = {energy}"
-        );
-        let amplitudes: Vec<f32> = params
-            .constellation()
-            .points()
-            .iter()
-            .map(|p| p.norm())
-            .collect();
-        let largest = amplitudes.iter().copied().fold(0.0f32, f32::max);
-        assert!(
-            largest > 0.0,
-            "an all-origin table has no amplitude to scale to"
-        );
-        let n = amplitudes.len() as f32;
-        let table_mean = amplitudes.iter().sum::<f32>() / n;
-        let table_sd = (amplitudes
-            .iter()
-            .map(|a| (a - table_mean) * (a - table_mean))
-            .sum::<f32>()
-            / n)
-            .sqrt();
-        assert!(
-            table_sd > 0.0,
-            "a constant-modulus table carries no amplitude for an envelope tier to detect"
-        );
-        let quietest = amplitudes.iter().copied().fold(f32::MAX, f32::min);
+        assert_unit_energy(receive_filter);
+        let (table_mean, table_sd, quietest) = amplitude_spread(params.constellation());
         Self {
             matched: Decimator::new(receive_filter, 1),
             sync: SymbolSync::new(params.sps() as f64, timing_bw),
@@ -205,8 +108,33 @@ pub fn slice_amplitude(table: &Constellation, amplitude: f32) -> u32 {
     table.labels()[best]
 }
 
+/// Mean, standard deviation and smallest of the table's point amplitudes.
+fn amplitude_spread(table: &Constellation) -> (f32, f32, f32) {
+    let amplitudes: Vec<f32> = table.points().iter().map(|p| p.norm()).collect();
+    let largest = amplitudes.iter().copied().fold(0.0f32, f32::max);
+    assert!(
+        largest > 0.0,
+        "an all-origin table has no amplitude to scale to"
+    );
+    let n = amplitudes.len() as f32;
+    let mean = amplitudes.iter().sum::<f32>() / n;
+    let sd = (amplitudes
+        .iter()
+        .map(|a| (a - mean) * (a - mean))
+        .sum::<f32>()
+        / n)
+        .sqrt();
+    assert!(
+        sd > 0.0,
+        "a constant-modulus table carries no amplitude for an envelope tier to detect"
+    );
+    let quietest = amplitudes.iter().copied().fold(f32::MAX, f32::min);
+    (mean, sd, quietest)
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::testutil::draws;
     use sdrmm_modem_test_support::ber::{
         impair::{Awgn, Impairment},
         perf::assert_no_alloc,
@@ -216,25 +144,16 @@ mod tests {
     use super::*;
     use crate::{
         constellation::tables,
-        linear::LinearMod,
-        pulse::{self, Norm},
+        linear::{
+            LinearMod, TIMING_BW_CONTINUOUS,
+            rotation::phasor,
+            testutil::{SPS, rotate, rrc},
+        },
     };
 
-    const SPS: usize = 8;
-
-    fn rrc() -> Vec<f32> {
-        pulse::root_raised_cosine(SPS as f64, 0.35, 8, Norm::Energy)
-    }
-
-    fn labels(n: usize, m: u32, seed: u64) -> Vec<u32> {
-        let mut rng = Rng::new(seed);
-        (0..n)
-            .map(|_| (rng.next_u64() % u64::from(m)) as u32)
-            .collect()
-    }
-
     fn demodulate(p: &LinearParams, wave: &[Complex<f32>]) -> Vec<f32> {
-        let mut demod = EnvelopeDemod::new(p, &rrc(), 0.003, EnvelopeTiming::CONTINUOUS);
+        let mut demod =
+            EnvelopeDemod::new(p, &rrc(), TIMING_BW_CONTINUOUS, EnvelopeTiming::CONTINUOUS);
         let mut out = Vec::new();
         demod.process(wave, &mut out);
         out
@@ -265,7 +184,7 @@ mod tests {
     #[test]
     fn noiseless_ook_recovers_every_symbol() {
         let table = tables::ook().unwrap();
-        let sent = labels(2_000, 2, 0x0009);
+        let sent = draws(2_000, 2, 0x0009);
         let p = LinearParams::new(table.clone(), rrc(), SPS).unwrap();
         let out = demodulate(&p, &LinearMod::transmission(&p, &sent));
         let (wrong, total) = errors(&out, &sent, &table, 400);
@@ -275,7 +194,7 @@ mod tests {
     #[test]
     fn noiseless_4ask_carries_the_tiers_own_self_noise() {
         let table = tables::ask(4).unwrap();
-        let sent = labels(2_000, 4, 0x4a54);
+        let sent = draws(2_000, 4, 0x4a54);
         let p = LinearParams::new(table.clone(), rrc(), SPS).unwrap();
         let out = demodulate(&p, &LinearMod::transmission(&p, &sent));
         let (wrong, total) = errors(&out, &sent, &table, 400);
@@ -292,10 +211,10 @@ mod tests {
     #[test]
     fn an_unknown_carrier_phase_costs_the_envelope_tier_nothing() {
         let table = tables::ook().unwrap();
-        let sent = labels(1_500, 2, 0x0009);
+        let sent = draws(1_500, 2, 0x0009);
         let p = LinearParams::new(table, rrc(), SPS).unwrap();
         let clean = LinearMod::transmission(&p, &sent);
-        let rot = Complex::new(0.9f64.cos() as f32, 0.9f64.sin() as f32);
+        let rot = phasor(0.9);
         let rotated: Vec<Complex<f32>> = clean.iter().map(|&s| s * rot).collect();
         let a = demodulate(&p, &clean);
         let b = demodulate(&p, &rotated);
@@ -310,14 +229,11 @@ mod tests {
     #[test]
     fn a_frequency_offset_costs_the_envelope_tier_only_the_filter_skirt() {
         let table = tables::ook().unwrap();
-        let sent = labels(1_500, 2, 0x0009);
+        let sent = draws(1_500, 2, 0x0009);
         let p = LinearParams::new(table.clone(), rrc(), SPS).unwrap();
         let clean = LinearMod::transmission(&p, &sent);
         let mut shifted = clean.clone();
-        for (n, s) in shifted.iter_mut().enumerate() {
-            let theta = std::f64::consts::TAU * 3e-3 * n as f64;
-            *s *= Complex::new(theta.cos() as f32, theta.sin() as f32);
-        }
+        rotate(&mut shifted, 3e-3, 0.0);
         let a = demodulate(&p, &clean);
         let b = demodulate(&p, &shifted);
         let worst = a
@@ -334,7 +250,7 @@ mod tests {
     #[test]
     fn the_threshold_follows_a_level_step() {
         let table = tables::ook().unwrap();
-        let sent = labels(4_000, 2, 0x57e9);
+        let sent = draws(4_000, 2, 0x57e9);
         let p = LinearParams::new(table.clone(), rrc(), SPS).unwrap();
         let mut wave = LinearMod::transmission(&p, &sent);
         let step_at = wave.len() / 2;
@@ -349,7 +265,7 @@ mod tests {
     #[test]
     fn the_fitted_pedestal_survives_noise() {
         let table = tables::ook().unwrap();
-        let sent = labels(4_000, 2, 0x0f100);
+        let sent = draws(4_000, 2, 0x0f100);
         let p = LinearParams::new(table.clone(), rrc(), SPS).unwrap();
         let mut wave = LinearMod::transmission(&p, &sent);
         Awgn::with_sigma((0.5 * 10f64.powf(-1.3)).sqrt()).apply(&mut wave, &mut Rng::new(0x9e));
@@ -365,7 +281,7 @@ mod tests {
     fn a_constant_modulus_table_is_refused() {
         let p = LinearParams::new(tables::psk(4).unwrap(), rrc(), SPS).unwrap();
         let built = std::panic::catch_unwind(|| {
-            EnvelopeDemod::new(&p, &rrc(), 0.003, EnvelopeTiming::CONTINUOUS)
+            EnvelopeDemod::new(&p, &rrc(), TIMING_BW_CONTINUOUS, EnvelopeTiming::CONTINUOUS)
         });
         assert!(built.is_err());
     }
@@ -387,8 +303,9 @@ mod tests {
     #[test]
     fn steady_state_allocates_nothing() {
         let p = LinearParams::new(tables::ask(4).unwrap(), rrc(), SPS).unwrap();
-        let wave = LinearMod::transmission(&p, &labels(2_048, 4, 0x0a12));
-        let mut demod = EnvelopeDemod::new(&p, &rrc(), 0.003, EnvelopeTiming::CONTINUOUS);
+        let wave = LinearMod::transmission(&p, &draws(2_048, 4, 0x0a12));
+        let mut demod =
+            EnvelopeDemod::new(&p, &rrc(), TIMING_BW_CONTINUOUS, EnvelopeTiming::CONTINUOUS);
         let mut out = Vec::with_capacity(wave.len());
         demod.process(&wave, &mut out);
         out.clear();

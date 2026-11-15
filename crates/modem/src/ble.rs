@@ -1,8 +1,10 @@
 pub mod band;
+mod channel;
 mod coded;
 mod receiver;
 mod track;
 pub mod transmit;
+mod whitener;
 
 use sdrmm_dsp::crc24_reflected;
 
@@ -11,7 +13,11 @@ use crate::{
     pulse::{Norm, gaussian_freq},
 };
 
-pub use self::receiver::Lane;
+pub use self::{
+    channel::{channel_index, rf_channel_at, rf_channel_hz},
+    receiver::Lane,
+    whitener::Whitener,
+};
 
 pub const SYMBOL_RATE_HZ: f64 = 1_000_000.0;
 pub const SPS: usize = 4;
@@ -22,10 +28,10 @@ pub const HEADER_BYTES: usize = 2;
 pub const CRC_BYTES: usize = 3;
 pub const MAX_PAYLOAD_BYTES: usize = 255;
 pub const MAX_PDU_BYTES: usize = HEADER_BYTES + MAX_PAYLOAD_BYTES;
+const ACCESS_ADDRESS_BITS: usize = 32;
+const LE1M_PREAMBLE_BITS: usize = 8;
 pub const CHANNEL_SPACING_HZ: f64 = 2_000_000.0;
 pub const RF_CHANNELS: u8 = 40;
-const BAND_START_HZ: f64 = 2_402_000_000.0;
-const ON_GRID_HZ: f64 = 500_000.0;
 const CRC_INIT_REFLECTED: u32 = 0xAA_AAAA;
 const CRC_POLY_REFLECTED: u32 = 0xDA_6000;
 const BT: f64 = 0.5;
@@ -63,51 +69,6 @@ pub fn gfsk(sps: f64) -> CpmParams {
 }
 
 #[must_use]
-pub fn rf_channel_hz(rf: u8) -> f64 {
-    BAND_START_HZ + f64::from(rf) * CHANNEL_SPACING_HZ
-}
-
-#[must_use]
-pub fn rf_channel_at(frequency_hz: f64) -> Option<u8> {
-    let steps = ((frequency_hz - BAND_START_HZ) / CHANNEL_SPACING_HZ).round();
-    let on_grid = (frequency_hz - BAND_START_HZ - steps * CHANNEL_SPACING_HZ).abs() <= ON_GRID_HZ;
-    (on_grid && (0.0..f64::from(RF_CHANNELS)).contains(&steps)).then_some(steps as u8)
-}
-
-#[must_use]
-pub fn channel_index(rf: u8) -> u8 {
-    match rf {
-        0 => 37,
-        12 => 38,
-        39 => 39,
-        1..=11 => rf - 1,
-        _ => rf - 2,
-    }
-}
-
-pub struct Whitener(u8);
-
-impl Whitener {
-    #[must_use]
-    pub fn new(channel_index: u8) -> Self {
-        Self(channel_index.reverse_bits() | 0x02)
-    }
-
-    pub fn bit(&mut self) -> bool {
-        let out = self.0 & 0x80 != 0;
-        if out {
-            self.0 ^= 0x11;
-        }
-        self.0 <<= 1;
-        out
-    }
-
-    pub fn byte(&mut self, byte: u8) -> u8 {
-        (0..8).fold(byte, |acc, bit| acc ^ (u8::from(self.bit()) << bit))
-    }
-}
-
-#[must_use]
 pub fn crc24(data: &[u8]) -> u32 {
     crc24_reflected(CRC_POLY_REFLECTED, CRC_INIT_REFLECTED, data)
 }
@@ -123,7 +84,11 @@ pub fn crc_ok(pdu_and_crc: &[u8]) -> bool {
 }
 
 pub(crate) fn access_address_bits() -> impl Iterator<Item = bool> {
-    (0..32).map(|bit| ACCESS_ADDRESS >> bit & 1 == 1)
+    (0..ACCESS_ADDRESS_BITS).map(|bit| ACCESS_ADDRESS >> bit & 1 == 1)
+}
+
+fn le1m_preamble() -> impl Iterator<Item = bool> {
+    (0..LE1M_PREAMBLE_BITS).map(|bit| bit % 2 == 1)
 }
 
 #[cfg(test)]

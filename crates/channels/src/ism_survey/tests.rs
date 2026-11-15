@@ -3,7 +3,7 @@ use crate::airtime::AirtimeSpan;
 use crate::airtime::IsmKind;
 use crate::airtime::IsmSurveyParams;
 use crate::airtime::IsmSurveyReport;
-use sdrmm_dsp::airtime::Burst;
+use sdrmm_dsp::measure::airtime::Burst;
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{IsmSurveyChannel, tally::Tally};

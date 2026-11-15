@@ -5,7 +5,7 @@ use std::{
 };
 
 use num_complex::Complex;
-use sdrmm_dsp::{PowerAverage, SpectrumAnalyzer, subband::SubbandPlan};
+use sdrmm_dsp::{PowerAverage, SpectrumAnalyzer, tuning::subband::SubbandPlan};
 
 use super::{
     Context,

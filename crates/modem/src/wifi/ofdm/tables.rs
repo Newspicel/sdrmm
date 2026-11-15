@@ -1,10 +1,22 @@
 use num_complex::Complex;
 
+use crate::wifi::scrambler::keystream;
+
 pub const FFT: usize = 64;
 pub const CP: usize = 16;
 pub const SYMBOL: usize = FFT + CP;
 pub const SHORT: usize = 16;
 pub const DATA_CARRIERS: usize = 48;
+/// The outermost occupied carrier; carriers run -EDGE..=EDGE around an unused DC.
+pub const EDGE: i32 = 26;
+pub const OCCUPIED: usize = 52;
+pub const POLARITY_LEN: usize = 127;
+/// Generator polynomials of the rate-1/2, K = 7 mother code, octal.
+pub const CONV_POLYS: [u16; 2] = [0o133, 0o171];
+/// The pilot polarity register starts all ones.
+const POLARITY_SEED: u8 = 0x7F;
+/// Coded bits per interleaver row.
+const INTERLEAVE_ROWS: usize = 16;
 pub const PILOT_CARRIERS: [i32; 4] = [-21, -7, 7, 21];
 pub const PILOT_VALUES: [f32; 4] = [1.0, 1.0, 1.0, -1.0];
 pub const SERVICE_BITS: usize = 16;
@@ -13,6 +25,8 @@ const LONG_TRAINING: [i8; 53] = [
     1, 1, -1, -1, 1, 1, -1, 1, -1, 1, 1, 1, 1, 1, 1, -1, -1, 1, 1, -1, 1, -1, 1, 1, 1, 1, 0, 1, -1,
     -1, 1, 1, -1, 1, -1, 1, -1, -1, -1, -1, -1, 1, 1, -1, -1, 1, -1, 1, -1, 1, 1, 1, 1,
 ];
+/// The short training's tones, one every fourth carrier.
+const SHORT_TRAINING_TONES: usize = 12;
 const SHORT_TRAINING: [i8; 53] = [
     0, 0, 1, 0, 0, 0, -1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
     -1, 0, 0, 0, -1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
@@ -121,34 +135,35 @@ pub fn bin(carrier: i32) -> usize {
 }
 
 pub fn data_carriers() -> impl Iterator<Item = i32> {
-    (-26..=26).filter(|carrier| *carrier != 0 && !PILOT_CARRIERS.contains(carrier))
+    occupied_carriers().filter(|carrier| !PILOT_CARRIERS.contains(carrier))
+}
+
+/// Every carrier from -EDGE to EDGE but DC.
+pub fn occupied_carriers() -> impl Iterator<Item = i32> {
+    (-EDGE..=EDGE).filter(|&carrier| carrier != 0)
 }
 
 pub fn long_training(carrier: i32) -> f32 {
-    if (-26..=26).contains(&carrier) {
-        f32::from(LONG_TRAINING[(carrier + 26) as usize])
+    if (-EDGE..=EDGE).contains(&carrier) {
+        f32::from(LONG_TRAINING[(carrier + EDGE) as usize])
     } else {
         0.0
     }
 }
 
 pub fn short_training(carrier: i32) -> Complex<f32> {
-    let scale = (13.0f32 / 6.0).sqrt();
-    if (-26..=26).contains(&carrier) {
-        let value = f32::from(SHORT_TRAINING[(carrier + 26) as usize]);
+    let scale = (OCCUPIED as f32 / (2 * SHORT_TRAINING_TONES) as f32).sqrt();
+    if (-EDGE..=EDGE).contains(&carrier) {
+        let value = f32::from(SHORT_TRAINING[(carrier + EDGE) as usize]);
         Complex::new(value, value) * scale
     } else {
         Complex::default()
     }
 }
 
-pub fn polarity() -> [f32; 127] {
-    let mut register = 0x7Fu8;
-    std::array::from_fn(|_| {
-        let bit = (register >> 6 ^ register >> 3) & 1;
-        register = (register << 1 | bit) & 0x7F;
-        if bit == 1 { -1.0 } else { 1.0 }
-    })
+pub fn polarity() -> [f32; POLARITY_LEN] {
+    let mut register = POLARITY_SEED;
+    std::array::from_fn(|_| if keystream(&mut register) { -1.0 } else { 1.0 })
 }
 
 pub fn interleave_table(rate: Rate) -> Vec<usize> {
@@ -156,8 +171,8 @@ pub fn interleave_table(rate: Rate) -> Vec<usize> {
     let spread = (rate.modulation.bits() / 2).max(1);
     (0..coded)
         .map(|k| {
-            let i = (coded / 16) * (k % 16) + k / 16;
-            spread * (i / spread) + (i + coded - (16 * i / coded)) % spread
+            let i = (coded / INTERLEAVE_ROWS) * (k % INTERLEAVE_ROWS) + k / INTERLEAVE_ROWS;
+            spread * (i / spread) + (i + coded - (INTERLEAVE_ROWS * i / coded)) % spread
         })
         .collect()
 }

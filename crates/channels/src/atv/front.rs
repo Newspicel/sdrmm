@@ -3,7 +3,7 @@ use std::f64::consts::{PI, TAU};
 use num_complex::Complex;
 use sdrmm_dsp::{
     Ddc, Decimator, Deemphasis, RealDecimator, RealResampler, blackman_harris, design_lowpass,
-    fast_arg, fft::FftPair, phase_diff_into,
+    fast_arg, math::fft::FftPair, phase_diff_into,
 };
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 

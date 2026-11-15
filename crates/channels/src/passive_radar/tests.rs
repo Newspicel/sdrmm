@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use num_complex::Complex;
-use sdrmm_dsp::manifold::{Direction, Geometry, Vec3};
+use sdrmm_dsp::array::manifold::{Direction, Geometry, Vec3};
 use sdrmm_dsp::scene::{ArrayScene, SceneEcho, SceneSignal, SceneSource};
 use sdrmm_wire::{ArrayGeometry, ArrayTuningMode, Coherence, DfParams, ProcessorParams, Winding};
 use sdrmm_wire::{frame::SurfaceFrame, frame::VisibilityOwned};
@@ -166,7 +166,7 @@ fn scene_ctx() -> RadarCtx {
 }
 
 fn kraken_ctx(center_hz: f64) -> RadarCtx {
-    let winding = sdrmm_dsp::manifold::Winding::Clockwise;
+    let winding = sdrmm_dsp::array::manifold::Winding::Clockwise;
     let geometry = Geometry::uca(0.35, 5, 0.0, winding).unwrap();
     RadarCtx {
         sample_rate: KRAKEN_RATE,
@@ -347,7 +347,10 @@ fn plan_refuses_an_order_over_512() {
 
 #[test]
 fn wire_and_solver_order_limits_agree() {
-    assert_eq!(MAX_ECA_ORDER as usize, sdrmm_dsp::linalg::MAX_SOLVE_ORDER);
+    assert_eq!(
+        MAX_ECA_ORDER as usize,
+        sdrmm_dsp::math::linalg::MAX_SOLVE_ORDER
+    );
 }
 
 #[test]
@@ -522,7 +525,7 @@ fn a_radar_plan_steers_through_the_array_table() {
     assert!(ideal.aoa.as_ref().unwrap().manifold.table().is_none());
     assert_eq!(change(&ideal, &measured), PlanChange::Rebuild);
     let mut three = ArrayScene::new(
-        Geometry::uca(1.0, 3, 0.0, sdrmm_dsp::manifold::Winding::Clockwise).unwrap(),
+        Geometry::uca(1.0, 3, 0.0, sdrmm_dsp::array::manifold::Winding::Clockwise).unwrap(),
         CENTER_HZ,
         INPUT_RATE,
     );

@@ -2,7 +2,7 @@ use crate::NativeChannel;
 use crate::iridium::IridiumParams;
 use crate::iridium::IridiumSpan;
 use num_complex::Complex;
-use sdrmm_dsp::fft::FftPair;
+use sdrmm_dsp::math::fft::FftPair;
 use sdrmm_wire::ChannelParams;
 
 use super::super::CHANNEL_RATE;

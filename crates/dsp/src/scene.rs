@@ -1,10 +1,16 @@
 pub mod delay;
 pub mod field;
-pub mod rng;
 pub mod world;
 
 #[cfg(any(test, feature = "test-scene"))]
+mod fractional;
+#[cfg(any(test, feature = "test-scene"))]
+mod history;
+#[cfg(any(test, feature = "test-scene"))]
 mod wave;
+
+#[cfg(test)]
+mod fixtures;
 
 #[cfg(any(test, feature = "test-scene"))]
 pub mod array;
@@ -19,7 +25,6 @@ pub use delay::{KAISER_BETA, KaiserSinc};
 #[cfg(any(test, feature = "test-scene"))]
 pub use echo::SceneEcho;
 pub use field::{LaneRenderer, LaneSetup, amplitude};
-pub use rng::{Draw, Rng, mix, mix_key, step};
 pub use world::{
     Clutter, DONGLE_SPACING_M, Echo, Emitter, KRAKEN_RADIUS_M, LaneImpairments, MAX_BENCH_LANES,
     MAX_CLUTTER_DELAY_SAMPLES, MAX_CLUTTER_ECHOES, MAX_PPM, MAX_RIPPLE_CYCLES, MAX_RIPPLE_DB, Path,

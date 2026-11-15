@@ -4,13 +4,13 @@ mod solve;
 use std::sync::Arc;
 
 use num_complex::Complex;
-use sdrmm_dsp::beamform::{
+use sdrmm_dsp::array::beamform::{
     Adaptation as TdlAdaptation, BeamError, BeamMetrics, BlockSolver, Cma, Constraints, Gsc,
     LaneNoise, TDL_MAX_CMAC_PER_S, TdlCanceller, WeightRamp, WeightSet, tdl_cmac_per_sample,
 };
-use sdrmm_dsp::covariance::SampleCovariance;
-use sdrmm_dsp::linalg::{CMat, Qr};
-use sdrmm_dsp::manifold::{GridSpec, Manifold, SteeringGrid};
+use sdrmm_dsp::array::covariance::SampleCovariance;
+use sdrmm_dsp::array::manifold::{GridSpec, Manifold, SteeringGrid};
+use sdrmm_dsp::math::linalg::{CMat, Qr};
 use sdrmm_wire::processor::beamformer::MAX_BEAM_NULLS;
 use sdrmm_wire::{
     Adaptation, BEAM_PORT, BeamMode, BeamformerParams, NoiseModel, ProcessorParams, STEER_PORT,

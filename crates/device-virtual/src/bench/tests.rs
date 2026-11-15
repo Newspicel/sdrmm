@@ -9,7 +9,7 @@ use sdrmm_device::{
     DeviceDriver, GapScope, LaneEvent, LaneMark, RxSink, SdrDevice, SinkItem, Uncertainty,
 };
 use sdrmm_dsp::{
-    manifold::{Direction, Geometry, LIGHT_SPEED_M_S, Winding, steer},
+    array::manifold::{Direction, Geometry, LIGHT_SPEED_M_S, Winding, steer},
     scene::{LaneRenderer, LaneSetup},
 };
 use sdrmm_wire::{
@@ -149,7 +149,7 @@ fn a_wide_noise_source_stays_inside_the_lane_band() {
     let len = 1 << 15;
     let mut out = vec![C32::new(0.0, 0.0); len];
     renderer.render(0, 0.0, 1.0 / RATE, true, &mut out);
-    sdrmm_dsp::fft::Transform::forward(len).process(&mut out);
+    sdrmm_dsp::math::fft::Transform::forward(len).process(&mut out);
     let band = |low: f64, high: f64| {
         let bins: Vec<f64> = out
             .iter()
@@ -185,7 +185,7 @@ fn noise_spectrum(ripple: Option<Ripple>, len: usize) -> Vec<f64> {
     renderer.configure(&wide, &setup);
     let mut out = vec![C32::new(0.0, 0.0); len];
     renderer.render(0, 0.0, 1.0 / RATE, true, &mut out);
-    sdrmm_dsp::fft::Transform::forward(len).process(&mut out);
+    sdrmm_dsp::math::fft::Transform::forward(len).process(&mut out);
     out.iter()
         .map(|value| f64::from(value.norm_sqr()))
         .collect()

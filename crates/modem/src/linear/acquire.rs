@@ -1,7 +1,13 @@
+mod chirp;
+mod line;
+
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::fft::Transform;
+use sdrmm_dsp::math::{complex::widen, fft::Transform, special::parabolic_peak};
+
+pub use chirp::Chirp;
+use line::{SegmentTone, fit_line};
 
 pub const MIN_SYMBOLS: usize = 32;
 
@@ -15,45 +21,13 @@ const MIN_SEGMENT: usize = 128;
 
 const OUTLIER_BINS: f64 = 3.0;
 
-const MIN_DRIFT_SIGMAS: f64 = 4.0;
-
 const MIN_DRIFT_EXCURSION_CYCLES: f64 = 0.05;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Chirp {
-    pub centre_cycles_per_symbol: f64,
-    pub drift_cycles_per_symbol2: f64,
-}
-
-impl Chirp {
-    pub fn remove(&self, symbols: &mut [Complex<f32>]) {
-        self.remove_spaced(symbols, 1);
-    }
-
-    pub fn remove_spaced(&self, samples: &mut [Complex<f32>], per_symbol: usize) {
-        let per_symbol = per_symbol.max(1);
-        let centre = (samples.len().div_ceil(per_symbol) as f64 - 1.0) / 2.0;
-        for (k, s) in samples.iter_mut().enumerate() {
-            let t = k as f64 / per_symbol as f64 - centre;
-            let cycles =
-                self.centre_cycles_per_symbol * t + 0.5 * self.drift_cycles_per_symbol2 * t * t;
-            let theta = -TAU * cycles.rem_euclid(1.0);
-            *s *= Complex::new(theta.cos() as f32, theta.sin() as f32);
-        }
-    }
-}
-
+/// The strongest line in a stretch of stripped symbols, against the noise around it.
 #[derive(Clone, Copy, Debug)]
 struct Tone {
     cycles_per_symbol: f64,
     strength: f64,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SegmentTone {
-    at_symbol: f64,
-    cycles_per_symbol: f64,
-    weight: f64,
 }
 
 pub struct FrequencyAcquisition {
@@ -119,7 +93,7 @@ impl FrequencyAcquisition {
     fn strip(&mut self, symbols: &[Complex<f32>], order: u32) {
         self.stripped.clear();
         self.stripped.extend(symbols.iter().map(|&y| {
-            let y = Complex::new(f64::from(y.re), f64::from(y.im));
+            let y = widen(y);
             let r2 = y.norm_sqr();
             if r2 <= 0.0 {
                 return Complex::new(0.0, 0.0);
@@ -201,17 +175,11 @@ impl FrequencyAcquisition {
             return None;
         }
         let at = |i: isize| self.spectrum[i.rem_euclid(size as isize) as usize].norm();
-        let (left, mid, right) = (
+        let shift = parabolic_peak(
             at(peak as isize - 1),
             at(peak as isize),
             at(peak as isize + 1),
         );
-        let curvature = left - 2.0 * mid + right;
-        let shift = if curvature < 0.0 {
-            (0.5 * (left - right) / curvature).clamp(-0.5, 0.5)
-        } else {
-            0.0
-        };
         Some(Tone {
             cycles_per_symbol: wrap_half((peak as f64 + shift) / size as f64),
             strength,
@@ -230,46 +198,6 @@ fn planned(transforms: &mut Vec<Transform<f64>>, size: usize) -> &mut Transform<
     &mut transforms[at]
 }
 
-fn fit_line(segments: &[SegmentTone]) -> Option<(f64, f64)> {
-    if segments.len() < 2 {
-        return None;
-    }
-    let w: f64 = segments.iter().map(|s| s.weight).sum();
-    let t = segments.iter().map(|s| s.weight * s.at_symbol).sum::<f64>() / w;
-    let f = segments
-        .iter()
-        .map(|s| s.weight * s.cycles_per_symbol)
-        .sum::<f64>()
-        / w;
-    let stt: f64 = segments
-        .iter()
-        .map(|s| s.weight * (s.at_symbol - t).powi(2))
-        .sum();
-    if stt <= 0.0 {
-        return None;
-    }
-    let stf: f64 = segments
-        .iter()
-        .map(|s| s.weight * (s.at_symbol - t) * (s.cycles_per_symbol - f))
-        .sum();
-    let slope = stf / stt;
-    let intercept = f - slope * t;
-    if segments.len() > 2 {
-        let scatter: f64 = segments
-            .iter()
-            .map(|s| s.weight * (s.cycles_per_symbol - intercept - slope * s.at_symbol).powi(2))
-            .sum::<f64>()
-            / w
-            * segments.len() as f64
-            / (segments.len() - 2) as f64;
-        let standard_error = (scatter * w / segments.len() as f64 / stt).sqrt();
-        if slope.abs() < MIN_DRIFT_SIGMAS * standard_error {
-            return Some((f, 0.0));
-        }
-    }
-    Some((intercept, slope))
-}
-
 fn dechirp(stripped: &mut [Complex<f64>], drift: f64) {
     if drift == 0.0 {
         return;
@@ -281,6 +209,7 @@ fn dechirp(stripped: &mut [Complex<f64>], drift: f64) {
     }
 }
 
+/// Folds cycles per symbol into [-0.5, 0.5].
 fn wrap_half(x: f64) -> f64 {
     x - x.round()
 }
@@ -292,20 +221,16 @@ mod tests {
         rng::Rng,
     };
 
-    use std::f64::consts::PI;
+    use sdrmm_dsp::math::special::wrap_rad;
 
     use super::*;
-    use crate::constellation::{Constellation, tables};
-
-    fn stream(table: &Constellation, n: usize, seed: u64) -> Vec<Complex<f32>> {
-        let mut rng = Rng::new(seed);
-        (0..n)
-            .map(|_| table.points()[(rng.next_u64() % table.len() as u64) as usize])
-            .collect()
-    }
+    use crate::{
+        constellation::{Constellation, tables},
+        testutil::points,
+    };
 
     fn chirped(table: &Constellation, n: usize, chirp: Chirp, sigma: f64) -> Vec<Complex<f32>> {
-        let mut w = stream(table, n, 0xacc1);
+        let mut w = points(table, n, 0xacc1);
         Chirp {
             centre_cycles_per_symbol: -chirp.centre_cycles_per_symbol,
             drift_cycles_per_symbol2: -chirp.drift_cycles_per_symbol2,
@@ -372,9 +297,9 @@ mod tests {
         let got = FrequencyAcquisition::new().estimate(&w, 4).unwrap();
         got.remove(&mut w);
         let phases: Vec<f64> = w.iter().map(|y| f64::from(y.powu(4).arg())).collect();
-        let spread = phases.iter().fold(0.0f64, |acc, &p| {
-            acc.max(((p - phases[0] + PI).rem_euclid(TAU) - PI).abs())
-        });
+        let spread = phases
+            .iter()
+            .fold(0.0f64, |acc, &p| acc.max(wrap_rad(p - phases[0]).abs()));
         assert!(spread < 0.3, "4th-power phase wanders {spread} rad");
     }
 
@@ -388,7 +313,7 @@ mod tests {
     #[test]
     fn a_short_burst_is_left_to_the_loop() {
         let table = tables::qam_square(4).unwrap();
-        let w = stream(&table, MIN_SYMBOLS - 1, 1);
+        let w = points(&table, MIN_SYMBOLS - 1, 1);
         assert_eq!(FrequencyAcquisition::new().estimate(&w, 4), None);
     }
 }

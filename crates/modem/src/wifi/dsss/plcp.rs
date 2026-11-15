@@ -1,14 +1,28 @@
 use num_complex::Complex;
 use sdrmm_dsp::crc16_msb_bits;
 
-use super::{Outcome, SymbolReader, WifiPhy};
+use super::{Outcome, WifiPhy, reader::SymbolReader};
 
 const TRAINING_SYMBOLS: usize = 16;
-const LONG_SFD: u16 = 0xF3A0;
-const SHORT_SFD: u16 = 0x05CF;
+pub(crate) const LONG_SFD: u16 = 0xF3A0;
+pub(crate) const SHORT_SFD: u16 = 0x05CF;
+/// The scrambled sync field ends in ones before a long SFD and in zeros before a short one.
+const LONG_SYNC_TAIL: u32 = 0xFF;
+const SHORT_SYNC_TAIL: u32 = 0;
+const SYNC_TAIL_BITS: u32 = 8;
+const SFD_REGISTER_BITS: u32 = 24;
 const HEADER_BITS: usize = 48;
+const CRC_BITS: usize = 32;
 const CRC_POLY: u16 = 0x1021;
-const LENGTH_EXTENSION: u8 = 0x80;
+const CRC_INIT: u16 = 0xFFFF;
+pub(crate) const LENGTH_EXTENSION: u8 = 0x80;
+/// The SIGNAL field of each DSSS rate, its bit rate in units of 100 kb/s.
+const SIGNALS: [(u8, WifiPhy); 4] = [
+    (0x0A, WifiPhy::Dsss1m),
+    (0x14, WifiPhy::Dsss2m),
+    (0x37, WifiPhy::Cck5m5),
+    (0x6E, WifiPhy::Cck11m),
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Preamble {
@@ -38,12 +52,12 @@ pub(crate) fn find_sfd(
     reader.train(&training);
     for _ in TRAINING_SYMBOLS..max_symbols {
         register = shift(register, reader.dbpsk().ok_or(Outcome::Short)?);
-        let sfd = (register >> 8) as u16;
-        let sync = register & 0xFF;
-        if sfd == LONG_SFD && sync == 0xFF {
+        let sfd = (register >> SYNC_TAIL_BITS) as u16;
+        let sync = register & ((1 << SYNC_TAIL_BITS) - 1);
+        if sfd == LONG_SFD && sync == LONG_SYNC_TAIL {
             return Ok(Preamble::Long);
         }
-        if sfd == SHORT_SFD && sync == 0 {
+        if sfd == SHORT_SFD && sync == SHORT_SYNC_TAIL {
             return Ok(Preamble::Short);
         }
     }
@@ -51,7 +65,7 @@ pub(crate) fn find_sfd(
 }
 
 fn shift(register: u32, bit: bool) -> u32 {
-    (register >> 1 | u32::from(bit) << 23) & 0xFF_FFFF
+    (register >> 1 | u32::from(bit) << (SFD_REGISTER_BITS - 1)) & ((1 << SFD_REGISTER_BITS) - 1)
 }
 
 pub(crate) fn header(reader: &mut SymbolReader<'_>, preamble: Preamble) -> Result<Header, Outcome> {
@@ -74,18 +88,12 @@ pub(crate) fn header(reader: &mut SymbolReader<'_>, preamble: Preamble) -> Resul
             .enumerate()
             .fold(0u32, |acc, (bit, &value)| acc | u32::from(value) << bit)
     };
-    if crc16(&bits[..32]) != received_crc(&bits[32..]) {
+    if crc16(&bits[..CRC_BITS]) != received_crc(&bits[CRC_BITS..]) {
         return Err(Outcome::Failed);
     }
     let service = field(8, 8) as u8;
     let length_us = field(16, 16) as u16;
-    let phy = match field(0, 8) {
-        0x0A => WifiPhy::Dsss1m,
-        0x14 => WifiPhy::Dsss2m,
-        0x37 => WifiPhy::Cck5m5,
-        0x6E => WifiPhy::Cck11m,
-        _ => return Err(Outcome::Failed),
-    };
+    let phy = phy_for_signal(field(0, 8) as u8).ok_or(Outcome::Failed)?;
     Ok(Header {
         phy,
         service,
@@ -109,7 +117,22 @@ pub fn psdu_bytes(phy: WifiPhy, length_us: u16, service: u8) -> usize {
 
 #[must_use]
 pub fn crc16(bits: &[bool]) -> u16 {
-    !crc16_msb_bits(CRC_POLY, 0xFFFF, bits)
+    !crc16_msb_bits(CRC_POLY, CRC_INIT, bits)
+}
+
+/// The SIGNAL field a DSSS rate sends; 1 Mb/s for anything else.
+pub(crate) fn signal_code(phy: WifiPhy) -> u8 {
+    SIGNALS
+        .iter()
+        .find(|(_, candidate)| *candidate == phy)
+        .map_or(SIGNALS[0].0, |&(code, _)| code)
+}
+
+fn phy_for_signal(code: u8) -> Option<WifiPhy> {
+    SIGNALS
+        .iter()
+        .find(|(candidate, _)| *candidate == code)
+        .map(|&(_, phy)| phy)
 }
 
 fn received_crc(bits: &[bool]) -> u16 {

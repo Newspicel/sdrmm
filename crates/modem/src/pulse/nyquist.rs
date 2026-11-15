@@ -1,6 +1,12 @@
-use sdrmm_dsp::design_rrc;
+use std::f64::consts::{FRAC_PI_4, PI};
+
+use sdrmm_dsp::{design_rrc, math::special::sinc};
 
 use super::{Norm, normalise, renorm_designed};
+
+/// How close a tap may come to the raised cosine's removable singularity before it takes the
+/// closed-form limit.
+const SINGULAR_TOLERANCE: f64 = 1e-9;
 
 #[must_use]
 pub fn raised_cosine(sps: f64, alpha: f64, span: usize, norm: Norm) -> Vec<f32> {
@@ -28,18 +34,10 @@ pub fn root_raised_cosine(sps: f64, alpha: f64, span: usize, norm: Norm) -> Vec<
 
 fn rc_pulse(t: f64, alpha: f64) -> f64 {
     let t0 = 1.0 / (2.0 * alpha);
-    if (t.abs() - t0).abs() < 1e-9 {
-        return std::f64::consts::FRAC_PI_4 * sinc(t0);
+    if (t.abs() - t0).abs() < SINGULAR_TOLERANCE {
+        return FRAC_PI_4 * sinc(t0);
     }
-    sinc(t) * (std::f64::consts::PI * alpha * t).cos() / (1.0 - (2.0 * alpha * t).powi(2))
-}
-
-fn sinc(x: f64) -> f64 {
-    if x.abs() < 1e-12 {
-        1.0
-    } else {
-        (std::f64::consts::PI * x).sin() / (std::f64::consts::PI * x)
-    }
+    sinc(t) * (PI * alpha * t).cos() / (1.0 - (2.0 * alpha * t).powi(2))
 }
 
 #[cfg(test)]

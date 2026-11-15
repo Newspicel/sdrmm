@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::constellation::Constellation;
+use crate::{constellation::Constellation, pulse};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LinearError {
@@ -48,8 +48,7 @@ impl LinearParams {
         if sps < 2 {
             return Err(LinearError::TooFewSamplesPerSymbol(sps));
         }
-        let energy: f64 = pulse.iter().map(|&h| f64::from(h) * f64::from(h)).sum();
-        if pulse.is_empty() || (energy - 1.0).abs() > 1e-3 {
+        if !pulse::is_unit_energy(&pulse) {
             return Err(LinearError::PulseNotUnitEnergy);
         }
         Ok(Self {
@@ -118,16 +117,13 @@ mod tests {
     use super::*;
     use crate::{
         constellation::tables,
-        pulse::{self, Norm},
+        linear::testutil::{rrc, rrc_at},
+        pulse::Norm,
     };
-
-    fn rrc(sps: usize) -> Vec<f32> {
-        pulse::root_raised_cosine(sps as f64, 0.35, 8, Norm::Energy)
-    }
 
     #[test]
     fn a_valid_entry_carries_its_four_axes() {
-        let p = LinearParams::new(tables::qam_square(16).unwrap(), rrc(8), 8)
+        let p = LinearParams::new(tables::qam_square(16).unwrap(), rrc(), 8)
             .unwrap()
             .with_rotation(tables::PI_4_ROTATION)
             .unwrap()
@@ -155,14 +151,14 @@ mod tests {
     #[test]
     fn the_stagger_needs_a_half_symbol_that_exists() {
         assert_eq!(
-            LinearParams::new(tables::qam_square(4).unwrap(), rrc(5), 5)
+            LinearParams::new(tables::qam_square(4).unwrap(), rrc_at(5), 5)
                 .unwrap()
                 .with_offset(true)
                 .unwrap_err(),
             LinearError::OffsetNeedsEvenSps(5)
         );
         assert!(
-            LinearParams::new(tables::qam_square(4).unwrap(), rrc(5), 5)
+            LinearParams::new(tables::qam_square(4).unwrap(), rrc_at(5), 5)
                 .unwrap()
                 .with_offset(false)
                 .is_ok()
@@ -172,11 +168,11 @@ mod tests {
     #[test]
     fn degenerate_axes_are_refused() {
         assert_eq!(
-            LinearParams::new(tables::pam(2).unwrap(), rrc(8), 1).unwrap_err(),
+            LinearParams::new(tables::pam(2).unwrap(), rrc(), 1).unwrap_err(),
             LinearError::TooFewSamplesPerSymbol(1)
         );
         assert_eq!(
-            LinearParams::new(tables::pam(2).unwrap(), rrc(8), 8)
+            LinearParams::new(tables::pam(2).unwrap(), rrc(), 8)
                 .unwrap()
                 .with_rotation(f64::NAN)
                 .unwrap_err(),

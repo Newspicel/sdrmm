@@ -1,9 +1,13 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
+use sdrmm_dsp::math::complex::widen;
 
 use super::{modulator::long_training_time, params::OfdmParams};
 use crate::framesync::{RepetitionDetector, conj_product, rotor};
+
+/// Short-training periods a repetition metric needs: a window of all but two, plus the lag.
+const MIN_SHORT_REPEATS: usize = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Acquisition {
@@ -30,15 +34,15 @@ impl PreambleSync {
         let preamble = params.preamble();
         let period = preamble.short_period(params.fft());
         assert!(
-            preamble.short_repeats >= 3,
+            preamble.short_repeats >= MIN_SHORT_REPEATS,
             "a repetition metric needs at least three short-training periods, got {}",
             preamble.short_repeats
         );
         Self {
             fft: params.fft(),
             period,
-            window: (preamble.short_repeats - 2) * period,
-            short_samples: preamble.short_repeats * period,
+            window: (preamble.short_repeats - (MIN_SHORT_REPEATS - 1)) * period,
+            short_samples: preamble.short_samples(params.fft()),
             long_guard: preamble.long_guard,
             long_repeats: preamble.long_repeats,
             ltf: long_training_time(params),
@@ -89,8 +93,7 @@ impl PreambleSync {
         let (mut rot, step) = rotor(cfo, t);
         for (n, &tap) in self.ltf.iter().enumerate() {
             let Some(&sample) = x.get(t + n) else { break };
-            let y = Complex::new(f64::from(sample.re), f64::from(sample.im)) * rot;
-            acc += y * Complex::new(f64::from(tap.re), -f64::from(tap.im));
+            acc += widen(sample) * rot * widen(tap).conj();
             rot *= step;
         }
         acc
@@ -119,31 +122,13 @@ mod tests {
     };
 
     use super::*;
-    use crate::ofdm::modulator::OfdmMod;
-
-    fn points(n: usize, seed: u32) -> Vec<Complex<f32>> {
-        let mut state = seed | 1;
-        (0..n)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                Complex::new(
-                    if state & 1 == 0 { 1.0 } else { -1.0 },
-                    if state & 2 == 0 { 1.0 } else { -1.0 },
-                ) * std::f32::consts::FRAC_1_SQRT_2
-            })
-            .collect()
-    }
+    use crate::{ofdm::modulator::OfdmMod, testutil::qpsk};
 
     fn burst(lead: usize, symbols: usize, cfo_cycles: f64) -> Vec<Complex<f32>> {
         let params = OfdmParams::wifi_like();
         let mut m = OfdmMod::new(params.clone());
         let mut wave = vec![Complex::new(0.0, 0.0); lead];
-        m.frame(
-            &points(params.data_subcarriers() * symbols, 0x0f4),
-            &mut wave,
-        );
+        m.frame(&qpsk(params.data_subcarriers() * symbols, 0x0f4), &mut wave);
         if cfo_cycles != 0.0 {
             Cfo::from_cycles_per_sample(cfo_cycles).apply(&mut wave, &mut Rng::new(0));
         }

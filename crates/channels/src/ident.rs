@@ -1126,7 +1126,7 @@ mod tests {
         const USEFUL: usize = 2_048;
         const GUARD: usize = 504;
         const CARRIERS: usize = 1_536;
-        let mut fft = sdrmm_dsp::fft::FftPair::new(USEFUL);
+        let mut fft = sdrmm_dsp::math::fft::FftPair::new(USEFUL);
         let mut state = seed | 1;
         let symbols = (seconds * RATE / (USEFUL + GUARD) as f64) as usize;
         let mut out = Vec::with_capacity(symbols * (USEFUL + GUARD));

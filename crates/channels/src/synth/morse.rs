@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::window::hann;
+use sdrmm_dsp::math::window::hann;
 
 use super::ook;
 

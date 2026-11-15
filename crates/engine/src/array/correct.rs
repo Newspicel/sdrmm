@@ -1,6 +1,6 @@
 use num_complex::Complex;
 use sdrmm_channels::array_processor::{CorrectionView, MAX_LANES};
-use sdrmm_dsp::array_sync::{FastConvolver, design_correction};
+use sdrmm_dsp::array::array_sync::{FastConvolver, design_correction};
 
 use super::align::ALIGN_BLOCK;
 

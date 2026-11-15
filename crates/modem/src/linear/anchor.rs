@@ -1,4 +1,7 @@
+use std::f64::consts::TAU;
+
 use num_complex::Complex;
+use sdrmm_dsp::math::complex::{narrow, widen};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AnchorError {
@@ -29,11 +32,7 @@ impl PhaseAnchor {
         let r: Vec<Complex<f64>> = received
             .iter()
             .zip(expected)
-            .map(|(&y, &x)| {
-                let y = Complex::new(f64::from(y.re), f64::from(y.im));
-                let x = Complex::new(f64::from(x.re), f64::from(x.im));
-                y * x.conj()
-            })
+            .map(|(&y, &x)| widen(y) * widen(x).conj())
             .collect();
         let pairs = r.len() - 1;
         let mut slope_acc = 0.0f64;
@@ -55,13 +54,12 @@ impl PhaseAnchor {
         if slope_weight <= 0.0 {
             return Err(AnchorError::NoEnergy);
         }
-        let freq = slope_acc / slope_weight / std::f64::consts::TAU;
+        let freq = slope_acc / slope_weight / TAU;
 
         let mut num = Complex::new(0.0f64, 0.0);
         let mut den = 0.0f64;
         for (k, (&index, &x)) in indices.iter().zip(expected).enumerate() {
-            let theta = -std::f64::consts::TAU * freq * index as f64;
-            num += r[k] * Complex::new(theta.cos(), theta.sin());
+            num += r[k] * Complex::from_polar(1.0, -TAU * freq * index as f64);
             den += f64::from(x.norm_sqr());
         }
         if den <= 0.0 || num.norm() <= 0.0 {
@@ -90,9 +88,8 @@ impl PhaseAnchor {
         let mut num = Complex::new(0.0f64, 0.0);
         let mut den = 0.0f64;
         for (&y, &x) in received.iter().zip(expected) {
-            let y = Complex::new(f64::from(y.re), f64::from(y.im));
-            let x = Complex::new(f64::from(x.re), f64::from(x.im));
-            num += y * x.conj();
+            let x = widen(x);
+            num += widen(y) * x.conj();
             den += x.norm_sqr();
         }
         if den <= 0.0 || num.norm() <= 0.0 {
@@ -111,10 +108,8 @@ impl PhaseAnchor {
 
     #[must_use]
     pub fn correct(&self, index: usize, y: Complex<f32>) -> Complex<f32> {
-        let theta = -std::f64::consts::TAU * self.freq_cycles_per_symbol * index as f64;
-        let y = Complex::new(f64::from(y.re), f64::from(y.im));
-        let z = y * Complex::new(theta.cos(), theta.sin()) / self.gain;
-        Complex::new(z.re as f32, z.im as f32)
+        let theta = -TAU * self.freq_cycles_per_symbol * index as f64;
+        narrow(widen(y) * Complex::from_polar(1.0, theta) / self.gain)
     }
 
     pub fn correct_block(&self, first_index: usize, symbols: &mut [Complex<f32>]) {
@@ -152,28 +147,27 @@ mod tests {
     };
 
     use super::*;
-    use crate::constellation::tables;
+    use crate::testutil::points;
+    use crate::{
+        constellation::tables,
+        linear::{rotation::phasor, testutil::rotate},
+    };
 
     fn known_word(n: usize, seed: u64) -> Vec<Complex<f32>> {
-        let table = tables::qam_square(16).unwrap();
-        let mut rng = Rng::new(seed);
-        (0..n)
-            .map(|_| table.points()[(rng.next_u64() % 16) as usize])
-            .collect()
+        points(&tables::qam_square(16).unwrap(), n, seed)
     }
 
-    fn impose(
-        x: &[Complex<f32>],
-        gain: Complex<f32>,
-        freq: f64,
-        first: usize,
-    ) -> Vec<Complex<f32>> {
-        x.iter()
-            .enumerate()
-            .map(|(k, &s)| {
-                let theta = std::f64::consts::TAU * freq * (first + k) as f64;
-                s * gain * Complex::new(theta.cos() as f32, theta.sin() as f32)
-            })
+    fn impose(x: &[Complex<f32>], gain: Complex<f32>, freq: f64) -> Vec<Complex<f32>> {
+        let mut y: Vec<Complex<f32>> = x.iter().map(|&s| s * gain).collect();
+        rotate(&mut y, freq, 0.0);
+        y
+    }
+
+    fn spun(indices: &[usize], x: &[Complex<f32>], freq: f64) -> Vec<Complex<f32>> {
+        indices
+            .iter()
+            .zip(x)
+            .map(|(&k, &s)| s * phasor(TAU * freq * k as f64))
             .collect()
     }
 
@@ -182,7 +176,7 @@ mod tests {
         let x = known_word(24, 0xa9c);
         let gain = Complex::new(0.83f32, -0.51);
         let freq = 2.5e-3;
-        let y = impose(&x, gain, freq, 0);
+        let y = impose(&x, gain, freq);
         let indices: Vec<usize> = (0..x.len()).collect();
         let fit = PhaseAnchor::fit(&indices, &y, &x).unwrap();
         assert!((fit.freq_cycles_per_symbol - freq).abs() < 1e-9, "{fit:?}");
@@ -194,15 +188,12 @@ mod tests {
     #[test]
     fn the_correction_lands_a_whole_block_back_on_the_table() {
         let table = tables::qam_square(16).unwrap();
-        let mut rng = Rng::new(0x8100);
-        let payload: Vec<Complex<f32>> = (0..500)
-            .map(|_| table.points()[(rng.next_u64() % 16) as usize])
-            .collect();
+        let payload = points(&table, 500, 0x8100);
         let word = known_word(32, 0x9ce);
         let gain = Complex::new(1.7f32, 0.9);
         let freq = -1.2e-3;
         let sent: Vec<Complex<f32>> = word.iter().chain(&payload).copied().collect();
-        let received = impose(&sent, gain, freq, 0);
+        let received = impose(&sent, gain, freq);
         let indices: Vec<usize> = (0..word.len()).collect();
         let fit = PhaseAnchor::fit(&indices, &received[..word.len()], &word).unwrap();
         let mut corrected = received.clone();
@@ -252,7 +243,7 @@ mod tests {
             .map(|_| qpsk.points()[(rng.next_u64() % 4) as usize])
             .collect();
         let freq = 1.5e-3;
-        let mut received = impose(&word, Complex::new(1.0, 0.0), freq, 0);
+        let mut received = impose(&word, Complex::new(1.0, 0.0), freq);
         Awgn::with_sigma((0.05f64).sqrt()).apply(&mut received, &mut rng);
         let indices: Vec<usize> = (0..word.len()).collect();
         let fit = PhaseAnchor::fit(&indices, &received, &word).unwrap();
@@ -266,7 +257,7 @@ mod tests {
         let word: Vec<Complex<f32>> = (0..64)
             .map(|_| qam.points()[(rng.next_u64() % 16) as usize])
             .collect();
-        let mut received = impose(&word, Complex::new(1.0, 0.0), freq, 0);
+        let mut received = impose(&word, Complex::new(1.0, 0.0), freq);
         Awgn::with_sigma((0.05f64).sqrt()).apply(&mut received, &mut rng);
         let qam_fit = PhaseAnchor::fit(&indices, &received, &word).unwrap();
         assert!(
@@ -296,31 +287,17 @@ mod tests {
     fn the_slope_estimate_wraps_where_the_docs_say_it_does() {
         let x = known_word(16, 0x2b0);
         let indices: Vec<usize> = (0..x.len()).collect();
-        let y = impose(&x, Complex::new(1.0, 0.0), 0.3, 0);
+        let y = impose(&x, Complex::new(1.0, 0.0), 0.3);
         let fit = PhaseAnchor::fit(&indices, &y, &x).unwrap();
         assert!((fit.freq_cycles_per_symbol - 0.3).abs() < 1e-6, "{fit:?}");
         let spread: Vec<usize> = (0..x.len()).map(|k| 4 * k).collect();
-        let y: Vec<Complex<f32>> = spread
-            .iter()
-            .zip(&x)
-            .map(|(&k, &s)| {
-                let theta = std::f64::consts::TAU * 0.3 * k as f64;
-                s * Complex::new(theta.cos() as f32, theta.sin() as f32)
-            })
-            .collect();
+        let y = spun(&spread, &x, 0.3);
         let fit = PhaseAnchor::fit(&spread, &y, &x).unwrap();
         assert!(
             (fit.freq_cycles_per_symbol - 0.3).abs() > 0.05,
             "a gap of 4 should alias 0.3 cycles/symbol, read {fit:?}"
         );
-        let y: Vec<Complex<f32>> = spread
-            .iter()
-            .zip(&x)
-            .map(|(&k, &s)| {
-                let theta = std::f64::consts::TAU * 0.05 * k as f64;
-                s * Complex::new(theta.cos() as f32, theta.sin() as f32)
-            })
-            .collect();
+        let y = spun(&spread, &x, 0.05);
         let fit = PhaseAnchor::fit(&spread, &y, &x).unwrap();
         assert!((fit.freq_cycles_per_symbol - 0.05).abs() < 1e-6, "{fit:?}");
     }

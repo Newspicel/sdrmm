@@ -2,7 +2,7 @@ use std::{f32::consts::TAU, sync::Arc};
 
 use num_complex::Complex;
 use realfft::{RealFftPlanner, RealToComplex};
-use sdrmm_dsp::fft::Transform;
+use sdrmm_dsp::math::fft::Transform;
 
 mod recall;
 

@@ -1,4 +1,7 @@
-use sdrmm_dsp::scene::{Draw, LaneImpairments, MAX_BENCH_LANES, Pilot, Scene, all_finite};
+use sdrmm_dsp::{
+    math::rng::Draw,
+    scene::{LaneImpairments, MAX_BENCH_LANES, Pilot, Scene, all_finite},
+};
 use sdrmm_wire::{Coherence, DcArtifact, NoiseSource, StreamScope};
 
 const IMPAIRMENT_SEED: u64 = 0xB1A5_ED00_0000_0005;

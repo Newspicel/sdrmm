@@ -190,7 +190,7 @@ fn lane_centers(
                 .flatten()
                 .find_map(|lane| current.get(&lane.device_set)?.sample_rate)
                 .unwrap_or(DEFAULT_SAMPLE_RATE);
-            sdrmm_dsp::stitch::auto_offsets(lanes.len(), rate)
+            sdrmm_dsp::measure::stitch::auto_offsets(lanes.len(), rate)
                 .into_iter()
                 .map(|offset| center_hz + offset)
                 .collect()

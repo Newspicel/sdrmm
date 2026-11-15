@@ -1,4 +1,4 @@
-use sdrmm_dsp::fir::{design_lowpass_kaiser, kaiser_transition};
+use sdrmm_dsp::filter::fir::{design_lowpass_kaiser, kaiser_transition};
 
 pub(crate) const FIR_CONFIG: &str = "filter_fir_config";
 pub(crate) const FIR_CHANNEL: &str = "out";

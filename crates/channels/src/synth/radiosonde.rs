@@ -4,11 +4,12 @@ use crate::radiosonde::SondeType;
 use jiff::Timestamp;
 use num_complex::Complex;
 use sdrmm_dsp::design_gaussian;
+use sdrmm_dsp::math::geodesy::{Geodetic, ecef, enu_vector_to_ecef};
 
 use super::{fm_modulate, resample};
 use crate::radiosonde::{
     INPUT_RATE_HZ, dfm,
-    fields::{GPS_EPOCH_UNIX, GPS_UTC_LEAP_SECONDS, SECONDS_PER_WEEK, WGS84_A, WGS84_B},
+    fields::{GPS_EPOCH_UNIX, GPS_UTC_LEAP_SECONDS, SECONDS_PER_WEEK},
     imet, m10, m20, meteomodem,
     rs41::{self, ptu},
 };
@@ -205,27 +206,6 @@ fn gps_week_tow(unix: i64) -> (i64, i64) {
     (gps / SECONDS_PER_WEEK, gps % SECONDS_PER_WEEK)
 }
 
-fn geodetic_to_ecef(lat: f64, lon: f64, alt: f64) -> [f64; 3] {
-    let e2 = 1.0 - (WGS84_B * WGS84_B) / (WGS84_A * WGS84_A);
-    let (phi, lam) = (lat.to_radians(), lon.to_radians());
-    let n = WGS84_A / (1.0 - e2 * phi.sin().powi(2)).sqrt();
-    [
-        (n + alt) * phi.cos() * lam.cos(),
-        (n + alt) * phi.cos() * lam.sin(),
-        (n * (1.0 - e2) + alt) * phi.sin(),
-    ]
-}
-
-fn enu_to_ecef(lat: f64, lon: f64, enu: [f64; 3]) -> [f64; 3] {
-    let (phi, lam) = (lat.to_radians(), lon.to_radians());
-    let [e, n, u] = enu;
-    [
-        -lam.sin() * e - phi.sin() * lam.cos() * n + phi.cos() * lam.cos() * u,
-        lam.cos() * e - phi.sin() * lam.sin() * n + phi.cos() * lam.sin() * u,
-        phi.cos() * n + phi.sin() * u,
-    ]
-}
-
 fn thermistor_ohm(coefficients: [f64; 4], celsius: f64) -> f64 {
     let target = 1.0 / (celsius + 273.15);
     let (mut low, mut high) = (0.0f64, 20.0f64);
@@ -340,14 +320,15 @@ fn rs41_status(flight: &Flight, fix: &Fix, calibration: &[u8]) -> Vec<u8> {
 
 fn rs41_position(flight: &Flight, fix: &Fix) -> Vec<u8> {
     let mut payload = Vec::with_capacity(21);
-    for axis in geodetic_to_ecef(fix.lat, fix.lon, fix.alt) {
+    let at = Geodetic {
+        lat_deg: fix.lat,
+        lon_deg: fix.lon,
+        alt_m: fix.alt,
+    };
+    for axis in ecef(at) {
         payload.extend_from_slice(&((axis * 100.0).round() as i32).to_le_bytes());
     }
-    let velocity = enu_to_ecef(
-        fix.lat,
-        fix.lon,
-        [flight.east_ms, flight.north_ms, flight.up_ms],
-    );
+    let velocity = enu_vector_to_ecef(at, [flight.east_ms, flight.north_ms, flight.up_ms]);
     for axis in velocity {
         payload.extend_from_slice(&((axis * 100.0).round() as i16).to_le_bytes());
     }

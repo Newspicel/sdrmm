@@ -1,9 +1,8 @@
 use crate::radiosonde::RadiosondeFrame;
 use crate::radiosonde::SondeType;
 use jiff::{Timestamp, civil::DateTime, tz::TimeZone};
+use sdrmm_dsp::math::geodesy;
 
-pub(crate) const WGS84_A: f64 = 6_378_137.0;
-pub(crate) const WGS84_B: f64 = 6_356_752.314_245_18;
 pub(crate) const GPS_EPOCH_UNIX: i64 = 315_964_800;
 pub(crate) const GPS_UTC_LEAP_SECONDS: i64 = 18;
 pub(crate) const SECONDS_PER_WEEK: i64 = 604_800;
@@ -36,27 +35,32 @@ impl Motion {
     }
 }
 
-pub(crate) fn ecef_to_geodetic(x: f64, y: f64, z: f64) -> Geodetic {
-    let e2 = (WGS84_A * WGS84_A - WGS84_B * WGS84_B) / (WGS84_A * WGS84_A);
-    let ee2 = (WGS84_A * WGS84_A - WGS84_B * WGS84_B) / (WGS84_B * WGS84_B);
-    let lon = y.atan2(x);
-    let p = x.hypot(y);
-    let t = (z * WGS84_A).atan2(p * WGS84_B);
-    let lat = (z + ee2 * WGS84_B * t.sin().powi(3)).atan2(p - e2 * WGS84_A * t.cos().powi(3));
-    let radius = WGS84_A / (1.0 - e2 * lat.sin().powi(2)).sqrt();
-    Geodetic {
-        lat: lat.to_degrees(),
-        lon: lon.to_degrees(),
-        alt: p / lat.cos() - radius,
+impl From<geodesy::Geodetic> for Geodetic {
+    fn from(point: geodesy::Geodetic) -> Self {
+        Self {
+            lat: point.lat_deg,
+            lon: point.lon_deg,
+            alt: point.alt_m,
+        }
     }
 }
 
+impl From<Geodetic> for geodesy::Geodetic {
+    fn from(point: Geodetic) -> Self {
+        Self {
+            lat_deg: point.lat,
+            lon_deg: point.lon,
+            alt_m: point.alt,
+        }
+    }
+}
+
+pub(crate) fn ecef_to_geodetic(x: f64, y: f64, z: f64) -> Geodetic {
+    geodesy::geodetic([x, y, z]).into()
+}
+
 pub(crate) fn ecef_velocity_to_enu(at: Geodetic, v: [f64; 3]) -> [f64; 3] {
-    let (phi, lam) = (at.lat.to_radians(), at.lon.to_radians());
-    let north = -v[0] * phi.sin() * lam.cos() - v[1] * phi.sin() * lam.sin() + v[2] * phi.cos();
-    let east = -v[0] * lam.sin() + v[1] * lam.cos();
-    let up = v[0] * phi.cos() * lam.cos() + v[1] * phi.cos() * lam.sin() + v[2] * phi.sin();
-    [east, north, up]
+    geodesy::ecef_vector_to_enu(at.into(), v)
 }
 
 pub(crate) fn plausible(position: Geodetic) -> bool {

@@ -1,7 +1,9 @@
-use super::params::{CpmParams, Mapping};
-use crate::soft::SoftBit;
+mod response;
 
-const RESIDUAL_ISI: f64 = 0.005;
+pub use self::response::SymbolResponse;
+
+use super::params::CpmParams;
+use crate::soft::SoftBit;
 
 const MAX_STATES: usize = 4_096;
 
@@ -11,65 +13,9 @@ const GAIN_SYMBOLS: f32 = 60.0;
 
 const MAX_BITS: usize = 8;
 
-fn training_tail(taps: usize) -> usize {
-    (4 * taps.saturating_sub(1)).clamp(8, WINDOW_SYMBOLS / 2)
-}
+const TAIL_SYMBOLS_PER_TAP: usize = 4;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct SymbolResponse {
-    taps: Vec<f32>,
-    lead: usize,
-    mean_abs: f32,
-}
-
-impl SymbolResponse {
-    #[must_use]
-    pub fn of(params: &CpmParams, receive_filter: &[f32]) -> Self {
-        assert!(!receive_filter.is_empty(), "receive filter must have taps");
-        let cascade = convolve(params.freq_pulse(), receive_filter);
-        let sps = params.sps();
-        let peak = cascade
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
-            .map_or(0, |(i, _)| i);
-
-        let first = -((peak as f64 / sps).floor() as i64);
-        let last = ((cascade.len() - 1 - peak) as f64 / sps).floor() as i64;
-        let weights: Vec<f64> = (first..=last)
-            .map(|i| sps * interpolate(&cascade, peak as f64 + i as f64 * sps))
-            .collect();
-        let cursor = (-first) as usize;
-
-        let mapping = params.mapping();
-        let floor =
-            RESIDUAL_ISI * f64::from(mapping.min_spacing() / 2.0) / f64::from(mapping.max_level());
-        let (lo, hi) = keep_window(&weights, cursor, floor);
-        let taps: Vec<f32> = weights[lo..=hi].iter().map(|&w| w as f32).collect();
-        let mean_abs = model_mean_abs(&taps, params.mapping());
-        assert!(mean_abs > 0.0, "the pulse cascade has no energy");
-        Self {
-            taps,
-            lead: cursor - lo,
-            mean_abs,
-        }
-    }
-
-    #[must_use]
-    pub fn taps(&self) -> &[f32] {
-        &self.taps
-    }
-
-    #[must_use]
-    pub fn lead(&self) -> usize {
-        self.lead
-    }
-
-    #[must_use]
-    pub fn is_isi_free(&self) -> bool {
-        self.taps.len() == 1
-    }
-}
+const MIN_TAIL_SYMBOLS: usize = 8;
 
 pub struct MlseDetector {
     levels: Vec<f32>,
@@ -101,7 +47,7 @@ impl MlseDetector {
     pub fn with_response(params: &CpmParams, response: SymbolResponse) -> Self {
         let mapping = params.mapping();
         let m = mapping.m();
-        let taps = response.taps.len();
+        let taps = response.taps().len();
         let states = m
             .checked_pow(taps as u32 - 1)
             .filter(|&s| s <= MAX_STATES)
@@ -119,14 +65,14 @@ impl MlseDetector {
             soft_scale: 0.5
                 / (mapping.min_spacing()
                     * mapping.min_spacing()
-                    * response.taps.iter().map(|&c| c * c).sum::<f32>()),
+                    * response.taps().iter().map(|&c| c * c).sum::<f32>()),
             states,
             branch: vec![0.0; states * m],
             decides: vec![0; states * m],
             tail: training_tail(taps),
             pending: Vec::with_capacity(WINDOW_SYMBOLS),
             pending_gain: Vec::with_capacity(WINDOW_SYMBOLS),
-            mean_abs_y: response.mean_abs,
+            mean_abs_y: response.mean_abs(),
             alpha: vec![0.0; (WINDOW_SYMBOLS + 1) * states],
             beta: vec![0.0; states],
             beta_next: vec![0.0; states],
@@ -174,18 +120,18 @@ impl MlseDetector {
         self.pending.clear();
         self.pending_gain.clear();
         self.decisions.clear();
-        self.mean_abs_y = self.response.mean_abs;
+        self.mean_abs_y = self.response.mean_abs();
         self.alpha.fill(0.0);
     }
 
     fn fill_tables(&mut self) {
-        let lead = self.response.lead;
+        let lead = self.response.lead();
         let digit = self.m.pow(lead.saturating_sub(1) as u32);
         for state in 0..self.states {
             for sym in 0..self.m {
-                let mut sum = self.response.taps[0] * self.levels[sym];
+                let mut sum = self.response.taps()[0] * self.levels[sym];
                 let mut rest = state;
-                for &tap in &self.response.taps[1..] {
+                for &tap in &self.response.taps()[1..] {
                     sum += tap * self.levels[rest % self.m];
                     rest /= self.m;
                 }
@@ -203,7 +149,7 @@ impl MlseDetector {
         self.mean_abs_y += (y.abs() - self.mean_abs_y) / GAIN_SYMBOLS;
         self.pending.push(y);
         self.pending_gain
-            .push(self.mean_abs_y / self.response.mean_abs);
+            .push(self.mean_abs_y / self.response.mean_abs());
     }
 
     fn run_window(&mut self, len: usize, emit: usize) {
@@ -297,6 +243,10 @@ impl MlseDetector {
     }
 }
 
+fn training_tail(taps: usize) -> usize {
+    (TAIL_SYMBOLS_PER_TAP * taps.saturating_sub(1)).clamp(MIN_TAIL_SYMBOLS, WINDOW_SYMBOLS / 2)
+}
+
 fn decide(
     marginal: &[f32],
     m: usize,
@@ -324,78 +274,12 @@ fn decide(
     (best as u8, soft)
 }
 
-fn convolve(a: &[f32], b: &[f32]) -> Vec<f64> {
-    let mut out = vec![0.0f64; a.len() + b.len() - 1];
-    for (i, &x) in a.iter().enumerate() {
-        for (j, &h) in b.iter().enumerate() {
-            out[i + j] += f64::from(x) * f64::from(h);
-        }
-    }
-    out
-}
-
-fn interpolate(samples: &[f64], at: f64) -> f64 {
-    if at < 0.0 || at >= (samples.len() - 1) as f64 {
-        return samples.get(at.round() as usize).copied().unwrap_or(0.0);
-    }
-    let i = at.floor() as usize;
-    let mu = at - i as f64;
-    samples[i] * (1.0 - mu) + samples[i + 1] * mu
-}
-
-fn keep_window(weights: &[f64], cursor: usize, floor: f64) -> (usize, usize) {
-    let mut lo = cursor;
-    while lo > 0 && weights[lo - 1].abs() >= floor {
-        lo -= 1;
-    }
-    let mut hi = cursor;
-    while hi + 1 < weights.len() && weights[hi + 1].abs() >= floor {
-        hi += 1;
-    }
-    (lo, hi)
-}
-
-fn model_mean_abs(taps: &[f32], mapping: &Mapping) -> f32 {
-    let m = mapping.m();
-    let levels = mapping.levels();
-    match (m as u64).checked_pow(taps.len() as u32) {
-        Some(count) if count <= 1 << 20 => {
-            let mut total = 0.0f64;
-            for combination in 0..count {
-                let mut rest = combination as usize;
-                let mut y = 0.0f64;
-                for &tap in taps {
-                    y += f64::from(tap) * f64::from(levels[rest % m]);
-                    rest /= m;
-                }
-                total += y.abs();
-            }
-            (total / count as f64) as f32
-        }
-        _ => {
-            const DRAWS: usize = 1 << 16;
-            let mut state = 0x9e37_79b9u32;
-            let mut total = 0.0f64;
-            for _ in 0..DRAWS {
-                let mut y = 0.0f64;
-                for &tap in taps {
-                    state ^= state << 13;
-                    state ^= state >> 17;
-                    state ^= state << 5;
-                    y += f64::from(tap) * f64::from(levels[state as usize % m]);
-                }
-                total += y.abs();
-            }
-            (total / DRAWS as f64) as f32
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::testutil::draws;
     use sdrmm_modem_test_support::ber::rng::Rng;
 
-    use super::*;
+    use super::{super::mapping::Mapping, *};
     use crate::pulse::{self, Norm};
 
     const SPS: f64 = 10.0;
@@ -411,13 +295,6 @@ mod tests {
 
     fn gmsk_rx(bt: f64, span: usize) -> Vec<f32> {
         pulse::gaussian_freq(SPS, bt, span, Norm::Area)
-    }
-
-    fn symbols(len: usize, seed: u64, m: usize) -> Vec<u8> {
-        let mut rng = Rng::new(seed);
-        (0..len)
-            .map(|_| (rng.next_u64() as usize % m) as u8)
-            .collect()
     }
 
     fn model_stream(response: &SymbolResponse, mapping: &Mapping, sent: &[u8]) -> Vec<f32> {
@@ -465,7 +342,7 @@ mod tests {
         );
         assert_eq!(MlseDetector::new(&params, &rx).states(), 1);
 
-        let sent = symbols(400, 0x4e11, 4);
+        let sent = draws(400, 4, 0x4e11);
         let observed = model_stream(&response, params.mapping(), &sent);
         let got = detect(&mut MlseDetector::new(&params, &rx), &observed);
         assert_eq!(
@@ -473,38 +350,12 @@ mod tests {
             "an ISI-free trellis decided a different sequence"
         );
     }
-
-    #[test]
-    fn a_full_response_pulse_through_its_matched_filter_has_no_isi() {
-        let params = CpmParams::from_h(Mapping::natural(2), 0.5, pulse::rect(SPS, Norm::Area), SPS);
-        let response = SymbolResponse::of(&params, &pulse::rect(SPS, Norm::Area));
-        assert!(response.is_isi_free(), "taps {:?}", response.taps());
-    }
-
-    #[test]
-    fn a_gaussian_cascade_spreads_a_symbol_and_conserves_its_level() {
-        for (bt, span) in [(0.5, 3), (0.3, 4)] {
-            let response = SymbolResponse::of(&gmsk(bt, span), &gmsk_rx(bt, span));
-            assert!(
-                response.taps().len() >= 3,
-                "BT {bt}: only {} taps",
-                response.taps().len()
-            );
-            let sum: f32 = response.taps().iter().sum();
-            assert!((sum - 1.0).abs() < 2e-2, "BT {bt}: Σtaps = {sum}");
-            assert_eq!(response.lead(), (response.taps().len() - 1) / 2);
-        }
-        let wide = SymbolResponse::of(&gmsk(0.3, 4), &gmsk_rx(0.3, 4));
-        let narrow = SymbolResponse::of(&gmsk(0.5, 3), &gmsk_rx(0.5, 3));
-        assert!(wide.taps().len() >= narrow.taps().len());
-    }
-
     #[test]
     fn noiseless_partial_response_decodes_without_error() {
         let params = gmsk(0.3, 4);
         let rx = gmsk_rx(0.3, 4);
         let response = SymbolResponse::of(&params, &rx);
-        let sent = symbols(600, 0x51a7, 2);
+        let sent = draws(600, 2, 0x51a7);
         let observed = model_stream(&response, params.mapping(), &sent);
         let mut detector = MlseDetector::new(&params, &rx);
         let got = detect(&mut detector, &observed);
@@ -523,7 +374,7 @@ mod tests {
         let mapping = params.mapping();
         let mut rng = Rng::new(0x3b1e);
         for trial in 0..8u64 {
-            let sent = symbols(LEN, 0x100 + trial, 2);
+            let sent = draws(LEN, 2, 0x100 + trial);
             let clean = model_stream(&response, mapping, &sent);
             let observed: Vec<f32> = clean
                 .iter()
@@ -559,7 +410,7 @@ mod tests {
         let params = gmsk(0.3, 4);
         let rx = gmsk_rx(0.3, 4);
         let response = SymbolResponse::of(&params, &rx);
-        let observed = model_stream(&response, params.mapping(), &symbols(500, 0x9c4, 2));
+        let observed = model_stream(&response, params.mapping(), &draws(500, 2, 0x9c4));
 
         let mut whole = MlseDetector::new(&params, &rx);
         let expected = detect(&mut whole, &observed);
@@ -584,7 +435,7 @@ mod tests {
         let params = gmsk(0.5, 3);
         let rx = gmsk_rx(0.5, 3);
         let response = SymbolResponse::of(&params, &rx);
-        let observed = model_stream(&response, params.mapping(), &symbols(300, 0x5b17, 2));
+        let observed = model_stream(&response, params.mapping(), &draws(300, 2, 0x5b17));
         let mut detector = MlseDetector::new(&params, &rx);
         let (mut got, mut bits) = (Vec::new(), Vec::new());
         detector.process(&observed, &mut got, &mut bits);
@@ -616,7 +467,7 @@ mod tests {
         let params = gmsk(0.3, 4);
         let rx = gmsk_rx(0.3, 4);
         let response = SymbolResponse::of(&params, &rx);
-        let sent = symbols(800, 0x2ea1, 2);
+        let sent = draws(800, 2, 0x2ea1);
         let clean = model_stream(&response, params.mapping(), &sent);
         for scale in [0.75f32, 1.0, 1.4] {
             let observed: Vec<f32> = clean.iter().map(|&y| y * scale).collect();
@@ -646,7 +497,7 @@ mod tests {
         let params = gmsk(0.3, 4);
         let rx = gmsk_rx(0.3, 4);
         let response = SymbolResponse::of(&params, &rx);
-        let observed = model_stream(&response, params.mapping(), &symbols(1_200, 0x0dd5, 2));
+        let observed = model_stream(&response, params.mapping(), &draws(1_200, 2, 0x0dd5));
         let mut detector = MlseDetector::new(&params, &rx);
         let mut got = Vec::with_capacity(observed.len() * 2);
         let mut bits = Vec::with_capacity(observed.len() * 2);

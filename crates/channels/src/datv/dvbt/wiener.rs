@@ -1,7 +1,7 @@
 use std::f64::consts::{PI, TAU};
 
 use num_complex::Complex;
-use sdrmm_dsp::fft::Transform;
+use sdrmm_dsp::math::fft::Transform;
 
 pub const TAPS: usize = 8;
 const MAX_SPACING: usize = 24;

@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use sdrmm_modem::analog::{AmDetector, AmMode};
 use sdrmm_modem_test_support::ber::{
     analog::{
@@ -18,9 +16,7 @@ use sdrmm_modem_test_support::ber::{
     perf::require_baseline_write,
 };
 
-fn baseline_path(stem: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("baselines/{stem}.json"))
-}
+use crate::baselines::baseline_path;
 
 fn load_curve(stem: &str) -> SinadCurve {
     sdrmm_modem_test_support::ber::analog::load_json(&baseline_path(stem)).unwrap()

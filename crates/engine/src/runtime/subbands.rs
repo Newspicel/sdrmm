@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::subband::{SUBBANDS, SubbandDecimator, SubbandFilterBank, SubbandPlan};
+use sdrmm_dsp::tuning::subband::{SUBBANDS, SubbandDecimator, SubbandFilterBank, SubbandPlan};
 
 use super::{ChannelHost, dsp_block_len};
 

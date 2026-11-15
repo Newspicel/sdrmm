@@ -3,7 +3,7 @@ use std::f64::consts::PI;
 use crate::lora::LoraBandwidth;
 use crate::lora::LoraSpreadingFactor;
 use num_complex::Complex;
-use sdrmm_dsp::fft::Transform;
+use sdrmm_dsp::math::fft::Transform;
 use sdrmm_wire::Modulation;
 
 use super::{classify::Verdict, detect::Band, features::Zoom};

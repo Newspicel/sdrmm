@@ -3,7 +3,7 @@ use sdrmm_channels::array_processor::{
     ArrayBlock, ArrayCtx, ArrayProcessor, CalView, CorrectionView, LaneBuffer, OutputSlots, Pose,
     ProcessorOutput, ResetCause, create_processor, processor_descriptor,
 };
-use sdrmm_dsp::stitch::auto_offsets;
+use sdrmm_dsp::measure::stitch::auto_offsets;
 use sdrmm_test_support::assert_no_alloc;
 use sdrmm_wire::{
     ArrayGeometry, ArrayTuningMode, Coherence, ProcessorParams, ProcessorReading, StitchBlend,

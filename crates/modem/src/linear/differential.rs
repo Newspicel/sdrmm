@@ -1,17 +1,5 @@
 use num_complex::Complex;
 
-pub fn differential_detect(symbols: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
-    for pair in symbols.windows(2) {
-        let (previous, current) = (pair[0], pair[1]);
-        let magnitude = previous.norm();
-        out.push(if magnitude > 0.0 {
-            current * previous.conj() / magnitude
-        } else {
-            Complex::new(0.0, 0.0)
-        });
-    }
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct DifferentialDetector {
     previous: Option<Complex<f32>>,
@@ -26,12 +14,7 @@ impl DifferentialDetector {
     pub fn process(&mut self, symbols: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
         for &current in symbols {
             if let Some(previous) = self.previous {
-                let magnitude = previous.norm();
-                out.push(if magnitude > 0.0 {
-                    current * previous.conj() / magnitude
-                } else {
-                    Complex::new(0.0, 0.0)
-                });
+                out.push(product(previous, current));
             }
             self.previous = Some(current);
         }
@@ -42,13 +25,31 @@ impl DifferentialDetector {
     }
 }
 
+pub fn differential_detect(symbols: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
+    out.extend(symbols.windows(2).map(|pair| product(pair[0], pair[1])));
+}
+
+/// The current symbol turned back by the previous one's phase, keeping the current amplitude.
+/// An origin symbol casts no vote.
+fn product(previous: Complex<f32>, current: Complex<f32>) -> Complex<f32> {
+    let magnitude = previous.norm();
+    if magnitude > 0.0 {
+        current * previous.conj() / magnitude
+    } else {
+        Complex::new(0.0, 0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use sdrmm_modem_test_support::ber::rng::Rng;
 
+    use std::f64::consts::{FRAC_PI_2, TAU};
+
     use super::*;
     use crate::{
         constellation::tables,
+        linear::rotation::phasor,
         symbolcode::{DifferentialSymbolDecoder, DifferentialSymbolEncoder},
     };
 
@@ -70,8 +71,7 @@ mod tests {
             table.points()[i]
         };
         for phase_turns in [0.0f64, 0.1, 0.25, 0.5, 0.77] {
-            let theta = std::f64::consts::TAU * phase_turns;
-            let rot = Complex::new(theta.cos() as f32, theta.sin() as f32);
+            let rot = phasor(TAU * phase_turns);
             let wave: Vec<Complex<f32>> = sent.iter().map(|&s| point(s) * rot).collect();
             let mut products = Vec::new();
             differential_detect(&wave, &mut products);
@@ -101,16 +101,14 @@ mod tests {
             let data = (rng.next_u64() % 4) as u32;
             steps.push(data);
             let _ = encoder.encode(data);
-            phase += std::f64::consts::FRAC_PI_2 * f64::from(data) + tables::PI_4_ROTATION;
-            wave.push(Complex::new(phase.cos() as f32, phase.sin() as f32));
+            phase += FRAC_PI_2 * f64::from(data) + tables::PI_4_ROTATION;
+            wave.push(phasor(phase));
         }
         let mut products = Vec::new();
         differential_detect(&wave, &mut products);
-        for z in &products {
-            let l = differences.hard_slice(*z);
-            let i = differences.labels().iter().position(|&x| x == l).unwrap();
+        for &z in &products {
             assert!(
-                (z - differences.points()[i]).norm() < 1e-5,
+                (z - differences.nearest(z)).norm() < 1e-5,
                 "product {z} is not on the difference table"
             );
         }
@@ -130,10 +128,7 @@ mod tests {
     fn streaming_matches_the_block_form_and_an_origin_casts_no_vote() {
         let mut rng = Rng::new(0x5719);
         let wave: Vec<Complex<f32>> = (0..300)
-            .map(|_| {
-                let theta = std::f64::consts::TAU * (rng.next_u64() % 8) as f64 / 8.0;
-                Complex::new(theta.cos() as f32, theta.sin() as f32)
-            })
+            .map(|_| phasor(TAU * (rng.next_u64() % 8) as f64 / 8.0))
             .collect();
         let mut whole = Vec::new();
         differential_detect(&wave, &mut whole);

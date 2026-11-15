@@ -57,26 +57,16 @@ impl MfskMod {
         out.reserve(symbols.len() * window);
         for &symbol in symbols {
             let index = symbol as usize & (self.params.m() - 1);
-            let step = std::f64::consts::TAU * self.params.tone_cycles_per_sample(index);
-            for n in 0..window {
-                let (sin, cos) = (step * n as f64).sin_cos();
-                out.push(Complex::new(cos as f32, sin as f32));
-            }
+            out.extend(self.params.tone(index));
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::f64::consts::TAU;
 
-    fn wave(params: &MfskParams, policy: TonePhase, symbols: &[u8]) -> Vec<Complex<f32>> {
-        let mut m = MfskMod::new(params.clone(), policy);
-        let mut out = Vec::new();
-        m.modulate(symbols, &mut out);
-        m.flush(&mut out);
-        out
-    }
+    use super::{super::testutil::wave, *};
 
     #[test]
     fn both_policies_radiate_the_plan_symbol_by_symbol() {
@@ -87,7 +77,7 @@ mod tests {
             for (k, &symbol) in symbols.iter().enumerate() {
                 let at = k * 16 + 4;
                 let step = (w[at + 1] * w[at].conj()).arg();
-                let cycles = f64::from(step) / std::f64::consts::TAU;
+                let cycles = f64::from(step) / TAU;
                 let expect = params.tone_cycles_per_sample(symbol as usize);
                 assert!(
                     (cycles - expect).abs() < 1e-4,
@@ -103,14 +93,12 @@ mod tests {
         let symbols = [0u8, 7, 0, 7];
         let w = wave(&params, TonePhase::Continuous, &symbols);
         for boundary in [16usize, 32, 48] {
-            let step =
-                f64::from((w[boundary] * w[boundary - 1].conj()).arg()) / std::f64::consts::TAU;
+            let step = f64::from((w[boundary] * w[boundary - 1].conj()).arg()) / TAU;
             let plausible = (0..8).any(|k| (step - params.tone_cycles_per_sample(k)).abs() < 1e-4);
             assert!(plausible, "phase step {step} at sample {boundary}");
         }
         let independent = wave(&params, TonePhase::Independent, &symbols);
-        let jump =
-            f64::from((independent[16] * independent[15].conj()).arg()) / std::f64::consts::TAU;
+        let jump = f64::from((independent[16] * independent[15].conj()).arg()) / TAU;
         assert!(
             (0..8).all(|k| (jump - params.tone_cycles_per_sample(k)).abs() > 1e-3),
             "the independent policy must show a phase step, measured {jump}"
@@ -126,7 +114,7 @@ mod tests {
             let expect = params.tone_cycles_per_sample(symbol);
             for n in 0..7 {
                 let at = k * 8 + n;
-                let cycles = f64::from((w[at + 1] * w[at].conj()).arg()) / std::f64::consts::TAU;
+                let cycles = f64::from((w[at + 1] * w[at].conj()).arg()) / TAU;
                 assert!(
                     (cycles - expect).abs() < 1e-4,
                     "symbol {k} sample {n}: {cycles} vs {expect}"

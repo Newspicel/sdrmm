@@ -1,7 +1,7 @@
 use std::f32::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::fft::Transform;
+use sdrmm_dsp::math::fft::Transform;
 
 use super::{
     acquire::{Acquisition, Preamble},
