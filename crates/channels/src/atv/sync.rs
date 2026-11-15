@@ -30,18 +30,19 @@ impl Samples {
     }
 }
 
-/// Where a window of `width` samples has the lowest mean in a folded line, read round.
-fn fold_sync(profile: &[f32], width: usize) -> usize {
-    let len = profile.len();
-    let mut sum: f32 = profile.iter().cycle().take(width).sum();
-    let (mut best, mut at) = (sum, 0);
+/// Where a window of `width` samples has the lowest mean in a folded line of `len`, read
+/// round.
+fn fold_sync(profile: impl Fn(usize) -> f32, len: usize, width: usize) -> usize {
+    let at = |k: usize| profile(k % len);
+    let mut sum: f32 = (0..width).map(at).sum();
+    let (mut best, mut found) = (sum, 0);
     for start in 1..len {
-        sum += profile[(start + width - 1) % len] - profile[start - 1];
+        sum += at(start + width - 1) - at(start - 1);
         if sum < best {
-            (best, at) = (sum, start);
+            (best, found) = (sum, start);
         }
     }
-    at
+    found
 }
 
 fn index(at: f64) -> u64 {
@@ -104,6 +105,9 @@ const FOLD_LINES: usize = 16;
 const FOLD_AGREE: f64 = 0.25;
 /// How far below the porch a folded sync tip must sit, in the noise of its own mean.
 const FOLD_CONTRAST: f32 = 6.0;
+/// Share of the folded line's whole range a sync must drop by: a sync tip sits well below
+/// black, a dark detail does not.
+const FOLD_DEPTH: f32 = 0.15;
 /// Samples per independent noise sample in detected video, which is oversampled.
 const NOISE_SPAN: f32 = 4.0;
 const AREA_LANES: usize = 8;
@@ -235,6 +239,8 @@ pub(super) struct LineSync {
     settled: u32,
     /// Mean square of the line edge error, in samples: how noisy each line's timing reads.
     jitter: f64,
+    /// A fold found the sync upside down.
+    inverted: bool,
     /// The two halves of a fold of lines, kept so acquiring does not allocate.
     folds: [Vec<f32>; 2],
 }
@@ -255,6 +261,7 @@ impl LineSync {
             },
             settled: 0,
             jitter: 0.0,
+            inverted: false,
             folds: [Vec::new(), Vec::new()],
         }
     }
@@ -362,45 +369,62 @@ impl LineSync {
                 *sum += v / half as f32;
             }
         }
+        let found = self.fold_lock(1.0, from, len);
+        if found.is_none() && self.fold_lock(-1.0, from, len).is_some() {
+            self.inverted = true;
+        }
+        found
+    }
+
+    /// The sync in the folded lines read with `sign`, where the halves agree on it and its
+    /// tip stands clear of the porch's noise: where the leading edge falls, and the levels.
+    fn fold_lock(&self, sign: f32, from: u64, len: usize) -> Option<(f64, Levels)> {
+        let g = self.g;
+        let at = |k: usize, i: usize| sign * self.folds[k][i];
         let width = (g.sync.round() as usize).max(1);
-        let [early, late] = [0, 1].map(|k| fold_sync(&self.folds[k], width));
+        let [early, late] = [0, 1].map(|k| fold_sync(|i| at(k, i), len, width));
         let apart = early.abs_diff(late).min(len - early.abs_diff(late)) as f64;
         if apart > FOLD_AGREE * g.sync {
             return None;
         }
-        let mean = |range: std::ops::Range<f64>| {
-            let (from, to) = (range.start.round() as i64, range.end.round() as i64);
-            let total: f32 = (from..to)
-                .map(|k| {
-                    let at = k.rem_euclid(len as i64) as usize;
-                    0.5 * (self.folds[0][at] + self.folds[1][at])
-                })
-                .sum();
-            total / (to - from).max(1) as f32
+        let both = |k: i64| {
+            let i = k.rem_euclid(len as i64) as usize;
+            0.5 * (at(0, i) + at(1, i))
         };
-        let at = late as f64;
-        let tip = at + 0.2 * g.sync..at + 0.85 * g.sync;
-        let porch = at + g.burst.1 + g.us(0.4)..at + g.active.0 - g.us(0.4);
+        let span =
+            |range: &std::ops::Range<f64>| range.start.round() as i64..range.end.round() as i64;
+        let mean = |range: &std::ops::Range<f64>| {
+            let r = span(range);
+            r.clone().map(both).sum::<f32>() / (r.end - r.start).max(1) as f32
+        };
+        let edge = late as f64;
+        let tip = edge + 0.2 * g.sync..edge + 0.85 * g.sync;
+        let porch = edge + g.burst.1 + g.us(0.4)..edge + g.active.0 - g.us(0.4);
         let levels = Levels {
-            tip: mean(tip.clone()),
-            blank: mean(porch.clone()),
+            tip: mean(&tip),
+            blank: mean(&porch),
         };
-        let porch_mean = levels.blank;
-        let variance = {
-            let (from, to) = (porch.start.round() as i64, porch.end.round() as i64);
-            (from..to)
-                .map(|k| {
-                    let at = k.rem_euclid(len as i64) as usize;
-                    let v = 0.5 * (self.folds[0][at] + self.folds[1][at]) - porch_mean;
-                    v * v
-                })
-                .sum::<f32>()
-                / (to - from).max(1) as f32
-        };
+        let r = span(&porch);
+        let variance = r
+            .clone()
+            .map(|k| (both(k) - levels.blank).powi(2))
+            .sum::<f32>()
+            / (r.end - r.start).max(1) as f32;
         let independent = ((tip.end - tip.start) as f32 / NOISE_SPAN).max(1.0);
         let noise = (variance / independent).sqrt();
-        let fall = from as f64 + (FOLD_LINES - 1) as f64 * g.line + at;
-        (levels.sync() > FOLD_CONTRAST * noise).then_some((fall, levels))
+        let fall = from as f64 + (FOLD_LINES - 1) as f64 * g.line + edge;
+        let depth = levels.sync();
+        let (low, high) = (0..len as i64)
+            .map(both)
+            .fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
+        let deep = depth > FOLD_DEPTH * (high - low);
+        (depth > FOLD_CONTRAST * noise && deep).then_some((fall, levels))
+    }
+
+    /// Whether a fold found the sync upside down since last asked: the video's polarity is
+    /// the other way round.
+    pub fn take_inverted(&mut self) -> bool {
+        std::mem::take(&mut self.inverted)
     }
 
     /// Tip and blanking read off the found pulse and the porch before it, sounder than the

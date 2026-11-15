@@ -247,6 +247,9 @@ impl AtvChannel {
             self.picture
                 .line(&self.samples, (line.zero_h, &line.levels), field.line, row);
         }
+        if self.sync.take_inverted() {
+            self.flip_polarity();
+        }
         let locked = self.sync.locked();
         if !locked {
             self.fields.reset();
@@ -258,6 +261,17 @@ impl AtvChannel {
         let keep = self.sync.keep_from();
         let held = self.picture.keep_from().unwrap_or(keep);
         self.samples.forget_before(keep.min(held));
+    }
+
+    /// The sync came out upside down: the transmission's polarity is the other way round
+    /// from what was set, so turn it and start the lines over.
+    fn flip_polarity(&mut self) {
+        self.picture.flush(&self.samples);
+        self.polarity = -self.polarity;
+        self.samples = Samples::default();
+        self.sync = LineSync::new(*self.sync.geometry());
+        self.fields.reset();
+        self.was_locked = false;
     }
 
     /// The frame row a field line lands on, if it is a picture line.

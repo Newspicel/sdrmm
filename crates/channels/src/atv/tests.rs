@@ -706,3 +706,16 @@ fn a_very_weak_am_carrier_still_locks_and_noise_alone_does_not() {
         "noise alone drew pictures"
     );
 }
+
+#[test]
+fn fm_finds_its_own_polarity() {
+    let mut sent = params_for(AtvStandard::Ccir625, AtvModulation::Fm);
+    sent.invert = true;
+    let iq = bars(
+        &AtvSource::new(&sent, sent.rate_hz).with_swing(6_000_000.0),
+        4,
+    );
+    let p = params_for(AtvStandard::Ccir625, AtvModulation::Fm);
+    let picture = run(&mut channel(p), &iq).pop().expect("a picture");
+    assert_bars_ascend(&picture, "inverted FM, invert off");
+}
