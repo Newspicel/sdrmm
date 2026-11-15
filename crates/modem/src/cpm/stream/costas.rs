@@ -83,6 +83,10 @@ impl LaurentCostas {
         shed
     }
 
+    pub(super) fn forget_frequency(&mut self, fraction: f64) {
+        let _ = self.shed_frequency(fraction);
+    }
+
     pub(super) fn reset(&mut self) {
         self.acquire.reset(0.0);
         self.track.reset(0.0);

@@ -23,7 +23,15 @@ use super::{
 
 const POWER_SYMBOLS: f32 = 64.0;
 
-const HANDOFF_PER_SYMBOL: f64 = 1.0 / 64.0;
+/// Share of the locked phase loop's frequency handed to the coarse lock each symbol. Kept well
+/// under `FINE_GAIN`, so on a drifting carrier the square lock carries the ramp and the phase
+/// loop is left with little static phase error.
+const HANDOFF_PER_SYMBOL: f64 = 1.0 / 256.0;
+
+/// Share of the unlocked phase loop's frequency dropped each symbol. Without a carrier its
+/// integrator random-walks on noise; after a long silence it sat hundreds of hertz off, past its
+/// own pull-in, and a new transmission stayed unlocked for thousands of symbols.
+const UNLOCKED_LEAK_PER_SYMBOL: f64 = 1.0 / 64.0;
 
 const FINE_GAIN: f64 = 1.0 / 32.0;
 
@@ -107,6 +115,8 @@ impl CoherentCpmStream {
         if self.detector.push(centre) {
             let shed = self.carrier.shed_frequency(HANDOFF_PER_SYMBOL);
             self.lock.shift(TAU * shed / self.sps as f64);
+        } else {
+            self.carrier.forget_frequency(UNLOCKED_LEAK_PER_SYMBOL);
         }
         let soft = z.re * self.previous.re;
         self.previous = z;
@@ -190,6 +200,7 @@ mod tests {
     const LOOP_BW: f64 = 0.01;
     const TIMING_BW: f64 = 0.02;
     const SETTLE: usize = 500;
+    const SEEDS: std::ops::Range<u64> = 0..16;
 
     fn gmsk() -> CpmParams {
         CpmParams::from_h(
@@ -300,42 +311,55 @@ mod tests {
 
     #[test]
     fn pulls_in_offsets_across_the_d_star_tolerance() {
-        for hz in [-2_500.0, -1_200.0, 400.0, 1_800.0, 2_500.0] {
-            let sent = draws(4_000, 2, 3);
-            let (soft, demod) = stream(&burst(&sent, hz, 12.0, 4));
-            let wrong = errors(&soft, &sent, 1_000, sent.len() - 16);
-            assert_eq!(wrong, 0, "{hz} Hz");
-            let read = demod.frequency_error_cycles_per_sample() * RATE;
-            assert!((read - hz).abs() < 10.0, "{hz} Hz read as {read}");
+        for seed in SEEDS {
+            let sent = draws(4_000, 2, seed + 300);
+            for hz in [-2_500.0, -1_200.0, 400.0, 1_800.0, 2_500.0] {
+                let (soft, demod) = stream(&burst(&sent, hz, 12.0, seed + 400));
+                let wrong = errors(&soft, &sent, 1_000, sent.len() - 16);
+                assert_eq!(wrong, 0, "seed {seed}, {hz} Hz");
+                let read = demod.frequency_error_cycles_per_sample() * RATE;
+                assert!(
+                    (read - hz).abs() < 10.0,
+                    "seed {seed}: {hz} Hz read as {read}"
+                );
+            }
         }
     }
 
     #[test]
     fn tracks_a_drifting_carrier() {
-        let sent = draws(9_600, 2, 5);
-        let mut w = vec![Complex::new(0.0, 0.0); 2_000];
-        w.extend(transmit(&gmsk(), &sent));
-        shift(&mut w, -600.0, 1_200.0);
-        noise(&mut w, 10.0, 6);
-        let (soft, _) = stream(&front(&w));
-        let wrong = errors(&soft, &sent, SETTLE, sent.len() - 16);
-        assert!(wrong <= 2, "{wrong} errors over a 1.2 kHz/s drift");
+        for seed in SEEDS {
+            let sent = draws(9_600, 2, seed);
+            let mut w = vec![Complex::new(0.0, 0.0); 2_000];
+            w.extend(transmit(&gmsk(), &sent));
+            shift(&mut w, -600.0, 1_200.0);
+            noise(&mut w, 10.0, seed + 100);
+            let (soft, _) = stream(&front(&w));
+            let wrong = errors(&soft, &sent, SETTLE, sent.len() - 16);
+            assert!(
+                wrong <= 2,
+                "seed {seed}: {wrong} errors over a 1.2 kHz/s drift"
+            );
+        }
     }
 
     #[test]
     fn reacquires_a_new_transmission_after_silence() {
-        let first = draws(2_000, 2, 7);
-        let second = draws(3_000, 2, 8);
-        let mut w = transmit(&gmsk(), &first);
-        shift(&mut w, 900.0, 0.0);
-        w.extend(vec![Complex::new(0.0, 0.0); 24_003]);
-        let mut tail = transmit(&gmsk(), &second);
-        shift(&mut tail, -1_500.0, 0.0);
-        w.extend(tail);
-        noise(&mut w, 11.0, 9);
-        let (soft, _) = stream(&front(&w));
-        let later = &soft[soft.len() - second.len() - 16..];
-        assert_eq!(errors(later, &second, 1_000, second.len() - 16), 0);
+        for seed in SEEDS {
+            let first = draws(2_000, 2, seed);
+            let second = draws(3_000, 2, seed + 1_000);
+            let mut w = transmit(&gmsk(), &first);
+            shift(&mut w, 900.0, 0.0);
+            w.extend(vec![Complex::new(0.0, 0.0); 24_003]);
+            let mut tail = transmit(&gmsk(), &second);
+            shift(&mut tail, -1_500.0, 0.0);
+            w.extend(tail);
+            noise(&mut w, 11.0, seed + 200);
+            let (soft, _) = stream(&front(&w));
+            let later = &soft[soft.len() - second.len() - 16..];
+            let wrong = errors(later, &second, 1_000, second.len() - 16);
+            assert_eq!(wrong, 0, "seed {seed}");
+        }
     }
 
     #[test]
