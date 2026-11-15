@@ -326,7 +326,9 @@ impl SymbolSync {
 
     /// Moves the next symbol onto the nearest peak of the envelope's symbol-rate line over the
     /// `span` samples ahead (Oerder and Meyr). The magnitude, not its square, keeps four-level
-    /// data with a small rolloff from throwing the estimate half a symbol out.
+    /// data with a small rolloff from throwing the estimate half a symbol out. The rate starts
+    /// over from the long-run one: whatever a noisy last burst left in the loop says nothing
+    /// about this one's clock.
     fn acquire(&mut self, span: usize) {
         if let Some(acquisition) = &mut self.acquisition {
             acquisition.armed = false;
@@ -361,6 +363,8 @@ impl SymbolSync {
         self.frac = at - whole;
         self.at_symbol = true;
         self.primed = false;
+        self.sps = self.free_run_sps;
+        self.step = self.sps;
     }
 
     fn step_through(
@@ -627,6 +631,22 @@ mod tests {
                 "offset {eighth}/8: no alignment from the eighth symbol on"
             );
         }
+    }
+
+    #[test]
+    fn a_new_burst_starts_from_the_long_run_rate() {
+        let syms = symbols(80, 0x1234_5678);
+        let signal = bpsk(&syms, 4.0, 0.25);
+        let mut sync = SymbolSync::new(4.0, 0.02).with_acquisition(32);
+        sync.sps = 4.0 * (1.0 + TRACKING_RANGE);
+        sync.process_held(&[], &mut Vec::new());
+        let mut out = Vec::new();
+        sync.process(&signal[..160], &mut out);
+        assert!(
+            (sync.sps() - 4.0).abs() < 0.05,
+            "the last burst's drift carried over: {}",
+            sync.sps()
+        );
     }
 
     #[test]

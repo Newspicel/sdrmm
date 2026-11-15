@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 
 use crate::dv::DpmrParams;
 use num_complex::Complex;
-use sdrmm_dsp::{ParityCode, crc8_msb};
+use sdrmm_dsp::{ParityCode, crc_msb_bits, crc8_msb};
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, CodeStyle, DecoderEvent,
@@ -53,6 +53,11 @@ const SUPERFRAME_SYMBOLS: usize = 756;
 const TCH_STARTS: [usize; 4] = [36, 228, 420, 612];
 const TCH_SYMBOLS: usize = 144;
 const AMBE_SYMBOLS: usize = 36;
+const CCH_STARTS: [usize; 4] = [0, 192, 384, 576];
+const CCH_BITS: usize = 72;
+const CCH_INFO_BITS: usize = 48;
+const CCH_BLOCKS: usize = 6;
+const CCH_CRC_BITS: usize = 7;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "dpmr".to_owned(),
@@ -145,8 +150,17 @@ struct Decoder {
     in_call: bool,
     voice_call: bool,
     inverted: bool,
+    reported: Option<(u32, u32)>,
+    id_halves: [Option<u32>; 4],
     vocoder: MbeDecoder,
     rejected: u32,
+}
+
+/// What one payload frame's CCH carries.
+struct ControlChannel {
+    number: usize,
+    id_half: u32,
+    mode: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -165,6 +179,8 @@ impl Decoder {
             in_call: false,
             voice_call: false,
             inverted: false,
+            reported: None,
+            id_halves: [None; 4],
             vocoder,
             rejected: 0,
         }
@@ -178,14 +194,17 @@ impl Decoder {
         self.window.reset();
         self.countdown = 0;
         self.pending = None;
-        self.in_call = false;
-        self.voice_call = false;
+        self.end_call();
         self.inverted = false;
         self.vocoder.reset();
     }
 
     fn push(&mut self, symbol: f32, out: &mut ChannelOutputs) {
         self.window.push(symbol);
+        let guessing = !self.in_call && matches!(self.pending, Some(Pending::Superframe));
+        if guessing && self.header_sync() {
+            return;
+        }
         if self.countdown > 0 {
             self.countdown -= 1;
             if self.countdown == 0 {
@@ -194,6 +213,7 @@ impl Decoder {
                         Some((frame, voice_call)) => {
                             self.in_call = true;
                             self.voice_call = voice_call;
+                            self.reported = frame.destination.zip(frame.source);
                             out.events.push(DecoderEvent::of(&frame));
                         }
                         None => self.rejected = self.rejected.saturating_add(1),
@@ -207,32 +227,67 @@ impl Decoder {
         if self.pending.is_some() {
             return;
         }
-        for (sync, fs4) in [(FS1, false), (FS4, true)] {
-            if self.window.sync_distance(sync, LONG_SYNC_BITS) <= LONG_TOLERANCE {
-                self.window.anchor(sync, LONG_SYNC_BITS);
-                self.pending = Some(Pending::Header { fs4 });
-                self.countdown = HEADER_SYMBOLS;
-                return;
-            }
+        if self.header_sync() {
+            return;
         }
         if !self.in_call {
+            self.late_entry_sync();
             return;
         }
         let fs2 = self.observed(FS2);
         if self.window.sync_distance(fs2, SHORT_SYNC_BITS) <= SHORT_TOLERANCE {
             self.window.anchor(fs2, SHORT_SYNC_BITS);
-            self.pending = Some(Pending::Superframe);
-            self.countdown = SUPERFRAME_SYMBOLS;
+            self.await_superframe();
             return;
         }
         let fs3 = self.observed(FS3);
         if self.window.sync_distance(fs3, SHORT_SYNC_BITS) <= SHORT_TOLERANCE {
             self.window.anchor(fs3, SHORT_SYNC_BITS);
-            self.in_call = false;
-            self.voice_call = false;
+            self.end_call();
             out.events
                 .push(DecoderEvent::of(&dv_frame(DvFrameKind::Terminator)));
         }
+    }
+
+    fn header_sync(&mut self) -> bool {
+        for (sync, fs4) in [(FS1, false), (FS4, true)] {
+            if self.window.sync_distance(sync, LONG_SYNC_BITS) <= LONG_TOLERANCE {
+                self.window.anchor(sync, LONG_SYNC_BITS);
+                self.pending = Some(Pending::Header { fs4 });
+                self.countdown = HEADER_SYMBOLS;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Joins a call whose header was missed on a payload sync of either polarity. The short
+    /// sync alone could be noise, so the CCH checksums decide and it never trains the levels.
+    fn late_entry_sync(&mut self) {
+        for inverted in [false, true] {
+            let fs2 = if inverted {
+                super::inverted(FS2, SHORT_SYNC_BITS)
+            } else {
+                FS2
+            };
+            if self.window.sync_distance(fs2, SHORT_SYNC_BITS) <= SHORT_TOLERANCE {
+                self.inverted = inverted;
+                self.await_superframe();
+                return;
+            }
+        }
+    }
+
+    fn await_superframe(&mut self) {
+        self.pending = Some(Pending::Superframe);
+        self.countdown = SUPERFRAME_SYMBOLS;
+    }
+
+    fn end_call(&mut self) {
+        self.in_call = false;
+        self.voice_call = false;
+        self.reported = None;
+        self.id_halves = [None; 4];
     }
 
     fn observed(&self, sync: u64) -> u64 {
@@ -270,16 +325,17 @@ impl Decoder {
         frame.destination = Some(bits_to_u32(hi, 4, 24));
         frame.source = Some(bits_to_u32(hi, 28, 24));
         let mode = bits_to_u32(hi, 52, 3);
-        (frame, matches!(mode, 0 | 1 | 5))
+        (frame, voice_mode(mode))
     }
 
     fn superframe(&mut self, out: &mut ChannelOutputs) {
-        if !self.voice_call {
-            return;
-        }
         self.window.bits(0, SUPERFRAME_SYMBOLS, &mut self.bits);
         if self.inverted {
             invert_dibits(&mut self.bits);
+        }
+        self.read_control_channels(out);
+        if !self.voice_call {
+            return;
         }
         for start in TCH_STARTS {
             for frame_start in (start..start + TCH_SYMBOLS).step_by(AMBE_SYMBOLS) {
@@ -293,6 +349,82 @@ impl Decoder {
             }
         }
     }
+}
+
+impl Decoder {
+    /// Collects the called and own IDs from the CCHs and reports a call the header did not
+    /// name once both are whole.
+    fn read_control_channels(&mut self, out: &mut ChannelOutputs) {
+        let mut mode = None;
+        for start in CCH_STARTS {
+            let coded = &self.bits[start * 2..start * 2 + CCH_BITS];
+            match control_channel(coded) {
+                Some(cch) => {
+                    self.id_halves[cch.number] = Some(cch.id_half);
+                    mode = Some(cch.mode);
+                }
+                None if self.in_call => self.rejected = self.rejected.saturating_add(1),
+                None => {}
+            }
+        }
+        let Some(mode) = mode else {
+            return;
+        };
+        self.in_call = true;
+        self.voice_call = voice_mode(mode);
+        let [
+            Some(called_high),
+            Some(called_low),
+            Some(own_high),
+            Some(own_low),
+        ] = self.id_halves
+        else {
+            return;
+        };
+        let call = (called_high << 12 | called_low, own_high << 12 | own_low);
+        if self.reported == Some(call) {
+            return;
+        }
+        let mut frame = dv_frame(DvFrameKind::Header);
+        (frame.destination, frame.source) = (Some(call.0), Some(call.1));
+        frame.late_entry = Some(true);
+        self.reported = Some(call);
+        out.events.push(DecoderEvent::of(&frame));
+    }
+}
+
+fn voice_mode(mode: u32) -> bool {
+    matches!(mode, 0 | 1 | 5)
+}
+
+fn control_channel(coded: &[bool]) -> Option<ControlChannel> {
+    let mut descrambled = [false; CCH_BITS];
+    descrambled.copy_from_slice(coded);
+    scramble(&mut descrambled);
+    let mut blocks = [false; CCH_BITS];
+    for r in 0..HAMMING_WORD_BITS {
+        for c in 0..CCH_BLOCKS {
+            blocks[c * HAMMING_WORD_BITS + r] = descrambled[r * CCH_BLOCKS + c];
+        }
+    }
+    let mut info = [false; CCH_INFO_BITS];
+    for block in 0..CCH_BLOCKS {
+        let word = &mut blocks[block * HAMMING_WORD_BITS..(block + 1) * HAMMING_WORD_BITS];
+        ParityCode::HAMMING_12_8.decode(word)?;
+        info[block * 8..block * 8 + 8].copy_from_slice(&word[..8]);
+    }
+    let checked = CCH_INFO_BITS - CCH_CRC_BITS;
+    let crc = crc_msb_bits(
+        0x09,
+        CCH_CRC_BITS as u32,
+        0,
+        info[..checked].iter().copied(),
+    );
+    (crc == bits_to_u32(&info, checked, CCH_CRC_BITS)).then(|| ControlChannel {
+        number: bits_to_u32(&info, 0, 2) as usize,
+        id_half: bits_to_u32(&info, 2, 12),
+        mode: bits_to_u32(&info, 14, 3),
+    })
 }
 
 fn channel_code(number: u8) -> u32 {
@@ -399,13 +531,56 @@ mod tests {
 
         let frames = decode(&mut chan, &iq);
 
+        let headers: Vec<&DvFrame> = frames
+            .iter()
+            .filter(|frame| frame.kind == DvFrameKind::Header)
+            .collect();
         assert!(
-            frames.iter().all(|frame| frame.kind != DvFrameKind::Header),
+            headers.iter().all(|frame| frame.late_entry == Some(true)),
             "an unreadable header was reported: {frames:?}"
+        );
+        let call = tx::Call::default();
+        assert!(
+            headers
+                .iter()
+                .any(|frame| frame.destination == Some(call.called)
+                    && frame.source == Some(call.own)),
+            "the control channel did not name the call: {frames:?}"
         );
         assert!(
             chan.rejected() > 0,
             "an unreadable header was dropped in silence"
+        );
+    }
+
+    #[test]
+    fn a_call_whose_header_noise_hid_is_named_by_its_control_channel() {
+        const NOISE_AMPLITUDE: f32 = 0.5;
+        let gap = vec![Complex::default(); 14_400];
+        let mut clean = gap.clone();
+        let owners: Vec<u32> = (0..8).map(|index| 0x12_3450 + index).collect();
+        for &own in &owners {
+            let call = tx::Call {
+                own,
+                ..tx::Call::default()
+            };
+            clean.extend(tx::transmission(&call, INPUT_RATE_HZ));
+            clean.extend_from_slice(&gap);
+        }
+        let hiss = crate::testutil::complex_noise(1, NOISE_AMPLITUDE, clean.len());
+        let iq: Vec<Complex<f32>> = clean.iter().zip(hiss).map(|(&s, n)| s + n).collect();
+
+        let frames = decode(&mut channel(), &iq);
+        let heard: Vec<u32> = frames
+            .iter()
+            .filter(|frame| frame.kind == DvFrameKind::Header)
+            .filter_map(|frame| frame.source)
+            .collect();
+
+        assert_eq!(heard, owners);
+        assert!(
+            frames.iter().any(|frame| frame.late_entry == Some(true)),
+            "every header survived, so late entry went untested"
         );
     }
 
@@ -494,6 +669,15 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_control_channel_checksum_matches_the_published_crc_7_check_value() {
+        let check: Vec<bool> = b"123456789"
+            .iter()
+            .flat_map(|byte| (0..8).rev().map(move |bit| byte >> bit & 1 == 1))
+            .collect();
+        assert_eq!(crc_msb_bits(0x09, CCH_CRC_BITS as u32, 0, check), 0x75);
     }
 
     #[test]

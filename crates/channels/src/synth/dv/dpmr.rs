@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::{ParityCode, crc8_msb};
+use sdrmm_dsp::{ParityCode, crc_msb_bits, crc8_msb};
 
 use super::{bits, c4fm, dibits, filler};
 
@@ -76,19 +76,20 @@ fn keyed_transmission(
 
     for frames in voice.chunks(16) {
         symbols.extend(dibits(&bits(FS2, 24)));
-        symbols.extend(superframe(frames, call.channel_code));
+        symbols.extend(superframe(frames, call));
     }
     symbols.extend(dibits(&bits(FS3, 24)));
     symbols.extend(dibits(&filler(400, 73)));
     c4fm(&symbols, rate, BAUD, DEVIATION_HZ, RRC_ALPHA)
 }
 
-fn superframe(frames: &[[bool; 72]], code: u8) -> Vec<u8> {
+fn superframe(frames: &[[bool; 72]], call: &Call) -> Vec<u8> {
+    let code = call.channel_code;
     let mut padded = [[false; 72]; 16];
     padded[..frames.len()].copy_from_slice(frames);
     let mut out = Vec::with_capacity(756);
-    for section in 0..4 {
-        out.extend(dibits(&filler(72, 71 + section as u32)));
+    for section in 0..4usize {
+        out.extend(dibits(&control_channel(call, section)));
         for frame in &padded[section * 4..section * 4 + 4] {
             out.extend(dibits(frame));
         }
@@ -104,6 +105,49 @@ fn superframe(frames: &[[bool; 72]], code: u8) -> Vec<u8> {
 
 fn channel_code(number: u8) -> Vec<bool> {
     bits(u64::from(CHANNEL_CODES[usize::from(number & 0x3F)]), 24)
+}
+
+/// The CCH of payload frame `number`: frames 0 and 1 carry the called ID's halves, 2 and 3 the
+/// own ID's, each beside the call mode and a CRC-7.
+fn control_channel(call: &Call, number: usize) -> Vec<bool> {
+    let id = if number < 2 { call.called } else { call.own };
+    let half = if number.is_multiple_of(2) {
+        id >> 12
+    } else {
+        id
+    } & 0xFFF;
+    let mut info = bits(number as u64, 2);
+    info.extend(bits(u64::from(half), 12));
+    info.extend(bits(u64::from(call.mode) & 0x07, 3));
+    info.extend(bits(0, 2 + 2 + 1 + 1 + 18));
+    let crc = crc_msb_bits(0x09, 7, 0, info.iter().copied());
+    info.extend(bits(u64::from(crc), 7));
+
+    let mut blocks = Vec::with_capacity(72);
+    for byte in info.chunks(8) {
+        let mut word = [false; 12];
+        word[..8].copy_from_slice(byte);
+        ParityCode::HAMMING_12_8.encode(&mut word);
+        blocks.extend(word);
+    }
+    let mut interleaved = vec![false; 72];
+    for r in 0..12 {
+        for c in 0..6 {
+            interleaved[r * 6 + c] = blocks[c * 12 + r];
+        }
+    }
+    scrambled(interleaved)
+}
+
+fn scrambled(bits: Vec<bool>) -> Vec<bool> {
+    let mut sequence = vec![true; bits.len()];
+    for i in 9..sequence.len() {
+        sequence[i] = sequence[i - 9] ^ sequence[i - 5];
+    }
+    bits.into_iter()
+        .zip(sequence)
+        .map(|(bit, key)| bit ^ key)
+        .collect()
 }
 
 fn header_info(call: &Call) -> Vec<bool> {
@@ -134,13 +178,5 @@ fn header_info(call: &Call) -> Vec<bool> {
             interleaved[r * 10 + c] = blocks[c * 12 + r];
         }
     }
-    let mut sequence = [true; 120];
-    for i in 9..sequence.len() {
-        sequence[i] = sequence[i - 9] ^ sequence[i - 5];
-    }
-    interleaved
-        .into_iter()
-        .zip(sequence)
-        .map(|(bit, key)| bit ^ key)
-        .collect()
+    scrambled(interleaved)
 }
