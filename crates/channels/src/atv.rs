@@ -1,12 +1,16 @@
 use crate::registry::Native;
 use sdrmm_wire::{ClickProfile, Control, KindSpec, NumberSpec, SettingField};
+mod chroma;
 mod front;
+mod luma;
 mod model;
 mod picture;
+mod secam;
 mod standard;
 mod sync;
 #[cfg(test)]
 mod tests;
+mod transform;
 pub use model::*;
 use std::sync::LazyLock;
 
@@ -17,11 +21,14 @@ use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel, check_rate,
 };
 use front::{Detector, Discriminator, Rate, SOUND_AUDIO_HZ, SOUND_DEVIATION_HZ, SoundDecoder};
-use picture::Picture;
+use picture::{Adjust, Picture};
 use standard::{CHROMA_BANDWIDTH_HZ, Geometry, subcarrier_hz, video_rate_hz};
 use sync::{Fields, LineSync, Pulse, Samples};
+use transform::Depth;
 
 const MIN_BANDWIDTH_HZ: f64 = 100_000.0;
+const COLOURED: [AtvColor; 3] = [AtvColor::Pal, AtvColor::Ntsc, AtvColor::Secam];
+const MAX_SATURATION_PCT: f64 = 200.0;
 const MAX_BANDWIDTH_HZ: f64 = 10_000_000.0;
 const RATES_HZ: (f64, f64) = (1_000_000.0, 122_880_000.0);
 /// What an AM picture keeps when the luma bandwidth follows the noise.
@@ -35,6 +42,8 @@ const AM_SPAN: f64 = 0.3;
 const FM_SPAN: f64 = 0.4;
 const MAX_VIDEO_SHARE: f64 = 0.45;
 const MONO_KEEP_HZ: f64 = 6_000_000.0;
+/// Half the Nyquist slope's width, the narrowest vestige broadcast standards keep.
+const NYQUIST_HZ: f64 = 750_000.0;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "atv".to_owned(),
@@ -62,6 +71,7 @@ pub struct AtvChannel {
     sync: LineSync,
     fields: Fields,
     picture: Picture,
+    was_locked: bool,
 }
 
 fn params(settings: &ChannelSettings) -> Result<AtvParams, ChannelError> {
@@ -69,6 +79,19 @@ fn params(settings: &ChannelSettings) -> Result<AtvParams, ChannelError> {
 }
 
 fn check_params(p: &AtvParams) -> Result<(), ChannelError> {
+    if !(p.saturation_pct.is_finite() && (0.0..=MAX_SATURATION_PCT).contains(&p.saturation_pct))
+        || !(p.hue_deg.is_finite() && (-180.0..=180.0).contains(&p.hue_deg))
+    {
+        return Err(ChannelError::InvalidSettings(format!(
+            "atv saturation must be in [0, {MAX_SATURATION_PCT}] % and hue in [-180, 180] degrees, got {} % and {} degrees",
+            p.saturation_pct, p.hue_deg
+        )));
+    }
+    if p.color == AtvColor::Secam && p.standard != AtvStandard::Ccir625 {
+        return Err(ChannelError::InvalidSettings(
+            "atv SECAM needs 625 lines".to_owned(),
+        ));
+    }
     if !(p.rate_hz.is_finite() && (RATES_HZ.0..=RATES_HZ.1).contains(&p.rate_hz)) {
         return Err(ChannelError::InvalidSettings(format!(
             "atv rate must be in [{}, {}] Hz, got {}",
@@ -99,6 +122,11 @@ fn sound_band_hz(p: &AtvParams) -> f64 {
         .map_or(0.0, |carrier| carrier + SOUND_DEVIATION_HZ + SOUND_AUDIO_HZ)
 }
 
+/// Half the Nyquist slope's width, kept inside the picture band of a narrow channel.
+fn nyquist_hz(p: &AtvParams) -> f64 {
+    NYQUIST_HZ.min(0.5 * am_video_hz(p))
+}
+
 fn am_video_hz(p: &AtvParams) -> f64 {
     let chroma = subcarrier_hz(p.color).map_or(0.0, |carrier| carrier + AM_CHROMA_HZ);
     p.bandwidth_hz
@@ -112,7 +140,7 @@ pub(crate) fn occupied_band(p: &AtvParams) -> (f64, f64) {
         AtvModulation::Fm => (-FM_SPAN * p.rate_hz, FM_SPAN * p.rate_hz),
         AtvModulation::Am => {
             let video = am_video_hz(p);
-            (-video, video.max(sound_band_hz(p)))
+            (-nyquist_hz(p), video.max(sound_band_hz(p)))
         }
     }
 }
@@ -152,7 +180,9 @@ impl AtvChannel {
         let g = Geometry::new(p.standard, video_rate);
         let detector = match p.modulation {
             AtvModulation::Fm => Detector::Discriminator(Discriminator::new()),
-            AtvModulation::Am => Detector::am(am_video_hz(p) / input_rate),
+            AtvModulation::Am => {
+                Detector::am(am_video_hz(p) / input_rate, nyquist_hz(p) / input_rate)
+            }
         };
         let sound = p
             .sound_subcarrier_hz
@@ -178,7 +208,18 @@ impl AtvChannel {
             samples: Samples::default(),
             sync: LineSync::new(g),
             fields: Fields::default(),
-            picture: Picture::new(g, p.color, p.bandwidth_hz, p.sound_subcarrier_hz),
+            picture: Picture::new(
+                g,
+                p.color,
+                p.bandwidth_hz,
+                p.sound_subcarrier_hz,
+                Adjust::new(p.saturation_pct, p.hue_deg),
+                match p.pal_split {
+                    AtvPalSplit::Field => Depth::Field,
+                    AtvPalSplit::Frames => Depth::Frames,
+                },
+            ),
+            was_locked: false,
         })
     }
 
@@ -190,36 +231,48 @@ impl AtvChannel {
         let field_len = (f64::from(self.params.standard.lines()) / 2.0) as u32;
         while let Some(line) = self.sync.next(&self.samples) {
             let field = self.fields.on_line(&line, field_len);
-            if field.new_field
-                && let Some(picture) = self.picture.take()
-            {
-                out.video.push(picture);
+            if field.new_field {
+                self.picture.field(&self.samples, field.parity);
+                if let Some(picture) = self.picture.take() {
+                    out.video.push(picture);
+                }
             }
             if line.pulse != Pulse::Line {
-                self.picture.coast();
+                self.picture.gap(&self.samples);
                 continue;
             }
             self.picture
                 .observe(&self.samples, line.zero_h, &line.levels);
-            let delay = u32::from(self.geometry_delay());
-            let Some(row) = field.line.and_then(|l| l.checked_sub(delay)) else {
-                continue;
-            };
-            if row >= self.rows() {
-                continue;
-            }
-            let dest = if self.params.interlace {
-                2 * row + u32::from(field.parity)
-            } else {
-                row
-            };
+            let row = self.row(field.line, field.parity);
             self.picture
-                .draw(&self.samples, line.zero_h, &line.levels, dest as usize);
+                .line(&self.samples, (line.zero_h, &line.levels), field.line, row);
         }
-        if !self.sync.locked() {
+        let locked = self.sync.locked();
+        if !locked {
             self.fields.reset();
+            if self.was_locked {
+                self.picture.flush(&self.samples);
+            }
         }
-        self.samples.forget_before(self.sync.keep_from());
+        self.was_locked = locked;
+        let keep = self.sync.keep_from();
+        let held = self.picture.keep_from().unwrap_or(keep);
+        self.samples.forget_before(keep.min(held));
+    }
+
+    /// The frame row a field line lands on, if it is a picture line.
+    fn row(&self, line: Option<u32>, parity: u16) -> Option<usize> {
+        let delay = u32::from(self.geometry_delay());
+        let row = line?.checked_sub(delay)?;
+        if row >= self.rows() {
+            return None;
+        }
+        let dest = if self.params.interlace {
+            2 * row + u32::from(parity)
+        } else {
+            row
+        };
+        Some(dest as usize)
     }
 
     fn geometry_delay(&self) -> u16 {
@@ -249,6 +302,13 @@ impl ChannelRx for AtvChannel {
             &DESCRIPTOR,
             p.rate_hz,
         )?;
+        if p.without_adjustments() == self.params.without_adjustments() {
+            check_params(&p)?;
+            self.picture
+                .set_adjust(Adjust::new(p.saturation_pct, p.hue_deg));
+            self.params = p;
+            return Ok(());
+        }
         *self = Self::build(self.input_rate, &p)?;
         Ok(())
     }
@@ -331,6 +391,20 @@ pub(crate) fn atv_form() -> Vec<SettingField> {
         .title("Luma bandwidth; Auto softens it as noise rises"),
         SettingField::new("color", "Colour", Control::choice::<AtvColor>())
             .title("Composite colour system"),
+        SettingField::new(
+            "saturation_pct",
+            "Sat",
+            NumberSpec::new(0.0, MAX_SATURATION_PCT, 1.0).unit("%"),
+        )
+        .title("Colour saturation")
+        .when("color", COLOURED),
+        SettingField::new(
+            "hue_deg",
+            "Hue",
+            NumberSpec::new(-180.0, 180.0, 1.0).unit("°"),
+        )
+        .title("Turns every colour around the wheel")
+        .when("color", COLOURED),
         SettingField::new(
             "sound_subcarrier_hz",
             "Sound",

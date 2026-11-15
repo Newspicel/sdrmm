@@ -15,7 +15,7 @@ covers the modes that need more than a frequency.
 | Marine | Digital Selective Calling, Inmarsat STD-C / EGC | | AIS, NAVTEX | |
 | Amateur and HF | [FT8](#ft8-ft4-and-wspr) | | CW skimmer, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | |
 | Paging and telemetry | FLEX pager, Radio clock (DCF77 / WWVB / MSF / JJY) | | POCSAG, Selcall (CCIR/ZVEI), ERMES pager | |
-| Pictures and video | | | [SSTV](#sstv), ATV | |
+| Pictures and video | | | [SSTV](#sstv), [ATV](#atv) | |
 | Weather and satellites | [Meteor LRPT](#weather-satellites) | | [WEFAX](#wefax), [NOAA APT](#weather-satellites), [Radiosonde](#radiosondes), [SAME alerts](#same-alerts) | |
 | Broadcast digital | | [DAB / DAB+](#dab-and-dab), [DRM30, DRM+](#drm) | | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
 | Utility | [Signal identifier](scanning.md#identify-a-signal), [End-of-Train](#end-of-train), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy), [HF modems](#hf-modems), [Wireless M-Bus](#wireless-m-bus), [ISM sensors](#ism-sensors) | [Iridium bursts](#inmarsat-and-iridium) | [DECT](#dect), [406 MHz beacons](#406-mhz-beacons), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
@@ -191,6 +191,20 @@ Wraase SC2-180.
 Wire `video` to **Video** to watch a picture arrive. Finished pictures show in the Video node's
 gallery and are kept as PNG on the server for 24 hours, up to 512 pictures or 256 MB. Without a
 `video` wire nothing is kept.
+
+## ATV
+
+Analog TV in 625, 525 and 405 lines, AM or FM. Tune AM to the vision carrier.
+
+| Setting | Does |
+|---|---|
+| Colour | PAL, NTSC or SECAM. SECAM needs 625 lines. |
+| Split | PAL only. **3D** also compares frames: sharper on still pictures, three frames later and about twice the CPU |
+| Sat, Hue | Picture adjustments, applied without losing lock |
+
+AM is detected against the recovered carrier through a Nyquist slope, so vestigial-sideband
+broadcasts keep flat luma and full colour. PAL splits luma from chroma in the frequency domain
+(Transform PAL), NTSC with an adaptive line comb, so fine detail stays sharp and grey.
 
 ## Weather satellites
 

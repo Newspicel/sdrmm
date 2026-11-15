@@ -30,6 +30,20 @@ impl Samples {
     }
 }
 
+/// Where a window of `width` samples has the lowest mean in a folded line, read round.
+fn fold_sync(profile: &[f32], width: usize) -> usize {
+    let len = profile.len();
+    let mut sum: f32 = profile.iter().cycle().take(width).sum();
+    let (mut best, mut at) = (sum, 0);
+    for start in 1..len {
+        sum += profile[(start + width - 1) % len] - profile[start - 1];
+        if sum < best {
+            (best, at) = (sum, start);
+        }
+    }
+    at
+}
+
 fn index(at: f64) -> u64 {
     at.max(0.0) as u64
 }
@@ -83,6 +97,15 @@ pub(super) struct Line {
 }
 
 const ACQUIRE_LINES: u8 = 4;
+/// Lines laid over each other when no clean run of syncs shows: noise falls by their root,
+/// the sync stays where it is.
+const FOLD_LINES: usize = 16;
+/// Sync widths either way the two halves of a fold may place the sync and still agree.
+const FOLD_AGREE: f64 = 0.25;
+/// How far below the porch a folded sync tip must sit, in the noise of its own mean.
+const FOLD_CONTRAST: f32 = 6.0;
+/// Samples per independent noise sample in detected video, which is oversampled.
+const NOISE_SPAN: f32 = 4.0;
 const AREA_LANES: usize = 8;
 const LINE_TOLERANCE: f64 = 0.03;
 const PULSE_WIDTH: (f64, f64) = (0.5, 1.6);
@@ -91,6 +114,17 @@ const TIP_RELEASE: f32 = 1e-5;
 const MEAN_TRACK: f32 = 2e-5;
 const SLICE: f32 = 0.25;
 const MAX_MISSES: u32 = 16;
+/// Lines without a line sync past any vertical interval: the levels are wrong, start over.
+const MAX_UNLINED: u32 = 32;
+/// Edge jitter, in square samples, at which the timing loops run at half speed: past it a
+/// line's own timing says less than the flywheel already knows.
+const JITTER_REF: f64 = 1.0;
+const JITTER_TRACK: f64 = 0.02;
+/// Lines a noisy lock may coast without a pulse before it starts over: a field.
+const MAX_COAST: f64 = 312.0;
+const SYNC_WIDTH_RANGE: (f64, f64) = (0.7, 1.4);
+/// Lines before a field is due within which one broad pulse starts it.
+const FIELD_SLACK: u32 = 8;
 const PHASE_GAIN: f64 = 0.15;
 const RATE_GAIN: f64 = 0.004;
 const RATE_LIMIT: f64 = 0.005;
@@ -103,6 +137,8 @@ const CYCLE: f64 = 4.0;
 #[derive(Clone, Debug)]
 struct Acquire {
     scan: u64,
+    /// Where the next fold of lines starts.
+    fold_from: u64,
     sum: f64,
     seen: u64,
     tip: f32,
@@ -163,6 +199,7 @@ impl Acquire {
     fn new(scan: u64) -> Self {
         Self {
             scan,
+            fold_from: scan,
             sum: 0.0,
             seen: 0,
             tip: 0.0,
@@ -178,7 +215,11 @@ impl Acquire {
 #[derive(Clone, Debug)]
 enum Mode {
     Acquire(Acquire),
-    Locked { misses: u32 },
+    /// `misses` counts lines without a pulse, `unlined` lines without a line sync.
+    Locked {
+        misses: u32,
+        unlined: u32,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -192,6 +233,10 @@ pub(super) struct LineSync {
     sync_width: f64,
     levels: Levels,
     settled: u32,
+    /// Mean square of the line edge error, in samples: how noisy each line's timing reads.
+    jitter: f64,
+    /// The two halves of a fold of lines, kept so acquiring does not allocate.
+    folds: [Vec<f32>; 2],
 }
 
 impl LineSync {
@@ -209,6 +254,8 @@ impl LineSync {
                 blank: 1.0,
             },
             settled: 0,
+            jitter: 0.0,
+            folds: [Vec::new(), Vec::new()],
         }
     }
 
@@ -223,7 +270,10 @@ impl LineSync {
     /// The oldest sample a later call still reads.
     pub fn keep_from(&self) -> u64 {
         match &self.mode {
-            Mode::Acquire(a) => a.scan.saturating_sub(self.boxcar as u64 + 1),
+            Mode::Acquire(a) => a
+                .scan
+                .saturating_sub(self.boxcar as u64 + 1)
+                .min(a.fold_from),
             Mode::Locked { .. } => {
                 index(self.phase - self.g.front_porch - self.window as f64 - 4.0)
             }
@@ -261,14 +311,110 @@ impl LineSync {
                 break;
             }
         }
-        if let Some((fall, levels)) = found {
+        let (found, folded) = match found {
+            Some(found) => (Some(found), false),
+            None => (self.fold(samples), true),
+        };
+        if let Some((fall, rough)) = found {
             self.phase = fall + self.g.line;
             self.line = self.g.line;
             self.sync_width = self.g.sync;
-            self.levels = levels;
+            self.levels = if folded {
+                rough
+            } else {
+                self.pulse_levels(samples, fall).unwrap_or(rough)
+            };
             self.settled = 0;
-            self.mode = Mode::Locked { misses: 0 };
+            self.mode = Mode::Locked {
+                misses: 0,
+                unlined: 0,
+            };
         }
+    }
+
+    /// Lays `FOLD_LINES` lines over each other at the nominal line rate and finds the sync in
+    /// their mean, for signals too weak to show it line by line. Both halves of the fold must
+    /// put it in the same place.
+    fn fold(&mut self, samples: &Samples) -> Option<(f64, Levels)> {
+        let Mode::Acquire(a) = &mut self.mode else {
+            return None;
+        };
+        let g = self.g;
+        let len = g.line.round() as usize;
+        let span = (FOLD_LINES as f64 * g.line).ceil() as u64;
+        if samples.end() < a.fold_from + span + len as u64 {
+            return None;
+        }
+        let from = a.fold_from;
+        a.fold_from += span / 2;
+        let half = FOLD_LINES / 2;
+        for fold in &mut self.folds {
+            fold.clear();
+            fold.resize(len, 0.0);
+        }
+        for line in 0..FOLD_LINES {
+            let start = index(from as f64 + line as f64 * g.line);
+            let row = samples.span(start, start + len as u64);
+            if row.len() < len {
+                return None;
+            }
+            for (sum, &v) in self.folds[line / half].iter_mut().zip(row) {
+                *sum += v / half as f32;
+            }
+        }
+        let width = (g.sync.round() as usize).max(1);
+        let [early, late] = [0, 1].map(|k| fold_sync(&self.folds[k], width));
+        let apart = early.abs_diff(late).min(len - early.abs_diff(late)) as f64;
+        if apart > FOLD_AGREE * g.sync {
+            return None;
+        }
+        let mean = |range: std::ops::Range<f64>| {
+            let (from, to) = (range.start.round() as i64, range.end.round() as i64);
+            let total: f32 = (from..to)
+                .map(|k| {
+                    let at = k.rem_euclid(len as i64) as usize;
+                    0.5 * (self.folds[0][at] + self.folds[1][at])
+                })
+                .sum();
+            total / (to - from).max(1) as f32
+        };
+        let at = late as f64;
+        let tip = at + 0.2 * g.sync..at + 0.85 * g.sync;
+        let porch = at + g.burst.1 + g.us(0.4)..at + g.active.0 - g.us(0.4);
+        let levels = Levels {
+            tip: mean(tip.clone()),
+            blank: mean(porch.clone()),
+        };
+        let porch_mean = levels.blank;
+        let variance = {
+            let (from, to) = (porch.start.round() as i64, porch.end.round() as i64);
+            (from..to)
+                .map(|k| {
+                    let at = k.rem_euclid(len as i64) as usize;
+                    let v = 0.5 * (self.folds[0][at] + self.folds[1][at]) - porch_mean;
+                    v * v
+                })
+                .sum::<f32>()
+                / (to - from).max(1) as f32
+        };
+        let independent = ((tip.end - tip.start) as f32 / NOISE_SPAN).max(1.0);
+        let noise = (variance / independent).sqrt();
+        let fall = from as f64 + (FOLD_LINES - 1) as f64 * g.line + at;
+        (levels.sync() > FOLD_CONTRAST * noise).then_some((fall, levels))
+    }
+
+    /// Tip and blanking read off the found pulse and the porch before it, sounder than the
+    /// scan's running estimates, which the stream's first samples can drag.
+    fn pulse_levels(&self, samples: &Samples, fall: f64) -> Option<Levels> {
+        let (g, sw) = (&self.g, self.g.sync);
+        let (tip, tips) = Self::mean_raw(samples, fall + 0.2 * sw, fall + 0.85 * sw)?;
+        let (blank, blanks) =
+            Self::mean_raw(samples, fall - g.front_porch + g.us(0.3), fall - g.us(0.3))?;
+        let levels = Levels {
+            tip: tip / tips as f32,
+            blank: blank / blanks as f32,
+        };
+        (levels.sync() > 0.0).then_some(levels)
     }
 
     fn mean_normalized(&self, samples: &Samples, from: f64, to: f64) -> f32 {
@@ -346,12 +492,18 @@ impl LineSync {
             Pulse::Line => {
                 let quiet = self.g.burst.0 - self.sync_width - self.g.us(0.4);
                 let trail = self.edge(samples, phi + self.sync_width, false, quiet);
-                if clean {
-                    self.sync_width += SYNC_WIDTH_TRACK * (trail - lead);
+                let error = if clean {
+                    self.sync_width += self.calm() * SYNC_WIDTH_TRACK * (trail - lead);
+                    self.sync_width = self.sync_width.clamp(
+                        SYNC_WIDTH_RANGE.0 * self.g.sync,
+                        SYNC_WIDTH_RANGE.1 * self.g.sync,
+                    );
                     0.5 * (lead + trail)
                 } else {
                     trail
-                }
+                };
+                self.jitter += JITTER_TRACK * (error * error - self.jitter);
+                error
             }
             Pulse::Equalizing | Pulse::Broad if clean => lead,
             Pulse::Equalizing | Pulse::Broad => 0.0,
@@ -359,14 +511,23 @@ impl LineSync {
         if pulse == Pulse::Line {
             self.track_levels(samples, phi);
         }
-        let zero_h = phi + PHASE_GAIN * error;
+        let calm = self.calm();
+        let zero_h = phi + PHASE_GAIN * calm * error;
         let nominal = self.g.line;
-        self.line = (self.line + RATE_GAIN * error)
+        self.line = (self.line + RATE_GAIN * calm * calm * error)
             .clamp(nominal * (1.0 - RATE_LIMIT), nominal * (1.0 + RATE_LIMIT));
         self.phase = zero_h + self.line;
-        if let Mode::Locked { misses } = &mut self.mode {
+        if let Mode::Locked { misses, unlined } = &mut self.mode {
             *misses = if pulse == Pulse::None { *misses + 1 } else { 0 };
-            if *misses > MAX_MISSES {
+            *unlined = if pulse == Pulse::Line {
+                0
+            } else {
+                *unlined + 1
+            };
+            let coast = (1.0 + self.jitter / JITTER_REF).min(MAX_COAST / f64::from(MAX_MISSES));
+            if f64::from(*misses) > f64::from(MAX_MISSES) * coast
+                || f64::from(*unlined) > f64::from(MAX_UNLINED) * coast
+            {
                 self.mode = Mode::Acquire(Acquire::new(index(self.phase)));
             }
         }
@@ -376,6 +537,12 @@ impl LineSync {
             broad_mid,
             levels: self.levels,
         }
+    }
+
+    /// How far the timing loops trust one line: 1 on a clean signal, falling as the edges
+    /// grow noisy.
+    fn calm(&self) -> f64 {
+        1.0 / (1.0 + self.jitter / JITTER_REF)
     }
 
     fn track_levels(&mut self, samples: &Samples, phi: f64) {
@@ -424,6 +591,8 @@ impl LineSync {
 #[derive(Clone, Debug, Default)]
 pub(super) struct Fields {
     in_vertical: bool,
+    /// Broad pulses in a row; a lone one far from where a field is due is noise.
+    broad_run: u32,
     broad_mid_before: bool,
     line: Option<u32>,
     parity: u16,
@@ -446,7 +615,12 @@ impl Fields {
     pub fn on_line(&mut self, line: &Line, field_len: u32) -> FieldLine {
         let broad = line.pulse == Pulse::Broad;
         let mut new_field = false;
-        if broad && !self.in_vertical {
+        let due = self
+            .line
+            .is_none_or(|count| count + FIELD_SLACK >= field_len);
+        let vertical = broad && (due || self.broad_run > 0);
+        self.broad_run = if broad { self.broad_run + 1 } else { 0 };
+        if vertical && !self.in_vertical {
             self.in_vertical = true;
             self.parity = u16::from(self.broad_mid_before);
             self.line = Some(0);

@@ -84,8 +84,8 @@ pub use fec::{
 };
 pub use fir::{
     design_bandpass, design_gaussian, design_halfband, design_lowpass,
-    design_lowpass_blackman_harris, design_rds_biphase, design_rds_shaping, design_rrc,
-    design_rrc_unit_energy,
+    design_lowpass_blackman_harris, design_lowpass_kaiser, design_rds_biphase, design_rds_shaping,
+    design_rrc, design_rrc_unit_energy,
 };
 pub use firc::FirC;
 pub use fm::FmDemod;

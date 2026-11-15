@@ -3,6 +3,11 @@ use super::{AtvColor, AtvStandard};
 pub(super) const PAL_SUBCARRIER_HZ: f64 = 4_433_618.75;
 pub(super) const NTSC_SUBCARRIER_HZ: f64 = 315e6 / 88.0;
 pub(super) const CHROMA_BANDWIDTH_HZ: f64 = 1_300_000.0;
+/// SECAM's rest frequencies for the red and blue difference lines.
+pub(super) const SECAM_DR_HZ: f64 = 4_406_250.0;
+pub(super) const SECAM_DB_HZ: f64 = 4_250_000.0;
+/// The middle of SECAM's two rest frequencies, where its FM chroma is mixed down.
+pub(super) const SECAM_CENTRE_HZ: f64 = 0.5 * (SECAM_DR_HZ + SECAM_DB_HZ);
 
 /// Where a line's parts sit, in seconds from the sync leading edge, and how the levels relate.
 #[derive(Clone, Copy, Debug)]
@@ -61,16 +66,28 @@ pub(super) fn subcarrier_hz(color: AtvColor) -> Option<f64> {
         AtvColor::Monochrome => None,
         AtvColor::Pal => Some(PAL_SUBCARRIER_HZ),
         AtvColor::Ntsc => Some(NTSC_SUBCARRIER_HZ),
+        AtvColor::Secam => Some(SECAM_CENTRE_HZ),
     }
 }
 
-/// The rate lines are cut at: four times the subcarrier for colour, so chroma demodulates
-/// with signs alone, and the standard's own rate for monochrome, never above the input.
+/// The rate lines are cut at: four times the subcarrier for PAL and NTSC, so chroma
+/// demodulates with signs alone, PAL's for SECAM, and the standard's own rate for monochrome,
+/// never above the input.
 pub(super) fn video_rate_hz(standard: AtvStandard, color: AtvColor, input_rate: f64) -> f64 {
-    subcarrier_hz(color).map_or_else(
-        || seconds(standard).video_rate_hz.min(input_rate),
-        |carrier| 4.0 * carrier,
-    )
+    match color {
+        AtvColor::Monochrome => seconds(standard).video_rate_hz.min(input_rate),
+        AtvColor::Pal | AtvColor::Secam => 4.0 * PAL_SUBCARRIER_HZ,
+        AtvColor::Ntsc => 4.0 * NTSC_SUBCARRIER_HZ,
+    }
+}
+
+/// Transmitted lines between two whose subcarriers stand in opposite phase: the comb's
+/// reach. PAL splits by transform instead.
+pub(super) fn comb_lines(color: AtvColor) -> usize {
+    match color {
+        AtvColor::Ntsc => 1,
+        AtvColor::Pal | AtvColor::Monochrome | AtvColor::Secam => 0,
+    }
 }
 
 /// One standard's line geometry in video-rate samples.

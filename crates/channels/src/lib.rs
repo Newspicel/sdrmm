@@ -184,7 +184,7 @@ pub use ais::{AisChannel, AisMessage, AisParams};
 pub use am::AmParams;
 pub use aprs::{AprsMode, AprsPacket, AprsParams, AprsWeather};
 pub use apt::{AptImage, AptParams, AvhrrChannel};
-pub use atv::{AtvColor, AtvModulation, AtvParams, AtvStandard};
+pub use atv::{AtvColor, AtvModulation, AtvPalSplit, AtvParams, AtvStandard};
 pub use ble::{
     BLUETOOTH_BAND_RATE_HZ, BLUETOOTH_CHANNEL_WIDTH_HZ, BLUETOOTH_RATE_HZ, BleAddress,
     BleAddressKind, BleAdi, BleAdvert, BleAuxPointer, BleBeacon, BleFlags, BleLink,

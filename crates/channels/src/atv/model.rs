@@ -20,6 +20,15 @@ pub enum AtvStandard {
     SystemA405,
 }
 
+/// How PAL splits luma from chroma: within each field, or across frames as well.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AtvPalSplit {
+    #[default]
+    Field,
+    Frames,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AtvColor {
@@ -27,6 +36,7 @@ pub enum AtvColor {
     Monochrome,
     Pal,
     Ntsc,
+    Secam,
 }
 
 impl AtvStandard {
@@ -58,6 +68,10 @@ fn default_atv_rate_hz() -> f64 {
     20_000_000.0
 }
 
+fn default_saturation_pct() -> f64 {
+    100.0
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AtvParams {
     #[serde(default)]
@@ -78,6 +92,12 @@ pub struct AtvParams {
     pub color: AtvColor,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sound_subcarrier_hz: Option<f64>,
+    #[serde(default = "default_saturation_pct")]
+    pub saturation_pct: f64,
+    #[serde(default)]
+    pub hue_deg: f64,
+    #[serde(default)]
+    pub pal_split: AtvPalSplit,
 }
 
 impl Default for AtvParams {
@@ -91,6 +111,21 @@ impl Default for AtvParams {
             interlace: true,
             color: AtvColor::default(),
             sound_subcarrier_hz: None,
+            saturation_pct: default_saturation_pct(),
+            hue_deg: 0.0,
+            pal_split: AtvPalSplit::default(),
+        }
+    }
+}
+
+impl AtvParams {
+    /// These settings with the picture adjustments, which apply without a restart, cleared.
+    #[must_use]
+    pub(super) fn without_adjustments(&self) -> Self {
+        Self {
+            saturation_pct: default_saturation_pct(),
+            hue_deg: 0.0,
+            ..self.clone()
         }
     }
 }
@@ -104,7 +139,11 @@ labelled! {
 }
 
 labelled! {
-    AtvColor { Monochrome => "Mono", Pal => "PAL", Ntsc => "NTSC" }
+    AtvPalSplit { Field => "2D", Frames => "3D" }
+}
+
+labelled! {
+    AtvColor { Monochrome => "Mono", Pal => "PAL", Ntsc => "NTSC", Secam => "SECAM" }
 }
 
 impl sdrmm_wire::DecoderSettings for AtvParams {

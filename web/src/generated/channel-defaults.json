@@ -41,10 +41,13 @@
     "type": "atv",
     "settings": {
       "color": "monochrome",
+      "hue_deg": 0.0,
       "interlace": true,
       "invert": false,
       "modulation": "am",
+      "pal_split": "field",
       "rate_hz": 20000000.0,
+      "saturation_pct": 100.0,
       "standard": "ccir625"
     }
   },

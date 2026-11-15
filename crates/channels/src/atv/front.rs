@@ -1,6 +1,9 @@
+use std::f64::consts::{PI, TAU};
+
 use num_complex::Complex;
 use sdrmm_dsp::{
-    Ddc, Decimator, Deemphasis, RealDecimator, RealResampler, design_lowpass, phase_diff_into,
+    Ddc, Deemphasis, RealDecimator, RealResampler, blackman_harris, design_lowpass, fast_arg,
+    phase_diff_into,
 };
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 
@@ -32,33 +35,214 @@ impl Discriminator {
     }
 }
 
-#[derive(Clone, Debug)]
 pub(super) enum Detector {
-    Envelope(Box<Decimator>, Vec<Complex<f32>>),
+    Synchronous(Box<Synchronous>),
     Discriminator(Discriminator),
 }
 
 impl Detector {
-    pub fn am(cutoff: f64) -> Self {
-        Self::Envelope(
-            Box::new(Decimator::new(
-                &design_lowpass(AM_TAPS, cutoff.min(0.49)),
-                1,
-            )),
-            Vec::new(),
-        )
+    /// Synchronous AM with a Nyquist slope: `video` and `ramp` are shares of the rate.
+    pub fn am(video: f64, ramp: f64) -> Self {
+        Self::Synchronous(Box::new(Synchronous::new(video, ramp)))
     }
 
     pub fn process(&mut self, iq: &[Complex<f32>], video: &mut Vec<f32>) {
         match self {
-            Self::Envelope(filter, filtered) => {
-                filter.process(iq, filtered);
-                video.clear();
-                video.extend(filtered.iter().map(|sample| sample.norm()));
-            }
+            Self::Synchronous(detector) => detector.process(iq, video),
             Self::Discriminator(fm) => fm.process(iq, video),
         }
     }
+}
+
+/// Samples per carrier loop update; the loop pulls in a carrier up to half a turn per block.
+const CARRIER_BLOCK: usize = 32;
+const CARRIER_PULL: f64 = 0.9 * PI / CARRIER_BLOCK as f64;
+const CARRIER_KP: f32 = 0.02;
+const CARRIER_KI: f64 = 2.5e-4;
+const CARRIER_KF: f64 = 0.02;
+
+/// Holds the vision carrier on the real axis: a frequency loop pulls it in, a phase loop
+/// settles it, both updated once a block so the sample loop is a single rotation.
+#[derive(Clone, Debug)]
+struct CarrierLock {
+    turn: Complex<f32>,
+    step: Complex<f32>,
+    freq: f64,
+    sum: Complex<f32>,
+    previous: Complex<f32>,
+    count: usize,
+}
+
+impl CarrierLock {
+    fn new() -> Self {
+        Self {
+            turn: Complex::new(1.0, 0.0),
+            step: Complex::new(1.0, 0.0),
+            freq: 0.0,
+            sum: Complex::new(0.0, 0.0),
+            previous: Complex::new(0.0, 0.0),
+            count: 0,
+        }
+    }
+
+    fn derotate(&mut self, iq: &[Complex<f32>], re: &mut Vec<f32>, im: &mut Vec<f32>) {
+        re.clear();
+        im.clear();
+        re.resize(iq.len(), 0.0);
+        im.resize(iq.len(), 0.0);
+        let mut at = 0;
+        while at < iq.len() {
+            let take = (CARRIER_BLOCK - self.count).min(iq.len() - at);
+            let end = at + take;
+            let sum = self.turn_block(&iq[at..end], &mut re[at..end], &mut im[at..end]);
+            self.sum += sum;
+            self.count += take;
+            at = end;
+            if self.count == CARRIER_BLOCK {
+                self.update();
+            }
+        }
+    }
+
+    /// Turns a stretch inside one block by four interleaved oscillators, so no sample waits
+    /// on the one before; returns the stretch's sum.
+    fn turn_block(&mut self, iq: &[Complex<f32>], re: &mut [f32], im: &mut [f32]) -> Complex<f32> {
+        let step2 = self.step * self.step;
+        let step4 = step2 * step2;
+        let mut lanes = [
+            self.turn,
+            self.turn * self.step,
+            self.turn * step2,
+            self.turn * step2 * self.step,
+        ];
+        let mut sums = [Complex::new(0.0, 0.0); 4];
+        let (chunks, tail) = iq.as_chunks::<4>();
+        for (z, (r, i)) in chunks.iter().zip(
+            re.as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .zip(im.as_chunks_mut::<4>().0.iter_mut()),
+        ) {
+            for lane in 0..4 {
+                let y = z[lane] * lanes[lane];
+                sums[lane] += y;
+                r[lane] = y.re;
+                i[lane] = y.im;
+                lanes[lane] *= step4;
+            }
+        }
+        let done = chunks.len() * 4;
+        let mut turn = lanes[0];
+        for (k, z) in tail.iter().enumerate() {
+            let y = z * turn;
+            sums[0] += y;
+            re[done + k] = y.re;
+            im[done + k] = y.im;
+            turn *= self.step;
+        }
+        self.turn = turn;
+        sums.iter().sum()
+    }
+
+    fn update(&mut self) {
+        let sum = std::mem::take(&mut self.sum);
+        self.count = 0;
+        let (error, drift) = if sum.norm_sqr() > 0.0 && sum.is_finite() {
+            (fast_arg(sum), fast_arg(sum * self.previous.conj()))
+        } else {
+            (0.0, 0.0)
+        };
+        let correction = Complex::from_polar(1.0, -CARRIER_KP * error);
+        self.previous = sum * correction;
+        self.freq = (self.freq
+            + (CARRIER_KI * f64::from(error) + CARRIER_KF * f64::from(drift))
+                / CARRIER_BLOCK as f64)
+            .clamp(-CARRIER_PULL, CARRIER_PULL);
+        let turn = self.turn * correction;
+        self.turn = turn / turn.norm();
+        self.step = Complex::from_polar(1.0, -self.freq as f32);
+    }
+}
+
+/// AM video detected against the recovered carrier through a Nyquist slope, so a vestigial
+/// sideband comes out flat and its chroma unbent; a double sideband passes the same way.
+#[derive(Clone, Debug)]
+pub(super) struct Synchronous {
+    carrier: CarrierLock,
+    even: RealDecimator,
+    odd: RealDecimator,
+    re: Vec<f32>,
+    im: Vec<f32>,
+    even_out: Vec<f32>,
+    odd_out: Vec<f32>,
+}
+
+impl Synchronous {
+    fn new(video: f64, ramp: f64) -> Self {
+        let (even, odd) = nyquist_taps(AM_TAPS, video, ramp);
+        Self {
+            carrier: CarrierLock::new(),
+            even: RealDecimator::new(&even, 1),
+            odd: RealDecimator::new(&odd, 1),
+            re: Vec::new(),
+            im: Vec::new(),
+            even_out: Vec::new(),
+            odd_out: Vec::new(),
+        }
+    }
+
+    fn process(&mut self, iq: &[Complex<f32>], video: &mut Vec<f32>) {
+        self.carrier.derotate(iq, &mut self.re, &mut self.im);
+        self.even.process(&self.re, &mut self.even_out);
+        self.odd.process(&self.im, &mut self.odd_out);
+        video.clear();
+        video.extend(
+            self.even_out
+                .iter()
+                .zip(&self.odd_out)
+                .map(|(&re, &im)| re - im),
+        );
+    }
+}
+
+/// The real and imaginary taps of a filter that rises linearly across `-ramp..ramp` and
+/// passes up to `video`: its slope and its mirror sum to one, so synchronous detection of
+/// either sideband arrangement is flat.
+pub(super) fn nyquist_taps(taps: usize, video: f64, ramp: f64) -> (Vec<f32>, Vec<f32>) {
+    const GRID: usize = 2048;
+    let centre = (taps - 1) as f64 / 2.0;
+    let gain = |f: f64| {
+        if f > video {
+            0.0
+        } else {
+            ((f + ramp) / (2.0 * ramp)).clamp(0.0, 1.0)
+        }
+    };
+    let window = blackman_harris(taps);
+    let mut even = Vec::with_capacity(taps);
+    let mut odd = Vec::with_capacity(taps);
+    for (n, &w) in window.iter().enumerate() {
+        let t = n as f64 - centre;
+        let h: Complex<f64> = (0..GRID)
+            .map(|k| {
+                let f = k as f64 / GRID as f64 - 0.5;
+                Complex::from_polar(gain(f), TAU * f * t)
+            })
+            .sum::<Complex<f64>>()
+            / GRID as f64;
+        even.push((h.re * f64::from(w)) as f32);
+        odd.push((h.im * f64::from(w)) as f32);
+    }
+    let dc: f32 = even.iter().sum();
+    let scale = if dc.abs() > f32::EPSILON {
+        1.0 / dc
+    } else {
+        1.0
+    };
+    (
+        even.iter().map(|t| t * scale).collect(),
+        odd.iter().map(|t| t * scale).collect(),
+    )
 }
 
 /// The detected video taken from the channel rate to the line rate.
