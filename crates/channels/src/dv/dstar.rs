@@ -185,6 +185,7 @@ impl ChannelRx for DstarChannel {
             &self.slicer,
             shadow,
         );
+        self.forward_shadow_calls(out);
         self.tap(out);
         match self.source {
             Source::Discriminator => self.decoder.vocoder.drain(out),
@@ -198,6 +199,14 @@ impl ChannelRx for DstarChannel {
             Source::Coherent => self.coherent_decoder.rejected(),
         }
     }
+}
+
+fn same_call(a: &DvFrame, b: &DvFrame) -> bool {
+    a.kind == b.kind
+        && match a.kind {
+            DvFrameKind::Header => a.source_call == b.source_call,
+            _ => a.text == b.text,
+        }
 }
 
 fn feed(decoder: &mut Decoder, soft: &[f32], slicer: &Mapping, out: &mut ChannelOutputs) {
@@ -227,6 +236,30 @@ impl DstarChannel {
         self.decoder
             .vocoder
             .swap_chip(&mut self.coherent_decoder.vocoder);
+    }
+
+    /// The tracker can change hands mid-call, so a call only the shadow decoder completed is
+    /// still a call. Each side then knows what the other reported, so neither repeats it.
+    fn forward_shadow_calls(&mut self, out: &mut ChannelOutputs) {
+        let (live, shadow) = match self.source {
+            Source::Discriminator => (&mut self.decoder, &mut self.coherent_decoder),
+            Source::Coherent => (&mut self.coherent_decoder, &mut self.decoder),
+        };
+        for event in self.shadow.events.drain(..) {
+            let Some(frame) = event.read::<DvFrame>() else {
+                continue;
+            };
+            let heard_live = out
+                .events
+                .iter()
+                .filter_map(DecoderEvent::read::<DvFrame>)
+                .any(|live_frame| same_call(&live_frame, &frame));
+            if !heard_live && live.first_to_hear(&frame) {
+                out.events.push(event);
+            }
+        }
+        shadow.reported.clone_from(&live.reported);
+        shadow.announced.clone_from(&live.announced);
     }
 
     fn tap(&self, out: &mut ChannelOutputs) {
@@ -305,6 +338,19 @@ impl Decoder {
         self.heard.clone_from(&other.heard);
         self.text = other.text;
         self.blocks = other.blocks;
+    }
+
+    fn first_to_hear(&mut self, frame: &DvFrame) -> bool {
+        let (known, heard) = match frame.kind {
+            DvFrameKind::Header => (&mut self.reported, &frame.source_call),
+            DvFrameKind::Data => (&mut self.announced, &frame.text),
+            _ => return false,
+        };
+        if heard.is_none() || *known == *heard {
+            return false;
+        }
+        known.clone_from(heard);
+        true
     }
 
     fn reset(&mut self) {
@@ -515,6 +561,47 @@ mod tests {
         );
         assert_eq!(header.via.as_deref(), Some(call.repeater.as_str()));
         assert_eq!(header.group_call, Some(true));
+    }
+
+    #[test]
+    fn every_call_between_stretches_of_noise_is_heard() {
+        const NOISE_AMPLITUDE: f32 = 0.122;
+        let gap = vec![Complex::default(); 14_400];
+        let mut clean = gap.clone();
+        let callers: Vec<String> = (b'A'..=b'H')
+            .map(|last| format!("DL1AB{}", char::from(last)))
+            .collect();
+        for mycall in &callers {
+            let call = tx::Call {
+                mycall: mycall.clone(),
+                ..tx::Call::default()
+            };
+            clean.extend(tx::transmission(&call, INPUT_RATE_HZ));
+            clean.extend_from_slice(&gap);
+        }
+        let hiss = crate::testutil::complex_noise(4, NOISE_AMPLITUDE, clean.len());
+        let iq: Vec<Complex<f32>> = clean.iter().zip(hiss).map(|(&s, n)| s + n).collect();
+
+        assert_eq!(headers(&iq, 4_096), callers);
+        assert_eq!(headers(&clean, 65_536), callers, "a call was repeated");
+    }
+
+    fn headers(iq: &[Complex<f32>], block: usize) -> Vec<String> {
+        let mut chan = channel();
+        let mut out = ChannelOutputs::default();
+        let mut heard = Vec::new();
+        for chunk in iq.chunks(block) {
+            out.reset();
+            chan.process(chunk, &mut out);
+            heard.extend(
+                out.events
+                    .iter()
+                    .filter_map(DecoderEvent::read::<DvFrame>)
+                    .filter(|frame| frame.kind == DvFrameKind::Header)
+                    .filter_map(|frame| frame.source_call),
+            );
+        }
+        heard
     }
 
     #[test]
