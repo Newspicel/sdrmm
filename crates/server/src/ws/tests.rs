@@ -279,19 +279,17 @@ async fn a_baseband_port_streams_iq_and_symbols_in_the_media_id_space() {
         vec![
             radio("band"),
             channel("voice", "nfm"),
-            of("scope", sdrmm_wire::NodeKind::BasebandScope),
             of("spk", sdrmm_wire::NodeKind::Speaker),
         ],
         vec![
             wire(("radio", "iq"), ("voice", "iq")),
-            wire(("voice", "baseband"), ("scope", "baseband")),
             wire(("voice", "audio"), ("spk", "audio")),
         ],
     ))
     .await;
     subscribe_port(&mut ws, "spk", "audio").await;
     let (audio_id, _, _) = port_stream(&mut ws).await;
-    subscribe_port(&mut ws, "scope", "baseband").await;
+    subscribe_port(&mut ws, "voice", "baseband").await;
     let mut ids = std::collections::HashMap::new();
     for _ in 0..2 {
         let (stream_id, kind, source) = port_stream(&mut ws).await;
@@ -314,7 +312,7 @@ async fn a_baseband_port_streams_iq_and_symbols_in_the_media_id_space() {
         }
     }
 
-    unsubscribe_port(&mut ws, "scope", "baseband").await;
+    unsubscribe_port(&mut ws, "voice", "baseband").await;
     let gone = [stopped(&mut ws).await, stopped(&mut ws).await];
     assert!(gone.contains(&(iq_id, StreamKind::Iq)));
     assert!(gone.contains(&(symbols_id, StreamKind::Symbols)));
@@ -346,6 +344,7 @@ async fn a_port_derives_a_spectrum_from_its_own_signal_only_when_asked() {
             fps: 30,
             bins: 512,
             spectrum: true,
+            ..Default::default()
         },
     )
     .await;
@@ -372,6 +371,7 @@ async fn a_port_derives_a_spectrum_from_its_own_signal_only_when_asked() {
             fps: 30,
             bins: 512,
             spectrum: false,
+            ..Default::default()
         },
     )
     .await;
@@ -459,6 +459,7 @@ async fn two_lanes_of_one_radio_stream_independently() {
         fps: 30,
         bins: 64,
         spectrum: false,
+        ..Default::default()
     };
     subscribe_with(&mut ws, "first", "iq", params).await;
     let (lane0, _, _) = port_stream(&mut ws).await;
@@ -500,6 +501,7 @@ async fn spectrum_lifecycle_reports_kind_and_streams_frames() {
             fps: 30,
             bins: 64,
             spectrum: false,
+            ..Default::default()
         },
     )
     .await;
@@ -775,6 +777,7 @@ async fn spectrum_resumes_after_a_reconnect_without_a_resubscribe() {
             fps: 30,
             bins: 64,
             spectrum: false,
+            ..Default::default()
         },
     )
     .await;
@@ -1454,6 +1457,7 @@ async fn watch_scope(addr: std::net::SocketAddr, bins: u16) -> WsClient {
         fps: 30,
         bins,
         spectrum: false,
+        ..Default::default()
     };
     subscribe_with(&mut ws, "scope", "iq", params).await;
     port_stream(&mut ws).await;

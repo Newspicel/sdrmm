@@ -88,6 +88,39 @@ pub struct StreamParams {
     /// something else as well.
     #[serde(default)]
     pub spectrum: bool,
+    #[serde(default)]
+    pub overlap: SpectrumOverlap,
+}
+
+/// How far a Scope overlaps the transforms it averages. A lane runs the most any open Scope
+/// asks for.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SpectrumOverlap {
+    /// Transforms side by side, the least CPU.
+    Off,
+    /// As much overlap as a share of this CPU affords.
+    #[default]
+    Auto,
+    /// Every transform the display can average, whatever it costs.
+    Full,
+}
+
+impl SpectrumOverlap {
+    pub const ALL: [Self; 3] = [Self::Off, Self::Auto, Self::Full];
 }
 
 const fn default_fps() -> u16 {
@@ -108,6 +141,7 @@ impl Default for StreamParams {
             fps: default_fps(),
             bins: default_bins(),
             spectrum: false,
+            overlap: SpectrumOverlap::Auto,
         }
     }
 }

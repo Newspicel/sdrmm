@@ -221,6 +221,7 @@ async fn listen(mut socket: WsClient, channels: usize, ear: &Ear) {
             fps: 30,
             bins: 4096,
             spectrum: false,
+            ..Default::default()
         },
     )
     .await;

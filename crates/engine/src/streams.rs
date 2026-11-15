@@ -8,13 +8,13 @@ use sdrmm_device::DeviceError;
 use sdrmm_wire::{
     AudioProcessing, AudioRoute, ChannelDescriptor, ChannelInfo, ChannelLevel, DeviceSetStatus,
     HuntSettings, HuntStatus, LaneLevel, PlaybackRequest, PlaybackStatus, ScanSettings,
-    ScannerStatus, ServerEvent, StateScope,
+    ScannerStatus, ServerEvent, SpectrumOverlap, StateScope,
 };
 use tokio::sync::broadcast;
 
 use crate::{
-    AudioPacket, BackgroundSpectrum, DspCommand, Engine, EngineError, IqBlock, PcmBlock,
-    SpectrumSnapshot, SymbolBlock, VideoPacket,
+    AudioPacket, BackgroundSpectrum, DspCommand, Engine, EngineError, IqBlock, OverlapClaim,
+    PcmBlock, SpectrumSnapshot, SymbolBlock, VideoPacket,
     audio_fx::{AudioFxHub, FxSource},
     hunt, lock_runtime,
     planning::{descriptor_for, plan_center},
@@ -492,6 +492,26 @@ impl Engine {
         };
         lock_runtime(&runtime)
             .subscribe_background(stream)
+            .ok_or(EngineError::StreamOutOfRange { stream, streams })
+    }
+
+    /// Asks a lane to overlap its display transforms by `overlap` while the claim lives.
+    pub fn claim_spectrum_overlap(
+        &self,
+        ds: u32,
+        stream: u32,
+        overlap: SpectrumOverlap,
+    ) -> Result<OverlapClaim, EngineError> {
+        let (runtime, streams) = {
+            let inner = self.lock();
+            let state = inner
+                .device_sets
+                .get(&ds)
+                .ok_or(EngineError::DeviceSetNotFound(ds))?;
+            (state.runtime.clone(), state.physical_streams())
+        };
+        lock_runtime(&runtime)
+            .claim_overlap(stream, overlap)
             .ok_or(EngineError::StreamOutOfRange { stream, streams })
     }
 }

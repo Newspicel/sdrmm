@@ -16,7 +16,7 @@ fn without_a_viewer_transforms_never_overlap_nor_cost_more() {
     for rate in RATES {
         let size = spectrum_size(rate);
         let analyzer = SpectrumAnalyzer::Cpu(CpuSpectrum::new(size, CPU_BUDGET));
-        let viewed = analyzer.cadence(rate, size, Watch::Viewer);
+        let viewed = analyzer.cadence(rate, size, Watch::Viewer(SpectrumOverlap::Auto));
         let background = analyzer.cadence(rate, size, Watch::Background);
         assert!(background.hop >= size, "{rate}");
         assert!(background.hop >= viewed.hop, "{rate}");
@@ -186,4 +186,19 @@ fn gpu_matches_cpu_when_a_hardware_adapter_is_available() {
             );
         }
     }
+}
+
+#[test]
+fn a_viewer_picks_how_far_the_cpu_overlaps() {
+    let rate = 2_400_000.0;
+    let size = spectrum_size(rate);
+    let slow = SpectrumAnalyzer::Cpu(CpuSpectrum::new(size, unlapped_budget(size)));
+    let at = |overlap| slow.cadence(rate, size, Watch::Viewer(overlap));
+    let off = at(SpectrumOverlap::Off);
+    assert!(off.hop >= size, "hop {}", off.hop);
+    assert_eq!(off.averages, UNLAPPED_AVERAGES);
+    assert_eq!(at(SpectrumOverlap::Auto), off);
+    let full = at(SpectrumOverlap::Full);
+    assert!(full.hop <= size / 2, "hop {}", full.hop);
+    assert_eq!(full.averages, MAX_AVERAGES);
 }

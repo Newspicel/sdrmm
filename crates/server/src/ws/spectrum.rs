@@ -4,7 +4,7 @@ use std::{
 };
 
 use sdrmm_dsp::{DbWindowSmoother, SpanFloor, adaptive_db_window, decimate_signal, quantize_db};
-use sdrmm_engine::{Engine, SpectrumSnapshot};
+use sdrmm_engine::{Engine, OverlapClaim, SpectrumSnapshot};
 use sdrmm_wire::{SPECTRUM_SIGNAL_MARGIN_DB, ServerEvent, SpectrumFrame, StreamKind};
 use tokio::sync::broadcast;
 
@@ -196,6 +196,7 @@ pub(super) fn spawn_spectrum(
     lane: SpectrumLane,
     params: sdrmm_wire::StreamParams,
     snapshots: broadcast::Receiver<SpectrumSnapshot>,
+    claim: OverlapClaim,
     out_tx: Outbox,
     engine: Arc<Engine>,
     share: &Arc<SpectrumShare>,
@@ -209,6 +210,7 @@ pub(super) fn spawn_spectrum(
     let mut lines = share.join(reduction, snapshots, engine);
     let stream_id = lane.stream_id;
     tokio::spawn(async move {
+        let _claim = claim;
         loop {
             match lines.recv().await {
                 Ok(line) => {

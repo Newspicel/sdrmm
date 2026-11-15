@@ -2,6 +2,10 @@ import type { SpectrumFrame } from "./frame";
 import { AUDIO_RATE_HZ } from "./limits";
 import type { Listener, Unsubscribe } from "./listeners";
 import { type PortHold, type PortHub, portHub, portKey, sourceKey } from "./ports";
+import type { StreamParams } from "./types";
+
+export type SpectrumOverlap = NonNullable<StreamParams["overlap"]>;
+export const SPECTRUM_OVERLAPS: readonly SpectrumOverlap[] = ["off", "auto", "full"];
 
 export interface SpectrumSocket {
   on<K extends "spectrum">(kind: K, listener: Listener<K>): Unsubscribe;
@@ -56,11 +60,13 @@ export function resampleRows(
 interface Want {
   bins: number;
   fps: number;
+  overlap: SpectrumOverlap;
 }
 
 export interface SpectrumWant {
   bins?: number;
   fps?: number;
+  overlap?: SpectrumOverlap;
   source?: string;
 }
 
@@ -78,6 +84,14 @@ function resolveFps(desired: Iterable<Want>): number {
     top = Math.max(top, want.fps);
   }
   return Math.max(1, top);
+}
+
+function resolveOverlap(desired: Iterable<Want>): SpectrumOverlap {
+  let top = 0;
+  for (const want of desired) {
+    top = Math.max(top, SPECTRUM_OVERLAPS.indexOf(want.overlap));
+  }
+  return SPECTRUM_OVERLAPS[top] ?? "auto";
 }
 
 export interface Lane {
@@ -167,6 +181,7 @@ interface Watched {
   release: number;
   bins: number;
   fps: number;
+  overlap: SpectrumOverlap;
   hold: PortHold | null;
 }
 
@@ -218,8 +233,8 @@ export class SpectrumHub {
     listener: (frame: SpectrumFrame) => void,
     options: SpectrumWant = {},
   ): () => void {
-    const { bins = SPECTRUM_BINS, fps = SPECTRUM_FPS, source } = options;
-    const want: Want = { bins, fps };
+    const { bins = SPECTRUM_BINS, fps = SPECTRUM_FPS, overlap = "auto", source } = options;
+    const want: Want = { bins, fps, overlap };
     const key = laneKey(node, port, source);
     let lane = this.lanes.get(key);
     if (lane === undefined) {
@@ -230,6 +245,7 @@ export class SpectrumHub {
         release: 0,
         bins: resolveBins([want]),
         fps: resolveFps([want]),
+        overlap,
         hold: null,
       };
       this.lanes.set(key, lane);
@@ -297,9 +313,11 @@ export class SpectrumHub {
   private refresh(watched: Watched): void {
     const bins = resolveBins(watched.listeners.values());
     const fps = resolveFps(watched.listeners.values());
-    if (bins !== watched.bins || fps !== watched.fps) {
+    const overlap = resolveOverlap(watched.listeners.values());
+    if (bins !== watched.bins || fps !== watched.fps || overlap !== watched.overlap) {
       watched.bins = bins;
       watched.fps = fps;
+      watched.overlap = overlap;
       this.send(watched);
     }
   }
@@ -309,7 +327,8 @@ export class SpectrumHub {
       fps: this.hidden ? SPECTRUM_HIDDEN_FPS : watched.fps,
       bins: watched.bins,
       spectrum: true,
-    };
+      overlap: this.hidden ? "off" : watched.overlap,
+    } satisfies StreamParams;
     const { node, port } = watched.lane;
     if (watched.hold === null) {
       watched.hold = this.ports.hold(node, port, params);

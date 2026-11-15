@@ -323,9 +323,9 @@ pub use workspace_state::{
     WORKSPACE_STATE_VERSION, WorkspaceChannel, WorkspaceDevice, WorkspaceState, WorkspaceTrunk,
 };
 pub use ws::{
-    ClientCommand, PortActivity, ServerEvent, StateScope, StreamKind, StreamParams, SurfaceFit,
-    SurfaceRefusal, WEBTRANSPORT_LENGTH_BYTES, WEBTRANSPORT_PATH, WS_BEARER_PROTOCOL_PREFIX,
-    WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
+    ClientCommand, PortActivity, ServerEvent, SpectrumOverlap, StateScope, StreamKind,
+    StreamParams, SurfaceFit, SurfaceRefusal, WEBTRANSPORT_LENGTH_BYTES, WEBTRANSPORT_PATH,
+    WS_BEARER_PROTOCOL_PREFIX, WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
 };
 
 #[cfg(test)]
@@ -361,6 +361,7 @@ mod contract_tests {
                 fps: 20,
                 bins: 512,
                 spectrum: false,
+                ..Default::default()
             },
         };
         let json = serde_json::to_string(&cmd).unwrap();

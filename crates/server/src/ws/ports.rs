@@ -450,9 +450,12 @@ impl Session {
         let out = self.out.clone();
         match tapped.clone() {
             Tapped::Spectrum { device_set, stream } => {
-                let rx = flatten_join(
+                let (rx, claim) = flatten_join(
                     tokio::task::spawn_blocking(move || {
-                        engine.subscribe_spectrum(device_set, stream)
+                        let rx = engine.subscribe_spectrum(device_set, stream)?;
+                        let claim =
+                            engine.claim_spectrum_overlap(device_set, stream, params.overlap)?;
+                        Ok((rx, claim))
                     })
                     .await,
                 )?;
@@ -465,6 +468,7 @@ impl Session {
                     lane,
                     params,
                     rx,
+                    claim,
                     out,
                     self.engine.clone(),
                     &self.state.spectra,

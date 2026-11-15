@@ -388,6 +388,8 @@ function ScopeChrome({
           onCustom={display.chooseCustom}
           average={display.average}
           onAverage={display.chooseAverage}
+          overlap={display.overlap}
+          onOverlap={display.chooseOverlap}
           traces={display.traceModes}
           onTrace={display.toggleTrace}
           phosphor={display.phosphor}

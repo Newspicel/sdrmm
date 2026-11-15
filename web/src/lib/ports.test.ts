@@ -76,6 +76,13 @@ describe("PortHub", () => {
     expect(combinedParams([undefined])).toBeUndefined();
   });
 
+  it("combines overlap as the most any holder asks for", () => {
+    expect(combinedParams([{ overlap: "off" }, { overlap: "full" }, { overlap: "auto" }])).toEqual({
+      overlap: "full",
+    });
+    expect(combinedParams([{ overlap: "off" }, { fps: 5 }])).toEqual({ overlap: "off", fps: 5 });
+  });
+
   it("knows each stream by its id, and the reason a port is refused", () => {
     const { registry, hub } = bench();
     hub.hold("spk", "audio");

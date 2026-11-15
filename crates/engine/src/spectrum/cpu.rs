@@ -4,13 +4,12 @@ use num_complex::Complex;
 use sdrmm_dsp::{PowerAverage, SpectrumAnalyzer};
 
 use super::{
-    CPU_BUDGET, Cadence, SpectrumFrame, TARGET_FPS, Tuning, cpu_analyzer, history::SpectrumHistory,
+    CPU_BUDGET, Cadence, SpectrumFrame, Tuning, cpu_analyzer, history::SpectrumHistory,
+    unlapped_budget,
 };
 
 /// Share of one core the display's transforms may take, so a slow core overlaps less.
 const CPU_SHARE: f64 = 0.05;
-/// Averages a frame the CPU always affords, the cadence from before transforms overlapped.
-const CPU_MIN_AVERAGES: u32 = 16;
 const PROBE_RUNS: usize = 5;
 
 /// Averages overlapping transforms on the calling thread, in linear power.
@@ -115,9 +114,9 @@ pub(crate) fn cpu_budget(size: usize) -> f64 {
 }
 
 /// What [`CPU_SHARE`] of a core takes at `transform` each, within [`CPU_BUDGET`] and never
-/// fewer than [`CPU_MIN_AVERAGES`] a frame.
+/// below the unlapped cadence.
 fn budget_for(size: usize, transform: Duration) -> f64 {
-    let floor = TARGET_FPS * f64::from(CPU_MIN_AVERAGES) * size as f64;
+    let floor = unlapped_budget(size);
     let affordable = CPU_SHARE * size as f64 / transform.as_secs_f64().max(1e-9);
     affordable.min(CPU_BUDGET).max(floor)
 }
@@ -248,7 +247,7 @@ mod tests {
         let size = 4_096;
         let budget = budget_for(size, Duration::from_micros(200));
         let cadence = Cadence::new(2_400_000.0, size, budget);
-        assert_eq!(cadence.averages, CPU_MIN_AVERAGES);
+        assert_eq!(cadence.averages, crate::spectrum::UNLAPPED_AVERAGES);
         assert_eq!(cadence.hop, 5_000);
     }
 
@@ -264,7 +263,7 @@ mod tests {
     fn the_budget_lies_between_the_floor_and_the_cap() {
         let size = 4_096;
         let budget = cpu_budget(size);
-        let floor = TARGET_FPS * f64::from(CPU_MIN_AVERAGES) * size as f64;
+        let floor = unlapped_budget(size);
         assert!((floor..=CPU_BUDGET).contains(&budget), "{budget}");
     }
 }

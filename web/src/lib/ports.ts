@@ -216,11 +216,21 @@ function sameParams(a: StreamParams | undefined, b: StreamParams | undefined): b
   if (a === undefined || b === undefined) {
     return a === b;
   }
-  return a.fps === b.fps && a.bins === b.bins && a.spectrum === b.spectrum;
+  return (
+    a.fps === b.fps && a.bins === b.bins && a.spectrum === b.spectrum && a.overlap === b.overlap
+  );
 }
 
-/// What every holder of a port needs at once: the fastest rate, the finest bins, and the
-/// spectrum if any holder reads it.
+type Overlap = NonNullable<StreamParams["overlap"]>;
+
+const OVERLAP_RANK: Record<Overlap, number> = { off: 0, auto: 1, full: 2 };
+
+function mostOverlap(a: Overlap | undefined, b: Overlap): Overlap {
+  return a !== undefined && OVERLAP_RANK[a] >= OVERLAP_RANK[b] ? a : b;
+}
+
+/// What every holder of a port needs at once: the fastest rate, the finest bins, the most
+/// overlap, and the spectrum if any holder reads it.
 export function combinedParams(
   wants: Iterable<StreamParams | undefined>,
 ): StreamParams | undefined {
@@ -234,6 +244,9 @@ export function combinedParams(
       ...(want.fps === undefined ? {} : { fps: Math.max(combined?.fps ?? 0, want.fps) }),
       ...(want.bins === undefined ? {} : { bins: Math.max(combined?.bins ?? 0, want.bins) }),
       ...(want.spectrum === true ? { spectrum: true } : {}),
+      ...(want.overlap === undefined
+        ? {}
+        : { overlap: mostOverlap(combined?.overlap, want.overlap) }),
     };
   }
   return combined;

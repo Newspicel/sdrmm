@@ -7754,6 +7754,12 @@ export interface components {
             /** Format: double */
             stop_hz?: number | null;
         };
+        /**
+         * @description How far a Scope overlaps the transforms it averages. A lane runs the most any open Scope
+         *     asks for.
+         * @enum {string}
+         */
+        SpectrumOverlap: "off" | "auto" | "full";
         Spot: {
             at: components["schemas"]["LatLon"];
             callsign: string;
@@ -7899,6 +7905,7 @@ export interface components {
             bins?: number;
             /** Format: int32 */
             fps?: number;
+            overlap?: components["schemas"]["SpectrumOverlap"];
             /**
              * @description Also send the spectrum this port can derive from its own signal, for ports that carry
              *     something else as well.

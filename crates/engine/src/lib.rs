@@ -76,7 +76,7 @@ pub use iq::{IQ_BLOCK_SAMPLES, IQ_BLOCKS_PER_SEC, IqBlock};
 pub use placement::{Allocation, Lane, Placeable, Placement};
 pub(crate) use planning::{dc_block, descriptor_for};
 pub use recording::FinalizedRecording;
-pub use runtime::{BackgroundSpectrum, SpectrumSnapshot};
+pub use runtime::{BackgroundSpectrum, OverlapClaim, SpectrumSnapshot};
 pub use symbols::{SYMBOL_BLOCKS_PER_SEC, SymbolBlock};
 pub use transmit::{TransmitRequest, TransmitSource};
 pub use trunking::TrunkSystem;

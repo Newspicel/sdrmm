@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use num_complex::Complex;
 use sdrmm_dsp::blackman_harris;
+use sdrmm_wire::SpectrumOverlap;
 
 use crate::runtime::Watch;
 
@@ -16,6 +17,8 @@ mod history;
 const GPU_MIN_FFT_SIZE: usize = 32_768;
 const TARGET_FPS: f64 = 30.0;
 const MAX_AVERAGES: u32 = 64;
+/// Averages a frame without overlap, the cadence from before transforms overlapped.
+const UNLAPPED_AVERAGES: u32 = 16;
 /// Most transformed samples per second the DSP thread spends on the display, however fast the
 /// core. At 245.76 MS/s this keeps the 16 averages a frame the CPU path always had.
 const CPU_BUDGET: f64 = 128e6;
@@ -165,32 +168,34 @@ pub(crate) enum SpectrumAnalyzer {
 }
 
 impl SpectrumAnalyzer {
-    /// The display's overlapped cadence while someone looks; otherwise the same without overlap.
+    /// The cadence its viewers ask for; without a viewer the same, but never overlapped.
     pub(crate) fn cadence(&self, sample_rate: f64, size: usize, watch: Watch) -> Cadence {
-        let viewed = self.viewed_cadence(sample_rate, size);
-        if watch == Watch::Viewer {
-            viewed
-        } else {
-            viewed.unlapped(sample_rate, size)
+        match watch {
+            Watch::Viewer(overlap) => Cadence::new(sample_rate, size, self.budget(size, overlap)),
+            Watch::Nobody | Watch::Background => {
+                Cadence::new(sample_rate, size, self.budget(size, SpectrumOverlap::Auto))
+                    .unlapped(sample_rate, size)
+            }
         }
     }
 
-    fn viewed_cadence(&self, sample_rate: f64, size: usize) -> Cadence {
-        match self {
-            Self::Cpu(spectrum) => Cadence::new(sample_rate, size, spectrum.budget()),
+    /// Transformed samples per second the display may take at `overlap`.
+    fn budget(&self, size: usize, overlap: SpectrumOverlap) -> f64 {
+        let (auto, most) = match self {
+            Self::Cpu(spectrum) => (spectrum.budget(), CPU_BUDGET),
             #[cfg(feature = "gpu-fft")]
             Self::Gpu {
-                stream,
+                stream: Some(_),
                 budget,
-                fallback,
-            } => {
-                let budget = if stream.is_some() {
-                    *budget
-                } else {
-                    fallback.budget()
-                };
-                Cadence::new(sample_rate, size, budget)
-            }
+                ..
+            } => (*budget, *budget),
+            #[cfg(feature = "gpu-fft")]
+            Self::Gpu { fallback, .. } => (fallback.budget(), CPU_BUDGET),
+        };
+        match overlap {
+            SpectrumOverlap::Off => unlapped_budget(size),
+            SpectrumOverlap::Auto => auto,
+            SpectrumOverlap::Full => most.max(auto),
         }
     }
 
@@ -254,6 +259,12 @@ impl SpectrumAnalyzer {
             }
         }
     }
+}
+
+/// Transformed samples per second that average [`UNLAPPED_AVERAGES`] a frame, side by side at
+/// all but the slowest rates.
+fn unlapped_budget(size: usize) -> f64 {
+    TARGET_FPS * f64::from(UNLAPPED_AVERAGES) * size as f64
 }
 
 pub(crate) fn display_window(size: usize) -> Vec<f32> {

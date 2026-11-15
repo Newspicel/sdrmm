@@ -7,6 +7,7 @@ import {
   DEFAULT_AVERAGE,
 } from "../../components/videoAverage";
 import type { Palette, Rgb } from "../../gl/colormap";
+import { SPECTRUM_OVERLAPS, type SpectrumOverlap } from "../../lib/spectrum";
 import {
   type PaletteChoice,
   paletteOf,
@@ -17,6 +18,7 @@ import {
 } from "./scopePalette";
 
 const AVERAGE_KEY = "sdrmm.scopeAverage";
+const OVERLAP_KEY = "sdrmm.scopeOverlap";
 
 export interface ScopeLive {
   view: SpectrumView;
@@ -35,6 +37,8 @@ export interface ScopeDisplay {
   setPhosphor: (on: boolean) => void;
   average: AverageFrames;
   chooseAverage: (frames: AverageFrames) => void;
+  overlap: SpectrumOverlap;
+  chooseOverlap: (overlap: SpectrumOverlap) => void;
   range: DbWindow | null;
   holdRange: (next: DbWindow | null) => void;
   paletteChoice: PaletteChoice;
@@ -61,11 +65,27 @@ function storeAverage(frames: AverageFrames): void {
   } catch {}
 }
 
+export function readOverlap(): SpectrumOverlap {
+  try {
+    const stored = localStorage.getItem(OVERLAP_KEY);
+    return SPECTRUM_OVERLAPS.find((overlap) => overlap === stored) ?? "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+function storeOverlap(overlap: SpectrumOverlap): void {
+  try {
+    localStorage.setItem(OVERLAP_KEY, overlap);
+  } catch {}
+}
+
 export function useScopeDisplay(): ScopeDisplay {
   const [view, setView] = useState<SpectrumView>(FULL_VIEW);
   const [traceModes, setTraceModes] = useState<readonly TraceMode[]>([]);
   const [phosphor, setPhosphor] = useState(false);
   const [average, setAverage] = useState<AverageFrames>(readAverage);
+  const [overlap, setOverlap] = useState<SpectrumOverlap>(readOverlap);
   const [range, setRange] = useState<DbWindow | null>(null);
   const [paletteChoice, setPaletteChoice] = useState<PaletteChoice>(readChoice);
   const [customStops, setCustomStops] = useState<readonly Rgb[]>(readCustom);
@@ -91,6 +111,11 @@ export function useScopeDisplay(): ScopeDisplay {
     chooseAverage: (frames) => {
       setAverage(frames);
       storeAverage(frames);
+    },
+    overlap,
+    chooseOverlap: (next) => {
+      setOverlap(next);
+      storeOverlap(next);
     },
     range,
     holdRange: (next) => {

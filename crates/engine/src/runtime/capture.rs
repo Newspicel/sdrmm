@@ -12,11 +12,13 @@ use std::{
 use arc_swap::ArcSwap;
 use num_complex::Complex;
 use sdrmm_device::{DeviceError, MarkPoster, RxSink, SdrDevice, SinkItem, SweepPlan, SweepSink};
-use sdrmm_wire::{DeviceSettings, MAX_STREAMS, StreamScope, array::MAX_VIRTUAL_LANES};
+use sdrmm_wire::{
+    DeviceSettings, MAX_STREAMS, SpectrumOverlap, StreamScope, array::MAX_VIRTUAL_LANES,
+};
 use tokio::sync::broadcast;
 
 use super::{
-    BackgroundSpectrum, DspCommand, DspMeta, SpectrumSnapshot, SpectrumTap, Waker,
+    BackgroundSpectrum, DspCommand, DspMeta, OverlapClaim, SpectrumSnapshot, SpectrumTap, Waker,
     clip::ClipMeter,
     retire::Reclaimer,
     spectrum_size,
@@ -356,6 +358,11 @@ impl CaptureRuntime {
     pub fn subscribe_background(&self, stream: u32) -> Option<BackgroundSpectrum> {
         self.lane(stream)
             .map(|lane| lane.spectrum_tx.subscribe_background())
+    }
+
+    pub fn claim_overlap(&self, stream: u32, overlap: SpectrumOverlap) -> Option<OverlapClaim> {
+        self.lane(stream)
+            .map(|lane| lane.spectrum_tx.claim(overlap))
     }
 
     fn lane(&self, stream: u32) -> Option<&Lane> {

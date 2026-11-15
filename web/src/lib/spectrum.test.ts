@@ -244,6 +244,16 @@ describe("SpectrumHub resolution", () => {
     const asked = subscribes(fake.sent).map((c) => c.data.params?.bins ?? 0);
     expect(asked).toEqual([1024, 4096, 1024]);
   });
+
+  it("overlaps as far as the most demanding watcher asks and settles back", () => {
+    const { fake, hub } = bench();
+    hub.subscribe("s1", "iq", () => {}, { overlap: "off" });
+    const dropFull = hub.subscribe("s1", "iq", () => {}, { overlap: "full" });
+    dropFull();
+
+    const asked = subscribes(fake.sent).map((c) => c.data.params?.overlap);
+    expect(asked).toEqual(["off", "full", "off"]);
+  });
 });
 
 describe("SpectrumHub history", () => {
@@ -368,6 +378,8 @@ describe("SpectrumHub history", () => {
     fake.reconnect();
     hub.setVisible(true);
     expect(fps()).toEqual([SPECTRUM_FPS, SPECTRUM_HIDDEN_FPS, SPECTRUM_HIDDEN_FPS, SPECTRUM_FPS]);
+    const overlap = subscribes(fake.sent).map((c) => c.data.params?.overlap);
+    expect(overlap).toEqual(["auto", "off", "off", "auto"]);
     expect(unsubscribes(fake.sent)).toHaveLength(0);
   });
 });

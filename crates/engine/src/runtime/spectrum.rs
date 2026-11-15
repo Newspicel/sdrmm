@@ -3,6 +3,7 @@ use std::sync::{
     atomic::{AtomicU8, AtomicUsize, Ordering},
 };
 
+use sdrmm_wire::SpectrumOverlap;
 use tokio::sync::broadcast;
 
 #[derive(Clone, Debug)]
@@ -34,7 +35,30 @@ pub(crate) enum Watch {
     Nobody,
     /// Only readers keeping statistics, which need every sample once but no overlap.
     Background,
-    Viewer,
+    Viewer(SpectrumOverlap),
+}
+
+impl Watch {
+    const fn code(self) -> u8 {
+        match self {
+            Self::Nobody => 0,
+            Self::Background => 1,
+            Self::Viewer(overlap) => 2 + overlap as u8,
+        }
+    }
+
+    fn from_code(code: u8) -> Self {
+        match code {
+            0 => Self::Nobody,
+            1 => Self::Background,
+            _ => Self::Viewer(
+                SpectrumOverlap::ALL
+                    .get(usize::from(code - 2))
+                    .copied()
+                    .unwrap_or_default(),
+            ),
+        }
+    }
 }
 
 /// A lane's spectrum broadcast. Readers that only keep statistics subscribe as background, so
@@ -43,6 +67,7 @@ pub(crate) enum Watch {
 pub struct SpectrumTap {
     tx: broadcast::Sender<SpectrumSnapshot>,
     background: Arc<AtomicUsize>,
+    claims: Arc<OverlapClaims>,
 }
 
 impl Default for SpectrumTap {
@@ -50,6 +75,7 @@ impl Default for SpectrumTap {
         Self {
             tx: broadcast::channel(TAP_SLOTS).0,
             background: Arc::default(),
+            claims: Arc::default(),
         }
     }
 }
@@ -69,6 +95,16 @@ impl SpectrumTap {
         }
     }
 
+    /// Asks for `overlap` while the claim lives. The lane runs the most any claim asks.
+    #[must_use]
+    pub fn claim(&self, overlap: SpectrumOverlap) -> OverlapClaim {
+        self.claims.count(overlap).fetch_add(1, Ordering::Relaxed);
+        OverlapClaim {
+            claims: self.claims.clone(),
+            overlap,
+        }
+    }
+
     pub(crate) fn send(&self, snapshot: SpectrumSnapshot) {
         let _ = self.tx.send(snapshot);
     }
@@ -77,12 +113,45 @@ impl SpectrumTap {
     pub(crate) fn watch(&self) -> Watch {
         let readers = self.tx.receiver_count();
         if readers > self.background.load(Ordering::Relaxed) {
-            Watch::Viewer
+            Watch::Viewer(self.claims.wanted())
         } else if readers > 0 {
             Watch::Background
         } else {
             Watch::Nobody
         }
+    }
+}
+
+#[derive(Debug, Default)]
+struct OverlapClaims([AtomicUsize; SpectrumOverlap::ALL.len()]);
+
+impl OverlapClaims {
+    const fn count(&self, overlap: SpectrumOverlap) -> &AtomicUsize {
+        &self.0[overlap as usize]
+    }
+
+    /// The most any claim asks, or [`SpectrumOverlap::Auto`] for viewers that claim nothing.
+    fn wanted(&self) -> SpectrumOverlap {
+        SpectrumOverlap::ALL
+            .into_iter()
+            .rev()
+            .find(|overlap| self.count(*overlap).load(Ordering::Relaxed) > 0)
+            .unwrap_or_default()
+    }
+}
+
+/// A viewer's ask for how far its lane overlaps transforms, dropped when the viewer leaves.
+#[derive(Debug)]
+pub struct OverlapClaim {
+    claims: Arc<OverlapClaims>,
+    overlap: SpectrumOverlap,
+}
+
+impl Drop for OverlapClaim {
+    fn drop(&mut self) {
+        self.claims
+            .count(self.overlap)
+            .fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -110,21 +179,19 @@ pub(crate) struct Watching(Arc<AtomicU8>);
 
 impl Default for Watching {
     fn default() -> Self {
-        Self(Arc::new(AtomicU8::new(Watch::Viewer as u8)))
+        Self(Arc::new(AtomicU8::new(
+            Watch::Viewer(SpectrumOverlap::Auto).code(),
+        )))
     }
 }
 
 impl Watching {
     pub(crate) fn get(&self) -> Watch {
-        match self.0.load(Ordering::Relaxed) {
-            value if value == Watch::Nobody as u8 => Watch::Nobody,
-            value if value == Watch::Background as u8 => Watch::Background,
-            _ => Watch::Viewer,
-        }
+        Watch::from_code(self.0.load(Ordering::Relaxed))
     }
 
     pub(crate) fn set(&self, watch: Watch) {
-        self.0.store(watch as u8, Ordering::Relaxed);
+        self.0.store(watch.code(), Ordering::Relaxed);
     }
 }
 
@@ -156,7 +223,7 @@ mod tests {
         let statistics = tap.subscribe_background();
         assert_eq!(tap.watch(), Watch::Background);
         let viewer = tap.subscribe();
-        assert_eq!(tap.watch(), Watch::Viewer);
+        assert_eq!(tap.watch(), Watch::Viewer(SpectrumOverlap::Auto));
         drop(viewer);
         assert_eq!(tap.watch(), Watch::Background);
         drop(statistics);
@@ -166,11 +233,32 @@ mod tests {
     #[test]
     fn the_dsp_thread_reads_the_watch_it_was_given() {
         let watching = Watching::default();
-        assert_eq!(watching.get(), Watch::Viewer);
-        for watch in [Watch::Nobody, Watch::Background, Watch::Viewer] {
+        assert_eq!(watching.get(), Watch::Viewer(SpectrumOverlap::Auto));
+        let viewers = SpectrumOverlap::ALL.map(Watch::Viewer);
+        for watch in [Watch::Nobody, Watch::Background]
+            .into_iter()
+            .chain(viewers)
+        {
             watching.set(watch);
             assert_eq!(watching.clone().get(), watch);
         }
+    }
+
+    #[test]
+    fn a_lane_overlaps_as_far_as_its_most_demanding_viewer() {
+        let tap = SpectrumTap::default();
+        let _viewer = tap.subscribe();
+        let off = tap.claim(SpectrumOverlap::Off);
+        assert_eq!(tap.watch(), Watch::Viewer(SpectrumOverlap::Off));
+        let full = tap.claim(SpectrumOverlap::Full);
+        let auto = tap.claim(SpectrumOverlap::Auto);
+        assert_eq!(tap.watch(), Watch::Viewer(SpectrumOverlap::Full));
+        drop(full);
+        assert_eq!(tap.watch(), Watch::Viewer(SpectrumOverlap::Auto));
+        drop(auto);
+        assert_eq!(tap.watch(), Watch::Viewer(SpectrumOverlap::Off));
+        drop(off);
+        assert_eq!(tap.watch(), Watch::Viewer(SpectrumOverlap::Auto));
     }
 
     fn snapshot_at(center_hz: f64, bins: usize) -> SpectrumSnapshot {

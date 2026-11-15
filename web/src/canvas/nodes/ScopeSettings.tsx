@@ -14,6 +14,7 @@ import {
   DEFAULT_AVERAGE,
 } from "../../components/videoAverage";
 import { COLORMAPS, type Palette, type Rgb, samplePalette } from "../../gl/colormap";
+import { SPECTRUM_OVERLAPS, type SpectrumOverlap } from "../../lib/spectrum";
 import { CUSTOM, type PaletteChoice, paletteOf } from "./scopePalette";
 import { TRACE_INK } from "./scopePlot";
 
@@ -30,6 +31,8 @@ const AVERAGE_OPTIONS = AVERAGE_CHOICES.map((frames) => ({
   label: frames === 1 ? "off" : String(frames),
 }));
 
+const OVERLAP_OPTIONS = SPECTRUM_OVERLAPS.map((overlap) => ({ value: overlap, label: overlap }));
+
 export interface ScopeSettingsProps {
   colormap: PaletteChoice;
   onColormap: (choice: PaletteChoice) => void;
@@ -37,6 +40,8 @@ export interface ScopeSettingsProps {
   onCustom: (stops: readonly Rgb[]) => void;
   average: AverageFrames;
   onAverage: (frames: AverageFrames) => void;
+  overlap: SpectrumOverlap;
+  onOverlap: (overlap: SpectrumOverlap) => void;
   traces: readonly TraceMode[];
   onTrace: (mode: TraceMode) => void;
   phosphor: boolean;
@@ -52,7 +57,11 @@ export interface ScopeSettingsProps {
 export function ScopeSettings(props: ScopeSettingsProps) {
   const palette = paletteOf(props.colormap, props.custom);
   const changed =
-    props.average !== DEFAULT_AVERAGE || props.traces.length > 0 || props.phosphor || props.manual;
+    props.average !== DEFAULT_AVERAGE ||
+    props.overlap !== "auto" ||
+    props.traces.length > 0 ||
+    props.phosphor ||
+    props.manual;
   return (
     <PlotSettings title="Scope settings" changed={changed}>
       <SettingsSection name="Colours">
@@ -83,6 +92,18 @@ export function ScopeSettings(props: ScopeSettingsProps) {
           value={props.average}
           options={AVERAGE_OPTIONS}
           onChange={props.onAverage}
+          fill
+        />
+      </SettingsSection>
+      <SettingsSection
+        name="Overlap"
+        hint="Smoother trace, more server CPU. The highest open Scope wins"
+      >
+        <Segmented
+          label="Transform overlap"
+          value={props.overlap}
+          options={OVERLAP_OPTIONS}
+          onChange={props.onOverlap}
           fill
         />
       </SettingsSection>

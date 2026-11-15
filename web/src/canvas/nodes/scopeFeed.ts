@@ -377,9 +377,9 @@ export function useScopeFeed(input: {
       node,
       SCOPE_PORT,
       spectrumListener(node, state, live, densityRef, setMeta),
-      { bins: SPECTRUM_MAX_BINS },
+      { bins: SPECTRUM_MAX_BINS, overlap: display.overlap },
     );
-  }, [setId, node, live, densityRef]);
+  }, [setId, node, live, densityRef, display.overlap]);
 
   useEffect(() => {
     const canvas = traceRef.current;
