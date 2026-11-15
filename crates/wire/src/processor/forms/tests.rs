@@ -247,7 +247,7 @@ fn every_processor_kind_publishes_its_form() {
     for kind in NodeKind::ALL
         .iter()
         .filter(|kind| NodeBody::default_for(**kind).is_array_processor())
-        .filter(|kind| !kind.info().needs_processor_type)
+        .filter(|kind| kind.info().picks != Some(crate::Picks::Processor))
     {
         assert!(!kind.settings().is_empty(), "{kind} has no form");
         assert_eq!(kind.info().settings, kind.settings());

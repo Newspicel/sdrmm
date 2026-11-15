@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { ChannelDescriptor, PatchNode, TransmitStatus } from "../../lib/types";
+import type { EncoderDescriptor, PatchNode, TransmitStatus } from "../../lib/types";
 import {
-  modulatorSettings,
-  modulatorTypes,
+  encoderSettings,
   peakText,
   tooWide,
   transmitStatusOf,
+  withEncoderSettings,
   withMicrophone,
-  withModulatorSettings,
-  withModulatorType,
   withTransmitSettings,
 } from "./transmit";
 
@@ -21,17 +19,6 @@ const status = (node: string, extra: Partial<TransmitStatus> = {}): TransmitStat
   samples: 0,
   bursts: 0,
   underruns: 0,
-  ...extra,
-});
-
-const descriptor = (
-  type_id: string,
-  extra: Partial<ChannelDescriptor> = {},
-): ChannelDescriptor => ({
-  type_id,
-  name: type_id.toUpperCase(),
-  bandwidth_hz: 12_500,
-  input_rate_hz: 48_000,
   ...extra,
 });
 
@@ -59,43 +46,26 @@ describe("transmit body edits", () => {
   });
 });
 
-describe("modulator", () => {
-  const types = [
-    descriptor("adsb"),
-    descriptor("nfm", { can_transmit: true }),
-    descriptor("aprs", {
-      can_transmit: true,
-      defaults: {
-        frequency_hz: 144_800_000,
-        params: { type: "aprs", settings: { mode: "afsk1200" } },
-      },
-    }),
-  ];
+describe("encoder settings", () => {
+  const aprs: EncoderDescriptor = {
+    type_id: "aprs",
+    name: "APRS",
+    rate_hz: 48_000,
+    bandwidth_hz: 12_500,
+    input: "message",
+    defaults: { mode: "afsk1200" },
+  };
 
-  it("offers only decoders that bring a modulator", () => {
-    expect(modulatorTypes(types).map((type) => type.type_id)).toEqual(["nfm", "aprs"]);
-  });
-
-  it("drops the old mode's settings when the mode changes", () => {
-    const before = node({
-      kind: "modulator",
-      data: { channel_type: "nfm", settings: { deviation: 5 } },
+  it("runs on its own settings, else the encoder's defaults", () => {
+    expect(encoderSettings({ mode: "g3ruh" }, aprs)).toEqual({ mode: "g3ruh" });
+    expect(encoderSettings(undefined, aprs)).toEqual({ mode: "afsk1200" });
+    expect(encoderSettings(null, undefined)).toEqual({});
+    const before = node({ kind: "encoder", data: { encoder_type: "aprs" } });
+    expect(withEncoderSettings(before, { mode: "g3ruh" })).toMatchObject({
+      data: { encoder_type: "aprs", settings: { mode: "g3ruh" } },
     });
-    expect(withModulatorType(before, "aprs")).toMatchObject({ data: { channel_type: "aprs" } });
-    expect((withModulatorType(before, "aprs") as { data: object }).data).not.toHaveProperty(
-      "settings",
-    );
-    expect(withModulatorType(before, "nfm")).toBe(before);
-  });
-
-  it("runs on its own settings, else the decoder's defaults", () => {
-    expect(modulatorSettings({ mode: "g3ruh" }, types[2])).toEqual({ mode: "g3ruh" });
-    expect(modulatorSettings(undefined, types[2])).toEqual({ mode: "afsk1200" });
-    expect(modulatorSettings(null, undefined)).toEqual({});
-    const before = node({ kind: "modulator", data: { channel_type: "aprs" } });
-    expect(withModulatorSettings(before, { mode: "g3ruh" })).toMatchObject({
-      data: { channel_type: "aprs", settings: { mode: "g3ruh" } },
-    });
+    const other = node({ kind: "scope" });
+    expect(withEncoderSettings(other, { mode: "g3ruh" })).toBe(other);
   });
 });
 

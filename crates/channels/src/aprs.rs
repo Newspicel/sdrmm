@@ -15,10 +15,12 @@ use sdrmm_dsp::{
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx, NativeChannel,
-    NativeTx, TxPayload, check_input_rate,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate,
+    encoder::{EncoderBase, Modulator, NativeEncoder, NativeModulator, TxPayload},
 };
 use sdrmm_modem::keying::{Burst, TxQueue};
+use serde::{Deserialize, Serialize};
 
 const CHANNEL_TAPS: usize = 65;
 
@@ -921,9 +923,8 @@ const PREAMBLE_FLAGS: usize = 24;
 const TRAILING_FLAGS: usize = 2;
 const SSID_RESERVED: u8 = 0x60;
 
-pub struct AprsTx {
+pub struct AprsModulator {
     rate: f64,
-    mode: AprsMode,
     pending: TxQueue<bool>,
     staging: Vec<bool>,
     line: Line,
@@ -1139,7 +1140,7 @@ fn speed_course_bytes(speed_kt: u32, course_deg: u32) -> [u8; 3] {
     [(sp + 28) as u8, (dc + 28) as u8, (course % 100 + 28) as u8]
 }
 
-impl AprsTx {
+impl AprsModulator {
     #[must_use]
     pub fn ui_frame(source: &str, destination: &str, path: &[&str], info: &str) -> Vec<u8> {
         let mut out = Vec::with_capacity(ADDRESS_LEN * (2 + path.len()) + 2 + info.len());
@@ -1187,46 +1188,47 @@ impl AprsTx {
     }
 }
 
-impl NativeTx for AprsTx {
-    fn descriptor() -> &'static ChannelDescriptor {
-        &DESCRIPTOR
+/// What an APRS encoder sends: the line its frames are keyed on.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AprsEncoderSettings {
+    pub mode: AprsMode,
+}
+
+/// The channel a mode is sent on: 1200 baud AFSK fits 12.5 kHz, 9600 baud G3RUH needs 25 kHz.
+const fn channel_width_hz(mode: AprsMode) -> f64 {
+    match mode {
+        AprsMode::Afsk1200 => 12_500.0,
+        AprsMode::G3ruh9600 => 25_000.0,
+    }
+}
+
+impl NativeModulator for AprsModulator {
+    type Settings = AprsEncoderSettings;
+
+    fn rate_hz() -> f64 {
+        DESCRIPTOR.input_rate_hz
     }
 
-    fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
-        check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = params(&settings)?;
-        check_params(&p)?;
+    fn new(settings: &AprsEncoderSettings) -> Result<Self, ChannelError> {
+        let rate = DESCRIPTOR.input_rate_hz;
+        let mode = settings.mode;
         Ok(Self {
-            rate: ctx.input_rate,
-            mode: p.mode,
-            pending: TxQueue::new(DESCRIPTOR.type_id.as_str(), baud(p.mode)),
+            rate,
+            pending: TxQueue::new(DESCRIPTOR.type_id.as_str(), baud(mode)),
             staging: Vec::new(),
-            line: Line::new(p.mode),
-            keyer: Keyer::new(p.mode),
+            line: Line::new(mode),
+            keyer: Keyer::new(mode),
             remaining: 0,
-            samples_per_symbol: (ctx.input_rate / baud(p.mode)) as usize,
+            samples_per_symbol: (rate / baud(mode)) as usize,
             level: false,
             carrier_phase: 0.0,
-            burst: Burst::new(ctx.input_rate),
+            burst: Burst::new(rate),
         })
     }
 }
 
-impl ChannelTx for AprsTx {
-    fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let p = params(&settings)?;
-        check_params(&p)?;
-        if p.mode != self.mode {
-            self.mode = p.mode;
-            self.pending.clear();
-            self.line = Line::new(p.mode);
-            self.keyer = Keyer::new(p.mode);
-            self.samples_per_symbol = (self.rate / baud(p.mode)) as usize;
-            self.remaining = 0;
-        }
-        Ok(())
-    }
-
+impl Modulator for AprsModulator {
     fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError> {
         let TxPayload::Frame(frame) = payload else {
             return Err(ChannelError::InvalidPayload(
@@ -1345,7 +1347,6 @@ pub(crate) fn aprs_decoder() -> Native<AprsParams> {
     Native::new::<AprsChannel>(occupied_band)
         .filter(channel_filter)
         .home(144_800_000.0)
-        .tx_messages::<AprsTx>(message_form, compose)
         .signatures(aprs_signatures)
         .trial(aprs_trial)
         .form(aprs_form)
@@ -1421,12 +1422,29 @@ fn compose(message: &serde_json::Value) -> Result<TxPayload, ChannelError> {
             "the text must be ASCII and not empty".to_owned(),
         ));
     }
-    Ok(TxPayload::Frame(AprsTx::ui_frame(
+    Ok(TxPayload::Frame(AprsModulator::ui_frame(
         source,
         destination,
         &hops,
         &message.text,
     )))
+}
+
+pub(crate) fn aprs_encoder() -> NativeEncoder<AprsEncoderSettings> {
+    NativeEncoder::new::<AprsModulator>(
+        EncoderBase {
+            type_id: "aprs",
+            name: "APRS",
+            summary: "APRS packets",
+        },
+        |s: &AprsEncoderSettings| channel_width_hz(s.mode),
+    )
+    .form(aprs_encoder_form)
+    .messages(message_form, compose)
+}
+
+fn aprs_encoder_form() -> Vec<SettingField> {
+    vec![SettingField::new("mode", "Mode", Control::choice::<AprsMode>()).title("APRS mode")]
 }
 
 pub(crate) fn aprs_form() -> Vec<SettingField> {
@@ -1467,8 +1485,8 @@ mod tests {
         AprsChannel::new(ChannelCtx { input_rate: RATE }, mode_settings(mode)).unwrap()
     }
 
-    fn transmitter(mode: AprsMode) -> AprsTx {
-        AprsTx::new(ChannelCtx { input_rate: RATE }, mode_settings(mode)).unwrap()
+    fn transmitter(mode: AprsMode) -> AprsModulator {
+        AprsModulator::new(&AprsEncoderSettings { mode }).unwrap()
     }
 
     fn keyed(mode: AprsMode, frame: &[u8]) -> Vec<Complex<f32>> {
@@ -1534,7 +1552,7 @@ mod tests {
     const POSITION_INFO: &str = "!4807.38N/01131.00E>088/036/A=000432 Testing";
 
     fn position_frame() -> Vec<u8> {
-        AprsTx::ui_frame("DL1ABC-9", "APRS", &["WIDE1-1*", "WIDE2-1"], POSITION_INFO)
+        AprsModulator::ui_frame("DL1ABC-9", "APRS", &["WIDE1-1*", "WIDE2-1"], POSITION_INFO)
     }
 
     fn assert_position_packet(packet: &AprsPacket) {
@@ -1600,7 +1618,7 @@ mod tests {
 
     #[test]
     fn compressed_position_decodes_to_the_same_place_as_the_spec_example() {
-        let frame = AprsTx::ui_frame("DL1ABC", "APRS", &[], "!/5L!!<*e7>7P[Compressed");
+        let frame = AprsModulator::ui_frame("DL1ABC", "APRS", &[], "!/5L!!<*e7>7P[Compressed");
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -1617,7 +1635,7 @@ mod tests {
 
     #[test]
     fn a_weather_station_reports_wind_instead_of_course() {
-        let frame = AprsTx::ui_frame(
+        let frame = AprsModulator::ui_frame(
             "DL1ABC-13",
             "APRS",
             &[],
@@ -1640,7 +1658,7 @@ mod tests {
 
     #[test]
     fn a_positionless_weather_report_decodes_without_a_position() {
-        let frame = AprsTx::ui_frame(
+        let frame = AprsModulator::ui_frame(
             "DL1ABC-13",
             "APRS",
             &[],
@@ -1660,7 +1678,7 @@ mod tests {
 
     #[test]
     fn compressed_gga_report_carries_altitude_instead_of_course_and_speed() {
-        let frame = AprsTx::ui_frame("DL1ABC", "APRS", &[], "!/5L!!<*e7>S]T");
+        let frame = AprsModulator::ui_frame("DL1ABC", "APRS", &[], "!/5L!!<*e7>S]T");
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -1673,7 +1691,7 @@ mod tests {
 
     #[test]
     fn explicit_altitude_overrides_the_compressed_one() {
-        let frame = AprsTx::ui_frame("DL1ABC", "APRS", &[], "!/5L!!<*e7>S]T/A=001234");
+        let frame = AprsModulator::ui_frame("DL1ABC", "APRS", &[], "!/5L!!<*e7>S]T/A=001234");
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -1683,7 +1701,8 @@ mod tests {
 
     #[test]
     fn timestamped_report_skips_the_timestamp() {
-        let frame = AprsTx::ui_frame("DL1ABC", "APRS", &[], "@092345z4807.38N/01131.00E>Zulu");
+        let frame =
+            AprsModulator::ui_frame("DL1ABC", "APRS", &[], "@092345z4807.38N/01131.00E>Zulu");
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -1707,7 +1726,7 @@ mod tests {
     #[test]
     fn long_runs_of_ones_in_the_info_field_survive_stuffing() {
         let info = ">stuffing \u{7f}\u{7f}~~ test";
-        let frame = AprsTx::ui_frame("DL1ABC-1", "APRS", &[], info);
+        let frame = AprsModulator::ui_frame("DL1ABC-1", "APRS", &[], info);
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -1718,8 +1737,8 @@ mod tests {
 
     #[test]
     fn two_frames_sharing_a_flag_both_decode() {
-        let first = AprsTx::ui_frame("DL1ABC-1", "APRS", &[], ">first");
-        let second = AprsTx::ui_frame("DL1ABC-2", "APRS", &["WIDE1-1"], ">second");
+        let first = AprsModulator::ui_frame("DL1ABC-1", "APRS", &[], ">first");
+        let second = AprsModulator::ui_frame("DL1ABC-2", "APRS", &["WIDE1-1"], ">second");
         let iq = keyed_frames(AprsMode::Afsk1200, &[&first, &second], 0);
         let decoded = decode(AprsMode::Afsk1200, &iq);
         assert_eq!(decoded.len(), 2, "{decoded:#?}");
@@ -1729,7 +1748,7 @@ mod tests {
 
     #[test]
     fn the_spec_worked_example_decodes_to_its_published_values() {
-        let frame = AprsTx::ui_frame("DL1ABC-7", "S32U6T", &["WIDE2-2"], "`(_fn\"Oj/");
+        let frame = AprsModulator::ui_frame("DL1ABC-7", "S32U6T", &["WIDE2-2"], "`(_fn\"Oj/");
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -1754,7 +1773,7 @@ mod tests {
 
     #[test]
     fn the_spec_longitude_example_needs_the_hundred_degree_offset() {
-        let frame = AprsTx::ui_frame("DL1ABC-7", "S32UVT", &[], "`(_fn\"Oj/");
+        let frame = AprsModulator::ui_frame("DL1ABC-7", "S32UVT", &[], "`(_fn\"Oj/");
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -1765,7 +1784,7 @@ mod tests {
     }
 
     fn mic_e_frame(report: &MicE) -> Vec<u8> {
-        AprsTx::ui_frame("DL1ABC-9", &report.destination(), &[], &report.info())
+        AprsModulator::ui_frame("DL1ABC-9", &report.destination(), &[], &report.info())
     }
 
     fn mic_e_packet(report: &MicE) -> AprsPacket {
@@ -1953,7 +1972,7 @@ mod tests {
 
     #[test]
     fn a_truncated_mic_e_field_yields_no_position() {
-        let frame = AprsTx::ui_frame("DL1ABC-9", "S32U6T", &[], "`(_fn\"O");
+        let frame = AprsModulator::ui_frame("DL1ABC-9", "S32U6T", &[], "`(_fn\"O");
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -1966,7 +1985,7 @@ mod tests {
     #[test]
     fn a_mic_e_information_field_under_an_ordinary_destination_decodes_nothing() {
         for destination in ["APRS", "N0CALL", "S32U6"] {
-            let frame = AprsTx::ui_frame("DL1ABC-9", destination, &[], "`(_fn\"Oj/");
+            let frame = AprsModulator::ui_frame("DL1ABC-9", destination, &[], "`(_fn\"Oj/");
             let packet = only(decode(
                 AprsMode::Afsk1200,
                 &keyed(AprsMode::Afsk1200, &frame),
@@ -1978,7 +1997,7 @@ mod tests {
 
     #[test]
     fn a_destination_ssid_does_not_disturb_the_six_data_characters() {
-        let frame = AprsTx::ui_frame("DL1ABC-9", "S32U6T-3", &[], "`(_fn\"Oj/");
+        let frame = AprsModulator::ui_frame("DL1ABC-9", "S32U6T-3", &[], "`(_fn\"Oj/");
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -1992,7 +2011,7 @@ mod tests {
     fn every_mic_e_data_type_identifier_is_decoded() {
         for id in ['`', '\'', '\u{1c}', '\u{1d}'] {
             let info = format!("{id}(_fn\"Oj/");
-            let frame = AprsTx::ui_frame("DL1ABC-9", "S32U6T", &[], &info);
+            let frame = AprsModulator::ui_frame("DL1ABC-9", "S32U6T", &[], &info);
             let packet = only(decode(
                 AprsMode::Afsk1200,
                 &keyed(AprsMode::Afsk1200, &frame),
@@ -2004,7 +2023,7 @@ mod tests {
 
     #[test]
     fn a_non_aprs_pid_still_yields_the_ax25_envelope() {
-        let mut frame = AprsTx::ui_frame("DL1ABC", "CQ", &[], "");
+        let mut frame = AprsModulator::ui_frame("DL1ABC", "CQ", &[], "");
         let pid = frame.len() - 1;
         frame[pid] = 0xCF;
         frame.extend_from_slice(b"!4807.38N/01131.00E>not aprs");
@@ -2020,7 +2039,7 @@ mod tests {
 
     #[test]
     fn ambiguous_minutes_read_as_zero() {
-        let frame = AprsTx::ui_frame("DL1ABC", "APRS", &[], "!4807.  N/01131.  E>ambiguous");
+        let frame = AprsModulator::ui_frame("DL1ABC", "APRS", &[], "!4807.  N/01131.  E>ambiguous");
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -2031,7 +2050,7 @@ mod tests {
 
     #[test]
     fn southern_and_western_hemispheres_are_negative() {
-        let frame = AprsTx::ui_frame("VK2ABC", "APRS", &[], "!3352.50S/15112.30W#");
+        let frame = AprsModulator::ui_frame("VK2ABC", "APRS", &[], "!3352.50S/15112.30W#");
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -2044,7 +2063,8 @@ mod tests {
 
     #[test]
     fn negative_altitude_is_read_as_signed_feet() {
-        let frame = AprsTx::ui_frame("DL1ABC", "APRS", &[], "!4807.38N/01131.00E>/A=-00042 deep");
+        let frame =
+            AprsModulator::ui_frame("DL1ABC", "APRS", &[], "!4807.38N/01131.00E>/A=-00042 deep");
         let packet = only(decode(
             AprsMode::Afsk1200,
             &keyed(AprsMode::Afsk1200, &frame),
@@ -2120,7 +2140,7 @@ mod tests {
         (0..trials)
             .filter(|&k| {
                 let info = format!("!4807.38N/01131.00E>trial {k:04}");
-                let frame = AprsTx::ui_frame("DL1ABC-9", "APRS", &["WIDE1-1"], &info);
+                let frame = AprsModulator::ui_frame("DL1ABC-9", "APRS", &["WIDE1-1"], &info);
                 let iq = twisted_afsk(&frame, twist_db, sigma, 0x51c0 + k);
                 let ChannelFilter::Symmetric(mut filter) =
                     channel_filter(&AprsParams::default()).unwrap()
@@ -2245,7 +2265,7 @@ mod tests {
         };
         assert_eq!(
             frame,
-            AprsTx::ui_frame("dl1abc-9", "APRS", &["WIDE1-1", "WIDE2-1"], "!test")
+            AprsModulator::ui_frame("dl1abc-9", "APRS", &["WIDE1-1", "WIDE2-1"], "!test")
         );
     }
 
@@ -2286,7 +2306,7 @@ mod tests {
 
     #[test]
     fn ui_frame_lays_out_the_ax25_address_field() {
-        let frame = AprsTx::ui_frame("DL1ABC-9", "APRS", &["WIDE1-1*"], "!test");
+        let frame = AprsModulator::ui_frame("DL1ABC-9", "APRS", &["WIDE1-1*"], "!test");
         assert_eq!(frame.len(), 3 * ADDRESS_LEN + 2 + 5);
         assert_eq!(&frame[..6], b"APRS  ".map(|c| c << 1));
         assert_eq!(frame[6] & 1, 0);
@@ -2319,7 +2339,7 @@ mod tests {
 
     #[test]
     fn the_burst_keys_one_symbol_per_bit_at_a_constant_envelope() {
-        let frame = AprsTx::ui_frame("DL1ABC", "APRS", &[], "!x");
+        let frame = AprsModulator::ui_frame("DL1ABC", "APRS", &[], "!x");
         let ramp = Burst::new(RATE).ramp_len();
         for (mode, sps) in [(AprsMode::Afsk1200, 40), (AprsMode::G3ruh9600, 5)] {
             let bits = 8 * PREAMBLE_FLAGS + 8 * (TRAILING_FLAGS + 1) + stuffed_bits(&frame);
@@ -2340,14 +2360,14 @@ mod tests {
     #[test]
     fn two_submitted_frames_ride_a_single_burst() {
         let mut tx = transmitter(AprsMode::Afsk1200);
-        tx.submit(TxPayload::Frame(AprsTx::ui_frame(
+        tx.submit(TxPayload::Frame(AprsModulator::ui_frame(
             "DL1ABC-1",
             "APRS",
             &[],
             ">first",
         )))
         .unwrap();
-        tx.submit(TxPayload::Frame(AprsTx::ui_frame(
+        tx.submit(TxPayload::Frame(AprsModulator::ui_frame(
             "DL1ABC-2",
             "APRS",
             &[],
@@ -2366,13 +2386,8 @@ mod tests {
     }
 
     #[test]
-    fn tx_apply_switches_the_physical_layer_and_drops_the_backlog() {
-        let mut tx = transmitter(AprsMode::Afsk1200);
-        tx.submit(TxPayload::Frame(position_frame())).unwrap();
-        tx.apply(mode_settings(AprsMode::G3ruh9600)).unwrap();
-        let mut block = [Complex::new(0.0, 0.0); 64];
-        assert_eq!(tx.generate(&mut block), 0, "backlog survived the switch");
-
+    fn tx_keys_g3ruh_that_its_receiver_decodes() {
+        let mut tx = transmitter(AprsMode::G3ruh9600);
         tx.submit(TxPayload::Frame(position_frame())).unwrap();
         let iq = burst(&mut tx);
         assert_position_packet(&only(decode(AprsMode::G3ruh9600, &iq)));
@@ -2417,18 +2432,8 @@ mod tests {
     }
 
     #[test]
-    fn tx_rejects_mismatched_params_and_input_rate() {
-        let built = AprsTx::new(
-            ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
-        );
-        assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
-        let built = AprsTx::new(
-            ChannelCtx {
-                input_rate: 240_000.0,
-            },
-            mode_settings(AprsMode::Afsk1200),
-        );
-        assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
+    fn the_encoder_sends_each_mode_in_its_own_channel_width() {
+        assert_eq!(channel_width_hz(AprsMode::Afsk1200), 12_500.0);
+        assert_eq!(channel_width_hz(AprsMode::G3ruh9600), 25_000.0);
     }
 }

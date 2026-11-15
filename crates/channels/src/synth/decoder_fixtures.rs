@@ -1,16 +1,17 @@
 use crate::aprs::AprsMode;
-use crate::aprs::AprsParams;
 use crate::atv::AtvParams;
 use crate::selcall::SelcallSystem;
 use crate::sstv::SstvMode;
 use num_complex::Complex;
-use sdrmm_wire::{ChannelParams, ChannelSettings, Squelch};
 
 use super::{
     Need, SynthError, acars, adsb, ais, atv, dect, dv, ermes, flex, gnss, morse, navtex, pocsag,
     radio_clock, rds, rtty, selcall, sstv,
 };
-use crate::{AprsTx, ChannelCtx, ChannelTx, NativeTx, TxPayload};
+use crate::{
+    AprsEncoderSettings, AprsModulator,
+    encoder::{Modulator, NativeModulator, TxPayload},
+};
 
 const NARROW: f64 = 240_000.0;
 const AUDIO: f64 = 48_000.0;
@@ -254,25 +255,11 @@ fn ais_position() -> Vec<Complex<f32>> {
 }
 
 fn aprs_packet() -> Result<Vec<Complex<f32>>, SynthError> {
-    let settings = ChannelSettings {
-        frequency_hz: 0.0,
-        squelch: Squelch::Off,
-        params: ChannelParams::of(&AprsParams {
-            mode: AprsMode::Afsk1200,
-            ..AprsParams::default()
-        })
-        .need("APRS settings")?,
-        blanker: Default::default(),
-        if_filter: Default::default(),
-    };
-    let mut tx = AprsTx::new(
-        ChannelCtx {
-            input_rate: AprsTx::descriptor().input_rate_hz,
-        },
-        settings,
-    )
+    let mut tx = AprsModulator::new(&AprsEncoderSettings {
+        mode: AprsMode::Afsk1200,
+    })
     .need("APRS modulator")?;
-    tx.submit(TxPayload::Frame(AprsTx::ui_frame(
+    tx.submit(TxPayload::Frame(AprsModulator::ui_frame(
         "DL1ABC-9",
         "APRS",
         &["WIDE1-1"],

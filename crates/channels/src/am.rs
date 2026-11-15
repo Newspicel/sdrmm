@@ -11,10 +11,13 @@ use sdrmm_modem::analog::{AmDemod, AmDetector, AmMode, AmParams as AmWaveform, A
 use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily};
 
 use crate::{
-    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx,
-    NativeChannel, NativeTx, TxPayload, check_input_rate, clamp_full_scale, voice_leveller,
+    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate, clamp_full_scale,
+    encoder::{EncoderBase, Modulator, NativeEncoder, NativeModulator, TxPayload},
+    voice_leveller,
 };
 use sdrmm_modem::keying::{Burst, TxQueue};
+use serde::{Deserialize, Serialize};
 
 const AUDIO_TAPS: usize = 129;
 const CHANNEL_TAPS: usize = 129;
@@ -53,13 +56,16 @@ fn params(settings: &ChannelSettings) -> Result<AmParams, ChannelError> {
 }
 
 fn check_bandwidth(p: &AmParams) -> Result<(), ChannelError> {
+    check_width(p.bandwidth_hz)
+}
+
+fn check_width(bandwidth_hz: f64) -> Result<(), ChannelError> {
     let rate = DESCRIPTOR.input_rate_hz;
-    if p.bandwidth_hz.is_finite() && p.bandwidth_hz > 0.0 && p.bandwidth_hz < rate {
+    if bandwidth_hz.is_finite() && bandwidth_hz > 0.0 && bandwidth_hz < rate {
         Ok(())
     } else {
         Err(ChannelError::InvalidSettings(format!(
-            "am bandwidth must be in (0, {rate}) Hz, got {}",
-            p.bandwidth_hz
+            "am bandwidth must be in (0, {rate}) Hz, got {bandwidth_hz}"
         )))
     }
 }
@@ -73,9 +79,9 @@ pub(crate) fn channel_filter(p: &AmParams) -> Result<ChannelFilter, ChannelError
     )))
 }
 
-fn audio_lowpass(p: &AmParams) -> Result<RealDecimator, ChannelError> {
-    check_bandwidth(p)?;
-    let cutoff = p.bandwidth_hz / 2.0 / DESCRIPTOR.input_rate_hz;
+fn audio_lowpass(bandwidth_hz: f64) -> Result<RealDecimator, ChannelError> {
+    check_width(bandwidth_hz)?;
+    let cutoff = bandwidth_hz / 2.0 / DESCRIPTOR.input_rate_hz;
     Ok(RealDecimator::new(&design_lowpass(AUDIO_TAPS, cutoff), 1))
 }
 
@@ -143,36 +149,46 @@ impl ChannelRx for AmChannel {
 
 const MODULATION_DEPTH: f32 = 0.8;
 
-pub struct AmTx {
+/// What an AM encoder sends: the width its audio is cut to.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AmEncoderSettings {
+    pub bandwidth_hz: f64,
+}
+
+impl Default for AmEncoderSettings {
+    fn default() -> Self {
+        Self {
+            bandwidth_hz: AmParams::default().bandwidth_hz,
+        }
+    }
+}
+
+pub struct AmModulator {
     queue: TxQueue<f32>,
     audio_lp: RealDecimator,
     filtered: Vec<f32>,
     burst: Burst,
 }
 
-impl NativeTx for AmTx {
-    fn descriptor() -> &'static ChannelDescriptor {
-        &DESCRIPTOR
+impl NativeModulator for AmModulator {
+    type Settings = AmEncoderSettings;
+
+    fn rate_hz() -> f64 {
+        DESCRIPTOR.input_rate_hz
     }
 
-    fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
-        check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = params(&settings)?;
+    fn new(settings: &AmEncoderSettings) -> Result<Self, ChannelError> {
         Ok(Self {
             queue: TxQueue::new(DESCRIPTOR.type_id.as_str(), f64::from(AUDIO_RATE)),
-            audio_lp: audio_lowpass(&p)?,
+            audio_lp: audio_lowpass(settings.bandwidth_hz)?,
             filtered: Vec::new(),
-            burst: Burst::new(ctx.input_rate),
+            burst: Burst::new(DESCRIPTOR.input_rate_hz),
         })
     }
 }
 
-impl ChannelTx for AmTx {
-    fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        self.audio_lp = audio_lowpass(&params(&settings)?)?;
-        Ok(())
-    }
-
+impl Modulator for AmModulator {
     fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError> {
         let TxPayload::Audio(pcm) = payload else {
             return Err(ChannelError::InvalidPayload(
@@ -230,16 +246,33 @@ fn am_tune(signal: &sdrmm_wire::IdentSignal, p: &mut AmParams) -> f64 {
 pub(crate) fn am_decoder() -> Native<AmParams> {
     Native::new::<AmChannel>(|p: &AmParams| (-p.bandwidth_hz / 2.0, p.bandwidth_hz / 2.0))
         .filter(channel_filter)
-        .tx::<AmTx>()
         .signatures(am_signatures)
         .tune(am_tune)
         .form(am_form)
         .kinds(am_kinds)
 }
 
+pub(crate) fn am_encoder() -> NativeEncoder<AmEncoderSettings> {
+    NativeEncoder::new::<AmModulator>(
+        EncoderBase {
+            type_id: "am",
+            name: "AM",
+            summary: "AM voice",
+        },
+        |s: &AmEncoderSettings| s.bandwidth_hz,
+    )
+    .form(am_encoder_form)
+}
+
+const BANDWIDTHS_HZ: [f64; 3] = [5_000.0, 8_000.0, 10_000.0];
+
+fn am_encoder_form() -> Vec<SettingField> {
+    vec![SettingField::bandwidth(&BANDWIDTHS_HZ)]
+}
+
 pub(crate) fn am_form() -> Vec<SettingField> {
     vec![
-        SettingField::bandwidth(&[5_000.0, 8_000.0, 10_000.0]),
+        SettingField::bandwidth(&BANDWIDTHS_HZ),
         SettingField::new("sync", "Sync", Control::Toggle)
             .title("Lock to the carrier; clearer under fading"),
     ]
@@ -256,7 +289,7 @@ mod tests {
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::{nfm::NfmParams, wfm::WfmParams};
+    use crate::wfm::WfmParams;
     use crate::{
         synth::{burst, tone_audio},
         testutil::{am_iq, dominant_tone, rms, run_ragged, settings, tone_power},
@@ -368,8 +401,8 @@ mod tests {
         )
     }
 
-    fn transmitter() -> AmTx {
-        AmTx::new(ctx(), tx_params()).unwrap()
+    fn transmitter() -> AmModulator {
+        AmModulator::new(&AmEncoderSettings::default()).unwrap()
     }
 
     #[test]
@@ -452,18 +485,10 @@ mod tests {
     }
 
     #[test]
-    fn tx_rejects_mismatched_params_and_input_rate() {
-        let built = AmTx::new(
-            ctx(),
-            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
-        );
-        assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
-        let built = AmTx::new(
-            ChannelCtx {
-                input_rate: 240_000.0,
-            },
-            tx_params(),
-        );
+    fn tx_refuses_a_width_past_its_rate() {
+        let built = AmModulator::new(&AmEncoderSettings {
+            bandwidth_hz: 96_000.0,
+        });
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
 }

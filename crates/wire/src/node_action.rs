@@ -4,7 +4,7 @@ use utoipa::ToSchema;
 use crate::{
     ControlAck, HuntAction, NetworkExportAction, NetworkExportStatus, NoticeWire, PlaybackRequest,
     PlaybackStatus, ScanAction,
-    transmit::{ModulatorMessage, TransmitAction, TransmitStatus},
+    transmit::{EncoderMessage, TransmitAction, TransmitStatus},
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -21,7 +21,7 @@ pub enum NodeAction {
     Playback(PlaybackRequest),
     NetworkExport(NetworkExportAction),
     Transmit(TransmitAction),
-    Send(ModulatorMessage),
+    Send(EncoderMessage),
     /// One of the actions a processor declares.
     Processor(crate::processor::view::ProcessorAction),
 }

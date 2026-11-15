@@ -54,13 +54,13 @@ symbol the server does not know gets its own palette group or a dot on the map.
 
 ## Transmit
 
-Set `can_transmit` on the descriptor, implement `Transmitter` and call `export_transmit!` once.
-`submit()` takes audio or a frame, `generate()` fills baseband at the input rate. The example's
-`Beacon` sends frames as two-tone FSK.
+A plugin can also bring an encoder. Declare it as the manifest's `encoder` (type id, name, rate,
+width, input, settings form), implement `Transmitter` and call `export_transmit!` once.
+`submit()` takes audio or a frame, `generate()` fills baseband at the encoder's rate.
 
-A Modulator node feeds it. Set `transmits_audio` to take an audio wire. List fields in the
-descriptor's `message` to get a form with a Send button: each filled form arrives as UTF-8 JSON
-in a frame. The example's `Beacon` declares one text field and keys what is typed into it.
+It shows under **Encoders** like a built-in one. Its `input` is `audio` for an audio wire, or
+`message` with fields in `message` for a form with a Send button: each filled form arrives as
+UTF-8 JSON in a frame. The example's `Beacon` declares one text field and keys it as two-tone FSK.
 
 ## Array processors
 

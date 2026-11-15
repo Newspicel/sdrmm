@@ -108,7 +108,7 @@ const UNCOVERED: &[sdrmm_wire::NodeKind] = &[
     sdrmm_wire::NodeKind::Schedule,
     sdrmm_wire::NodeKind::Processor,
     sdrmm_wire::NodeKind::Microphone,
-    sdrmm_wire::NodeKind::Modulator,
+    sdrmm_wire::NodeKind::Encoder,
     sdrmm_wire::NodeKind::Transmit,
 ];
 

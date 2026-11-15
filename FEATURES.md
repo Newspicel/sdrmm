@@ -4,8 +4,8 @@ Remove an item once it ships.
 
 ## 1. Transmit
 
-Already there: a Transmitter node armed by hand, fed by a Modulator (NFM, AM, SSB voice from a
-Microphone or a channel's audio, APRS messages, plugin transmitters), by a channel's baseband or
+Already there: a Transmitter node armed by hand, fed by an encoder (NFM, AM, SSB voice from a
+Microphone or a channel's audio, APRS messages, plugin encoders), by a channel's baseband or
 by a lane, on HackRF, AD936x/Pluto, Soapy and the virtual radios. Level, timeout, on-air state,
 occupied width, a PTT key and VOX included.
 
@@ -13,7 +13,7 @@ occupied width, a PTT key and VOX included.
 - Per-service emission masks beyond the occupied width
 
 ### Sources
-- Modulators for the remaining modes, over the frame/bit codec each protocol already owns
+- Encoders for the remaining modes, over the frame/bit codec each protocol already owns
 - Arbitrary waveforms to air
 
 ### Links

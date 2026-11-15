@@ -81,10 +81,12 @@ use num_complex::Complex;
 use sdrmm_wire::{ChannelParams, ChannelSettings, DecoderEvent, EventKind};
 
 use crate::{
-    AprsTx, ChannelCtx, ChannelFront, ChannelOutputs, ChannelRx, ChannelTx, Ft4Channel, Ft8Channel,
-    NativeTx, TxPayload, WsprChannel,
+    AprsEncoderSettings, AprsModulator, ChannelCtx, ChannelFront, ChannelOutputs, ChannelRx,
+    Ft4Channel, Ft8Channel, WsprChannel,
     airtime::scene::Scene,
-    create, descriptors, input_rate, synth,
+    create, descriptors,
+    encoder::{Modulator, NativeModulator, TxPayload},
+    input_rate, synth,
     synth::{dv, weak_signal},
     testutil::{cf32_le, complex_noise, settings},
 };
@@ -998,7 +1000,10 @@ fn aprs() -> Option<Fixture> {
     )
     .expect("aprs settings");
     let rate = Fixture::rate(&params);
-    let mut tx = AprsTx::new(ChannelCtx { input_rate: rate }, settings(params.clone())).ok()?;
+    let mut tx = AprsModulator::new(&AprsEncoderSettings {
+        mode: AprsMode::Afsk1200,
+    })
+    .ok()?;
     tx.submit(TxPayload::Frame(aprs_frame(APRS_POSITION_REPORT)))
         .ok()?;
     let iq = synth::burst(&mut tx);

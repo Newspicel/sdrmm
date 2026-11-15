@@ -506,7 +506,7 @@ fn processor_params_follow_the_body() {
     for entry in PatchCatalog::build().nodes {
         let body = &entry.default_body;
         match body.processor_params() {
-            Some(params) if entry.needs_processor_type => {
+            Some(params) if entry.picks == Some(Picks::Processor) => {
                 assert!(body.is_array_processor(), "{}", entry.kind);
                 assert!(
                     matches!(params, crate::processor::ProcessorParams::Plugin(_)),

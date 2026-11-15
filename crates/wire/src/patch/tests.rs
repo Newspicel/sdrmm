@@ -1412,7 +1412,7 @@ fn the_catalog_describes_every_node_kind_once() {
         .iter()
         .find(|n| n.kind.as_str() == "channel")
         .expect("channel in the palette");
-    assert!(channel.needs_channel_type);
+    assert_eq!(channel.picks, Some(Picks::Decoder));
     assert_eq!(
         channel
             .ports
@@ -1911,7 +1911,7 @@ fn the_catalog_offers_one_source_that_opens_a_radio() {
         .find(|entry| entry.kind == NodeKind::Device)
         .expect("device is in the catalog");
     assert_eq!(entry.category, NodeCategory::Source);
-    assert!(!entry.needs_channel_type);
+    assert_eq!(entry.picks, None);
     assert_eq!(entry.ports.len(), 3);
     for retired in ["recording", "signal_gen"] {
         assert!(NodeKind::parse(retired).is_none(), "{retired} is retired");
@@ -2231,7 +2231,7 @@ fn a_speaker_output_name_is_bounded() {
 }
 
 fn repeater(edges: Vec<PatchEdge>) -> PatchGraph {
-    use crate::transmit::{ModulatorNode, TransmitNode};
+    use crate::transmit::{EncoderNode, TransmitNode};
     PatchGraph {
         nodes: vec![
             node("radio", NodeBody::Device(DeviceNode::default())),
@@ -2244,8 +2244,8 @@ fn repeater(edges: Vec<PatchEdge>) -> PatchGraph {
             ),
             node(
                 "mod",
-                NodeBody::Modulator(ModulatorNode {
-                    channel_type: "nfm".to_owned(),
+                NodeBody::Encoder(EncoderNode {
+                    encoder_type: "nfm".to_owned(),
                     settings: serde_json::Value::Null,
                 }),
             ),

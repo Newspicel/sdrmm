@@ -1,7 +1,7 @@
 import type { Settings } from "../../lib/settingsForm";
 import type {
-  ChannelDescriptor,
   DeviceSet,
+  EncoderDescriptor,
   PatchNode,
   TransmitSettings,
   TransmitStatus,
@@ -29,34 +29,22 @@ export function withTransmitSettings(node: PatchNode, next: Partial<TransmitSett
   return node.kind === "transmit" ? { ...node, data: { ...node.data, ...next } } : node;
 }
 
-/** Decoders that bring a modulator, in the catalog's order. */
-export function modulatorTypes(types: readonly ChannelDescriptor[]): ChannelDescriptor[] {
-  return types.filter((type) => type.can_transmit === true);
+export function withEncoderSettings(node: PatchNode, settings: Settings): PatchNode {
+  return node.kind === "encoder" ? { ...node, data: { ...node.data, settings } } : node;
 }
 
-/** A new mode starts on its own defaults: another decoder's settings mean nothing to it. */
-export function withModulatorType(node: PatchNode, channelType: string): PatchNode {
-  return node.kind === "modulator" && node.data.channel_type !== channelType
-    ? { ...node, data: { channel_type: channelType } }
-    : node;
-}
-
-export function withModulatorSettings(node: PatchNode, settings: Settings): PatchNode {
-  return node.kind === "modulator" ? { ...node, data: { ...node.data, settings } } : node;
-}
-
-/** What the modulator runs on: its own settings, else the decoder's defaults. */
-export function modulatorSettings(
+/** What the encoder runs on: its own settings, else its defaults. */
+export function encoderSettings(
   stored: unknown,
-  descriptor: ChannelDescriptor | undefined,
+  descriptor: EncoderDescriptor | undefined,
 ): Settings {
   if (typeof stored === "object" && stored !== null) {
     return stored as Settings;
   }
-  return descriptor?.defaults?.params.settings ?? NO_SETTINGS;
+  return descriptor?.defaults ?? NO_SETTINGS;
 }
 
-/** A modulator's signal that spills past the width its mode is meant to stay inside. */
+/** An encoder's signal that spills past the width its mode is meant to stay inside. */
 export function tooWide(status: Pick<TransmitStatus, "occupied_hz" | "channel_hz">): boolean {
   return (
     status.occupied_hz != null &&

@@ -11,6 +11,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use sdrmm_channels::{
     ChannelError, Decoder,
     array_processor::{ProcessorFactory, install_processors, processor_refusal},
+    encoder::{Encoder, encoder_refusal, install_encoders},
     install_plugins, plugin_refusal,
 };
 
@@ -18,6 +19,7 @@ use crate::{
     PluginError,
     cache::ModuleCache,
     decoder::WasmDecoder,
+    encoder::WasmEncoder,
     module::{PluginModule, plugin_name},
     processor::WasmProcessors,
 };
@@ -47,6 +49,7 @@ pub struct Reload {
 #[derive(Default)]
 pub struct Scan {
     pub decoders: Vec<Arc<dyn Decoder>>,
+    pub encoders: Vec<Arc<dyn Encoder>>,
     pub processors: Vec<Arc<dyn ProcessorFactory>>,
     pub errors: Vec<PluginError>,
 }
@@ -56,6 +59,7 @@ struct Loaded {
     name: String,
     fingerprint: u64,
     decoder: Arc<dyn Decoder>,
+    encoder: Option<Arc<dyn Encoder>>,
     processor: Option<Arc<dyn ProcessorFactory>>,
 }
 
@@ -63,6 +67,7 @@ struct Loaded {
 #[derive(Default)]
 struct Taken {
     decoders: Vec<(String, String)>,
+    encoders: Vec<(String, String)>,
     processors: Vec<(String, String)>,
 }
 
@@ -73,6 +78,11 @@ impl Taken {
         let decoder = loaded.decoder.descriptor().type_id.clone();
         let refusal = plugin_refusal(&decoder, &ids(&self.decoders))
             .map(|refusal| explain(refusal, &self.decoders))
+            .or_else(|| {
+                let encoder = &loaded.encoder.as_ref()?.descriptor().type_id;
+                encoder_refusal(encoder, &ids(&self.encoders))
+                    .map(|refusal| explain(refusal, &self.encoders))
+            })
             .or_else(|| {
                 let kind = loaded.processor.as_ref()?.kind();
                 processor_refusal(kind, &ids(&self.processors))
@@ -85,6 +95,10 @@ impl Taken {
             });
         }
         self.decoders.push((decoder, loaded.name.clone()));
+        if let Some(encoder) = &loaded.encoder {
+            let type_id = encoder.descriptor().type_id.clone();
+            self.encoders.push((type_id, loaded.name.clone()));
+        }
         if let Some(processor) = &loaded.processor {
             let kind = processor.kind().type_id.clone();
             self.processors.push((kind, loaded.name.clone()));
@@ -170,10 +184,12 @@ impl PluginDir {
         let module = PluginModule::from_bytes(name.clone(), &bytes, self.cache.as_ref())?;
         let processor = WasmProcessors::of(&module)
             .map(|processors| Arc::new(processors) as Arc<dyn ProcessorFactory>);
+        let encoder = WasmEncoder::of(&module).map(|encoder| Arc::new(encoder) as Arc<dyn Encoder>);
         let loaded = Loaded {
             name,
             fingerprint,
             decoder: Arc::new(WasmDecoder::new(module)),
+            encoder,
             processor,
         };
         self.loaded.insert(path, loaded.clone());
@@ -201,6 +217,7 @@ impl PluginDir {
             match admitted {
                 Ok(loaded) => {
                     scan.decoders.push(loaded.decoder);
+                    scan.encoders.extend(loaded.encoder);
                     scan.processors.extend(loaded.processor);
                 }
                 Err(error) => scan.errors.push(error),
@@ -213,11 +230,13 @@ impl PluginDir {
     pub fn reload(&mut self) -> Reload {
         let Scan {
             decoders,
+            encoders,
             processors,
             mut errors,
         } = self.scan();
         let count = decoders.len();
         let mut replaced = install(install_plugins(decoders), &mut errors);
+        install(install_encoders(encoders).map(|()| Vec::new()), &mut errors);
         replaced.extend(install(install_processors(processors), &mut errors));
         tracing::info!(count, dir = %self.dir.display(), "plugins loaded");
         for error in &errors {

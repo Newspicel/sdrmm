@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use sdrmm_wire::{
-    MicrophoneNode, ModulatorNode, NodeActed, NodeBody, PatchEdge, PatchNode, PortRef, Position,
+    EncoderNode, MicrophoneNode, NodeActed, NodeBody, PatchEdge, PatchNode, PortRef, Position,
     TransmitNode, TransmitPhase, TransmitSettings, TransmitStatus, WorkspaceSnapshot,
 };
 
@@ -28,18 +28,18 @@ fn wire(from: (&str, &str), to: (&str, &str)) -> PatchEdge {
     }
 }
 
-fn modulator(channel_type: &str) -> NodeBody {
-    NodeBody::Modulator(ModulatorNode {
-        channel_type: channel_type.to_owned(),
+fn encoder(encoder_type: &str) -> NodeBody {
+    NodeBody::Encoder(EncoderNode {
+        encoder_type: encoder_type.to_owned(),
         settings: serde_json::Value::Null,
     })
 }
 
-fn station(channel_type: &str) -> WorkspaceSnapshot {
+fn station(encoder_type: &str) -> WorkspaceSnapshot {
     let mut snapshot = virtual_snapshot("transceiver", &[]);
     snapshot.graph.nodes.extend([
         node("mic", NodeBody::Microphone(MicrophoneNode::default())),
-        node("mod", modulator(channel_type)),
+        node("mod", encoder(encoder_type)),
         node("tx", NodeBody::Transmit(TransmitNode::default())),
     ]);
     snapshot.graph.edges.extend([
@@ -101,7 +101,7 @@ async fn until(app: &Router, what: &str, done: impl Fn(&TransmitStatus) -> bool)
 }
 
 #[tokio::test]
-async fn an_armed_transmitter_sends_the_message_its_modulator_is_handed() {
+async fn an_armed_transmitter_sends_the_message_its_encoder_is_handed() {
     let app = test_router();
     on_the_bench(&app, &station("aprs")).await;
     assert_eq!(transmitting(&app).await, None, "nothing transmits unasked");
@@ -155,13 +155,13 @@ async fn a_transmitter_is_refused_until_its_wiring_can_carry_a_signal() {
     on_the_bench(&app, &loose).await;
     let (_, body) = act(&app, "tx", arm()).await;
     assert!(
-        body.contains("Wire a modulator, a channel or a lane"),
+        body.contains("Wire an encoder, a channel or a lane"),
         "{body}"
     );
 
     on_the_bench(&app, &station("")).await;
     let (_, body) = act(&app, "tx", arm()).await;
-    assert!(body.contains("Pick the modulator's mode"), "{body}");
+    assert!(body.contains("Pick the encoder's mode"), "{body}");
 
     let (status, body) = act(&app, "mod", arm()).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -171,7 +171,7 @@ async fn a_transmitter_is_refused_until_its_wiring_can_carry_a_signal() {
 
     let mut deaf = virtual_snapshot("quad", &[]);
     deaf.graph.nodes.extend([
-        node("mod", modulator("nfm")),
+        node("mod", encoder("nfm")),
         node("tx", NodeBody::Transmit(TransmitNode::default())),
     ]);
     deaf.graph.edges.extend([
@@ -231,7 +231,7 @@ async fn a_channels_audio_keys_the_transmitter_it_is_wired_to() {
     let app = test_router();
     let mut snapshot = virtual_snapshot("transceiver", &[("ear", "nfm", "iq")]);
     snapshot.graph.nodes.extend([
-        node("mod", modulator("nfm")),
+        node("mod", encoder("nfm")),
         node("tx", NodeBody::Transmit(TransmitNode::default())),
     ]);
     snapshot.graph.edges.extend([

@@ -25,6 +25,7 @@ pub mod df;
 mod drm;
 mod dsc;
 mod dv;
+pub mod encoder;
 mod eot;
 mod ermes;
 mod flex;
@@ -99,8 +100,8 @@ pub mod synth;
 pub use acars::AcarsChannel;
 pub use adsb::AdsbChannel;
 pub use ais::AisChannelRx;
-pub use am::{AmChannel, AmTx};
-pub use aprs::{AprsChannel, AprsTx, MicE, MicEBit};
+pub use am::{AmChannel, AmEncoderSettings, AmModulator};
+pub use aprs::{AprsChannel, AprsEncoderSettings, AprsModulator, MicE, MicEBit};
 pub use apt::AptChannel;
 pub use atv::AtvChannel;
 pub use audio_chain::{AudioChain, ClickProfile, click_profile};
@@ -143,7 +144,7 @@ pub use lora::LoraChannel;
 pub use lrpt::LrptChannel;
 pub use morse::MorseChannel;
 pub use navtex::NavtexChannel;
-pub use nfm::{NfmChannel, NfmTx};
+pub use nfm::{NfmChannel, NfmEncoderSettings, NfmModulator};
 pub use noise_figure::NoiseFigureChannel;
 use num_complex::Complex;
 pub use per::PerChannel;
@@ -159,7 +160,7 @@ use sdrmm_dsp::{Decimator, FirC};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, ChannelStatus, DecoderEvent, PositionFix};
 pub use selcall::SelcallChannel;
 pub use sid::SidChannel;
-pub use ssb::{SsbChannel, SsbTx};
+pub use ssb::{SsbChannel, SsbEncoderSettings, SsbModulator};
 pub use sstv::SstvChannel;
 pub use stanag::StanagChannel;
 pub use symbols::SymbolTap;
@@ -262,9 +263,9 @@ pub use radiosonde::{
 pub use rds::RdsUpdate;
 pub use registry::{
     ChannelLayout, Decoder, Native, Registry, TrunkGrant, TrunkPlacement, Trunking, Tuned,
-    audio_channels, channel_filter, check, compose, create, create_tx, default_settings,
-    descriptor, descriptors, input_rate, install_plugins, layout, normalize, occupied_band,
-    plugin_refusal, registry, trunking, tune,
+    audio_channels, channel_filter, check, create, default_settings, descriptor, descriptors,
+    input_rate, install_plugins, layout, normalize, occupied_band, plugin_refusal, registry,
+    trunking, tune,
 };
 pub use remote_id::{
     AuthType, EuCategory, EuClassification, HeightReference, OperatorLocationType, RemoteIdFrame,
@@ -379,8 +380,8 @@ pub enum ChannelError {
     UnknownType(String),
     #[error("invalid settings: {0}")]
     InvalidSettings(String),
-    #[error("{0} has no modulator")]
-    NoTransmitter(String),
+    #[error("unknown encoder: {0}")]
+    UnknownEncoder(String),
     #[error("invalid payload: {0}")]
     InvalidPayload(String),
     #[error("{0}")]
@@ -482,27 +483,6 @@ pub trait ChannelRx: Send {
     fn skipped(&self) -> u32 {
         0
     }
-}
-
-pub enum TxPayload {
-    Audio(Vec<f32>),
-    Frame(Vec<u8>),
-}
-
-/// A modulator compiled into this crate: its static descriptor and how to open it.
-pub trait NativeTx: ChannelTx + Sized {
-    fn descriptor() -> &'static ChannelDescriptor;
-
-    fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError>;
-}
-
-/// A running modulator, built in or loaded as a plugin.
-pub trait ChannelTx: Send {
-    fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError>;
-
-    fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError>;
-
-    fn generate(&mut self, out: &mut [Complex<f32>]) -> usize;
 }
 
 pub(crate) fn check_input_rate(
@@ -905,65 +885,6 @@ mod tests {
             let built = create(ctx, &home_settings(&d.type_id));
             assert!(built.is_ok(), "{}: {:?}", d.type_id, built.err());
         }
-    }
-
-    #[test]
-    fn every_transmitter_is_fed_by_audio_or_by_its_message_form() {
-        for d in descriptors() {
-            assert_eq!(
-                d.can_transmit,
-                d.transmits_audio != !d.message.is_empty(),
-                "{}: audio {} message fields {}",
-                d.type_id,
-                d.transmits_audio,
-                d.message.len()
-            );
-            let composed = compose(&d.type_id, &serde_json::json!({}));
-            if d.message.is_empty() {
-                assert!(
-                    matches!(composed, Err(ChannelError::InvalidPayload(_))),
-                    "{} sends no messages",
-                    d.type_id
-                );
-            }
-        }
-        assert_eq!(descriptor("aprs").expect("aprs").message.len(), 4);
-        assert!(descriptor("nfm").expect("nfm").transmits_audio);
-    }
-
-    #[test]
-    fn can_transmit_matches_what_create_tx_will_build() {
-        for d in descriptors() {
-            let ctx = ChannelCtx {
-                input_rate: d.input_rate_hz,
-            };
-            let built = create_tx(ctx, &home_settings(&d.type_id));
-            assert_eq!(
-                built.is_ok(),
-                d.can_transmit,
-                "{}: can_transmit {} but create_tx said {:?}",
-                d.type_id,
-                d.can_transmit,
-                built.err()
-            );
-            if !d.can_transmit {
-                assert!(
-                    matches!(built, Err(ChannelError::NoTransmitter(_))),
-                    "{} must refuse by naming the missing modulator",
-                    d.type_id
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn only_the_modes_with_a_modulator_transmit() {
-        let transmitting: Vec<String> = descriptors()
-            .into_iter()
-            .filter(|d| d.can_transmit)
-            .map(|d| d.type_id)
-            .collect();
-        assert_eq!(transmitting, ["nfm", "am", "ssb", "aprs"]);
     }
 
     #[test]

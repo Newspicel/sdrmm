@@ -56,10 +56,10 @@ pub use sdrmm_modem::synth::{
     Signal, add_noise, fm_modulate, fsk, ook, resample, scale, shift, silence, tone_audio,
 };
 
-use crate::ChannelTx;
+use crate::encoder::Modulator;
 
 #[must_use]
-pub fn burst(tx: &mut dyn ChannelTx) -> Vec<Complex<f32>> {
+pub fn burst(tx: &mut dyn Modulator) -> Vec<Complex<f32>> {
     let mut iq = Vec::new();
     let mut block = [Complex::new(0.0, 0.0); 4_096];
     loop {

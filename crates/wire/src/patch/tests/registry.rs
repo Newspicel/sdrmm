@@ -43,7 +43,7 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("processor", Face::fit(400)),
     ("note", Face::sized(320, 200).min(200, 120)),
     ("microphone", Face::fit(300)),
-    ("modulator", Face::fit(400)),
+    ("encoder", Face::fit(280)),
     ("transmit", Face::fit(360)),
 ];
 
@@ -194,4 +194,22 @@ fn a_node_takes_events_on_one_input_at_most() {
             "{kind} has {events} events inputs, so a sink id would not name one input"
         );
     }
+}
+
+#[test]
+fn channels_encoders_and_processors_each_pick_from_their_own_registry() {
+    let picked: Vec<(&str, Picks)> = PatchCatalog::build()
+        .nodes
+        .iter()
+        .filter_map(|entry| Some((entry.kind.as_str(), entry.picks?)))
+        .collect();
+    assert!(picked.contains(&("channel", Picks::Decoder)));
+    assert!(picked.contains(&("encoder", Picks::Encoder)));
+    assert!(picked.contains(&("processor", Picks::Processor)));
+    assert!(
+        picked
+            .iter()
+            .all(|(kind, _)| ["channel", "encoder", "processor"].contains(kind)),
+        "{picked:?}"
+    );
 }

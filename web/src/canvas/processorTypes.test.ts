@@ -24,7 +24,7 @@ function processorNode(type: string): PatchNode {
 
 describe("plugin processor types", () => {
   it("start a fresh node on their defaults and form", () => {
-    const body = newNodeBody(WITH_METER, "processor", { processorType: "lane_meter" });
+    const body = newNodeBody(WITH_METER, "processor", { typeId: "lane_meter" });
     expect(body).toEqual({
       kind: "processor",
       data: { processor_type: "lane_meter", settings: { blocks: 8 } },
@@ -32,13 +32,13 @@ describe("plugin processor types", () => {
     const node = processorNode("lane_meter");
     expect(nodeSettings(WITH_METER, node)).toEqual({ blocks: 8 });
     expect(formOf(WITH_METER, node).map((field) => field.key)).toEqual(["blocks"]);
-    expect(newNodeBody(WITH_METER, "processor", { processorType: "gone" })).toBeNull();
+    expect(newNodeBody(WITH_METER, "processor", { typeId: "gone" })).toBeNull();
   });
 
   it("each show in the palette, not the bare kind", () => {
     const items = paletteGroups(WITH_METER, []).flatMap((group) => group.items);
     expect(items.filter((item) => item.kind === "processor")).toEqual([
-      expect.objectContaining({ id: "processor:lane_meter", processorType: "lane_meter" }),
+      expect.objectContaining({ id: "processor:lane_meter", typeId: "lane_meter" }),
     ]);
     const bare = paletteGroups(CATALOG, []).flatMap((group) => group.items);
     expect(bare.some((item) => item.kind === "processor")).toBe(false);

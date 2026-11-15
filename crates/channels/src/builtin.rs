@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::registry::Decoder;
+use crate::{encoder::Encoder, registry::Decoder};
 
 /// Every decoder compiled in, in the order the palette lists them; the first is what a new
 /// channel starts as.
@@ -73,5 +73,15 @@ pub(crate) fn decoders() -> Vec<Arc<dyn Decoder>> {
         Arc::new(crate::per::per_decoder()),
         Arc::new(crate::sid::sid_decoder()),
         Arc::new(crate::stanag::stanag_decoder()),
+    ]
+}
+
+/// Every encoder compiled in, in the order the palette lists them.
+pub(crate) fn encoders() -> Vec<Arc<dyn Encoder>> {
+    vec![
+        Arc::new(crate::nfm::nfm_encoder()),
+        Arc::new(crate::am::am_encoder()),
+        Arc::new(crate::ssb::ssb_encoder()),
+        Arc::new(crate::aprs::aprs_encoder()),
     ]
 }

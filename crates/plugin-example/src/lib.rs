@@ -1,8 +1,8 @@
 //! Carrier: reports the strongest unmodulated carrier in its passband.
 //!
 //! A template for decoder plugins: a settings form, one event kind with a presenter and view
-//! hints, the health footer, a host FFT doing the heavy lifting, a transmitter ([`Beacon`]) and
-//! an array processor ([`LaneMeter`]).
+//! hints, the health footer, a host FFT doing the heavy lifting, an encoder ([`Beacon`]) and an
+//! array processor ([`LaneMeter`]).
 //! Build it in this folder with `cargo build --target wasm32-unknown-unknown --release` and drop
 //! the `.wasm` into the server's plugins directory.
 
@@ -16,8 +16,8 @@ use sdrmm_plugin::{
     kernels::Fft,
     serde_json::Value,
     wire::{
-        Capability, ChannelDescriptor, ChannelHealth, ChannelStatus, Control, DecoderFamily,
-        EventContract, EventKind, EventKindEntry, KindView, NumberSpec, SettingField,
+        Capability, ChannelDescriptor, ChannelHealth, ChannelStatus, DecoderFamily, EventContract,
+        EventKind, EventKindEntry, KindView, NumberSpec, SettingField,
         patch::Hue,
         plugin::{ABI_VERSION, PluginLayout, PluginManifest},
         present::{Presentation, Unit, fields, number},
@@ -141,11 +141,6 @@ impl Plugin for Carrier {
                 input_rate_hz: INPUT_RATE_HZ,
                 has_audio: false,
                 emits: vec![KIND],
-                can_transmit: true,
-                message: vec![
-                    SettingField::new("text", "Text", Control::text("CQ"))
-                        .title("Text the beacon keys"),
-                ],
                 ..ChannelDescriptor::default()
             },
             form: vec![
@@ -170,6 +165,7 @@ impl Plugin for Carrier {
             ],
             home_hz: None,
             processor: Some(lane_meter::kind()),
+            encoder: Some(beacon::descriptor()),
         }
     }
 

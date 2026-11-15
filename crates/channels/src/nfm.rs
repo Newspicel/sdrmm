@@ -19,8 +19,9 @@ use sdrmm_wire::{
 };
 
 use crate::{
-    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx,
-    NativeChannel, NativeTx, TxPayload, check_input_rate, clamp_full_scale,
+    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate, clamp_full_scale,
+    encoder::{EncoderBase, Modulator, NativeEncoder, NativeModulator, TxPayload},
     tone_squelch::{AUDIO_CORNER_HZ, ToneSquelch, is_standard_ctcss, is_standard_dcs},
     voice_inversion::{
         DEFAULT_INVERSION_HZ, Inversion, InversionDetector, MAX_INVERSION_HZ, MIN_INVERSION_HZ,
@@ -28,6 +29,7 @@ use crate::{
     },
 };
 use sdrmm_modem::keying::{Burst, TxQueue};
+use serde::{Deserialize, Serialize};
 
 const VOICE_CUTOFF_HZ: f64 = 3_400.0;
 const COMPANDER_REFERENCE_RMS: f32 = 0.25;
@@ -315,13 +317,16 @@ fn params(settings: &ChannelSettings) -> Result<NfmParams, ChannelError> {
 }
 
 fn check_bandwidth(p: &NfmParams) -> Result<(), ChannelError> {
+    check_width(p.bandwidth_hz)
+}
+
+fn check_width(bandwidth_hz: f64) -> Result<(), ChannelError> {
     let rate = DESCRIPTOR.input_rate_hz;
-    if p.bandwidth_hz.is_finite() && p.bandwidth_hz > 0.0 && p.bandwidth_hz < rate {
+    if bandwidth_hz.is_finite() && bandwidth_hz > 0.0 && bandwidth_hz < rate {
         Ok(())
     } else {
         Err(ChannelError::InvalidSettings(format!(
-            "nfm bandwidth must be in (0, {rate}) Hz, got {}",
-            p.bandwidth_hz
+            "nfm bandwidth must be in (0, {rate}) Hz, got {bandwidth_hz}"
         )))
     }
 }
@@ -370,8 +375,11 @@ fn discriminator(rate: f64, p: &NfmParams) -> AngleDemod {
     )
 }
 
+/// Peak deviation is a fifth of the channel width: 2.5 kHz on 12.5 kHz, 5 kHz on 25 kHz.
+const DEVIATION_RATIO: f64 = 5.0;
+
 fn deviation_hz(p: &NfmParams) -> f64 {
-    p.bandwidth_hz / 5.0
+    p.bandwidth_hz / DEVIATION_RATIO
 }
 
 pub(crate) fn channel_filter(p: &NfmParams) -> Result<ChannelFilter, ChannelError> {
@@ -490,7 +498,28 @@ impl ChannelRx for NfmChannel {
     }
 }
 
-pub struct NfmTx {
+/// What an NFM encoder sends: its channel width, and how the voice is shaped before it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NfmEncoderSettings {
+    pub bandwidth_hz: f64,
+    pub inversion: bool,
+    pub inversion_hz: f64,
+    pub compander: bool,
+}
+
+impl Default for NfmEncoderSettings {
+    fn default() -> Self {
+        Self {
+            bandwidth_hz: NfmParams::default().bandwidth_hz,
+            inversion: false,
+            inversion_hz: DEFAULT_INVERSION_HZ,
+            compander: false,
+        }
+    }
+}
+
+pub struct NfmModulator {
     rate: f64,
     deviation_hz: f64,
     queue: TxQueue<f32>,
@@ -503,8 +532,8 @@ pub struct NfmTx {
     phase: f64,
 }
 
-fn tx_compressor(p: &NfmParams, rate: f64) -> Option<Compander> {
-    p.compander.then(|| {
+fn tx_compressor(s: &NfmEncoderSettings, rate: f64) -> Option<Compander> {
+    s.compander.then(|| {
         Compander::compressor(
             rate,
             COMPANDER_REFERENCE_RMS,
@@ -514,52 +543,48 @@ fn tx_compressor(p: &NfmParams, rate: f64) -> Option<Compander> {
     })
 }
 
-fn tx_inverter(p: &NfmParams, rate: f64) -> Option<VoiceInverter> {
-    match p.scrambler_mode {
-        NfmScramblerMode::Inversion => Some(VoiceInverter::new(
-            rate,
-            p.inversion_hz.unwrap_or(DEFAULT_INVERSION_HZ),
-        )),
-        NfmScramblerMode::Off | NfmScramblerMode::Auto => None,
-    }
+fn tx_inverter(s: &NfmEncoderSettings, rate: f64) -> Option<VoiceInverter> {
+    s.inversion
+        .then(|| VoiceInverter::new(rate, s.inversion_hz))
 }
 
-impl NativeTx for NfmTx {
-    fn descriptor() -> &'static ChannelDescriptor {
-        &DESCRIPTOR
+fn check_encoder(s: &NfmEncoderSettings) -> Result<(), ChannelError> {
+    check_width(s.bandwidth_hz)?;
+    if s.inversion && !is_supported_inversion(s.inversion_hz) {
+        return Err(ChannelError::InvalidSettings(format!(
+            "nfm inversion needs a carrier in {MIN_INVERSION_HZ}..={MAX_INVERSION_HZ} Hz, got {}",
+            s.inversion_hz
+        )));
+    }
+    Ok(())
+}
+
+impl NativeModulator for NfmModulator {
+    type Settings = NfmEncoderSettings;
+
+    fn rate_hz() -> f64 {
+        DESCRIPTOR.input_rate_hz
     }
 
-    fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
-        check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = &params(&settings)?;
-        check_bandwidth(p)?;
-        check_scrambler(p)?;
+    fn new(settings: &NfmEncoderSettings) -> Result<Self, ChannelError> {
+        check_encoder(settings)?;
+        let rate = DESCRIPTOR.input_rate_hz;
         Ok(Self {
-            rate: ctx.input_rate,
-            deviation_hz: deviation_hz(p),
+            rate,
+            deviation_hz: settings.bandwidth_hz / DEVIATION_RATIO,
             queue: TxQueue::new(DESCRIPTOR.type_id.as_str(), f64::from(AUDIO_RATE)),
             audio_lp: audio_lowpass(),
-            compressor: tx_compressor(p, f64::from(AUDIO_RATE)),
-            inverter: tx_inverter(p, f64::from(AUDIO_RATE)),
+            compressor: tx_compressor(settings, f64::from(AUDIO_RATE)),
+            inverter: tx_inverter(settings, f64::from(AUDIO_RATE)),
             preemphasis: AudioPreemphasis::new(f64::from(AUDIO_RATE)),
             filtered: Vec::new(),
-            burst: Burst::new(ctx.input_rate),
+            burst: Burst::new(rate),
             phase: 0.0,
         })
     }
 }
 
-impl ChannelTx for NfmTx {
-    fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let p = &params(&settings)?;
-        check_bandwidth(p)?;
-        check_scrambler(p)?;
-        self.deviation_hz = deviation_hz(p);
-        self.compressor = tx_compressor(p, f64::from(AUDIO_RATE));
-        self.inverter = tx_inverter(p, f64::from(AUDIO_RATE));
-        Ok(())
-    }
-
+impl Modulator for NfmModulator {
     fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError> {
         let TxPayload::Audio(pcm) = payload else {
             return Err(ChannelError::InvalidPayload(
@@ -641,7 +666,6 @@ fn nfm_tune(signal: &sdrmm_wire::IdentSignal, p: &mut NfmParams) -> f64 {
 pub(crate) fn nfm_decoder() -> Native<NfmParams> {
     Native::new::<NfmChannel>(|p: &NfmParams| (-p.bandwidth_hz / 2.0, p.bandwidth_hz / 2.0))
         .filter(channel_filter)
-        .tx::<NfmTx>()
         .signatures(nfm_signatures)
         .tune(nfm_tune)
         .form(nfm_form)
@@ -652,6 +676,35 @@ const CTCSS_DEFAULT_HZ: f64 = 88.5;
 const DCS_DEFAULT_CODE: u16 = 23;
 const INVERSION_DEFAULT_HZ: f64 = 3_300.0;
 const BANDWIDTHS_HZ: [f64; 2] = [12_500.0, 25_000.0];
+
+pub(crate) fn nfm_encoder() -> NativeEncoder<NfmEncoderSettings> {
+    NativeEncoder::new::<NfmModulator>(
+        EncoderBase {
+            type_id: "nfm",
+            name: "NFM",
+            summary: "Narrowband FM voice",
+        },
+        |s: &NfmEncoderSettings| s.bandwidth_hz,
+    )
+    .form(nfm_encoder_form)
+}
+
+fn nfm_encoder_form() -> Vec<SettingField> {
+    vec![
+        SettingField::bandwidth(&BANDWIDTHS_HZ),
+        SettingField::new("inversion", "Inversion", Control::Toggle)
+            .title("Scramble by inverting the voice"),
+        SettingField::new(
+            "inversion_hz",
+            "Carrier",
+            NumberSpec::hz(MIN_INVERSION_HZ, MAX_INVERSION_HZ, 50.0),
+        )
+        .title("Inversion carrier")
+        .when("inversion", [true]),
+        SettingField::new("compander", "Compander", Control::Toggle)
+            .title("Compress audio 2:1 for a receiver that expands it"),
+    ]
+}
 
 pub(crate) fn nfm_form() -> Vec<SettingField> {
     vec![
@@ -1305,10 +1358,7 @@ mod tests {
                 matches!(built, Err(ChannelError::InvalidSettings(_))),
                 "{p:?} must be refused"
             );
-            let built = NfmTx::new(
-                ctx(),
-                settings(ChannelParams::of(&p.clone()).expect("nfm settings")),
-            );
+            let built = modulator_for(&p);
             assert!(
                 matches!(built, Err(ChannelError::InvalidSettings(_))),
                 "{p:?} must be refused by the transmitter"
@@ -1318,12 +1368,9 @@ mod tests {
 
     #[test]
     fn tx_scrambles_what_the_matching_receiver_takes_apart() {
-        let params = ChannelParams::of(&scrambler_params(
-            NfmScramblerMode::Inversion,
-            Some(3_300.0),
-        ))
-        .expect("nfm settings");
-        let mut tx = NfmTx::new(ctx(), settings(params.clone())).unwrap();
+        let scrambled = scrambler_params(NfmScramblerMode::Inversion, Some(3_300.0));
+        let params = ChannelParams::of(&scrambled).expect("nfm settings");
+        let mut tx = modulator_for(&scrambled).unwrap();
         tx.submit(TxPayload::Audio(tone_audio(1_000.0, 1.0, RATE, 24_000)))
             .unwrap();
         let iq = burst(&mut tx);
@@ -1351,11 +1398,7 @@ mod tests {
     }
 
     fn heard_over_the_air(tx: NfmParams, rx: NfmParams, amplitude: f32) -> f32 {
-        let mut transmitter = NfmTx::new(
-            ctx(),
-            settings(ChannelParams::of(&tx).expect("nfm settings")),
-        )
-        .unwrap();
+        let mut transmitter = modulator_for(&tx).unwrap();
         transmitter
             .submit(TxPayload::Audio(tone_audio(
                 1_000.0, amplitude, RATE, 96_000,
@@ -1418,11 +1461,7 @@ mod tests {
     fn a_compandered_link_lifts_a_quiet_voice_out_of_the_channel_noise() {
         let tone_to_noise = |compander: bool| {
             let params = compander_params(compander);
-            let mut tx = NfmTx::new(
-                ctx(),
-                settings(ChannelParams::of(&params.clone()).expect("nfm settings")),
-            )
-            .unwrap();
+            let mut tx = modulator_for(&params).unwrap();
             tx.submit(TxPayload::Audio(tone_audio(1_000.0, QUIET, RATE, 96_000)))
                 .unwrap();
             let mut iq = burst(&mut tx);
@@ -1492,23 +1531,29 @@ mod tests {
         Burst::new(RATE).ramp_len()
     }
 
-    fn transmitter() -> NfmTx {
-        NfmTx::new(
-            ctx(),
-            settings(ChannelParams::of(&NfmParams::default()).expect("nfm settings")),
-        )
-        .unwrap()
+    /// The encoder set the way a receiver on `p` hears it.
+    fn modulator_for(p: &NfmParams) -> Result<NfmModulator, ChannelError> {
+        NfmModulator::new(&NfmEncoderSettings {
+            bandwidth_hz: p.bandwidth_hz,
+            inversion: p.scrambler_mode == NfmScramblerMode::Inversion,
+            inversion_hz: p.inversion_hz.unwrap_or(f64::NAN),
+            compander: p.compander,
+        })
+    }
+
+    fn transmitter() -> NfmModulator {
+        NfmModulator::new(&NfmEncoderSettings::default()).unwrap()
     }
 
     #[test]
     fn tx_round_trips_a_tone_through_the_demodulator() {
         for bandwidth_hz in [12_500.0, 25_000.0] {
-            let params = ChannelParams::of(&NfmParams {
+            let heard = NfmParams {
                 bandwidth_hz,
                 ..NfmParams::default()
-            })
-            .expect("nfm settings");
-            let mut tx = NfmTx::new(ctx(), settings(params.clone())).unwrap();
+            };
+            let params = ChannelParams::of(&heard).expect("nfm settings");
+            let mut tx = modulator_for(&heard).unwrap();
             tx.submit(TxPayload::Audio(tone_audio(1_000.0, 1.0, RATE, 24_000)))
                 .unwrap();
             let iq = burst(&mut tx);
@@ -1533,27 +1578,6 @@ mod tests {
                 "{bandwidth_hz} Hz: rms {amplitude}"
             );
         }
-    }
-
-    #[test]
-    fn tx_apply_rescales_deviation() {
-        let wide = settings(
-            ChannelParams::of(&NfmParams {
-                bandwidth_hz: 25_000.0,
-                ..NfmParams::default()
-            })
-            .expect("nfm settings"),
-        );
-        let mut tx = transmitter();
-        tx.apply(wide.clone()).unwrap();
-        tx.submit(TxPayload::Audio(tone_audio(1_000.0, 1.0, RATE, 24_000)))
-            .unwrap();
-        let iq = burst(&mut tx);
-
-        let mut rx = channel();
-        rx.apply(wide).unwrap();
-        let amplitude = rms(&run_ragged(&mut rx, &iq)[2_000..20_000]);
-        assert!((0.6..0.8).contains(&amplitude), "rms {amplitude}");
     }
 
     #[test]
@@ -1613,18 +1637,11 @@ mod tests {
     }
 
     #[test]
-    fn tx_rejects_mismatched_params_and_input_rate() {
-        let built = NfmTx::new(
-            ctx(),
-            settings(ChannelParams::new("am", &AmParams::default()).expect("am settings")),
-        );
-        assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
-        let built = NfmTx::new(
-            ChannelCtx {
-                input_rate: 240_000.0,
-            },
-            settings(ChannelParams::of(&NfmParams::default()).expect("nfm settings")),
-        );
+    fn tx_refuses_a_width_past_its_rate() {
+        let built = NfmModulator::new(&NfmEncoderSettings {
+            bandwidth_hz: 96_000.0,
+            ..NfmEncoderSettings::default()
+        });
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
 }

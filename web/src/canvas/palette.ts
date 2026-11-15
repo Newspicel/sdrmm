@@ -1,8 +1,10 @@
 import type {
   ChannelDescriptor,
   DecoderFamily,
+  EncoderDescriptor,
   NodeCategory,
   NodeKind,
+  NodeTypeInfo,
   PatchCatalog,
 } from "../lib/types";
 
@@ -13,9 +15,10 @@ export interface PaletteItem {
   name: string;
   summary: string;
   kind: NodeKind;
-  type?: ChannelDescriptor;
-  /** The plugin processor a processor node runs. */
-  processorType?: string;
+  /** The decoder, encoder or plugin processor the node runs. */
+  typeId?: string;
+  /** The width the type occupies, shown beside its name. */
+  bandwidthHz?: number;
 }
 
 export interface PaletteGroup {
@@ -28,6 +31,7 @@ export interface PaletteGroup {
 export const SECTION_TITLES = {
   source: "Sources",
   channel: "Decoders",
+  encoder: "Encoders",
   tool: "Tools",
   output: "Outputs",
 } satisfies Record<PaletteSection, string>;
@@ -67,39 +71,54 @@ export function familiesOf(types: readonly ChannelDescriptor[]): DecoderFamily[]
 export function paletteGroups(
   catalog: PatchCatalog,
   channelTypes: readonly ChannelDescriptor[],
+  encoderTypes: readonly EncoderDescriptor[] = [],
 ): PaletteGroup[] {
   const sections = new Map<PaletteSection, PaletteItem[]>(
     SECTIONS.map((section) => [section.id, []]),
   );
   for (const entry of catalog.nodes) {
-    if (entry.needs_processor_type === true) {
-      sections.get(entry.category)?.push(...processorItems(catalog, entry.kind));
-    } else if (entry.needs_channel_type !== true) {
-      sections.get(entry.category)?.push({
-        id: entry.kind,
-        name: entry.name,
-        summary: entry.summary ?? "",
-        kind: entry.kind,
-      });
-    }
+    sections.get(entry.category)?.push(...entryItems(catalog, entry, encoderTypes));
   }
-  const offersChannels = catalog.nodes.some((entry) => entry.needs_channel_type === true);
+  const offersDecoders = catalog.nodes.some((entry) => entry.picks === "decoder");
   return SECTIONS.flatMap((section) => {
     const plain = { ...section, section: section.id, items: sections.get(section.id) ?? [] };
-    return section.id === "channel" && offersChannels
+    return section.id === "channel" && offersDecoders
       ? [plain, ...decoderGroups(channelTypes)]
       : [plain];
   }).filter((group) => group.items.length > 0);
 }
 
-function processorItems(catalog: PatchCatalog, kind: NodeKind): PaletteItem[] {
-  return (catalog.processors ?? []).map((type) => ({
-    id: `processor:${type.type_id}`,
+/** What one catalog entry adds: itself, or one item per type of the registry it picks from. */
+function entryItems(
+  catalog: PatchCatalog,
+  entry: NodeTypeInfo,
+  encoderTypes: readonly EncoderDescriptor[],
+): PaletteItem[] {
+  switch (entry.picks) {
+    case "decoder":
+      return [];
+    case "encoder":
+      return encoderTypes.map((type) => typeItem(entry.kind, type, type.bandwidth_hz));
+    case "processor":
+      return (catalog.processors ?? []).map((type) => typeItem(entry.kind, type));
+    default:
+      return [{ id: entry.kind, name: entry.name, summary: entry.summary ?? "", kind: entry.kind }];
+  }
+}
+
+function typeItem(
+  kind: NodeKind,
+  type: { type_id: string; name: string; summary?: string },
+  bandwidthHz?: number,
+): PaletteItem {
+  return {
+    id: `${kind}:${type.type_id}`,
     name: type.name,
     summary: type.summary ?? "",
     kind,
-    processorType: type.type_id,
-  }));
+    typeId: type.type_id,
+    bandwidthHz,
+  };
 }
 
 export function decoderGroups(channelTypes: readonly ChannelDescriptor[]): PaletteGroup[] {
@@ -114,13 +133,7 @@ export function decoderGroups(channelTypes: readonly ChannelDescriptor[]): Palet
 }
 
 function channelItems(channelTypes: readonly ChannelDescriptor[]): PaletteItem[] {
-  return channelTypes.map((type) => ({
-    id: `channel:${type.type_id}`,
-    name: type.name,
-    summary: type.summary ?? "",
-    kind: "channel",
-    type,
-  }));
+  return channelTypes.map((type) => typeItem("channel", type, type.bandwidth_hz));
 }
 
 export function channelPicker(

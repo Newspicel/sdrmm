@@ -2344,6 +2344,23 @@
         }
       }
     },
+    "/api/encodertypes": {
+      "get": {
+        "operationId": "get_encoder_types",
+        "responses": {
+          "200": {
+            "description": "Available encoder types",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EncoderTypesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/examples": {
       "get": {
         "operationId": "list_examples",
@@ -9769,9 +9786,6 @@
               }
             ]
           },
-          "can_transmit": {
-            "type": "boolean"
-          },
           "click": {
             "$ref": "#/components/schemas/ClickProfile"
           },
@@ -9813,13 +9827,6 @@
             "type": "boolean",
             "description": "The demodulator already levels its audio, so an added AGC stage is redundant."
           },
-          "message": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SettingField"
-            },
-            "description": "The form of one message the transmitter sends, in order."
-          },
           "name": {
             "type": "string"
           },
@@ -9848,10 +9855,6 @@
           },
           "summary": {
             "type": "string"
-          },
-          "transmits_audio": {
-            "type": "boolean",
-            "description": "The transmitter modulates an audio wire."
           },
           "trial": {
             "oneOf": [
@@ -13832,6 +13835,119 @@
           }
         }
       },
+      "EncoderDescriptor": {
+        "type": "object",
+        "description": "One mode the server can transmit, built in or loaded as a plugin.",
+        "required": [
+          "type_id",
+          "name",
+          "rate_hz",
+          "bandwidth_hz"
+        ],
+        "properties": {
+          "bandwidth_hz": {
+            "type": "number",
+            "format": "double",
+            "description": "The width the signal stays inside at the default settings."
+          },
+          "defaults": {
+            "type": "object",
+            "description": "What a fresh encoder starts on.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "input": {
+            "$ref": "#/components/schemas/EncoderInput"
+          },
+          "message": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettingField"
+            },
+            "description": "The form of one message, in order. Only a message encoder has one."
+          },
+          "name": {
+            "type": "string"
+          },
+          "rate_hz": {
+            "type": "number",
+            "format": "double",
+            "description": "The baseband rate the encoder produces."
+          },
+          "settings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettingField"
+            },
+            "description": "The form an encoder node renders for its settings, in order."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "type_id": {
+            "type": "string"
+          }
+        }
+      },
+      "EncoderInput": {
+        "type": "string",
+        "description": "What an encoder turns into a signal.",
+        "enum": [
+          "audio",
+          "message"
+        ]
+      },
+      "EncoderMessage": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "object",
+            "description": "One message, shaped by the form its encoder declares.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "EncoderNode": {
+        "type": "object",
+        "required": [
+          "encoder_type"
+        ],
+        "properties": {
+          "encoder_type": {
+            "type": "string"
+          },
+          "settings": {
+            "type": "object",
+            "description": "The encoder's own settings object, absent fields taking its defaults.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "EncoderTypesResponse": {
+        "type": "object",
+        "required": [
+          "types"
+        ],
+        "properties": {
+          "types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EncoderDescriptor"
+            }
+          }
+        }
+      },
       "Entity": {
         "type": "object",
         "required": [
@@ -16988,41 +17104,6 @@
           "unknown"
         ]
       },
-      "ModulatorMessage": {
-        "type": "object",
-        "required": [
-          "message"
-        ],
-        "properties": {
-          "message": {
-            "type": "object",
-            "description": "One message, shaped by the form its decoder declares.",
-            "additionalProperties": {},
-            "propertyNames": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "ModulatorNode": {
-        "type": "object",
-        "required": [
-          "channel_type"
-        ],
-        "properties": {
-          "channel_type": {
-            "type": "string"
-          },
-          "settings": {
-            "type": "object",
-            "description": "The decoder's own settings object, absent fields taking its defaults.",
-            "additionalProperties": {},
-            "propertyNames": {
-              "type": "string"
-            }
-          }
-        }
-      },
       "Multi": {
         "type": "string",
         "enum": [
@@ -18535,7 +18616,7 @@
                 ]
               },
               "with": {
-                "$ref": "#/components/schemas/ModulatorMessage"
+                "$ref": "#/components/schemas/EncoderMessage"
               }
             }
           },
@@ -19281,12 +19362,12 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/ModulatorNode"
+                "$ref": "#/components/schemas/EncoderNode"
               },
               "kind": {
                 "type": "string",
                 "enum": [
-                  "modulator"
+                  "encoder"
                 ]
               }
             }
@@ -19334,6 +19415,7 @@
         "enum": [
           "source",
           "channel",
+          "encoder",
           "tool",
           "output"
         ]
@@ -19382,7 +19464,7 @@
           "triangulation",
           "bearing_fix",
           "microphone",
-          "modulator",
+          "encoder",
           "transmit",
           "note"
         ]
@@ -19433,12 +19515,16 @@
           "name": {
             "type": "string"
           },
-          "needs_channel_type": {
-            "type": "boolean"
-          },
-          "needs_processor_type": {
-            "type": "boolean",
-            "description": "A node of this kind runs one of the catalog's `processors`."
+          "picks": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Picks",
+                "description": "Where a node of this kind picks the type it runs, when it is added."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "ports": {
             "type": "array",
@@ -20746,6 +20832,15 @@
             }
           }
         }
+      },
+      "Picks": {
+        "type": "string",
+        "description": "The registry a node picks the type it runs from: decoders, encoders or plugin processors.",
+        "enum": [
+          "decoder",
+          "encoder",
+          "processor"
+        ]
       },
       "PipelineQueue": {
         "type": "object",
@@ -29048,7 +29143,7 @@
               "null"
             ],
             "format": "double",
-            "description": "Where the signal lands on the air. Unset, a modulator sits on the radio's centre and a\nlane where it was received.",
+            "description": "Where the signal lands on the air. Unset, an encoder sits on the radio's centre and a\nlane where it was received.",
             "default": null
           },
           "level_db": {
@@ -29090,7 +29185,7 @@
               "null"
             ],
             "format": "double",
-            "description": "The width the modulator's mode is meant to stay inside."
+            "description": "The width the encoder's mode is meant to stay inside."
           },
           "error": {
             "type": [

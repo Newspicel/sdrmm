@@ -23,13 +23,17 @@ export function NodePalette({ onAdd }: { onAdd: (kind: NodeKind, typeId?: string
   const [query, setQuery] = useState("");
   const [section, setSection] = useState<PaletteSection>(storedSection);
   const listRef = useRef<HTMLDivElement>(null);
-  const all = paletteGroups(workspace.context.catalog, workspace.context.channelTypes);
+  const all = paletteGroups(
+    workspace.context.catalog,
+    workspace.context.channelTypes,
+    workspace.context.encoderTypes,
+  );
   const found = filterPalette(all, query);
   const searching = query.trim() !== "";
   const shown = searching ? found : sectionGroups(all, section);
   const pick = (item: PaletteItem | undefined) => {
     if (item !== undefined) {
-      onAdd(item.kind, item.type?.type_id ?? item.processorType);
+      onAdd(item.kind, item.typeId);
     }
   };
   const choose = (next: PaletteSection) => {
@@ -82,6 +86,7 @@ export function NodePalette({ onAdd }: { onAdd: (kind: NodeKind, typeId?: string
 const SECTION_DOT: Record<PaletteSection, string> = {
   source: "bg-cat-source",
   channel: "bg-cat-channel",
+  encoder: "bg-cat-encoder",
   tool: "bg-cat-tool",
   output: "bg-cat-output",
 };
@@ -164,9 +169,9 @@ export function PaletteEntry({ item, onAdd }: { item: PaletteItem; onAdd: () => 
         <span className="truncate font-mono text-xs text-ink group-hover:text-accent">
           {item.name}
         </span>
-        {item.type !== undefined && (
+        {item.bandwidthHz !== undefined && (
           <span aria-hidden className="shrink-0 font-mono text-2xs tabular-nums text-ink-faint">
-            {formatHz(item.type.bandwidth_hz)}
+            {formatHz(item.bandwidthHz)}
           </span>
         )}
       </span>

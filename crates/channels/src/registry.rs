@@ -11,10 +11,7 @@ use sdrmm_wire::{
 };
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelRx, ChannelTx, NativeChannel, NativeTx,
-    TxPayload,
-};
+use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelRx, NativeChannel};
 
 /// Where a channel sits in its own baseband and what it needs fed.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -42,24 +39,6 @@ pub trait Decoder: Send + Sync {
         ctx: ChannelCtx,
         settings: &ChannelSettings,
     ) -> Result<Box<dyn ChannelRx>, ChannelError>;
-
-    fn create_tx(
-        &self,
-        _ctx: ChannelCtx,
-        settings: &ChannelSettings,
-    ) -> Result<Box<dyn ChannelTx>, ChannelError> {
-        Err(ChannelError::NoTransmitter(
-            settings.params.type_id().to_owned(),
-        ))
-    }
-
-    /// One message, filled into the descriptor's `message` form, as what the transmitter takes.
-    fn compose(&self, _message: &serde_json::Value) -> Result<TxPayload, ChannelError> {
-        Err(ChannelError::InvalidPayload(format!(
-            "{} sends no messages",
-            self.descriptor().type_id
-        )))
-    }
 
     fn layout(&self, params: &ChannelParams) -> Result<ChannelLayout, ChannelError>;
 
@@ -136,24 +115,11 @@ pub struct Trunking {
 }
 
 type CreateRx = fn(ChannelCtx, ChannelSettings) -> Result<Box<dyn ChannelRx>, ChannelError>;
-type CreateTx = fn(ChannelCtx, ChannelSettings) -> Result<Box<dyn ChannelTx>, ChannelError>;
-type Compose = fn(&serde_json::Value) -> Result<TxPayload, ChannelError>;
-
-/// What a transmitter is fed: an audio wire, or messages the operator fills into a form.
-#[derive(Clone, Copy)]
-enum TxInput {
-    Audio,
-    Messages {
-        form: fn() -> Vec<SettingField>,
-        compose: Compose,
-    },
-}
 
 /// A decoder compiled into this crate, whose settings are the struct `S`.
 pub struct Native<S> {
     base: fn() -> &'static ChannelDescriptor,
     rx: CreateRx,
-    tx: Option<(CreateTx, TxInput)>,
     band: fn(&S) -> (f64, f64),
     filter: fn(&S) -> Result<ChannelFilter, ChannelError>,
     input_rate: Option<fn(&S) -> f64>,
@@ -205,7 +171,6 @@ where
         Self {
             base: C::descriptor,
             rx: boxed::<C>,
-            tx: None,
             band,
             filter: passthrough::<S>,
             input_rate: None,
@@ -221,24 +186,6 @@ where
             tune: None,
             complete: OnceLock::new(),
         }
-    }
-
-    #[must_use]
-    pub fn tx<T: NativeTx + 'static>(mut self) -> Self {
-        self.tx = Some((boxed_tx::<T>, TxInput::Audio));
-        self
-    }
-
-    /// A transmitter that sends messages: `form` is what the operator fills in and `compose`
-    /// turns one filled form into the payload.
-    #[must_use]
-    pub fn tx_messages<T: NativeTx + 'static>(
-        mut self,
-        form: fn() -> Vec<SettingField>,
-        compose: Compose,
-    ) -> Self {
-        self.tx = Some((boxed_tx::<T>, TxInput::Messages { form, compose }));
-        self
     }
 
     #[must_use]
@@ -335,11 +282,6 @@ where
 
     fn completed(&self) -> ChannelDescriptor {
         let mut descriptor = (self.base)().clone();
-        descriptor.can_transmit = self.tx.is_some();
-        descriptor.transmits_audio = matches!(self.tx, Some((_, TxInput::Audio)));
-        if let Some((_, TxInput::Messages { form, .. })) = self.tx {
-            descriptor.message = form();
-        }
         descriptor.trunking = self.trunking.map(|trunking| (trunking.spec)());
         descriptor.settings = (self.form)();
         descriptor.defaults = ChannelParams::new(&descriptor.type_id, &S::default())
@@ -370,28 +312,6 @@ where
     ) -> Result<Box<dyn ChannelRx>, ChannelError> {
         self.settings(&settings.params)?;
         (self.rx)(ctx, settings.clone())
-    }
-
-    fn create_tx(
-        &self,
-        ctx: ChannelCtx,
-        settings: &ChannelSettings,
-    ) -> Result<Box<dyn ChannelTx>, ChannelError> {
-        let (create, _) = self
-            .tx
-            .ok_or_else(|| ChannelError::NoTransmitter(settings.params.type_id().to_owned()))?;
-        self.settings(&settings.params)?;
-        create(ctx, settings.clone())
-    }
-
-    fn compose(&self, message: &serde_json::Value) -> Result<TxPayload, ChannelError> {
-        match self.tx {
-            Some((_, TxInput::Messages { compose, .. })) => compose(message),
-            _ => Err(ChannelError::InvalidPayload(format!(
-                "{} sends no messages",
-                (self.base)().type_id
-            ))),
-        }
     }
 
     fn layout(&self, params: &ChannelParams) -> Result<ChannelLayout, ChannelError> {
@@ -445,13 +365,6 @@ fn boxed<C: NativeChannel + 'static>(
     ctx: ChannelCtx,
     settings: ChannelSettings,
 ) -> Result<Box<dyn ChannelRx>, ChannelError> {
-    Ok(Box::new(C::new(ctx, settings)?))
-}
-
-fn boxed_tx<C: NativeTx + 'static>(
-    ctx: ChannelCtx,
-    settings: ChannelSettings,
-) -> Result<Box<dyn ChannelTx>, ChannelError> {
     Ok(Box::new(C::new(ctx, settings)?))
 }
 
@@ -627,19 +540,6 @@ pub fn create(
     registry()
         .decoder(settings.params.type_id())?
         .create_rx(ctx, settings)
-}
-
-pub fn create_tx(
-    ctx: ChannelCtx,
-    settings: &ChannelSettings,
-) -> Result<Box<dyn ChannelTx>, ChannelError> {
-    registry()
-        .decoder(settings.params.type_id())?
-        .create_tx(ctx, settings)
-}
-
-pub fn compose(type_id: &str, message: &serde_json::Value) -> Result<TxPayload, ChannelError> {
-    registry().decoder(type_id)?.compose(message)
 }
 
 /// The band `params` occupies around the channel frequency; an unknown decoder occupies none.

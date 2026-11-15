@@ -39,7 +39,7 @@ export interface ProcessorKindInfo {
 /** What the catalog says a processor node draws: a built-in's own entry, or its plugin type. */
 export function processorKindOf(catalog: PatchCatalog, node: PatchNode): ProcessorKindInfo {
   const entry = catalog.nodes.find((type) => type.kind === node.kind);
-  if (entry?.needs_processor_type !== true) {
+  if (entry?.picks !== "processor") {
     return {
       title: entry?.name ?? FALLBACK_TITLE,
       facets: entry?.processor ?? NO_FACETS,

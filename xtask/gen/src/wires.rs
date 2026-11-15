@@ -1,8 +1,8 @@
 use std::fmt::Write as _;
 
 use sdrmm_wire::{
-    EventKind, KindSet, Multi, NodeCategory, NodeTypeInfo, PatchCatalog, Payload, PortDirection,
-    PortRepeat, PortSpec,
+    EventKind, KindSet, Multi, NodeCategory, NodeTypeInfo, PatchCatalog, Payload, Picks,
+    PortDirection, PortRepeat, PortSpec,
 };
 
 const LISTED_KINDS: usize = 6;
@@ -19,6 +19,7 @@ pub(crate) fn page(catalog: &PatchCatalog) -> String {
     for category in [
         NodeCategory::Source,
         NodeCategory::Channel,
+        NodeCategory::Encoder,
         NodeCategory::Tool,
         NodeCategory::Output,
     ] {
@@ -69,6 +70,7 @@ const fn heading(category: NodeCategory) -> &'static str {
     match category {
         NodeCategory::Source => "Sources",
         NodeCategory::Channel => "Channels",
+        NodeCategory::Encoder => "Encoders",
         NodeCategory::Tool => "Tools",
         NodeCategory::Output => "Outputs",
     }
@@ -76,7 +78,7 @@ const fn heading(category: NodeCategory) -> &'static str {
 
 fn node_section(out: &mut String, node: &NodeTypeInfo) {
     let _ = write!(out, "\n### {}\n\n{}\n", node.name, node.summary);
-    if node.needs_channel_type {
+    if node.picks == Some(Picks::Decoder) {
         out.push_str("\nPorts follow the decoder the node runs.\n");
     }
     if node.ports.is_empty() {

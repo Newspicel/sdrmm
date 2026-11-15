@@ -1,6 +1,6 @@
-//! The transmit half of a plugin: a modulator the server feeds payloads and pulls baseband from,
-//! like a built-in one. Implement [`Transmitter`], call [`crate::export_transmit!`] once, and set
-//! `can_transmit` on the manifest's descriptor.
+//! The encoder of a plugin: a modulator the server feeds payloads and pulls baseband from, like a
+//! built-in one. Implement [`Transmitter`], call [`crate::export_transmit!`] once, and declare it
+//! as the manifest's `encoder`.
 
 use serde::de::DeserializeOwned;
 
@@ -16,14 +16,11 @@ pub enum Payload<'a> {
 
 /// One running modulator.
 pub trait Transmitter: Sized {
-    /// The same settings the decoder's form edits; fields the transmitter has no use for are
-    /// ignored.
+    /// The settings the encoder's form edits.
     type Settings: DeserializeOwned + Default;
 
     /// Opens a modulator producing baseband at `rate_hz`.
     fn open(rate_hz: f64, settings: Self::Settings) -> Result<Self, String>;
-
-    fn apply(&mut self, settings: Self::Settings) -> Result<(), String>;
 
     /// Queues `payload`; refuse what the mode cannot carry or a backlog past its bound.
     fn submit(&mut self, payload: Payload<'_>) -> Result<(), String>;
@@ -42,11 +39,6 @@ macro_rules! export_transmit {
             #[unsafe(no_mangle)]
             pub extern "C" fn sdrmm_tx_open(rate: f64, ptr: u32, len: u32) -> i32 {
                 $crate::abi::transmit::open::<$tx>(rate, ptr, len)
-            }
-
-            #[unsafe(no_mangle)]
-            pub extern "C" fn sdrmm_tx_apply(handle: i32, ptr: u32, len: u32) -> i32 {
-                $crate::abi::transmit::apply::<$tx>(handle, ptr, len)
             }
 
             #[unsafe(no_mangle)]

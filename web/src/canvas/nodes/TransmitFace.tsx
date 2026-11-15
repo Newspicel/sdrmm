@@ -62,7 +62,7 @@ function TransmitNodeFace({ node }: { node: PatchNodeOf<"transmit"> }) {
         <Chips>
           <HzChip
             label="Freq"
-            title="Transmit frequency. Empty: a modulator sits on the radio's centre, a lane where it was received"
+            title="Transmit frequency. Empty: an encoder sits on the radio's centre, a lane where it was received"
             value={node.data.frequency_hz ?? null}
             placeholder="auto"
             optional

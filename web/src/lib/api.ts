@@ -40,6 +40,7 @@ import type {
   DfFusionView,
   DiagnosticsReport,
   DoctorReport,
+  EncoderTypesResponse,
   ErrorCode,
   ExamplesResponse,
   ExportFormat,
@@ -122,6 +123,7 @@ export const DEVICES_KEY = ["get", "/api/devices"] as const;
 export const NMEA_DEVICES_KEY = ["get", "/api/position/nmea-devices"] as const;
 export const SERIAL_PORTS_KEY = ["get", "/api/serial/ports"] as const;
 export const CHANNEL_TYPES_KEY = ["get", "/api/channeltypes"] as const;
+export const ENCODER_TYPES_KEY = ["get", "/api/encodertypes"] as const;
 export const PRESETS_KEY = ["get", "/api/presets"] as const;
 export const BOOKMARKS_KEY = ["get", "/api/bookmarks"] as const;
 export const SAVED_RADIOS_KEY = ["get", "/api/saved-radios"] as const;
@@ -263,6 +265,14 @@ export function channelTypesQuery() {
     queryKey: CHANNEL_TYPES_KEY,
     queryFn: async (): Promise<ChannelTypesResponse> =>
       unwrap(await client.GET("/api/channeltypes")),
+  });
+}
+
+export function encoderTypesQuery() {
+  return queryOptions({
+    queryKey: ENCODER_TYPES_KEY,
+    queryFn: async (): Promise<EncoderTypesResponse> =>
+      unwrap(await client.GET("/api/encodertypes")),
   });
 }
 

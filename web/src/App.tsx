@@ -23,7 +23,13 @@ import { SerialDialog } from "./components/SerialDialog";
 import { ServerDown } from "./components/ServerDown";
 import { Toasts } from "./components/Toasts";
 import { TokenGate } from "./components/TokenGate";
-import { channelTypesQuery, patchCatalogQuery, resolvedQuery, stateQuery } from "./lib/api";
+import {
+  channelTypesQuery,
+  encoderTypesQuery,
+  patchCatalogQuery,
+  resolvedQuery,
+  stateQuery,
+} from "./lib/api";
 import { loadCatalog, useCatalogStore } from "./lib/catalog";
 import { useRefusalStore } from "./lib/refusals";
 import { activePatch, boundChannels, boundRadios, channelOwners } from "./lib/resolved";
@@ -85,6 +91,7 @@ export function App() {
 
   const state = useQuery(stateQuery());
   const channelTypes = useQuery(channelTypesQuery());
+  const encoderTypes = useQuery(encoderTypesQuery());
   const catalog = useQuery(patchCatalogQuery());
   const resolvedState = useQuery(resolvedQuery());
   const workspace = useWorkspace();
@@ -136,10 +143,11 @@ export function App() {
     () => ({
       catalog: catalog.data ?? { nodes: [], port_types: [], event_kinds: [] },
       channelTypes: channelTypes.data?.types ?? [],
+      encoderTypes: encoderTypes.data?.types ?? [],
       resolved,
       bound: devices,
     }),
-    [catalog.data, channelTypes.data, resolved, devices],
+    [catalog.data, channelTypes.data, encoderTypes.data, resolved, devices],
   );
 
   const selectedNode = graph.nodes.find((node) => node.id === selected) ?? null;

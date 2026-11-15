@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use sdrmm_channels::encoder::EncoderParams;
 use sdrmm_engine::{Engine, PcmBlock, PcmPayload, TransmitRequest, TransmitSource};
 use sdrmm_wire::{
     AUDIO_PORT, BASEBAND_PORT, IQ_PORT, NodeBody, NodeProblem, ProblemSource, TRANSMIT_PORT,
@@ -68,7 +69,7 @@ fn source(resolved: &Resolved, node: &str) -> Result<TransmitSource, String> {
         return Err("The wired lane is not running".to_owned());
     }
     let Some(feeder) = wired_into(resolved, node, BASEBAND_PORT) else {
-        return Err("Wire a modulator, a channel or a lane into it".to_owned());
+        return Err("Wire an encoder, a channel or a lane into it".to_owned());
     };
     let tapped = resolved
         .patch
@@ -81,10 +82,13 @@ fn source(resolved: &Resolved, node: &str) -> Result<TransmitSource, String> {
         });
     }
     match resolved.graph.node(feeder).map(|found| &found.body) {
-        Some(NodeBody::Modulator(modulator)) if modulator.channel_type.is_empty() => {
-            Err("Pick the modulator's mode".to_owned())
+        Some(NodeBody::Encoder(encoder)) if encoder.encoder_type.is_empty() => {
+            Err("Pick the encoder's mode".to_owned())
         }
-        Some(NodeBody::Modulator(modulator)) => Ok(TransmitSource::Modulator(modulator.params())),
+        Some(NodeBody::Encoder(encoder)) => Ok(TransmitSource::Encoder(EncoderParams {
+            type_id: encoder.encoder_type.clone(),
+            settings: encoder.settings.clone(),
+        })),
         _ => Err("The wired channel is not running".to_owned()),
     }
 }
@@ -148,9 +152,9 @@ pub(crate) fn disarm(state: &AppState, node: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// The armed transmitters a modulator feeds, each with the radio it drives.
-fn transmitters_of(engine: &Engine, resolved: &Resolved, modulator: &str) -> Vec<(u32, String)> {
-    reached_from(resolved, modulator, BASEBAND_PORT)
+/// The armed transmitters an encoder feeds, each with the radio it drives.
+fn transmitters_of(engine: &Engine, resolved: &Resolved, encoder: &str) -> Vec<(u32, String)> {
+    reached_from(resolved, encoder, BASEBAND_PORT)
         .filter_map(|transmitter| Some((armed_on(engine, transmitter)?, transmitter.to_owned())))
         .collect()
 }
@@ -162,7 +166,7 @@ pub(crate) fn send(
 ) -> Result<(), AppError> {
     let resolved = state.resolved.current();
     match resolved.graph.node(node).map(|found| &found.body) {
-        Some(NodeBody::Modulator(_)) => {}
+        Some(NodeBody::Encoder(_)) => {}
         Some(_) => {
             return Err(AppError::bad_request(format!(
                 "{node} takes no such action"
@@ -193,7 +197,7 @@ pub(crate) fn speak(state: &AppState, microphone: &str, pcm: &[f32]) -> usize {
         return 0;
     }
     reached_from(&resolved, microphone, AUDIO_PORT)
-        .flat_map(|modulator| transmitters_of(&state.engine, &resolved, modulator))
+        .flat_map(|encoder| transmitters_of(&state.engine, &resolved, encoder))
         .filter(|(device_set, transmitter)| {
             state
                 .engine
@@ -236,7 +240,7 @@ pub(crate) fn reconcile(state: &AppState) {
 }
 
 impl TransmitHub {
-    /// Starts a forwarder for every channel wired into an armed transmitter's modulator and
+    /// Starts a forwarder for every channel wired into an armed transmitter's encoder and
     /// stops the ones the patch no longer asks for.
     fn relink(&self, state: &AppState, resolved: &Resolved) {
         let wanted = wanted_links(&state.engine, resolved);
@@ -265,10 +269,10 @@ impl TransmitHub {
 fn wanted_links(engine: &Engine, resolved: &Resolved) -> Vec<Link> {
     let mut links = Vec::new();
     for (radio, armed) in engine.transmitters() {
-        let Some(modulator) = wired_into(resolved, &armed.node, BASEBAND_PORT) else {
+        let Some(encoder) = wired_into(resolved, &armed.node, BASEBAND_PORT) else {
             continue;
         };
-        for feed in resolved.patch.feeds(modulator, AUDIO_PORT) {
+        for feed in resolved.patch.feeds(encoder, AUDIO_PORT) {
             for addr in feed.tap.iter().flat_map(sdrmm_wire::Tap::channels) {
                 links.push(Link {
                     radio,

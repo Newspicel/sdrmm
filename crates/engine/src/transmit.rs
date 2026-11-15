@@ -7,10 +7,10 @@ use std::{
     thread::JoinHandle,
 };
 
-use sdrmm_channels::{ChannelCtx, TxPayload};
+use sdrmm_channels::encoder::{EncoderParams, TxPayload, encoder};
 use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DeviceSetStatus, Direction, ServerEvent, StateScope,
-    TransmitPhase, TransmitSettings, TransmitStatus,
+    DeviceSetStatus, Direction, EncoderInput, ServerEvent, StateScope, TransmitPhase,
+    TransmitSettings, TransmitStatus,
 };
 
 use crate::{
@@ -25,8 +25,8 @@ use worker::{Band, Source, TxCommand, TxShared, Worker};
 /// What a transmitter sends.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TransmitSource {
-    /// A decoder's own modulator, fed audio or messages.
-    Modulator(ChannelParams),
+    /// An encoder, fed audio or messages.
+    Encoder(EncoderParams),
     /// A lane as it is received: a recording, a generator or another radio.
     Lane { device_set: u32, stream: u32 },
     /// One channel's filtered baseband, as its decoder sees it.
@@ -50,7 +50,7 @@ struct Seen {
 
 pub(crate) struct TransmitState {
     request: TransmitRequest,
-    modulates: Option<Modulates>,
+    encodes: Option<Encodes>,
     feed: Option<FeedFrom>,
     commands: mpsc::Sender<TxCommand>,
     shared: Arc<TxShared>,
@@ -59,7 +59,8 @@ pub(crate) struct TransmitState {
     seen: Seen,
 }
 
-struct Modulates {
+/// The encoder a transmitter runs and what it is fed.
+struct Encodes {
     type_id: String,
     audio: bool,
 }
@@ -146,8 +147,8 @@ struct Plan {
 }
 
 enum Planned {
-    Modulator {
-        params: ChannelParams,
+    Encoder {
+        params: EncoderParams,
         rate: f64,
         audio: bool,
         width_hz: f64,
@@ -207,18 +208,15 @@ impl Inner {
             )));
         }
         let source = match &request.source {
-            TransmitSource::Modulator(params) => {
-                let descriptor = sdrmm_channels::descriptor(params.type_id())
-                    .ok_or_else(|| refused(format!("no decoder named {}", params.type_id())))?;
-                if !descriptor.can_transmit {
-                    return Err(refused(format!("{} has no modulator", descriptor.name)));
-                }
-                let (low, high) = sdrmm_channels::layout(params)?.band;
-                Planned::Modulator {
+            TransmitSource::Encoder(params) => {
+                let encoder = encoder(&params.type_id)
+                    .map_err(|_| refused(format!("no encoder named {}", params.type_id)))?;
+                let descriptor = encoder.descriptor();
+                Planned::Encoder {
                     params: params.clone(),
-                    rate: descriptor.input_rate_hz,
-                    audio: descriptor.transmits_audio,
-                    width_hz: high - low,
+                    rate: descriptor.rate_hz,
+                    audio: descriptor.input == EncoderInput::Audio,
+                    width_hz: encoder.width_hz(params)?,
                 }
             }
             TransmitSource::Lane { device_set, stream } => {
@@ -294,19 +292,18 @@ struct Started {
 
 fn start(plan: Plan, request: &TransmitRequest) -> Result<Started, EngineError> {
     let shared = Arc::new(TxShared::default());
-    let (source, modulates, tap) = match plan.source {
-        Planned::Modulator {
+    let (source, encodes, tap) = match plan.source {
+        Planned::Encoder {
             params,
             rate,
             audio,
             width_hz,
         } => {
             shared.declare_channel(width_hz);
-            let type_id = params.type_id().to_owned();
-            let settings = ChannelSettings::new(plan.radio.center_hz, params);
-            let tx = sdrmm_channels::create_tx(ChannelCtx { input_rate: rate }, &settings)?;
-            let source = Source::Modulator { tx, rate };
-            (source, Some(Modulates { type_id, audio }), None)
+            let tx = encoder(&params.type_id)?.open(&params)?;
+            let source = Source::Encoder { tx, rate };
+            let type_id = params.type_id;
+            (source, Some(Encodes { type_id, audio }), None)
         }
         Planned::Feed { from, band } => {
             let (tap, source) = worker::feed(band, &shared);
@@ -334,7 +331,7 @@ fn start(plan: Plan, request: &TransmitRequest) -> Result<Started, EngineError> 
     let feed = tap.as_ref().map(|(from, _)| *from);
     let state = TransmitState {
         request: request.clone(),
-        modulates,
+        encodes,
         feed,
         commands,
         shared,
@@ -464,7 +461,7 @@ impl Engine {
             .collect()
     }
 
-    /// Sends one message, shaped by the form the modulator's decoder declares.
+    /// Sends one message, shaped by the form its encoder declares.
     pub fn transmit_message(
         &self,
         ds: u32,
@@ -473,18 +470,18 @@ impl Engine {
     ) -> Result<(), EngineError> {
         let inner = self.lock();
         let transmit = inner.transmitter(ds, node)?;
-        let Some(modulates) = &transmit.modulates else {
+        let Some(encodes) = &transmit.encodes else {
             return Err(refused("a lane takes no messages"));
         };
-        let payload = sdrmm_channels::compose(&modulates.type_id, message)?;
+        let payload = encoder(&encodes.type_id)?.compose(message)?;
         transmit.send(TxCommand::Payload(payload))
     }
 
-    /// Feeds mono audio at the modulator's rate to a voice transmitter.
+    /// Feeds mono audio at the encoder's rate to a voice transmitter.
     pub fn transmit_audio(&self, ds: u32, node: &str, pcm: Vec<f32>) -> Result<(), EngineError> {
         let inner = self.lock();
         let transmit = inner.transmitter(ds, node)?;
-        if !transmit.modulates.as_ref().is_some_and(|m| m.audio) {
+        if !transmit.encodes.as_ref().is_some_and(|e| e.audio) {
             return Err(refused("this transmitter takes no audio"));
         }
         transmit.send(TxCommand::Payload(TxPayload::Audio(pcm)))

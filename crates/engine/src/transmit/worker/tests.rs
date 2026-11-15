@@ -2,7 +2,6 @@ use std::sync::Mutex;
 
 use sdrmm_channels::ChannelError;
 use sdrmm_device::DeviceError;
-use sdrmm_wire::ChannelSettings;
 
 use super::*;
 
@@ -54,11 +53,7 @@ struct Carrier {
     endless: bool,
 }
 
-impl ChannelTx for Carrier {
-    fn apply(&mut self, _settings: ChannelSettings) -> Result<(), ChannelError> {
-        Ok(())
-    }
-
+impl Modulator for Carrier {
     fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError> {
         self.left += match payload {
             TxPayload::Audio(pcm) => pcm.len(),
@@ -109,8 +104,8 @@ impl Rig {
         }
     }
 
-    fn modulator(carrier: Carrier, settings: TransmitSettings) -> Self {
-        let source = Source::Modulator {
+    fn encoder(carrier: Carrier, settings: TransmitSettings) -> Self {
+        let source = Source::Encoder {
             tx: Box::new(carrier),
             rate: RATE,
         };
@@ -153,7 +148,7 @@ fn frame(octets: usize) -> TxCommand {
 
 #[test]
 fn a_frame_goes_out_as_one_burst_at_the_set_level_and_ends_it() {
-    let mut rig = Rig::modulator(Carrier::default(), TransmitSettings::default());
+    let mut rig = Rig::encoder(Carrier::default(), TransmitSettings::default());
     assert_eq!(rig.status().phase, TransmitPhase::Idle);
     rig.commands.send(frame(4_800)).expect("queued");
     let done = rig.until("ended the burst", |status| {
@@ -182,7 +177,7 @@ fn a_frame_goes_out_as_one_burst_at_the_set_level_and_ends_it() {
 
 #[test]
 fn a_modulator_is_paced_to_real_time_with_a_short_lead() {
-    let rig = Rig::modulator(Carrier::default(), TransmitSettings::default());
+    let rig = Rig::encoder(Carrier::default(), TransmitSettings::default());
     rig.commands.send(frame(48_000)).expect("queued");
     rig.until("keyed", |status| status.phase == TransmitPhase::OnAir);
     std::thread::sleep(Duration::from_millis(200));
@@ -200,7 +195,7 @@ fn a_transmission_past_its_timeout_ends_and_disarms_with_the_reason() {
         timeout_s: 1,
         ..TransmitSettings::default()
     };
-    let rig = Rig::modulator(endless, settings);
+    let rig = Rig::encoder(endless, settings);
     let tripped = rig.until("tripped", |status| status.error.is_some());
     assert!(tripped.error.expect("reason").contains("1 s; disarmed"));
     rig.until("stopped", |_| rig.shared.stopped());
@@ -214,7 +209,7 @@ fn a_frequency_the_radio_cannot_reach_mutes_the_transmitter_until_it_moves_back(
         frequency_hz: Some(RADIO.center_hz + 500_000.0),
         ..TransmitSettings::default()
     };
-    let rig = Rig::modulator(Carrier::default(), settings);
+    let rig = Rig::encoder(Carrier::default(), settings);
     rig.commands.send(frame(2_400)).expect("queued");
     let muted = rig.until("refused the frequency", |status| status.error.is_some());
     assert_eq!(muted.frequency_hz, RADIO.center_hz + 500_000.0);
@@ -237,7 +232,7 @@ fn a_frequency_the_radio_cannot_reach_mutes_the_transmitter_until_it_moves_back(
 /// test thread is provably still inside it.
 #[test]
 fn held_audio_waits_for_a_prefill_then_flows() {
-    let rig = Rig::modulator(Carrier::default(), TransmitSettings::default());
+    let rig = Rig::encoder(Carrier::default(), TransmitSettings::default());
     let short = (PREFILL_S * RATE) as usize / 3;
     let sent = Instant::now();
     rig.commands
@@ -315,7 +310,7 @@ fn a_lane_is_sent_as_it_arrives_and_what_does_not_fit_is_counted() {
 /// excuse a re-key.
 #[test]
 fn audio_that_arrives_late_is_bridged_and_the_carrier_stays_up() {
-    let rig = Rig::modulator(Carrier::default(), TransmitSettings::default());
+    let rig = Rig::encoder(Carrier::default(), TransmitSettings::default());
     let chunk = (RATE / 50.0) as usize;
     let mut stalls = 0;
     let mut last = Instant::now();

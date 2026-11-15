@@ -14,6 +14,7 @@ pub mod decode;
 pub mod device;
 pub mod diagnostics;
 pub mod doctor;
+pub mod encoder;
 pub mod event_output;
 pub mod filter;
 pub mod frame;
@@ -126,6 +127,7 @@ pub use device::{
 };
 pub use diagnostics::{DiagnosticsReport, LogLevel, LogLine, MAX_LOG_LINES, MAX_LOG_MESSAGE_LEN};
 pub use doctor::{CheckStatus, DoctorCheck, DoctorReport};
+pub use encoder::{EncoderDescriptor, EncoderInput, EncoderTypesResponse};
 pub use event_output::{
     DEFAULT_POSTGRES_TABLE, EventOutputNode, EventOutputTarget, MAX_EVENT_FILE_LEN,
     MAX_INFLUX_NAME_LEN, MAX_MATRIX_ROOM_ID_LEN, MAX_MQTT_TOPIC_LEN, MAX_MQTT_USERNAME_LEN,
@@ -171,14 +173,14 @@ pub use patch::{
     MAX_TRUNK_CHANNEL_MAP, MAX_TRUNK_PROBES, MAX_TRUNK_SEARCH_CANDIDATES, MAX_TRUNK_SEARCH_RANGES,
     MIN_TRUNK_SEARCH_STEP_HZ, Multi, NodeBody, NodeCategory, NodeKind, NodeProblem, NodeTypeInfo,
     POSITION_PORT, PassiveRadarNode, PatchCatalog, PatchEdge, PatchError, PatchGraph, PatchNode,
-    Payload, PolarimeterNode, PortDirection, PortRef, PortRepeat, PortSpec, PortType, PortTypeInfo,
-    Position, ProblemSource, RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT, RADAR_TX_PORT, REFUSALS,
-    RackCell, RackLayout, RackSlot, Reach, RecorderNode, Refusal, RefusedEdge, ResolveCtx,
-    ResolvedEdge, ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs, STEER_PORT,
-    STITCH_WIDE_PORT, ScannerNode, SignalMapNode, Size, SpatialSpectrumNode, SpeakerNode,
-    StitchNode, TRANSMIT_PORT, Tap, TriangulationNode, TrunkChannelEntry, TrunkDiscovery,
-    TrunkNode, TrunkSearchRange, UnboundReason, VIDEO_PORT, channel_ports, generator_key,
-    port_index, port_lane, port_stream, stream_port,
+    Payload, Picks, PolarimeterNode, PortDirection, PortRef, PortRepeat, PortSpec, PortType,
+    PortTypeInfo, Position, ProblemSource, RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT, RADAR_TX_PORT,
+    REFUSALS, RackCell, RackLayout, RackSlot, Reach, RecorderNode, Refusal, RefusedEdge,
+    ResolveCtx, ResolvedEdge, ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs,
+    STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalMapNode, Size, SpatialSpectrumNode,
+    SpeakerNode, StitchNode, TRANSMIT_PORT, Tap, TriangulationNode, TrunkChannelEntry,
+    TrunkDiscovery, TrunkNode, TrunkSearchRange, UnboundReason, VIDEO_PORT, channel_ports,
+    generator_key, port_index, port_lane, port_stream, stream_port,
 };
 #[cfg(feature = "pin")]
 pub use phone::PinError;
@@ -307,9 +309,9 @@ pub use tools::{
 };
 pub use transmit::{
     DEFAULT_TRANSMIT_LEVEL_DB, DEFAULT_TRANSMIT_TIMEOUT_S, DEFAULT_VOX_HANG_MS,
-    DEFAULT_VOX_THRESHOLD_DB, MAX_MICROPHONE_FRAME, MAX_TRANSMIT_TIMEOUT_S, MAX_VOX_HANG_MS,
-    MICROPHONE_RATE_HZ, MIN_TRANSMIT_LEVEL_DB, MicrophoneNode, ModulatorMessage, ModulatorNode,
-    TransmitAction, TransmitNode, TransmitPhase, TransmitSettings, TransmitStatus,
+    DEFAULT_VOX_THRESHOLD_DB, EncoderMessage, EncoderNode, MAX_MICROPHONE_FRAME,
+    MAX_TRANSMIT_TIMEOUT_S, MAX_VOX_HANG_MS, MICROPHONE_RATE_HZ, MIN_TRANSMIT_LEVEL_DB,
+    MicrophoneNode, TransmitAction, TransmitNode, TransmitPhase, TransmitSettings, TransmitStatus,
     encode_microphone_pcm, microphone_pcm,
 };
 pub use workspace::{
@@ -734,12 +736,10 @@ mod contract_tests {
         assert!(back.emits.is_empty());
         assert_eq!(back.calls, None);
         assert!(!back.has_events());
-        assert!(!back.can_transmit);
 
         json["has_audio"] = serde_json::json!(false);
         json["emits"] = serde_json::json!(["probe", "beacon"]);
         json["calls"] = serde_json::json!("squelch");
-        json["can_transmit"] = serde_json::json!(true);
         let back: ChannelDescriptor = serde_json::from_value(json).unwrap();
         assert!(!back.has_audio);
         assert_eq!(
@@ -748,7 +748,6 @@ mod contract_tests {
         );
         assert_eq!(back.calls, Some(CallGate::Squelch));
         assert!(back.has_events());
-        assert!(back.can_transmit);
     }
 
     #[test]

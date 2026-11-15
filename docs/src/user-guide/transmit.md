@@ -22,19 +22,19 @@ a transmit frequency has to fall inside the Device's window.
 
 ## Send a message
 
-1. Add a **Modulator** and pick a mode that sends messages, such as APRS.
-2. Add a **Transmitter**. Wire Modulator `baseband` to it, and its `transmit` to the Device's
+1. Add a message encoder from **Encoders**, such as APRS.
+2. Add a **Transmitter**. Wire the encoder's `baseband` to it, and its `transmit` to the Device's
    `transmit`.
 3. Set the Transmitter's frequency. Empty means the Device's centre.
 4. Press **Arm**.
-5. Fill in the message on the Modulator and press **Send**.
+5. Fill in the message on the encoder and press **Send**.
 
 The burst goes out once and the Transmitter returns to idle, still armed.
 
 ## Talk
 
-1. Add a **Microphone**, a **Modulator** on NFM, AM or SSB, and a **Transmitter**.
-2. Wire Microphone `audio` to the Modulator, then on to the Transmitter and the Device as above.
+1. Add a **Microphone**, an NFM, AM or SSB encoder, and a **Transmitter**.
+2. Wire Microphone `audio` to the encoder, then on to the Transmitter and the Device as above.
 3. Arm, then hold the key on the Microphone while you speak. The [keyboard](keyboard.md) has a
    key for it too.
 
@@ -65,7 +65,7 @@ as the sending radio's window has to sit on that radio's centre.
 
 The Transmitter shows when it is on the air, its frequency, the peak drive of the last burst and
 how often the source could not keep up. **Width** is the band that held 99 % of the last
-transmission's power. It turns to a warning when a modulator's signal is wider than its mode's
+transmission's power. It turns to a warning when an encoder's signal is wider than its mode's
 channel: lower the level or the audio. An error, such as a frequency outside the Device's window,
 mutes it until the cause is gone.
 

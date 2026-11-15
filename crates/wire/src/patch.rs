@@ -73,6 +73,7 @@ pub fn port_lane(base: &str, name: &str) -> Option<u32> {
 pub enum NodeCategory {
     Source,
     Channel,
+    Encoder,
     Tool,
     Output,
 }

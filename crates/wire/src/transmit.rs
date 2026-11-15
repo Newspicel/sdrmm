@@ -2,8 +2,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
-use crate::channel::ChannelParams;
-
 pub const DEFAULT_TRANSMIT_TIMEOUT_S: u32 = 180;
 pub const MAX_TRANSMIT_TIMEOUT_S: u32 = 3_600;
 pub const DEFAULT_TRANSMIT_LEVEL_DB: f64 = -3.0;
@@ -14,7 +12,7 @@ pub const MAX_MICROPHONE_FRAME: usize = 4_800;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct TransmitSettings {
-    /// Where the signal lands on the air. Unset, a modulator sits on the radio's centre and a
+    /// Where the signal lands on the air. Unset, an encoder sits on the radio's centre and a
     /// lane where it was received.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frequency_hz: Option<f64>,
@@ -65,25 +63,12 @@ pub struct TransmitNode {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct ModulatorNode {
-    pub channel_type: String,
-    /// The decoder's own settings object, absent fields taking its defaults.
+pub struct EncoderNode {
+    pub encoder_type: String,
+    /// The encoder's own settings object, absent fields taking its defaults.
     #[serde(default, skip_serializing_if = "Value::is_null")]
     #[schema(value_type = std::collections::BTreeMap<String, Value>)]
     pub settings: Value,
-}
-
-impl ModulatorNode {
-    #[must_use]
-    pub fn params(&self) -> ChannelParams {
-        match &self.settings {
-            Value::Object(_) => ChannelParams {
-                type_id: self.channel_type.clone(),
-                settings: self.settings.clone(),
-            },
-            _ => ChannelParams::bare(&self.channel_type),
-        }
-    }
 }
 
 pub const DEFAULT_VOX_THRESHOLD_DB: f64 = -35.0;
@@ -197,8 +182,8 @@ pub enum TransmitAction {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct ModulatorMessage {
-    /// One message, shaped by the form its decoder declares.
+pub struct EncoderMessage {
+    /// One message, shaped by the form its encoder declares.
     #[schema(value_type = std::collections::BTreeMap<String, Value>)]
     pub message: Value,
 }
@@ -230,7 +215,7 @@ pub struct TransmitStatus {
     /// The width that holds 99 % of the latest transmission's power.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub occupied_hz: Option<f64>,
-    /// The width the modulator's mode is meant to stay inside.
+    /// The width the encoder's mode is meant to stay inside.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel_hz: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -265,15 +250,14 @@ mod tests {
     }
 
     #[test]
-    fn a_modulator_without_settings_runs_its_decoders_defaults() {
-        let node: ModulatorNode =
-            serde_json::from_value(serde_json::json!({"channel_type": "nfm"})).expect("parsed");
-        assert_eq!(node.params(), ChannelParams::bare("nfm"));
-        let set: ModulatorNode = serde_json::from_value(serde_json::json!({
-            "channel_type": "aprs", "settings": {"mode": "afsk1200"}
-        }))
-        .expect("parsed");
-        assert_eq!(set.params().settings["mode"], "afsk1200");
+    fn an_encoder_without_settings_stores_none() {
+        let node: EncoderNode =
+            serde_json::from_value(serde_json::json!({"encoder_type": "nfm"})).expect("parsed");
+        assert!(node.settings.is_null());
+        assert_eq!(
+            serde_json::to_value(&node).expect("json"),
+            serde_json::json!({"encoder_type": "nfm"})
+        );
     }
 
     #[test]

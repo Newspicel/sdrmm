@@ -124,7 +124,11 @@ use sdrmm_channels::WmbusParams;
 use sdrmm_channels::WsjtParams;
 use sdrmm_channels::WsprParams;
 use sdrmm_channels::YsfParams;
-use sdrmm_channels::{AprsTx, ChannelCtx, ChannelTx, MicE, MicEBit, NativeTx, TxPayload, synth};
+use sdrmm_channels::{
+    AprsEncoderSettings, AprsModulator, MicE, MicEBit,
+    encoder::{Modulator, NativeModulator, TxPayload},
+    synth,
+};
 use sdrmm_channels::{DabMode, DabParams, DabTransmissionMode};
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_recording::RecordingDriver;
@@ -148,25 +152,9 @@ const DECT_DEVICE_RATE: f64 = 2_304_000.0;
 const HACKRF_DEVICE_RATE: f64 = 20_000_000.0;
 const CENTER_HZ: f64 = 145_000_000.0;
 fn aprs_burst(frame: Vec<u8>) -> Vec<Complex<f32>> {
-    let mut tx = AprsTx::new(
-        ChannelCtx {
-            input_rate: AprsTx::descriptor().input_rate_hz,
-        },
-        ChannelSettings {
-            frequency_hz: CENTER_HZ,
-            squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::new(
-                "aprs",
-                &AprsParams {
-                    mode: AprsMode::Afsk1200,
-                    ..AprsParams::default()
-                },
-            )
-            .expect("aprs settings"),
-            blanker: Default::default(),
-            if_filter: Default::default(),
-        },
-    )
+    let mut tx = AprsModulator::new(&AprsEncoderSettings {
+        mode: AprsMode::Afsk1200,
+    })
     .unwrap();
     tx.submit(TxPayload::Frame(frame)).unwrap();
     synth::burst(&mut tx)
@@ -555,7 +543,7 @@ async fn aprs_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
     let engine = engine_for(dir.path());
     let offset_hz = -40_000.0;
 
-    let frame = AprsTx::ui_frame(
+    let frame = AprsModulator::ui_frame(
         "DL1ABC-9",
         "APRS",
         &["WIDE1-1"],
@@ -563,7 +551,7 @@ async fn aprs_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
     );
     let mut iq = synth::resample(
         &aprs_burst(frame),
-        AprsTx::descriptor().input_rate_hz,
+        AprsModulator::rate_hz(),
         NARROW_DEVICE_RATE,
     );
     synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
@@ -667,7 +655,7 @@ async fn a_mic_e_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
         bits: [MicEBit::Standard; 3],
         ..MicE::default()
     };
-    let frame = AprsTx::ui_frame(
+    let frame = AprsModulator::ui_frame(
         "DL1ABC-7",
         &report.destination(),
         &["WIDE2-2"],
@@ -675,7 +663,7 @@ async fn a_mic_e_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
     );
     let mut iq = synth::resample(
         &aprs_burst(frame),
-        AprsTx::descriptor().input_rate_hz,
+        AprsModulator::rate_hz(),
         NARROW_DEVICE_RATE,
     );
     synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
@@ -2367,7 +2355,7 @@ async fn dab_pad_slideshow_crosses_the_virtual_receiver_and_decoded_event_stream
 async fn an_aprs_weather_report_reaches_the_decoded_stream() {
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
-    let frame = AprsTx::ui_frame(
+    let frame = AprsModulator::ui_frame(
         "DL1WX-13",
         "APRS",
         &[],
@@ -2375,7 +2363,7 @@ async fn an_aprs_weather_report_reaches_the_decoded_stream() {
     );
     let iq = synth::resample(
         &aprs_burst(frame),
-        AprsTx::descriptor().input_rate_hz,
+        AprsModulator::rate_hz(),
         NARROW_DEVICE_RATE,
     );
     let device = plant(dir.path(), "aprs_wx", iq, NARROW_DEVICE_RATE);

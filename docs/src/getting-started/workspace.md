@@ -30,9 +30,10 @@ A wire joins an output port to an input port of the same type:
 ## Node types
 
 **+ Add** groups nodes as **Sources** (Device, GPS position, Microphone), **Decoders** (every
-[decoder](../user-guide/decoders.md) by family, and the Modulator), **Tools** (Scanner, Array,
-Audio FX and more) and **Outputs** (Scope, Speaker, Map, recorders and more). It lists what the
-running server offers. [Wires and what they carry](../wires.md) lists every node and its ports.
+[decoder](../user-guide/decoders.md) by family), **Encoders** (every mode that
+[transmits](../user-guide/transmit.md)), **Tools** (Scanner, Array, Audio FX and more) and
+**Outputs** (Scope, Speaker, Map, recorders and more). It lists what the running server offers.
+[Wires and what they carry](../wires.md) lists every node and its ports.
 
 To add a node at the cursor, double-click the canvas, or right-click it and pick **Add node
 here**.

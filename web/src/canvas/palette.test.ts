@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChannelDescriptor, PatchCatalog } from "../lib/types";
+import type { ChannelDescriptor, EncoderDescriptor, PatchCatalog } from "../lib/types";
 import { catalogBody, catalogShape, CATALOG as WIRE_CATALOG } from "../test/catalog";
 import {
   channelPicker,
@@ -40,7 +40,7 @@ const CATALOG: PatchCatalog = {
       name: "Channel",
       category: "channel",
       ports: [],
-      needs_channel_type: true,
+      picks: "decoder",
     },
     {
       kind: "scope",
@@ -131,7 +131,8 @@ describe("paletteGroups", () => {
         name: "Voice",
         summary: "Narrowband FM voice",
         kind: "channel",
-        type: TYPES[0],
+        typeId: "voice",
+        bandwidthHz: 12_500,
       },
     ]);
     expect(groups[3]?.items.map((item) => item.id)).toEqual(["scanner", "hunt", "triangulation"]);
@@ -149,6 +150,58 @@ describe("paletteGroups", () => {
       TYPES,
     );
     expect(groups.map((group) => group.id)).toEqual(["source"]);
+  });
+});
+
+describe("encoders", () => {
+  const withEncoder: PatchCatalog = {
+    ...CATALOG,
+    nodes: [
+      ...CATALOG.nodes,
+      {
+        kind: "encoder",
+        default_body: catalogBody("encoder"),
+        ...catalogShape("encoder"),
+        name: "Encoder",
+        category: "encoder",
+        ports: [],
+        picks: "encoder",
+      },
+    ],
+  };
+  const NFM: EncoderDescriptor = {
+    type_id: "nfm",
+    name: "NFM",
+    summary: "Narrowband FM voice",
+    rate_hz: 48_000,
+    bandwidth_hz: 12_500,
+  };
+
+  it("get a section of their own, one entry per encoder", () => {
+    const groups = paletteGroups(withEncoder, TYPES, [NFM]);
+    expect(groups.map((group) => group.title)).toEqual([
+      "Sources",
+      "Analog voice",
+      "Aviation",
+      "Encoders",
+      "Tools",
+      "Outputs",
+    ]);
+    expect(groups[3]?.items).toEqual([
+      {
+        id: "encoder:nfm",
+        name: "NFM",
+        summary: "Narrowband FM voice",
+        kind: "encoder",
+        typeId: "nfm",
+        bandwidthHz: 12_500,
+      },
+    ]);
+  });
+
+  it("drop the section when the server brings none", () => {
+    const titles = paletteGroups(withEncoder, TYPES).map((group) => group.title);
+    expect(titles).not.toContain("Encoders");
   });
 });
 
@@ -204,7 +257,7 @@ describe("firstPaletteItem", () => {
 
   it("takes the top of the narrowed list when a search has moved past it", () => {
     const groups = filterPalette(channelPicker(TYPES, "plane"), "voice");
-    expect(firstPaletteItem(groups)?.type?.type_id).toBe("voice");
+    expect(firstPaletteItem(groups)?.typeId).toBe("voice");
   });
 
   it("has nothing to take from a list that matches nothing", () => {
@@ -258,7 +311,7 @@ describe("the palette sections", () => {
     );
     for (const entry of WIRE_CATALOG.nodes) {
       expect(listed, `${entry.kind} is in no section`).toContain(entry.category);
-      if (entry.needs_channel_type !== true && entry.needs_processor_type !== true) {
+      if (entry.picks == null) {
         expect(offered.has(entry.kind), `${entry.kind} is in no palette group`).toBe(true);
       }
     }

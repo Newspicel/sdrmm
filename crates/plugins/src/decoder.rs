@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use sdrmm_channels::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelLayout, ChannelRx, ChannelTx, Decoder,
-    TxPayload,
-};
+use sdrmm_channels::{ChannelCtx, ChannelError, ChannelFilter, ChannelLayout, ChannelRx, Decoder};
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DEFAULT_FREQUENCY_HZ, EventKind, KindCodec,
@@ -12,7 +9,7 @@ use sdrmm_wire::{
     present::Presentation,
 };
 
-use crate::{channel::WasmChannel, module::PluginModule, transmit::WasmTx};
+use crate::{channel::WasmChannel, module::PluginModule};
 
 const FILTER_TAPS: usize = 65;
 
@@ -91,35 +88,6 @@ impl Decoder for WasmDecoder {
             ctx.input_rate,
             &settings.params.settings,
         )?))
-    }
-
-    fn create_tx(
-        &self,
-        ctx: ChannelCtx,
-        settings: &ChannelSettings,
-    ) -> Result<Box<dyn ChannelTx>, ChannelError> {
-        self.check_type(&settings.params)?;
-        if !self.descriptor.can_transmit {
-            return Err(ChannelError::NoTransmitter(self.descriptor.type_id.clone()));
-        }
-        Ok(Box::new(WasmTx::open(
-            self.module.clone(),
-            ctx.input_rate,
-            &settings.params.settings,
-        )?))
-    }
-
-    /// A plugin that declares a message form gets the filled form as UTF-8 JSON in a frame.
-    fn compose(&self, message: &serde_json::Value) -> Result<TxPayload, ChannelError> {
-        if self.descriptor.message.is_empty() {
-            return Err(ChannelError::InvalidPayload(format!(
-                "{} sends no messages",
-                self.descriptor.type_id
-            )));
-        }
-        serde_json::to_vec(message)
-            .map(TxPayload::Frame)
-            .map_err(|error| ChannelError::InvalidPayload(error.to_string()))
     }
 
     fn layout(&self, params: &ChannelParams) -> Result<ChannelLayout, ChannelError> {

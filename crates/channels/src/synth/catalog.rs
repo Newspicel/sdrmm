@@ -1,7 +1,6 @@
 use num_complex::Complex;
 use sdrmm_modem::synth::{Catalog, Signal};
 
-use crate::am::AmParams;
 use crate::apt::AvhrrChannel;
 use crate::atv::AtvModulation;
 use crate::atv::AtvParams;
@@ -15,15 +14,15 @@ use crate::per::PerParams;
 use crate::psk::PskBaud;
 use crate::radiosonde::SondeType;
 use crate::selcall::SelcallSystem;
-use crate::ssb::SsbParams;
 use crate::sstv::SstvMode;
 use crate::wefax::WefaxIoc;
 use crate::wefax::WefaxLpm;
 use crate::{
-    AmTx, AprsTx, ChannelCtx, ChannelTx, NativeTx, SsbTx, TxPayload,
+    AmModulator, AprsEncoderSettings, AprsModulator, SsbEncoderSettings, SsbModulator,
+    encoder::{Modulator, NativeModulator, TxPayload},
     synth::{self, dv, weak_signal},
 };
-use sdrmm_wire::{ChannelParams, ChannelSettings, Sideband, Squelch};
+use sdrmm_wire::Sideband;
 
 const NARROW: f64 = 240_000.0;
 const AUDIO: f64 = 48_000.0;
@@ -483,68 +482,31 @@ fn nfm_dcs() -> Vec<Complex<f32>> {
     synth::fm_modulate(&audio, 2_500.0, NARROW)
 }
 
-fn voice_settings(params: ChannelParams) -> ChannelSettings {
-    ChannelSettings {
-        frequency_hz: CENTER_HZ,
-        squelch: Squelch::Off,
-        params,
-        blanker: Default::default(),
-        if_filter: Default::default(),
-    }
-}
-
-fn modulated_voice(
-    rate: f64,
-    build: fn(ChannelCtx, ChannelSettings) -> Option<Box<dyn ChannelTx>>,
-    params: ChannelParams,
-) -> Vec<Complex<f32>> {
-    let Some(mut tx) = build(ChannelCtx { input_rate: rate }, voice_settings(params)) else {
-        return Vec::new();
-    };
+fn modulated_voice(mut tx: impl Modulator) -> Vec<Complex<f32>> {
     if tx
         .submit(TxPayload::Audio(voice_audio(f64::from(crate::AUDIO_RATE))))
         .is_err()
     {
         return Vec::new();
     }
-    synth::burst(tx.as_mut())
+    synth::burst(&mut tx)
 }
 
 fn am_voice() -> Vec<Complex<f32>> {
-    let Ok(params) = ChannelParams::of(&AmParams::default()) else {
+    let Ok(tx) = AmModulator::new(&Default::default()) else {
         return Vec::new();
     };
-    let rate = AmTx::descriptor().input_rate_hz;
-    let iq = modulated_voice(
-        rate,
-        |ctx, settings| {
-            AmTx::new(ctx, settings)
-                .ok()
-                .map(|tx| Box::new(tx) as Box<dyn ChannelTx>)
-        },
-        params,
-    );
-    synth::resample(&iq, rate, NARROW)
+    synth::resample(&modulated_voice(tx), AmModulator::rate_hz(), NARROW)
 }
 
 fn ssb_voice() -> Vec<Complex<f32>> {
-    let Ok(params) = ChannelParams::of(&SsbParams {
+    let Ok(tx) = SsbModulator::new(&SsbEncoderSettings {
         sideband: Sideband::Usb,
-        ..SsbParams::default()
+        ..SsbEncoderSettings::default()
     }) else {
         return Vec::new();
     };
-    let rate = SsbTx::descriptor().input_rate_hz;
-    let iq = modulated_voice(
-        rate,
-        |ctx, settings| {
-            SsbTx::new(ctx, settings)
-                .ok()
-                .map(|tx| Box::new(tx) as Box<dyn ChannelTx>)
-        },
-        params,
-    );
-    synth::resample(&iq, rate, AUDIO)
+    synth::resample(&modulated_voice(tx), SsbModulator::rate_hz(), AUDIO)
 }
 
 fn broadcast_audio(rate: f64) -> (Vec<f32>, Vec<f32>) {
@@ -674,14 +636,8 @@ fn aprs_weather() -> Vec<Complex<f32>> {
 }
 
 fn aprs_packet(text: &str) -> Vec<Complex<f32>> {
-    let rate = AprsTx::descriptor().input_rate_hz;
-    let Ok(params) = ChannelParams::of(&crate::aprs::AprsParams {
-        mode: crate::aprs::AprsMode::Afsk1200,
-        ..crate::aprs::AprsParams::default()
-    }) else {
-        return Vec::new();
-    };
-    let Ok(mut tx) = AprsTx::new(ChannelCtx { input_rate: rate }, voice_settings(params)) else {
+    let rate = AprsModulator::rate_hz();
+    let Ok(mut tx) = AprsModulator::new(&AprsEncoderSettings::default()) else {
         return Vec::new();
     };
     if tx.submit(TxPayload::Frame(aprs_frame(text))).is_err() {

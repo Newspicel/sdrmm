@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_channels::{AprsPacket, AprsParams, NfmParams};
+use sdrmm_channels::{AprsPacket, AprsParams, NfmParams, encoder::EncoderParams};
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_virtual::{NFM_CARRIER_OFFSET_HZ, VirtualDriver};
 use sdrmm_engine::{Engine, EngineError, TransmitRequest, TransmitSource, audio::PcmPayload};
@@ -127,13 +127,17 @@ async fn a_message_sent_from_a_half_duplex_radio_is_decoded_by_another() {
     let aprs = ChannelParams::new("aprs", &AprsParams::default()).expect("aprs settings");
     let mut decoded = engine.subscribe_decoded();
     let channel = engine
-        .add_channel(listener, 0, listening(CHANNEL_HZ, aprs.clone()))
+        .add_channel(listener, 0, listening(CHANNEL_HZ, aprs))
         .expect("decoder");
 
     let armed = engine
         .arm_transmitter(
             talker,
-            &request("tx", TransmitSource::Modulator(aprs), Some(CHANNEL_HZ)),
+            &request(
+                "tx",
+                TransmitSource::Encoder(EncoderParams::bare("aprs")),
+                Some(CHANNEL_HZ),
+            ),
         )
         .expect("armed");
     assert_eq!(armed.phase, TransmitPhase::Idle);
@@ -194,13 +198,17 @@ async fn voice_fed_to_an_nfm_transmitter_comes_back_out_of_the_receiver() {
     let ds = radio(&engine, "virtual:transceiver", CENTER_HZ);
     let nfm = ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings");
     let channel = engine
-        .add_channel(ds, 0, listening(CHANNEL_HZ, nfm.clone()))
+        .add_channel(ds, 0, listening(CHANNEL_HZ, nfm))
         .expect("receiver");
     let mut audio = engine.subscribe_pcm(ds, channel).expect("PCM");
     engine
         .arm_transmitter(
             ds,
-            &request("tx", TransmitSource::Modulator(nfm), Some(CHANNEL_HZ)),
+            &request(
+                "tx",
+                TransmitSource::Encoder(EncoderParams::bare("nfm")),
+                Some(CHANNEL_HZ),
+            ),
         )
         .expect("armed");
     tokio::time::sleep(Duration::from_millis(300)).await;
@@ -327,7 +335,7 @@ async fn a_channels_baseband_is_sent_on_another_frequency() {
 #[test]
 fn what_cannot_be_sent_is_refused_with_its_reason() {
     let engine = engine();
-    let nfm = || TransmitSource::Modulator(ChannelParams::bare("nfm"));
+    let nfm = || TransmitSource::Encoder(EncoderParams::bare("nfm"));
     let quad = radio(&engine, "virtual:quad", 100_000_000.0);
     let refused = |result: Result<TransmitStatus, EngineError>, needle: &str| match result {
         Err(EngineError::Transmit(reason)) => assert!(reason.contains(needle), "{reason}"),
@@ -343,11 +351,11 @@ fn what_cannot_be_sent_is_refused_with_its_reason() {
             ds,
             &request(
                 "tx",
-                TransmitSource::Modulator(ChannelParams::bare("adsb")),
+                TransmitSource::Encoder(EncoderParams::bare("adsb")),
                 None,
             ),
         ),
-        "no modulator",
+        "no encoder",
     );
     let mut loud = request("tx", nfm(), None);
     loud.settings.level_db = 6.0;

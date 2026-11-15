@@ -22,8 +22,8 @@ export function ChannelPicker({
   const shown = filterPalette(groups, query);
 
   const choose = (item: PaletteItem | undefined): void => {
-    if (item?.type !== undefined) {
-      onChannel(item.type.type_id);
+    if (item?.typeId !== undefined) {
+      onChannel(item.typeId);
     }
   };
 

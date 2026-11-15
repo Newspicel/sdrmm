@@ -2,41 +2,39 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../components/BaseControls";
 import { BTN_PRIMARY } from "../../components/controls";
-import { Chips, ChoiceChip } from "../../components/face/Chips";
+import { Chips } from "../../components/face/Chips";
 import { SettingsForm } from "../../components/SettingsForm";
 import { nodeAction } from "../../lib/api";
 import { clearAction, failAction } from "../../lib/refusals";
+import { useFeeds } from "../../lib/resolved";
 import type { Settings } from "../../lib/settingsForm";
 import type { ParamChoice, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
-import {
-  modulatorSettings,
-  modulatorTypes,
-  withModulatorSettings,
-  withModulatorType,
-} from "./transmit";
+import { encoderSettings, withEncoderSettings } from "./transmit";
 
 const NO_CHOICES: readonly ParamChoice[] = [];
 const NO_MESSAGE: Settings = {};
 const SEND_ACTION = "Send";
 
-export function ModulatorFace({ node }: { node: PatchNode }) {
-  if (node.kind !== "modulator") {
+export function EncoderFace({ node }: { node: PatchNode }) {
+  if (node.kind !== "encoder") {
     return null;
   }
-  return <ModulatorNodeFace node={node} />;
+  return <EncoderNodeFace node={node} />;
 }
 
-function ModulatorNodeFace({ node }: { node: PatchNodeOf<"modulator"> }) {
+function EncoderNodeFace({ node }: { node: PatchNodeOf<"encoder"> }) {
   const workspace = useWorkspaceContext();
-  const types = modulatorTypes(workspace.context.channelTypes);
-  const typeId = node.data.channel_type;
-  const descriptor = types.find((type) => type.type_id === typeId);
-  const [drafts, setDrafts] = useState<Readonly<Record<string, Settings>>>({});
-  const message = drafts[typeId] ?? NO_MESSAGE;
+  const descriptor = workspace.context.encoderTypes?.find(
+    (type) => type.type_id === node.data.encoder_type,
+  );
+  const settings = encoderSettings(node.data.settings, descriptor);
+  const [message, setMessage] = useState<Settings>(NO_MESSAGE);
   const form = descriptor?.message ?? [];
+  const heard = useFeeds(node.id, "audio").length > 0;
+  const takesAudio = (descriptor?.input ?? "audio") === "audio";
   const edit = (change: (current: PatchNode) => PatchNode): void =>
     workspace.edit((snapshot) => ({
       ...snapshot,
@@ -49,34 +47,32 @@ function ModulatorNodeFace({ node }: { node: PatchNodeOf<"modulator"> }) {
   });
 
   return (
-    <NodeShell node={node} title={descriptor?.name ?? "Modulator"} category="channel">
+    <NodeShell
+      node={node}
+      title={descriptor?.name ?? node.data.encoder_type}
+      subtitle="Encoder"
+      category="encoder"
+    >
       <FaceBody>
-        <Chips>
-          <ChoiceChip
-            label="Mode"
-            title="What it modulates"
-            value={typeId}
-            quiet={descriptor === undefined}
-            options={types.map((type) => ({ value: type.type_id, label: type.name }))}
-            onChange={(next) => edit((current) => withModulatorType(current, next))}
-          />
-          {descriptor !== undefined && (
+        {descriptor === undefined && <FaceEmpty hint="Mode not loaded" />}
+        {descriptor !== undefined && takesAudio && !heard && <FaceEmpty hint="Wire audio in" />}
+        {descriptor !== undefined && (descriptor.settings ?? []).length > 0 && (
+          <Chips>
             <SettingsForm
               form={descriptor.settings ?? []}
-              settings={modulatorSettings(node.data.settings, descriptor)}
+              settings={settings}
               choices={NO_CHOICES}
-              onSettings={(settings) => edit((current) => withModulatorSettings(current, settings))}
+              onSettings={(next) => edit((current) => withEncoderSettings(current, next))}
             />
-          )}
-        </Chips>
-        {descriptor === undefined && <FaceEmpty hint="Pick a mode" />}
+          </Chips>
+        )}
         {form.length > 0 && (
           <Chips>
             <SettingsForm
               form={form}
               settings={message}
               choices={NO_CHOICES}
-              onSettings={(next) => setDrafts((held) => ({ ...held, [typeId]: next }))}
+              onSettings={setMessage}
             />
           </Chips>
         )}

@@ -10,7 +10,7 @@ use std::{
 use arc_swap::ArcSwapOption;
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
-use sdrmm_channels::{ChannelTx, TxPayload};
+use sdrmm_channels::encoder::{Modulator, TxPayload};
 use sdrmm_device::TxStream;
 use sdrmm_dsp::{Duc, EmissionMeter};
 use sdrmm_wire::{TransmitPhase, TransmitSettings, TransmitStatus};
@@ -139,21 +139,21 @@ pub(crate) fn feed(band: Band, shared: &Arc<TxShared>) -> (TxFeedTap, Source) {
 }
 
 pub(crate) enum Source {
-    Modulator { tx: Box<dyn ChannelTx>, rate: f64 },
+    Encoder { tx: Box<dyn Modulator>, rate: f64 },
     Feed { ring: Consumer<Sample>, band: Band },
 }
 
 impl Source {
     fn rate(&self) -> f64 {
         match self {
-            Self::Modulator { rate, .. } => *rate,
+            Self::Encoder { rate, .. } => *rate,
             Self::Feed { band, .. } => band.sample_rate,
         }
     }
 
     fn center_hz(&self) -> Option<f64> {
         match self {
-            Self::Modulator { .. } => None,
+            Self::Encoder { .. } => None,
             Self::Feed { band, .. } => Some(band.center_hz),
         }
     }
@@ -161,12 +161,12 @@ impl Source {
     /// A modulator makes samples as fast as it is asked, so the worker paces it; a lane arrives
     /// at its own pace.
     const fn paced(&self) -> bool {
-        matches!(self, Self::Modulator { .. })
+        matches!(self, Self::Encoder { .. })
     }
 
     fn fill(&mut self, out: &mut [Sample], on_air: bool) -> usize {
         match self {
-            Self::Modulator { tx, .. } => tx.generate(out),
+            Self::Encoder { tx, .. } => tx.generate(out),
             Self::Feed { ring, band } => {
                 let ready = ring.slots();
                 let prefill = (PREFILL_S * band.sample_rate) as usize;
@@ -353,7 +353,7 @@ impl Worker {
     }
 
     fn submit(&mut self, payload: TxPayload) {
-        let Source::Modulator { tx, .. } = &mut self.source else {
+        let Source::Encoder { tx, .. } = &mut self.source else {
             self.shared
                 .fail("a lane takes no messages or audio".to_owned());
             return;

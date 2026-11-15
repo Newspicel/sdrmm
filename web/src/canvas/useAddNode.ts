@@ -5,7 +5,8 @@ import { addNode, newNodeId, nodeIds, opensDevice } from "./graph";
 import { newNodeBody } from "./newNode";
 import { useNodePlacement } from "./placement";
 
-/** Adds a node of `kind`; `typeId` picks the decoder or plugin processor it runs. */
+/** Adds a node of `kind`; `typeId` picks the decoder, encoder or plugin processor it runs. A
+ * channel without one starts on the first decoder. */
 export type AddNode = (kind: NodeKind, typeId?: string, at?: Position) => void;
 
 export function useAddNode(): AddNode {
@@ -13,10 +14,9 @@ export function useAddNode(): AddNode {
   const placeNode = useNodePlacement();
 
   return (kind, typeId, at) => {
-    const body = newNodeBody(workspace.context.catalog, kind, {
-      channelType: typeId ?? workspace.context.channelTypes[0]?.type_id,
-      processorType: typeId,
-    });
+    const firstDecoder =
+      kind === "channel" ? workspace.context.channelTypes[0]?.type_id : undefined;
+    const body = newNodeBody(workspace.context.catalog, kind, { typeId: typeId ?? firstDecoder });
     if (body === null) {
       pushToast(`Unknown node: ${kind}`);
       return;

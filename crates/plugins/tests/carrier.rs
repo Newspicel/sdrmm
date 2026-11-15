@@ -9,8 +9,11 @@ use std::{
 
 use num_complex::Complex;
 use sdrmm_channels::array_processor::ProcessorFactory;
-use sdrmm_channels::{ChannelCtx, ChannelError, ChannelOutputs, Decoder, TxPayload};
-use sdrmm_plugins::{PluginModule, WasmDecoder, WasmProcessors, load_dir};
+use sdrmm_channels::{
+    ChannelCtx, ChannelError, ChannelOutputs, Decoder,
+    encoder::{Encoder, EncoderParams, TxPayload},
+};
+use sdrmm_plugins::{PluginModule, WasmDecoder, WasmEncoder, WasmProcessors, load_dir};
 use sdrmm_wire::{ChannelParams, ChannelSettings, EventKind};
 
 mod common;
@@ -55,10 +58,13 @@ fn plugin_dir() -> &'static Path {
     })
 }
 
+fn module() -> std::sync::Arc<PluginModule> {
+    PluginModule::load(&plugin_dir().join(WASM))
+        .unwrap_or_else(|error| panic!("plugin loads: {error}"))
+}
+
 fn decoder() -> WasmDecoder {
-    let module = PluginModule::load(&plugin_dir().join(WASM))
-        .unwrap_or_else(|error| panic!("plugin loads: {error}"));
-    WasmDecoder::new(module)
+    WasmDecoder::new(module())
 }
 
 fn tone(offset_hz: f64, samples: usize) -> Vec<Complex<f32>> {
@@ -136,9 +142,9 @@ fn a_plugin_reports_health_and_view_hints_like_a_built_in() {
 #[test]
 fn a_plugin_transmits_what_its_own_receiver_hears() {
     let decoder = decoder();
-    assert!(decoder.descriptor().can_transmit);
-    assert_eq!(decoder.descriptor().message.len(), 1);
-    let Ok(TxPayload::Frame(form)) = decoder.compose(&serde_json::json!({"text": "CQ"})) else {
+    let encoder = WasmEncoder::of(&module()).expect("the example brings an encoder");
+    assert_eq!(encoder.descriptor().message.len(), 1);
+    let Ok(TxPayload::Frame(form)) = encoder.compose(&serde_json::json!({"text": "CQ"})) else {
         panic!("the beacon's form composes to a frame");
     };
     assert_eq!(form, br#"{"text":"CQ"}"#);
@@ -146,8 +152,8 @@ fn a_plugin_transmits_what_its_own_receiver_hears() {
     let ctx = ChannelCtx {
         input_rate: RATE_HZ,
     };
-    let mut tx = decoder
-        .create_tx(ctx, &settings)
+    let mut tx = encoder
+        .open(&EncoderParams::bare(&encoder.descriptor().type_id))
         .unwrap_or_else(|error| panic!("transmitter opens: {error}"));
     tx.submit(TxPayload::Frame(vec![0xFF; 8]))
         .unwrap_or_else(|error| panic!("frame queues: {error}"));

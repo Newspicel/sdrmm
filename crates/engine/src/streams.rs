@@ -294,6 +294,11 @@ impl Engine {
         crate::channel_types()
     }
 
+    #[must_use]
+    pub fn encoder_types(&self) -> Vec<sdrmm_wire::EncoderDescriptor> {
+        sdrmm_channels::encoder::encoders()
+    }
+
     pub fn start_scan(
         self: &Arc<Self>,
         ds: u32,

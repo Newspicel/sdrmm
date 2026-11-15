@@ -86,6 +86,7 @@ export function PortAnchor({ port }: { port: string }) {
 const CATEGORY_STRIP: Record<NodeCategory, string> = {
   source: "bg-cat-source shadow-[0_0_8px_var(--color-cat-source)]",
   channel: "bg-cat-channel shadow-[0_0_8px_var(--color-cat-channel)]",
+  encoder: "bg-cat-encoder shadow-[0_0_8px_var(--color-cat-encoder)]",
   tool: "bg-cat-tool shadow-[0_0_8px_var(--color-cat-tool)]",
   output: "bg-cat-output shadow-[0_0_8px_var(--color-cat-output)]",
 };
@@ -95,6 +96,7 @@ const LIVE_STRIP = "bg-ok shadow-[0_0_10px_2px_var(--color-ok)]";
 const CATEGORY_TINT: Record<NodeCategory, string> = {
   source: "bg-cat-source/15",
   channel: "bg-cat-channel/15",
+  encoder: "bg-cat-encoder/15",
   tool: "bg-cat-tool/15",
   output: "bg-cat-output/15",
 };
@@ -104,6 +106,7 @@ const LIVE_TINT = "bg-ok/25";
 const CATEGORY_RULE: Record<NodeCategory, string> = {
   source: "shadow-[inset_0_2px_0_var(--color-cat-source)]",
   channel: "shadow-[inset_0_2px_0_var(--color-cat-channel)]",
+  encoder: "shadow-[inset_0_2px_0_var(--color-cat-encoder)]",
   tool: "shadow-[inset_0_2px_0_var(--color-cat-tool)]",
   output: "shadow-[inset_0_2px_0_var(--color-cat-output)]",
 };

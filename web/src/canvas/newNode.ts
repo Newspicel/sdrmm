@@ -9,10 +9,9 @@ import type {
 } from "../lib/types";
 
 export interface NewNodeSeed {
-  /** The decoder a channel runs; a channel without one has no body. */
-  channelType?: string;
-  /** The plugin processor a processor node runs. */
-  processorType?: string;
+  /** The decoder, encoder or plugin processor the node runs; a node that picks one has no
+   * body without it. */
+  typeId?: string;
 }
 
 export function processorTypeOf(catalog: PatchCatalog, typeId: string): ProcessorType | undefined {
@@ -40,12 +39,13 @@ export function newNodeBody(
   seed: NewNodeSeed = {},
 ): NodeBody | null {
   if (kind === "channel") {
-    return seed.channelType === undefined
-      ? null
-      : { kind, data: { channel_type: seed.channelType } };
+    return seed.typeId === undefined ? null : { kind, data: { channel_type: seed.typeId } };
+  }
+  if (kind === "encoder") {
+    return seed.typeId === undefined ? null : { kind, data: { encoder_type: seed.typeId } };
   }
   if (kind === "processor") {
-    const type = processorTypeOf(catalog, seed.processorType ?? "");
+    const type = processorTypeOf(catalog, seed.typeId ?? "");
     return type === undefined
       ? null
       : { kind, data: { processor_type: type.type_id, settings: processorDefaults(type) } };

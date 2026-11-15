@@ -8,6 +8,7 @@ import {
   CHANNEL_TYPES_KEY,
   DECODER_LOG_KEY,
   DEVICES_KEY,
+  ENCODER_TYPES_KEY,
   PATCH_CATALOG_KEY,
   PHONES_KEY,
   PRESETS_KEY,
@@ -218,6 +219,7 @@ export function invalidateScope(queryClient: QueryClient, scope: StateScope): vo
       break;
     case "decoders":
       void queryClient.invalidateQueries({ queryKey: CHANNEL_TYPES_KEY });
+      void queryClient.invalidateQueries({ queryKey: ENCODER_TYPES_KEY });
       void queryClient.invalidateQueries({ queryKey: PATCH_CATALOG_KEY });
       break;
   }

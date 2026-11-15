@@ -36,13 +36,6 @@ pub fn open<T: Transmitter + 'static>(rate: f64, ptr: u32, len: u32) -> i32 {
     }
 }
 
-pub fn apply<T: Transmitter + 'static>(handle: i32, ptr: u32, len: u32) -> i32 {
-    answer(settings::<T::Settings>(&take(ptr, len)).and_then(|s| {
-        with_stored::<TxSlot<T>, _>(handle, |slot| slot.tx.apply(s))
-            .unwrap_or_else(|| Err(missing(handle)))
-    }))
-}
-
 pub fn submit<T: Transmitter + 'static>(handle: i32, kind: u32, ptr: u32, len: u32) -> i32 {
     let bytes = take(ptr, len);
     let Some(kind) = PayloadKind::from_code(kind) else {

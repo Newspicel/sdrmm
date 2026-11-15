@@ -16,10 +16,13 @@ use sdrmm_modem::analog::{
 use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily, Sideband};
 
 use crate::{
-    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ChannelTx,
-    NativeChannel, NativeTx, TxPayload, check_input_rate, clamp_full_scale, voice_leveller,
+    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
+    check_input_rate, clamp_full_scale,
+    encoder::{EncoderBase, Modulator, NativeEncoder, NativeModulator, TxPayload},
+    voice_leveller,
 };
 use sdrmm_modem::keying::{Burst, TxQueue};
+use serde::{Deserialize, Serialize};
 
 pub(crate) const PASSBAND_LOW_HZ: f64 = 100.0;
 const FILTER_TAPS: usize = 257;
@@ -148,7 +151,35 @@ fn audio_bandpass(p: &SsbParams) -> Result<RealDecimator, ChannelError> {
     ))
 }
 
-pub struct SsbTx {
+/// What an SSB encoder sends: the sideband and how wide its audio runs.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SsbEncoderSettings {
+    pub sideband: Sideband,
+    pub bandwidth_hz: f64,
+}
+
+impl Default for SsbEncoderSettings {
+    fn default() -> Self {
+        let heard = SsbParams::default();
+        Self {
+            sideband: heard.sideband,
+            bandwidth_hz: heard.bandwidth_hz,
+        }
+    }
+}
+
+impl SsbEncoderSettings {
+    /// The receiver settings that hear exactly this signal.
+    const fn heard_as(&self) -> SsbParams {
+        SsbParams {
+            sideband: self.sideband,
+            bandwidth_hz: self.bandwidth_hz,
+        }
+    }
+}
+
+pub struct SsbModulator {
     queue: TxQueue<Complex<f32>>,
     sideband: Sideband,
     audio_bp: RealDecimator,
@@ -160,36 +191,29 @@ pub struct SsbTx {
     burst: Burst,
 }
 
-impl NativeTx for SsbTx {
-    fn descriptor() -> &'static ChannelDescriptor {
-        &DESCRIPTOR
+impl NativeModulator for SsbModulator {
+    type Settings = SsbEncoderSettings;
+
+    fn rate_hz() -> f64 {
+        DESCRIPTOR.input_rate_hz
     }
 
-    fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
-        check_input_rate(ctx, &DESCRIPTOR)?;
-        let p = params(&settings)?;
+    fn new(settings: &SsbEncoderSettings) -> Result<Self, ChannelError> {
         Ok(Self {
             queue: TxQueue::new(DESCRIPTOR.type_id.as_str(), f64::from(AUDIO_RATE)),
-            sideband: p.sideband,
-            audio_bp: audio_bandpass(&p)?,
+            sideband: settings.sideband,
+            audio_bp: audio_bandpass(&settings.heard_as())?,
             hilbert: RealDecimator::new(&hilbert_taps(), 1),
             delay: RealDecimator::new(&delay_taps(), 1),
             shaped: Vec::new(),
             in_phase: Vec::new(),
             quadrature: Vec::new(),
-            burst: Burst::new(ctx.input_rate),
+            burst: Burst::new(DESCRIPTOR.input_rate_hz),
         })
     }
 }
 
-impl ChannelTx for SsbTx {
-    fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let p = params(&settings)?;
-        self.audio_bp = audio_bandpass(&p)?;
-        self.sideband = p.sideband;
-        Ok(())
-    }
-
+impl Modulator for SsbModulator {
     fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError> {
         let TxPayload::Audio(pcm) = payload else {
             return Err(ChannelError::InvalidPayload(
@@ -255,11 +279,22 @@ pub(crate) fn ssb_decoder() -> Native<SsbParams> {
         Sideband::Lsb => (-p.bandwidth_hz, -PASSBAND_LOW_HZ),
     })
     .filter(channel_filter)
-    .tx::<SsbTx>()
     .signatures(ssb_signatures)
     .tune(ssb_tune)
     .form(ssb_form)
     .kinds(ssb_kinds)
+}
+
+pub(crate) fn ssb_encoder() -> NativeEncoder<SsbEncoderSettings> {
+    NativeEncoder::new::<SsbModulator>(
+        EncoderBase {
+            type_id: "ssb",
+            name: "SSB",
+            summary: "Single sideband voice",
+        },
+        |s: &SsbEncoderSettings| s.bandwidth_hz,
+    )
+    .form(ssb_form)
 }
 
 pub(crate) fn ssb_form() -> Vec<SettingField> {
@@ -313,8 +348,16 @@ mod tests {
         SsbChannel::new(ctx(), voice_settings(sideband)).unwrap()
     }
 
+    fn modulator(sideband: Sideband) -> SsbModulator {
+        SsbModulator::new(&SsbEncoderSettings {
+            sideband,
+            bandwidth_hz: 2_700.0,
+        })
+        .unwrap()
+    }
+
     fn excite(sideband: Sideband, audio: Vec<f32>) -> Vec<Complex<f32>> {
-        let mut tx = SsbTx::new(ctx(), voice_settings(sideband)).unwrap();
+        let mut tx = modulator(sideband);
         tx.submit(TxPayload::Audio(audio)).unwrap();
         burst(&mut tx)
     }
@@ -465,9 +508,8 @@ mod tests {
     }
 
     #[test]
-    fn tx_apply_switches_the_sideband() {
-        let mut tx = SsbTx::new(ctx(), voice_settings(Sideband::Usb)).unwrap();
-        tx.apply(voice_settings(Sideband::Lsb)).unwrap();
+    fn tx_sends_the_lower_sideband_below_the_carrier() {
+        let mut tx = modulator(Sideband::Lsb);
         tx.submit(TxPayload::Audio(tone_audio(1_500.0, 1.0, RATE, 48_000)))
             .unwrap();
         let iq = burst(&mut tx);
@@ -478,7 +520,7 @@ mod tests {
 
     #[test]
     fn tx_radiates_nothing_until_audio_is_submitted() {
-        let mut tx = SsbTx::new(ctx(), voice_settings(Sideband::Usb)).unwrap();
+        let mut tx = modulator(Sideband::Usb);
         let mut block = [Complex::new(9.0, 9.0); 64];
         assert_eq!(tx.generate(&mut block), 0);
         assert_eq!(block[0], Complex::new(9.0, 9.0));
@@ -486,7 +528,7 @@ mod tests {
 
     #[test]
     fn tx_rejects_a_frame_payload_and_a_backlog_past_the_bound() {
-        let mut tx = SsbTx::new(ctx(), voice_settings(Sideband::Usb)).unwrap();
+        let mut tx = modulator(Sideband::Usb);
         assert!(matches!(
             tx.submit(TxPayload::Frame(vec![0x7E])),
             Err(ChannelError::InvalidPayload(_))
@@ -501,29 +543,11 @@ mod tests {
     }
 
     #[test]
-    fn tx_rejects_mismatched_params_and_out_of_range_bandwidth() {
-        let built = SsbTx::new(
-            ctx(),
-            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
-        );
-        assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
-        let built = SsbTx::new(
-            ctx(),
-            settings(
-                ChannelParams::of(&SsbParams {
-                    sideband: Sideband::Usb,
-                    bandwidth_hz: 50.0,
-                })
-                .expect("ssb settings"),
-            ),
-        );
-        assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
-        let built = SsbTx::new(
-            ChannelCtx {
-                input_rate: 240_000.0,
-            },
-            voice_settings(Sideband::Usb),
-        );
+    fn tx_refuses_a_bandwidth_below_its_passband() {
+        let built = SsbModulator::new(&SsbEncoderSettings {
+            sideband: Sideband::Usb,
+            bandwidth_hz: 50.0,
+        });
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
 }

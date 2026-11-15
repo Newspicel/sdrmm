@@ -123,6 +123,16 @@ pub(super) async fn get_channel_types(State(state): State<AppState>) -> Json<Cha
 }
 
 #[utoipa::path(
+    get, path = "/api/encodertypes",
+    responses((status = 200, description = "Available encoder types", body = EncoderTypesResponse)),
+)]
+pub(super) async fn get_encoder_types(State(state): State<AppState>) -> Json<EncoderTypesResponse> {
+    Json(EncoderTypesResponse {
+        types: state.engine.encoder_types(),
+    })
+}
+
+#[utoipa::path(
     get, path = "/api/saved-radios",
     responses((status = 200, description = "Saved network radios", body = Vec<SavedRadio>)),
 )]

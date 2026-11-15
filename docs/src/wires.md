@@ -132,7 +132,9 @@ Ports follow the decoder the node runs.
 | `events` | out | Events | any kind | many. Decoded messages and calls. Analog calls need squelch |
 | `video` | out | Video | Decoded video frames and pictures | many |
 
-### Modulator
+## Encoders
+
+### Encoder
 
 Turns audio or a message into a signal
 
@@ -484,7 +486,7 @@ Points an antenna
 
 ### Transmitter
 
-Puts a modulator or a lane on the air
+Puts an encoder or a lane on the air
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|

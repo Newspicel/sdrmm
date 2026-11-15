@@ -27,7 +27,7 @@ use crate::{
     satellite::SatelliteNode,
     schedule::ScheduleNode,
     sky_scan::SkyScanNode,
-    transmit::{MicrophoneNode, ModulatorNode, TransmitNode},
+    transmit::{EncoderNode, MicrophoneNode, TransmitNode},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -94,6 +94,26 @@ impl Face {
     }
 }
 
+/// The registry a node picks the type it runs from: decoders, encoders or plugin processors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Picks {
+    Decoder,
+    Encoder,
+    Processor,
+}
+
+impl Picks {
+    const fn of(body: &NodeBody) -> Option<Self> {
+        match body {
+            NodeBody::Channel(_) => Some(Self::Decoder),
+            NodeBody::Encoder(_) => Some(Self::Encoder),
+            NodeBody::Processor(_) => Some(Self::Processor),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct NodeTypeInfo {
     pub kind: NodeKind,
@@ -104,11 +124,9 @@ pub struct NodeTypeInfo {
     pub role: Role,
     pub face: Face,
     pub ports: Vec<PortSpec>,
-    #[serde(default)]
-    pub needs_channel_type: bool,
-    /// A node of this kind runs one of the catalog's `processors`.
-    #[serde(default)]
-    pub needs_processor_type: bool,
+    /// Where a node of this kind picks the type it runs, when it is added.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub picks: Option<Picks>,
     pub default_body: NodeBody,
     /// The form a face renders for this node's settings, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -155,8 +173,7 @@ impl NodeKind {
             role: self.role(),
             face: self.face(),
             ports: self.ports(),
-            needs_channel_type: matches!(default_body, NodeBody::Channel(_)),
-            needs_processor_type: matches!(default_body, NodeBody::Processor(_)),
+            picks: Picks::of(&default_body),
             default_body,
             settings: self.settings(),
             processor: self.processor_facets(),
@@ -601,13 +618,13 @@ macro_rules! node_registry {
                 "Your voice while you hold the key", Role::Plain, Face::fit(300), [
                 audio_out(),
             ]),
-            (Modulator(ModulatorNode), "modulator", Channel, "Modulator",
-                "Turns audio or a message into a signal", Role::Plain, Face::fit(400), [
+            (Encoder(EncoderNode), "encoder", Encoder, "Encoder",
+                "Turns audio or a message into a signal", Role::Plain, Face::fit(280), [
                 audio_in().noted("Voice for an analog mode"),
                 output(BASEBAND_PORT, Payload::Baseband).one(),
             ]),
             (Transmit(TransmitNode), "transmit", Output, "Transmitter",
-                "Puts a modulator or a lane on the air", Role::Plain, Face::fit(360), [
+                "Puts an encoder or a lane on the air", Role::Plain, Face::fit(360), [
                 iq_in().group(TRANSMIT_SOURCE).noted("A lane to send as it is"),
                 input(BASEBAND_PORT, Payload::Baseband).group(TRANSMIT_SOURCE),
                 output(TRANSMIT_PORT, Payload::Transmit).one(),

@@ -2,10 +2,13 @@
 
 use std::collections::VecDeque;
 
-use sdrmm_plugin::{Complex, Payload, Transmitter, serde_json};
-use serde::Deserialize;
+use sdrmm_plugin::{
+    Complex, Payload, Transmitter, serde_json,
+    wire::{Control, EncoderDescriptor, EncoderInput, SettingField},
+};
+use serde::{Deserialize, Serialize};
 
-use crate::{CarrierSettings, INPUT_RATE_HZ};
+use crate::INPUT_RATE_HZ;
 
 /// The mark tone sits this far above the channel frequency, the space tone as far below.
 pub const SHIFT_HZ: f64 = 1_000.0;
@@ -13,7 +16,7 @@ pub const BAUD: f64 = 100.0;
 const AMPLITUDE: f32 = 0.5;
 const MAX_QUEUED_BITS: usize = 8 * 4_096;
 
-/// What the Modulator node's form hands over: the text to key.
+/// What the encoder node's message form hands over: the text to key.
 #[derive(Deserialize)]
 struct Message {
     text: String,
@@ -25,6 +28,23 @@ fn keyed(frame: &[u8]) -> Vec<u8> {
         .map_or_else(|_| frame.to_vec(), |message| message.text.into_bytes())
 }
 
+/// The encoder the example declares in its manifest.
+#[must_use]
+pub fn descriptor() -> EncoderDescriptor {
+    EncoderDescriptor {
+        type_id: "beacon".to_owned(),
+        name: "Beacon".to_owned(),
+        summary: "Text as two-tone FSK".to_owned(),
+        rate_hz: INPUT_RATE_HZ,
+        bandwidth_hz: WIDTH_HZ,
+        input: EncoderInput::Message,
+        message: vec![
+            SettingField::new("text", "Text", Control::text("CQ")).title("Text the beacon keys"),
+        ],
+        ..EncoderDescriptor::default()
+    }
+}
+
 pub struct Beacon {
     bits: VecDeque<bool>,
     tone_hz: f64,
@@ -33,16 +53,12 @@ pub struct Beacon {
     samples_per_bit: usize,
 }
 
-fn fits(settings: &CarrierSettings) -> Result<(), String> {
-    if settings.bandwidth_hz / 2.0 < SHIFT_HZ {
-        Err(format!(
-            "beacon tones at ±{SHIFT_HZ} Hz need a width of {} Hz",
-            2.0 * SHIFT_HZ
-        ))
-    } else {
-        Ok(())
-    }
-}
+/// The beacon keys at a fixed shift and rate, so it has nothing to set.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BeaconSettings {}
+
+/// The mark and space tones and the keying sidebands around them.
+pub const WIDTH_HZ: f64 = 2.0 * SHIFT_HZ + 4.0 * BAUD;
 
 impl Beacon {
     fn next_bit(&mut self) -> bool {
@@ -63,13 +79,12 @@ impl Beacon {
 }
 
 impl Transmitter for Beacon {
-    type Settings = CarrierSettings;
+    type Settings = BeaconSettings;
 
-    fn open(rate_hz: f64, settings: CarrierSettings) -> Result<Self, String> {
+    fn open(rate_hz: f64, _settings: BeaconSettings) -> Result<Self, String> {
         if rate_hz != INPUT_RATE_HZ {
             return Err(format!("beacon sends at {INPUT_RATE_HZ} Hz, got {rate_hz}"));
         }
-        fits(&settings)?;
         Ok(Self {
             bits: VecDeque::new(),
             tone_hz: 0.0,
@@ -77,10 +92,6 @@ impl Transmitter for Beacon {
             phase: 0.0,
             samples_per_bit: (rate_hz / BAUD).round() as usize,
         })
-    }
-
-    fn apply(&mut self, settings: CarrierSettings) -> Result<(), String> {
-        fits(&settings)
     }
 
     fn submit(&mut self, payload: Payload<'_>) -> Result<(), String> {
@@ -117,7 +128,7 @@ mod tests {
     use super::*;
 
     fn beacon() -> Beacon {
-        Beacon::open(INPUT_RATE_HZ, CarrierSettings::default()).expect("opens")
+        Beacon::open(INPUT_RATE_HZ, BeaconSettings::default()).expect("opens")
     }
 
     #[test]
@@ -151,12 +162,8 @@ mod tests {
     }
 
     #[test]
-    fn audio_and_a_narrow_width_are_refused() {
+    fn audio_and_another_rate_are_refused() {
         assert!(beacon().submit(Payload::Audio(&[0.0; 4])).is_err());
-        let narrow = CarrierSettings {
-            bandwidth_hz: 1_000.0,
-            ..CarrierSettings::default()
-        };
-        assert!(Beacon::open(INPUT_RATE_HZ, narrow).is_err());
+        assert!(Beacon::open(96_000.0, BeaconSettings::default()).is_err());
     }
 }

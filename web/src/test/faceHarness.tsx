@@ -7,6 +7,7 @@ import type {
   ChannelDescriptor,
   ChannelInfo,
   DeviceSet,
+  EncoderDescriptor,
   NodeProblem,
   PatchCatalog,
   PatchGraph,
@@ -25,6 +26,7 @@ export interface FaceHarness {
   owners?: ReadonlyMap<string, string>;
   catalog?: PatchCatalog;
   channelTypes?: readonly ChannelDescriptor[];
+  encoderTypes?: readonly EncoderDescriptor[];
   resolved?: ResolvedPatch | null;
   problems?: readonly NodeProblem[];
   selected?: string | null;
@@ -45,6 +47,7 @@ export function stubWorkspace(harness: FaceHarness): Workspace {
     context: {
       catalog: harness.catalog ?? CATALOG,
       channelTypes: harness.channelTypes ?? [],
+      encoderTypes: harness.encoderTypes ?? [],
       resolved,
       bound: devices,
     },

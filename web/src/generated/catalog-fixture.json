@@ -51,8 +51,6 @@
           "note": "The transmitter this radio sends"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "device",
         "data": {}
@@ -81,8 +79,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "gps",
         "data": {}
@@ -138,8 +134,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "array",
         "data": {
@@ -322,8 +316,7 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": true,
-      "needs_processor_type": false,
+      "picks": "decoder",
       "default_body": {
         "kind": "channel",
         "data": {
@@ -365,8 +358,6 @@
           "multi": "one"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "scope"
       }
@@ -399,8 +390,6 @@
           "multi": "one"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "baseband_scope"
       }
@@ -428,8 +417,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "speaker",
         "data": null
@@ -498,8 +485,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "map"
       }
@@ -546,8 +531,6 @@
           "multi": "one"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "signal_map",
         "data": {
@@ -602,8 +585,6 @@
           "multi": "one"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "propagation",
         "data": {
@@ -708,8 +689,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "readout"
       }
@@ -809,8 +788,6 @@
           "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "decoder_log",
         "data": {}
@@ -919,8 +896,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "spectrum_monitor",
         "data": {
@@ -985,8 +960,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "trunk",
         "data": {
@@ -1165,8 +1138,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "event_filter",
         "data": {
@@ -1212,8 +1183,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "audio_fx",
         "data": {
@@ -1326,8 +1295,6 @@
           "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "event_output",
         "data": {
@@ -1370,8 +1337,6 @@
           ]
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "video"
       }
@@ -1427,8 +1392,6 @@
           "note": "Armed, it records only while a schedule or satellite says so"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "recorder",
         "data": {
@@ -1474,8 +1437,6 @@
           "note": "Armed, it records only while a schedule or satellite says so"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "audio_recorder",
         "data": {
@@ -1521,8 +1482,6 @@
           "note": "Armed, it records only while a schedule or satellite says so"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "baseband_recorder",
         "data": {
@@ -1569,8 +1528,6 @@
           "group": "source"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "network_export",
         "data": {
@@ -1669,8 +1626,6 @@
           "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "export"
       }
@@ -1716,8 +1671,6 @@
           "multi": "one"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "scanner",
         "data": {
@@ -1804,8 +1757,6 @@
           "note": "Sweep and mark bearings"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "hunt",
         "data": {
@@ -1847,8 +1798,6 @@
           "note": "Radios and recorders to run in its windows"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "schedule",
         "data": {}
@@ -1906,8 +1855,6 @@
           "note": "Position and ground track for a Map"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "satellite",
         "data": {
@@ -1943,8 +1890,6 @@
           "note": "A satellite, an aim or a sky scan"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "rotator",
         "data": {
@@ -2038,8 +1983,6 @@
           "note": "Rotators to point"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "aim",
         "data": {
@@ -2105,8 +2048,6 @@
           "note": "The rotator to sweep"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "sky_scan",
         "data": {
@@ -2271,8 +2212,6 @@
           "note": "Live bearing to steer a beam"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "df",
         "data": {
@@ -2633,8 +2572,6 @@
           "note": "The combined lane"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "beamformer",
         "data": {
@@ -3408,8 +3345,6 @@
           "note": "Track events"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "passive_radar",
         "data": {
@@ -4375,8 +4310,6 @@
           "note": "Every lane joined"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "stitch",
         "data": {
@@ -4480,8 +4413,6 @@
           "multi": "one"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "spatial_spectrum",
         "data": {
@@ -4736,8 +4667,6 @@
           "multi": "one"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "correlator",
         "data": {
@@ -4932,8 +4861,6 @@
           "note": "Matched to the wave"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "polarimeter",
         "data": {
@@ -5170,8 +5097,7 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": true,
+      "picks": "processor",
       "default_body": {
         "kind": "processor",
         "data": {
@@ -5231,8 +5157,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "triangulation",
         "data": {
@@ -5426,8 +5350,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "bearing_fix"
       }
@@ -5455,8 +5377,6 @@
           "multi": "many"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "microphone",
         "data": {
@@ -5467,15 +5387,15 @@
       }
     },
     {
-      "kind": "modulator",
-      "name": "Modulator",
-      "category": "channel",
+      "kind": "encoder",
+      "name": "Encoder",
+      "category": "encoder",
       "summary": "Turns audio or a message into a signal",
       "role": {
         "role": "plain"
       },
       "face": {
-        "width": 400,
+        "width": 280,
         "dial": false
       },
       "ports": [
@@ -5499,12 +5419,11 @@
           "multi": "one"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
+      "picks": "encoder",
       "default_body": {
-        "kind": "modulator",
+        "kind": "encoder",
         "data": {
-          "channel_type": ""
+          "encoder_type": ""
         }
       }
     },
@@ -5512,7 +5431,7 @@
       "kind": "transmit",
       "name": "Transmitter",
       "category": "output",
-      "summary": "Puts a modulator or a lane on the air",
+      "summary": "Puts an encoder or a lane on the air",
       "role": {
         "role": "plain"
       },
@@ -5557,8 +5476,6 @@
           "multi": "one"
         }
       ],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "transmit",
         "data": {
@@ -5585,8 +5502,6 @@
         "dial": false
       },
       "ports": [],
-      "needs_channel_type": false,
-      "needs_processor_type": false,
       "default_body": {
         "kind": "note",
         "data": {

@@ -66,7 +66,7 @@ const FACES: Partial<Record<NodeKind, Face>> = {
   bearing_fix: lazyFace(() => import("./BearingFixFace"), "BearingFixFace"),
   array: lazyFace(() => import("./ArrayFace"), "ArrayFace"),
   microphone: lazyFace(() => import("./MicrophoneFace"), "MicrophoneFace"),
-  modulator: lazyFace(() => import("./ModulatorFace"), "ModulatorFace"),
+  encoder: lazyFace(() => import("./EncoderFace"), "EncoderFace"),
   transmit: lazyFace(() => import("./TransmitFace"), "TransmitFace"),
   note: lazyFace(() => import("./NoteFace"), "NoteFace"),
 };

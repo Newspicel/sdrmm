@@ -5,13 +5,13 @@ import { carriesSettings, defaultBody, huntSweepOf, newNodeBody } from "./newNod
 import { nodeSettings } from "./nodes/NodeForm";
 
 const KINDS = CATALOG.nodes
-  .filter((entry) => entry.needs_processor_type !== true)
+  .filter((entry) => entry.picks !== "processor")
   .map((entry) => entry.kind);
 
 describe("newNodeBody", () => {
   it("takes every body from the catalog", () => {
     for (const entry of CATALOG.nodes) {
-      if (entry.needs_channel_type === true || entry.needs_processor_type === true) {
+      if (entry.picks != null) {
         continue;
       }
       expect(newNodeBody(CATALOG, entry.kind)).toEqual(entry.default_body);
@@ -33,15 +33,23 @@ describe("newNodeBody", () => {
   });
 
   it("starts a channel of the picked type", () => {
-    expect(newNodeBody(CATALOG, "channel", { channelType: "probe" })).toEqual({
+    expect(newNodeBody(CATALOG, "channel", { typeId: "probe" })).toEqual({
       kind: "channel",
       data: { channel_type: "probe" },
     });
     expect(newNodeBody(CATALOG, "channel")).toBeNull();
   });
 
+  it("starts an encoder of the picked mode", () => {
+    expect(newNodeBody(CATALOG, "encoder", { typeId: "nfm" })).toEqual({
+      kind: "encoder",
+      data: { encoder_type: "nfm" },
+    });
+    expect(newNodeBody(CATALOG, "encoder")).toBeNull();
+  });
+
   it.each(KINDS)("gives %s a body of its own kind", (kind) => {
-    const body = newNodeBody(CATALOG, kind, { channelType: "probe" });
+    const body = newNodeBody(CATALOG, kind, { typeId: "probe" });
     expect(body?.kind).toBe(kind);
     if (carriesSettings(CATALOG, kind)) {
       expect((body as { data?: unknown }).data).toBeDefined();

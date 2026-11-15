@@ -178,7 +178,7 @@ const fn column(category: NodeCategory) -> f32 {
     match category {
         NodeCategory::Source => 0.0,
         NodeCategory::Tool => 1.0,
-        NodeCategory::Channel => 2.0,
+        NodeCategory::Channel | NodeCategory::Encoder => 2.0,
         NodeCategory::Output => 3.0,
     }
 }

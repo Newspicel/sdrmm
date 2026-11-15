@@ -724,6 +724,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/encodertypes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_encoder_types"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/examples": {
         parameters: {
             query?: never;
@@ -2924,7 +2940,6 @@ export interface components {
             /** Format: double */
             bandwidth_hz: number;
             calls?: components["schemas"]["CallGate"] | null;
-            can_transmit?: boolean;
             click?: components["schemas"]["ClickProfile"];
             defaults?: components["schemas"]["ChannelSettings"] | null;
             emits?: components["schemas"]["EventKind"][];
@@ -2937,8 +2952,6 @@ export interface components {
             input_rate_hz: number;
             /** @description The demodulator already levels its audio, so an added AGC stage is redundant. */
             levels_audio?: boolean;
-            /** @description The form of one message the transmitter sends, in order. */
-            message?: components["schemas"]["SettingField"][];
             name: string;
             needs_position?: boolean;
             ports?: components["schemas"]["PortSpec"][];
@@ -2947,8 +2960,6 @@ export interface components {
             /** @description How this decoder's signal shows on the air, for Signal ID. */
             signatures?: components["schemas"]["SignalSignature"][];
             summary?: string;
-            /** @description The transmitter modulates an audio wire. */
-            transmits_audio?: boolean;
             trial?: components["schemas"]["SignalTrial"] | null;
             trunking?: components["schemas"]["TrunkSpec"] | null;
             type_id: string;
@@ -4079,6 +4090,52 @@ export interface components {
              */
             v: number;
         };
+        /** @description One mode the server can transmit, built in or loaded as a plugin. */
+        EncoderDescriptor: {
+            /**
+             * Format: double
+             * @description The width the signal stays inside at the default settings.
+             */
+            bandwidth_hz: number;
+            /** @description What a fresh encoder starts on. */
+            defaults?: {
+                [key: string]: unknown;
+            };
+            input?: components["schemas"]["EncoderInput"];
+            /** @description The form of one message, in order. Only a message encoder has one. */
+            message?: components["schemas"]["SettingField"][];
+            name: string;
+            /**
+             * Format: double
+             * @description The baseband rate the encoder produces.
+             */
+            rate_hz: number;
+            /** @description The form an encoder node renders for its settings, in order. */
+            settings?: components["schemas"]["SettingField"][];
+            summary?: string;
+            type_id: string;
+        };
+        /**
+         * @description What an encoder turns into a signal.
+         * @enum {string}
+         */
+        EncoderInput: "audio" | "message";
+        EncoderMessage: {
+            /** @description One message, shaped by the form its encoder declares. */
+            message: {
+                [key: string]: unknown;
+            };
+        };
+        EncoderNode: {
+            encoder_type: string;
+            /** @description The encoder's own settings object, absent fields taking its defaults. */
+            settings?: {
+                [key: string]: unknown;
+            };
+        };
+        EncoderTypesResponse: {
+            types: components["schemas"]["EncoderDescriptor"][];
+        };
         Entity: {
             event: components["schemas"]["DecoderEvent"];
             first_seen: string;
@@ -4921,19 +4978,6 @@ export interface components {
         };
         /** @enum {string} */
         Modulation: "none" | "carrier" | "ook" | "am" | "ssb" | "fm" | "fsk2" | "fsk4" | "fsk8" | "psk2" | "psk4" | "ofdm" | "chirp" | "noise_like" | "unknown";
-        ModulatorMessage: {
-            /** @description One message, shaped by the form its decoder declares. */
-            message: {
-                [key: string]: unknown;
-            };
-        };
-        ModulatorNode: {
-            channel_type: string;
-            /** @description The decoder's own settings object, absent fields taking its defaults. */
-            settings?: {
-                [key: string]: unknown;
-            };
-        };
         /** @enum {string} */
         Multi: "one" | "many" | "many_lanes";
         NanoVnaAntenna: {
@@ -5289,7 +5333,7 @@ export interface components {
         } | {
             /** @enum {string} */
             action: "send";
-            with: components["schemas"]["ModulatorMessage"];
+            with: components["schemas"]["EncoderMessage"];
         } | {
             /** @enum {string} */
             action: "processor";
@@ -5454,9 +5498,9 @@ export interface components {
             /** @enum {string} */
             kind: "microphone";
         } | {
-            data: components["schemas"]["ModulatorNode"];
+            data: components["schemas"]["EncoderNode"];
             /** @enum {string} */
-            kind: "modulator";
+            kind: "encoder";
         } | {
             data: components["schemas"]["TransmitNode"];
             /** @enum {string} */
@@ -5467,9 +5511,9 @@ export interface components {
             kind: "note";
         };
         /** @enum {string} */
-        NodeCategory: "source" | "channel" | "tool" | "output";
+        NodeCategory: "source" | "channel" | "encoder" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "modulator" | "transmit" | "note";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "encoder" | "transmit" | "note";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -5481,9 +5525,7 @@ export interface components {
             face: components["schemas"]["Face"];
             kind: components["schemas"]["NodeKind"];
             name: string;
-            needs_channel_type?: boolean;
-            /** @description A node of this kind runs one of the catalog's `processors`. */
-            needs_processor_type?: boolean;
+            picks?: components["schemas"]["Picks"] | null;
             ports: components["schemas"]["PortSpec"][];
             processor?: components["schemas"]["ProcessorFacets"] | null;
             role: components["schemas"]["Role"];
@@ -5885,6 +5927,11 @@ export interface components {
             offer?: components["schemas"]["PairingOfferStatus"] | null;
             phones: components["schemas"]["Phone"][];
         };
+        /**
+         * @description The registry a node picks the type it runs from: decoders, encoders or plugin processors.
+         * @enum {string}
+         */
+        Picks: "decoder" | "encoder" | "processor";
         PipelineQueue: {
             /** Format: int32 */
             channel?: number | null;
@@ -8227,7 +8274,7 @@ export interface components {
         TransmitSettings: {
             /**
              * Format: double
-             * @description Where the signal lands on the air. Unset, a modulator sits on the radio's centre and a
+             * @description Where the signal lands on the air. Unset, an encoder sits on the radio's centre and a
              *     lane where it was received.
              * @default null
              */
@@ -8250,7 +8297,7 @@ export interface components {
             bursts: number;
             /**
              * Format: double
-             * @description The width the modulator's mode is meant to stay inside.
+             * @description The width the encoder's mode is meant to stay inside.
              */
             channel_hz?: number | null;
             error?: string | null;
@@ -10619,6 +10666,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DoctorReport"];
+                };
+            };
+        };
+    };
+    get_encoder_types: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Available encoder types */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EncoderTypesResponse"];
                 };
             };
         };

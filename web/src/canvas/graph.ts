@@ -6,6 +6,7 @@ import type {
   Capabilities,
   ChannelDescriptor,
   DeviceSet,
+  EncoderDescriptor,
   Face,
   NodeKind,
   NodeTypeInfo,
@@ -24,6 +25,7 @@ import type {
 export interface GraphContext {
   catalog: PatchCatalog;
   channelTypes: readonly ChannelDescriptor[];
+  encoderTypes?: readonly EncoderDescriptor[];
   resolved?: ResolvedPatch | null;
   bound?: ReadonlyMap<string, DeviceSet>;
 }
@@ -101,7 +103,7 @@ function specOf({
 export function catalogPorts(context: GraphContext, node: PatchNode): PortSpec[] {
   const entry = context.catalog.nodes.find((type) => type.kind === node.kind);
   const declared =
-    entry?.needs_channel_type === true ? (descriptorOf(context, node)?.ports ?? []) : entry?.ports;
+    entry?.picks === "decoder" ? (descriptorOf(context, node)?.ports ?? []) : entry?.ports;
   return (declared ?? []).map((port) => ({ ...port, repeat: "once" as const }));
 }
 

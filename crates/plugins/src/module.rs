@@ -10,10 +10,10 @@ use wasmtime::{Instance, Linker, Memory, Module, Store, TypedFunc};
 use crate::{
     PluginError,
     cache::ModuleCache,
+    encoder::check_exports,
     engine::{CALL_BUDGET, engine},
     kernels::{HostState, link},
     processor::check_processor,
-    transmit::check_exports,
 };
 
 /// One loaded plugin: its compiled code, its manifest, and an instance kept for control calls.
@@ -67,7 +67,7 @@ impl PluginModule {
         let mut control = instantiate(&name, &module, &linker).map_err(fail)?;
         let manifest = control.manifest().map_err(fail)?;
         check_abi(manifest.abi).map_err(fail)?;
-        if manifest.descriptor.can_transmit {
+        if manifest.encoder.is_some() {
             check_exports(&module).map_err(fail)?;
         }
         check_processor(&module, &manifest).map_err(fail)?;

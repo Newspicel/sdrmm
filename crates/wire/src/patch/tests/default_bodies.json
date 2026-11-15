@@ -460,9 +460,9 @@
     }
   },
   {
-    "kind": "modulator",
+    "kind": "encoder",
     "data": {
-      "channel_type": ""
+      "encoder_type": ""
     }
   },
   {

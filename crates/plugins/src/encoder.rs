@@ -1,11 +1,14 @@
-//! A plugin's modulator, opened like a built-in `ChannelTx`.
+//! A plugin's encoder, listed and opened like a built-in one.
 
 use std::sync::Arc;
 
 use num_complex::Complex;
-use sdrmm_channels::{ChannelError, ChannelTx, TxPayload};
+use sdrmm_channels::{
+    ChannelError,
+    encoder::{Encoder, EncoderParams, Modulator, TxPayload},
+};
 use sdrmm_wire::{
-    ChannelSettings,
+    EncoderDescriptor, EncoderInput,
     plugin::{
         transmit::{PayloadKind, export},
         unpack,
@@ -19,12 +22,73 @@ use crate::{
     samples::SAMPLE_BYTES,
 };
 
-/// One transmitter of a plugin, on an instance of its own.
-pub struct WasmTx {
+/// A plugin as the encoder registry sees it.
+pub struct WasmEncoder {
+    module: Arc<PluginModule>,
+    descriptor: EncoderDescriptor,
+}
+
+impl WasmEncoder {
+    /// The encoder `module` declares, if it declares one.
+    #[must_use]
+    pub fn of(module: &Arc<PluginModule>) -> Option<Self> {
+        let descriptor = module.manifest.encoder.clone()?;
+        Some(Self {
+            module: module.clone(),
+            descriptor,
+        })
+    }
+
+    fn check_type(&self, params: &EncoderParams) -> Result<(), ChannelError> {
+        if params.type_id == self.descriptor.type_id {
+            Ok(())
+        } else {
+            Err(invalid(format!(
+                "{} encoder got {} settings",
+                self.descriptor.type_id, params.type_id
+            )))
+        }
+    }
+}
+
+impl Encoder for WasmEncoder {
+    fn descriptor(&self) -> &EncoderDescriptor {
+        &self.descriptor
+    }
+
+    fn open(&self, params: &EncoderParams) -> Result<Box<dyn Modulator>, ChannelError> {
+        self.check_type(params)?;
+        Ok(Box::new(WasmModulator::open(
+            self.module.clone(),
+            self.descriptor.rate_hz,
+            &params.settings,
+        )?))
+    }
+
+    /// A message encoder gets the filled form as UTF-8 JSON in a frame.
+    fn compose(&self, message: &serde_json::Value) -> Result<TxPayload, ChannelError> {
+        if self.descriptor.input != EncoderInput::Message {
+            return Err(ChannelError::InvalidPayload(format!(
+                "{} sends no messages",
+                self.descriptor.type_id
+            )));
+        }
+        serde_json::to_vec(message)
+            .map(TxPayload::Frame)
+            .map_err(|error| ChannelError::InvalidPayload(error.to_string()))
+    }
+
+    fn width_hz(&self, params: &EncoderParams) -> Result<f64, ChannelError> {
+        self.check_type(params)?;
+        Ok(self.descriptor.bandwidth_hz)
+    }
+}
+
+/// One running encoder of a plugin, on an instance of its own.
+pub struct WasmModulator {
     module: Arc<PluginModule>,
     guest: Guest,
     handle: i32,
-    apply: TypedFunc<(i32, u32, u32), i32>,
     submit: TypedFunc<(i32, u32, u32, u32), i32>,
     generate: TypedFunc<(i32, u32), i64>,
     close: TypedFunc<i32, ()>,
@@ -39,7 +103,7 @@ fn halted(error: &str) -> ChannelError {
     ChannelError::Unsupported(format!("plugin transmitter stopped: {error}"))
 }
 
-/// Whether the plugin exports every transmit entry its descriptor promises.
+/// Whether the plugin exports every transmit entry its encoder needs.
 pub(crate) fn check_exports(module: &wasmtime::Module) -> Result<(), String> {
     let missing: Vec<&str> = export::ALL
         .into_iter()
@@ -52,7 +116,7 @@ pub(crate) fn check_exports(module: &wasmtime::Module) -> Result<(), String> {
     }
 }
 
-impl WasmTx {
+impl WasmModulator {
     pub fn open(
         module: Arc<PluginModule>,
         rate: f64,
@@ -66,7 +130,6 @@ impl WasmTx {
             return Err(invalid(guest.last_error()));
         }
         Ok(Self {
-            apply: typed(&guest.instance, &mut guest.store, export::APPLY).map_err(invalid)?,
             submit: typed(&guest.instance, &mut guest.store, export::SUBMIT).map_err(invalid)?,
             generate: typed(&guest.instance, &mut guest.store, export::GENERATE)
                 .map_err(invalid)?,
@@ -127,19 +190,7 @@ fn encode(payload: &TxPayload) -> (PayloadKind, Vec<u8>) {
     }
 }
 
-impl ChannelTx for WasmTx {
-    fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        self.stopped()?;
-        let code = self
-            .guest
-            .call_json(&self.apply, self.handle, &settings.params.settings)
-            .map_err(invalid)?;
-        if code < 0 {
-            return Err(invalid(self.guest.last_error()));
-        }
-        Ok(())
-    }
-
+impl Modulator for WasmModulator {
     fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError> {
         self.stopped()?;
         let (kind, bytes) = encode(&payload);
@@ -166,7 +217,7 @@ impl ChannelTx for WasmTx {
     }
 }
 
-impl Drop for WasmTx {
+impl Drop for WasmModulator {
     fn drop(&mut self) {
         self.guest.store.set_epoch_deadline(CALL_BUDGET);
         if let Err(error) = self.close.call(&mut self.guest.store, self.handle) {

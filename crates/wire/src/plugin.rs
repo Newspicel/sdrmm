@@ -10,6 +10,7 @@ use serde_json::Value;
 use crate::{
     channel::{ChannelDescriptor, ChannelStatus, SettingField},
     decode::{DecoderEvent, EventKind, EventKindEntry},
+    encoder::EncoderDescriptor,
     present::Presentation,
     processor::plugin::ProcessorType,
 };
@@ -80,6 +81,9 @@ pub struct PluginManifest {
     /// An array processor the plugin also brings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub processor: Option<ProcessorType>,
+    /// An encoder the plugin also brings, run through the [`transmit`] exports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoder: Option<EncoderDescriptor>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

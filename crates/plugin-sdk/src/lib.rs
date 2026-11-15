@@ -1,4 +1,4 @@
-//! Write an sdr-- decoder, and with it a transmitter or an array processor, as a WASM plugin.
+//! Write an sdr-- decoder, and with it an encoder or an array processor, as a WASM plugin.
 //!
 //! Implement [`Plugin`] for a type, call [`export!`] once, and build the crate as a `cdylib` for
 //! `wasm32-unknown-unknown`. The server loads the `.wasm` from its plugins directory and the

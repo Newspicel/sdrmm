@@ -7,6 +7,7 @@ use super::{StoreError, coherent_break};
 mod backends;
 mod banks;
 mod clip_wires;
+mod encoders;
 mod filter_kinds;
 mod generators;
 mod pictures;
@@ -24,6 +25,7 @@ mod wires;
 type Step = fn(&mut Value) -> Vec<WorkspaceNoticeKind>;
 
 const STEPS: &[Step] = &[
+    encoders::modulators_become_encoders,
     filter_kinds::drop_unknown_filter_kinds,
     sources::sources_become_device_nodes,
     preroll::time_machines_become_recorders,
