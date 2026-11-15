@@ -695,8 +695,8 @@ fn a_very_weak_am_carrier_still_locks_and_noise_alone_does_not() {
     crate::synth::add_noise(&mut iq, 7, 1.6);
     let pictures = run(&mut channel(p.clone()), &iq);
     assert!(
-        pictures.len() >= 8,
-        "-2 dB CNR: {} pictures",
+        (8..=12).contains(&pictures.len()),
+        "-2 dB CNR: {} pictures of 12 fields",
         pictures.len()
     );
     let mut noise = vec![Complex::new(0.0, 0.0); iq.len()];

@@ -105,6 +105,11 @@ const FOLD_LINES: usize = 16;
 const FOLD_AGREE: f64 = 0.25;
 /// How far below the porch a folded sync tip must sit, in the noise of its own mean.
 const FOLD_CONTRAST: f32 = 6.0;
+/// Folds in a row that must find the sync upside down before the polarity turns: noise
+/// passes for an upside-down sync now and then, a real one keeps showing.
+const FLIP_FOLDS: u32 = 2;
+/// How much clearer than upright an upside-down sync must stand to count toward a flip.
+const FLIP_MARGIN: f32 = 2.0;
 /// Share of the folded line's whole range a sync must drop by: a sync tip sits well below
 /// black, a dark detail does not.
 const FOLD_DEPTH: f32 = 0.15;
@@ -124,11 +129,19 @@ const MAX_UNLINED: u32 = 32;
 /// line's own timing says less than the flywheel already knows.
 const JITTER_REF: f64 = 1.0;
 const JITTER_TRACK: f64 = 0.02;
+/// How fast a noisy lock's line rate falls back to the standard's: broadcast timebases hold
+/// it far better than noisy edges can measure it.
+const RATE_LEAK: f64 = 0.01;
 /// Lines a noisy lock may coast without a pulse before it starts over: a field.
 const MAX_COAST: f64 = 312.0;
 const SYNC_WIDTH_RANGE: (f64, f64) = (0.7, 1.4);
 /// Lines before a field is due within which one broad pulse starts it.
 const FIELD_SLACK: u32 = 8;
+/// Lines after a coasted field start within which a real vertical sync pulls the field into
+/// line instead of starting another.
+const FIELD_REALIGN: u32 = 32;
+/// Lines a measured field may differ from the standard's half frame and still set the pace.
+const FIELD_SPREAD: u32 = 2;
 const PHASE_GAIN: f64 = 0.15;
 const RATE_GAIN: f64 = 0.004;
 const RATE_LIMIT: f64 = 0.005;
@@ -241,6 +254,8 @@ pub(super) struct LineSync {
     jitter: f64,
     /// A fold found the sync upside down.
     inverted: bool,
+    /// Folds in a row that found it so.
+    upside_down: u32,
     /// The two halves of a fold of lines, kept so acquiring does not allocate.
     folds: [Vec<f32>; 2],
 }
@@ -262,6 +277,7 @@ impl LineSync {
             settled: 0,
             jitter: 0.0,
             inverted: false,
+            upside_down: 0,
             folds: [Vec::new(), Vec::new()],
         }
     }
@@ -369,24 +385,27 @@ impl LineSync {
                 *sum += v / half as f32;
             }
         }
-        let found = self.fold_lock(1.0, from, len);
-        if found.is_none() && self.fold_lock(-1.0, from, len).is_some() {
+        let (upright, found) = self.fold_lock(1.0, from, len);
+        let (inverted, _) = self.fold_lock(-1.0, from, len);
+        let upside_down = found.is_none() && inverted > FLIP_MARGIN * upright.max(FOLD_CONTRAST);
+        self.upside_down = if upside_down { self.upside_down + 1 } else { 0 };
+        if self.upside_down >= FLIP_FOLDS {
+            self.upside_down = 0;
             self.inverted = true;
         }
         found
     }
 
-    /// The sync in the folded lines read with `sign`, where the halves agree on it and its
-    /// tip stands clear of the porch's noise: where the leading edge falls, and the levels.
-    fn fold_lock(&self, sign: f32, from: u64, len: usize) -> Option<(f64, Levels)> {
+    /// The sync in the folded lines read with `sign`: how far its tip stands below the porch,
+    /// in the porch's noise, and, where the halves agree on it and it stands clear enough,
+    /// where its leading edge falls and the levels.
+    fn fold_lock(&self, sign: f32, from: u64, len: usize) -> (f32, Option<(f64, Levels)>) {
         let g = self.g;
         let at = |k: usize, i: usize| sign * self.folds[k][i];
         let width = (g.sync.round() as usize).max(1);
         let [early, late] = [0, 1].map(|k| fold_sync(|i| at(k, i), len, width));
         let apart = early.abs_diff(late).min(len - early.abs_diff(late)) as f64;
-        if apart > FOLD_AGREE * g.sync {
-            return None;
-        }
+        let agree = apart <= FOLD_AGREE * g.sync;
         let both = |k: i64| {
             let i = k.rem_euclid(len as i64) as usize;
             0.5 * (at(0, i) + at(1, i))
@@ -418,7 +437,15 @@ impl LineSync {
             .map(both)
             .fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
         let deep = depth > FOLD_DEPTH * (high - low);
-        (depth > FOLD_CONTRAST * noise && deep).then_some((fall, levels))
+        let score = if deep {
+            depth / noise.max(f32::MIN_POSITIVE)
+        } else {
+            0.0
+        };
+        (
+            score,
+            (agree && score > FOLD_CONTRAST).then_some((fall, levels)),
+        )
     }
 
     /// Whether a fold found the sync upside down since last asked: the video's polarity is
@@ -538,6 +565,7 @@ impl LineSync {
         let calm = self.calm();
         let zero_h = phi + PHASE_GAIN * calm * error;
         let nominal = self.g.line;
+        self.line += RATE_LEAK * (1.0 - calm) * (nominal - self.line);
         self.line = (self.line + RATE_GAIN * calm * calm * error)
             .clamp(nominal * (1.0 - RATE_LIMIT), nominal * (1.0 + RATE_LIMIT));
         self.phase = zero_h + self.line;
@@ -620,6 +648,12 @@ pub(super) struct Fields {
     broad_mid_before: bool,
     line: Option<u32>,
     parity: u16,
+    /// Lines each field parity last ran from vertical sync to vertical sync: where the next
+    /// field of that parity starts when its broad pulses are lost in noise.
+    lengths: [Option<u32>; 2],
+    /// The field coming in was started by the flywheel, so a broad pulse just after may
+    /// still pull it into line.
+    coasted: bool,
 }
 
 /// What a line means for the picture.
@@ -642,19 +676,31 @@ impl Fields {
         let due = self
             .line
             .is_none_or(|count| count + FIELD_SLACK >= field_len);
-        let vertical = broad && (due || self.broad_run > 0);
+        let late = self.coasted && self.line.is_some_and(|count| count < FIELD_REALIGN);
+        let vertical = broad && (due || late || self.broad_run > 0);
         self.broad_run = if broad { self.broad_run + 1 } else { 0 };
         if vertical && !self.in_vertical {
+            if let Some(count) = self
+                .line
+                .map(|count| count + 1)
+                .filter(|&count| !late && count.abs_diff(field_len) <= FIELD_SPREAD)
+            {
+                self.lengths[usize::from(self.parity)] = Some(count);
+            }
             self.in_vertical = true;
             self.parity = u16::from(self.broad_mid_before);
             self.line = Some(0);
-            new_field = true;
+            new_field = !late;
+            self.coasted = false;
         } else if let Some(count) = &mut self.line {
             *count += 1;
-            if *count > field_len + 8 {
+            let expected = self.lengths[usize::from(self.parity)]
+                .unwrap_or(field_len + u32::from(self.parity));
+            if *count >= expected {
                 *count = 0;
                 self.parity ^= 1;
                 new_field = true;
+                self.coasted = true;
             }
         }
         if !broad && !line.broad_mid {
