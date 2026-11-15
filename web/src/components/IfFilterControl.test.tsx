@@ -15,9 +15,9 @@ function render(filter: IfFilter): string {
 }
 
 describe("IfFilterChip", () => {
-  it("reads off until it shapes something", () => {
+  it("reads off until enabled, then on until it shapes something", () => {
     expect(render({})).toContain(">off<");
-    expect(render({ enabled: true })).toContain(">off<");
+    expect(render({ enabled: true })).toContain(">on<");
   });
 
   it("shows the edges and the notch count when on", () => {

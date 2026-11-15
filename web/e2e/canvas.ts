@@ -218,12 +218,17 @@ export async function activate(shell: Locator): Promise<void> {
   await shell.locator("header").click();
 }
 
-export async function addNode(page: Page, name: string): Promise<void> {
+/** Adds the palette entry `name`; `group` picks between entries that share a name. */
+export async function addNode(page: Page, name: string, group?: string): Promise<void> {
   await page.getByRole("button", { name: "Add a node" }).click();
   const search = page.getByRole("textbox", { name: "Search nodes" });
   await search.fill(name);
   const palette = search.locator("xpath=ancestor::div[nav][1]");
-  await palette.getByRole("button", { name, exact: true }).click();
+  const scope =
+    group === undefined
+      ? palette
+      : palette.locator("section").filter({ has: page.getByText(group, { exact: true }) });
+  await scope.getByRole("button", { name, exact: true }).click();
 }
 
 export function face(page: Page, id: string): Locator {

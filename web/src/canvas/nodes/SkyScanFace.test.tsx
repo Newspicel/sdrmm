@@ -26,7 +26,6 @@ function render(face: typeof SkyScanFace, node: PatchNode): string {
   return renderFace(face, node, {
     graph: { nodes: [node], edges: [] },
     resolved: null,
-    inspected: true,
   });
 }
 

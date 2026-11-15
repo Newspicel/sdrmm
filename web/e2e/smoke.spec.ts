@@ -171,7 +171,7 @@ test.describe("the workspace", () => {
     await expect(library).toHaveCount(0);
     await activate(receiver);
 
-    await addNode(page, "NFM");
+    await addNode(page, "NFM", "Analog voice");
     const channel = page.locator('.react-flow__node[data-id^="channel:"]');
     await expect(channel).toBeVisible();
 
