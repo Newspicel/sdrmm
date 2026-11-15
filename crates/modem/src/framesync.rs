@@ -41,6 +41,18 @@ impl RepetitionDetector {
 
     #[must_use]
     pub fn detect(&self, x: &[Complex<f32>], search: usize) -> Option<Repetition> {
+        self.detect_apart(x, search, &[])
+    }
+
+    /// The strongest offset at least a period from every offset in `taken`, so a caller can
+    /// rank the runners-up behind a false peak that noise or payload lifted above the preamble.
+    #[must_use]
+    pub fn detect_apart(
+        &self,
+        x: &[Complex<f32>],
+        search: usize,
+        taken: &[usize],
+    ) -> Option<Repetition> {
         let needed = self.window + self.period;
         if x.len() < needed {
             return None;
@@ -52,7 +64,7 @@ impl RepetitionDetector {
             p += conj_product(x[n], x[n + self.period]);
             r += f64::from(x[n + self.period].norm_sqr());
         }
-        let mut best = (0usize, p, f64::NEG_INFINITY);
+        let mut best: Option<(usize, Complex<f64>, f64)> = None;
         for d in 0..=last {
             if d > 0 {
                 let out = d - 1;
@@ -62,12 +74,15 @@ impl RepetitionDetector {
                 r -= f64::from(x[out + self.period].norm_sqr());
                 r += f64::from(x[into + self.period].norm_sqr());
             }
+            if taken.iter().any(|&t| t.abs_diff(d) < self.period) {
+                continue;
+            }
             let metric = if r > 0.0 { p.norm_sqr() / (r * r) } else { 0.0 };
-            if metric > best.2 {
-                best = (d, p, metric);
+            if best.is_none_or(|(_, _, top)| metric > top) {
+                best = Some((d, p, metric));
             }
         }
-        let (offset, correlation, metric) = best;
+        let (offset, correlation, metric) = best?;
         Some(Repetition {
             offset,
             cfo: correlation.arg() / (TAU * self.period as f64),
@@ -105,5 +120,15 @@ mod tests {
         assert_eq!(found.offset, 37);
         assert!(found.metric > 0.99);
         assert!((found.cfo - 0.011).abs() < 1e-6, "cfo {}", found.cfo);
+    }
+
+    #[test]
+    fn taken_offsets_and_their_neighbours_are_skipped() {
+        let detector = RepetitionDetector::new(20, 20);
+        let x = periodic(37, 20, 2, 0.0);
+        let runner_up = detector.detect_apart(&x, 100, &[37]).unwrap();
+        assert!(runner_up.offset.abs_diff(37) >= 20, "{}", runner_up.offset);
+        assert!(runner_up.metric < 0.99);
+        assert!(detector.detect_apart(&x, 10, &[5]).is_none());
     }
 }

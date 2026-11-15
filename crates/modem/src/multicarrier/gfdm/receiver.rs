@@ -436,19 +436,24 @@ mod tests {
 
     #[test]
     fn frames_are_found_at_low_snr_and_noise_alone_is_rejected() {
-        let mut found = 0;
-        for trial in 0..50u64 {
-            let (_, mut wave) = burst(37, 0x67);
-            Awgn::with_sigma(0.7).apply(&mut wave, &mut Rng::new(0x670 + trial));
-            let mut rx = receiver();
-            if rx
-                .acquire(&wave, 200)
-                .is_some_and(|a| a.preamble_start.abs_diff(37 + params().cp) <= 2)
-            {
-                found += 1;
+        for seed in 0x67..0x6fu64 {
+            let (_, clean) = burst(37, seed);
+            let mut found = 0;
+            for trial in 0..50u64 {
+                let mut wave = clean.clone();
+                Awgn::with_sigma(0.7).apply(&mut wave, &mut Rng::new(seed << 8 | trial));
+                if receiver()
+                    .acquire(&wave, 200)
+                    .is_some_and(|a| a.preamble_start.abs_diff(37 + params().cp) <= 2)
+                {
+                    found += 1;
+                }
             }
+            assert_eq!(
+                found, 50,
+                "payload {seed:#x}: {found} of 50 frames found at 0 dB"
+            );
         }
-        assert_eq!(found, 50, "{found} of 50 frames found at 0 dB SNR");
         let mut false_alarms = 0;
         for trial in 0..50u64 {
             let mut noise = vec![Complex::new(0.0, 0.0); 800];
