@@ -575,13 +575,13 @@ impl BurstReceiver {
             let Some(frame) = self.deframer.push(bit) else {
                 continue;
             };
-            if !hdlc_fcs_ok(&frame) {
+            if !hdlc_fcs_ok(frame) {
                 return Outcome::Corrupt(k + 1);
             }
             let end = anchor.at + (TEMPLATE_BITS + k + 1) * SPS;
             return Outcome::Frame(
                 Decoded {
-                    frame,
+                    frame: frame.to_vec(),
                     end: self.base + end as u64,
                 },
                 k + 1,

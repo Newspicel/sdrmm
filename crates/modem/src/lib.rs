@@ -9,6 +9,7 @@ pub mod linear;
 pub mod multicarrier;
 pub mod ofdm;
 pub mod orthogonal;
+pub mod packet;
 pub mod ppm;
 pub mod pulse;
 pub mod quality;

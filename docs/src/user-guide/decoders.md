@@ -13,7 +13,7 @@ covers the modes that need more than a frequency.
 | Digital voice | DMR, FreeDV 1600, [TETRA](#tetra), [Tetrapol](#tetrapol) | | D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | |
 | Aviation | ADS-B (1090ES), ACARS, [Inmarsat Classic Aero](#inmarsat-and-iridium) | [Drone Remote ID](#drone-remote-id) | VDL Mode 2, High Frequency Data Link | VOR, ILS localizer / glideslope |
 | Marine | Digital Selective Calling, Inmarsat STD-C / EGC | | AIS, NAVTEX | |
-| Amateur and HF | [FT8](#ft8-ft4-and-wspr) | | CW skimmer, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | |
+| Amateur and HF | [FT8](#ft8-ft4-and-wspr), [BSS](#bss) | | CW skimmer, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | |
 | Paging and telemetry | FLEX pager, Radio clock (DCF77 / WWVB / MSF / JJY) | | POCSAG, Selcall (CCIR/ZVEI), ERMES pager | |
 | Pictures and video | | | [SSTV](#sstv), [ATV](#atv) | |
 | Weather and satellites | [Meteor LRPT](#weather-satellites) | | [WEFAX](#wefax), [NOAA APT](#weather-satellites), [Radiosonde](#radiosondes), [SAME alerts](#same-alerts) | |
@@ -284,6 +284,13 @@ kept in this browser.
 The APRS channel reads weather reports, positioned or positionless, into wind, gust, temperature,
 rain, snow, humidity, pressure and luminosity in metric units. The APRS readout lists each weather
 station with its latest values and the extremes seen.
+
+## BSS
+
+Benshi-built handhelds (Btech UV-Pro, VGC VR-N76) send chat, positions and location or call
+requests as BSS: 1200 baud AFSK frames like APRS, on any 2 m, 70 cm or GMRS channel. Put a BSS
+channel on that frequency; it can share it with an APRS channel. Wire `events` to **Map** to
+place stations.
 
 ## DAB and DAB+
 

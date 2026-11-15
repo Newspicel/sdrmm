@@ -11,10 +11,11 @@ mod weather;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{
-    BitSync, DcBlocker, Decimator, Descrambler, FmDemod, HdlcDeframer, NrziDecoder, RealDecimator,
-    ToneCorrelator, design_bandpass, design_lowpass, hdlc_repair,
+use sdrmm_dsp::{Decimator, design_lowpass, hdlc_repair};
+pub(crate) use sdrmm_modem::packet::{
+    AFSK_BAUD, AFSK_MARK_HZ, AFSK_SPACE_HZ, DEVIATION_HZ, G3RUH_BAUD,
 };
+use sdrmm_modem::packet::{PacketMode, PacketReceiver, RecentFrames};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use crate::{
@@ -23,19 +24,6 @@ use crate::{
 };
 
 const CHANNEL_TAPS: usize = 65;
-
-pub(crate) const AFSK_MARK_HZ: f64 = 1_200.0;
-pub(crate) const AFSK_SPACE_HZ: f64 = 2_200.0;
-pub(crate) const AFSK_BAUD: f64 = 1_200.0;
-pub(crate) const G3RUH_BAUD: f64 = 9_600.0;
-
-pub(crate) const DEVIATION_HZ: f64 = 3_000.0;
-
-const G3RUH_CUTOFF_HZ: f64 = 7_200.0;
-const AFSK_DECIMATION: usize = 4;
-const AFSK_CUTOFF_HZ: f64 = 4_800.0;
-const AFSK_TAPS: usize = 31;
-const G3RUH_TAPS: usize = 15;
 
 pub(crate) const ADDRESS_LEN: usize = 7;
 const MAX_ADDRESSES: usize = 10;
@@ -58,161 +46,23 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     ..ChannelDescriptor::default()
 });
 
-pub struct AprsChannel {
-    mode: AprsMode,
-    demod: FmDemod,
-    slicer: Slicer,
-    discriminated: Vec<f32>,
-    frames: Vec<Vec<u8>>,
-    recent: Vec<(u64, Vec<u8>)>,
-    clock: u64,
-}
-
-const TWIST_LANES: usize = 9;
-const TWIST_SPAN_DB: f32 = 6.0;
-const AFSK_CLIP: f32 = 1.2;
-const AFSK_BAND_TAPS: usize = 31;
-const AFSK_BAND_LOW_HZ: f64 = 700.0;
-const AFSK_BAND_HIGH_HZ: f64 = 2_400.0;
-
 const DEDUP_SAMPLES: u64 = 48_000;
 
-struct Lane {
-    sync: BitSync,
-    nrzi: NrziDecoder,
-    deframer: HdlcDeframer,
-    space_gain: f32,
+pub struct AprsChannel {
+    receiver: PacketReceiver,
+    recent: RecentFrames,
 }
 
-impl Lane {
-    fn new(rate: f64, baud: f64, space_gain: f32) -> Self {
-        Self {
-            sync: BitSync::new(rate, baud),
-            nrzi: NrziDecoder::new(),
-            deframer: HdlcDeframer::new(MIN_FRAME_BYTES, MAX_FRAME_BYTES),
-            space_gain,
-        }
-    }
-
-    fn push(&mut self, sample: f32, frames: &mut Vec<Vec<u8>>) {
-        if let Some(level) = self.sync.push(sample) {
-            self.push_level(level, frames);
-        }
-    }
-
-    fn push_level(&mut self, level: bool, frames: &mut Vec<Vec<u8>>) {
-        if let Some(frame) = self.deframer.push(self.nrzi.decode(level)) {
-            frames.push(frame);
-        }
-    }
-}
-
-fn twist_gains() -> impl Iterator<Item = f32> {
-    let step = 2.0 * TWIST_SPAN_DB / (TWIST_LANES - 1) as f32;
-    (0..TWIST_LANES).map(move |k| 10f32.powf((k as f32 * step - TWIST_SPAN_DB) / 20.0))
-}
-
-struct Afsk {
-    audio: RealDecimator,
-    band: RealDecimator,
-    decimated: Vec<f32>,
-    filtered: Vec<f32>,
-    mark: ToneCorrelator,
-    space: ToneCorrelator,
-    lanes: Vec<Lane>,
-}
-
-impl Afsk {
-    fn new(rate: f64) -> Self {
-        let audio_rate = rate / AFSK_DECIMATION as f64;
-        let window = (audio_rate / (AFSK_SPACE_HZ - AFSK_MARK_HZ)).round() as usize;
-        Self {
-            audio: RealDecimator::new(
-                &design_lowpass(AFSK_TAPS, AFSK_CUTOFF_HZ / rate),
-                AFSK_DECIMATION,
-            ),
-            band: RealDecimator::new(
-                &design_bandpass(
-                    AFSK_BAND_TAPS,
-                    AFSK_BAND_LOW_HZ / audio_rate,
-                    AFSK_BAND_HIGH_HZ / audio_rate,
-                ),
-                1,
-            ),
-            decimated: Vec::new(),
-            filtered: Vec::new(),
-            mark: ToneCorrelator::new(audio_rate, AFSK_MARK_HZ, window),
-            space: ToneCorrelator::new(audio_rate, AFSK_SPACE_HZ, window),
-            lanes: twist_gains()
-                .map(|gain| Lane::new(audio_rate, AFSK_BAUD, gain))
-                .collect(),
-        }
-    }
-
-    fn frames(&mut self, discriminated: &mut [f32], out: &mut Vec<Vec<u8>>) {
-        discriminated
-            .iter_mut()
-            .for_each(|v| *v = v.clamp(-AFSK_CLIP, AFSK_CLIP));
-        self.audio.process(discriminated, &mut self.decimated);
-        self.band.process(&self.decimated, &mut self.filtered);
-        for &s in &self.filtered {
-            let (m, sp) = (self.mark.push(s), self.space.push(s));
-            for lane in &mut self.lanes {
-                lane.push(m - lane.space_gain * sp, out);
-            }
-        }
-    }
-}
-
-struct G3ruh {
-    lowpass: RealDecimator,
-    dc: DcBlocker,
-    filtered: Vec<f32>,
-    lane: Lane,
-    descrambler: Descrambler,
-}
-
-impl G3ruh {
-    fn new(rate: f64) -> Self {
-        Self {
-            lowpass: RealDecimator::new(&design_lowpass(G3RUH_TAPS, G3RUH_CUTOFF_HZ / rate), 1),
-            dc: DcBlocker::new(),
-            filtered: Vec::new(),
-            lane: Lane::new(rate, G3RUH_BAUD, 1.0),
-            descrambler: Descrambler::g3ruh(),
-        }
-    }
-
-    fn frames(&mut self, discriminated: &[f32], out: &mut Vec<Vec<u8>>) {
-        self.lowpass.process(discriminated, &mut self.filtered);
-        self.dc.process(&mut self.filtered);
-        for &s in &self.filtered {
-            if let Some(level) = self.lane.sync.push(s) {
-                self.lane.push_level(self.descrambler.push(level), out);
-            }
-        }
-    }
-}
-
-enum Slicer {
-    Afsk(Box<Afsk>),
-    G3ruh(Box<G3ruh>),
-}
-
-impl Slicer {
-    fn new(mode: AprsMode, rate: f64) -> Self {
-        match mode {
-            AprsMode::Afsk1200 => Self::Afsk(Box::new(Afsk::new(rate))),
-            AprsMode::G3ruh9600 => Self::G3ruh(Box::new(G3ruh::new(rate))),
-        }
-    }
-
-    fn frames(&mut self, discriminated: &mut [f32], out: &mut Vec<Vec<u8>>) {
-        match self {
-            Self::Afsk(afsk) => afsk.frames(discriminated, out),
-            Self::G3ruh(g3ruh) => g3ruh.frames(discriminated, out),
-        }
-    }
+fn receiver(mode: AprsMode) -> PacketReceiver {
+    let mode = match mode {
+        AprsMode::Afsk1200 => PacketMode::Afsk1200,
+        AprsMode::G3ruh9600 => PacketMode::G3ruh9600,
+    };
+    PacketReceiver::new(
+        mode,
+        DESCRIPTOR.input_rate_hz,
+        &(MIN_FRAME_BYTES..=MAX_FRAME_BYTES),
+    )
 }
 
 fn params(settings: &ChannelSettings) -> Result<AprsParams, ChannelError> {
@@ -254,13 +104,8 @@ impl NativeChannel for AprsChannel {
         let p = params(&settings)?;
         check_params(&p)?;
         Ok(Self {
-            mode: p.mode,
-            demod: FmDemod::new(ctx.input_rate, DEVIATION_HZ),
-            slicer: Slicer::new(p.mode, ctx.input_rate),
-            discriminated: Vec::new(),
-            frames: Vec::new(),
-            recent: Vec::new(),
-            clock: 0,
+            receiver: receiver(p.mode),
+            recent: RecentFrames::new(DEDUP_SAMPLES),
         })
     }
 }
@@ -269,38 +114,30 @@ impl ChannelRx for AprsChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         check_params(&p)?;
-        if p.mode != self.mode {
-            self.mode = p.mode;
-            self.slicer = Slicer::new(p.mode, DESCRIPTOR.input_rate_hz);
+        let wanted = receiver(p.mode);
+        if wanted.mode() != self.receiver.mode() {
+            self.receiver = wanted;
             self.recent.clear();
         }
         Ok(())
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
-        self.demod.process(iq, &mut self.discriminated);
-        self.clock += iq.len() as u64;
-        self.frames.clear();
-        self.slicer
-            .frames(&mut self.discriminated, &mut self.frames);
-        let clock = self.clock;
-        self.recent
-            .retain(|(seen, _)| clock.saturating_sub(*seen) < DEDUP_SAMPLES);
-        for frame in self.frames.drain(..) {
-            let Some((packet, repaired)) = checked_packet(frame) else {
-                continue;
-            };
-            if self.recent.iter().any(|(_, seen)| *seen == repaired) {
-                continue;
+        let Self { receiver, recent } = self;
+        recent.advance(iq.len());
+        receiver.process(iq, |frame| {
+            if let Some((packet, repaired)) = checked_packet(frame)
+                && recent.first(&repaired)
+            {
+                out.events.push(DecoderEvent::of(&packet));
             }
-            self.recent.push((clock, repaired));
-            out.events.push(DecoderEvent::of(&packet));
-        }
+        });
     }
 }
 
-fn checked_packet(mut frame: Vec<u8>) -> Option<(AprsPacket, Vec<u8>)> {
-    parse_frame(&frame)?;
+fn checked_packet(frame: &[u8]) -> Option<(AprsPacket, Vec<u8>)> {
+    parse_frame(frame)?;
+    let mut frame = frame.to_vec();
     if !hdlc_repair(&mut frame) {
         return None;
     }

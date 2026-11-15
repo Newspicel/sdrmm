@@ -276,6 +276,15 @@ const PAYLOADS: &[Payload] = &[
     )
     .at(52.5, 13.4),
     reads(
+        "bss",
+        &[
+            r#""source":"N0CALL""#,
+            r#""message":"hello world""#,
+            r#""altitude_m":100"#,
+        ],
+    )
+    .at(40.0, -75.0),
+    reads(
         "ais",
         &[
             r#""mmsi":244010000"#,
@@ -775,6 +784,7 @@ fn heard(type_id: &str) -> Option<Heard> {
         "sarsat" => sarsat(),
         "acars" => acars(),
         "aprs" => aprs()?,
+        "bss" => crate::bss::fixture(),
         "ais" => ais(),
         "adsb" => adsb(),
         "morse" => morse(),
@@ -1597,6 +1607,7 @@ emitted_kinds_are_declared! {
     sarsat_emits_what_it_declares => "sarsat",
     acars_emits_what_it_declares => "acars",
     aprs_emits_what_it_declares => "aprs",
+    bss_emits_what_it_declares => "bss",
     ais_emits_what_it_declares => "ais",
     adsb_emits_what_it_declares => "adsb",
     morse_emits_what_it_declares => "morse",

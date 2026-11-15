@@ -6,6 +6,8 @@ const ABORT_ONES: u8 = 7;
 /// a byte boundary.
 const FLAG_TAIL_BITS: [u8; 2] = [5, 6];
 
+/// Bits in, HDLC frames out. A closed frame is lent from a buffer the next frame reuses, so a
+/// frame costs no allocation.
 #[derive(Clone, Debug)]
 pub struct HdlcDeframer {
     min_bytes: usize,
@@ -14,6 +16,7 @@ pub struct HdlcDeframer {
     byte: u8,
     nbits: u8,
     frame: Vec<u8>,
+    closed: Vec<u8>,
     in_frame: bool,
     overflow: bool,
 }
@@ -32,12 +35,13 @@ impl HdlcDeframer {
             byte: 0,
             nbits: 0,
             frame: Vec::with_capacity(max_bytes),
+            closed: Vec::with_capacity(max_bytes),
             in_frame: false,
             overflow: false,
         }
     }
 
-    pub fn push(&mut self, bit: bool) -> Option<Vec<u8>> {
+    pub fn push(&mut self, bit: bool) -> Option<&[u8]> {
         match self.ones {
             0..STUFF_ONES => {
                 self.ones = if bit { self.ones + 1 } else { 0 };
@@ -88,18 +92,19 @@ impl HdlcDeframer {
         self.overflow = false;
     }
 
-    fn close(&mut self) -> Option<Vec<u8>> {
+    fn close(&mut self) -> Option<&[u8]> {
         let aligned = FLAG_TAIL_BITS.contains(&self.nbits);
         let keep = self.in_frame
             && aligned
             && !self.overflow
             && (self.min_bytes..=self.max_bytes).contains(&self.frame.len());
-        let out =
-            keep.then(|| std::mem::replace(&mut self.frame, Vec::with_capacity(self.max_bytes)));
+        if keep {
+            std::mem::swap(&mut self.frame, &mut self.closed);
+        }
         self.ones = 0;
         self.in_frame = true;
         self.discard();
-        out
+        keep.then_some(self.closed.as_slice())
     }
 }
 
@@ -134,7 +139,9 @@ mod tests {
     }
 
     fn deframe(deframer: &mut HdlcDeframer, bits: &[bool]) -> Vec<Vec<u8>> {
-        bits.iter().filter_map(|&b| deframer.push(b)).collect()
+        bits.iter()
+            .filter_map(|&b| deframer.push(b).map(<[u8]>::to_vec))
+            .collect()
     }
 
     #[test]

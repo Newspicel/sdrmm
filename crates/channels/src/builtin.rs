@@ -20,6 +20,7 @@ pub(crate) fn decoders() -> Vec<Arc<dyn Decoder>> {
         Arc::new(crate::adsb::adsb_decoder()),
         Arc::new(crate::ais::ais_decoder()),
         Arc::new(crate::aprs::aprs_decoder()),
+        Arc::new(crate::bss::bss_decoder()),
         Arc::new(crate::rtty::rtty_decoder()),
         Arc::new(crate::morse::morse_decoder()),
         Arc::new(crate::cw_skimmer::cw_skimmer_decoder()),

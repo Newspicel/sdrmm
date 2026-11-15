@@ -30,6 +30,7 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 | `ble` | BLE | Devices | log, station |
 | `broadcast` | Broadcast | Services |  |
 | `broadcast_data` | Broadcast data | Services | log |
+| `bss` | BSS | Stations | log, station, geo |
 | `call` | Call | Calls | log, station, voice, duration, clip |
 | `cw_skimmer` | CW skimmer | CW spots | log |
 | `dect` | DECT | Base stations | log, station |
@@ -236,7 +237,7 @@ Points a rotator at a decoded position
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 23 kinds | many. Positions to follow |
+| `events` | in | Events | 24 kinds | many. Positions to follow |
 | `position` | in | Position | A live fix and the heading it comes with | one. Where the antenna stands |
 | `control` | out | Control | point | many. Rotators to point |
 
@@ -378,7 +379,7 @@ Decoded positions on a map
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 23 kinds | many |
+| `events` | in | Events | 24 kinds | many |
 | `position` | in | Position | A live fix and the heading it comes with | many |
 
 ### Signal survey
@@ -413,7 +414,7 @@ Every decoded message in a table
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 60 kinds | many, keeps history, clips |
+| `events` | in | Events | 61 kinds | many, keeps history, clips |
 
 ### Event output
 
@@ -421,7 +422,7 @@ Sends events out, saves call audio
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 60 kinds | many |
+| `events` | in | Events | 61 kinds | many |
 
 ### Video
 
@@ -474,7 +475,7 @@ Saves logged rows as CSV or JSON
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 60 kinds | many, keeps history |
+| `events` | in | Events | 61 kinds | many, keeps history |
 
 ### Rotator
 

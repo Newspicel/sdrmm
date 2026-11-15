@@ -57,6 +57,12 @@
       "link": "channel"
     }
   },
+  "bss": {
+    "type": "bss",
+    "settings": {
+      "bandwidth_hz": 12500.0
+    }
+  },
   "cw_skimmer": {
     "type": "cw_skimmer",
     "settings": {

@@ -13,6 +13,7 @@ pub mod beamformer;
 mod ble;
 mod broadcast_audio;
 mod broadcast_media;
+mod bss;
 mod builtin;
 pub mod correlator;
 mod crypto;
@@ -110,6 +111,7 @@ pub use ble::BleChannel;
 pub use broadcast_audio::decode_layer_two;
 #[cfg(feature = "fuzzing")]
 pub use broadcast_media::decode_bitstream;
+pub use bss::{BssChannel, BssPacket, BssParams};
 pub use cw_skimmer::CwSkimmerChannel;
 pub use dab::DabChannel;
 #[cfg(any(test, feature = "synth"))]
@@ -600,7 +602,7 @@ mod tests {
                 "tetrapol" => (12_500.0, 48_000.0),
                 "adsb" => (2_000_000.0, 2_400_000.0),
                 "ais" => (25_000.0, 48_000.0),
-                "aprs" => (12_500.0, 48_000.0),
+                "aprs" | "bss" => (12_500.0, 48_000.0),
                 "rtty" => (1_000.0, 8_000.0),
                 "morse" => (400.0, 8_000.0),
                 "cw_skimmer" => (24_000.0, 48_000.0),

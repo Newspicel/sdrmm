@@ -375,6 +375,7 @@ mod model_tests {
             DecoderEvent::of(&AdsbMessage::default()),
             DecoderEvent::of(&AisMessage::default()),
             DecoderEvent::of(&AprsPacket::default()),
+            DecoderEvent::of(&crate::bss::BssPacket::default()),
             DecoderEvent::of(&RttyText {
                 text: String::new(),
             }),

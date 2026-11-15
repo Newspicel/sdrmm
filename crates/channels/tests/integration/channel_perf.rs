@@ -502,6 +502,21 @@ fn ism_sensors_allocate_nothing_while_listening_to_noise() {
 }
 
 #[test]
+fn packet_decoders_allocate_nothing_while_listening_to_noise() {
+    for type_id in ["aprs", "bss"] {
+        let settings = sdrmm_channels::default_settings(type_id).expect("settings");
+        let rate = sdrmm_channels::input_rate(&settings.params);
+        let mut rx =
+            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        let iq = searching_signal(rate);
+        let mut outputs = ChannelOutputs::default();
+        drive(rx.as_mut(), &iq, &mut outputs);
+        assert_no_alloc(type_id, || drive(rx.as_mut(), &iq, &mut outputs));
+        assert!(outputs.events.is_empty());
+    }
+}
+
+#[test]
 fn wmbus_allocates_nothing_while_listening_to_noise() {
     let settings = sdrmm_channels::default_settings("wmbus").expect("settings");
     let rate = sdrmm_channels::input_rate(&settings.params);
