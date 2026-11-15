@@ -36,3 +36,4 @@
   operator writes about their own patch is theirs, and the Note node is where it lives.
 - Always write text, commits, docs as short as possible. Always try to reduce words, keep useless text out of the ui. And always write short and coherend text. That on which you are currently working on is not the most important thing in the world, you don't need to write everywhere about it. And never include an em dash.
 - If you need any physical hardware, ask the user for that to plug in.
+- Phones are additonal apps, not the entire app. so don't think about phones, if not explicitly asked 
