@@ -24,6 +24,11 @@ pub const DEFAULT_FILTER_LOW_HZ: f64 = 300.0;
 pub const DEFAULT_FILTER_HIGH_HZ: f64 = 3_000.0;
 pub const DEFAULT_NOTCH_WIDTH_HZ: f64 = 100.0;
 pub const DEFAULT_NOTCH_FREQ_HZ: f64 = 1_000.0;
+pub const MIN_PEAK_GAIN_DB: f64 = 1.0;
+pub const MAX_PEAK_GAIN_DB: f64 = 24.0;
+pub const DEFAULT_PEAK_FREQ_HZ: f64 = 700.0;
+pub const DEFAULT_PEAK_WIDTH_HZ: f64 = 100.0;
+pub const DEFAULT_PEAK_GAIN_DB: f64 = 12.0;
 
 const fn default_blanker_threshold() -> f32 {
     DEFAULT_BLANKER_THRESHOLD
@@ -51,6 +56,18 @@ const fn default_notch_width_hz() -> f64 {
 
 const fn default_notch_freq_hz() -> f64 {
     DEFAULT_NOTCH_FREQ_HZ
+}
+
+const fn default_peak_freq_hz() -> f64 {
+    DEFAULT_PEAK_FREQ_HZ
+}
+
+const fn default_peak_width_hz() -> f64 {
+    DEFAULT_PEAK_WIDTH_HZ
+}
+
+const fn default_peak_gain_db() -> f64 {
+    DEFAULT_PEAK_GAIN_DB
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -242,6 +259,46 @@ impl Default for NotchSettings {
     }
 }
 
+/// A bell that lifts one tone, a CW note or a data carrier, out of the rest.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PeakSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_peak_freq_hz")]
+    pub freq_hz: f64,
+    #[serde(default = "default_peak_width_hz")]
+    pub width_hz: f64,
+    #[serde(default = "default_peak_gain_db")]
+    pub gain_db: f64,
+}
+
+impl Default for PeakSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            freq_hz: default_peak_freq_hz(),
+            width_hz: default_peak_width_hz(),
+            gain_db: default_peak_gain_db(),
+        }
+    }
+}
+
+impl PeakSettings {
+    fn validate(&self) -> Result<(), String> {
+        check_tone_hz("peak frequency", self.freq_hz)?;
+        check_width_hz("peak width", self.width_hz)?;
+        if self.gain_db.is_finite() && (MIN_PEAK_GAIN_DB..=MAX_PEAK_GAIN_DB).contains(&self.gain_db)
+        {
+            Ok(())
+        } else {
+            Err(format!(
+                "peak gain must be in {MIN_PEAK_GAIN_DB}..={MAX_PEAK_GAIN_DB} dB, got {}",
+                self.gain_db
+            ))
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct AudioFilterSettings {
     #[serde(default)]
@@ -293,6 +350,8 @@ pub struct AudioProcessing {
     #[serde(default)]
     pub notches: Vec<NotchSettings>,
     #[serde(default)]
+    pub peak: PeakSettings,
+    #[serde(default)]
     pub auto_notch: bool,
     #[serde(default)]
     pub denoise: DenoiseSettings,
@@ -306,6 +365,7 @@ impl AudioProcessing {
         self.click_removal.enabled
             || self.filter.enabled
             || !self.notches.is_empty()
+            || self.peak.enabled
             || self.auto_notch
             || self.denoise.enabled
             || self.agc != AudioAgcMode::Off
@@ -342,16 +402,9 @@ impl AudioProcessing {
         }
         for notch in &self.notches {
             check_tone_hz("notch frequency", notch.freq_hz)?;
-            if !notch.width_hz.is_finite()
-                || !(MIN_NOTCH_WIDTH_HZ..=MAX_NOTCH_WIDTH_HZ).contains(&notch.width_hz)
-            {
-                return Err(format!(
-                    "notch width must be in {MIN_NOTCH_WIDTH_HZ}..={MAX_NOTCH_WIDTH_HZ} Hz, got {}",
-                    notch.width_hz
-                ));
-            }
+            check_width_hz("notch width", notch.width_hz)?;
         }
-        Ok(())
+        self.peak.validate()
     }
 }
 
@@ -394,6 +447,16 @@ impl AudioRoute {
             return Err("an audio FX node id is empty or too long".to_owned());
         }
         Ok(())
+    }
+}
+
+fn check_width_hz(what: &str, hz: f64) -> Result<(), String> {
+    if hz.is_finite() && (MIN_NOTCH_WIDTH_HZ..=MAX_NOTCH_WIDTH_HZ).contains(&hz) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{what} must be in {MIN_NOTCH_WIDTH_HZ}..={MAX_NOTCH_WIDTH_HZ} Hz, got {hz}"
+        ))
     }
 }
 
@@ -500,10 +563,11 @@ mod tests {
 
     #[test]
     fn every_stage_counts_as_active_on_its_own() {
-        let stages: [fn(&mut AudioProcessing); 6] = [
+        let stages: [fn(&mut AudioProcessing); 7] = [
             |a| a.click_removal.enabled = true,
             |a| a.filter.enabled = true,
             |a| a.notches.push(NotchSettings::default()),
+            |a| a.peak.enabled = true,
             |a| a.auto_notch = true,
             |a| a.denoise.enabled = true,
             |a| a.agc = AudioAgcMode::Slow,
@@ -520,7 +584,7 @@ mod tests {
 
     #[test]
     fn out_of_range_settings_are_named_rather_than_clamped() {
-        let bad: [Break; 7] = [
+        let bad: [Break; 11] = [
             (|a| a.click_removal.threshold = 1.0, "click threshold"),
             (|a| a.click_removal.threshold = f32::NAN, "click nan"),
             (|a| a.denoise.strength = 1.5, "strength"),
@@ -539,6 +603,10 @@ mod tests {
                 },
                 "notch width",
             ),
+            (|a| a.peak.freq_hz = 5.0, "peak frequency"),
+            (|a| a.peak.width_hz = 1.0, "peak width"),
+            (|a| a.peak.gain_db = 30.0, "peak gain"),
+            (|a| a.peak.gain_db = f64::NAN, "peak nan"),
         ];
         for (break_it, what) in bad {
             let mut chain = AudioProcessing::default();

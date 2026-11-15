@@ -1,15 +1,17 @@
 //! The AM encoder: audio cut to the channel width on a full carrier.
 
 use num_complex::Complex;
-use sdrmm_dsp::{RealDecimator, design_lowpass};
+use sdrmm_dsp::{Limiter, RealDecimator, design_lowpass};
 use sdrmm_modem::keying::{Burst, TxQueue};
 use sdrmm_wire::SettingField;
 use serde::{Deserialize, Serialize};
 
 use super::{AUDIO_TAPS, AmParams, BANDWIDTHS_HZ, DESCRIPTOR, MODULATION_DEPTH};
 use crate::{
-    AUDIO_RATE, clamp_full_scale,
-    encoder::{EncoderBase, EncoderError, Modulator, NativeEncoder, NativeModulator, TxPayload},
+    AUDIO_RATE,
+    encoder::{
+        EncoderBase, EncoderError, Modulator, NativeEncoder, NativeModulator, TxPayload, tx_limiter,
+    },
 };
 
 const TYPE_ID: &str = "am";
@@ -32,6 +34,7 @@ impl Default for AmEncoderSettings {
 pub struct AmModulator {
     queue: TxQueue<f32>,
     audio_lp: RealDecimator,
+    limiter: Limiter<f32>,
     filtered: Vec<f32>,
     burst: Burst,
 }
@@ -47,6 +50,7 @@ impl NativeModulator for AmModulator {
         Ok(Self {
             queue: TxQueue::new(TYPE_ID, f64::from(AUDIO_RATE)),
             audio_lp: audio_lowpass(settings.bandwidth_hz)?,
+            limiter: tx_limiter(f64::from(AUDIO_RATE)),
             filtered: Vec::new(),
             burst: Burst::new(DESCRIPTOR.input_rate_hz),
         })
@@ -58,7 +62,7 @@ impl Modulator for AmModulator {
         let pcm = payload.audio(TYPE_ID)?;
         self.queue.accept(pcm.len())?;
         self.audio_lp.process(&pcm, &mut self.filtered);
-        clamp_full_scale(&mut self.filtered);
+        self.limiter.process(&mut self.filtered);
         self.queue.extend(self.filtered.iter().copied());
         Ok(())
     }
@@ -170,6 +174,33 @@ mod tests {
         assert!((peak - 1.0).abs() < 0.02, "peak envelope {peak}");
         let floor = (1.0 - MODULATION_DEPTH) / (1.0 + MODULATION_DEPTH);
         assert!(trough > floor - 0.02, "trough envelope {trough}");
+    }
+
+    fn bin_power(x: &[f32], freq_hz: f64) -> f64 {
+        let w = std::f64::consts::TAU * freq_hz / RATE;
+        let (re, im) = x.iter().enumerate().fold((0.0, 0.0), |(re, im), (n, &v)| {
+            let phase = w * n as f64;
+            (
+                re + f64::from(v) * phase.cos(),
+                im - f64::from(v) * phase.sin(),
+            )
+        });
+        re * re + im * im
+    }
+
+    #[test]
+    fn tx_holds_a_loud_tone_to_full_scale_without_distorting_it() {
+        let mut tx = transmitter();
+        tx.submit(TxPayload::Audio(tone_audio(1_000.0, 4.0, RATE, 24_000)))
+            .unwrap();
+        let iq = burst(&mut tx);
+        let envelope: Vec<f32> = iq[12_000..12_000 + 4_800].iter().map(|s| s.re).collect();
+        let harmonic = bin_power(&envelope, 3_000.0) / bin_power(&envelope, 1_000.0);
+        assert!(
+            10.0 * harmonic.log10() < -40.0,
+            "third harmonic {} dB",
+            10.0 * harmonic.log10()
+        );
     }
 
     #[test]

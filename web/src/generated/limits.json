@@ -465,7 +465,14 @@
     "notch_width_seed_hz": 100.0,
     "denoise_strength_seed": 0.5,
     "filter_low_seed_hz": 300.0,
-    "filter_high_seed_hz": 3000.0
+    "filter_high_seed_hz": 3000.0,
+    "peak_gain_db": {
+      "min": 1.0,
+      "max": 24.0
+    },
+    "peak_freq_seed_hz": 700.0,
+    "peak_width_seed_hz": 100.0,
+    "peak_gain_seed_db": 12.0
   },
   "if_filter": {
     "notches": 8,

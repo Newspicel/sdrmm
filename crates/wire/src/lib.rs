@@ -75,8 +75,9 @@ pub use audio::{
     ClickRemovalSettings, DENOISE_MODELS_PREFIX, DENOISE_MODELS_URL, DenoiseArtifact, DenoiseMode,
     DenoiseModel, DenoiseModelState, DenoiseModelStatus, DenoiseModelsResponse, DenoiseSettings,
     MAX_AUDIO_FX_CHAIN, MAX_AUDIO_NOTCHES, MAX_AUDIO_TONE_HZ, MAX_BLANKER_THRESHOLD,
-    MAX_CLICK_THRESHOLD, MAX_NOTCH_WIDTH_HZ, MIN_AUDIO_TONE_HZ, MIN_BLANKER_THRESHOLD,
-    MIN_CLICK_THRESHOLD, MIN_NOTCH_WIDTH_HZ, NoiseBlankerSettings, NotchSettings,
+    MAX_CLICK_THRESHOLD, MAX_NOTCH_WIDTH_HZ, MAX_PEAK_GAIN_DB, MIN_AUDIO_TONE_HZ,
+    MIN_BLANKER_THRESHOLD, MIN_CLICK_THRESHOLD, MIN_NOTCH_WIDTH_HZ, MIN_PEAK_GAIN_DB,
+    NoiseBlankerSettings, NotchSettings, PeakSettings,
 };
 pub use bandplan::{
     BandAllocation, BandBlock, BandChannel, BandLane, BandLayerInfo, BandLayerKind, BandPlan,

@@ -8080,6 +8080,9 @@
             "items": {
               "$ref": "#/components/schemas/NotchSettings"
             }
+          },
+          "peak": {
+            "$ref": "#/components/schemas/PeakSettings"
           }
         }
       },
@@ -20570,6 +20573,27 @@
             }
           }
         ]
+      },
+      "PeakSettings": {
+        "type": "object",
+        "description": "A bell that lifts one tone, a CW note or a data carrier, out of the rest.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "freq_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "gain_db": {
+            "type": "number",
+            "format": "double"
+          },
+          "width_hz": {
+            "type": "number",
+            "format": "double"
+          }
+        }
       },
       "Peer": {
         "type": "object",

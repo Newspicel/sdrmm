@@ -162,6 +162,10 @@ fn the_published_limits_name_their_wire_constants() {
         crate::audio::DEFAULT_NOTCH_WIDTH_HZ
     );
     assert_eq!(
+        json["audio"]["peak_gain_seed_db"],
+        crate::audio::DEFAULT_PEAK_GAIN_DB
+    );
+    assert_eq!(
         json["channel_frequency_seed_hz"],
         crate::channel::DEFAULT_FREQUENCY_HZ
     );
@@ -200,6 +204,9 @@ fn the_audio_seeds_sit_inside_the_published_bounds() {
     assert!(limits.tone_hz.contains(limits.notch_freq_seed_hz));
     assert!(limits.tone_hz.contains(limits.filter_low_seed_hz));
     assert!(limits.tone_hz.contains(limits.filter_high_seed_hz));
+    assert!(limits.tone_hz.contains(limits.peak_freq_seed_hz));
+    assert!(limits.notch_width_hz.contains(limits.peak_width_seed_hz));
+    assert!(limits.peak_gain_db.contains(limits.peak_gain_seed_db));
 }
 
 #[test]

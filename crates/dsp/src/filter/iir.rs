@@ -4,6 +4,7 @@ mod deemphasis;
 mod highpass;
 mod iq_dc_blocker;
 mod one_pole;
+mod svf;
 
 use std::f64::consts::TAU;
 
@@ -13,6 +14,7 @@ pub use deemphasis::Deemphasis;
 pub use highpass::Highpass;
 pub use iq_dc_blocker::IqDcBlocker;
 pub use one_pole::ComplexOnePole;
+pub use svf::{Svf, SvfShape};
 
 /// Samples the DC blockers run through their closed-form recursion at once.
 const STRIDE: usize = 4;

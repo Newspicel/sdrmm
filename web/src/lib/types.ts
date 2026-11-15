@@ -76,6 +76,7 @@ export type NoiseBlankerSettings = components["schemas"]["NoiseBlankerSettings"]
 export type IfFilter = components["schemas"]["IfFilter"];
 export type IfNotch = components["schemas"]["IfNotch"];
 export type NotchSettings = components["schemas"]["NotchSettings"];
+export type PeakSettings = components["schemas"]["PeakSettings"];
 export type ChannelTypesResponse = components["schemas"]["ChannelTypesResponse"];
 export type EncoderDescriptor = components["schemas"]["EncoderDescriptor"];
 export type EncoderTypesResponse = components["schemas"]["EncoderTypesResponse"];

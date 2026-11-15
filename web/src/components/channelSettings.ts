@@ -196,6 +196,9 @@ export const AUDIO_DEFAULTS = {
   filterHighHz: AUDIO.filter_high_seed_hz,
   notchFreqHz: AUDIO.notch_freq_seed_hz,
   notchWidthHz: AUDIO.notch_width_seed_hz,
+  peakFreqHz: AUDIO.peak_freq_seed_hz,
+  peakWidthHz: AUDIO.peak_width_seed_hz,
+  peakGainDb: AUDIO.peak_gain_seed_db,
 } as const;
 
 export const AUDIO_LIMITS = {
@@ -205,6 +208,7 @@ export const AUDIO_LIMITS = {
   squelchAutoMarginDb: AUDIO.squelch_auto_margin_db,
   toneHz: AUDIO.tone_hz,
   notchWidthHz: AUDIO.notch_width_hz,
+  peakGainDb: AUDIO.peak_gain_db,
 } as const;
 
 export function mergeAudio(
@@ -244,6 +248,7 @@ export function audioChainActive(audio: AudioProcessing | undefined): boolean {
     (audio.click_removal?.enabled ?? false) ||
     (audio.filter?.enabled ?? false) ||
     (audio.notches?.length ?? 0) > 0 ||
+    (audio.peak?.enabled ?? false) ||
     (audio.auto_notch ?? false) ||
     (audio.denoise?.enabled ?? false) ||
     (audio.agc ?? "off") !== "off"

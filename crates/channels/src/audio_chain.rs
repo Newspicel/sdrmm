@@ -1,7 +1,9 @@
-use sdrmm_dsp::{Agc, AutoNotch, Biquad, ClickRemover, SpectralDenoiser};
+use sdrmm_dsp::{Agc, AutoNotch, ClickRemover, SpectralDenoiser, Svf, SvfShape};
 use std::sync::Arc;
 
-use sdrmm_wire::{AudioProcessing, ChannelParams, DenoiseMode, DenoiseSettings, NotchSettings};
+use sdrmm_wire::{
+    AudioProcessing, ChannelParams, DenoiseMode, DenoiseSettings, NotchSettings, PeakSettings,
+};
 
 use crate::{
     AUDIO_RATE,
@@ -185,9 +187,10 @@ struct Changes {
 #[derive(Default)]
 struct Plane {
     clicks: Option<ClickRemover>,
-    highpass: Vec<Biquad>,
-    lowpass: Vec<Biquad>,
-    notches: Vec<Biquad>,
+    highpass: Vec<Svf>,
+    lowpass: Vec<Svf>,
+    notches: Vec<Svf>,
+    peak: Option<Svf>,
     auto_notch: Option<AutoNotch>,
     denoise: Option<Denoiser>,
     agc: Option<Agc>,
@@ -219,14 +222,19 @@ impl Plane {
             }
             (slot, false) => *slot = None,
         }
-        if settings.filter.enabled {
-            self.highpass = butterworth(rate, settings.filter.low_hz, true);
-            self.lowpass = butterworth(rate, settings.filter.high_hz, false);
-        } else {
-            self.highpass.clear();
-            self.lowpass.clear();
-        }
-        self.notches = settings.notches.iter().map(|n| notch(rate, n)).collect();
+        let filter = &settings.filter;
+        let on = |specs: Vec<Tuning>| if filter.enabled { specs } else { Vec::new() };
+        retune(
+            &mut self.highpass,
+            &on(butterworth(SvfShape::Highpass, filter.low_hz)),
+        );
+        retune(
+            &mut self.lowpass,
+            &on(butterworth(SvfShape::Lowpass, filter.high_hz)),
+        );
+        let notches: Vec<Tuning> = settings.notches.iter().map(notch).collect();
+        retune(&mut self.notches, &notches);
+        self.configure_peak(&settings.peak);
 
         if settings.auto_notch {
             self.auto_notch
@@ -251,6 +259,19 @@ impl Plane {
             None => self.agc = None,
         }
         denoised
+    }
+
+    fn configure_peak(&mut self, settings: &PeakSettings) {
+        if !settings.enabled {
+            self.peak = None;
+            return;
+        }
+        let (shape, freq_hz, q) = peak(settings);
+        let rate = f64::from(AUDIO_RATE);
+        match &mut self.peak {
+            Some(section) => section.retune(shape, rate, freq_hz, q),
+            slot => *slot = Some(Svf::new(shape, rate, freq_hz, q)),
+        }
     }
 
     fn configure_denoise(
@@ -282,7 +303,7 @@ impl Plane {
         for section in self.highpass.iter_mut().chain(&mut self.lowpass) {
             section.reset();
         }
-        for section in &mut self.notches {
+        for section in self.notches.iter_mut().chain(&mut self.peak) {
             section.reset();
         }
         if let Some(auto_notch) = &mut self.auto_notch {
@@ -300,7 +321,7 @@ impl Plane {
         for section in self.highpass.iter_mut().chain(&mut self.lowpass) {
             section.process(pcm);
         }
-        for section in &mut self.notches {
+        for section in self.notches.iter_mut().chain(&mut self.peak) {
             section.process(pcm);
         }
         if let Some(auto_notch) = &mut self.auto_notch {
@@ -316,22 +337,46 @@ impl Plane {
     }
 }
 
-fn butterworth(rate: f64, freq_hz: f64, high: bool) -> Vec<Biquad> {
-    BUTTERWORTH_Q
-        .iter()
-        .map(|&q| {
-            if high {
-                Biquad::highpass(rate, freq_hz, q)
-            } else {
-                Biquad::lowpass(rate, freq_hz, q)
-            }
-        })
-        .collect()
+/// A section's shape, centre and Q.
+type Tuning = (SvfShape, f64, f64);
+
+/// Moves `sections` to `specs`, keeping the state of every section that stays so a moved
+/// setting does not click.
+fn retune(sections: &mut Vec<Svf>, specs: &[Tuning]) {
+    let rate = f64::from(AUDIO_RATE);
+    sections.truncate(specs.len());
+    for (index, &(shape, freq_hz, q)) in specs.iter().enumerate() {
+        match sections.get_mut(index) {
+            Some(section) => section.retune(shape, rate, freq_hz, q),
+            None => sections.push(Svf::new(shape, rate, freq_hz, q)),
+        }
+    }
 }
 
-fn notch(rate: f64, settings: &NotchSettings) -> Biquad {
-    let width = settings.width_hz.max(f64::MIN_POSITIVE);
-    Biquad::notch(rate, settings.freq_hz, settings.freq_hz / width)
+fn butterworth(shape: SvfShape, freq_hz: f64) -> Vec<Tuning> {
+    BUTTERWORTH_Q.iter().map(|&q| (shape, freq_hz, q)).collect()
+}
+
+fn q_of(freq_hz: f64, width_hz: f64) -> f64 {
+    freq_hz / width_hz.max(f64::MIN_POSITIVE)
+}
+
+fn notch(settings: &NotchSettings) -> Tuning {
+    (
+        SvfShape::Notch,
+        settings.freq_hz,
+        q_of(settings.freq_hz, settings.width_hz),
+    )
+}
+
+fn peak(settings: &PeakSettings) -> Tuning {
+    (
+        SvfShape::Peak {
+            gain_db: settings.gain_db,
+        },
+        settings.freq_hz,
+        q_of(settings.freq_hz, settings.width_hz),
+    )
 }
 
 #[cfg(test)]
@@ -409,6 +454,10 @@ mod tests {
                 freq_hz: 1_500.0,
                 width_hz: 80.0,
             }],
+            peak: PeakSettings {
+                enabled: true,
+                ..PeakSettings::default()
+            },
             auto_notch: true,
             denoise: DenoiseSettings {
                 enabled: true,
@@ -457,6 +506,46 @@ mod tests {
         let settled = &output[24_000..];
         assert!(tone_amplitude(settled, 1_500.0, RATE) < 0.02);
         assert!(tone_amplitude(settled, 800.0, RATE) > 0.35);
+    }
+
+    fn peaked(freq_hz: f64) -> AudioProcessing {
+        AudioProcessing {
+            peak: PeakSettings {
+                enabled: true,
+                freq_hz,
+                width_hz: 100.0,
+                gain_db: 12.0,
+            },
+            ..AudioProcessing::default()
+        }
+    }
+
+    #[test]
+    fn the_peak_lifts_its_tone_over_the_rest() {
+        let input = mix(&tone(700.0, 0.1, 48_000), &tone(1_500.0, 0.1, 48_000));
+        let output = run(&mut chain(peaked(700.0)), &input);
+        let settled = &output[24_000..];
+        let lifted = tone_amplitude(settled, 700.0, RATE);
+        let left = tone_amplitude(settled, 1_500.0, RATE);
+        assert!((0.37..0.43).contains(&lifted), "centre {lifted}");
+        assert!((0.09..0.12).contains(&left), "neighbour {left}");
+    }
+
+    #[test]
+    fn moving_the_peak_keeps_the_audio_running() {
+        let mut chain = chain(peaked(700.0));
+        let input = tone(720.0, 0.1, 9_600);
+        let mut head = run(&mut chain, &input[..4_800]);
+        chain
+            .configure(1, &peaked(740.0), ClickProfile::Discriminator)
+            .expect("chain reconfigures");
+        head.extend(run(&mut chain, &input[4_800..]));
+        let jump = (head[4_800] - head[4_799]).abs();
+        let swing = head[4_700..4_799]
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).abs())
+            .fold(0.0f32, f32::max);
+        assert!(jump < swing * 1.5, "jump {jump} against {swing}");
     }
 
     #[test]

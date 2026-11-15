@@ -1197,6 +1197,12 @@
               "high_hz": 3000.0
             },
             "notches": [],
+            "peak": {
+              "enabled": false,
+              "freq_hz": 700.0,
+              "width_hz": 100.0,
+              "gain_db": 12.0
+            },
             "auto_notch": false,
             "denoise": {
               "enabled": false,

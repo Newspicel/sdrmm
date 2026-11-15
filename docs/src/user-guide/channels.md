@@ -119,6 +119,7 @@ default:
 | De-click | Removes short clicks |
 | Passband | Cuts audio below and above two frequencies |
 | Notches | Removes up to four chosen tones, each with its own width |
+| Peak | Lifts one tone, such as a CW note, by up to 24 dB |
 | Auto notch | Finds and removes steady tones |
 | Denoise | **Spectral** cuts noise by up to 20 dB, light on CPU. **DPDFNet** is the strongest speech model, built for 8 kHz radio voice, downloaded on first use. |
 | AGC | Levels the volume: Slow, Med or Fast. AM and SSB channels already level their own. |

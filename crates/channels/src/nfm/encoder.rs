@@ -3,7 +3,7 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Compander, RealDecimator};
+use sdrmm_dsp::{Compander, Limiter, RealDecimator};
 use sdrmm_modem::keying::{Burst, TxQueue};
 use sdrmm_wire::{Control, NumberSpec, SettingField};
 use serde::{Deserialize, Serialize};
@@ -13,8 +13,10 @@ use super::{
     COMPANDER_REFERENCE_RMS, DESCRIPTOR, DEVIATION_RATIO, NfmParams, audio_lowpass,
 };
 use crate::{
-    AUDIO_RATE, clamp_full_scale,
-    encoder::{EncoderBase, EncoderError, Modulator, NativeEncoder, NativeModulator, TxPayload},
+    AUDIO_RATE,
+    encoder::{
+        EncoderBase, EncoderError, Modulator, NativeEncoder, NativeModulator, TxPayload, tx_limiter,
+    },
     voice_inversion::{
         DEFAULT_INVERSION_HZ, MAX_INVERSION_HZ, MIN_INVERSION_HZ, VoiceInverter,
         is_supported_inversion,
@@ -52,6 +54,7 @@ pub struct NfmModulator {
     compressor: Option<Compander>,
     inverter: Option<VoiceInverter>,
     preemphasis: AudioPreemphasis,
+    limiter: Limiter<f32>,
     filtered: Vec<f32>,
     burst: Burst,
     phase: f64,
@@ -111,6 +114,7 @@ impl NativeModulator for NfmModulator {
             compressor: tx_compressor(settings, f64::from(AUDIO_RATE)),
             inverter: tx_inverter(settings, f64::from(AUDIO_RATE)),
             preemphasis: AudioPreemphasis::new(f64::from(AUDIO_RATE)),
+            limiter: tx_limiter(f64::from(AUDIO_RATE)),
             filtered: Vec::new(),
             burst: Burst::new(rate),
             phase: 0.0,
@@ -130,7 +134,7 @@ impl Modulator for NfmModulator {
             inverter.process(&mut self.filtered);
         }
         self.preemphasis.process(&mut self.filtered);
-        clamp_full_scale(&mut self.filtered);
+        self.limiter.process(&mut self.filtered);
         self.queue.extend(self.filtered.iter().copied());
         Ok(())
     }

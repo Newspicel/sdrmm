@@ -142,6 +142,10 @@ pub struct AudioLimits {
     pub denoise_strength_seed: f32,
     pub filter_low_seed_hz: f64,
     pub filter_high_seed_hz: f64,
+    pub peak_gain_db: Bounds<f64>,
+    pub peak_freq_seed_hz: f64,
+    pub peak_width_seed_hz: f64,
+    pub peak_gain_seed_db: f64,
 }
 
 pub const AUDIO_LIMITS: AudioLimits = AudioLimits {
@@ -175,6 +179,13 @@ pub const AUDIO_LIMITS: AudioLimits = AudioLimits {
     denoise_strength_seed: crate::audio::DEFAULT_DENOISE_STRENGTH,
     filter_low_seed_hz: crate::audio::DEFAULT_FILTER_LOW_HZ,
     filter_high_seed_hz: crate::audio::DEFAULT_FILTER_HIGH_HZ,
+    peak_gain_db: Bounds::new(
+        crate::audio::MIN_PEAK_GAIN_DB,
+        crate::audio::MAX_PEAK_GAIN_DB,
+    ),
+    peak_freq_seed_hz: crate::audio::DEFAULT_PEAK_FREQ_HZ,
+    peak_width_seed_hz: crate::audio::DEFAULT_PEAK_WIDTH_HZ,
+    peak_gain_seed_db: crate::audio::DEFAULT_PEAK_GAIN_DB,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]

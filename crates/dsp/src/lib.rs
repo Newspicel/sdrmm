@@ -14,6 +14,7 @@ mod testutil;
 
 pub use audio::agc::Agc;
 pub use audio::compander::Compander;
+pub use audio::limiter::{Limiter, Peak};
 pub use audio::noise::{AutoNotch, ClickRemover, NoiseBlanker, SpectralDenoiser};
 pub use audio::squelch::Squelch;
 pub use coding::bits::{
@@ -51,7 +52,8 @@ pub use filter::fir::{
 };
 pub use filter::firc::FirC;
 pub use filter::iir::{
-    Biquad, ComplexOnePole, DcBlocker, Deemphasis, Highpass, IqDcBlocker, one_pole_coeff,
+    Biquad, ComplexOnePole, DcBlocker, Deemphasis, Highpass, IqDcBlocker, Svf, SvfShape,
+    one_pole_coeff,
 };
 pub use filter::interp::{CubicInterpolator, Interpolator, RealInterpolator};
 pub use filter::moving::MovingSum;

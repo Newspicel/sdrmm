@@ -6,6 +6,7 @@
 use std::sync::{Arc, LazyLock, OnceLock, PoisonError, RwLock};
 
 use num_complex::Complex;
+use sdrmm_dsp::{Limiter, Peak};
 use sdrmm_wire::{EncoderDescriptor, EncoderInput, SettingField};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
@@ -13,6 +14,16 @@ use serde_json::{Map, Value};
 mod error;
 
 pub use error::{Carries, EncoderError};
+
+/// How far ahead of a peak a voice encoder's limiter starts to pull its gain down.
+const TX_LOOKAHEAD_S: f64 = 1e-3;
+const TX_RELEASE_S: f64 = 0.1;
+
+/// Holds a voice encoder's audio, or its envelope, to full scale without the splatter of a
+/// hard clip.
+pub(crate) fn tx_limiter<T: Peak>(rate: f64) -> Limiter<T> {
+    Limiter::new(rate, 1.0, TX_LOOKAHEAD_S, TX_RELEASE_S)
+}
 
 /// What an encoder is handed to send.
 pub enum TxPayload {

@@ -2410,6 +2410,7 @@ export interface components {
             denoise?: components["schemas"]["DenoiseSettings"];
             filter?: components["schemas"]["AudioFilterSettings"];
             notches?: components["schemas"]["NotchSettings"][];
+            peak?: components["schemas"]["PeakSettings"];
         };
         AudioRecorderNode: {
             /** @default false */
@@ -5862,6 +5863,16 @@ export interface components {
         } | {
             /** @enum {string} */
             type: "transmit";
+        };
+        /** @description A bell that lifts one tone, a CW note or a data carrier, out of the rest. */
+        PeakSettings: {
+            enabled?: boolean;
+            /** Format: double */
+            freq_hz?: number;
+            /** Format: double */
+            gain_db?: number;
+            /** Format: double */
+            width_hz?: number;
         };
         Peer: {
             /** Format: int32 */

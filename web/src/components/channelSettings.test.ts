@@ -301,6 +301,7 @@ describe("audioChainActive", () => {
     expect(audioChainActive({ filter: { enabled: true } })).toBe(true);
     expect(audioChainActive({ click_removal: { enabled: true } })).toBe(true);
     expect(audioChainActive({ notches: [{ freq_hz: 1_000, width_hz: 100 }] })).toBe(true);
+    expect(audioChainActive({ peak: { enabled: true } })).toBe(true);
   });
 });
 
@@ -389,6 +390,9 @@ describe("the audio seeds and bounds", () => {
       filterHighHz: wire.audio.filter_high_seed_hz,
       notchFreqHz: wire.audio.notch_freq_seed_hz,
       notchWidthHz: wire.audio.notch_width_seed_hz,
+      peakFreqHz: wire.audio.peak_freq_seed_hz,
+      peakWidthHz: wire.audio.peak_width_seed_hz,
+      peakGainDb: wire.audio.peak_gain_seed_db,
     });
     expect(AUDIO_LIMITS).toEqual({
       maxNotches: wire.audio.notches,
@@ -397,6 +401,7 @@ describe("the audio seeds and bounds", () => {
       squelchAutoMarginDb: wire.audio.squelch_auto_margin_db,
       toneHz: wire.audio.tone_hz,
       notchWidthHz: wire.audio.notch_width_hz,
+      peakGainDb: wire.audio.peak_gain_db,
     });
   });
 });

@@ -69,5 +69,8 @@ transmission's power. It turns to a warning when an encoder's signal is wider th
 channel: lower the level or the audio. An error, such as a frequency outside the Device's window,
 mutes it until the cause is gone.
 
+AM, NFM and SSB encoders hold loud audio to full modulation with a limiter, so a loud voice gets
+quieter instead of wider.
+
 Changing a Transmitter's wires while it is armed takes it off the air. Changing its source arms
 it again on the new one.

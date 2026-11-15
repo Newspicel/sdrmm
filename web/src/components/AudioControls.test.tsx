@@ -24,7 +24,13 @@ const NEURAL: AudioProcessing = {
 describe("AudioControls", () => {
   it("renders every audio stage as a chip", () => {
     const html = render({});
-    for (const label of ["Audio AGC speed", "Click removal", "Noise reduction", "Audio filter"]) {
+    for (const label of [
+      "Audio AGC speed",
+      "Click removal",
+      "Noise reduction",
+      "Audio filter",
+      "Peak filter",
+    ]) {
       expect(html).toContain(`aria-label="${label}"`);
     }
   });
@@ -39,6 +45,10 @@ describe("AudioControls", () => {
   it("shows the passband when the filter is on", () => {
     const html = render({ filter: { enabled: true } });
     expect(html).toContain("300 Hz – 3 kHz");
+  });
+
+  it("shows the peak tone when the peak filter is on", () => {
+    expect(render({ peak: { enabled: true } })).toContain("700 Hz");
   });
 
   it("flags a DPDFNet model that is not downloaded", () => {
