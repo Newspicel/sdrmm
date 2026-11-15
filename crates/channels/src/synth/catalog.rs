@@ -5,6 +5,7 @@ use crate::apt::AvhrrChannel;
 use crate::atv::AtvModulation;
 use crate::atv::AtvParams;
 use crate::atv::AtvStandard;
+use crate::bss::{BssPacket, Compose};
 use crate::dab::DabTransmissionMode;
 use crate::eot::EotArming;
 use crate::eot::EotBattery;
@@ -153,6 +154,12 @@ pub static SIGNALS: &[Signal] = &[
         label: "APRS weather",
         rate_hz: NARROW,
         render: aprs_weather,
+    },
+    Signal {
+        id: "bss",
+        label: "BSS · Benshi chat",
+        rate_hz: NARROW,
+        render: bss,
     },
     Signal {
         id: "ais",
@@ -657,6 +664,40 @@ fn aprs_frame(text: &str) -> Vec<u8> {
     frame.extend([0x03, 0xF0]);
     frame.extend(text.bytes());
     frame
+}
+
+fn bss() -> Vec<Complex<f32>> {
+    let berlin = BssPacket {
+        lat: Some(52.5163),
+        lon: Some(13.3777),
+        altitude_m: Some(34),
+        speed_kmh: Some(0),
+        heading_deg: Some(90),
+        ..BssPacket::default()
+    };
+    let potsdam = BssPacket {
+        lat: Some(52.4009),
+        lon: Some(13.0591),
+        altitude_m: Some(41),
+        speed_kmh: Some(12),
+        heading_deg: Some(250),
+        ..BssPacket::default()
+    };
+    let frames = [
+        Compose::from("DL1ABC-7")
+            .position(&berlin)
+            .message("CQ from the Tor"),
+        Compose::from("DO2XYZ")
+            .position(&potsdam)
+            .message("loud and clear, 73"),
+        Compose::from("DL1ABC-7").call_request(2, "DO2XYZ"),
+    ];
+    let mut iq = Vec::new();
+    for frame in &frames {
+        iq.extend(sdrmm_modem::packet::afsk_burst(frame.bytes(), AUDIO));
+        iq.extend(synth::silence(AUDIO as usize));
+    }
+    synth::resample(&iq, AUDIO, NARROW)
 }
 
 fn ais() -> Vec<Complex<f32>> {

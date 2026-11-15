@@ -1,6 +1,7 @@
 use crate::registry::Native;
 use sdrmm_wire::{HzRange, KindSpec, Modulation, SettingField, SignalSignature};
 mod frame;
+pub(crate) use frame::Compose;
 mod model;
 pub use model::*;
 #[cfg(test)]

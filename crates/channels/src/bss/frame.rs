@@ -108,3 +108,56 @@ fn degrees(be24: [u8; 3]) -> f64 {
     let raw = i32::from_be_bytes([be24[0], be24[1], be24[2], 0]) >> 8;
     f64::from(raw) / UNITS_PER_DEGREE
 }
+
+/// A BSS frame laid out the way a handheld keys one, for the signal generator and tests.
+pub(crate) struct Compose(Vec<u8>);
+
+impl Compose {
+    pub(crate) fn from(source: &str) -> Self {
+        let mut frame = Self(vec![MARKER]);
+        frame.field(SOURCE, source.as_bytes());
+        frame
+    }
+
+    pub(crate) fn message(mut self, text: &str) -> Self {
+        self.field(MESSAGE, text.as_bytes());
+        self
+    }
+
+    pub(crate) fn position(mut self, at: &BssPacket) -> Self {
+        let mut value = Vec::with_capacity(MOTION_BYTES);
+        value.extend(units(at.lat.unwrap_or_default()));
+        value.extend(units(at.lon.unwrap_or_default()));
+        value.extend(at.altitude_m.unwrap_or(NO_ALTITUDE).to_be_bytes());
+        value.extend(at.speed_kmh.unwrap_or(NOT_KNOWN).to_be_bytes());
+        value.extend(at.heading_deg.unwrap_or(NOT_KNOWN).to_be_bytes());
+        self.field(LOCATION, &value);
+        self
+    }
+
+    pub(crate) fn call_request(mut self, message_id: u16, callee: &str) -> Self {
+        self.0.push(MESSAGE_ID);
+        self.0.extend(message_id.to_be_bytes());
+        self.field(CALL_REQUEST, callee.as_bytes());
+        self
+    }
+
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Cuts a value short of the length that would read as a message ID.
+    fn field(&mut self, kind: u8, value: &[u8]) {
+        let value = &value[..value.len().min(usize::from(MESSAGE_ID) - 2)];
+        self.0
+            .push(u8::try_from(value.len() + 1).unwrap_or(MESSAGE_ID - 1));
+        self.0.push(kind);
+        self.0.extend(value);
+    }
+}
+
+fn units(degrees: f64) -> [u8; 3] {
+    let raw = (degrees * UNITS_PER_DEGREE).round() as i32;
+    let [_, high, mid, low] = raw.to_be_bytes();
+    [high, mid, low]
+}

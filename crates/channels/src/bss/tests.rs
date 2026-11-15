@@ -218,3 +218,24 @@ fn a_bandwidth_past_the_input_rate_is_refused() {
     );
     assert!(BssChannel::new(ChannelCtx { input_rate: RATE }, wide).is_err());
 }
+
+#[test]
+fn hears_every_frame_of_the_generator_signal() {
+    let signal = crate::synth::catalog::CATALOG
+        .find("bss")
+        .expect("a bss signal");
+    let iq = crate::synth::resample(&(signal.render)(), signal.rate_hz, RATE);
+    let mut rx = channel();
+    let mut out = ChannelOutputs::default();
+    for block in iq.chunks(2_048) {
+        rx.process(block, &mut out);
+    }
+    let heard = packets(&out.events);
+    let sources: Vec<&str> = heard.iter().map(|p| p.source.as_str()).collect();
+    assert_eq!(sources, ["DL1ABC-7", "DO2XYZ", "DL1ABC-7"], "{heard:?}");
+    assert_eq!(heard[0].message.as_deref(), Some("CQ from the Tor"));
+    assert!((heard[1].lat.expect("lat") - 52.4009).abs() < 1e-4);
+    assert_eq!(heard[1].heading_deg, Some(250));
+    assert_eq!(heard[2].call_request.as_deref(), Some("DO2XYZ"));
+    assert_eq!(rx.rejected(), 0);
+}
