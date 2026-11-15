@@ -1806,12 +1806,14 @@ async fn csv_appends_rows_under_one_header() {
     ];
     let weak = Arc::downgrade(&engine);
 
-    csv::append(&weak, "log", &batch).await.expect("first");
-    csv::append(&weak, "log", &batch[..1])
+    file::append(&weak, file::Format::Csv, "log", &batch)
+        .await
+        .expect("first");
+    file::append(&weak, file::Format::Csv, "log", &batch[..1])
         .await
         .expect("second");
 
-    let text = std::fs::read_to_string(csv::events_dir(dir.path()).join("log.csv")).expect("read");
+    let text = std::fs::read_to_string(file::events_dir(dir.path()).join("log.csv")).expect("read");
     let lines: Vec<_> = text.lines().collect();
     assert_eq!(lines.len(), 4);
     assert!(lines[0].starts_with("at,kind,output"));
@@ -1833,15 +1835,50 @@ async fn csv_refuses_a_path_and_a_missing_library() {
         &decoded(),
     )];
 
-    let escape = csv::append(&weak, "../log", &batch)
+    let escape = file::append(&weak, file::Format::Csv, "../log", &batch)
         .await
         .expect_err("path");
-    let missing = csv::append(&weak, "log", &batch)
+    let missing = file::append(&weak, file::Format::Csv, "log", &batch)
         .await
         .expect_err("no library");
 
     assert!(escape.to_string().contains("plain name"), "{escape}");
     assert!(missing.to_string().contains("recordings"), "{missing}");
+}
+
+#[tokio::test]
+async fn text_appends_one_line_per_event_without_a_header() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let engine = Engine::with_registry(
+        sdrmm_device::DeviceRegistry::new(),
+        Some(dir.path().to_path_buf()),
+    );
+    let target = EventOutputTarget::Text {
+        file: "log".to_owned(),
+    };
+    let record = DecodedRecord {
+        event: DecoderEvent::of(&RttyText {
+            text: "two\nlines".to_owned(),
+        }),
+        ..decoded()
+    };
+    let batch = [
+        delivery_to("log", target.clone(), &record),
+        delivery_to("log", target, &record),
+    ];
+    let weak = Arc::downgrade(&engine);
+
+    file::append(&weak, file::Format::Text, "log", &batch)
+        .await
+        .expect("append");
+
+    let text = std::fs::read_to_string(file::events_dir(dir.path()).join("log.txt")).expect("read");
+    let lines: Vec<_> = text.lines().collect();
+    assert_eq!(lines.len(), 2, "{text}");
+    assert!(
+        lines[0].starts_with("2026-08-15T10:00:02Z  rtty  14.080000 MHz  two lines"),
+        "{text}"
+    );
 }
 
 fn routing_over(store: &crate::Store) -> Routing {

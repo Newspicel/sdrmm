@@ -27,9 +27,11 @@ use crate::{NativeShell, Store, calls::Calls, decoded::Decoded, resolved::Resolv
 
 pub(crate) mod csv;
 mod feed;
+mod file;
 mod influx;
 mod postgres;
 mod status;
+pub(crate) mod text;
 mod tunnel;
 
 const DELIVERY_QUEUE: usize = 64;
@@ -436,6 +438,7 @@ fn same_batch(first: &Delivery, next: &Delivery) -> bool {
         EventOutputTarget::Postgres { .. }
             | EventOutputTarget::Influx { .. }
             | EventOutputTarget::Csv { .. }
+            | EventOutputTarget::Text { .. }
     ) && first.node == next.node
         && first.target == next.target
 }
@@ -505,7 +508,12 @@ async fn deliver(outputs: &mut Outputs<'_>, batch: &[Delivery]) -> Result<(), De
     match &delivery.target {
         EventOutputTarget::Recordings => save_recording(outputs.engine, &delivery.message).await,
         EventOutputTarget::Desktop => notify(outputs.shell, &delivery.message).await,
-        EventOutputTarget::Csv { file } => csv::append(outputs.engine, file, batch).await,
+        EventOutputTarget::Csv { file: name } => {
+            file::append(outputs.engine, file::Format::Csv, name, batch).await
+        }
+        EventOutputTarget::Text { file: name } => {
+            file::append(outputs.engine, file::Format::Text, name, batch).await
+        }
         EventOutputTarget::Tunnel { .. } | EventOutputTarget::Feed { .. } => Err(
             DeliveryError::Failed("Network streams use the dedicated writer".to_owned()),
         ),

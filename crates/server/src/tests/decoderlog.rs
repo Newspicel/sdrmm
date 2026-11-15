@@ -153,12 +153,32 @@ async fn decoder_log_exports_csv_and_json() {
 }
 
 #[tokio::test]
+async fn decoder_log_exports_one_text_line_per_frame() {
+    let (app, store) = test_router_with_store();
+    seed_decoder_log(&store);
+
+    let (status, body) = request(app, "GET", "/api/decoderlog/export/txt", None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let text = String::from_utf8(body.to_vec()).expect("utf-8");
+    assert_eq!(text.lines().count(), 3, "{text}");
+    assert!(
+        text.lines()
+            .next()
+            .is_some_and(|line| line.contains("4CA2D4")),
+        "{text}"
+    );
+    assert!(text.contains("DL1ABC-9>APRS:hello, \"world\""), "{text}");
+}
+
+#[tokio::test]
 async fn decoder_log_export_sets_download_headers() {
     let (app, store) = test_router_with_store();
     seed_decoder_log(&store);
     for (format, content_type) in [
         ("csv", "text/csv; charset=utf-8"),
         ("json", "application/json"),
+        ("txt", "text/plain; charset=utf-8"),
     ] {
         let response = app
             .clone()

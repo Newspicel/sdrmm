@@ -124,10 +124,10 @@ pub use device::{
 pub use diagnostics::{DiagnosticsReport, LogLevel, LogLine, MAX_LOG_LINES, MAX_LOG_MESSAGE_LEN};
 pub use doctor::{CheckStatus, DoctorCheck, DoctorReport};
 pub use event_output::{
-    DEFAULT_POSTGRES_TABLE, EventOutputNode, EventOutputTarget, MAX_CSV_FILE_LEN,
+    DEFAULT_POSTGRES_TABLE, EventOutputNode, EventOutputTarget, MAX_EVENT_FILE_LEN,
     MAX_INFLUX_NAME_LEN, MAX_MATRIX_ROOM_ID_LEN, MAX_MQTT_TOPIC_LEN, MAX_MQTT_USERNAME_LEN,
     MAX_OUTPUT_SECRET_LEN, MAX_OUTPUT_URL_LEN, MAX_SQL_IDENTIFIER_LEN, WebhookFormat,
-    csv_file_name, valid_csv_file, valid_sql_identifier,
+    event_file_name, valid_event_file, valid_sql_identifier,
 };
 pub use filter::{
     EventFilterNode, FilterMode, MAX_FILTER_DURATION_MS, MAX_FILTER_IDS, MAX_FILTER_KINDS,
@@ -239,13 +239,13 @@ pub use rest::{
     CreatedRowId, DecoderLogEntry, DecoderLogGroup, DecoderLogGroupsResponse, DecoderLogQuery,
     DecoderLogResponse, DeletedCount, DeviceClaim, DevicesResponse, ErrorCode, EventAudio,
     EventImage, ExampleInfo, ExampleNeeds, ExamplesResponse, ExportFormat, LogGroupKey, LogScope,
-    MAX_LOG_SOURCES, MAX_RECORDING_NAME_LEN, MAX_RECORDING_NOTE_LEN, MAX_RECORDING_TAG_LEN,
-    MAX_RECORDING_TAGS, MAX_RECORDING_UPLOAD_BYTES, OccupancyBucket, OccupancyReport,
-    PRESET_SNAPSHOT_VERSION, PatchChannelRequest, PlaybackAction, PlaybackRequest, PresetDevice,
-    PresetInfo, PresetSnapshot, RecordingAnnotation, RecordingDownloadQuery, RecordingFormat,
-    RecordingInfo, RecordingUpload, RecordingsResponse, SaveRadioRequest, SavedRadio, ServerStatus,
-    TemplateInfo, TemplatesResponse, TransportInfo, VoiceCall, WebTransportInfo,
-    WriteSerialRequest, WrittenSerial, device_claims, kinds_in,
+    MAX_DECODER_LOG_ROWS, MAX_LOG_SOURCES, MAX_RECORDING_NAME_LEN, MAX_RECORDING_NOTE_LEN,
+    MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS, MAX_RECORDING_UPLOAD_BYTES, OccupancyBucket,
+    OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchChannelRequest, PlaybackAction, PlaybackRequest,
+    PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation, RecordingDownloadQuery,
+    RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse, SaveRadioRequest,
+    SavedRadio, ServerStatus, TemplateInfo, TemplatesResponse, TransportInfo, VoiceCall,
+    WebTransportInfo, WriteSerialRequest, WrittenSerial, device_claims, kinds_in,
 };
 pub use rotator::{
     DEFAULT_GS232_BAUD, DEFAULT_ROTATOR_TOLERANCE_DEG, DEFAULT_ROTCTLD_ADDRESS,

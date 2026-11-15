@@ -11,8 +11,9 @@ pub const MAX_MQTT_USERNAME_LEN: usize = 255;
 pub const MAX_SQL_IDENTIFIER_LEN: usize = 63;
 pub const MAX_INFLUX_NAME_LEN: usize = 255;
 pub const DEFAULT_POSTGRES_TABLE: &str = "sdrmm_events";
-pub const MAX_CSV_FILE_LEN: usize = 64;
+pub const MAX_EVENT_FILE_LEN: usize = 64;
 pub const CSV_SUFFIX: &str = ".csv";
+pub const TEXT_SUFFIX: &str = ".txt";
 pub const MAX_SECRET_ID_LEN: usize = 64;
 
 /// A credential an output needs. The server keeps the value in its own store and a workspace
@@ -116,6 +117,10 @@ pub enum EventOutputTarget {
     Csv {
         file: String,
     },
+    /// One readable line per event, appended to a `.txt` file.
+    Text {
+        file: String,
+    },
     /// A TCP listener streaming events encoded in a format a decoder registered.
     #[serde(alias = "beast")]
     Feed {
@@ -173,6 +178,7 @@ impl std::fmt::Debug for EventOutputTarget {
             Self::Recordings => formatter.write_str("Recordings"),
             Self::Desktop => formatter.write_str("Desktop"),
             Self::Csv { file } => formatter.debug_struct("Csv").field("file", file).finish(),
+            Self::Text { file } => formatter.debug_struct("Text").field("file", file).finish(),
             Self::Feed {
                 format, address, ..
             } => formatter
@@ -273,6 +279,7 @@ impl EventOutputTarget {
             Self::Recordings
             | Self::Desktop
             | Self::Csv { .. }
+            | Self::Text { .. }
             | Self::Feed { .. }
             | Self::Tunnel { .. } => None,
         }
@@ -295,6 +302,7 @@ impl EventOutputTarget {
             Self::Recordings
             | Self::Desktop
             | Self::Csv { .. }
+            | Self::Text { .. }
             | Self::Feed { .. }
             | Self::Tunnel { .. } => None,
         }
@@ -316,6 +324,7 @@ impl EventOutputTarget {
             Self::Recordings => KindSet::with_cap(Capability::Clip),
             Self::Desktop
             | Self::Csv { .. }
+            | Self::Text { .. }
             | Self::Webhook { .. }
             | Self::Matrix { .. }
             | Self::Mqtt { .. }
@@ -341,7 +350,7 @@ impl EventOutputTarget {
     pub fn configured(&self) -> bool {
         match self {
             Self::Recordings | Self::Desktop => true,
-            Self::Csv { file } => !file.trim().is_empty(),
+            Self::Csv { file } | Self::Text { file } => !file.trim().is_empty(),
             Self::Feed {
                 address, enabled, ..
             } => *enabled && !address.is_empty(),
@@ -380,7 +389,7 @@ impl EventOutputTarget {
     pub fn valid(&self) -> bool {
         match self {
             Self::Recordings | Self::Desktop => true,
-            Self::Csv { file } => file.is_empty() || valid_csv_file(file),
+            Self::Csv { file } | Self::Text { file } => file.is_empty() || valid_event_file(file),
             Self::Feed {
                 format, address, ..
             } => {
@@ -479,9 +488,9 @@ pub fn valid_sql_identifier(value: &str) -> bool {
 }
 
 #[must_use]
-pub fn valid_csv_file(value: &str) -> bool {
+pub fn valid_event_file(value: &str) -> bool {
     let mut chars = value.chars();
-    value.len() <= MAX_CSV_FILE_LEN
+    value.len() <= MAX_EVENT_FILE_LEN
         && chars
             .next()
             .is_some_and(|first| first.is_ascii_alphanumeric())
@@ -489,11 +498,11 @@ pub fn valid_csv_file(value: &str) -> bool {
 }
 
 #[must_use]
-pub fn csv_file_name(file: &str) -> String {
-    if file.to_ascii_lowercase().ends_with(CSV_SUFFIX) {
+pub fn event_file_name(file: &str, suffix: &str) -> String {
+    if file.to_ascii_lowercase().ends_with(suffix) {
         file.to_owned()
     } else {
-        format!("{file}{CSV_SUFFIX}")
+        format!("{file}{suffix}")
     }
 }
 
@@ -651,11 +660,24 @@ mod tests {
         for file in ["../events", "a/b", ".hidden", "a\\b", "a b", "ä"] {
             assert!(!csv(file).valid(), "{file}");
         }
-        assert!(!csv(&"e".repeat(MAX_CSV_FILE_LEN + 1)).valid());
+        assert!(!csv(&"e".repeat(MAX_EVENT_FILE_LEN + 1)).valid());
         let encoded = serde_json::to_string(&csv("events")).expect("encode");
         assert_eq!(encoded, r#"{"service":"csv","file":"events"}"#);
-        assert_eq!(csv_file_name("events"), "events.csv");
-        assert_eq!(csv_file_name("events.CSV"), "events.CSV");
+        assert_eq!(event_file_name("events", CSV_SUFFIX), "events.csv");
+        assert_eq!(event_file_name("events.CSV", CSV_SUFFIX), "events.CSV");
+    }
+
+    #[test]
+    fn a_text_file_shares_the_csv_name_rules() {
+        let text = |file: &str| EventOutputTarget::Text {
+            file: file.to_owned(),
+        };
+        assert!(text("pager").valid() && text("pager").configured());
+        assert!(!text("../pager").valid());
+        assert!(!text("").configured());
+        let encoded = serde_json::to_string(&text("pager")).expect("encode");
+        assert_eq!(encoded, r#"{"service":"text","file":"pager"}"#);
+        assert_eq!(event_file_name("pager", TEXT_SUFFIX), "pager.txt");
     }
 
     #[test]

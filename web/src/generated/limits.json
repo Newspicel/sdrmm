@@ -487,5 +487,6 @@
     "metres_per_degree_lat": 110540.0,
     "min_cos_lat": 0.01
   },
+  "decoder_log_rows": 5000,
   "workspace_state_version": 2
 }

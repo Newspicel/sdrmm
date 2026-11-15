@@ -1,4 +1,5 @@
 import { decoderLogExportUrl } from "../lib/api";
+import { DECODER_LOG_ROWS } from "../lib/limits";
 import type {
   Callsign,
   DecodedRecord,
@@ -10,7 +11,7 @@ import type {
 } from "../lib/types";
 import type { DownloadChoice } from "./DownloadMenu";
 
-export const LIMIT_OPTIONS = [100, 500, 2000];
+export const LIMIT_OPTIONS = [100, 500, 2000, DECODER_LOG_ROWS];
 
 export const LIVE_ROW_CAP = 200;
 
@@ -273,5 +274,6 @@ export function logDownloads(filter: DecoderLogFilter): DownloadChoice[] {
   return [
     { label: "CSV", href: decoderLogExportUrl("csv", filter), hint: "One row per decoded frame" },
     { label: "JSON", href: decoderLogExportUrl("json", filter), hint: "Every field of every row" },
+    { label: "TXT", href: decoderLogExportUrl("txt", filter), hint: "One line per decoded frame" },
   ];
 }

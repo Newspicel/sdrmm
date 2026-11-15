@@ -1,5 +1,5 @@
 use super::*;
-use crate::event_output::csv::field;
+use crate::event_output::{csv::field, text};
 
 #[utoipa::path(
     get, path = "/api/decoderlog",
@@ -91,6 +91,7 @@ pub(super) async fn clear_decoder_log(
             content(
                 (String = "text/csv"),
                 (Vec<DecoderLogEntry> = "application/json"),
+                (String = "text/plain"),
             ),
         ),
         (status = 400, description = "Unknown format or malformed filter", body = ApiError),
@@ -109,12 +110,14 @@ pub(super) async fn export_decoder_log(
     let (content_type, body) = match format {
         ExportFormat::Csv => ("text/csv; charset=utf-8", csv_export(&entries)),
         ExportFormat::Json => ("application/json", serde_json::to_string(&entries)),
+        ExportFormat::Txt => ("text/plain; charset=utf-8", Ok(text_export(&entries))),
     };
     let body = body
         .map_err(|err| AppError::internal(format!("serializing the decoder-log export: {err}")))?;
     let extension = match format {
         ExportFormat::Csv => "csv",
         ExportFormat::Json => "json",
+        ExportFormat::Txt => "txt",
     };
     let stamp = jiff::Timestamp::now().strftime("%Y%m%dT%H%M%SZ");
     Ok((
@@ -172,4 +175,19 @@ pub(super) fn csv_export(entries: &[DecoderLogEntry]) -> Result<String, serde_js
         out.push_str("\r\n");
     }
     Ok(out)
+}
+
+pub(super) fn text_export(entries: &[DecoderLogEntry]) -> String {
+    entries
+        .iter()
+        .map(|entry| {
+            text::line(
+                &entry.at,
+                &entry.kind,
+                entry.freq_hz,
+                entry.station.as_deref(),
+                &entry.summary,
+            )
+        })
+        .collect()
 }

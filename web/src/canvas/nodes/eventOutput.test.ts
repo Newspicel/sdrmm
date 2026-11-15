@@ -52,6 +52,11 @@ describe("event output configuration", () => {
     expect(eventOutputConfigured({ service: "csv", file: " " })).toBe(false);
   });
 
+  it("appends text once a file name is set", () => {
+    expect(newOutputTarget("text")).toEqual({ service: "text", file: "events" });
+    expect(eventOutputConfigured({ service: "text", file: " " })).toBe(false);
+  });
+
   it("opens a feed only after a format, an address and explicit enable", () => {
     const closed = { service: "feed", format: "probe", address: "127.0.0.1:30999" } as const;
     expect(eventOutputConfigured({ ...closed, enabled: false })).toBe(false);

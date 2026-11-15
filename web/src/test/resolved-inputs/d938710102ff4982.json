@@ -1,0 +1,27 @@
+{
+  "name": "d938710102ff4982",
+  "test": "EventOutputFace > shows the text file name",
+  "graph": {
+    "nodes": [
+      {
+        "id": "out",
+        "kind": "event_output",
+        "data": {
+          "target": {
+            "service": "text",
+            "file": "pager"
+          }
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

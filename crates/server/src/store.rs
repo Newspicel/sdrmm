@@ -77,7 +77,7 @@ pub enum StoreError {
 }
 
 pub const DECODER_LOG_LIMIT_DEFAULT: u32 = 200;
-pub const DECODER_LOG_LIMIT_MAX: u32 = 2_000;
+pub const DECODER_LOG_LIMIT_MAX: u32 = sdrmm_wire::MAX_DECODER_LOG_ROWS;
 
 pub const DECODER_LOG_EXPORT_MAX: u32 = 100_000;
 

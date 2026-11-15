@@ -34,6 +34,12 @@ describe("EventOutputFace", () => {
     expect(html).toContain(">adsb<");
   });
 
+  it("shows the text file name", () => {
+    const html = render({ service: "text", file: "pager" });
+    expect(html).toContain(">Text file<");
+    expect(html).toContain(">pager<");
+  });
+
   it("never shows a secret on its chip", () => {
     const html = render({ service: "webhook", url: "https://hooks.example/abc", format: "json" });
     expect(html).not.toContain("hooks.example");

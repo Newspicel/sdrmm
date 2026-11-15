@@ -4,6 +4,7 @@ export const OUTPUT_SERVICES = [
   { value: "recordings", label: "Recordings" },
   { value: "desktop", label: "Notification" },
   { value: "csv", label: "CSV file" },
+  { value: "text", label: "Text file" },
   { value: "feed", label: "Feed" },
   { value: "webhook", label: "Webhook" },
   { value: "matrix", label: "Matrix" },
@@ -51,6 +52,7 @@ export function newOutputTarget(
     case "desktop":
       return { service };
     case "csv":
+    case "text":
       return { service, file: "events" };
     case "feed":
       return feedTarget(feeds[0]);
@@ -82,6 +84,7 @@ export function eventOutputConfigured(target: EventOutputTarget): boolean {
     case "desktop":
       return true;
     case "csv":
+    case "text":
       return target.file.trim() !== "";
     case "feed":
       return (

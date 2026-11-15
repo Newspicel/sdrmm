@@ -4132,6 +4132,10 @@ export interface components {
             /** @enum {string} */
             service: "csv";
         } | {
+            file: string;
+            /** @enum {string} */
+            service: "text";
+        } | {
             address: string;
             enabled?: boolean;
             format?: string;
@@ -4201,7 +4205,7 @@ export interface components {
             examples: components["schemas"]["ExampleInfo"][];
         };
         /** @enum {string} */
-        ExportFormat: "csv" | "json";
+        ExportFormat: "csv" | "json" | "txt";
         ExtraSetting: {
             default: boolean;
             group?: string | null;
@@ -10160,6 +10164,7 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DecoderLogEntry"][];
                     "text/csv": string;
+                    "text/plain": string;
                 };
             };
             /** @description Unknown format or malformed filter */

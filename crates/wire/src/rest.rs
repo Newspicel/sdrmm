@@ -478,6 +478,7 @@ pub enum ExportFormat {
     #[default]
     Csv,
     Json,
+    Txt,
 }
 
 #[derive(
@@ -507,6 +508,8 @@ pub struct DecoderLogQuery {
     pub limit: Option<u32>,
 }
 
+/// The most rows one decoder-log page returns. An export is not bound by it.
+pub const MAX_DECODER_LOG_ROWS: u32 = 5_000;
 pub const MAX_LOG_SOURCES: usize = crate::patch::MAX_EDGES;
 pub const MAX_LOG_KIND_LEN: usize = 32;
 

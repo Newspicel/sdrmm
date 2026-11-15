@@ -299,6 +299,7 @@
   "pocsag": {
     "type": "pocsag",
     "settings": {
+      "alpha_only": false,
       "bandwidth_hz": 12500.0,
       "baud": "auto",
       "invert": false

@@ -99,6 +99,7 @@ pub struct Limits {
     pub audio: AudioLimits,
     pub if_filter: IfFilterLimits,
     pub survey: SurveyLimits,
+    pub decoder_log_rows: u32,
     pub workspace_state_version: u32,
 }
 
@@ -585,6 +586,7 @@ pub const LIMITS: Limits = Limits {
     audio: AUDIO_LIMITS,
     if_filter: IF_FILTER_LIMITS,
     survey: SURVEY_LIMITS,
+    decoder_log_rows: crate::rest::MAX_DECODER_LOG_ROWS,
     workspace_state_version: crate::workspace_state::WORKSPACE_STATE_VERSION,
 };
 

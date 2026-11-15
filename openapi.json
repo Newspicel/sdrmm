@@ -1939,6 +1939,11 @@
                     "$ref": "#/components/schemas/DecoderLogEntry"
                   }
                 }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -14003,6 +14008,25 @@
           },
           {
             "type": "object",
+            "description": "One readable line per event, appended to a `.txt` file.",
+            "required": [
+              "file",
+              "service"
+            ],
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "A TCP listener streaming events encoded in a format a decoder registered.",
             "required": [
               "address",
@@ -14271,7 +14295,8 @@
         "type": "string",
         "enum": [
           "csv",
-          "json"
+          "json",
+          "txt"
         ]
       },
       "ExtraSetting": {

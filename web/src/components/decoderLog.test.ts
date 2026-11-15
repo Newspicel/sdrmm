@@ -306,14 +306,15 @@ describe("column widths", () => {
 });
 
 describe("logDownloads", () => {
-  it("offers both formats over the same filter", () => {
+  it("offers every format over the same filter", () => {
     const choices = logDownloads({ limit: 200, sink: "export:1", q: "wx" });
-    expect(choices.map((choice) => choice.label)).toEqual(["CSV", "JSON"]);
+    expect(choices.map((choice) => choice.label)).toEqual(["CSV", "JSON", "TXT"]);
     for (const choice of choices) {
       expect(choice.href).toContain("sink=export%3A1");
       expect(choice.href).toContain("q=wx");
     }
     expect(choices[0]?.href).toContain("csv");
     expect(choices[1]?.href).toContain("json");
+    expect(choices[2]?.href).toContain("txt");
   });
 });

@@ -10,7 +10,7 @@ Send live IQ or decoded events to other programs.
 | Event output | Webhook, Matrix, MQTT | Chat, automation and alerts |
 | Event output | Notification | Alerts in the desktop app |
 | Event output | PostgreSQL, InfluxDB | Databases |
-| Event output | CSV file | Spreadsheets and logs |
+| Event output | CSV file, Text file | Spreadsheets and logs |
 | Event output | Network interface | IP packets from DAB and DVB-S2 |
 
 Network IQ and feed ports skip the server's token and TLS. Keep them on trusted networks. A
@@ -90,7 +90,7 @@ Failures go to the server log.
 
 ## Databases and files
 
-Wire `events` to an **Event output** and choose **PostgreSQL**, **InfluxDB** or **CSV file**.
+Wire `events` to an **Event output** and choose **PostgreSQL**, **InfluxDB**, **CSV file** or **Text file**.
 
 **PostgreSQL** creates the table (default `sdrmm_events`) on first write: one row per event with time, kind, frequency,
 station, summary, and the full record as `jsonb`. A server on another host must speak TLS unless
@@ -99,6 +99,9 @@ the URL sets `sslmode`, such as `?sslmode=disable`.
 **CSV file** appends one row per event to `Recordings/events/<file>.csv`: time, kind, output,
 device set, channel, frequency, station, summary, and the event data as JSON. Text that starts
 like a formula gets a leading `'`.
+
+**Text file** appends one line per event to `Recordings/events/<file>.txt`: time, kind,
+frequency, station and summary.
 
 **InfluxDB** 2 and 3 take one point per event. The measurement is the event kind, and numbers,
 flags, and short text from the event become fields.

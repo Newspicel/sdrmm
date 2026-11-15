@@ -85,6 +85,9 @@ function emptyHint(inputs: number, configured: boolean, target: EventOutputTarge
   if (target.service === "csv") {
     return configured ? "One row per event in Recordings" : "Enter a file name";
   }
+  if (target.service === "text") {
+    return configured ? "One line per event in Recordings" : "Enter a file name";
+  }
   if (target.service === "tunnel") {
     return configured ? "Received IPv4 and IPv6 datagrams" : "Enter the interface name";
   }
@@ -118,10 +121,11 @@ function TargetChips({
     case "desktop":
       return null;
     case "csv":
+    case "text":
       return (
         <TextChip
           label="File"
-          name="CSV file name"
+          name={target.service === "csv" ? "CSV file name" : "Text file name"}
           title="Appended in Recordings/events. Letters, digits, - _ and ."
           value={target.file}
           onCommit={(file) => onEdit({ ...target, file })}
