@@ -3,10 +3,14 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use tokio::sync::broadcast;
-
 use super::Publisher;
-use crate::{runtime::SpectrumSnapshot, spectrum::SpectrumFrame};
+use crate::{
+    runtime::{SpectrumSnapshot, SpectrumTap, Watching},
+    spectrum::SpectrumFrame,
+};
+
+/// Publisher polls between looks at who reads the tap: about every 20 ms.
+const POLLS_PER_WATCH: u32 = 20;
 
 struct SpectrumPacket {
     seq: u32,
@@ -17,24 +21,26 @@ struct SpectrumPacket {
 pub(crate) struct SpectrumPublisher {
     queue: Publisher<SpectrumPacket>,
     dropped: Arc<AtomicU64>,
+    watching: Watching,
 }
 
 impl SpectrumPublisher {
-    pub(crate) fn new(
-        tx: broadcast::Sender<SpectrumSnapshot>,
-        size: usize,
-    ) -> std::io::Result<Self> {
-        Self::with_metrics(tx, size, Arc::new(crate::metrics::QueueMetrics::default()))
+    pub(crate) fn new(tap: SpectrumTap, size: usize) -> std::io::Result<Self> {
+        Self::with_metrics(tap, size, Arc::new(crate::metrics::QueueMetrics::default()))
     }
 
     pub(crate) fn with_metrics(
-        tx: broadcast::Sender<SpectrumSnapshot>,
+        tap: SpectrumTap,
         size: usize,
         metrics: Arc<crate::metrics::QueueMetrics>,
     ) -> std::io::Result<Self> {
         let dropped = Arc::new(AtomicU64::new(0));
         let count = dropped.clone();
         let mut seen = 0;
+        let watching = Watching::default();
+        let watched = watching.clone();
+        let readers = tap.clone();
+        let mut polls = 0u32;
         let queue = Publisher::with_metrics(
             "sdrmm-spectrum-publish",
             8,
@@ -48,7 +54,7 @@ impl SpectrumPublisher {
                 db: vec![0.0; size],
             },
             move |packet| {
-                let _ = tx.send(SpectrumSnapshot {
+                tap.send(SpectrumSnapshot {
                     seq: packet.seq,
                     timestamp: packet.frame.timestamp,
                     center_hz: packet.frame.center_hz,
@@ -57,6 +63,10 @@ impl SpectrumPublisher {
                 });
             },
             move || {
+                if polls == 0 {
+                    watched.set(readers.watch());
+                }
+                polls = (polls + 1) % POLLS_PER_WATCH;
                 let now = count.load(Ordering::Relaxed);
                 if now != seen {
                     tracing::warn!(
@@ -69,7 +79,16 @@ impl SpectrumPublisher {
             },
             metrics,
         )?;
-        Ok(Self { queue, dropped })
+        Ok(Self {
+            queue,
+            dropped,
+            watching,
+        })
+    }
+
+    /// Who reads the spectrum, as the publishing thread last saw it.
+    pub(crate) fn watching(&self) -> Watching {
+        self.watching.clone()
     }
 
     pub(crate) fn publish(&mut self, seq: u32, frame: SpectrumFrame, db: &[f32]) {

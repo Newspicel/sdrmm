@@ -20,8 +20,8 @@ pub(crate) use channel::{
 pub(crate) use command::DspCommand;
 pub use frontend::DspMeta;
 pub(crate) use patches::DeviceRuntime;
-pub use spectrum::SpectrumSnapshot;
-pub(crate) use spectrum::spectrum_size;
+pub use spectrum::{BackgroundSpectrum, SpectrumSnapshot, SpectrumTap};
+pub(crate) use spectrum::{Watch, Watching, spectrum_size};
 pub(crate) use worker::Waker;
 
 pub(crate) const DSP_BLOCK: usize = 2048;

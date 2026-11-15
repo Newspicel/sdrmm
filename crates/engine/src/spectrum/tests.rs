@@ -12,6 +12,26 @@ const RATES: [f64; 7] = [
 ];
 
 #[test]
+fn without_a_viewer_transforms_never_overlap_nor_cost_more() {
+    for rate in RATES {
+        let size = spectrum_size(rate);
+        let analyzer = SpectrumAnalyzer::Cpu(CpuSpectrum::new(size));
+        let viewed = analyzer.cadence(rate, size, Watch::Viewer);
+        let background = analyzer.cadence(rate, size, Watch::Background);
+        assert!(background.hop >= size, "{rate}");
+        assert!(background.hop >= viewed.hop, "{rate}");
+    }
+    let background = SpectrumAnalyzer::Cpu(CpuSpectrum::new(16_384));
+    assert_eq!(
+        background.cadence(10e6, 16_384, Watch::Background),
+        Cadence {
+            hop: 16_384,
+            averages: 20
+        }
+    );
+}
+
+#[test]
 fn each_frame_averages_what_fits_its_period_within_the_budget() {
     for rate in RATES {
         let size = spectrum_size(rate);

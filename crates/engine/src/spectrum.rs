@@ -4,6 +4,8 @@ use std::sync::Arc;
 use num_complex::Complex;
 use sdrmm_dsp::blackman_harris;
 
+use crate::runtime::Watch;
+
 pub(crate) use cpu::CpuSpectrum;
 
 mod cpu;
@@ -58,6 +60,20 @@ impl Cadence {
             .max((size / 4) as f64)
             .ceil()
             .max(1.0) as usize;
+        let averages = (per_frame / hop as f64).round() as u32;
+        Self {
+            hop,
+            averages: averages.clamp(1, MAX_AVERAGES),
+        }
+    }
+}
+
+impl Cadence {
+    /// The same cadence without overlap: transforms side by side, or as far apart as the
+    /// budget already put them, so statistics never cost more than the display.
+    pub(crate) fn unlapped(self, sample_rate: f64, size: usize) -> Self {
+        let per_frame = (sample_rate / TARGET_FPS).max(1.0);
+        let hop = self.hop.max(size).max(1);
         let averages = (per_frame / hop as f64).round() as u32;
         Self {
             hop,
@@ -140,7 +156,17 @@ pub(crate) enum SpectrumAnalyzer {
 }
 
 impl SpectrumAnalyzer {
-    pub(crate) fn cadence(&self, sample_rate: f64, size: usize) -> Cadence {
+    /// The display's overlapped cadence while someone looks; otherwise the same without overlap.
+    pub(crate) fn cadence(&self, sample_rate: f64, size: usize, watch: Watch) -> Cadence {
+        let viewed = self.viewed_cadence(sample_rate, size);
+        if watch == Watch::Viewer {
+            viewed
+        } else {
+            viewed.unlapped(sample_rate, size)
+        }
+    }
+
+    fn viewed_cadence(&self, sample_rate: f64, size: usize) -> Cadence {
         match self {
             Self::Cpu(_) => Cadence::new(sample_rate, size, CPU_BUDGET),
             #[cfg(feature = "gpu-fft")]

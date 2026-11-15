@@ -13,8 +13,8 @@ use sdrmm_wire::{
 use tokio::sync::broadcast;
 
 use crate::{
-    AudioPacket, DspCommand, Engine, EngineError, IqBlock, PcmBlock, SpectrumSnapshot, SymbolBlock,
-    VideoPacket,
+    AudioPacket, BackgroundSpectrum, DspCommand, Engine, EngineError, IqBlock, PcmBlock,
+    SpectrumSnapshot, SymbolBlock, VideoPacket,
     audio_fx::{AudioFxHub, FxSource},
     hunt, lock_runtime,
     planning::{descriptor_for, plan_center},
@@ -472,6 +472,26 @@ impl Engine {
         };
         lock_runtime(&runtime)
             .subscribe(stream)
+            .ok_or(EngineError::StreamOutOfRange { stream, streams })
+    }
+
+    /// Reads the spectrum for statistics only: it keeps every sample analysed once, but not
+    /// the display's overlapped transforms.
+    pub fn subscribe_spectrum_background(
+        &self,
+        ds: u32,
+        stream: u32,
+    ) -> Result<BackgroundSpectrum, EngineError> {
+        let (runtime, streams) = {
+            let inner = self.lock();
+            let state = inner
+                .device_sets
+                .get(&ds)
+                .ok_or(EngineError::DeviceSetNotFound(ds))?;
+            (state.runtime.clone(), state.physical_streams())
+        };
+        lock_runtime(&runtime)
+            .subscribe_background(stream)
             .ok_or(EngineError::StreamOutOfRange { stream, streams })
     }
 }

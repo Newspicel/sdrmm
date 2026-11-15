@@ -16,7 +16,7 @@ use sdrmm_wire::{DeviceSettings, MAX_STREAMS, StreamScope, array::MAX_VIRTUAL_LA
 use tokio::sync::broadcast;
 
 use super::{
-    DspCommand, DspMeta, SpectrumSnapshot, Waker,
+    BackgroundSpectrum, DspCommand, DspMeta, SpectrumSnapshot, SpectrumTap, Waker,
     clip::ClipMeter,
     retire::Reclaimer,
     spectrum_size,
@@ -33,7 +33,6 @@ pub(crate) const RING_SECONDS: f64 = 0.1;
 const LIVE_MAX_AGE: Duration = Duration::from_millis(100);
 const RING_MIN: usize = 1 << 17;
 const RING_MAX: usize = 1 << 25;
-const SPECTRUM_TAP_SLOTS: usize = 8;
 const SWEEP_FFT_SIZE: usize = 4_096;
 
 pub(crate) fn ring_capacity(sample_rate: f64) -> usize {
@@ -52,7 +51,7 @@ type FatalReport = Box<dyn FnOnce(DeviceError) + Send>;
 
 struct Lane {
     meta: Arc<ArcSwap<DspMeta>>,
-    spectrum_tx: broadcast::Sender<SpectrumSnapshot>,
+    spectrum_tx: SpectrumTap,
     cmd_tx: mpsc::Sender<DspCommand>,
     overruns: Arc<AtomicU64>,
     stalled_us: Arc<AtomicU64>,
@@ -67,7 +66,7 @@ struct Lane {
 impl Lane {
     fn new(
         meta: DspMeta,
-        spectrum_tx: broadcast::Sender<SpectrumSnapshot>,
+        spectrum_tx: SpectrumTap,
         cmd_tx: mpsc::Sender<DspCommand>,
         capture_metrics: Arc<crate::metrics::QueueMetrics>,
     ) -> Self {
@@ -265,7 +264,7 @@ impl CaptureRuntime {
         mut device: Box<dyn SdrDevice>,
         settings: &DeviceSettings,
         dc_block: bool,
-        taps: Vec<broadcast::Sender<SpectrumSnapshot>>,
+        taps: Vec<SpectrumTap>,
         on_fatal: impl FnOnce(DeviceError) + Send + 'static,
     ) -> Result<Self, DeviceError> {
         let max_age = max_age_for(device.as_ref());
@@ -299,7 +298,7 @@ impl CaptureRuntime {
             let spectrum_tx = taps
                 .get(stream)
                 .cloned()
-                .unwrap_or_else(|| broadcast::channel(SPECTRUM_TAP_SLOTS).0);
+                .unwrap_or_else(SpectrumTap::default);
             let center_hz = settings
                 .for_stream(stream as u32, &per_stream)
                 .center_hz
@@ -352,6 +351,11 @@ impl CaptureRuntime {
 
     pub fn subscribe(&self, stream: u32) -> Option<broadcast::Receiver<SpectrumSnapshot>> {
         self.lane(stream).map(|lane| lane.spectrum_tx.subscribe())
+    }
+
+    pub fn subscribe_background(&self, stream: u32) -> Option<BackgroundSpectrum> {
+        self.lane(stream)
+            .map(|lane| lane.spectrum_tx.subscribe_background())
     }
 
     fn lane(&self, stream: u32) -> Option<&Lane> {
@@ -420,7 +424,7 @@ impl CaptureRuntime {
                 sample_rate,
                 dc_block,
             },
-            broadcast::channel(SPECTRUM_TAP_SLOTS).0,
+            SpectrumTap::default(),
             cmd_tx.clone(),
             consumer.metrics.clone(),
         );
@@ -543,7 +547,7 @@ impl CaptureRuntime {
     }
 
     #[must_use]
-    pub fn taps(&self) -> Vec<broadcast::Sender<SpectrumSnapshot>> {
+    pub fn taps(&self) -> Vec<SpectrumTap> {
         self.lanes
             .iter()
             .map(|lane| lane.spectrum_tx.clone())
@@ -559,7 +563,7 @@ impl CaptureRuntime {
         mut device: Box<dyn SdrDevice>,
         plan: &SweepPlan,
         offset_hz: f64,
-        taps: Vec<broadcast::Sender<SpectrumSnapshot>>,
+        taps: Vec<SpectrumTap>,
         on_fatal: impl FnOnce(DeviceError) + Send + 'static,
     ) -> Result<Self, (Box<dyn SdrDevice>, DeviceError)> {
         if let Err(e) = plan.check() {
@@ -568,7 +572,7 @@ impl CaptureRuntime {
         let lane_count = device.capabilities().rx_streams.clamp(1, MAX_STREAMS) as usize;
         let per_stream = device.capabilities().per_stream;
         let mut taps = taps;
-        taps.resize_with(lane_count, || broadcast::channel(SPECTRUM_TAP_SLOTS).0);
+        taps.resize_with(lane_count, SpectrumTap::default);
         let lanes: Vec<Lane> = taps
             .iter()
             .map(|spectrum_tx| {
@@ -639,7 +643,7 @@ fn lane_sink(
 }
 
 fn sweep_sink(
-    tx: broadcast::Sender<SpectrumSnapshot>,
+    tx: SpectrumTap,
     sample_rate: f64,
     offset_hz: f64,
     on_fatal: impl FnOnce(DeviceError) + Send + 'static,

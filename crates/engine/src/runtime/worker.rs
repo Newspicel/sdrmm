@@ -10,8 +10,8 @@ use std::{
 use arc_swap::ArcSwap;
 
 use super::{
-    ChannelHost, DspCommand, DspMeta, MAX_LANE_CHANNELS, MAX_LANE_MONITORS, clock::SampleClock,
-    dsp_block_len, frontend::Frontend, retire::Reclaimer, subbands::Subbands,
+    ChannelHost, DspCommand, DspMeta, MAX_LANE_CHANNELS, MAX_LANE_MONITORS, Watch,
+    clock::SampleClock, dsp_block_len, frontend::Frontend, retire::Reclaimer, subbands::Subbands,
 };
 use crate::{
     audio_recording::AudioTaps,
@@ -121,6 +121,7 @@ pub(super) fn dsp_loop(
     let mut transmit_feed: Option<crate::transmit::TxFeedTap> = None;
     let mut history: Option<TimeMachineTap> = None;
     let mut seq: u32 = 0;
+    let watching = publisher.watching();
     let mut publish = |frame: SpectrumFrame, db: &[f32]| {
         seq = seq.wrapping_add(1);
         publisher.publish(seq, frame, db);
@@ -147,7 +148,8 @@ pub(super) fn dsp_loop(
             &mut retirement,
         );
         let snapshot = *meta.load_full();
-        let cadence = analyzer.cadence(snapshot.sample_rate, size);
+        let watch = watching.get();
+        let cadence = analyzer.cadence(snapshot.sample_rate, size, watch);
         let tuning = Tuning {
             center_hz: snapshot.center_hz,
             span_hz: snapshot.sample_rate as f32,
@@ -209,7 +211,9 @@ pub(super) fn dsp_loop(
                     host.process_at(slice, total, snapshot.center_hz);
                 }
             }
-            analyzer.push(slice, total, tuning, cadence, &mut publish);
+            if watch != Watch::Nobody {
+                analyzer.push(slice, total, tuning, cadence, &mut publish);
+            }
         });
         if let Some(arrival) = consumer.arrival() {
             clock.observe(arrival, snapshot.sample_rate);

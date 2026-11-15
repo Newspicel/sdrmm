@@ -1,4 +1,9 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU8, AtomicUsize, Ordering},
+};
+
+use tokio::sync::broadcast;
 
 #[derive(Clone, Debug)]
 pub struct SpectrumSnapshot {
@@ -9,6 +14,7 @@ pub struct SpectrumSnapshot {
     pub db: Arc<[f32]>,
 }
 
+const TAP_SLOTS: usize = 8;
 const LO_GUARD_BINS: usize = 4;
 const MIN_SPECTRUM_SIZE: usize = 4_096;
 const MAX_SPECTRUM_SIZE: usize = 262_144;
@@ -20,6 +26,106 @@ pub(crate) fn spectrum_size(sample_rate: f64) -> usize {
     (bins.ceil() as usize)
         .next_power_of_two()
         .clamp(MIN_SPECTRUM_SIZE, MAX_SPECTRUM_SIZE)
+}
+
+/// Who reads a lane's spectrum, which sets how much of it the DSP thread works out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Watch {
+    Nobody,
+    /// Only readers keeping statistics, which need every sample once but no overlap.
+    Background,
+    Viewer,
+}
+
+/// A lane's spectrum broadcast. Readers that only keep statistics subscribe as background, so
+/// the display's overlapped transforms run only while someone looks.
+#[derive(Clone, Debug)]
+pub struct SpectrumTap {
+    tx: broadcast::Sender<SpectrumSnapshot>,
+    background: Arc<AtomicUsize>,
+}
+
+impl Default for SpectrumTap {
+    fn default() -> Self {
+        Self {
+            tx: broadcast::channel(TAP_SLOTS).0,
+            background: Arc::default(),
+        }
+    }
+}
+
+impl SpectrumTap {
+    #[must_use]
+    pub fn subscribe(&self) -> broadcast::Receiver<SpectrumSnapshot> {
+        self.tx.subscribe()
+    }
+
+    #[must_use]
+    pub fn subscribe_background(&self) -> BackgroundSpectrum {
+        self.background.fetch_add(1, Ordering::Relaxed);
+        BackgroundSpectrum {
+            rx: self.tx.subscribe(),
+            background: self.background.clone(),
+        }
+    }
+
+    pub(crate) fn send(&self, snapshot: SpectrumSnapshot) {
+        let _ = self.tx.send(snapshot);
+    }
+
+    /// Takes the broadcast's lock, so it belongs on the publishing thread, never the DSP one.
+    pub(crate) fn watch(&self) -> Watch {
+        let readers = self.tx.receiver_count();
+        if readers > self.background.load(Ordering::Relaxed) {
+            Watch::Viewer
+        } else if readers > 0 {
+            Watch::Background
+        } else {
+            Watch::Nobody
+        }
+    }
+}
+
+/// A statistics reader of a lane's spectrum. It does not keep the display's overlap running.
+pub struct BackgroundSpectrum {
+    rx: broadcast::Receiver<SpectrumSnapshot>,
+    background: Arc<AtomicUsize>,
+}
+
+impl BackgroundSpectrum {
+    pub fn blocking_recv(&mut self) -> Result<SpectrumSnapshot, broadcast::error::RecvError> {
+        self.rx.blocking_recv()
+    }
+}
+
+impl Drop for BackgroundSpectrum {
+    fn drop(&mut self) {
+        self.background.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// The last [`Watch`] the publishing thread saw, read lock-free by the DSP thread.
+#[derive(Clone, Debug)]
+pub(crate) struct Watching(Arc<AtomicU8>);
+
+impl Default for Watching {
+    fn default() -> Self {
+        Self(Arc::new(AtomicU8::new(Watch::Viewer as u8)))
+    }
+}
+
+impl Watching {
+    pub(crate) fn get(&self) -> Watch {
+        match self.0.load(Ordering::Relaxed) {
+            value if value == Watch::Nobody as u8 => Watch::Nobody,
+            value if value == Watch::Background as u8 => Watch::Background,
+            _ => Watch::Viewer,
+        }
+    }
+
+    pub(crate) fn set(&self, watch: Watch) {
+        self.0.store(watch as u8, Ordering::Relaxed);
+    }
 }
 
 impl SpectrumSnapshot {
@@ -42,6 +148,30 @@ impl SpectrumSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_watch_follows_who_subscribes() {
+        let tap = SpectrumTap::default();
+        assert_eq!(tap.watch(), Watch::Nobody);
+        let statistics = tap.subscribe_background();
+        assert_eq!(tap.watch(), Watch::Background);
+        let viewer = tap.subscribe();
+        assert_eq!(tap.watch(), Watch::Viewer);
+        drop(viewer);
+        assert_eq!(tap.watch(), Watch::Background);
+        drop(statistics);
+        assert_eq!(tap.watch(), Watch::Nobody);
+    }
+
+    #[test]
+    fn the_dsp_thread_reads_the_watch_it_was_given() {
+        let watching = Watching::default();
+        assert_eq!(watching.get(), Watch::Viewer);
+        for watch in [Watch::Nobody, Watch::Background, Watch::Viewer] {
+            watching.set(watch);
+            assert_eq!(watching.clone().get(), watch);
+        }
+    }
 
     fn snapshot_at(center_hz: f64, bins: usize) -> SpectrumSnapshot {
         SpectrumSnapshot {

@@ -76,7 +76,7 @@ pub use iq::{IQ_BLOCK_SAMPLES, IQ_BLOCKS_PER_SEC, IqBlock};
 pub use placement::{Allocation, Lane, Placeable, Placement};
 pub(crate) use planning::{dc_block, descriptor_for};
 pub use recording::FinalizedRecording;
-pub use runtime::SpectrumSnapshot;
+pub use runtime::{BackgroundSpectrum, SpectrumSnapshot};
 pub use symbols::{SYMBOL_BLOCKS_PER_SEC, SymbolBlock};
 pub use transmit::{TransmitRequest, TransmitSource};
 pub use trunking::TrunkSystem;
@@ -1510,7 +1510,7 @@ impl Engine {
                 return Ok(());
             }
         }
-        let mut rx = match self.subscribe_spectrum(ds, stream) {
+        let mut rx = match self.subscribe_spectrum_background(ds, stream) {
             Ok(rx) => rx,
             Err(error) => {
                 self.stop_collecting(ds, stream);

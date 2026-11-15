@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use sdrmm_device::{SdrDevice, SweepBand, SweepPlan};
-use tokio::sync::broadcast;
 
 use crate::{
     CaptureRuntime, DeviceSetStatus, Engine, EngineError, RebuildEntry, dc_block, lock_runtime,
     reattach::Handover,
-    runtime::{DeviceRuntime, SpectrumSnapshot},
+    runtime::{DeviceRuntime, SpectrumTap},
 };
 
 /// How far apart two targets have to sit before sweeping the gap costs more than tuning across it.
@@ -103,7 +102,7 @@ fn restore_receiving(
     engine: &Engine,
     ds: u32,
     mut device: Box<dyn SdrDevice>,
-    taps: Vec<broadcast::Sender<SpectrumSnapshot>>,
+    taps: Vec<SpectrumTap>,
     handover: Handover,
 ) -> Result<(), EngineError> {
     let settings = {
