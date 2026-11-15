@@ -11,6 +11,11 @@ use crate::{
 
 const SCRATCH: usize = MAX_TONES;
 
+/// Weight of an offset's own energy against its earlier neighbour's in the timing score.
+/// Above 1 so a lone peak beats its later neighbour; finite so a two-sample plateau picks its
+/// later sample.
+const OWN_WEIGHT: f64 = 2.0;
+
 #[derive(Clone, Debug)]
 pub struct MfskDemod {
     params: MfskParams,
@@ -51,24 +56,45 @@ impl MfskDemod {
             .energies(iq, offset + symbol * self.params.window(), out)
     }
 
+    /// The sample in `0..window` where a symbol starts, judged over up to `symbols` symbols.
+    ///
+    /// A continuous-phase tone has its phase knot on a sample, so it stays coherent over
+    /// `window + 1` samples and the true start and the sample before it read the same energy.
+    /// When the start is 0 that twin sits at `window - 1`, a whole symbol late. So a coarse pass
+    /// only finds the plateau, and a fine pass picks its later sample from neighbours scored
+    /// over the same symbols, never across the wrap. Scoring starts one symbol in so every
+    /// candidate has those neighbours, and every candidate counts the same number of windows.
+    /// `None` when `iq` holds under three symbols or `symbols` is 0.
     #[must_use]
-    pub fn estimate_offset(&self, iq: &[Complex<f32>], symbols: usize) -> usize {
+    pub fn estimate_offset(&self, iq: &[Complex<f32>], symbols: usize) -> Option<usize> {
+        let window = self.params.window();
+        let symbols = symbols.min(iq.len().saturating_sub(2 * window) / window);
+        if symbols == 0 {
+            return None;
+        }
+        let coarse =
+            strongest((window..2 * window).map(|at| (at, self.timing_energy(iq, at, symbols))));
+        let fine = strongest((coarse - 1..=coarse + 1).map(|at| {
+            let own = self.timing_energy(iq, at, symbols);
+            (
+                at,
+                OWN_WEIGHT * own + self.timing_energy(iq, at - 1, symbols),
+            )
+        }));
+        Some(fine % window)
+    }
+
+    fn timing_energy(&self, iq: &[Complex<f32>], offset: usize, symbols: usize) -> f64 {
         let mut energies = [0.0f32; SCRATCH];
         let energies = &mut energies[..self.m()];
-        let mut best = (0usize, f64::NEG_INFINITY);
-        for offset in 0..self.params.window() {
-            let mut score = 0.0f64;
-            for symbol in 0..symbols {
-                if !self.energies(iq, offset, symbol, energies) {
-                    break;
-                }
-                score += f64::from(energies.iter().copied().fold(0.0f32, f32::max));
+        let mut sum = 0.0f64;
+        for symbol in 0..symbols {
+            if !self.energies(iq, offset, symbol, energies) {
+                break;
             }
-            if score > best.1 {
-                best = (offset, score);
-            }
+            sum += f64::from(energies.iter().copied().fold(0.0f32, f32::max));
         }
-        best.0
+        sum
     }
 
     pub fn demodulate(
@@ -113,6 +139,14 @@ impl MfskDemod {
         }
         symbols
     }
+}
+
+fn strongest(scores: impl Iterator<Item = (usize, f64)>) -> usize {
+    scores
+        .fold((0, f64::NEG_INFINITY), |best, next| {
+            if next.1 > best.1 { next } else { best }
+        })
+        .0
 }
 
 #[must_use]
@@ -180,19 +214,90 @@ mod tests {
         );
     }
 
+    const POLICIES: [TonePhase; 2] = [TonePhase::Continuous, TonePhase::Independent];
+
+    fn burst(p: &MfskParams, policy: TonePhase, symbols: &[u8], shift: usize) -> Vec<Complex<f32>> {
+        let mut wave = vec![Complex::new(0.0, 0.0); shift];
+        wave.extend(modulate(p, policy, symbols));
+        wave
+    }
+
     #[test]
-    fn the_timing_estimate_finds_the_offset_the_burst_was_sent_at() {
-        let p = params(4);
-        let symbols = draws(64, 4, 2);
-        let demod = MfskDemod::new(p.clone());
-        for shift in [0usize, 1, 3, 7, 9] {
-            let mut wave = vec![Complex::new(0.0, 0.0); shift];
-            wave.extend(modulate(&p, TonePhase::Continuous, &symbols));
-            assert_eq!(demod.estimate_offset(&wave, 32), shift, "shift {shift}");
-            let mut out = Vec::new();
-            demod.demodulate(&wave, shift, symbols.len(), &mut out);
-            assert_eq!(out, symbols, "shift {shift}");
+    fn the_timing_estimate_finds_every_shift_for_any_data() {
+        for (policy, m, sps) in POLICIES
+            .into_iter()
+            .flat_map(|policy| [2usize, 4, 8].map(|m| (policy, m)))
+            .flat_map(|(policy, m)| [SPS, 16.0].map(|sps| (policy, m, sps)))
+        {
+            let p = MfskParams::orthogonal(m, sps);
+            let demod = MfskDemod::new(p.clone());
+            for seed in 0..20 {
+                let symbols = draws(64, m, seed);
+                for shift in 0..p.window() {
+                    let wave = burst(&p, policy, &symbols, shift);
+                    let case = format!("{policy:?} M = {m}, sps {sps}, seed {seed}, shift {shift}");
+                    assert_eq!(demod.estimate_offset(&wave, 32), Some(shift), "{case}");
+                    let mut out = Vec::new();
+                    demod.demodulate(&wave, shift, symbols.len(), &mut out);
+                    assert_eq!(out, symbols, "{case}");
+                }
+            }
         }
+    }
+
+    /// A continuous-phase tone gives up its timing only where the tone changes, one sample
+    /// past its knot, so in noise only alphabets that change tone often time exactly.
+    #[test]
+    fn the_timing_estimate_holds_at_10_db_es_n0() {
+        let cases = [
+            (TonePhase::Continuous, 8usize),
+            (TonePhase::Independent, 2),
+            (TonePhase::Independent, 4),
+            (TonePhase::Independent, 8),
+        ];
+        for (policy, m) in cases {
+            let p = params(m);
+            let demod = MfskDemod::new(p.clone());
+            for seed in 0..20 {
+                let symbols = draws(64, m, seed);
+                for shift in 0..p.window() {
+                    let mut wave = burst(&p, policy, &symbols, shift);
+                    add_noise(&mut wave, seed ^ 0x5eed, 1.0);
+                    let got = demod.estimate_offset(&wave, 32);
+                    assert_eq!(got, Some(shift), "{policy:?} M = {m}, seed {seed}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_burst_cut_mid_symbol_still_times_exactly() {
+        let p = params(4);
+        let window = p.window();
+        let demod = MfskDemod::new(p.clone());
+        for seed in 0..20 {
+            let symbols = draws(6, 4, seed);
+            for shift in 0..window {
+                let wave = burst(&p, TonePhase::Continuous, &symbols, shift);
+                let cut = &wave[..shift + 5 * window + window / 2];
+                assert_eq!(
+                    demod.estimate_offset(cut, usize::MAX),
+                    Some(shift),
+                    "seed {seed}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_buffer_under_three_symbols_gives_no_timing() {
+        let p = params(4);
+        let window = p.window();
+        let demod = MfskDemod::new(p.clone());
+        let wave = burst(&p, TonePhase::Continuous, &[1, 2, 3], 0);
+        assert_eq!(demod.estimate_offset(&wave[..3 * window - 1], 8), None);
+        assert_eq!(demod.estimate_offset(&wave[..3 * window], 8), Some(0));
+        assert_eq!(demod.estimate_offset(&wave, 0), None);
     }
 
     #[test]

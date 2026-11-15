@@ -83,7 +83,9 @@ pub fn link_sized(m: usize, payload_symbols: usize) -> Link {
             modulate(m, &symbols)
         }),
         demodulate: Box::new(move |wave| {
-            let offset = demod.estimate_offset(wave, LEAD + word.len());
+            let Some(offset) = demod.estimate_offset(wave, LEAD + word.len()) else {
+                return Vec::new();
+            };
             let mut symbols = Vec::new();
             demod.demodulate(
                 wave,

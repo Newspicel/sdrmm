@@ -103,7 +103,7 @@ fn the_filterbank_hot_path_allocates_nothing() {
     demod.demodulate(&iq, 0, MFSK_SYMBOLS, &mut symbols);
     symbols.clear();
     assert_no_alloc("MfskDemod::estimate_offset + demodulate", || {
-        let offset = demod.estimate_offset(&iq, 64);
+        let offset = demod.estimate_offset(&iq, 64).unwrap_or(0);
         demod.demodulate(&iq, offset, MFSK_SYMBOLS, &mut symbols);
     });
 }
