@@ -3,8 +3,13 @@ use sdrmm_dsp::Decibels;
 use super::{demod::argmax_bin, *};
 use crate::testutil::{add_noise, draws};
 
-/// The estimator misses some leads near half a symbol on other preambles; this one it finds.
-const TIMING_PREAMBLE: [u32; 8] = [2, 30, 28, 17, 105, 62, 96, 86];
+const TIMING_SEEDS: u64 = 20;
+
+/// The widest miss allowed at 13 dB. A whole-sample slip moves the carrier by whole bins, which
+/// turns no phase between symbols, so only the steps between known symbols reveal it. Seed 4
+/// draws `[49, 52, 0, 4, 4, 88, 84, 97]`: five of its seven steps lie within 13 of zero, so a
+/// lead two samples off keeps 0.73 of the true lead's coherence.
+const AMBIGUOUS_SLIP: usize = 2;
 
 /// Symbols whose early window does not cross the chirp's wrap, so the peak keeps 9/16 of its energy.
 const SPLIT_SYMBOLS: [u32; 8] = [112, 60, 98, 7, 126, 77, 117, 103];
@@ -63,22 +68,59 @@ fn every_spreading_factor_round_trips_and_stays_constant_envelope() {
     }
 }
 
-#[test]
-fn the_timing_estimate_finds_the_origin_the_burst_was_sent_at() {
+fn timed_preamble(params: &CssParams, preamble: &[u32], lead: usize) -> Vec<Complex<f32>> {
+    let n = params.chips();
+    let mut wave = vec![Complex::new(0.0, 0.0); lead];
+    CssMod::new(params.clone()).modulate(preamble, &mut wave);
+    wave.resize(wave.len() + 2 * n, Complex::new(0.0, 0.0));
+    wave
+}
+
+/// Every lead below half a symbol, over many preambles: `(found, leads, worst miss)`.
+fn timing_sweep(noise_var: f64) -> (usize, usize, usize) {
     let params = CssParams::new(7);
-    let preamble = TIMING_PREAMBLE;
-    let mut demod = CssDemod::new(params.clone());
-    for lead in [0usize, 1, 17, 40, 63] {
-        let mut wave = vec![Complex::new(0.0, 0.0); lead];
-        CssMod::new(params.clone()).modulate(&preamble, &mut wave);
-        wave.resize(wave.len() + 256, Complex::new(0.0, 0.0));
-        add_noise(&mut wave, 0x7158 + lead as u64, 0.05);
-        assert_eq!(demod.estimate_origin(&wave, &preamble), lead, "lead {lead}");
+    let n = params.chips();
+    let (mut found, mut leads, mut worst) = (0, 0, 0);
+    for seed in 0..TIMING_SEEDS {
+        let preamble: Vec<u32> = draws(8, n, seed);
+        let mut demod = CssDemod::new(params.clone());
+        for lead in 0..n / 2 {
+            let mut wave = timed_preamble(&params, &preamble, lead);
+            add_noise(&mut wave, 0x7158 + seed * n as u64 + lead as u64, noise_var);
+            let origin = demod.estimate_origin(&wave, &preamble);
+            leads += 1;
+            if origin == lead {
+                found += 1;
+            }
+            worst = worst.max(origin.abs_diff(lead));
+        }
     }
-    let mut wave = vec![Complex::new(0.0, 0.0); 100];
-    CssMod::new(params).modulate(&preamble, &mut wave);
-    wave.resize(wave.len() + 256, Complex::new(0.0, 0.0));
-    assert_ne!(demod.estimate_origin(&wave, &preamble), 100);
+    (found, leads, worst)
+}
+
+#[test]
+fn the_timing_estimate_finds_every_lead_below_half_a_symbol() {
+    let (found, leads, worst) = timing_sweep(0.02);
+    assert_eq!(found, leads, "worst miss {worst} samples");
+}
+
+#[test]
+fn at_13_db_only_slips_the_preamble_cannot_resolve_are_missed() {
+    let (found, leads, worst) = timing_sweep(0.05);
+    assert!(found * 200 >= leads * 199, "found {found} of {leads}");
+    assert!(worst <= AMBIGUOUS_SLIP, "missed by {worst} samples");
+}
+
+#[test]
+fn a_lead_past_half_a_symbol_is_not_taken_for_itself() {
+    let params = CssParams::new(7);
+    let n = params.chips();
+    for seed in 0..TIMING_SEEDS {
+        let preamble: Vec<u32> = draws(8, n, seed);
+        let wave = timed_preamble(&params, &preamble, 100);
+        let origin = CssDemod::new(params.clone()).estimate_origin(&wave, &preamble);
+        assert_ne!(origin, 100, "seed {seed}");
+    }
 }
 
 #[test]

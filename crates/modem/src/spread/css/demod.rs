@@ -229,8 +229,12 @@ fn tracker() -> LoopFilter {
 }
 
 fn timing_loop(chips: usize) -> LoopFilter {
-    let range = (chips as f64 * MAX_CLOCK_PPM * 1e-6).max(MIN_TIMING_RANGE);
-    LoopFilter::new(TIMING_BW, TRACK_DAMPING, range)
+    LoopFilter::new(TIMING_BW, TRACK_DAMPING, timing_range(chips))
+}
+
+/// The most the symbol clock may drift, in samples per symbol, for acquisition and tracking.
+fn timing_range(chips: usize) -> f64 {
+    (chips as f64 * MAX_CLOCK_PPM * 1e-6).max(MIN_TIMING_RANGE)
 }
 
 fn wrap(value: f64, period: f64) -> f64 {
