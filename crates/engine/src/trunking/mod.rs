@@ -36,6 +36,10 @@ const RETRY_MAX: Duration = Duration::from_secs(300);
 /// another call may take its receiver.
 const GRANT_HOLD: Duration = Duration::from_secs(3);
 
+/// How long a granted traffic channel keeps its receiver after its last grant or burst. Replies
+/// on a talkgroup find it still open; a quiet channel stops costing a decoder.
+const FOLLOWER_LINGER: Duration = Duration::from_secs(30);
+
 /// How long a control channel may go without a control burst before the follower tries the
 /// site's other control channels.
 const CONTROL_SILENCE: Duration = Duration::from_secs(10);
@@ -141,11 +145,17 @@ struct FollowerChannel {
     freq_hz: u64,
     call: Option<TrunkGrant>,
     granted: Instant,
+    /// The last grant naming this channel or burst decoded on it.
+    heard: Instant,
 }
 
 impl FollowerChannel {
     fn idle(&self, now: Instant) -> bool {
         now.saturating_duration_since(self.granted) >= GRANT_HOLD
+    }
+
+    fn lingered(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.heard) >= FOLLOWER_LINGER
     }
 }
 
@@ -331,6 +341,9 @@ impl Follower {
             return false;
         };
         let frame = &frame;
+        if self.note_traffic(record.device_set, record.channel) {
+            return false;
+        }
         if let Some(probe) = self.probes.get(&(record.device_set, record.channel)) {
             let (system_node, freq_hz) = (probe.system_node.clone(), probe.freq_hz);
             return self.prospect(&engine, &system_node, freq_hz, frame);
@@ -398,25 +411,16 @@ impl Follower {
         self.fail_over_silent_controls();
         self.retune_drifted(&engine);
         let live: Vec<Carrier> = self.carriers.values().cloned().collect();
-        let known: Vec<(FollowerKey, u32, u32)> = self
+        let orphaned: Vec<FollowerKey> = self
             .followers
-            .iter()
-            .filter(|(key, _)| !self.system_holds(&live, key))
-            .map(|(key, follower)| (key.clone(), follower.device_set, follower.channel))
+            .keys()
+            .filter(|key| !self.system_holds(&live, key))
+            .cloned()
             .collect();
-        for (key, device_set, channel) in known {
-            match engine.remove_channel(device_set, channel) {
-                Ok(()) => {}
-                Err(error) if error.is_not_found() => {}
-                Err(error) => tracing::warn!(
-                    device_set,
-                    channel,
-                    %error,
-                    "could not remove an orphaned trunk follower"
-                ),
-            }
-            self.followers.remove(&key);
+        for key in orphaned {
+            self.drop_follower(&engine, &key);
         }
+        self.retire_lingering(&engine);
         let nodes: Vec<&str> = self
             .systems
             .iter()

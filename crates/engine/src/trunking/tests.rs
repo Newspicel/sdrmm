@@ -1389,3 +1389,66 @@ fn a_site_code_wider_than_a_dmr_colour_code_keys_the_site() {
     follower.publish();
     assert_eq!(status(&follower).color_code, Some(0x4D2));
 }
+
+fn age_past_linger(follower: &mut Follower) {
+    let past = Instant::now()
+        .checked_sub(FOLLOWER_LINGER)
+        .expect("a clock older than the linger");
+    for open in follower.followers.values_mut() {
+        open.granted = past;
+        open.heard = past;
+    }
+}
+
+fn open_call(engine: &Arc<Engine>) -> (Follower, (u32, u32)) {
+    let (device_set, channel, center_hz) = control_channel(engine);
+    let carrier = (device_set, channel);
+    let mut follower = follower(engine, "tier_three", carrier);
+    follower.observe(&record(carrier, definition(center_hz as u64 + 125_000)));
+    follower.observe(&record(carrier, grant_to(LOGICAL_CHANNEL, 1, 93)));
+    assert_eq!(follower.followers.len(), 1);
+    (follower, carrier)
+}
+
+#[test]
+fn a_quiet_traffic_channel_closes_after_the_linger() {
+    let engine = engine();
+    let (mut follower, carrier) = open_call(&engine);
+    let traffic = follower.followers.values().next().map(|open| open.channel);
+    age_past_linger(&mut follower);
+
+    follower.reconcile();
+
+    assert!(follower.followers.is_empty());
+    let channels: Vec<u32> = engine.snapshot().device_sets[0]
+        .channels
+        .iter()
+        .map(|info| info.id)
+        .collect();
+    assert_eq!(channels, [carrier.1]);
+    assert!(traffic.is_some_and(|channel| !channels.contains(&channel)));
+}
+
+#[test]
+fn bursts_on_a_traffic_channel_keep_it_open() {
+    let engine = engine();
+    let (mut follower, _) = open_call(&engine);
+    let traffic = follower
+        .followers
+        .values()
+        .map(|open| (open.device_set, open.channel))
+        .next()
+        .expect("a traffic channel");
+    age_past_linger(&mut follower);
+
+    follower.observe(&record(
+        traffic,
+        DvFrame {
+            kind: DvFrameKind::Voice,
+            ..DvFrame::default()
+        },
+    ));
+    follower.reconcile();
+
+    assert_eq!(follower.followers.len(), 1);
+}

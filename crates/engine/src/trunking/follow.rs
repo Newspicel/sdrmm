@@ -144,7 +144,9 @@ impl Follower {
         if let Some(follower) = self.followers.get_mut(&key)
             && follower.freq_hz == grant.freq_hz
         {
-            follower.granted = Instant::now();
+            let now = Instant::now();
+            follower.granted = now;
+            follower.heard = now;
             if grant.call.is_some() && follower.call != grant.call {
                 follower.call = grant.call;
                 self.publish();
@@ -221,6 +223,7 @@ impl Follower {
                         freq_hz: grant.freq_hz,
                         call: grant.call,
                         granted: Instant::now(),
+                        heard: Instant::now(),
                     },
                 );
                 self.publish();
@@ -267,6 +270,51 @@ impl Follower {
         };
         self.followers.insert(key.clone(), follower);
         true
+    }
+
+    /// Keeps a traffic channel open while bursts decode on it. Reports whether the record came
+    /// from one.
+    pub(super) fn note_traffic(&mut self, device_set: u32, channel: u32) -> bool {
+        let Some(follower) = self
+            .followers
+            .values_mut()
+            .find(|follower| follower.device_set == device_set && follower.channel == channel)
+        else {
+            return false;
+        };
+        follower.heard = Instant::now();
+        true
+    }
+
+    /// Closes granted traffic channels nothing has used for [`super::FOLLOWER_LINGER`]. Known
+    /// carriers stay: no grant would open them again.
+    pub(super) fn retire_lingering(&mut self, engine: &Engine) {
+        let now = Instant::now();
+        let quiet: Vec<FollowerKey> = self
+            .followers
+            .iter()
+            .filter(|(key, follower)| {
+                matches!(key, FollowerKey::Granted { .. }) && follower.lingered(now)
+            })
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in quiet {
+            self.drop_follower(engine, &key);
+        }
+    }
+
+    pub(super) fn drop_follower(&mut self, engine: &Engine, key: &FollowerKey) {
+        let Some(follower) = self.followers.remove(key) else {
+            return;
+        };
+        let (device_set, channel) = (follower.device_set, follower.channel);
+        match engine.remove_channel(device_set, channel) {
+            Ok(()) => {}
+            Err(error) if error.is_not_found() => {}
+            Err(error) => {
+                tracing::warn!(device_set, channel, %error, "could not remove a trunk follower");
+            }
+        }
     }
 
     pub(super) fn at_limit(&self, system_node: &str) -> bool {
