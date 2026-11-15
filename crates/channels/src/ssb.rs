@@ -1,15 +1,15 @@
 use crate::registry::Native;
 use sdrmm_wire::{ClickProfile, Control, KindSpec, NumberSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod encoder;
 mod model;
+pub(crate) use encoder::ssb_encoder;
+pub use encoder::{SsbEncoderSettings, SsbModulator};
 pub use model::*;
-use std::{
-    f64::consts::{PI, TAU},
-    sync::LazyLock,
-};
+use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Agc, FirC, RealDecimator, design_bandpass, design_lowpass};
+use sdrmm_dsp::{Agc, FirC, design_lowpass};
 use sdrmm_modem::analog::{
     Sideband as EngineSideband, SsbDemod, SsbDetector, SsbMethod, SsbParams as SsbWaveform,
 };
@@ -17,15 +17,12 @@ use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily, Si
 
 use crate::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate, clamp_full_scale,
-    encoder::{EncoderBase, Modulator, NativeEncoder, NativeModulator, TxPayload},
-    voice_leveller,
+    check_input_rate, clamp_full_scale, voice_leveller,
 };
-use sdrmm_modem::keying::{Burst, TxQueue};
-use serde::{Deserialize, Serialize};
 
 pub(crate) const PASSBAND_LOW_HZ: f64 = 100.0;
 const FILTER_TAPS: usize = 257;
+const AUDIO_TAPS: usize = FILTER_TAPS;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "ssb".to_owned(),
@@ -118,138 +115,6 @@ impl ChannelRx for SsbChannel {
     }
 }
 
-const HILBERT_TAPS: usize = 257;
-const AUDIO_TAPS: usize = FILTER_TAPS;
-
-fn hilbert_taps() -> Vec<f32> {
-    let center = (HILBERT_TAPS / 2) as i64;
-    (0..HILBERT_TAPS)
-        .map(|k| {
-            let n = k as i64 - center;
-            if n.unsigned_abs().is_multiple_of(2) {
-                return 0.0;
-            }
-            let phase = TAU * k as f64 / (HILBERT_TAPS - 1) as f64;
-            let window = 0.42 - 0.5 * phase.cos() + 0.08 * (2.0 * phase).cos();
-            (window * 2.0 / (PI * n as f64)) as f32
-        })
-        .collect()
-}
-
-fn delay_taps() -> Vec<f32> {
-    let mut taps = vec![0.0; HILBERT_TAPS];
-    taps[HILBERT_TAPS / 2] = 1.0;
-    taps
-}
-
-fn audio_bandpass(p: &SsbParams) -> Result<RealDecimator, ChannelError> {
-    let rate = DESCRIPTOR.input_rate_hz;
-    sideband_filter(p)?;
-    Ok(RealDecimator::new(
-        &design_bandpass(AUDIO_TAPS, PASSBAND_LOW_HZ / rate, p.bandwidth_hz / rate),
-        1,
-    ))
-}
-
-/// What an SSB encoder sends: the sideband and how wide its audio runs.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct SsbEncoderSettings {
-    pub sideband: Sideband,
-    pub bandwidth_hz: f64,
-}
-
-impl Default for SsbEncoderSettings {
-    fn default() -> Self {
-        let heard = SsbParams::default();
-        Self {
-            sideband: heard.sideband,
-            bandwidth_hz: heard.bandwidth_hz,
-        }
-    }
-}
-
-impl SsbEncoderSettings {
-    /// The receiver settings that hear exactly this signal.
-    const fn heard_as(&self) -> SsbParams {
-        SsbParams {
-            sideband: self.sideband,
-            bandwidth_hz: self.bandwidth_hz,
-        }
-    }
-}
-
-pub struct SsbModulator {
-    queue: TxQueue<Complex<f32>>,
-    sideband: Sideband,
-    audio_bp: RealDecimator,
-    hilbert: RealDecimator,
-    delay: RealDecimator,
-    shaped: Vec<f32>,
-    in_phase: Vec<f32>,
-    quadrature: Vec<f32>,
-    burst: Burst,
-}
-
-impl NativeModulator for SsbModulator {
-    type Settings = SsbEncoderSettings;
-
-    fn rate_hz() -> f64 {
-        DESCRIPTOR.input_rate_hz
-    }
-
-    fn new(settings: &SsbEncoderSettings) -> Result<Self, ChannelError> {
-        Ok(Self {
-            queue: TxQueue::new(DESCRIPTOR.type_id.as_str(), f64::from(AUDIO_RATE)),
-            sideband: settings.sideband,
-            audio_bp: audio_bandpass(&settings.heard_as())?,
-            hilbert: RealDecimator::new(&hilbert_taps(), 1),
-            delay: RealDecimator::new(&delay_taps(), 1),
-            shaped: Vec::new(),
-            in_phase: Vec::new(),
-            quadrature: Vec::new(),
-            burst: Burst::new(DESCRIPTOR.input_rate_hz),
-        })
-    }
-}
-
-impl Modulator for SsbModulator {
-    fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError> {
-        let TxPayload::Audio(pcm) = payload else {
-            return Err(ChannelError::InvalidPayload(
-                "ssb carries audio, not frames".to_owned(),
-            ));
-        };
-        self.queue.accept(pcm.len())?;
-        self.audio_bp.process(&pcm, &mut self.shaped);
-        self.hilbert.process(&self.shaped, &mut self.quadrature);
-        self.delay.process(&self.shaped, &mut self.in_phase);
-        let sign = match self.sideband {
-            Sideband::Usb => 1.0,
-            Sideband::Lsb => -1.0,
-        };
-        for (&i, &q) in self.in_phase.iter().zip(self.quadrature.iter()) {
-            let sample = Complex::new(i, sign * q);
-            let norm = sample.norm();
-            self.queue
-                .push(if norm > 1.0 { sample / norm } else { sample });
-        }
-        Ok(())
-    }
-
-    fn generate(&mut self, out: &mut [Complex<f32>]) -> usize {
-        let mut written = 0;
-        for slot in out {
-            let Some(envelope) = self.burst.next(!self.queue.is_empty()) else {
-                break;
-            };
-            *slot = self.queue.pop().unwrap_or_default() * envelope;
-            written += 1;
-        }
-        written
-    }
-}
-
 fn channel_filter(p: &SsbParams) -> Result<ChannelFilter, ChannelError> {
     Ok(ChannelFilter::Sideband(sideband_filter(p)?))
 }
@@ -285,18 +150,6 @@ pub(crate) fn ssb_decoder() -> Native<SsbParams> {
     .kinds(ssb_kinds)
 }
 
-pub(crate) fn ssb_encoder() -> NativeEncoder<SsbEncoderSettings> {
-    NativeEncoder::new::<SsbModulator>(
-        EncoderBase {
-            type_id: "ssb",
-            name: "SSB",
-            summary: "Single sideband voice",
-        },
-        |s: &SsbEncoderSettings| s.bandwidth_hz,
-    )
-    .form(ssb_form)
-}
-
 pub(crate) fn ssb_form() -> Vec<SettingField> {
     vec![
         SettingField::new("sideband", "Side", Control::choice::<Sideband>()).title("Sideband"),
@@ -314,7 +167,10 @@ mod tests {
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::nfm::NfmParams;
+    use crate::{
+        encoder::{Carries, EncoderError, Modulator, NativeModulator, TxPayload},
+        nfm::NfmParams,
+    };
     use crate::{
         synth::{burst, tone_audio},
         testutil::{complex_tone, component, dominant_tone, rms, run_ragged, settings, tone_power},
@@ -531,12 +387,15 @@ mod tests {
         let mut tx = modulator(Sideband::Usb);
         assert!(matches!(
             tx.submit(TxPayload::Frame(vec![0x7E])),
-            Err(ChannelError::InvalidPayload(_))
+            Err(EncoderError::WrongPayload {
+                takes: Carries::Audio,
+                ..
+            })
         ));
         let over = (sdrmm_modem::keying::MAX_QUEUE_S * f64::from(AUDIO_RATE)) as usize + 1;
         assert!(matches!(
             tx.submit(TxPayload::Audio(vec![0.0; over])),
-            Err(ChannelError::InvalidPayload(_))
+            Err(EncoderError::Backlog(_))
         ));
         let mut block = [Complex::new(0.0, 0.0); 16];
         assert_eq!(tx.generate(&mut block), 0);
@@ -548,6 +407,6 @@ mod tests {
             sideband: Sideband::Usb,
             bandwidth_hz: 50.0,
         });
-        assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
+        assert!(matches!(built, Err(EncoderError::Settings { .. })));
     }
 }

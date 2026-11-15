@@ -291,6 +291,8 @@ pub enum EngineError {
     Device(#[from] DeviceError),
     #[error(transparent)]
     Channel(#[from] ChannelError),
+    #[error(transparent)]
+    Encoder(#[from] sdrmm_channels::encoder::EncoderError),
     #[error("audio pipeline: {0}")]
     Audio(String),
     #[error("recording: {0}")]
@@ -348,6 +350,7 @@ impl EngineError {
                     | DeviceError::AlreadyStreaming
                     | DeviceError::DuplexConflict { .. },
             ) | Self::Channel(_)
+                | Self::Encoder(_)
                 | Self::Recording(_)
                 | Self::NetworkExport(_)
                 | Self::Transmit(_)

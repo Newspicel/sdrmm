@@ -1,11 +1,11 @@
-//! The guest side of the transmit ABI, instantiated for one transmitter type by
-//! [`crate::export_transmit!`].
+//! The guest side of the encoder ABI, instantiated for one encoder type by
+//! [`crate::export_encoder!`].
 
 use num_complex::Complex;
-use sdrmm_wire::plugin::{pack, transmit::PayloadKind};
+use sdrmm_wire::plugin::{encoder::PayloadKind, pack};
 
 use super::{address, fail, len_u32, store, take, with_stored};
-use crate::{Payload, Transmitter, settings};
+use crate::{Encoder, Payload, settings};
 
 struct TxSlot<T> {
     tx: T,
@@ -14,7 +14,7 @@ struct TxSlot<T> {
 }
 
 fn missing(handle: i32) -> String {
-    format!("no transmitter {handle}")
+    format!("no encoder {handle}")
 }
 
 fn answer(result: Result<(), String>) -> i32 {
@@ -24,7 +24,7 @@ fn answer(result: Result<(), String>) -> i32 {
     }
 }
 
-pub fn open<T: Transmitter + 'static>(rate: f64, ptr: u32, len: u32) -> i32 {
+pub fn open<T: Encoder + 'static>(rate: f64, ptr: u32, len: u32) -> i32 {
     let opened = settings::<T::Settings>(&take(ptr, len)).and_then(|s| T::open(rate, s));
     match opened {
         Ok(tx) => store(TxSlot {
@@ -36,7 +36,7 @@ pub fn open<T: Transmitter + 'static>(rate: f64, ptr: u32, len: u32) -> i32 {
     }
 }
 
-pub fn submit<T: Transmitter + 'static>(handle: i32, kind: u32, ptr: u32, len: u32) -> i32 {
+pub fn submit<T: Encoder + 'static>(handle: i32, kind: u32, ptr: u32, len: u32) -> i32 {
     let bytes = take(ptr, len);
     let Some(kind) = PayloadKind::from_code(kind) else {
         return fail(&format!("unknown payload kind {kind}"));
@@ -60,7 +60,7 @@ pub fn submit<T: Transmitter + 'static>(handle: i32, kind: u32, ptr: u32, len: u
     )
 }
 
-pub fn generate<T: Transmitter + 'static>(handle: i32, max: u32) -> i64 {
+pub fn generate<T: Encoder + 'static>(handle: i32, max: u32) -> i64 {
     with_stored::<TxSlot<T>, _>(handle, |slot| {
         slot.output.resize(max as usize, Complex::new(0.0, 0.0));
         let written = slot.tx.generate(&mut slot.output).min(slot.output.len());

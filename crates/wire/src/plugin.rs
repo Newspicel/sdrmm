@@ -1,6 +1,7 @@
-//! The contract between the server and a WASM decoder plugin.
+//! The contract between the server and a WASM plugin.
 //!
-//! A plugin is a core WebAssembly module. Control calls exchange JSON in the guest's memory;
+//! A plugin is a core WebAssembly module that brings any of a decoder, an encoder and an array
+//! processor, each through exports of its own. Control calls exchange JSON in the guest's memory;
 //! the per-block call exchanges raw samples through buffers the guest owns, so the hot path
 //! copies samples and allocates nothing.
 
@@ -15,26 +16,36 @@ use crate::{
     processor::plugin::ProcessorType,
 };
 
+pub mod encoder;
 pub mod processor;
-pub mod transmit;
 
 /// The ABI this server and the SDK speak; a plugin built for any other is refused.
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 pub const IMPORT_MODULE: &str = "sdrmm";
 
-/// Guest exports, by name.
+/// Guest exports every plugin has, by name.
 pub mod export {
     pub const ABI: &str = "sdrmm_abi";
     pub const ALLOC: &str = "sdrmm_alloc";
     pub const MANIFEST: &str = "sdrmm_manifest";
+    pub const ERROR: &str = "sdrmm_error";
+    /// `(ptr: u32, len: u32) -> packed reply: i64`, a [`super::PresentRequest`] in, a
+    /// [`super::PresentReply`] out. Only a plugin that declares event kinds needs it.
+    pub const PRESENT: &str = "sdrmm_present";
+}
+
+/// Guest exports of a plugin's decoder, by name.
+pub mod decoder {
     pub const CALL: &str = "sdrmm_call";
     pub const OPEN: &str = "sdrmm_open";
     pub const APPLY: &str = "sdrmm_apply";
     pub const INPUT: &str = "sdrmm_input";
     pub const PROCESS: &str = "sdrmm_process";
+    /// Optional.
     pub const RETUNED: &str = "sdrmm_retuned";
     pub const CLOSE: &str = "sdrmm_close";
-    pub const ERROR: &str = "sdrmm_error";
+
+    pub const REQUIRED: [&str; 6] = [CALL, OPEN, APPLY, INPUT, PROCESS, CLOSE];
 }
 
 /// Host imports in [`IMPORT_MODULE`], by name: native `dsp` kernels working on guest memory.
@@ -49,41 +60,60 @@ pub mod import {
     pub const KERNEL_DROP: &str = "kernel_drop";
 }
 
-/// Control operations of `sdrmm_call(op, ptr, len)`.
+/// Control operations of the decoder's `sdrmm_call(op, ptr, len)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
 pub enum Op {
     Layout = 1,
     Normalize = 2,
-    Present = 3,
 }
 
 impl Op {
     #[must_use]
     pub fn from_code(code: i32) -> Option<Self> {
-        [Self::Layout, Self::Normalize, Self::Present]
+        [Self::Layout, Self::Normalize]
             .into_iter()
             .find(|op| *op as i32 == code)
     }
 }
 
-/// Everything the host needs to list and open a plugin's decoder.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// What a plugin brings: any of a decoder, an encoder and an array processor, and the event
+/// kinds they emit.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PluginManifest {
     pub abi: u32,
-    pub descriptor: ChannelDescriptor,
-    #[serde(default)]
-    pub form: Vec<SettingField>,
-    #[serde(default)]
+    /// Event kinds the decoder and the processor emit, presented through [`export::PRESENT`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kinds: Vec<EventKindEntry>,
+    /// Run through the [`decoder`] exports.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub home_hz: Option<f64>,
-    /// An array processor the plugin also brings.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub processor: Option<ProcessorType>,
-    /// An encoder the plugin also brings, run through the [`transmit`] exports.
+    pub decoder: Option<DecoderManifest>,
+    /// Run through the [`encoder::export`] exports.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub encoder: Option<EncoderDescriptor>,
+    /// Run through the [`processor::export`] exports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processor: Option<ProcessorType>,
+}
+
+impl PluginManifest {
+    /// Whether the plugin brings anything to load.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.decoder.is_none() && self.encoder.is_none() && self.processor.is_none()
+    }
+}
+
+/// Everything the host needs to list and open a plugin's decoder.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DecoderManifest {
+    pub descriptor: ChannelDescriptor,
+    /// The settings form a channel of it renders.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub form: Vec<SettingField>,
+    /// The one frequency the service lives on, where a new channel starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home_hz: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -262,11 +292,25 @@ mod tests {
     }
 
     #[test]
+    fn a_manifest_brings_any_mix_of_parts() {
+        let encoder_only: PluginManifest = serde_json::from_value(serde_json::json!({
+            "abi": ABI_VERSION,
+            "encoder": {"type_id": "beacon", "name": "Beacon", "rate_hz": 48_000.0, "bandwidth_hz": 2_400.0},
+        }))
+        .expect("an encoder alone parses");
+        assert!(encoder_only.decoder.is_none() && encoder_only.kinds.is_empty());
+        assert!(!encoder_only.is_empty());
+        let empty: PluginManifest =
+            serde_json::from_value(serde_json::json!({"abi": ABI_VERSION})).expect("parses");
+        assert!(empty.is_empty());
+    }
+
+    #[test]
     fn a_reply_reads_as_a_result() {
         let json = serde_json::to_string(&Reply::<u8>::Err("bad".into())).expect("reply");
         let back: Reply<u8> = serde_json::from_str(&json).expect("reply parses");
         assert_eq!(back.into_result(), Err("bad".to_owned()));
-        assert_eq!(Op::from_code(3), Some(Op::Present));
-        assert_eq!(Op::from_code(9), None);
+        assert_eq!(Op::from_code(2), Some(Op::Normalize));
+        assert_eq!(Op::from_code(3), None);
     }
 }

@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 
 use sdrmm_plugin::{
-    Complex, Payload, Transmitter, serde_json,
+    Complex, Encoder, Payload, serde_json,
     wire::{Control, EncoderDescriptor, EncoderInput, SettingField},
 };
 use serde::{Deserialize, Serialize};
@@ -78,7 +78,7 @@ impl Beacon {
     }
 }
 
-impl Transmitter for Beacon {
+impl Encoder for Beacon {
     type Settings = BeaconSettings;
 
     fn open(rate_hz: f64, _settings: BeaconSettings) -> Result<Self, String> {

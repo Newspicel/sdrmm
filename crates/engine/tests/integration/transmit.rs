@@ -5,7 +5,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_channels::{AprsPacket, AprsParams, NfmParams, encoder::EncoderParams};
+use sdrmm_channels::{
+    AprsPacket, AprsParams, NfmParams,
+    encoder::{EncoderError, EncoderParams},
+};
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_virtual::{NFM_CARRIER_OFFSET_HZ, VirtualDriver};
 use sdrmm_engine::{Engine, EngineError, TransmitRequest, TransmitSource, audio::PcmPayload};
@@ -346,7 +349,7 @@ fn what_cannot_be_sent_is_refused_with_its_reason() {
         "does not transmit",
     );
     let ds = radio(&engine, "virtual:transceiver", 100_000_000.0);
-    refused(
+    assert!(matches!(
         engine.arm_transmitter(
             ds,
             &request(
@@ -355,8 +358,8 @@ fn what_cannot_be_sent_is_refused_with_its_reason() {
                 None,
             ),
         ),
-        "no encoder",
-    );
+        Err(EngineError::Encoder(EncoderError::Unknown(id))) if id == "adsb"
+    ));
     let mut loud = request("tx", nfm(), None);
     loud.settings.level_db = 6.0;
     refused(engine.arm_transmitter(ds, &loud), "level");

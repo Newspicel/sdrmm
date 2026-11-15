@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use sdrmm_channels::ChannelError;
+use sdrmm_channels::encoder::EncoderError;
 use sdrmm_device::DeviceError;
 
 use super::*;
@@ -54,7 +54,7 @@ struct Carrier {
 }
 
 impl Modulator for Carrier {
-    fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError> {
+    fn submit(&mut self, payload: TxPayload) -> Result<(), EncoderError> {
         self.left += match payload {
             TxPayload::Audio(pcm) => pcm.len(),
             TxPayload::Frame(frame) => frame.len(),

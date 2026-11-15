@@ -10,7 +10,9 @@ use sdrmm_wire::{EncoderDescriptor, EncoderInput, SettingField};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 
-use crate::ChannelError;
+mod error;
+
+pub use error::{Carries, EncoderError};
 
 /// What an encoder is handed to send.
 pub enum TxPayload {
@@ -21,7 +23,7 @@ pub enum TxPayload {
 /// A running encoder: payloads in, baseband at its descriptor's rate out.
 pub trait Modulator: Send {
     /// Queues `payload`, refusing what the mode cannot carry or a backlog past its bound.
-    fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError>;
+    fn submit(&mut self, payload: TxPayload) -> Result<(), EncoderError>;
 
     /// Fills `out` with what is queued and returns how many samples it wrote, fewer once the
     /// queue runs dry.
@@ -35,7 +37,7 @@ pub trait NativeModulator: Modulator + Sized + 'static {
     /// The baseband rate it produces.
     fn rate_hz() -> f64;
 
-    fn new(settings: &Self::Settings) -> Result<Self, ChannelError>;
+    fn new(settings: &Self::Settings) -> Result<Self, EncoderError>;
 }
 
 /// An encoder's settings as a node stores them: its type id and its own settings object.
@@ -63,14 +65,12 @@ impl EncoderParams {
     }
 
     /// The settings as the encoder's own struct, absent fields taking its defaults.
-    fn parse<S: DeserializeOwned>(&self) -> Result<S, ChannelError> {
+    fn parse<S: DeserializeOwned>(&self) -> Result<S, EncoderError> {
         let parsed = match &self.settings {
             Value::Null => S::deserialize(&Value::Object(Map::new())),
             settings => S::deserialize(settings),
         };
-        parsed.map_err(|error| {
-            ChannelError::InvalidSettings(format!("{} settings: {error}", self.type_id))
-        })
+        parsed.map_err(|error| EncoderError::settings(&self.type_id, error.to_string()))
     }
 }
 
@@ -78,17 +78,17 @@ pub trait Encoder: Send + Sync {
     /// The completed descriptor: forms and defaults included.
     fn descriptor(&self) -> &EncoderDescriptor;
 
-    fn open(&self, params: &EncoderParams) -> Result<Box<dyn Modulator>, ChannelError>;
+    fn open(&self, params: &EncoderParams) -> Result<Box<dyn Modulator>, EncoderError>;
 
     /// One message, filled into the descriptor's `message` form, as what the modulator takes.
-    fn compose(&self, message: &Value) -> Result<TxPayload, ChannelError>;
+    fn compose(&self, message: &Value) -> Result<TxPayload, EncoderError>;
 
     /// The width `params` keeps the signal inside.
-    fn width_hz(&self, params: &EncoderParams) -> Result<f64, ChannelError>;
+    fn width_hz(&self, params: &EncoderParams) -> Result<f64, EncoderError>;
 }
 
-type Compose = fn(&Value) -> Result<TxPayload, ChannelError>;
-type Open<S> = fn(&S) -> Result<Box<dyn Modulator>, ChannelError>;
+type Compose = fn(&Value) -> Result<TxPayload, EncoderError>;
+type Open<S> = fn(&S) -> Result<Box<dyn Modulator>, EncoderError>;
 /// A message encoder's form and how one filled form becomes a payload.
 type Messages = (fn() -> Vec<SettingField>, Compose);
 
@@ -115,7 +115,7 @@ fn no_form() -> Vec<SettingField> {
     Vec::new()
 }
 
-fn boxed<M: NativeModulator>(settings: &M::Settings) -> Result<Box<dyn Modulator>, ChannelError> {
+fn boxed<M: NativeModulator>(settings: &M::Settings) -> Result<Box<dyn Modulator>, EncoderError> {
     Ok(Box::new(M::new(settings)?))
 }
 
@@ -151,12 +151,12 @@ where
         self
     }
 
-    fn settings(&self, params: &EncoderParams) -> Result<S, ChannelError> {
+    fn settings(&self, params: &EncoderParams) -> Result<S, EncoderError> {
         if params.type_id != self.base.type_id {
-            return Err(ChannelError::InvalidSettings(format!(
-                "{} encoder got {} settings",
-                self.base.type_id, params.type_id
-            )));
+            return Err(EncoderError::WrongType {
+                encoder: self.base.type_id.to_owned(),
+                got: params.type_id.clone(),
+            });
         }
         params.parse()
     }
@@ -188,18 +188,18 @@ where
         self.complete.get_or_init(|| self.completed())
     }
 
-    fn open(&self, params: &EncoderParams) -> Result<Box<dyn Modulator>, ChannelError> {
+    fn open(&self, params: &EncoderParams) -> Result<Box<dyn Modulator>, EncoderError> {
         (self.open)(&self.settings(params)?)
     }
 
-    fn compose(&self, message: &Value) -> Result<TxPayload, ChannelError> {
-        let (_, compose) = self.messages.ok_or_else(|| {
-            ChannelError::InvalidPayload(format!("{} sends no messages", self.base.type_id))
-        })?;
+    fn compose(&self, message: &Value) -> Result<TxPayload, EncoderError> {
+        let (_, compose) = self
+            .messages
+            .ok_or_else(|| EncoderError::NoMessages(self.base.type_id.to_owned()))?;
         compose(message)
     }
 
-    fn width_hz(&self, params: &EncoderParams) -> Result<f64, ChannelError> {
+    fn width_hz(&self, params: &EncoderParams) -> Result<f64, EncoderError> {
         Ok((self.width)(&self.settings(params)?))
     }
 }
@@ -223,9 +223,9 @@ impl EncoderRegistry {
             .find(|encoder| encoder.descriptor().type_id == type_id)
     }
 
-    pub fn encoder(&self, type_id: &str) -> Result<&Arc<dyn Encoder>, ChannelError> {
+    pub fn encoder(&self, type_id: &str) -> Result<&Arc<dyn Encoder>, EncoderError> {
         self.find(type_id)
-            .ok_or_else(|| ChannelError::UnknownEncoder(type_id.to_owned()))
+            .ok_or_else(|| EncoderError::Unknown(type_id.to_owned()))
     }
 
     #[must_use]
@@ -256,21 +256,21 @@ pub fn encoders() -> Vec<EncoderDescriptor> {
     encoder_registry().descriptors()
 }
 
-pub fn encoder(type_id: &str) -> Result<Arc<dyn Encoder>, ChannelError> {
+pub fn encoder(type_id: &str) -> Result<Arc<dyn Encoder>, EncoderError> {
     encoder_registry().encoder(type_id).cloned()
 }
 
 /// Why a plugin encoder of `type_id` may not load beside the built-ins and the plugin encoders
 /// in `taken`, if it may not.
 #[must_use]
-pub fn encoder_refusal(type_id: &str, taken: &[&str]) -> Option<ChannelError> {
+pub fn encoder_refusal(type_id: &str, taken: &[&str]) -> Option<EncoderError> {
     if BUILT_IN
         .iter()
         .any(|encoder| encoder.descriptor().type_id == type_id)
     {
-        Some(ChannelError::BuiltIn(type_id.to_owned()))
+        Some(EncoderError::BuiltIn(type_id.to_owned()))
     } else if taken.contains(&type_id) {
-        Some(ChannelError::LoadedTwice(type_id.to_owned()))
+        Some(EncoderError::LoadedTwice(type_id.to_owned()))
     } else {
         None
     }
@@ -278,7 +278,7 @@ pub fn encoder_refusal(type_id: &str, taken: &[&str]) -> Option<ChannelError> {
 
 /// Opens `plugins` beside the built-in encoders, replacing every plugin encoder loaded before.
 /// Refuses the whole set, changing nothing, when [`encoder_refusal`] refuses one of them.
-pub fn install_encoders(plugins: Vec<Arc<dyn Encoder>>) -> Result<(), ChannelError> {
+pub fn install_encoders(plugins: Vec<Arc<dyn Encoder>>) -> Result<(), EncoderError> {
     let mut taken: Vec<&str> = Vec::with_capacity(plugins.len());
     for plugin in &plugins {
         let type_id = plugin.descriptor().type_id.as_str();
@@ -303,15 +303,15 @@ mod tests {
             &self.0
         }
 
-        fn open(&self, params: &EncoderParams) -> Result<Box<dyn Modulator>, ChannelError> {
-            Err(ChannelError::UnknownEncoder(params.type_id.clone()))
+        fn open(&self, params: &EncoderParams) -> Result<Box<dyn Modulator>, EncoderError> {
+            Err(EncoderError::Unknown(params.type_id.clone()))
         }
 
-        fn compose(&self, _: &Value) -> Result<TxPayload, ChannelError> {
-            Err(ChannelError::InvalidPayload("none".to_owned()))
+        fn compose(&self, _: &Value) -> Result<TxPayload, EncoderError> {
+            Err(EncoderError::NoMessages(self.0.type_id.clone()))
         }
 
-        fn width_hz(&self, _: &EncoderParams) -> Result<f64, ChannelError> {
+        fn width_hz(&self, _: &EncoderParams) -> Result<f64, EncoderError> {
             Ok(self.0.bandwidth_hz)
         }
     }
@@ -353,16 +353,16 @@ mod tests {
         let nfm = encoder("nfm").expect("nfm encodes");
         assert!(matches!(
             nfm.open(&EncoderParams::bare("am")),
-            Err(ChannelError::InvalidSettings(_))
+            Err(EncoderError::WrongType { got, .. }) if got == "am"
         ));
         assert!(matches!(
             nfm.compose(&serde_json::json!({})),
-            Err(ChannelError::InvalidPayload(_))
+            Err(EncoderError::NoMessages(id)) if id == "nfm"
         ));
         assert_eq!(encoder("aprs").expect("aprs").descriptor().message.len(), 4);
         assert!(matches!(
             encoder("wfm"),
-            Err(ChannelError::UnknownEncoder(id)) if id == "wfm"
+            Err(EncoderError::Unknown(id)) if id == "wfm"
         ));
     }
 

@@ -264,8 +264,8 @@ pub use rds::RdsUpdate;
 pub use registry::{
     ChannelLayout, Decoder, Native, Registry, TrunkGrant, TrunkPlacement, Trunking, Tuned,
     audio_channels, channel_filter, check, create, default_settings, descriptor, descriptors,
-    input_rate, install_plugins, layout, normalize, occupied_band, plugin_refusal, registry,
-    trunking, tune,
+    input_rate, install_plugin_kinds, install_plugins, layout, normalize, occupied_band,
+    plugin_refusal, registry, trunking, tune,
 };
 pub use remote_id::{
     AuthType, EuCategory, EuClassification, HeightReference, OperatorLocationType, RemoteIdFrame,
@@ -380,8 +380,6 @@ pub enum ChannelError {
     UnknownType(String),
     #[error("invalid settings: {0}")]
     InvalidSettings(String),
-    #[error("unknown encoder: {0}")]
-    UnknownEncoder(String),
     #[error("invalid payload: {0}")]
     InvalidPayload(String),
     #[error("{0}")]
@@ -392,12 +390,6 @@ pub enum ChannelError {
     BuiltIn(String),
     #[error("type {0} is loaded twice")]
     LoadedTwice(String),
-}
-
-impl From<sdrmm_modem::keying::QueueFull> for ChannelError {
-    fn from(full: sdrmm_modem::keying::QueueFull) -> Self {
-        Self::InvalidPayload(full.to_string())
-    }
 }
 
 #[derive(Clone, Copy, Debug)]

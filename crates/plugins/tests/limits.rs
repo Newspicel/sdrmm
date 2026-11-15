@@ -5,11 +5,11 @@ use sdrmm_plugins::PluginModule;
 
 mod common;
 
-const MANIFEST: &str = r#"{"abi":1,"descriptor":{"type_id":"capped","name":"Capped","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}"#;
+const MANIFEST: &str = r#"{"abi":2,"decoder":{"descriptor":{"type_id":"capped","name":"Capped","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}"#;
 const MEMORY: &str = r#"(memory (export "memory") 2)"#;
 
 fn text() -> String {
-    common::wat_text(1, MANIFEST, "i32.const 0", "")
+    common::wat_text(common::ABI, MANIFEST, "i32.const 0", "")
 }
 
 fn load(text: &str) -> Result<(), String> {

@@ -1,8 +1,8 @@
 //! Carrier: reports the strongest unmodulated carrier in its passband.
 //!
-//! A template for decoder plugins: a settings form, one event kind with a presenter and view
-//! hints, the health footer, a host FFT doing the heavy lifting, an encoder ([`Beacon`]) and an
-//! array processor ([`LaneMeter`]).
+//! A template for plugins: a decoder ([`Carrier`]) with a settings form, one event kind with a
+//! presenter and view hints, the health footer and a host FFT doing the heavy lifting, an encoder
+//! ([`Beacon`]) and an array processor ([`LaneMeter`]).
 //! Build it in this folder with `cargo build --target wasm32-unknown-unknown --release` and drop
 //! the `.wasm` into the server's plugins directory.
 
@@ -12,14 +12,14 @@ pub mod lane_meter;
 pub use beacon::Beacon;
 pub use lane_meter::LaneMeter;
 use sdrmm_plugin::{
-    Complex, Outputs, Plugin,
+    Complex, Decoder, Outputs, Plugin,
     kernels::Fft,
     serde_json::Value,
     wire::{
         Capability, ChannelDescriptor, ChannelHealth, ChannelStatus, DecoderFamily, EventContract,
         EventKind, EventKindEntry, KindView, NumberSpec, SettingField,
         patch::Hue,
-        plugin::{ABI_VERSION, PluginLayout, PluginManifest},
+        plugin::{ABI_VERSION, DecoderManifest, PluginLayout, PluginManifest},
         present::{Presentation, Unit, fields, number},
     },
 };
@@ -126,48 +126,75 @@ fn bin_offset(bin: usize, rate: f64) -> f64 {
     signed * rate / FFT_LEN as f64
 }
 
-impl Plugin for Carrier {
-    type Settings = CarrierSettings;
+/// The plugin as a whole: what it brings and how its events read.
+pub struct Example;
 
+impl Plugin for Example {
     fn manifest() -> PluginManifest {
         PluginManifest {
             abi: ABI_VERSION,
-            descriptor: ChannelDescriptor {
-                type_id: TYPE_ID.to_owned(),
-                name: "Carrier".to_owned(),
-                summary: "Strongest unmodulated carrier".to_owned(),
-                family: DecoderFamily::UTILITY,
-                bandwidth_hz: 20_000.0,
-                input_rate_hz: INPUT_RATE_HZ,
-                has_audio: false,
-                emits: vec![KIND],
-                ..ChannelDescriptor::default()
-            },
-            form: vec![
-                SettingField::new(
-                    "bandwidth_hz",
-                    "Width",
-                    NumberSpec::hz(1_000.0, 20_000.0, 500.0),
-                )
-                .title("Passband searched for a carrier"),
-                SettingField::new(
-                    "threshold_db",
-                    "Threshold",
-                    NumberSpec::new(3.0, 60.0, 1.0).unit("dB"),
-                )
-                .title("SNR a carrier needs to be reported"),
-            ],
             kinds: vec![
                 EventKindEntry::new(KIND, "Carrier", "Carriers", Hue::Teal)
                     .caps(&[Capability::Log])
                     .view(KindView::meter("snr", 0.0, 60.0))
                     .view(KindView::trend(&["offset"], 300)),
             ],
-            home_hz: None,
-            processor: Some(lane_meter::kind()),
+            decoder: Some(decoder()),
             encoder: Some(beacon::descriptor()),
+            processor: Some(lane_meter::kind()),
         }
     }
+
+    fn present(_kind: &EventKind, data: &Value) -> Result<Presentation, String> {
+        let seen: CarrierSeen = sdrmm_plugin::serde_json::from_value(data.clone())
+            .map_err(|error| error.to_string())?;
+        Ok(Presentation {
+            fields: fields(&[
+                (
+                    "offset",
+                    "Offset",
+                    number(Some(seen.offset_hz), Unit::Hz, 0),
+                ),
+                ("snr", "SNR", number(Some(seen.snr_db), Unit::Db, 1)),
+            ]),
+            ..Presentation::of(format!("Carrier {:+.0} Hz", seen.offset_hz))
+        })
+    }
+}
+
+fn decoder() -> DecoderManifest {
+    DecoderManifest {
+        descriptor: ChannelDescriptor {
+            type_id: TYPE_ID.to_owned(),
+            name: "Carrier".to_owned(),
+            summary: "Strongest unmodulated carrier".to_owned(),
+            family: DecoderFamily::UTILITY,
+            bandwidth_hz: 20_000.0,
+            input_rate_hz: INPUT_RATE_HZ,
+            has_audio: false,
+            emits: vec![KIND],
+            ..ChannelDescriptor::default()
+        },
+        form: vec![
+            SettingField::new(
+                "bandwidth_hz",
+                "Width",
+                NumberSpec::hz(1_000.0, 20_000.0, 500.0),
+            )
+            .title("Passband searched for a carrier"),
+            SettingField::new(
+                "threshold_db",
+                "Threshold",
+                NumberSpec::new(3.0, 60.0, 1.0).unit("dB"),
+            )
+            .title("SNR a carrier needs to be reported"),
+        ],
+        home_hz: None,
+    }
+}
+
+impl Decoder for Carrier {
+    type Settings = CarrierSettings;
 
     fn layout(settings: &CarrierSettings) -> PluginLayout {
         let half = settings.bandwidth_hz / 2.0;
@@ -207,26 +234,11 @@ impl Plugin for Carrier {
             }
         }
     }
-
-    fn present(_kind: &EventKind, data: &Value) -> Result<Presentation, String> {
-        let seen: CarrierSeen = sdrmm_plugin::serde_json::from_value(data.clone())
-            .map_err(|error| error.to_string())?;
-        Ok(Presentation {
-            fields: fields(&[
-                (
-                    "offset",
-                    "Offset",
-                    number(Some(seen.offset_hz), Unit::Hz, 0),
-                ),
-                ("snr", "SNR", number(Some(seen.snr_db), Unit::Db, 1)),
-            ]),
-            ..Presentation::of(format!("Carrier {:+.0} Hz", seen.offset_hz))
-        })
-    }
 }
 
-sdrmm_plugin::export!(Carrier);
-sdrmm_plugin::export_transmit!(Beacon);
+sdrmm_plugin::export!(Example);
+sdrmm_plugin::export_decoder!(Carrier);
+sdrmm_plugin::export_encoder!(Beacon);
 sdrmm_plugin::export_processor!(LaneMeter);
 
 #[cfg(test)]
@@ -289,7 +301,7 @@ mod tests {
     #[test]
     fn an_event_presents_its_offset() {
         let data = sdrmm_plugin::serde_json::json!({ "offset_hz": -250.0, "snr_db": 31.5 });
-        let view = Carrier::present(&KIND, &data).expect("presents");
+        let view = Example::present(&KIND, &data).expect("presents");
         assert_eq!(view.summary, "Carrier -250 Hz");
     }
 }

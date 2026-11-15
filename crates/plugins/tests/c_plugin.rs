@@ -5,10 +5,10 @@ use std::{path::Path, process::Command};
 
 use num_complex::Complex;
 use sdrmm_channels::{ChannelCtx, ChannelOutputs, Decoder};
-use sdrmm_plugins::{PluginModule, WasmDecoder};
+use sdrmm_plugins::{PluginModule, WasmDecoder, plugin_kinds};
 use sdrmm_wire::EventKind;
 
-fn build() -> WasmDecoder {
+fn build() -> std::sync::Arc<PluginModule> {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = workspace.join("crates/plugin-example/c/burst.c");
     let wasm = Path::new(env!("CARGO_TARGET_TMPDIR")).join("burst.wasm");
@@ -28,14 +28,15 @@ fn build() -> WasmDecoder {
         .status()
         .unwrap_or_else(|error| panic!("zig did not start: {error}"));
     assert!(status.success(), "the C plugin did not build");
-    let module = PluginModule::load(&wasm).unwrap_or_else(|error| panic!("plugin loads: {error}"));
-    WasmDecoder::new(module)
+    PluginModule::load(&wasm).unwrap_or_else(|error| panic!("plugin loads: {error}"))
 }
 
 #[test]
 #[ignore = "needs zig on PATH"]
 fn a_c_plugin_logs_a_burst_once_and_reports_lock() {
-    let decoder = build();
+    let module = build();
+    let decoder =
+        WasmDecoder::of(&module).unwrap_or_else(|| panic!("the plugin declares a decoder"));
     assert_eq!(decoder.descriptor().type_id, "burst");
     let settings = decoder.descriptor().defaults.clone().expect("defaults");
     let mut channel = decoder
@@ -55,7 +56,7 @@ fn a_c_plugin_logs_a_burst_once_and_reports_lock() {
     assert_eq!(out.events.len(), 1, "{:?}", out.events);
     assert_eq!(out.events[0].kind, EventKind::named("burst"));
     assert_eq!(out.status.expect("a status").health.lock, Some(true));
-    let view = decoder.kinds()[0]
+    let view = plugin_kinds(&module)[0]
         .codec
         .present(&out.events[0].kind, &out.events[0].data())
         .expect("presents");

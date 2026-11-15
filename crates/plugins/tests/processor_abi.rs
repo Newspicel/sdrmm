@@ -25,7 +25,7 @@ const EVENTS: &str = r#"[{"kind":"probe","data":{"n":1}}]"#;
 
 fn manifest(processor: &str) -> String {
     format!(
-        r#"{{"abi":1,"descriptor":{{"type_id":"probe_rx","name":"Probe","bandwidth_hz":1000.0,"input_rate_hz":48000.0}},"processor":{processor}}}"#
+        r#"{{"abi":2,"decoder":{{"descriptor":{{"type_id":"probe_rx","name":"Probe","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}},"processor":{processor}}}"#
     )
 }
 
@@ -76,7 +76,13 @@ fn exports(process: &str) -> String {
 }
 
 fn load(name: &str, processor: &str, extra: &str) -> Result<Arc<PluginModule>, String> {
-    let path = common::wat_plugin(name, 1, &manifest(processor), "i32.const 0", extra);
+    let path = common::wat_plugin(
+        name,
+        common::ABI,
+        &manifest(processor),
+        "i32.const 0",
+        extra,
+    );
     PluginModule::load(&path).map_err(|error| error.to_string())
 }
 

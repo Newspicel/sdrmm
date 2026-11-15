@@ -3,14 +3,19 @@ use std::{
     sync::{Arc, Mutex, PoisonError},
 };
 
-use sdrmm_wire::plugin::{ABI_VERSION, Op, PluginManifest, Reply, export, unpack};
+use sdrmm_wire::{
+    EventKind,
+    plugin::{
+        ABI_VERSION, Op, PluginManifest, PresentRequest, Reply, decoder, encoder, export, unpack,
+    },
+    present::Presentation,
+};
 use serde::{Serialize, de::DeserializeOwned};
 use wasmtime::{Instance, Linker, Memory, Module, Store, TypedFunc};
 
 use crate::{
     PluginError,
     cache::ModuleCache,
-    encoder::check_exports,
     engine::{CALL_BUDGET, engine},
     kernels::{HostState, link},
     processor::check_processor,
@@ -31,7 +36,6 @@ pub(crate) struct Guest {
     pub(crate) instance: Instance,
     pub(crate) memory: Memory,
     alloc: TypedFunc<u32, u32>,
-    call: TypedFunc<(i32, u32, u32), i64>,
     error: TypedFunc<(), i64>,
 }
 
@@ -67,10 +71,7 @@ impl PluginModule {
         let mut control = instantiate(&name, &module, &linker).map_err(fail)?;
         let manifest = control.manifest().map_err(fail)?;
         check_abi(manifest.abi).map_err(fail)?;
-        if manifest.encoder.is_some() {
-            check_exports(&module).map_err(fail)?;
-        }
-        check_processor(&module, &manifest).map_err(fail)?;
+        check_parts(&module, &manifest).map_err(fail)?;
         Ok(Arc::new(Self {
             name,
             module,
@@ -84,7 +85,7 @@ impl PluginModule {
         instantiate(&self.name, &self.module, &self.linker)
     }
 
-    /// A control call on the shared instance: JSON in, JSON reply out.
+    /// A decoder control call on the shared instance: JSON in, JSON reply out.
     pub(crate) fn call<T: DeserializeOwned>(
         &self,
         op: Op,
@@ -92,6 +93,50 @@ impl PluginModule {
     ) -> Result<T, String> {
         let mut guest = self.control.lock().unwrap_or_else(PoisonError::into_inner);
         guest.call(op, input)
+    }
+
+    /// How the plugin reads one of its events.
+    pub(crate) fn present(
+        &self,
+        kind: &EventKind,
+        data: &serde_json::Value,
+    ) -> Result<Presentation, String> {
+        let request = PresentRequest {
+            kind: kind.clone(),
+            data: data.clone(),
+        };
+        let mut guest = self.control.lock().unwrap_or_else(PoisonError::into_inner);
+        guest.present(&request)
+    }
+}
+
+/// Whether the plugin brings anything, and exports what each part it declares needs.
+fn check_parts(module: &Module, manifest: &PluginManifest) -> Result<(), String> {
+    if manifest.is_empty() {
+        return Err("brings no decoder, encoder or processor".to_owned());
+    }
+    if manifest.decoder.is_some() {
+        check_exports(module, &decoder::REQUIRED, "decodes")?;
+    }
+    if manifest.encoder.is_some() {
+        check_exports(module, &encoder::export::ALL, "encodes")?;
+    }
+    if !manifest.kinds.is_empty() {
+        check_exports(module, &[export::PRESENT], "declares event kinds")?;
+    }
+    check_processor(module, manifest)
+}
+
+fn check_exports(module: &Module, names: &[&str], part: &str) -> Result<(), String> {
+    let missing: Vec<&str> = names
+        .iter()
+        .copied()
+        .filter(|name| module.get_export(name).is_none())
+        .collect();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{part} but lacks {}", missing.join(", ")))
     }
 }
 
@@ -113,7 +158,6 @@ fn instantiate(name: &str, module: &Module, linker: &Linker<HostState>) -> Resul
     check_abi(version)?;
     Ok(Guest {
         alloc: typed(&instance, &mut store, export::ALLOC)?,
-        call: typed(&instance, &mut store, export::CALL)?,
         error: typed(&instance, &mut store, export::ERROR)?,
         store,
         instance,
@@ -166,13 +210,30 @@ impl Guest {
     }
 
     fn call<T: DeserializeOwned>(&mut self, op: Op, input: &impl Serialize) -> Result<T, String> {
+        let call: TypedFunc<(i32, u32, u32), i64> =
+            typed(&self.instance, &mut self.store, decoder::CALL)?;
         let bytes = serde_json::to_vec(input).map_err(|error| error.to_string())?;
         let (ptr, len) = self.write(&bytes)?;
         self.store.set_epoch_deadline(CALL_BUDGET);
-        let packed = self
-            .call
+        let packed = call
             .call(&mut self.store, (op as i32, ptr, len))
             .map_err(|error| error.to_string())?;
+        self.reply(packed)
+    }
+
+    fn present(&mut self, request: &PresentRequest) -> Result<Presentation, String> {
+        let present: TypedFunc<(u32, u32), i64> =
+            typed(&self.instance, &mut self.store, export::PRESENT)?;
+        let bytes = serde_json::to_vec(request).map_err(|error| error.to_string())?;
+        let (ptr, len) = self.write(&bytes)?;
+        self.store.set_epoch_deadline(CALL_BUDGET);
+        let packed = present
+            .call(&mut self.store, (ptr, len))
+            .map_err(|error| error.to_string())?;
+        self.reply(packed)
+    }
+
+    fn reply<T: DeserializeOwned>(&self, packed: i64) -> Result<T, String> {
         let reply: Reply<T> = serde_json::from_slice(&self.read_packed(packed)?)
             .map_err(|error| format!("reply: {error}"))?;
         reply.into_result()

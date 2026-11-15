@@ -404,14 +404,25 @@ impl Registry {
             .collect()
     }
 
+    /// Publishes every decoder's event kinds and the plugins' own, so a kind a plugin brings
+    /// without a decoder is known too.
     fn publish_kinds(&self) {
+        let plugin_kinds = PLUGIN_KINDS
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         let kinds = self.decoders.iter().flat_map(|decoder| decoder.kinds());
         let feeds = self.decoders.iter().flat_map(|decoder| decoder.feeds());
-        sdrmm_wire::install_catalog(kinds.collect::<Vec<_>>(), feeds.collect::<Vec<_>>());
+        sdrmm_wire::install_catalog(
+            kinds.chain(plugin_kinds).collect::<Vec<_>>(),
+            feeds.collect::<Vec<_>>(),
+        );
     }
 }
 
 static BUILT_IN: LazyLock<Vec<Arc<dyn Decoder>>> = LazyLock::new(crate::builtin::decoders);
+
+static PLUGIN_KINDS: RwLock<Vec<KindSpec>> = RwLock::new(Vec::new());
 
 static CURRENT: LazyLock<RwLock<Arc<Registry>>> = LazyLock::new(|| {
     let registry = Registry::new(BUILT_IN.clone());
@@ -471,6 +482,12 @@ pub fn install_plugins(plugins: Vec<Arc<dyn Decoder>>) -> Result<Vec<String>, Ch
     registry.publish_kinds();
     *current = Arc::new(registry);
     Ok(replaced)
+}
+
+/// Makes `kinds` the event kinds the loaded plugins bring, in place of those loaded before.
+pub fn install_plugin_kinds(kinds: Vec<KindSpec>) {
+    *PLUGIN_KINDS.write().unwrap_or_else(PoisonError::into_inner) = kinds;
+    registry().publish_kinds();
 }
 
 /// Makes sure the decoders' event kinds are known before anything reads the event catalog.

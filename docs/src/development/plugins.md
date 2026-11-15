@@ -1,8 +1,9 @@
-# Decoder plugins
+# Plugins
 
-A plugin is a decoder compiled to WebAssembly. Drop the `.wasm` into the plugins folder
-(`--plugins-dir`, default `sdrmm/plugins` in the platform data folder) and it appears next to the
-built-in decoders: same palette entry, same settings form, same logs, maps and wires. The folder is
+A plugin brings a decoder, an encoder or an array processor, or any mix of them, compiled to
+WebAssembly. Drop the `.wasm` into the plugins folder (`--plugins-dir`, default `sdrmm/plugins` in
+the platform data folder) and each part appears next to the built-in ones: same palette entry,
+same settings form, same logs, maps and wires. The folder is
 watched, so a rebuilt plugin is loaded again on its own, and its running channels reopen on the new
 build with their settings and wires. A channel the new build refuses keeps the old one and the
 reason shows as an error. A plugin whose type id a built-in or another plugin already has is
@@ -34,17 +35,25 @@ An existing crate adds the SDK as a git dependency:
 sdrmm-plugin = { git = "https://github.com/newspicel/sdrmm", tag = "v2.4.3" }
 ```
 
-A plugin crate depends on `sdrmm-plugin`, builds as a `cdylib`, implements `Plugin` and calls
-`export!` once:
+A plugin crate depends on `sdrmm-plugin` and builds as a `cdylib`. It implements `Plugin` and
+calls `export!` once:
 
 | `Plugin` item | Gives |
 |---|---|
+| `manifest()` | The event kinds, and which of a decoder, encoder and processor it brings |
+| `present()` | How one of your events reads in logs and on maps |
+
+## Decoders
+
+Declare the manifest's `decoder` (type id, name, family, input rate, settings form), implement
+`Decoder` and call `export_decoder!` once:
+
+| `Decoder` item | Gives |
+|---|---|
 | `Settings` | Your settings struct, read from JSON with defaults for absent fields |
-| `manifest()` | Type id, name, family, input rate, settings form and event kinds |
 | `layout()` | Input rate and the band the settings occupy |
 | `open()`, `apply()` | A running channel, and new settings for it |
 | `process()` | One block of IQ in; audio, events and node readouts out |
-| `present()` | How one of your events reads in logs and on maps |
 
 The settings form is what the channel node shows: choices, numbers with ranges and units,
 toggles, text, conditional fields and lists. The frontend draws it from the manifest, so a plugin
@@ -52,11 +61,11 @@ ships no UI code. Event kinds carry view hints (table, meter, trend, picture) an
 status carries the health footer (lock, SNR, frequency error, errors per second). A family or
 symbol the server does not know gets its own palette group or a dot on the map.
 
-## Transmit
+## Encoders
 
-A plugin can also bring an encoder. Declare it as the manifest's `encoder` (type id, name, rate,
-width, input, settings form), implement `Transmitter` and call `export_transmit!` once.
-`submit()` takes audio or a frame, `generate()` fills baseband at the encoder's rate.
+Declare the manifest's `encoder` (type id, name, rate, width, input, settings form), implement
+`Encoder` and call `export_encoder!` once. `submit()` takes audio or a frame, `generate()` fills
+baseband at the encoder's rate.
 
 It shows under **Encoders** like a built-in one. Its `input` is `audio` for an audio wire, or
 `message` with fields in `message` for a form with a Send button: each filled form arrives as
@@ -64,8 +73,7 @@ UTF-8 JSON in a frame. The example's `Beacon` declares one text field and keys i
 
 ## Array processors
 
-A plugin can also bring an array processor: it runs on every lane of an Array node at once, like
-the direction finder. Declare it as the manifest's `processor` (type id, name, lane range, needs,
+An array processor runs on every lane of an Array node at once, like the direction finder. Declare it as the manifest's `processor` (type id, name, lane range, needs,
 settings form, readouts, emitted kinds), implement `Processor` and call `export_processor!` once.
 `process()` gets one block of every lane and sets readouts by their declared order, the health
 footer and events. Its node gets the face every built-in processor has, drawn from what its type
@@ -73,7 +81,8 @@ declares. The example's `LaneMeter` reports each lane's power and phase against 
 
 ## ABI
 
-The server runs plugins built for its own ABI version and refuses any other.
+The server runs plugins built for its own ABI version, currently 2, and refuses any other. A
+plugin built for ABI 1 needs a rebuild against the current SDK.
 
 ## Speed
 

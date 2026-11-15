@@ -14,15 +14,19 @@ mod common;
 
 fn manifest(name: &str) -> String {
     format!(
-        r#"{{"abi":1,"descriptor":{{"type_id":"cached","name":"{name}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}}"#
+        r#"{{"abi":2,"decoder":{{"descriptor":{{"type_id":"cached","name":"{name}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}}}}"#
     )
 }
 
 fn load(cache: &ModuleCache, name: &str) -> String {
-    let text = common::wat_text(1, &manifest(name), "i32.const 0", "");
+    let text = common::wat_text(common::ABI, &manifest(name), "i32.const 0", "");
     let module = PluginModule::from_bytes("cached".to_owned(), text.as_bytes(), Some(cache))
         .unwrap_or_else(|error| panic!("{error}"));
-    WasmDecoder::new(module).descriptor().name.clone()
+    WasmDecoder::of(&module)
+        .unwrap_or_else(|| panic!("the plugin declares a decoder"))
+        .descriptor()
+        .name
+        .clone()
 }
 
 fn builds(dir: &Path) -> Vec<PathBuf> {

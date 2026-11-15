@@ -13,9 +13,9 @@ fn write(dir: &std::path::Path, file: &str, type_id: &str, processor: Option<&st
         format!(r#","processor":{{"type_id":"{id}","name":"{id}"}}"#)
     });
     let manifest = format!(
-        r#"{{"abi":1,"descriptor":{{"type_id":"{type_id}","name":"{file}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}{processor}}}"#
+        r#"{{"abi":2,"decoder":{{"descriptor":{{"type_id":"{type_id}","name":"{file}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}}{processor}}}"#
     );
-    let text = common::wat_text(1, &manifest, "i32.const 0", common::ARRAY_EXPORTS);
+    let text = common::wat_text(common::ABI, &manifest, "i32.const 0", common::ARRAY_EXPORTS);
     std::fs::write(dir.join(format!("{file}.wasm")), text)
         .unwrap_or_else(|error| panic!("{error}"));
 }

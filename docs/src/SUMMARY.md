@@ -57,7 +57,7 @@
 
 - [Build and test](development/building.md)
 - [Architecture](development/architecture.md)
-- [Decoder plugins](development/plugins.md)
+- [Plugins](development/plugins.md)
   - [Any language](development/plugin-abi.md)
 - [Phone apps](development/phone-apps.md)
 - [Hardware tests](development/hardware-tests.md)

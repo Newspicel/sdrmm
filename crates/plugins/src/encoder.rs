@@ -3,14 +3,11 @@
 use std::sync::Arc;
 
 use num_complex::Complex;
-use sdrmm_channels::{
-    ChannelError,
-    encoder::{Encoder, EncoderParams, Modulator, TxPayload},
-};
+use sdrmm_channels::encoder::{Encoder, EncoderError, EncoderParams, Modulator, TxPayload};
 use sdrmm_wire::{
     EncoderDescriptor, EncoderInput,
     plugin::{
-        transmit::{PayloadKind, export},
+        encoder::{PayloadKind, export},
         unpack,
     },
 };
@@ -22,7 +19,7 @@ use crate::{
     samples::SAMPLE_BYTES,
 };
 
-/// A plugin as the encoder registry sees it.
+/// A plugin's encoder as the encoder registry sees it.
 pub struct WasmEncoder {
     module: Arc<PluginModule>,
     descriptor: EncoderDescriptor,
@@ -39,14 +36,14 @@ impl WasmEncoder {
         })
     }
 
-    fn check_type(&self, params: &EncoderParams) -> Result<(), ChannelError> {
+    fn check_type(&self, params: &EncoderParams) -> Result<(), EncoderError> {
         if params.type_id == self.descriptor.type_id {
             Ok(())
         } else {
-            Err(invalid(format!(
-                "{} encoder got {} settings",
-                self.descriptor.type_id, params.type_id
-            )))
+            Err(EncoderError::WrongType {
+                encoder: self.descriptor.type_id.clone(),
+                got: params.type_id.clone(),
+            })
         }
     }
 }
@@ -56,29 +53,27 @@ impl Encoder for WasmEncoder {
         &self.descriptor
     }
 
-    fn open(&self, params: &EncoderParams) -> Result<Box<dyn Modulator>, ChannelError> {
+    fn open(&self, params: &EncoderParams) -> Result<Box<dyn Modulator>, EncoderError> {
         self.check_type(params)?;
         Ok(Box::new(WasmModulator::open(
             self.module.clone(),
-            self.descriptor.rate_hz,
+            &self.descriptor,
             &params.settings,
         )?))
     }
 
     /// A message encoder gets the filled form as UTF-8 JSON in a frame.
-    fn compose(&self, message: &serde_json::Value) -> Result<TxPayload, ChannelError> {
+    fn compose(&self, message: &serde_json::Value) -> Result<TxPayload, EncoderError> {
+        let type_id = &self.descriptor.type_id;
         if self.descriptor.input != EncoderInput::Message {
-            return Err(ChannelError::InvalidPayload(format!(
-                "{} sends no messages",
-                self.descriptor.type_id
-            )));
+            return Err(EncoderError::NoMessages(type_id.clone()));
         }
         serde_json::to_vec(message)
             .map(TxPayload::Frame)
-            .map_err(|error| ChannelError::InvalidPayload(error.to_string()))
+            .map_err(|error| EncoderError::message(type_id, error.to_string()))
     }
 
-    fn width_hz(&self, params: &EncoderParams) -> Result<f64, ChannelError> {
+    fn width_hz(&self, params: &EncoderParams) -> Result<f64, EncoderError> {
         self.check_type(params)?;
         Ok(self.descriptor.bandwidth_hz)
     }
@@ -87,6 +82,7 @@ impl Encoder for WasmEncoder {
 /// One running encoder of a plugin, on an instance of its own.
 pub struct WasmModulator {
     module: Arc<PluginModule>,
+    type_id: String,
     guest: Guest,
     handle: i32,
     submit: TypedFunc<(i32, u32, u32, u32), i32>,
@@ -95,64 +91,54 @@ pub struct WasmModulator {
     fault: Option<String>,
 }
 
-fn invalid(error: String) -> ChannelError {
-    ChannelError::InvalidSettings(error)
-}
-
-fn halted(error: &str) -> ChannelError {
-    ChannelError::Unsupported(format!("plugin transmitter stopped: {error}"))
-}
-
-/// Whether the plugin exports every transmit entry its encoder needs.
-pub(crate) fn check_exports(module: &wasmtime::Module) -> Result<(), String> {
-    let missing: Vec<&str> = export::ALL
-        .into_iter()
-        .filter(|name| module.get_export(name).is_none())
-        .collect();
-    if missing.is_empty() {
-        Ok(())
-    } else {
-        Err(format!("transmits but lacks {}", missing.join(", ")))
-    }
-}
-
 impl WasmModulator {
     pub fn open(
         module: Arc<PluginModule>,
-        rate: f64,
+        descriptor: &EncoderDescriptor,
         settings: &serde_json::Value,
-    ) -> Result<Self, ChannelError> {
-        let mut guest = module.instantiate().map_err(invalid)?;
+    ) -> Result<Self, EncoderError> {
+        let type_id = descriptor.type_id.clone();
+        let refused = |reason: String| EncoderError::settings(&type_id, reason);
+        let mut guest = module.instantiate().map_err(refused)?;
         let open: TypedFunc<(f64, u32, u32), i32> =
-            typed(&guest.instance, &mut guest.store, export::OPEN).map_err(invalid)?;
-        let handle = guest.call_json(&open, rate, settings).map_err(invalid)?;
+            typed(&guest.instance, &mut guest.store, export::OPEN).map_err(refused)?;
+        let handle = guest
+            .call_json(&open, descriptor.rate_hz, settings)
+            .map_err(refused)?;
         if handle < 0 {
-            return Err(invalid(guest.last_error()));
+            return Err(refused(guest.last_error()));
         }
         Ok(Self {
-            submit: typed(&guest.instance, &mut guest.store, export::SUBMIT).map_err(invalid)?,
+            submit: typed(&guest.instance, &mut guest.store, export::SUBMIT).map_err(refused)?,
             generate: typed(&guest.instance, &mut guest.store, export::GENERATE)
-                .map_err(invalid)?,
-            close: typed(&guest.instance, &mut guest.store, export::CLOSE).map_err(invalid)?,
+                .map_err(refused)?,
+            close: typed(&guest.instance, &mut guest.store, export::CLOSE).map_err(refused)?,
             module,
+            type_id,
             guest,
             handle,
             fault: None,
         })
     }
 
-    fn stopped(&self) -> Result<(), ChannelError> {
-        self.fault
-            .as_deref()
-            .map_or(Ok(()), |error| Err(halted(error)))
+    fn halted(&self, reason: String) -> EncoderError {
+        EncoderError::Stopped {
+            encoder: self.type_id.clone(),
+            reason,
+        }
     }
 
-    /// Stops the transmitter for good; every later call says why.
-    fn stop(&mut self, error: String) -> ChannelError {
-        tracing::error!(plugin = %self.module.name, %error, "plugin transmitter stopped");
-        let halted = halted(&error);
-        self.fault = Some(error);
-        halted
+    fn stopped(&self) -> Result<(), EncoderError> {
+        self.fault
+            .clone()
+            .map_or(Ok(()), |reason| Err(self.halted(reason)))
+    }
+
+    /// Stops the encoder for good; every later call says why.
+    fn stop(&mut self, error: String) -> EncoderError {
+        tracing::error!(plugin = %self.module.name, %error, "plugin encoder stopped");
+        self.fault = Some(error.clone());
+        self.halted(error)
     }
 
     fn pull(&mut self, out: &mut [Complex<f32>]) -> Result<usize, String> {
@@ -191,7 +177,7 @@ fn encode(payload: &TxPayload) -> (PayloadKind, Vec<u8>) {
 }
 
 impl Modulator for WasmModulator {
-    fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError> {
+    fn submit(&mut self, payload: TxPayload) -> Result<(), EncoderError> {
         self.stopped()?;
         let (kind, bytes) = encode(&payload);
         let (ptr, len) = self.guest.write(&bytes).map_err(|error| self.stop(error))?;
@@ -201,7 +187,10 @@ impl Modulator for WasmModulator {
             .call(&mut self.guest.store, (self.handle, kind as u32, ptr, len))
             .map_err(|error| self.stop(error.to_string()))?;
         if code < 0 {
-            return Err(ChannelError::InvalidPayload(self.guest.last_error()));
+            return Err(EncoderError::Refused {
+                encoder: self.type_id.clone(),
+                reason: self.guest.last_error(),
+            });
         }
         Ok(())
     }
@@ -221,7 +210,7 @@ impl Drop for WasmModulator {
     fn drop(&mut self) {
         self.guest.store.set_epoch_deadline(CALL_BUDGET);
         if let Err(error) = self.close.call(&mut self.guest.store, self.handle) {
-            tracing::warn!(plugin = %self.module.name, %error, "plugin transmitter did not close");
+            tracing::warn!(plugin = %self.module.name, %error, "plugin encoder did not close");
         }
     }
 }

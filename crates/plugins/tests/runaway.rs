@@ -9,12 +9,12 @@ use sdrmm_wire::present::FieldValue;
 
 mod common;
 
-const MANIFEST: &str = r#"{"abi":1,"descriptor":{"type_id":"runaway","name":"Runaway","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}"#;
+const MANIFEST: &str = r#"{"abi":2,"decoder":{"descriptor":{"type_id":"runaway","name":"Runaway","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}"#;
 
 fn plugin_path() -> PathBuf {
     common::wat_plugin(
         "runaway",
-        1,
+        common::ABI,
         MANIFEST,
         "(loop $forever (br $forever))\n    i32.const 0",
         "",
@@ -24,7 +24,8 @@ fn plugin_path() -> PathBuf {
 #[test]
 fn a_plugin_stuck_in_a_loop_stops_its_channel_with_a_visible_error() {
     let module = PluginModule::load(&plugin_path()).unwrap_or_else(|error| panic!("{error}"));
-    let decoder = WasmDecoder::new(module);
+    let decoder =
+        WasmDecoder::of(&module).unwrap_or_else(|| panic!("the plugin declares a decoder"));
     let settings = decoder.descriptor().defaults.clone().expect("defaults");
     let mut channel = decoder
         .create_rx(

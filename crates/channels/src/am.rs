@@ -1,23 +1,22 @@
 use crate::registry::Native;
 use sdrmm_wire::{ClickProfile, Control, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
+mod encoder;
 mod model;
+pub(crate) use encoder::am_encoder;
+pub use encoder::{AmEncoderSettings, AmModulator};
 pub use model::*;
 use std::{f64::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
-use sdrmm_dsp::{Agc, Decimator, Deemphasis, RealDecimator, design_lowpass};
+use sdrmm_dsp::{Agc, Decimator, Deemphasis, design_lowpass};
 use sdrmm_modem::analog::{AmDemod, AmDetector, AmMode, AmParams as AmWaveform, AmRx};
 use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily};
 
 use crate::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate, clamp_full_scale,
-    encoder::{EncoderBase, Modulator, NativeEncoder, NativeModulator, TxPayload},
-    voice_leveller,
+    check_input_rate, clamp_full_scale, voice_leveller,
 };
-use sdrmm_modem::keying::{Burst, TxQueue};
-use serde::{Deserialize, Serialize};
 
 const AUDIO_TAPS: usize = 129;
 const CHANNEL_TAPS: usize = 129;
@@ -56,16 +55,13 @@ fn params(settings: &ChannelSettings) -> Result<AmParams, ChannelError> {
 }
 
 fn check_bandwidth(p: &AmParams) -> Result<(), ChannelError> {
-    check_width(p.bandwidth_hz)
-}
-
-fn check_width(bandwidth_hz: f64) -> Result<(), ChannelError> {
     let rate = DESCRIPTOR.input_rate_hz;
-    if bandwidth_hz.is_finite() && bandwidth_hz > 0.0 && bandwidth_hz < rate {
+    if p.bandwidth_hz.is_finite() && p.bandwidth_hz > 0.0 && p.bandwidth_hz < rate {
         Ok(())
     } else {
         Err(ChannelError::InvalidSettings(format!(
-            "am bandwidth must be in (0, {rate}) Hz, got {bandwidth_hz}"
+            "am bandwidth must be in (0, {rate}) Hz, got {}",
+            p.bandwidth_hz
         )))
     }
 }
@@ -77,12 +73,6 @@ pub(crate) fn channel_filter(p: &AmParams) -> Result<ChannelFilter, ChannelError
         &design_lowpass(CHANNEL_TAPS, cutoff),
         1,
     )))
-}
-
-fn audio_lowpass(bandwidth_hz: f64) -> Result<RealDecimator, ChannelError> {
-    check_width(bandwidth_hz)?;
-    let cutoff = bandwidth_hz / 2.0 / DESCRIPTOR.input_rate_hz;
-    Ok(RealDecimator::new(&design_lowpass(AUDIO_TAPS, cutoff), 1))
 }
 
 fn waveform(p: &AmParams) -> Result<AmWaveform, ChannelError> {
@@ -149,74 +139,6 @@ impl ChannelRx for AmChannel {
 
 const MODULATION_DEPTH: f32 = 0.8;
 
-/// What an AM encoder sends: the width its audio is cut to.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct AmEncoderSettings {
-    pub bandwidth_hz: f64,
-}
-
-impl Default for AmEncoderSettings {
-    fn default() -> Self {
-        Self {
-            bandwidth_hz: AmParams::default().bandwidth_hz,
-        }
-    }
-}
-
-pub struct AmModulator {
-    queue: TxQueue<f32>,
-    audio_lp: RealDecimator,
-    filtered: Vec<f32>,
-    burst: Burst,
-}
-
-impl NativeModulator for AmModulator {
-    type Settings = AmEncoderSettings;
-
-    fn rate_hz() -> f64 {
-        DESCRIPTOR.input_rate_hz
-    }
-
-    fn new(settings: &AmEncoderSettings) -> Result<Self, ChannelError> {
-        Ok(Self {
-            queue: TxQueue::new(DESCRIPTOR.type_id.as_str(), f64::from(AUDIO_RATE)),
-            audio_lp: audio_lowpass(settings.bandwidth_hz)?,
-            filtered: Vec::new(),
-            burst: Burst::new(DESCRIPTOR.input_rate_hz),
-        })
-    }
-}
-
-impl Modulator for AmModulator {
-    fn submit(&mut self, payload: TxPayload) -> Result<(), ChannelError> {
-        let TxPayload::Audio(pcm) = payload else {
-            return Err(ChannelError::InvalidPayload(
-                "am carries audio, not frames".to_owned(),
-            ));
-        };
-        self.queue.accept(pcm.len())?;
-        self.audio_lp.process(&pcm, &mut self.filtered);
-        clamp_full_scale(&mut self.filtered);
-        self.queue.extend(self.filtered.iter().copied());
-        Ok(())
-    }
-
-    fn generate(&mut self, out: &mut [Complex<f32>]) -> usize {
-        let mut written = 0;
-        for slot in out {
-            let Some(envelope) = self.burst.next(!self.queue.is_empty()) else {
-                break;
-            };
-            let audio = self.queue.pop().unwrap_or(0.0);
-            let modulated = (1.0 + MODULATION_DEPTH * audio) / (1.0 + MODULATION_DEPTH);
-            *slot = Complex::new(envelope * modulated, 0.0);
-            written += 1;
-        }
-        written
-    }
-}
-
 const AIRBAND: &[HzRange] = &[HzRange::mhz(118.0, 137.0)];
 
 fn am_signatures() -> Vec<SignalSignature> {
@@ -252,23 +174,7 @@ pub(crate) fn am_decoder() -> Native<AmParams> {
         .kinds(am_kinds)
 }
 
-pub(crate) fn am_encoder() -> NativeEncoder<AmEncoderSettings> {
-    NativeEncoder::new::<AmModulator>(
-        EncoderBase {
-            type_id: "am",
-            name: "AM",
-            summary: "AM voice",
-        },
-        |s: &AmEncoderSettings| s.bandwidth_hz,
-    )
-    .form(am_encoder_form)
-}
-
 const BANDWIDTHS_HZ: [f64; 3] = [5_000.0, 8_000.0, 10_000.0];
-
-fn am_encoder_form() -> Vec<SettingField> {
-    vec![SettingField::bandwidth(&BANDWIDTHS_HZ)]
-}
 
 pub(crate) fn am_form() -> Vec<SettingField> {
     vec![
@@ -289,11 +195,8 @@ mod tests {
     use sdrmm_wire::ChannelParams;
 
     use super::*;
+    use crate::testutil::{am_iq, dominant_tone, rms, run_ragged, settings, tone_power};
     use crate::wfm::WfmParams;
-    use crate::{
-        synth::{burst, tone_audio},
-        testutil::{am_iq, dominant_tone, rms, run_ragged, settings, tone_power},
-    };
 
     const RATE: f64 = 48_000.0;
 
@@ -385,110 +288,5 @@ mod tests {
             ChannelParams::new("wfm", &WfmParams::default()).expect("wfm settings"),
         ));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
-    }
-
-    const fn ctx() -> ChannelCtx {
-        ChannelCtx { input_rate: RATE }
-    }
-
-    fn tx_params() -> ChannelSettings {
-        settings(
-            ChannelParams::of(&AmParams {
-                bandwidth_hz: 10_000.0,
-                ..AmParams::default()
-            })
-            .expect("am settings"),
-        )
-    }
-
-    fn transmitter() -> AmModulator {
-        AmModulator::new(&AmEncoderSettings::default()).unwrap()
-    }
-
-    #[test]
-    fn tx_round_trips_a_tone_through_the_detector() {
-        let mut tx = transmitter();
-        tx.submit(TxPayload::Audio(tone_audio(1_000.0, 1.0, RATE, 24_000)))
-            .unwrap();
-        let iq = burst(&mut tx);
-        assert_eq!(iq.len(), 24_000 + Burst::new(RATE).ramp_len());
-
-        let mut rx = AmChannel::new(ctx(), tx_params()).unwrap();
-        let audio = run_ragged(&mut rx, &iq);
-        let window = &audio[4_000..20_000];
-        let (freq, ratio) = dominant_tone(window, RATE);
-        assert!((995.0..1_005.0).contains(&freq), "dominant {freq} Hz");
-        assert!(ratio > 10.0, "tone-to-rest ratio {ratio}");
-        let amplitude = rms(window);
-        assert!((0.2..0.3).contains(&amplitude), "rms {amplitude}");
-    }
-
-    #[test]
-    fn tx_keeps_the_envelope_between_the_trough_and_full_scale() {
-        let mut tx = transmitter();
-        tx.submit(TxPayload::Audio(tone_audio(1_000.0, 4.0, RATE, 24_000)))
-            .unwrap();
-        let iq = burst(&mut tx);
-        let ramp = Burst::new(RATE).ramp_len();
-        let keyed = &iq[ramp..iq.len() - ramp];
-        let peak = keyed.iter().map(|s| s.norm()).fold(f32::MIN, f32::max);
-        let trough = keyed.iter().map(|s| s.norm()).fold(f32::MAX, f32::min);
-        assert!((peak - 1.0).abs() < 0.02, "peak envelope {peak}");
-        let floor = (1.0 - MODULATION_DEPTH) / (1.0 + MODULATION_DEPTH);
-        assert!(trough > floor - 0.02, "trough envelope {trough}");
-    }
-
-    #[test]
-    fn tx_ramps_the_burst_edges() {
-        let mut tx = transmitter();
-        tx.submit(TxPayload::Audio(vec![0.0; 4_800])).unwrap();
-        let iq = burst(&mut tx);
-        let ramp = Burst::new(RATE).ramp_len();
-        assert!(iq[0].norm() < 0.01, "first sample {}", iq[0].norm());
-        assert!(
-            iq[iq.len() - 1].norm() < 0.01,
-            "last sample {}",
-            iq[iq.len() - 1].norm()
-        );
-        for (k, s) in iq[ramp..iq.len() - ramp].iter().enumerate() {
-            let unmodulated = 1.0 / (1.0 + MODULATION_DEPTH);
-            assert!(
-                (s.norm() - unmodulated).abs() < 1e-5,
-                "envelope {} at {k}",
-                s.norm()
-            );
-        }
-    }
-
-    #[test]
-    fn tx_radiates_nothing_until_audio_is_submitted() {
-        let mut tx = transmitter();
-        let mut block = [Complex::new(9.0, 9.0); 64];
-        assert_eq!(tx.generate(&mut block), 0);
-        assert_eq!(block[0], Complex::new(9.0, 9.0));
-    }
-
-    #[test]
-    fn tx_rejects_a_frame_payload_and_a_backlog_past_the_bound() {
-        let mut tx = transmitter();
-        assert!(matches!(
-            tx.submit(TxPayload::Frame(vec![0x7E])),
-            Err(ChannelError::InvalidPayload(_))
-        ));
-        let over = (sdrmm_modem::keying::MAX_QUEUE_S * f64::from(AUDIO_RATE)) as usize + 1;
-        assert!(matches!(
-            tx.submit(TxPayload::Audio(vec![0.0; over])),
-            Err(ChannelError::InvalidPayload(_))
-        ));
-        let mut block = [Complex::new(0.0, 0.0); 16];
-        assert_eq!(tx.generate(&mut block), 0);
-    }
-
-    #[test]
-    fn tx_refuses_a_width_past_its_rate() {
-        let built = AmModulator::new(&AmEncoderSettings {
-            bandwidth_hz: 96_000.0,
-        });
-        assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
 }

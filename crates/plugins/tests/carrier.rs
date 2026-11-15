@@ -10,10 +10,12 @@ use std::{
 use num_complex::Complex;
 use sdrmm_channels::array_processor::ProcessorFactory;
 use sdrmm_channels::{
-    ChannelCtx, ChannelError, ChannelOutputs, Decoder,
-    encoder::{Encoder, EncoderParams, TxPayload},
+    ChannelCtx, ChannelOutputs, Decoder,
+    encoder::{Encoder, EncoderError, EncoderParams, TxPayload},
 };
-use sdrmm_plugins::{PluginModule, WasmDecoder, WasmEncoder, WasmProcessors, load_dir};
+use sdrmm_plugins::{
+    PluginModule, WasmDecoder, WasmEncoder, WasmProcessors, load_dir, plugin_kinds,
+};
 use sdrmm_wire::{ChannelParams, ChannelSettings, EventKind};
 
 mod common;
@@ -64,7 +66,7 @@ fn module() -> std::sync::Arc<PluginModule> {
 }
 
 fn decoder() -> WasmDecoder {
-    WasmDecoder::new(module())
+    WasmDecoder::of(&module()).unwrap_or_else(|| panic!("the plugin declares a decoder"))
 }
 
 fn tone(offset_hz: f64, samples: usize) -> Vec<Complex<f32>> {
@@ -86,7 +88,7 @@ fn a_plugin_describes_itself_like_a_built_in_decoder() {
     let defaults = descriptor.defaults.as_ref().expect("defaults");
     assert_eq!(defaults.params.settings["threshold_db"], 20.0);
     assert!(!descriptor.ports.is_empty());
-    let kinds = decoder.kinds();
+    let kinds = plugin_kinds(&module());
     assert_eq!(kinds.len(), 1);
     assert_eq!(kinds[0].entry.name, "Carrier");
 }
@@ -112,7 +114,7 @@ fn a_plugin_channel_reports_a_tone_through_the_host_fft() {
     assert_eq!(event.kind, EventKind::named("carrier"));
     let offset = event.data()["offset_hz"].as_f64().expect("offset");
     assert!((offset - 2_000.0).abs() < 50.0, "{offset}");
-    let view = decoder.kinds()[0]
+    let view = plugin_kinds(&module())[0]
         .codec
         .present(&event.kind, &event.data())
         .expect("presents");
@@ -122,7 +124,7 @@ fn a_plugin_channel_reports_a_tone_through_the_host_fft() {
 #[test]
 fn a_plugin_reports_health_and_view_hints_like_a_built_in() {
     let decoder = decoder();
-    assert_eq!(decoder.kinds()[0].entry.views.len(), 2);
+    assert_eq!(plugin_kinds(&module())[0].entry.views.len(), 2);
     let settings = decoder.descriptor().defaults.clone().expect("defaults");
     let mut channel = decoder
         .create_rx(
@@ -158,7 +160,7 @@ fn a_plugin_transmits_what_its_own_receiver_hears() {
     tx.submit(TxPayload::Frame(vec![0xFF; 8]))
         .unwrap_or_else(|error| panic!("frame queues: {error}"));
     let refused = tx.submit(TxPayload::Audio(vec![0.0; 4]));
-    let Err(ChannelError::InvalidPayload(reason)) = refused else {
+    let Err(EncoderError::Refused { reason, .. }) = refused else {
         panic!("audio must be refused, got {refused:?}");
     };
     assert!(reason.contains("frames"), "{reason}");
@@ -232,14 +234,23 @@ fn the_example_lane_meter_reports_power_and_phase_through_the_abi() {
 }
 
 #[test]
-fn a_directory_loads_every_plugin_in_it() {
-    let (decoders, errors) = load_dir(plugin_dir());
-    assert!(errors.is_empty(), "{errors:?}");
-    let ids: Vec<String> = decoders
+fn a_directory_loads_every_part_of_every_plugin_in_it() {
+    let scan = load_dir(plugin_dir());
+    assert!(scan.errors.is_empty(), "{:?}", scan.errors);
+    let decoders: Vec<String> = scan
+        .decoders
         .iter()
         .map(|decoder: &Arc<dyn Decoder>| decoder.descriptor().type_id.clone())
         .collect();
-    assert_eq!(ids, ["carrier"]);
-    let (none, missing) = load_dir(&plugin_dir().join("absent"));
-    assert!(none.is_empty() && missing.is_empty());
+    assert_eq!(decoders, ["carrier"]);
+    let encoders: Vec<&str> = scan
+        .encoders
+        .iter()
+        .map(|encoder| encoder.descriptor().type_id.as_str())
+        .collect();
+    assert_eq!(encoders, ["beacon"]);
+    assert_eq!(scan.processors.len(), 1);
+    assert_eq!(scan.kinds.len(), 1);
+    let none = load_dir(&plugin_dir().join("absent"));
+    assert!(none.decoders.is_empty() && none.errors.is_empty());
 }

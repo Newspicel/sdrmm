@@ -209,8 +209,7 @@ impl Inner {
         }
         let source = match &request.source {
             TransmitSource::Encoder(params) => {
-                let encoder = encoder(&params.type_id)
-                    .map_err(|_| refused(format!("no encoder named {}", params.type_id)))?;
+                let encoder = encoder(&params.type_id)?;
                 let descriptor = encoder.descriptor();
                 Planned::Encoder {
                     params: params.clone(),

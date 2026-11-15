@@ -26,11 +26,20 @@ A plugin is a core WebAssembly module. Rust gets the SDK; any other language tha
 
 ## Exports
 
+Every plugin:
+
 | Export | Signature | Does |
 |---|---|---|
-| `sdrmm_abi` | `() -> u32` | ABI version, currently `1` |
+| `sdrmm_abi` | `() -> u32` | ABI version, currently `2` |
 | `sdrmm_alloc` | `(len: u32) -> ptr` | A buffer for the host to write `len` bytes into |
 | `sdrmm_manifest` | `() -> i64` | Packed manifest JSON |
+| `sdrmm_present` | `(ptr, len) -> i64` | Only with `kinds`. `{"kind": "burst", "data": {...}}` in, a packed reply out whose `ok` is a `Presentation`: `{"summary": "Burst", "fields": [...]}` |
+| `sdrmm_error` | `() -> i64` | Packed message for the last `-1` |
+
+A decoder:
+
+| Export | Signature | Does |
+|---|---|---|
 | `sdrmm_call` | `(op: i32, ptr, len) -> i64` | A control call, JSON in, packed JSON reply out |
 | `sdrmm_open` | `(rate: f64, ptr, len) -> i32` | Opens a channel at `rate` Hz with settings JSON; a handle, or `-1` |
 | `sdrmm_apply` | `(handle, ptr, len) -> i32` | New settings JSON; `0`, or `-1` |
@@ -38,7 +47,6 @@ A plugin is a core WebAssembly module. Rust gets the SDK; any other language tha
 | `sdrmm_process` | `(handle, samples: u32) -> ptr` | Runs the block; where the output header is |
 | `sdrmm_retuned` | `(handle)` | Optional. The channel moved; drop what you accumulated |
 | `sdrmm_close` | `(handle)` | The channel is gone |
-| `sdrmm_error` | `() -> i64` | Packed message for the last `-1` |
 
 `ptr`, `len` and `handle` are `u32`, `u32` and `i32`. A packed `i64` is `ptr << 32 | len`. Every
 buffer you return stays yours and must stay valid until the host's next call into the instance.
@@ -46,13 +54,12 @@ A buffer from `sdrmm_alloc` is yours again once the call it was written for retu
 
 ## Control calls
 
-`sdrmm_call` answers `{"ok": value}` or `{"err": "message"}`.
+`sdrmm_call` and `sdrmm_present` answer `{"ok": value}` or `{"err": "message"}`.
 
 | `op` | Input | `ok` value |
 |---|---|---|
 | `1` layout | Settings | `{"input_rate_hz": 48000.0, "band": [-6000.0, 6000.0], "audio_channels": 1}` |
 | `2` normalize | Settings, `{}` for the defaults | The settings with every default filled in |
-| `3` present | `{"kind": "burst", "data": {...}}` | A `Presentation`: `{"summary": "Burst", "fields": [...]}` |
 
 Settings are the JSON object your form produces. Treat absent fields as defaults.
 
@@ -60,26 +67,30 @@ Settings are the JSON object your form produces. Treat absent fields as defaults
 
 ```json
 {
-  "abi": 1,
-  "descriptor": {
-    "type_id": "burst", "name": "Burst", "summary": "Strong bursts",
-    "family": "utility", "bandwidth_hz": 12000.0, "input_rate_hz": 48000.0,
-    "emits": ["burst"]
-  },
-  "form": [
-    { "key": "threshold_db", "label": "Threshold",
-      "control": { "type": "number", "min": -60.0, "max": 0.0, "step": 1.0, "unit": "dB" } }
-  ],
+  "abi": 2,
   "kinds": [
     { "kind": "burst", "name": "Burst", "noun": "Bursts", "caps": ["log"],
       "hue": "amber", "lifetime": { "type": "instant" } }
-  ]
+  ],
+  "decoder": {
+    "descriptor": {
+      "type_id": "burst", "name": "Burst", "summary": "Strong bursts",
+      "family": "utility", "bandwidth_hz": 12000.0, "input_rate_hz": 48000.0,
+      "emits": ["burst"]
+    },
+    "form": [
+      { "key": "threshold_db", "label": "Threshold",
+        "control": { "type": "number", "min": -60.0, "max": 0.0, "step": 1.0, "unit": "dB" } }
+    ]
+  }
 }
 ```
 
-`descriptor`, `form` entries and `kinds` entries are the `ChannelDescriptor`, `SettingField` and
-`EventKindEntry` schemas in [`openapi.json`](https://github.com/Newspicel/sdrmm/blob/main/openapi.json).
-Optional: `home_hz`, the frequency a new channel starts on, and `processor`, a `ProcessorType`.
+A plugin brings at least one of `decoder`, `encoder` and `processor`. `descriptor`, `form`
+entries, `kinds` entries and `encoder` are the `ChannelDescriptor`, `SettingField`,
+`EventKindEntry` and `EncoderDescriptor` schemas in
+[`openapi.json`](https://github.com/Newspicel/sdrmm/blob/main/openapi.json); `processor` is a
+`ProcessorType`. Optional in `decoder`: `home_hz`, the frequency a new channel starts on.
 
 ## One block
 
@@ -131,17 +142,17 @@ host by `crates/plugins/tests/c_plugin.rs`.
 {{#include ../../../crates/plugin-example/c/burst.c}}
 ```
 
-## Transmit and arrays
+## Encoders and arrays
 
-A transmitter sets `can_transmit` and adds the exports in `crates/wire/src/plugin/transmit.rs`:
+An encoder declares `encoder` in the manifest and adds the exports in
+`crates/wire/src/plugin/encoder.rs`:
 
 | Export | Signature |
 |---|---|
-| `sdrmm_tx_open` | `(rate: f64, ptr, len) -> handle` |
-| `sdrmm_tx_apply` | `(handle, ptr, len) -> i32` |
-| `sdrmm_tx_submit` | `(handle, kind: u32, ptr, len) -> i32`, kind `0` audio as `f32`, `1` frame bytes |
-| `sdrmm_tx_generate` | `(handle, max_samples: u32) -> i64`, packed pointer and sample count of I/Q |
-| `sdrmm_tx_close` | `(handle)` |
+| `sdrmm_encoder_open` | `(rate: f64, ptr, len) -> handle` |
+| `sdrmm_encoder_submit` | `(handle, kind: u32, ptr, len) -> i32`, kind `0` audio as `f32`, `1` frame bytes |
+| `sdrmm_encoder_generate` | `(handle, max_samples: u32) -> i64`, packed pointer and sample count of I/Q |
+| `sdrmm_encoder_close` | `(handle)` |
 
 An array processor declares `processor` in the manifest and adds the exports in
 `crates/wire/src/plugin/processor.rs`. `sdrmm_array_input` takes every lane's block one after the

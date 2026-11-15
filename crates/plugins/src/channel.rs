@@ -4,7 +4,7 @@ use num_complex::Complex;
 use sdrmm_channels::{ChannelError, ChannelOutputs, ChannelRx};
 use sdrmm_wire::{
     ChannelSettings, ChannelStatus, DecoderEvent,
-    plugin::{OutputHeader, export},
+    plugin::{OutputHeader, decoder as export},
     present::{Field, FieldValue},
 };
 use wasmtime::TypedFunc;

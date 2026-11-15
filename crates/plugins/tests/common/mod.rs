@@ -7,6 +7,9 @@ use std::path::PathBuf;
 
 const REPLY: &str = r#"{"ok":{}}"#;
 
+/// The ABI the host speaks, for plugins that should load.
+pub const ABI: u32 = sdrmm_wire::plugin::ABI_VERSION;
+
 /// Array processor exports that open, take settings and report nothing.
 pub const ARRAY_EXPORTS: &str = r#"(func (export "sdrmm_array_open") (param i32 i32) (result i32) i32.const 0)
   (func (export "sdrmm_array_apply") (param i32 i32 i32) (result i32) i32.const 0)
@@ -50,6 +53,8 @@ pub fn wat_text(abi: u32, manifest: &str, process: &str, extra: &str) -> String 
   (func (export "sdrmm_manifest") (result i64)
     i64.const {manifest_packed})
   (func (export "sdrmm_call") (param i32 i32 i32) (result i64)
+    i64.const {reply_packed})
+  (func (export "sdrmm_present") (param i32 i32) (result i64)
     i64.const {reply_packed})
   (func (export "sdrmm_error") (result i64) i64.const 0)
   (func (export "sdrmm_open") (param f64 i32 i32) (result i32) i32.const 0)

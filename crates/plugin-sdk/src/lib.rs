@@ -1,19 +1,22 @@
-//! Write an sdr-- decoder, and with it an encoder or an array processor, as a WASM plugin.
+//! Write an sdr-- decoder, encoder or array processor, or any mix of them, as a WASM plugin.
 //!
-//! Implement [`Plugin`] for a type, call [`export!`] once, and build the crate as a `cdylib` for
-//! `wasm32-unknown-unknown`. The server loads the `.wasm` from its plugins directory and the
-//! decoder shows up beside the built-in ones. `dsp` and `modem` are the same building blocks the
+//! Implement [`Plugin`] for a type and call [`export!`] once. Then, for each part the manifest
+//! declares, implement [`Decoder`], [`Encoder`] or [`Processor`] and call [`export_decoder!`],
+//! [`export_encoder!`] or [`export_processor!`]. Build the crate as a `cdylib` for
+//! `wasm32-unknown-unknown`. The server loads the `.wasm` from its plugins directory and each
+//! part shows up beside the built-in ones. `dsp` and `modem` are the same building blocks the
 //! built-in decoders use; [`kernels`] runs the heavy ones natively in the host.
 
+pub mod encoder;
 pub mod kernels;
 mod outputs;
 pub mod processor;
-pub mod transmit;
 
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 pub mod abi;
 
+pub use encoder::{Encoder, Payload};
 pub use num_complex::Complex;
 pub use outputs::Outputs;
 pub use processor::{ArrayOutputs, Lanes, Processor};
@@ -21,7 +24,6 @@ pub use sdrmm_dsp as dsp;
 pub use sdrmm_modem as modem;
 pub use sdrmm_wire as wire;
 pub use serde_json;
-pub use transmit::{Payload, Transmitter};
 
 use sdrmm_wire::{
     EventKind,
@@ -31,11 +33,19 @@ use sdrmm_wire::{
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
-/// One decoder: what it is, how it is laid out, and a running channel of it.
-pub trait Plugin: Sized {
-    type Settings: Serialize + DeserializeOwned + Default;
-
+/// What a plugin brings, and how the events its parts emit read.
+pub trait Plugin {
     fn manifest() -> PluginManifest;
+
+    /// How an event of one of the manifest's kinds reads in a log.
+    fn present(kind: &EventKind, _data: &Value) -> Result<Presentation, String> {
+        Err(format!("no presenter for {kind}"))
+    }
+}
+
+/// One decoder: how it is laid out, and a running channel of it.
+pub trait Decoder: Sized {
+    type Settings: Serialize + DeserializeOwned + Default;
 
     fn layout(settings: &Self::Settings) -> PluginLayout;
 
@@ -47,9 +57,6 @@ pub trait Plugin: Sized {
     fn process(&mut self, iq: &[Complex<f32>], out: &mut Outputs);
 
     fn retuned(&mut self) {}
-
-    /// How an event of one of this plugin's kinds reads in a log.
-    fn present(kind: &EventKind, data: &Value) -> Result<Presentation, String>;
 }
 
 /// Parses settings JSON the way the host will, absent fields taking their defaults.
@@ -70,7 +77,7 @@ pub fn from_value<S: DeserializeOwned>(value: Value) -> Result<S, String> {
     serde_json::from_value(value).map_err(|error| error.to_string())
 }
 
-/// Exports the ABI the host calls for the plugin type `$plugin`.
+/// Exports what every plugin has, for the plugin type `$plugin`.
 #[macro_export]
 macro_rules! export {
     ($plugin:ty) => {
@@ -92,43 +99,57 @@ macro_rules! export {
             }
 
             #[unsafe(no_mangle)]
-            pub extern "C" fn sdrmm_call(op: i32, ptr: u32, len: u32) -> i64 {
-                $crate::abi::call::<$plugin>(op, ptr, len)
-            }
-
-            #[unsafe(no_mangle)]
-            pub extern "C" fn sdrmm_open(rate: f64, ptr: u32, len: u32) -> i32 {
-                $crate::abi::open::<$plugin>(rate, ptr, len)
-            }
-
-            #[unsafe(no_mangle)]
-            pub extern "C" fn sdrmm_apply(handle: i32, ptr: u32, len: u32) -> i32 {
-                $crate::abi::apply::<$plugin>(handle, ptr, len)
-            }
-
-            #[unsafe(no_mangle)]
-            pub extern "C" fn sdrmm_input(handle: i32, samples: u32) -> u32 {
-                $crate::abi::input::<$plugin>(handle, samples)
-            }
-
-            #[unsafe(no_mangle)]
-            pub extern "C" fn sdrmm_process(handle: i32, samples: u32) -> u32 {
-                $crate::abi::process::<$plugin>(handle, samples)
-            }
-
-            #[unsafe(no_mangle)]
-            pub extern "C" fn sdrmm_retuned(handle: i32) {
-                $crate::abi::retuned::<$plugin>(handle);
-            }
-
-            #[unsafe(no_mangle)]
-            pub extern "C" fn sdrmm_close(handle: i32) {
-                $crate::abi::close(handle);
+            pub extern "C" fn sdrmm_present(ptr: u32, len: u32) -> i64 {
+                $crate::abi::present::<$plugin>(ptr, len)
             }
 
             #[unsafe(no_mangle)]
             pub extern "C" fn sdrmm_error() -> i64 {
                 $crate::abi::error()
+            }
+        };
+    };
+}
+
+/// Exports the decoder ABI for the decoder type `$decoder`.
+#[macro_export]
+macro_rules! export_decoder {
+    ($decoder:ty) => {
+        #[cfg(target_arch = "wasm32")]
+        const _: () = {
+            #[unsafe(no_mangle)]
+            pub extern "C" fn sdrmm_call(op: i32, ptr: u32, len: u32) -> i64 {
+                $crate::abi::call::<$decoder>(op, ptr, len)
+            }
+
+            #[unsafe(no_mangle)]
+            pub extern "C" fn sdrmm_open(rate: f64, ptr: u32, len: u32) -> i32 {
+                $crate::abi::open::<$decoder>(rate, ptr, len)
+            }
+
+            #[unsafe(no_mangle)]
+            pub extern "C" fn sdrmm_apply(handle: i32, ptr: u32, len: u32) -> i32 {
+                $crate::abi::apply::<$decoder>(handle, ptr, len)
+            }
+
+            #[unsafe(no_mangle)]
+            pub extern "C" fn sdrmm_input(handle: i32, samples: u32) -> u32 {
+                $crate::abi::input::<$decoder>(handle, samples)
+            }
+
+            #[unsafe(no_mangle)]
+            pub extern "C" fn sdrmm_process(handle: i32, samples: u32) -> u32 {
+                $crate::abi::process::<$decoder>(handle, samples)
+            }
+
+            #[unsafe(no_mangle)]
+            pub extern "C" fn sdrmm_retuned(handle: i32) {
+                $crate::abi::retuned::<$decoder>(handle);
+            }
+
+            #[unsafe(no_mangle)]
+            pub extern "C" fn sdrmm_close(handle: i32) {
+                $crate::abi::close(handle);
             }
         };
     };

@@ -3,47 +3,45 @@ use std::sync::Arc;
 use sdrmm_channels::{ChannelCtx, ChannelError, ChannelFilter, ChannelLayout, ChannelRx, Decoder};
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DEFAULT_FREQUENCY_HZ, EventKind, KindCodec,
-    KindSpec,
-    plugin::{Op, PluginLayout, PresentRequest},
-    present::Presentation,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DEFAULT_FREQUENCY_HZ,
+    plugin::{DecoderManifest, Op, PluginLayout, PluginManifest},
 };
 
 use crate::{channel::WasmChannel, module::PluginModule};
 
 const FILTER_TAPS: usize = 65;
 
-/// A plugin as the decoder registry sees it.
+/// A plugin's decoder as the decoder registry sees it.
 pub struct WasmDecoder {
     module: Arc<PluginModule>,
     descriptor: ChannelDescriptor,
 }
 
 impl WasmDecoder {
-    pub fn new(module: Arc<PluginModule>) -> Self {
-        let descriptor = describe(&module);
-        Self { module, descriptor }
+    /// The decoder `module` declares, if it declares one.
+    #[must_use]
+    pub fn of(module: &Arc<PluginModule>) -> Option<Self> {
+        let decoder = module.manifest.decoder.as_ref()?;
+        Some(Self {
+            descriptor: describe(module, decoder),
+            module: module.clone(),
+        })
     }
 }
 
-fn describe(module: &PluginModule) -> ChannelDescriptor {
-    let manifest = &module.manifest;
-    let mut descriptor = manifest.descriptor.clone();
-    descriptor.settings = manifest.form.clone();
+fn describe(module: &PluginModule, decoder: &DecoderManifest) -> ChannelDescriptor {
+    let mut descriptor = decoder.descriptor.clone();
+    descriptor.settings = decoder.form.clone();
     descriptor.identifiable = !descriptor.signatures.is_empty();
     if descriptor.emits.is_empty() {
-        descriptor.emits = manifest
-            .kinds
-            .iter()
-            .map(|kind| kind.kind.clone())
-            .collect();
+        descriptor.emits = decoded_kinds(&module.manifest);
     }
     descriptor.defaults = module
         .call::<serde_json::Value>(Op::Normalize, &serde_json::json!({}))
         .ok()
         .map(|settings| {
             ChannelSettings::new(
-                manifest.home_hz.unwrap_or(DEFAULT_FREQUENCY_HZ),
+                decoder.home_hz.unwrap_or(DEFAULT_FREQUENCY_HZ),
                 ChannelParams {
                     type_id: descriptor.type_id.clone(),
                     settings,
@@ -52,6 +50,21 @@ fn describe(module: &PluginModule) -> ChannelDescriptor {
         });
     descriptor.ports = sdrmm_wire::patch::channel_ports(&descriptor);
     descriptor
+}
+
+/// The plugin's kinds its processor does not emit, which are the decoder's.
+fn decoded_kinds(manifest: &PluginManifest) -> Vec<sdrmm_wire::EventKind> {
+    let processed = manifest
+        .processor
+        .as_ref()
+        .map(|processor| processor.emits.as_slice())
+        .unwrap_or_default();
+    manifest
+        .kinds
+        .iter()
+        .map(|entry| entry.kind.clone())
+        .filter(|kind| !processed.contains(kind))
+        .collect()
 }
 
 fn invalid(error: String) -> ChannelError {
@@ -127,34 +140,5 @@ impl Decoder for WasmDecoder {
             type_id: params.type_id.clone(),
             settings,
         })
-    }
-
-    fn kinds(&self) -> Vec<KindSpec> {
-        let codec: Arc<dyn KindCodec> = Arc::new(PluginCodec {
-            module: self.module.clone(),
-        });
-        self.module
-            .manifest
-            .kinds
-            .iter()
-            .map(|entry| KindSpec::with_codec(entry.clone(), codec.clone()))
-            .collect()
-    }
-}
-
-/// Presents a plugin's events by asking the plugin.
-struct PluginCodec {
-    module: Arc<PluginModule>,
-}
-
-impl KindCodec for PluginCodec {
-    fn present(&self, kind: &EventKind, data: &serde_json::Value) -> Result<Presentation, String> {
-        self.module.call(
-            Op::Present,
-            &PresentRequest {
-                kind: kind.clone(),
-                data: data.clone(),
-            },
-        )
     }
 }

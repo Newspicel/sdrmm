@@ -12,7 +12,7 @@ reaches it. A bind other machines can reach always needs a [token](#token) and s
 | `--bind <ADDRESS>` | `127.0.0.1:8080` | Listen address; a non-loopback one gets a token |
 | `--db <PATH>` | `sdrmm/sdrmm.db` in the platform data folder | SQLite database |
 | `--recordings-dir <PATH>` | `sdrmm/recordings` in the platform data folder | Recording folder |
-| `--plugins-dir <PATH>` | `sdrmm/plugins` in the platform data folder | [Decoder plugins](../development/plugins.md) |
+| `--plugins-dir <PATH>` | `sdrmm/plugins` in the platform data folder | [Plugins](../development/plugins.md) |
 | `--token <TOKEN>` | Generated on a network bind | Shared access token |
 | `--no-auth` | Off | Run a network bind without a token |
 | `--tls-cert <PATH>`, `--tls-key <PATH>` | None | HTTPS certificate chain and key, PEM; always together |

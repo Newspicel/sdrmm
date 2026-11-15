@@ -11,13 +11,13 @@
 #define PAGE 65536
 #define THRESHOLD 0.01f
 
-enum { OP_LAYOUT = 1, OP_NORMALIZE = 2, OP_PRESENT = 3 };
+enum { OP_LAYOUT = 1, OP_NORMALIZE = 2 };
 
 static const char MANIFEST[] =
-    "{\"abi\":1,"
-    "\"descriptor\":{\"type_id\":\"burst\",\"name\":\"Burst\",\"summary\":\"Strong bursts\","
+    "{\"abi\":2,"
+    "\"decoder\":{\"descriptor\":{\"type_id\":\"burst\",\"name\":\"Burst\",\"summary\":\"Strong bursts\","
     "\"family\":\"utility\",\"bandwidth_hz\":12000.0,\"input_rate_hz\":48000.0,"
-    "\"emits\":[\"burst\"]},"
+    "\"emits\":[\"burst\"]}},"
     "\"kinds\":[{\"kind\":\"burst\",\"name\":\"Burst\",\"noun\":\"Bursts\",\"caps\":[\"log\"],"
     "\"hue\":\"amber\",\"lifetime\":{\"type\":\"instant\"}}]}";
 static const char LAYOUT[] =
@@ -65,7 +65,7 @@ static int64_t pack(const void *ptr, size_t len) {
     return ((int64_t)(uintptr_t)ptr << 32) | (int64_t)len;
 }
 
-EXPORT uint32_t sdrmm_abi(void) { return 1; }
+EXPORT uint32_t sdrmm_abi(void) { return 2; }
 
 EXPORT uint32_t sdrmm_alloc(uint32_t len) { return (uint32_t)(uintptr_t)fit(&inbox, len); }
 
@@ -75,9 +75,12 @@ EXPORT int64_t sdrmm_call(int32_t op, uint32_t ptr, uint32_t len) {
     switch (op) {
     case OP_LAYOUT: return pack(LAYOUT, sizeof LAYOUT - 1);
     case OP_NORMALIZE: return pack(NORMALIZED, sizeof NORMALIZED - 1);
-    case OP_PRESENT: return pack(PRESENTED, sizeof PRESENTED - 1);
     default: return pack(UNKNOWN, sizeof UNKNOWN - 1);
     }
+}
+
+EXPORT int64_t sdrmm_present(uint32_t ptr, uint32_t len) {
+    return pack(PRESENTED, sizeof PRESENTED - 1);
 }
 
 EXPORT int32_t sdrmm_open(double rate, uint32_t ptr, uint32_t len) {

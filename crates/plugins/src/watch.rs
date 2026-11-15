@@ -9,17 +9,19 @@ use std::{
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use sdrmm_channels::{
-    ChannelError, Decoder,
+    Decoder,
     array_processor::{ProcessorFactory, install_processors, processor_refusal},
     encoder::{Encoder, encoder_refusal, install_encoders},
-    install_plugins, plugin_refusal,
+    install_plugin_kinds, install_plugins, plugin_refusal,
 };
+use sdrmm_wire::KindSpec;
 
 use crate::{
     PluginError,
     cache::ModuleCache,
     decoder::WasmDecoder,
     encoder::WasmEncoder,
+    kinds::plugin_kinds,
     module::{PluginModule, plugin_name},
     processor::WasmProcessors,
 };
@@ -28,12 +30,11 @@ use crate::{
 /// being written is not loaded half done.
 const SETTLE: Duration = Duration::from_millis(300);
 
-/// Every `.wasm` in `dir` as a decoder, compiled without the cache, with the reason for each
-/// file that would not load.
+/// Every `.wasm` in `dir`, compiled without the cache, with the reason for each file that
+/// would not load.
 #[must_use]
-pub fn load_dir(dir: &Path) -> (Vec<Arc<dyn Decoder>>, Vec<PluginError>) {
-    let scan = PluginDir::new(dir.to_owned()).with_cache(None).scan();
-    (scan.decoders, scan.errors)
+pub fn load_dir(dir: &Path) -> Scan {
+    PluginDir::new(dir.to_owned()).with_cache(None).scan()
 }
 
 /// What one pass over the plugins directory changed.
@@ -51,6 +52,7 @@ pub struct Scan {
     pub decoders: Vec<Arc<dyn Decoder>>,
     pub encoders: Vec<Arc<dyn Encoder>>,
     pub processors: Vec<Arc<dyn ProcessorFactory>>,
+    pub kinds: Vec<KindSpec>,
     pub errors: Vec<PluginError>,
 }
 
@@ -58,9 +60,10 @@ pub struct Scan {
 struct Loaded {
     name: String,
     fingerprint: u64,
-    decoder: Arc<dyn Decoder>,
+    decoder: Option<Arc<dyn Decoder>>,
     encoder: Option<Arc<dyn Encoder>>,
     processor: Option<Arc<dyn ProcessorFactory>>,
+    kinds: Vec<KindSpec>,
 }
 
 /// The type ids one scan has given out so far, each with the plugin that took it.
@@ -75,18 +78,23 @@ impl Taken {
     /// Gives `loaded` its types, or refuses the whole plugin when one is built in or another
     /// plugin took it first.
     fn take(&mut self, loaded: &Loaded) -> Result<(), PluginError> {
-        let decoder = loaded.decoder.descriptor().type_id.clone();
-        let refusal = plugin_refusal(&decoder, &ids(&self.decoders))
-            .map(|refusal| explain(refusal, &self.decoders))
+        let refusal = loaded
+            .decoder
+            .as_ref()
+            .and_then(|decoder| {
+                let type_id = &decoder.descriptor().type_id;
+                plugin_refusal(type_id, &ids(&self.decoders))
+                    .map(|refusal| explain(&refusal, type_id, &self.decoders))
+            })
             .or_else(|| {
-                let encoder = &loaded.encoder.as_ref()?.descriptor().type_id;
-                encoder_refusal(encoder, &ids(&self.encoders))
-                    .map(|refusal| explain(refusal, &self.encoders))
+                let type_id = &loaded.encoder.as_ref()?.descriptor().type_id;
+                encoder_refusal(type_id, &ids(&self.encoders))
+                    .map(|refusal| explain(&refusal, type_id, &self.encoders))
             })
             .or_else(|| {
                 let kind = loaded.processor.as_ref()?.kind();
                 processor_refusal(kind, &ids(&self.processors))
-                    .map(|refusal| explain(refusal, &self.processors))
+                    .map(|refusal| explain(&refusal, &kind.type_id, &self.processors))
             });
         if let Some(error) = refusal {
             return Err(PluginError::Load {
@@ -94,7 +102,10 @@ impl Taken {
                 error,
             });
         }
-        self.decoders.push((decoder, loaded.name.clone()));
+        if let Some(decoder) = &loaded.decoder {
+            let type_id = decoder.descriptor().type_id.clone();
+            self.decoders.push((type_id, loaded.name.clone()));
+        }
         if let Some(encoder) = &loaded.encoder {
             let type_id = encoder.descriptor().type_id.clone();
             self.encoders.push((type_id, loaded.name.clone()));
@@ -111,10 +122,8 @@ fn ids(taken: &[(String, String)]) -> Vec<&str> {
     taken.iter().map(|(id, _)| id.as_str()).collect()
 }
 
-fn explain(refusal: ChannelError, taken: &[(String, String)]) -> String {
-    let ChannelError::LoadedTwice(type_id) = &refusal else {
-        return refusal.to_string();
-    };
+/// `refusal`, naming the plugin that took `type_id` first when another one did.
+fn explain(refusal: &impl std::fmt::Display, type_id: &str, taken: &[(String, String)]) -> String {
     let owner = taken.iter().find(|(id, _)| id == type_id);
     owner.map_or_else(
         || refusal.to_string(),
@@ -184,20 +193,20 @@ impl PluginDir {
         let module = PluginModule::from_bytes(name.clone(), &bytes, self.cache.as_ref())?;
         let processor = WasmProcessors::of(&module)
             .map(|processors| Arc::new(processors) as Arc<dyn ProcessorFactory>);
-        let encoder = WasmEncoder::of(&module).map(|encoder| Arc::new(encoder) as Arc<dyn Encoder>);
         let loaded = Loaded {
             name,
             fingerprint,
-            decoder: Arc::new(WasmDecoder::new(module)),
-            encoder,
+            decoder: WasmDecoder::of(&module).map(|decoder| Arc::new(decoder) as Arc<dyn Decoder>),
+            encoder: WasmEncoder::of(&module).map(|encoder| Arc::new(encoder) as Arc<dyn Encoder>),
             processor,
+            kinds: plugin_kinds(&module),
         };
         self.loaded.insert(path, loaded.clone());
         Ok(loaded)
     }
 
-    /// Every `.wasm` in the directory as a decoder and maybe a processor, reusing each one whose
-    /// file is unchanged. A plugin taking a built-in's type or one an earlier file took is left
+    /// Every `.wasm` in the directory as whatever it brings, reusing each one whose file is
+    /// unchanged. A plugin taking a built-in's type or one an earlier file took is left
     /// out with an error; the others load.
     pub fn scan(&mut self) -> Scan {
         let mut scan = Scan::default();
@@ -216,9 +225,10 @@ impl PluginDir {
                 .and_then(|loaded| taken.take(&loaded).map(|()| loaded));
             match admitted {
                 Ok(loaded) => {
-                    scan.decoders.push(loaded.decoder);
+                    scan.decoders.extend(loaded.decoder);
                     scan.encoders.extend(loaded.encoder);
                     scan.processors.extend(loaded.processor);
+                    scan.kinds.extend(loaded.kinds);
                 }
                 Err(error) => scan.errors.push(error),
             }
@@ -232,9 +242,11 @@ impl PluginDir {
             decoders,
             encoders,
             processors,
+            kinds,
             mut errors,
         } = self.scan();
-        let count = decoders.len();
+        let count = self.loaded.len();
+        install_plugin_kinds(kinds);
         let mut replaced = install(install_plugins(decoders), &mut errors);
         install(install_encoders(encoders).map(|()| Vec::new()), &mut errors);
         replaced.extend(install(install_processors(processors), &mut errors));
@@ -247,7 +259,7 @@ impl PluginDir {
 }
 
 fn install(
-    installed: Result<Vec<String>, sdrmm_channels::ChannelError>,
+    installed: Result<Vec<String>, impl std::fmt::Display>,
     errors: &mut Vec<PluginError>,
 ) -> Vec<String> {
     installed.unwrap_or_else(|error| {

@@ -1,4 +1,5 @@
-//! The guest side of the plugin ABI, instantiated for one plugin type by [`crate::export!`].
+//! The guest side of the plugin ABI: [`crate::export!`] instantiates the part every plugin has,
+//! [`crate::export_decoder!`] the decoder's.
 //!
 //! Every buffer the host reads stays owned by a `Vec` here until the next call, so the host only
 //! ever reads memory the guest still holds.
@@ -9,13 +10,13 @@ use num_complex::Complex;
 use sdrmm_wire::plugin::{Op, OutputHeader, PresentRequest, Reply, pack};
 use serde::Serialize;
 
-use crate::{Outputs, Plugin, settings};
+use crate::{Decoder, Outputs, Plugin, settings};
 
+pub mod encoder;
 pub mod processor;
-pub mod transmit;
 
-struct Slot<P> {
-    plugin: P,
+struct Slot<D> {
+    decoder: D,
     input: Vec<Complex<f32>>,
     out: Outputs,
     events: Vec<u8>,
@@ -81,31 +82,35 @@ pub fn manifest<P: Plugin>() -> i64 {
     reply(json(&P::manifest()))
 }
 
-pub fn call<P: Plugin>(op: i32, ptr: u32, len: u32) -> i64 {
+pub fn present<P: Plugin>(ptr: u32, len: u32) -> i64 {
+    let bytes = take(ptr, len);
+    reply(json(&Reply::from(
+        serde_json::from_slice::<PresentRequest>(&bytes)
+            .map_err(|error| error.to_string())
+            .and_then(|request| P::present(&request.kind, &request.data)),
+    )))
+}
+
+pub fn call<D: Decoder>(op: i32, ptr: u32, len: u32) -> i64 {
     let bytes = take(ptr, len);
     let answer = match Op::from_code(op) {
         Some(Op::Layout) => json(&Reply::from(
-            settings::<P::Settings>(&bytes).map(|s| P::layout(&s)),
+            settings::<D::Settings>(&bytes).map(|s| D::layout(&s)),
         )),
         Some(Op::Normalize) => json(&Reply::from(
-            settings::<P::Settings>(&bytes)
+            settings::<D::Settings>(&bytes)
                 .and_then(|s| serde_json::to_value(s).map_err(|error| error.to_string())),
-        )),
-        Some(Op::Present) => json(&Reply::from(
-            serde_json::from_slice::<PresentRequest>(&bytes)
-                .map_err(|error| error.to_string())
-                .and_then(|request| P::present(&request.kind, &request.data)),
         )),
         None => json(&Reply::<()>::Err(format!("unknown op {op}"))),
     };
     reply(answer)
 }
 
-pub fn open<P: Plugin + 'static>(rate: f64, ptr: u32, len: u32) -> i32 {
-    let opened = settings::<P::Settings>(&take(ptr, len)).and_then(|s| P::open(rate, s));
+pub fn open<D: Decoder + 'static>(rate: f64, ptr: u32, len: u32) -> i32 {
+    let opened = settings::<D::Settings>(&take(ptr, len)).and_then(|s| D::open(rate, s));
     match opened {
-        Ok(plugin) => store(Slot {
-            plugin,
+        Ok(decoder) => store(Slot {
+            decoder,
             input: Vec::new(),
             out: Outputs::default(),
             events: Vec::new(),
@@ -141,13 +146,13 @@ fn with_stored<T: 'static, R>(handle: i32, f: impl FnOnce(&mut T) -> R) -> Optio
     })
 }
 
-fn with_slot<P: 'static, R>(handle: i32, f: impl FnOnce(&mut Slot<P>) -> R) -> Option<R> {
-    with_stored::<Slot<P>, R>(handle, f)
+fn with_slot<D: 'static, R>(handle: i32, f: impl FnOnce(&mut Slot<D>) -> R) -> Option<R> {
+    with_stored::<Slot<D>, R>(handle, f)
 }
 
-pub fn apply<P: Plugin + 'static>(handle: i32, ptr: u32, len: u32) -> i32 {
-    let applied = settings::<P::Settings>(&take(ptr, len)).and_then(|s| {
-        with_slot::<P, _>(handle, |slot| slot.plugin.apply(s))
+pub fn apply<D: Decoder + 'static>(handle: i32, ptr: u32, len: u32) -> i32 {
+    let applied = settings::<D::Settings>(&take(ptr, len)).and_then(|s| {
+        with_slot::<D, _>(handle, |slot| slot.decoder.apply(s))
             .unwrap_or(Err(format!("no channel {handle}")))
     });
     match applied {
@@ -156,25 +161,25 @@ pub fn apply<P: Plugin + 'static>(handle: i32, ptr: u32, len: u32) -> i32 {
     }
 }
 
-pub fn input<P: Plugin + 'static>(handle: i32, samples: u32) -> u32 {
-    with_slot::<P, _>(handle, |slot| {
+pub fn input<D: Decoder + 'static>(handle: i32, samples: u32) -> u32 {
+    with_slot::<D, _>(handle, |slot| {
         slot.input.resize(samples as usize, Complex::new(0.0, 0.0));
         address(&slot.input)
     })
     .unwrap_or(0)
 }
 
-pub fn process<P: Plugin + 'static>(handle: i32, samples: u32) -> u32 {
-    with_slot::<P, _>(handle, |slot| {
+pub fn process<D: Decoder + 'static>(handle: i32, samples: u32) -> u32 {
+    with_slot::<D, _>(handle, |slot| {
         slot.out.clear();
         let n = (samples as usize).min(slot.input.len());
-        slot.plugin.process(&slot.input[..n], &mut slot.out);
+        slot.decoder.process(&slot.input[..n], &mut slot.out);
         encode(slot)
     })
     .unwrap_or(0)
 }
 
-fn encode<P>(slot: &mut Slot<P>) -> u32 {
+fn encode<D>(slot: &mut Slot<D>) -> u32 {
     slot.events.clear();
     if !slot.out.events.is_empty()
         && serde_json::to_writer(&mut slot.events, &slot.out.events).is_err()
@@ -203,8 +208,8 @@ fn encode<P>(slot: &mut Slot<P>) -> u32 {
     address(&slot.header)
 }
 
-pub fn retuned<P: Plugin + 'static>(handle: i32) {
-    with_slot::<P, _>(handle, |slot| slot.plugin.retuned());
+pub fn retuned<D: Decoder + 'static>(handle: i32) {
+    with_slot::<D, _>(handle, |slot| slot.decoder.retuned());
 }
 
 pub fn close(handle: i32) {
