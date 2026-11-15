@@ -44,6 +44,11 @@ const MAX_VIDEO_SHARE: f64 = 0.45;
 const MONO_KEEP_HZ: f64 = 6_000_000.0;
 /// Half the Nyquist slope's width, the narrowest vestige broadcast standards keep.
 const NYQUIST_HZ: f64 = 750_000.0;
+/// The narrowest band either side an FM monochrome picture is filtered to before detection.
+const FM_MONO_FLOOR_HZ: f64 = 3_500_000.0;
+/// What an FM colour picture keeps above the subcarrier before detection, so its weak
+/// chroma sidebands survive.
+const FM_CHROMA_HZ: f64 = 2_300_000.0;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "atv".to_owned(),
@@ -179,7 +184,10 @@ impl AtvChannel {
         let rate = Rate::new(input_rate, video_rate, keep)?;
         let g = Geometry::new(p.standard, video_rate);
         let detector = match p.modulation {
-            AtvModulation::Fm => Detector::Discriminator(Discriminator::new()),
+            AtvModulation::Fm => Detector::Discriminator(Box::new(Discriminator::new(
+                input_rate,
+                subcarrier_hz(p.color).map_or(FM_MONO_FLOOR_HZ, |hz| hz + FM_CHROMA_HZ),
+            ))),
             AtvModulation::Am => {
                 Detector::am(am_video_hz(p) / input_rate, nyquist_hz(p) / input_rate)
             }

@@ -2,8 +2,8 @@ use std::f64::consts::{PI, TAU};
 
 use num_complex::Complex;
 use sdrmm_dsp::{
-    Ddc, Deemphasis, RealDecimator, RealResampler, blackman_harris, design_lowpass, fast_arg,
-    phase_diff_into,
+    Ddc, Decimator, Deemphasis, RealDecimator, RealResampler, blackman_harris, design_lowpass,
+    fast_arg, fft::FftPair, phase_diff_into,
 };
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 
@@ -17,27 +17,140 @@ pub(super) const SOUND_AUDIO_HZ: f64 = 15_000.0;
 const SOUND_DECIM: usize = 5;
 const SOUND_TAPS: usize = 199;
 
-/// Phase step per sample, in radians.
-#[derive(Clone, Debug)]
+/// Half-widths of the filters an FM picture can be narrowed to before detection.
+const IF_HALF_WIDTHS_HZ: [f64; 5] = [
+    2_500_000.0,
+    3_500_000.0,
+    5_000_000.0,
+    7_000_000.0,
+    10_000_000.0,
+];
+const IF_TAPS: usize = 63;
+/// Share of the rate a filter must stay under to be worth running.
+const IF_MAX_SHARE: f64 = 0.3;
+/// Bins of the spectrum the occupied band is read from, and samples between looks.
+const IF_BINS: usize = 256;
+const IF_EVERY: usize = 2_048;
+const IF_TRACK: f64 = 0.25;
+/// Share of the power above the noise floor the kept band must hold.
+const IF_HOLD: f64 = 0.97;
+/// Margin on the measured band, and looks in a row a new filter must win before it is used.
+const IF_MARGIN: f64 = 1.2;
+const IF_SETTLE: u32 = 3;
+
+/// Phase step per sample, in radians, after a filter that keeps only the band the signal
+/// occupies, read off its own spectrum, so the noise beyond it never reaches the detector.
 pub(super) struct Discriminator {
     prev: Complex<f32>,
+    rate: f64,
+    /// The narrowest band the video itself needs either side.
+    floor_hz: f64,
+    filters: Vec<(f64, Decimator)>,
+    chosen: Option<usize>,
+    candidate: (Option<usize>, u32),
+    filtered: Vec<Complex<f32>>,
+    /// The open band's last samples, held back by a filter's delay.
+    delay: [Complex<f32>; IF_TAPS / 2],
+    fft: FftPair,
+    bins: Vec<Complex<f32>>,
+    power: Vec<f64>,
+    sorted: Vec<f64>,
+    since: usize,
 }
 
 impl Discriminator {
-    pub fn new() -> Self {
+    /// A discriminator at `rate` that never narrows below `floor_hz` either side.
+    pub fn new(rate: f64, floor_hz: f64) -> Self {
         Self {
             prev: Complex::new(1.0, 0.0),
+            rate,
+            floor_hz,
+            filters: IF_HALF_WIDTHS_HZ
+                .iter()
+                .filter(|&&hz| hz < IF_MAX_SHARE * rate)
+                .map(|&hz| (hz, Decimator::new(&design_lowpass(IF_TAPS, hz / rate), 1)))
+                .collect(),
+            chosen: None,
+            candidate: (None, 0),
+            filtered: Vec::new(),
+            delay: [Complex::new(0.0, 0.0); IF_TAPS / 2],
+            fft: FftPair::new(IF_BINS),
+            bins: vec![Complex::new(0.0, 0.0); IF_BINS],
+            power: vec![0.0; IF_BINS],
+            sorted: Vec::with_capacity(IF_BINS),
+            since: IF_EVERY,
         }
     }
 
     pub fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<f32>) {
-        phase_diff_into(iq, &mut self.prev, 1.0, out);
+        self.look(iq);
+        match self.chosen.and_then(|k| self.filters.get_mut(k)) {
+            Some((_, filter)) => filter.process(iq, &mut self.filtered),
+            None => {
+                self.filtered.clear();
+                self.filtered.extend_from_slice(&self.delay);
+                self.filtered.extend_from_slice(iq);
+                let keep = self.filtered.len() - self.delay.len();
+                self.delay.copy_from_slice(&self.filtered[keep..]);
+                self.filtered.truncate(keep);
+            }
+        }
+        phase_diff_into(&self.filtered, &mut self.prev, 1.0, out);
     }
+
+    /// Now and then adds a spectrum of the input to the running one and picks the filter
+    /// that holds the occupied band.
+    fn look(&mut self, iq: &[Complex<f32>]) {
+        self.since += iq.len();
+        if self.since < IF_EVERY || iq.len() < IF_BINS {
+            return;
+        }
+        self.since = 0;
+        self.bins.copy_from_slice(&iq[iq.len() - IF_BINS..]);
+        self.fft.forward(&mut self.bins);
+        for (power, bin) in self.power.iter_mut().zip(&self.bins) {
+            *power += IF_TRACK * (f64::from(bin.norm_sqr()) - *power);
+        }
+        let wanted = occupied_half(&self.power, &mut self.sorted, self.rate)
+            .map(|hz| (IF_MARGIN * hz).max(self.floor_hz));
+        let pick = wanted.and_then(|hz| self.filters.iter().position(|&(width, _)| width >= hz));
+        self.candidate = if self.candidate.0 == pick {
+            (pick, self.candidate.1 + 1)
+        } else {
+            (pick, 1)
+        };
+        if self.candidate.1 >= IF_SETTLE {
+            self.chosen = pick;
+        }
+    }
+}
+
+/// Half the band, in Hz either side of the centre, holding `IF_HOLD` of the power above the
+/// noise floor, the floor read from the quietest quarter of the bins.
+fn occupied_half(power: &[f64], sorted: &mut Vec<f64>, rate: f64) -> Option<f64> {
+    let len = power.len();
+    sorted.clear();
+    sorted.extend_from_slice(power);
+    sorted.sort_by(f64::total_cmp);
+    let floor = sorted[..len / 4].iter().sum::<f64>() / (len / 4) as f64;
+    let excess = |k: usize| (power[k] - floor).max(0.0);
+    let total: f64 = (0..len).map(excess).sum();
+    if total <= floor * len as f64 * 0.1 {
+        return None;
+    }
+    let mut held = excess(0);
+    for reach in 1..len / 2 {
+        held += excess(reach) + excess(len - reach);
+        if held >= IF_HOLD * total {
+            return Some(reach as f64 * rate / len as f64);
+        }
+    }
+    None
 }
 
 pub(super) enum Detector {
     Synchronous(Box<Synchronous>),
-    Discriminator(Discriminator),
+    Discriminator(Box<Discriminator>),
 }
 
 impl Detector {
