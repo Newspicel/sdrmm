@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use cef::*;
 
@@ -14,6 +14,8 @@ const SIZE: Size = Size {
 thread_local! {
     /// The one browser, owned by the UI thread that created it.
     static BROWSER: RefCell<Option<Browser>> = const { RefCell::new(None) };
+    /// Whether a screen reader asked for the page, kept for a browser not created yet.
+    static ACCESSIBLE: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Opens the window. Its delegate switches the window controls on: cef-rs defaults every
@@ -35,6 +37,25 @@ pub fn open(start: &Start) {
 
 pub fn created(browser: Option<&mut Browser>) {
     BROWSER.with_borrow_mut(|slot| *slot = browser.cloned());
+    apply_accessibility();
+}
+
+/// Chromium builds the page's accessibility tree only once a screen reader asks for it.
+pub fn set_accessibility(on: bool) {
+    ACCESSIBLE.set(on);
+    apply_accessibility();
+}
+
+fn apply_accessibility() {
+    let state = if ACCESSIBLE.get() {
+        State::ENABLED
+    } else {
+        State::DISABLED
+    };
+    let host = BROWSER.with_borrow(|browser| browser.as_ref().and_then(Browser::host));
+    if let Some(host) = host {
+        host.set_accessibility_state(state);
+    }
 }
 
 pub fn closed() {
