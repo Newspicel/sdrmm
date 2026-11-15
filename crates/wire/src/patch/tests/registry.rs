@@ -28,6 +28,8 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("schedule", Face::fit(360)),
     ("satellite", Face::fit(420).dial()),
     ("rotator", Face::fit(340)),
+    ("aim", Face::fit(340)),
+    ("sky_scan", Face::fit(400)),
     ("triangulation", Face::fit(400)),
     ("bearing_fix", Face::fit(320)),
     ("array", Face::fit(460)),

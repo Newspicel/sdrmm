@@ -228,6 +228,25 @@ Predicts passes and follows Doppler
 | `control` | out | Control | tune, doppler, point, run | many. decoders to tune and Doppler correct, rotators to point, radios to run |
 | `events` | out | Events | Satellite | many. Position and ground track for a Map |
 
+### Aim
+
+Points a rotator at a decoded position
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `events` | in | Events | 23 kinds | many. Positions to follow |
+| `position` | in | Position | A live fix and the heading it comes with | one. Where the antenna stands |
+| `control` | out | Control | point | many. Rotators to point |
+
+### Sky scan
+
+Sweeps a rotator and maps signal level
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `iq` | in | IQ | radio, synthetic, derived | one. The lane it measures |
+| `control` | out | Control | point | one. The rotator to sweep |
+
 ### Direction finder
 
 Bearings from an array
@@ -457,11 +476,11 @@ Saves logged rows as CSV or JSON
 
 ### Rotator
 
-Points an antenna at a satellite
+Points an antenna
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `control` | in | Control | point | one. The satellite to follow |
+| `control` | in | Control | point | one. A satellite, an aim or a sky scan |
 
 ### Transmitter
 

@@ -4480,6 +4480,110 @@
         }
       }
     },
+    "/api/sky-scan/{node}": {
+      "get": {
+        "operationId": "get_sky_scan",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "description": "Sky scan node id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every measured point",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkyScanStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No sky scan with that id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "control_sky_scan",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "description": "Sky scan node id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SurveyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The scan after the action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkyScanStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No sky scan with that id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The scan cannot do that now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/state": {
       "get": {
         "operationId": "get_state",
@@ -5838,6 +5942,84 @@
           },
           "on": {
             "type": "boolean"
+          }
+        }
+      },
+      "AimNode": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/AimParams"
+          }
+        }
+      },
+      "AimParams": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "The entity to follow, such as a sonde serial or a callsign. Empty follows the newest.",
+            "default": ""
+          }
+        }
+      },
+      "AimStatus": {
+        "type": "object",
+        "required": [
+          "node"
+        ],
+        "properties": {
+          "age_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Seconds since the followed position was decoded."
+          },
+          "altitude_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "driving": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "entity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "look": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SatelliteLook"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "node": {
+            "type": "string"
+          },
+          "readouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            }
           }
         }
       },
@@ -18869,6 +19051,42 @@
             ],
             "properties": {
               "data": {
+                "$ref": "#/components/schemas/AimNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "aim"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/SkyScanNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "sky_scan"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
                 "$ref": "#/components/schemas/DfNode"
               },
               "kind": {
@@ -19151,6 +19369,8 @@
           "schedule",
           "satellite",
           "rotator",
+          "aim",
+          "sky_scan",
           "df",
           "beamformer",
           "passive_radar",
@@ -25761,6 +25981,58 @@
                 ],
                 "properties": {
                   "status": {
+                    "$ref": "#/components/schemas/AimStatus"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "AimUpdate"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "$ref": "#/components/schemas/SkyScanStatus"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SkyScanUpdate"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
                     "$ref": "#/components/schemas/ScheduleStatus"
                   }
                 }
@@ -26747,6 +27019,28 @@
           }
         }
       },
+      "SkyCell": {
+        "type": "object",
+        "required": [
+          "azimuth_deg",
+          "elevation_deg",
+          "level_dbfs"
+        ],
+        "properties": {
+          "azimuth_deg": {
+            "type": "number",
+            "format": "double"
+          },
+          "elevation_deg": {
+            "type": "number",
+            "format": "double"
+          },
+          "level_dbfs": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
       "SkyPoint": {
         "type": "object",
         "required": [
@@ -26761,6 +27055,117 @@
           "elevation_deg": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "SkyScanNode": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/SkyScanParams"
+          }
+        }
+      },
+      "SkyScanParams": {
+        "type": "object",
+        "properties": {
+          "azimuth_from_deg": {
+            "type": "number",
+            "format": "double",
+            "description": "Compass bearing the sweep starts at.",
+            "default": 0.0
+          },
+          "azimuth_span_deg": {
+            "type": "number",
+            "format": "double",
+            "description": "How far clockwise it sweeps; 360 goes all the way round.",
+            "default": 360.0
+          },
+          "bandwidth_hz": {
+            "type": "integer",
+            "format": "int64",
+            "default": 12500,
+            "minimum": 0
+          },
+          "dwell_ms": {
+            "type": "integer",
+            "format": "int32",
+            "default": 1000,
+            "minimum": 0
+          },
+          "elevation_from_deg": {
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "elevation_to_deg": {
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "offset_hz": {
+            "type": "integer",
+            "format": "int64",
+            "default": 0
+          },
+          "step_deg": {
+            "type": "number",
+            "format": "double",
+            "default": 10.0
+          }
+        }
+      },
+      "SkyScanStatus": {
+        "type": "object",
+        "required": [
+          "node",
+          "running",
+          "columns",
+          "rows"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkyCell"
+            }
+          },
+          "columns": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Bearings in each row of the grid.",
+            "minimum": 0
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "frequency_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "node": {
+            "type": "string"
+          },
+          "readouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            }
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Elevations the grid climbs through.",
+            "minimum": 0
+          },
+          "running": {
+            "type": "boolean"
           }
         }
       },

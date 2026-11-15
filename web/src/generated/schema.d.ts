@@ -1396,6 +1396,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sky-scan/{node}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_sky_scan"];
+        put?: never;
+        post: operations["control_sky_scan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/state": {
         parameters: {
             query?: never;
@@ -1791,6 +1807,31 @@ export interface components {
         AgcSetting: {
             mode?: string | null;
             on: boolean;
+        };
+        AimNode: {
+            settings?: components["schemas"]["AimParams"];
+        };
+        AimParams: {
+            /**
+             * @description The entity to follow, such as a sonde serial or a callsign. Empty follows the newest.
+             * @default
+             */
+            entity: string;
+        };
+        AimStatus: {
+            /**
+             * Format: double
+             * @description Seconds since the followed position was decoded.
+             */
+            age_s?: number | null;
+            /** Format: double */
+            altitude_m?: number | null;
+            driving?: string[];
+            entity?: string | null;
+            error?: string | null;
+            look?: components["schemas"]["SatelliteLook"] | null;
+            node: string;
+            readouts?: components["schemas"]["Field"][];
         };
         AntennaDesign: {
             /** @enum {string} */
@@ -5362,6 +5403,14 @@ export interface components {
             /** @enum {string} */
             kind: "rotator";
         } | {
+            data: components["schemas"]["AimNode"];
+            /** @enum {string} */
+            kind: "aim";
+        } | {
+            data: components["schemas"]["SkyScanNode"];
+            /** @enum {string} */
+            kind: "sky_scan";
+        } | {
             data: components["schemas"]["DfNode"];
             /** @enum {string} */
             kind: "df";
@@ -5420,7 +5469,7 @@ export interface components {
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "modulator" | "transmit" | "note";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "modulator" | "transmit" | "note";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -7278,6 +7327,18 @@ export interface components {
             type: "RotatorUpdate";
         } | {
             data: {
+                status: components["schemas"]["AimStatus"];
+            };
+            /** @enum {string} */
+            type: "AimUpdate";
+        } | {
+            data: {
+                status: components["schemas"]["SkyScanStatus"];
+            };
+            /** @enum {string} */
+            type: "SkyScanUpdate";
+        } | {
+            data: {
                 status: components["schemas"]["ScheduleStatus"];
             };
             /** @enum {string} */
@@ -7522,11 +7583,85 @@ export interface components {
             /** Format: float */
             w: number;
         };
+        SkyCell: {
+            /** Format: double */
+            azimuth_deg: number;
+            /** Format: double */
+            elevation_deg: number;
+            /** Format: float */
+            level_dbfs: number;
+        };
         SkyPoint: {
             /** Format: double */
             azimuth_deg: number;
             /** Format: double */
             elevation_deg: number;
+        };
+        SkyScanNode: {
+            settings?: components["schemas"]["SkyScanParams"];
+        };
+        SkyScanParams: {
+            /**
+             * Format: double
+             * @description Compass bearing the sweep starts at.
+             * @default 0
+             */
+            azimuth_from_deg: number;
+            /**
+             * Format: double
+             * @description How far clockwise it sweeps; 360 goes all the way round.
+             * @default 360
+             */
+            azimuth_span_deg: number;
+            /**
+             * Format: int64
+             * @default 12500
+             */
+            bandwidth_hz: number;
+            /**
+             * Format: int32
+             * @default 1000
+             */
+            dwell_ms: number;
+            /**
+             * Format: double
+             * @default 0
+             */
+            elevation_from_deg: number;
+            /**
+             * Format: double
+             * @default 0
+             */
+            elevation_to_deg: number;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            offset_hz: number;
+            /**
+             * Format: double
+             * @default 10
+             */
+            step_deg: number;
+        };
+        SkyScanStatus: {
+            cells?: components["schemas"]["SkyCell"][];
+            /**
+             * Format: int32
+             * @description Bearings in each row of the grid.
+             */
+            columns: number;
+            error?: string | null;
+            /** Format: double */
+            frequency_hz?: number | null;
+            node: string;
+            readouts?: components["schemas"]["Field"][];
+            /**
+             * Format: int32
+             * @description Elevations the grid climbs through.
+             */
+            rows: number;
+            running: boolean;
         };
         SortKey: {
             descending?: boolean;
@@ -12417,6 +12552,92 @@ export interface operations {
             };
             /** @description The node keeps no sink feed */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    get_sky_scan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sky scan node id */
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every measured point */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkyScanStatus"];
+                };
+            };
+            /** @description No sky scan with that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    control_sky_scan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sky scan node id */
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SurveyRequest"];
+            };
+        };
+        responses: {
+            /** @description The scan after the action */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkyScanStatus"];
+                };
+            };
+            /** @description No sky scan with that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The scan cannot do that now */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

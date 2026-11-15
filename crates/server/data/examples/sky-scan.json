@@ -1,0 +1,124 @@
+{
+  "version": 2,
+  "name": "Sky scan",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": 0.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "scope",
+          "kind": "scope",
+          "position": {
+            "x": 520.0,
+            "y": -40.0
+          }
+        },
+        {
+          "id": "sky",
+          "kind": "sky_scan",
+          "data": {
+            "settings": {
+              "offset_hz": 0,
+              "bandwidth_hz": 12500,
+              "azimuth_from_deg": 0.0,
+              "azimuth_span_deg": 360.0,
+              "elevation_from_deg": 0.0,
+              "elevation_to_deg": 0.0,
+              "step_deg": 10.0,
+              "dwell_ms": 1000
+            }
+          },
+          "position": {
+            "x": 520.0,
+            "y": 380.0
+          }
+        },
+        {
+          "id": "rot",
+          "kind": "rotator",
+          "data": {},
+          "position": {
+            "x": 1040.0,
+            "y": 380.0
+          }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Sky scan\n\n**Sky scan** turns the **Rotator** through each point of its grid and maps the level it hears there. The brightest cell is where the signal comes from.\n\nPick a link on the Rotator, set the band and area, then press Start."
+          },
+          "position": {
+            "x": 0.0,
+            "y": 380.0
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "scope",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "sky",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "sky",
+            "port": "control"
+          },
+          "to": {
+            "node": "rot",
+            "port": "control"
+          }
+        }
+      ]
+    },
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 4
+        }
+      ]
+    }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 145000000.0,
+          "sample_rate": 2400000.0
+        }
+      }
+    ],
+    "channels": []
+  }
+}

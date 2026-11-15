@@ -1919,7 +1919,7 @@
       "kind": "rotator",
       "name": "Rotator",
       "category": "output",
-      "summary": "Points an antenna at a satellite",
+      "summary": "Points an antenna",
       "role": {
         "role": "plain"
       },
@@ -1940,7 +1940,7 @@
           },
           "multi": "one",
           "takes": "pointing",
-          "note": "The satellite to follow"
+          "note": "A satellite, an aim or a sky scan"
         }
       ],
       "needs_channel_type": false,
@@ -1964,6 +1964,266 @@
           }
         }
       }
+    },
+    {
+      "kind": "aim",
+      "name": "Aim",
+      "category": "tool",
+      "summary": "Points a rotator at a decoded position",
+      "role": {
+        "role": "plain"
+      },
+      "face": {
+        "width": 340,
+        "dial": false
+      },
+      "ports": [
+        {
+          "name": "events",
+          "port_type": "events",
+          "direction": "in",
+          "payload": {
+            "type": "events",
+            "kinds": [
+              "acars",
+              "adsb",
+              "ais",
+              "aprs",
+              "bearing_fix",
+              "df",
+              "df_fix",
+              "dsc",
+              "dv",
+              "hfdl",
+              "inmarsat_aero",
+              "inmarsat_stdc",
+              "iridium",
+              "lora",
+              "nav",
+              "radar",
+              "radar_sites",
+              "radiosonde",
+              "remote_id",
+              "sarsat",
+              "satellite",
+              "vdl2",
+              "vor"
+            ]
+          },
+          "multi": "many",
+          "takes": "positions",
+          "note": "Positions to follow"
+        },
+        {
+          "name": "position",
+          "port_type": "position",
+          "direction": "in",
+          "payload": {
+            "type": "position"
+          },
+          "multi": "one",
+          "note": "Where the antenna stands"
+        },
+        {
+          "name": "control",
+          "port_type": "control",
+          "direction": "out",
+          "payload": {
+            "type": "control",
+            "verbs": [
+              "point"
+            ]
+          },
+          "multi": "many",
+          "note": "Rotators to point"
+        }
+      ],
+      "needs_channel_type": false,
+      "needs_processor_type": false,
+      "default_body": {
+        "kind": "aim",
+        "data": {
+          "settings": {
+            "entity": ""
+          }
+        }
+      },
+      "settings": [
+        {
+          "key": "entity",
+          "label": "Follow",
+          "title": "Serial or callsign to follow, empty for the newest",
+          "control": {
+            "type": "text",
+            "placeholder": "newest",
+            "optional": true,
+            "secret": false,
+            "max_len": 64
+          }
+        }
+      ]
+    },
+    {
+      "kind": "sky_scan",
+      "name": "Sky scan",
+      "category": "tool",
+      "summary": "Sweeps a rotator and maps signal level",
+      "role": {
+        "role": "plain"
+      },
+      "face": {
+        "width": 400,
+        "dial": false
+      },
+      "ports": [
+        {
+          "name": "iq",
+          "port_type": "iq",
+          "direction": "in",
+          "payload": {
+            "type": "iq",
+            "origins": [
+              "radio",
+              "synthetic",
+              "derived"
+            ]
+          },
+          "multi": "one",
+          "note": "The lane it measures"
+        },
+        {
+          "name": "control",
+          "port_type": "control",
+          "direction": "out",
+          "payload": {
+            "type": "control",
+            "verbs": [
+              "point"
+            ]
+          },
+          "multi": "one",
+          "note": "The rotator to sweep"
+        }
+      ],
+      "needs_channel_type": false,
+      "needs_processor_type": false,
+      "default_body": {
+        "kind": "sky_scan",
+        "data": {
+          "settings": {
+            "offset_hz": 0,
+            "bandwidth_hz": 12500,
+            "azimuth_from_deg": 0.0,
+            "azimuth_span_deg": 360.0,
+            "elevation_from_deg": 0.0,
+            "elevation_to_deg": 0.0,
+            "step_deg": 10.0,
+            "dwell_ms": 1000
+          }
+        }
+      },
+      "settings": [
+        {
+          "key": "offset_hz",
+          "label": "Offset",
+          "title": "From the lane centre",
+          "control": {
+            "type": "number",
+            "min": -1000000000000.0,
+            "max": 1000000000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          },
+          "quiet": [
+            0
+          ]
+        },
+        {
+          "key": "bandwidth_hz",
+          "label": "Width",
+          "title": "Band it measures",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 100000000.0,
+            "step": 100.0,
+            "unit": "kHz",
+            "scale": 1000.0
+          }
+        },
+        {
+          "key": "azimuth_from_deg",
+          "label": "Az from",
+          "title": "Compass bearing the sweep starts at",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 359.0,
+            "step": 1.0,
+            "unit": "°"
+          }
+        },
+        {
+          "key": "azimuth_span_deg",
+          "label": "Az span",
+          "title": "How far clockwise it sweeps",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 360.0,
+            "step": 1.0,
+            "unit": "°"
+          }
+        },
+        {
+          "key": "elevation_from_deg",
+          "label": "El from",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 90.0,
+            "step": 1.0,
+            "unit": "°"
+          }
+        },
+        {
+          "key": "elevation_to_deg",
+          "label": "El to",
+          "title": "Same as El from for one row along the horizon",
+          "control": {
+            "type": "number",
+            "min": 0.0,
+            "max": 90.0,
+            "step": 1.0,
+            "unit": "°"
+          }
+        },
+        {
+          "key": "step_deg",
+          "label": "Step",
+          "title": "Spacing between points",
+          "control": {
+            "type": "number",
+            "min": 1.0,
+            "max": 90.0,
+            "step": 1.0,
+            "unit": "°"
+          }
+        },
+        {
+          "key": "dwell_ms",
+          "label": "Dwell",
+          "title": "How long it listens at each point",
+          "control": {
+            "type": "number",
+            "min": 100.0,
+            "max": 60000.0,
+            "step": 100.0,
+            "unit": "ms"
+          }
+        }
+      ]
     },
     {
       "kind": "df",

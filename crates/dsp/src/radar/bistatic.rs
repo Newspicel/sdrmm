@@ -148,6 +148,25 @@ pub fn bistatic_rate_mps(tx: Vec3, rx: Vec3, target: Vec3, velocity: Vec3) -> f6
     dot(velocity, add(unit(sub(target, tx)), unit(sub(target, rx))))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Look {
+    pub azimuth_deg: f64,
+    pub elevation_deg: f64,
+    pub range_m: f64,
+}
+
+/// Where `to` stands in the sky seen from `from`.
+#[must_use]
+pub fn look(from: Geodetic, to: Geodetic) -> Look {
+    let local = enu(from, ecef(to));
+    let [east, north, up] = local;
+    Look {
+        azimuth_deg: east.atan2(north).to_degrees().rem_euclid(360.0),
+        elevation_deg: up.atan2(east.hypot(north)).to_degrees(),
+        range_m: norm(local),
+    }
+}
+
 #[must_use]
 pub fn bearing_deg(from: Geodetic, to: Geodetic) -> f64 {
     let [east, north, _] = enu(from, ecef(to));
@@ -299,6 +318,25 @@ mod tests {
     fn horizontal_error(truth: Geodetic, got: Geodetic) -> f64 {
         let [east, north, _] = enu(truth, ecef(got));
         east.hypot(north)
+    }
+
+    #[test]
+    fn a_balloon_overhead_and_one_on_the_horizon_look_right() {
+        let overhead = look(
+            MUNICH,
+            Geodetic {
+                alt_m: MUNICH.alt_m + 20_000.0,
+                ..MUNICH
+            },
+        );
+        assert!((overhead.elevation_deg - 90.0).abs() < 1e-6);
+        assert!((overhead.range_m - 20_000.0).abs() < 1e-3);
+        let east = look(MUNICH, at(MUNICH, 50_000.0, 0.0, MUNICH.alt_m + 10_000.0));
+        assert!((east.azimuth_deg - 90.0).abs() < 0.1);
+        assert!(east.elevation_deg > 10.0 && east.elevation_deg < 11.5);
+        let north = look(MUNICH, at(MUNICH, 0.0, 30_000.0, 0.0));
+        assert!(north.azimuth_deg.abs() < 0.1 || (north.azimuth_deg - 360.0).abs() < 0.1);
+        assert!(north.elevation_deg < 0.0);
     }
 
     #[test]

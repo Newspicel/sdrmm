@@ -21,7 +21,7 @@ use crate::{AppState, satellites::unix_now};
 
 const POLL: Duration = Duration::from_secs(1);
 const RETRY: Duration = Duration::from_secs(5);
-const UNWIRED: &str = "wire a satellite";
+const UNWIRED: &str = "wire what to point at";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Aim {

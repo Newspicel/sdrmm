@@ -55,6 +55,7 @@ mod recordings;
 mod satellites;
 mod secrets;
 mod sinks;
+mod sky_scan;
 mod survey;
 mod workspaces;
 
@@ -501,6 +502,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .merge(processors::routes())
         .merge(phones::routes())
         .merge(missions::routes())
+        .merge(sky_scan::routes())
         .merge(survey::routes())
         .merge(fusion::routes())
         .merge(denoise::routes())

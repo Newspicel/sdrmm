@@ -1,6 +1,7 @@
 pub mod monitor;
 pub use monitor::{EventOrigin, SpectrumMonitorNode, Transmission, TransmissionState};
 pub mod about;
+pub mod aim;
 pub mod array;
 pub mod audio;
 pub mod bandplan;
@@ -44,6 +45,7 @@ pub mod satellite;
 pub mod scan;
 pub mod schedule;
 pub mod sink;
+pub mod sky_scan;
 pub mod state;
 pub mod survey;
 pub mod tools;
@@ -59,6 +61,7 @@ pub mod workspace_state;
 pub mod ws;
 
 pub use about::{API_PROTOCOL, AboutResponse, Attribution, ComponentSource, LicenseTextResponse};
+pub use aim::{AimNode, AimParams, AimStatus, MAX_AIM_ENTITY_LEN};
 pub use array::{
     ArrayCal, ArrayCalRecord, ArrayCalSource, ArrayElement, ArrayFailure, ArrayGain, ArrayGeometry,
     ArrayLaneStatus, ArrayNode, ArrayOrientation, ArrayRecordingRequest, ArrayRecordingStarted,
@@ -273,6 +276,7 @@ pub use sink::{
     Entity, EntityKey, PositionTrack, PropagationCell, PropagationPath, PropagationSummary,
     PropagationView, SinkFeed, SinkUpdate, SurfaceRef,
 };
+pub use sky_scan::{MAX_SKY_CELLS, SkyCell, SkyScanNode, SkyScanParams, SkyScanStatus};
 pub use state::{
     AudioRecordingStatus, ChannelLevel, DeviceFault, DeviceSet, DeviceSetStatus, LaneLevel,
     PlaybackStatus, RecordingStatus, SettingsRefused, StateSnapshot, TrunkChannel,

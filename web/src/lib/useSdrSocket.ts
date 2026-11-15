@@ -26,6 +26,7 @@ import { useFusionStore } from "./fusion";
 import { useHuntStore } from "./hunt";
 import { useLevelStore } from "./levels";
 import { usePipelineHealth } from "./pipeline";
+import { useAimStore, useSkyScanStore } from "./pointing";
 import { portHub } from "./ports";
 import { iqHub, symbolHub } from "./portTaps";
 import { usePositionStore } from "./position";
@@ -115,6 +116,8 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     s.on("event", usePositionStore.getState().observe);
     s.on("event", useSatelliteStore.getState().observe);
     s.on("event", useRotatorStore.getState().observe);
+    s.on("event", useAimStore.getState().observe);
+    s.on("event", useSkyScanStore.getState().observe);
     s.on("event", useScheduleStore.getState().observe);
     s.on("event", useLevelStore.getState().observe);
     s.on("event", useProcessorStore.getState().observe);

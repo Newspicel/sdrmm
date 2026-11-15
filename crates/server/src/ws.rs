@@ -402,6 +402,12 @@ async fn greet(state: &AppState, out: &Outbox, identity: &Identity) {
     for rotator in state.rotators.snapshot() {
         let _ = out.send(text_event(&rotator)).await;
     }
+    for aim in state.aims.snapshot() {
+        let _ = out.send(text_event(&aim)).await;
+    }
+    for scan in state.sky_scans.snapshot() {
+        let _ = out.send(text_event(&scan)).await;
+    }
     for schedule in state.schedules.snapshot() {
         let _ = out.send(text_event(&schedule)).await;
     }

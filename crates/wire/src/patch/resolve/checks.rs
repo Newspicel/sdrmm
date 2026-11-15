@@ -96,6 +96,8 @@ fn settings_valid(body: &NodeBody) -> bool {
         NodeBody::EventOutput(settings) => settings.target.valid(),
         NodeBody::Satellite(satellite) => satellite.valid(),
         NodeBody::Rotator(rotator) => rotator.valid(),
+        NodeBody::Aim(aim) => aim.settings.valid(),
+        NodeBody::SkyScan(scan) => scan.settings.valid(),
         NodeBody::Schedule(schedule) => schedule.valid(),
         NodeBody::Array(array) => array.valid(),
         NodeBody::Hunt(hunt) => hunt.sweep.problem().is_none(),

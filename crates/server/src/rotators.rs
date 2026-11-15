@@ -67,6 +67,10 @@ impl RotatorHub {
             .collect()
     }
 
+    pub(crate) fn status(&self, node: &str) -> Option<RotatorStatus> {
+        locked(&self.statuses).get(node).cloned()
+    }
+
     pub(crate) fn reconcile(&self, state: &AppState) {
         let wanted = wanted(&state.resolved.current());
         let mut workers = locked(&self.workers);

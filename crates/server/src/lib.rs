@@ -20,6 +20,7 @@ pub const HOTPLUG_INTERVAL: Duration = Duration::from_secs(5);
 pub const LEVEL_INTERVAL: Duration = Duration::from_millis(100);
 
 mod activity;
+mod aims;
 mod apply;
 mod array;
 mod assets;
@@ -67,6 +68,7 @@ mod run_gate;
 mod satellites;
 mod schedules;
 mod sinks;
+mod sky_scans;
 mod store;
 mod surfaces;
 mod survey;
@@ -122,6 +124,8 @@ pub(crate) struct AppState {
     pub(crate) satellites: Arc<satellites::SatelliteHub>,
     pub(crate) schedules: Arc<schedules::ScheduleHub>,
     pub(crate) rotators: Arc<rotators::RotatorHub>,
+    pub(crate) aims: Arc<aims::AimHub>,
+    pub(crate) sky_scans: Arc<sky_scans::SkyScanHub>,
     pub(crate) reference: Arc<reference::Reference>,
     pub(crate) cps: Arc<cps::CpsHub>,
     pub(crate) fusion: df_fusion::SharedFusion,
@@ -176,6 +180,8 @@ impl AppState {
             satellites: Arc::new(satellites::SatelliteHub::default()),
             schedules: Arc::default(),
             rotators: Arc::default(),
+            aims: Arc::default(),
+            sky_scans: Arc::default(),
             reference: Arc::default(),
             cps: Arc::new(cps::CpsHub::default()),
             fusion: Arc::new(df_fusion::FusionHub::default()),
@@ -332,6 +338,8 @@ fn start_runtime(state: &AppState) -> Background {
     audio_fx::follow(state);
     array::start_pump(state);
     reports::start(state);
+    aims::start(state);
+    sky_scans::follow(state);
     df_fusion::start(state);
     fusion_routes::start(state);
     bearing_fix::start(state);

@@ -238,6 +238,29 @@
     }
   },
   {
+    "kind": "aim",
+    "data": {
+      "settings": {
+        "entity": ""
+      }
+    }
+  },
+  {
+    "kind": "sky_scan",
+    "data": {
+      "settings": {
+        "offset_hz": 0,
+        "bandwidth_hz": 12500,
+        "azimuth_from_deg": 0.0,
+        "azimuth_span_deg": 360.0,
+        "elevation_from_deg": 0.0,
+        "elevation_to_deg": 0.0,
+        "step_deg": 10.0,
+        "dwell_ms": 1000
+      }
+    }
+  },
+  {
     "kind": "df",
     "data": {
       "settings": {

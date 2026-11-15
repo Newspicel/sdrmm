@@ -32,6 +32,8 @@ still wins.
 During a pass the rotator follows the satellite. Between passes it waits where the next one
 rises.
 
+A rotator can also follow a radiosonde or sweep the sky. See [Rotators](rotators.md).
+
 A Winegard link talks to the motor console at 57600 baud, on the ODU debug port or the board's
 MOT/DCM header. It reads the steps per revolution each motor reports, so SM and LG elevation
 motors need no setting, and it holds the mount inside its own travel of 445° azimuth and 94°
@@ -40,7 +42,7 @@ the console dropped.
 
 | Setting | Does |
 |---|---|
-| Mode | **Track** the satellite, point by hand (**Manual**), **Park**, or **Stop** both axes |
+| Mode | **Track** what is wired, point by hand (**Manual**), **Park**, or **Stop** both axes |
 | Axes | Azimuth and elevation, or azimuth only |
 | Range | 360°, 450° or 540° of azimuth. Past 360° a pass crosses north without unwinding |
 | Heading | Compass bearing the mount's 0° azimuth faces, for a mount not set up facing north. Manual and Park take compass bearings |

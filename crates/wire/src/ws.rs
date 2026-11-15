@@ -203,6 +203,12 @@ pub enum ServerEvent {
     RotatorUpdate {
         status: Box<crate::rotator::RotatorStatus>,
     },
+    AimUpdate {
+        status: Box<crate::aim::AimStatus>,
+    },
+    SkyScanUpdate {
+        status: Box<crate::sky_scan::SkyScanStatus>,
+    },
     ScheduleUpdate {
         status: Box<crate::schedule::ScheduleStatus>,
     },

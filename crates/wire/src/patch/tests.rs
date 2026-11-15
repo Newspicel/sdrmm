@@ -2066,21 +2066,44 @@ fn a_satellite_with_nonsense_settings_is_refused() {
 }
 
 #[test]
-fn a_rotator_follows_a_satellite_and_nothing_else() {
+fn a_rotator_follows_whatever_points_and_nothing_else() {
     let mut graph = PatchGraph {
         nodes: vec![
             node("sat", NodeBody::Satellite(crate::SatelliteNode::default())),
+            node("aim", NodeBody::Aim(crate::AimNode::default())),
+            node("sky", NodeBody::SkyScan(crate::SkyScanNode::default())),
             node("scan", NodeBody::Scanner(ScannerNode::default())),
             node("rot", NodeBody::Rotator(crate::RotatorNode::default())),
         ],
         edges: vec![edge(("sat", "control"), ("rot", "control"))],
     };
     assert_eq!(graph.validate(), Ok(()));
+    for pointer in ["aim", "sky"] {
+        graph.edges = vec![edge((pointer, "control"), ("rot", "control"))];
+        assert_eq!(graph.validate(), Ok(()), "{pointer}");
+    }
     graph.edges = vec![edge(("scan", "control"), ("rot", "control"))];
     assert_eq!(
         graph.validate().map_err(|error| error.to_string()),
         Err("Rotator takes pointing".to_owned())
     );
+}
+
+#[test]
+fn a_sky_scan_with_nonsense_settings_is_refused() {
+    let graph = PatchGraph {
+        nodes: vec![node(
+            "sky",
+            NodeBody::SkyScan(crate::SkyScanNode {
+                settings: crate::SkyScanParams {
+                    step_deg: 0.0,
+                    ..crate::SkyScanParams::default()
+                },
+            }),
+        )],
+        edges: Vec::new(),
+    };
+    assert!(matches!(graph.validate(), Err(PatchError::NodeSettings(_))));
 }
 
 #[test]

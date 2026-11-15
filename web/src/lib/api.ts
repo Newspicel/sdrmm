@@ -78,6 +78,7 @@ import type {
   ScannerStatus,
   Secret,
   SerialDevicesResponse,
+  SkyScanStatus,
   StateSnapshot,
   SurveyAction,
   SurveyGrid,
@@ -744,6 +745,12 @@ export function surveyQuery(node: string) {
 export async function controlSurvey(node: string, action: SurveyAction): Promise<SurveyGrid> {
   return unwrap(
     await client.POST("/api/survey/{node}", { params: { path: { node } }, body: { action } }),
+  );
+}
+
+export async function controlSkyScan(node: string, action: SurveyAction): Promise<SkyScanStatus> {
+  return unwrap(
+    await client.POST("/api/sky-scan/{node}", { params: { path: { node } }, body: { action } }),
   );
 }
 

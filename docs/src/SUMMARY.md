@@ -27,6 +27,7 @@
 
 - [Position and GPS](user-guide/position.md)
 - [Satellites](user-guide/satellites.md)
+- [Rotators](user-guide/rotators.md)
 - [Propagation map](user-guide/propagation.md)
 
 # Arrays

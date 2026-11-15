@@ -10,6 +10,7 @@ use super::{
     SpeakerNode, TRANSMIT_PORT, TriangulationNode, TrunkNode, VIDEO_PORT, input, output,
 };
 use crate::{
+    aim::AimNode,
     channel::{ChannelDescriptor, SettingField},
     control::ControlVerb,
     decode::{Capability, EventKind, EventKindEntry, KindSet},
@@ -25,6 +26,7 @@ use crate::{
     rotator::RotatorNode,
     satellite::SatelliteNode,
     schedule::ScheduleNode,
+    sky_scan::SkyScanNode,
     transmit::{MicrophoneNode, ModulatorNode, TransmitNode},
 };
 
@@ -557,8 +559,20 @@ macro_rules! node_registry {
                     .noted("Position and ground track for a Map"),
             ]),
             (Rotator(RotatorNode), "rotator", Output, "Rotator",
-                "Points an antenna at a satellite", Role::Plain, Face::fit(340), [
-                input(CONTROL_PORT, Payload::control(POINT)).noted("The satellite to follow"),
+                "Points an antenna", Role::Plain, Face::fit(340), [
+                input(CONTROL_PORT, Payload::control(POINT))
+                    .noted("A satellite, an aim or a sky scan"),
+            ]),
+            (Aim(AimNode), "aim", Tool, "Aim", "Points a rotator at a decoded position",
+                Role::Plain, Face::fit(340), [
+                events_in(Accept::Caps(&[Capability::Geo])).noted("Positions to follow"),
+                position_in().noted("Where the antenna stands"),
+                output(CONTROL_PORT, Payload::control(POINT)).noted("Rotators to point"),
+            ]),
+            (SkyScan(SkyScanNode), "sky_scan", Tool, "Sky scan",
+                "Sweeps a rotator and maps signal level", Role::Plain, Face::fit(400), [
+                iq_in().noted("The lane it measures"),
+                output(CONTROL_PORT, Payload::control(POINT)).one().noted("The rotator to sweep"),
             ]),
             $(
                 ($variant($node), $type_id, Tool, $name, $summary, Role::Processor, $face, [
@@ -644,6 +658,8 @@ macro_rules! processor_nodes {
                 match self {
                     $(Self::$variant => <$params>::form(),)*
                     Self::Triangulation => crate::fusion::TriangulationParams::form(),
+                    Self::Aim => crate::aim::AimParams::form(),
+                    Self::SkyScan => crate::sky_scan::SkyScanParams::form(),
                     _ => Vec::new(),
                 }
             }

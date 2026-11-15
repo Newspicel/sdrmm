@@ -1,0 +1,179 @@
+{
+  "version": 2,
+  "name": "Radiosonde track",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": 0.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "ch",
+          "kind": "channel",
+          "data": {
+            "channel_type": "radiosonde",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 520.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "gps",
+          "kind": "gps",
+          "data": {},
+          "position": {
+            "x": 0.0,
+            "y": 380.0
+          }
+        },
+        {
+          "id": "aim",
+          "kind": "aim",
+          "data": {
+            "settings": {
+              "entity": ""
+            }
+          },
+          "position": {
+            "x": 1040.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "rot",
+          "kind": "rotator",
+          "data": {},
+          "position": {
+            "x": 1560.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "map",
+          "kind": "map",
+          "position": {
+            "x": 1040.0,
+            "y": 380.0
+          }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Radiosonde track\n\n**Aim** points the **Rotator** at the newest sonde the channel decodes. Type a serial in Follow to stay on one.\n\n**GPS position** is where the antenna stands.\n\nSet the channel to your local sonde frequency and pick a link on the Rotator."
+          },
+          "position": {
+            "x": 0.0,
+            "y": 760.0
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "ch",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "ch",
+            "port": "events"
+          },
+          "to": {
+            "node": "aim",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "ch",
+            "port": "events"
+          },
+          "to": {
+            "node": "map",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "gps",
+            "port": "position"
+          },
+          "to": {
+            "node": "aim",
+            "port": "position"
+          }
+        },
+        {
+          "from": {
+            "node": "gps",
+            "port": "position"
+          },
+          "to": {
+            "node": "map",
+            "port": "position"
+          }
+        },
+        {
+          "from": {
+            "node": "aim",
+            "port": "control"
+          },
+          "to": {
+            "node": "rot",
+            "port": "control"
+          }
+        }
+      ]
+    },
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 4
+        }
+      ]
+    }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 403000000.0,
+          "sample_rate": 2400000.0
+        }
+      }
+    ],
+    "channels": [
+      {
+        "node": "ch",
+        "settings": {
+          "frequency_hz": 403000000.0,
+          "params": {
+            "type": "radiosonde",
+            "settings": {}
+          }
+        }
+      }
+    ]
+  }
+}

@@ -23,6 +23,18 @@ static EXAMPLES: &[Example] = &[
         body: packed_data!("examples/satellite-pass.json"),
     },
     Example {
+        id: "radiosonde-track",
+        name: "Radiosonde track",
+        description: "Points a rotator at the radiosonde a channel decodes.",
+        body: packed_data!("examples/radiosonde-track.json"),
+    },
+    Example {
+        id: "sky-scan",
+        name: "Sky scan",
+        description: "Sweeps a rotator round the sky and maps the level it hears.",
+        body: packed_data!("examples/sky-scan.json"),
+    },
+    Example {
         id: "record-replay",
         name: "Record and replay",
         description: "Play an IQ file back, keep the channel, hold the last 30 seconds.",
@@ -224,6 +236,8 @@ mod tests {
         };
         assert_eq!(needs("no-radio"), (0, 0, 0));
         assert_eq!(needs("satellite-pass"), (1, 0, 0));
+        assert_eq!(needs("radiosonde-track"), (1, 0, 0));
+        assert_eq!(needs("sky-scan"), (1, 0, 0));
         assert_eq!(needs("record-replay"), (0, 1, 0));
         assert_eq!(needs("scanner-sweep"), (1, 0, 0));
         assert_eq!(needs("hf-station"), (1, 0, 0));

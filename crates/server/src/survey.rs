@@ -18,7 +18,7 @@ use crate::{
     rest::AppError,
 };
 
-mod measure;
+pub(crate) mod measure;
 
 #[cfg(test)]
 mod tests;
