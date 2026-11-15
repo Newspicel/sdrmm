@@ -31,6 +31,8 @@ pub(crate) const SYNC_PACKET: u64 = 0x75FF;
 const SYNC_EOT: u64 = 0x555D;
 pub(crate) const SYNC_BITS: u32 = 16;
 pub(crate) const SYNC_TOLERANCE: u32 = 2;
+/// Both phases of the alternating outer symbols that open a transmission.
+const PREAMBLES: [u64; 2] = [0x7777, 0xDDDD];
 
 const PAYLOAD_SYMBOLS: usize = 184;
 const PAYLOAD_BITS: usize = 368;
@@ -233,13 +235,30 @@ impl Decoder {
             (SYNC_STREAM, FrameType::Stream),
             (SYNC_PACKET, FrameType::Packet),
         ] {
-            if self.window.sync_distance(sync, SYNC_BITS) <= SYNC_TOLERANCE {
+            if self.synced(sync, kind) {
                 self.window.anchor(sync, SYNC_BITS);
                 self.pending = Some(kind);
                 self.countdown = PAYLOAD_SYMBOLS;
                 return;
             }
         }
+    }
+
+    /// A sync counts unless the preamble explains it better: inside the preamble, or a stream or
+    /// packet sync straight after it, where only a link setup frame may follow.
+    fn synced(&self, sync: u64, kind: FrameType) -> bool {
+        let distance = self.window.sync_distance(sync, SYNC_BITS);
+        let preamble = |back| {
+            PREAMBLES
+                .iter()
+                .map(|&pattern| self.window.distance_before(pattern, SYNC_BITS, back))
+                .min()
+                .unwrap_or(u32::MAX)
+        };
+        let symbols = SYNC_BITS / 2;
+        distance <= SYNC_TOLERANCE
+            && preamble(0) >= distance
+            && (kind == FrameType::LinkSetup || preamble(symbols) > SYNC_TOLERANCE)
     }
 
     fn payload(&mut self, kind: FrameType, out: &mut ChannelOutputs) -> Option<DvFrame> {
@@ -460,6 +479,22 @@ mod tests {
             settings(ChannelParams::new("m17", &M17Params::default()).expect("m17 settings")),
         )
         .expect("m17 channel")
+    }
+
+    #[test]
+    fn one_wrong_symbol_in_the_preamble_is_no_sync() {
+        let mut decoder = Decoder::new().expect("m17 decoder");
+        let mut out = ChannelOutputs::default();
+        let mut symbols = [3.0, -3.0].repeat(16);
+        symbols.extend([3.0, 3.0, 3.0, -3.0, 3.0, -3.0, 3.0, -3.0]);
+        for symbol in symbols {
+            decoder.push(symbol, &mut out);
+        }
+        assert_eq!(
+            decoder.window.sync_distance(SYNC_LSF, SYNC_BITS),
+            SYNC_TOLERANCE
+        );
+        assert!(decoder.pending.is_none());
     }
 
     #[test]

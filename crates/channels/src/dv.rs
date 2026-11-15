@@ -155,12 +155,23 @@ impl SymbolWindow {
     }
 
     pub(crate) fn sync_distance(&self, pattern: u64, bits: u32) -> u32 {
+        self.distance_before(pattern, bits, 0)
+    }
+
+    /// Hamming distance of `pattern` to the symbols that ended `back` symbols ago.
+    pub(crate) fn distance_before(&self, pattern: u64, bits: u32, back: u32) -> u32 {
         let mask = if bits >= 64 {
             u64::MAX
         } else {
             (1 << bits) - 1
         };
-        sdrmm_dsp::hamming_distance(self.register & mask, pattern & mask)
+        let shift = 2 * back;
+        let register = if shift >= 64 {
+            0
+        } else {
+            self.register >> shift
+        };
+        sdrmm_dsp::hamming_distance(register & mask, pattern & mask)
     }
 
     pub(crate) fn soft(&self, back: usize) -> f32 {

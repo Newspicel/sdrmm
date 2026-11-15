@@ -20,14 +20,18 @@ const RANDOMIZER: [u8; 46] = [
     0x19, 0x8D, 0xD5, 0x80, 0xD1, 0x33, 0x87, 0x13, 0x57, 0x18, 0x2D, 0x29, 0x78, 0xC3,
 ];
 
+pub(crate) const CODEC2_SILENCE_PAIR: [u8; 16] = [
+    0x01, 0x00, 0x09, 0x43, 0x9C, 0xE4, 0x21, 0x08, 0x01, 0x00, 0x09, 0x43, 0x9C, 0xE4, 0x21, 0x08,
+];
+
+/// The 40 ms of alternating outer symbols that precede a link setup frame.
+const PREAMBLE_SYMBOLS: usize = 192;
+const PREAMBLE_DIBITS: [u8; 2] = [0b01, 0b11];
+
 const CALLSIGN_ALPHABET: &[u8; 40] = b" ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/.";
 
 #[must_use]
 pub fn transmission(destination: &str, source: &str, rate: f64) -> Vec<Complex<f32>> {
-    const CODEC2_SILENCE_PAIR: [u8; 16] = [
-        0x01, 0x00, 0x09, 0x43, 0x9C, 0xE4, 0x21, 0x08, 0x01, 0x00, 0x09, 0x43, 0x9C, 0xE4, 0x21,
-        0x08,
-    ];
     let voice = [CODEC2_SILENCE_PAIR; 3];
     transmission_with_voice(destination, source, &voice, rate)
 }
@@ -66,10 +70,6 @@ fn transmission_with_type(
 #[must_use]
 #[allow(dead_code)]
 pub(crate) fn late_entry(destination: &str, source: &str, rate: f64) -> Vec<Complex<f32>> {
-    const CODEC2_SILENCE_PAIR: [u8; 16] = [
-        0x01, 0x00, 0x09, 0x43, 0x9C, 0xE4, 0x21, 0x08, 0x01, 0x00, 0x09, 0x43, 0x9C, 0xE4, 0x21,
-        0x08,
-    ];
     stream_transmission(
         destination,
         source,
@@ -91,6 +91,7 @@ fn stream_transmission(
     let mut symbols = dibits(&filler(400, 79));
     let lsf = lsf_bits(destination, source, stream_type);
     if link_setup_frame {
+        symbols.extend(PREAMBLE_DIBITS.iter().cycle().take(PREAMBLE_SYMBOLS));
         symbols.extend(dibits(&bits(SYNC_LSF, 16)));
         symbols.extend(dibits(&link_setup(&lsf)));
     }
