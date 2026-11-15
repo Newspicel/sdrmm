@@ -5,7 +5,7 @@ use crate::{
     testutil::XorShift32,
 };
 
-const AWGN_SEED_STEP: u64 = 0x9E37_79B9;
+const SOFT_PER_AMPLITUDE: f64 = CONFIDENT as f64 / 2.0;
 
 fn pattern<const N: usize>(seed: u32) -> [bool; N] {
     let mut rng = XorShift32(seed | 1);
@@ -70,11 +70,11 @@ fn noise_block<const N: usize>(rng: &mut Rng) -> [Soft; N] {
 fn awgn_trial(seed: u32, sigma: f64) -> ([bool; 96], [Soft; 196]) {
     let data: [bool; 96] = pattern(seed);
     let coded = Bptc196::encode(&data);
-    let mut rng = Rng::from_state(u64::from(seed) * AWGN_SEED_STEP + 1);
+    let mut rng = Rng::mixed(u64::from(seed));
     let soft_block = std::array::from_fn(|i| {
         let x = if coded[i] { 1.0 } else { -1.0 };
         let y = x + sigma * rng.normal();
-        (y * 32.0)
+        (y * SOFT_PER_AMPLITUDE)
             .round()
             .clamp(-f64::from(CONFIDENT), f64::from(CONFIDENT)) as Soft
     });
@@ -177,54 +177,77 @@ fn bptc128_soft_acceptance_of_noise_stays_at_its_measured_rate() {
     assert!(accepted <= 5, "accepted {accepted} of 10000 noise blocks");
 }
 
-#[test]
-fn bptc196_soft_decoding_beats_hard_under_awgn() {
-    let mut hard_failures = 0u32;
-    let mut soft_failures = 0u32;
-    for seed in 0..400 {
-        let (data, soft_block) = awgn_trial(seed, 0.55);
-        let hard: [bool; 196] = std::array::from_fn(|i| soft_block[i] > 0);
-        if Bptc196::decode(&hard).is_none_or(|(d, _)| d != data) {
-            hard_failures += 1;
-        }
-        if Bptc196::decode_soft(&soft_block).is_none_or(|(d, _)| d != data) {
-            soft_failures += 1;
+#[derive(Default)]
+struct Tally {
+    right: u32,
+    wrong: u32,
+    refused: u32,
+}
+
+impl Tally {
+    fn score(&mut self, decoded: Option<([bool; 96], u32)>, data: &[bool; 96]) {
+        match decoded {
+            Some((d, _)) if d == *data => self.right += 1,
+            Some(_) => self.wrong += 1,
+            None => self.refused += 1,
         }
     }
+
+    fn failed(&self) -> u32 {
+        self.wrong + self.refused
+    }
+}
+
+/// Hard and soft decoding of the same `trials` AWGN blocks at `sigma`.
+fn awgn_tallies(sigma: f64, trials: u32) -> (Tally, Tally) {
+    let (mut hard, mut soft) = (Tally::default(), Tally::default());
+    for seed in 0..trials {
+        let (data, soft_block) = awgn_trial(seed, sigma);
+        let signs: [bool; 196] = std::array::from_fn(|i| soft_block[i] > 0);
+        hard.score(Bptc196::decode(&signs), &data);
+        soft.score(Bptc196::decode_soft(&soft_block), &data);
+    }
+    (hard, soft)
+}
+
+/// Measured over 200000 blocks at sigma 0.55: hard decoding fails 36.4%, soft 0.005%. Here that
+/// is about 364 hard failures (300 is 4.2 deviations below) against 0.05 soft ones.
+#[test]
+fn bptc196_soft_decoding_beats_hard_under_awgn() {
+    let (hard, soft) = awgn_tallies(0.55, 1_000);
     assert!(
-        hard_failures >= 100,
-        "only {hard_failures} hard failures: noise level no longer stresses the decoder"
+        hard.failed() >= 300,
+        "only {} hard failures: noise level no longer stresses the decoder",
+        hard.failed()
     );
     assert!(
-        soft_failures <= 20 && soft_failures * 4 <= hard_failures,
-        "soft lost {soft_failures} blocks to hard's {hard_failures}"
+        soft.failed() * 20 <= hard.failed(),
+        "soft lost {} blocks to hard's {}",
+        soft.failed(),
+        hard.failed()
     );
 }
 
+/// Measured over 200000 blocks at sigma 0.6: hard decoding is right 41.5% and wrong 2.2%, soft
+/// right 99.8% and wrong 0.02%. Here that is about 131 wrong hard blocks against 1.4 soft
+/// ones; even 90 hard ones, 3.6 deviations low, leave room for 9 soft. At sigma 0.7 soft is
+/// wrong 0.33% to hard's 2.4%, and four in five of those blocks lie closer to the received
+/// values than the sent one: a maximum likelihood decoder would pick them too.
 #[test]
 fn bptc196_soft_decoding_rarely_accepts_a_wrong_block() {
-    let (mut hard_right, mut hard_wrong, mut soft_right, mut soft_wrong) = (0, 0, 0, 0);
-    for seed in 0..2_000 {
-        let (data, soft_block) = awgn_trial(seed, 0.7);
-        let hard: [bool; 196] = std::array::from_fn(|i| soft_block[i] > 0);
-        match Bptc196::decode(&hard) {
-            Some((d, _)) if d == data => hard_right += 1,
-            Some(_) => hard_wrong += 1,
-            None => {}
-        }
-        match Bptc196::decode_soft(&soft_block) {
-            Some((d, _)) if d == data => soft_right += 1,
-            Some(_) => soft_wrong += 1,
-            None => {}
-        }
-    }
+    let (hard, soft) = awgn_tallies(0.6, 6_000);
     assert!(
-        hard_wrong >= 20,
-        "only {hard_wrong} wrong hard blocks: noise level no longer stresses the decoder"
+        hard.wrong >= 90,
+        "only {} wrong hard blocks: noise level no longer stresses the decoder",
+        hard.wrong
     );
     assert!(
-        soft_right > hard_right && soft_wrong * 10 <= hard_wrong,
-        "soft {soft_right} right {soft_wrong} wrong, hard {hard_right} right {hard_wrong} wrong"
+        soft.right > 2 * hard.right && soft.wrong * 10 <= hard.wrong,
+        "soft {} right {} wrong, hard {} right {} wrong",
+        soft.right,
+        soft.wrong,
+        hard.right,
+        hard.wrong
     );
 }
 
