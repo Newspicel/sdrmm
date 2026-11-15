@@ -2,7 +2,7 @@
   "machine": {
     "cpu": "Apple M4 Max",
     "os": "macOS 27.0.1",
-    "date": "2026-10-02"
+    "date": "2026-11-15"
   },
   "groups": [
     {
@@ -23,14 +23,14 @@
           "value": 18.1
         },
         {
-          "tool": "SDRmm headless",
-          "version": "2.0.0-37-g2b62c93d-dirty",
-          "value": 5.4
-        },
-        {
           "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 46.1
+        },
+        {
+          "tool": "SDRmm headless",
+          "version": "2.4.4-15-gc08e48d3-dirty",
+          "value": 7.2
         }
       ]
     },
@@ -52,14 +52,14 @@
           "value": 148.3
         },
         {
-          "tool": "SDRmm headless",
-          "version": "2.0.0-37-g2b62c93d-dirty",
-          "value": 46.1
-        },
-        {
           "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 644.6
+        },
+        {
+          "tool": "SDRmm headless",
+          "version": "2.4.4-15-gc08e48d3-dirty",
+          "value": 59.8
         }
       ]
     },
@@ -76,14 +76,14 @@
           "value": 61.0
         },
         {
-          "tool": "SDRmm headless",
-          "version": "2.0.0-37-g2b62c93d-dirty",
-          "value": 11.0
-        },
-        {
           "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 91.2
+        },
+        {
+          "tool": "SDRmm headless",
+          "version": "2.4.4-15-gc08e48d3-dirty",
+          "value": 13.5
         }
       ]
     },
@@ -100,14 +100,14 @@
           "value": 625.4
         },
         {
-          "tool": "SDRmm headless",
-          "version": "2.0.0-37-g2b62c93d-dirty",
-          "value": 55.9
-        },
-        {
           "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 759.5
+        },
+        {
+          "tool": "SDRmm headless",
+          "version": "2.4.4-15-gc08e48d3-dirty",
+          "value": 65.9
         }
       ]
     },
@@ -124,14 +124,14 @@
           "value": 130.4
         },
         {
-          "tool": "SDRmm headless",
-          "version": "2.0.0-37-g2b62c93d-dirty",
-          "value": 38.5
-        },
-        {
           "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 192.0
+        },
+        {
+          "tool": "SDRmm headless",
+          "version": "2.4.4-15-gc08e48d3-dirty",
+          "value": 41.3
         }
       ]
     },
@@ -148,14 +148,14 @@
           "value": 814.1
         },
         {
-          "tool": "SDRmm headless",
-          "version": "2.0.0-37-g2b62c93d-dirty",
-          "value": 101.9
-        },
-        {
           "tool": "SDRmm app",
           "version": "2.0.0-37-g2b62c93d-dirty",
           "value": 948.6
+        },
+        {
+          "tool": "SDRmm headless",
+          "version": "2.4.4-15-gc08e48d3-dirty",
+          "value": 85.2
         }
       ]
     }
