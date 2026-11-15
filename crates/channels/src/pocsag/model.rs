@@ -55,6 +55,8 @@ pub struct PocsagParams {
     pub bandwidth_hz: f64,
     #[serde(default)]
     pub invert: bool,
+    #[serde(default)]
+    pub alpha_only: bool,
     /// The organisation code the pagers are programmed with, as up to four hex digits.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub idea_org_code: String,
@@ -68,6 +70,7 @@ impl Default for PocsagParams {
             baud: PocsagBaud::default(),
             bandwidth_hz: default_pocsag_bandwidth_hz(),
             invert: false,
+            alpha_only: false,
             idea_org_code: String::new(),
             idea_keys: Vec::new(),
         }

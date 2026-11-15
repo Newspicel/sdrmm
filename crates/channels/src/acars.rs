@@ -52,7 +52,7 @@ pub(crate) fn acars_decoder() -> Native<AcarsParams> {
 }
 
 pub(crate) fn acars_form() -> Vec<SettingField> {
-    vec![SettingField::bandwidth(&[8_000.0, 12_500.0, 25_000.0])]
+    vec![SettingField::bandwidth(&[8_000.0, 12_500.0, 20_000.0])]
 }
 
 fn acars_kinds() -> Vec<KindSpec> {

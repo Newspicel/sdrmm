@@ -120,6 +120,8 @@ Some German POCSAG networks send umlauts as `{ | } [ \ ] ~`. SDRmm converts them
 lowercase words only: `M}nchen` becomes `München`, `Stra~e` becomes `Straße`. `[ALARM]` and
 all-caps messages stay as sent.
 
+**Alpha only** in the POCSAG settings drops numeric and tone-only pages.
+
 Swissphone pagers can carry IDEA-encrypted text. Enter the message key of each RIC and the
 organisation code from the pager programming (PSW900) under the POCSAG settings, and those
 messages decode as text marked `IDEA`. The seed includes the local date and hour, so the

@@ -699,6 +699,46 @@ mod tests {
         }))
     }
 
+    fn offered_widths(field: &sdrmm_wire::SettingField) -> Vec<serde_json::Value> {
+        match &field.control {
+            sdrmm_wire::Control::Choice { options } if field.key == "bandwidth_hz" => {
+                options.iter().map(|option| option.value.clone()).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn with_width(field: &sdrmm_wire::SettingField, width: serde_json::Value) -> serde_json::Value {
+        let mut settings = serde_json::Map::new();
+        for condition in &field.when {
+            if let Some(value) = condition.any_of.first() {
+                settings.insert(condition.key.clone(), value.clone());
+            }
+        }
+        settings.insert(field.key.clone(), width);
+        serde_json::Value::Object(settings)
+    }
+
+    #[test]
+    fn every_offered_bandwidth_builds_a_channel_filter() {
+        for decoder in BUILT_IN.iter() {
+            let descriptor = decoder.descriptor();
+            for field in &descriptor.settings {
+                for width in offered_widths(field) {
+                    let params = ChannelParams {
+                        type_id: descriptor.type_id.clone(),
+                        settings: with_width(field, width.clone()),
+                    };
+                    assert!(
+                        decoder.filter(&params).is_ok() && decoder.normalize(&params).is_ok(),
+                        "{} offers {width} Hz but refuses it",
+                        descriptor.type_id
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn a_plugin_may_not_take_a_built_in_or_a_taken_type() {
         let built_in = BUILT_IN[0].descriptor().type_id.clone();

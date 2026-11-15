@@ -423,9 +423,9 @@ describe("IF filter", () => {
     expect(withIfNotchRemoved(filter ?? {}, 0).notches).toHaveLength(IF_LIMITS.maxNotches - 1);
   });
 
-  it("summarises only what it does", () => {
+  it("summarises what it does, on once enabled", () => {
     expect(ifFilterSummary({ high_hz: 40_000 }, WFM_HZ)).toBe("off");
-    expect(ifFilterSummary({ enabled: true }, WFM_HZ)).toBe("off");
+    expect(ifFilterSummary({ enabled: true }, WFM_HZ)).toBe("on");
     const notch = { frequency_hz: 99_930_000, width_hz: 2_000 };
     expect(ifFilterSummary({ enabled: true, notches: [notch] }, WFM_HZ)).toBe("1 notch");
     expect(ifFilterSummary({ enabled: true, high_hz: 40_000 }, WFM_HZ)).toMatch(

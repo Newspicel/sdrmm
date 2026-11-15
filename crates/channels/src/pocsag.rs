@@ -22,6 +22,7 @@ use crate::{
 };
 
 const CHANNEL_TAPS: usize = 65;
+const BANDWIDTHS_HZ: [f64; 2] = [12_500.0, 20_000.0];
 
 const NOMINAL_DEVIATION_HZ: f64 = 4_500.0;
 
@@ -74,7 +75,13 @@ pub struct PocsagChannel {
     candidates: Vec<Candidate>,
     locked: Option<usize>,
     soft: Vec<f32>,
+    reader: Reader,
+}
+
+/// How pages are read: the IDEA keys, and whether numeric and tone-only pages are dropped.
+struct Reader {
     vault: Vault,
+    alpha_only: bool,
 }
 
 /// The IDEA keys the operator entered, and the clock the pager would seed them with.
@@ -107,6 +114,15 @@ impl Vault {
 
     fn now(&self) -> Civil {
         Civil::local(self.clock.unwrap_or_else(SystemTime::now))
+    }
+}
+
+impl Reader {
+    fn of(p: &PocsagParams, clock: Option<SystemTime>) -> Result<Self, ChannelError> {
+        Ok(Self {
+            vault: Vault::of(p, clock)?,
+            alpha_only: p.alpha_only,
+        })
     }
 }
 
@@ -242,7 +258,7 @@ impl Candidate {
         self.payload.clear();
     }
 
-    fn bit(&mut self, bit: bool, vault: &Vault, out: &mut Vec<DecoderEvent>) -> Framing {
+    fn bit(&mut self, bit: bool, reader: &Reader, out: &mut Vec<DecoderEvent>) -> Framing {
         let synced = self.detector.push(bit);
         match self.batching {
             Batching::Hunt => {
@@ -256,7 +272,7 @@ impl Candidate {
                 if bits < CODEWORD_BITS {
                     self.batching = Batching::Codeword { index, bits };
                 } else {
-                    self.codeword(index, self.detector.register() as u32, vault, out);
+                    self.codeword(index, self.detector.register() as u32, reader, out);
                     let index = index + 1;
                     self.batching = if index == BATCH_CODEWORDS {
                         Batching::Resync { bits: 0 }
@@ -275,7 +291,7 @@ impl Candidate {
                     self.batching = Batching::Codeword { index: 0, bits: 0 };
                     return Framing::Acquired;
                 } else {
-                    self.flush(vault, out);
+                    self.flush(reader, out);
                     self.batching = Batching::Hunt;
                     return Framing::Lost;
                 }
@@ -284,7 +300,7 @@ impl Candidate {
         Framing::Held
     }
 
-    fn codeword(&mut self, index: usize, word: u32, vault: &Vault, out: &mut Vec<DecoderEvent>) {
+    fn codeword(&mut self, index: usize, word: u32, reader: &Reader, out: &mut Vec<DecoderEvent>) {
         let Some((word, errors)) = pocsag_bch_decode(word) else {
             if let Some(pending) = &mut self.pending {
                 pending.poisoned = true;
@@ -292,11 +308,11 @@ impl Candidate {
             return;
         };
         if word == IDLE {
-            self.flush(vault, out);
+            self.flush(reader, out);
             return;
         }
         if word >> 31 == 0 {
-            self.flush(vault, out);
+            self.flush(reader, out);
             self.payload.clear();
             self.pending = Some(Pending {
                 address: ((word >> 13) & 0x3_FFFF) << 3 | (index / 2) as u32,
@@ -315,14 +331,17 @@ impl Candidate {
         }
     }
 
-    fn flush(&mut self, vault: &Vault, out: &mut Vec<DecoderEvent>) {
+    fn flush(&mut self, reader: &Reader, out: &mut Vec<DecoderEvent>) {
         let Some(pending) = self.pending.take() else {
             return;
         };
-        let Some((payload, text, encrypted)) = self.message(&pending, vault) else {
+        let Some((payload, text, encrypted)) = self.message(&pending, &reader.vault) else {
             self.rejected = self.rejected.saturating_add(1);
             return;
         };
+        if reader.alpha_only && payload != PocsagPayload::Alpha {
+            return;
+        }
         out.push(DecoderEvent::of(&PocsagMessage {
             address: pending.address,
             function: pending.function,
@@ -459,7 +478,7 @@ impl NativeChannel for PocsagChannel {
             candidates: candidates(ctx.input_rate, p.baud),
             locked: None,
             soft: Vec::new(),
-            vault: Vault::of(&p, None)?,
+            reader: Reader::of(&p, None)?,
         })
     }
 }
@@ -468,7 +487,7 @@ impl ChannelRx for PocsagChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         check_params(&p)?;
-        self.vault = Vault::of(&p, self.vault.clock)?;
+        self.reader = Reader::of(&p, self.reader.vault.clock)?;
         self.invert = p.invert;
         if p.baud != self.baud {
             self.baud = p.baud;
@@ -489,7 +508,7 @@ impl ChannelRx for PocsagChannel {
             for &symbol in &soft {
                 let symbol = if self.invert { -symbol } else { symbol };
                 let bit = self.slicer.slice(symbol) == 1;
-                match self.candidates[index].bit(bit, &self.vault, &mut out.events) {
+                match self.candidates[index].bit(bit, &self.reader, &mut out.events) {
                     Framing::Held => {}
                     Framing::Acquired => self.acquire(index),
                     Framing::Lost => {
@@ -503,7 +522,7 @@ impl ChannelRx for PocsagChannel {
     }
 
     fn captured_at(&mut self, time: SystemTime) {
-        self.vault.clock = Some(time);
+        self.reader.vault.clock = Some(time);
     }
 
     fn rejected(&self) -> u32 {
@@ -581,8 +600,11 @@ pub(crate) fn pocsag_form() -> Vec<SettingField> {
         SettingField::new("baud", "Baud", Control::choice::<PocsagBaud>())
             .title("POCSAG baud")
             .quiet(PocsagBaud::Auto),
-        SettingField::bandwidth(&[12_500.0, 25_000.0]),
+        SettingField::bandwidth(&BANDWIDTHS_HZ),
         SettingField::invert(),
+        SettingField::new("alpha_only", "Alpha only", Control::Toggle)
+            .title("Drop numeric and tone-only pages")
+            .quiet(false),
         SettingField::new(
             "idea_keys",
             "IDEA keys",
@@ -728,6 +750,29 @@ mod tests {
         assert_eq!(messages[2].payload, PocsagPayload::Numeric);
         assert_eq!(messages[2].text, "4711");
         assert!(!messages[2].encrypted);
+    }
+
+    #[test]
+    fn alpha_only_drops_numeric_and_tone_pages() {
+        let tone = Page {
+            address: OTHER_ADDRESS,
+            function: 1,
+            text: String::new(),
+            numeric: true,
+            seal: None,
+        };
+        let mut sent = pages();
+        sent.push(tone);
+        let iq = burst(&sent, 1_200);
+        assert_eq!(run(&mut channel(), &iq).len(), 3);
+        let mut chan = channel_with(PocsagParams {
+            alpha_only: true,
+            ..PocsagParams::default()
+        });
+        let messages = run(&mut chan, &iq);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert_eq!(messages[0].payload, PocsagPayload::Alpha);
+        assert_eq!(chan.rejected(), 0);
     }
 
     #[test]

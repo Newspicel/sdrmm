@@ -128,8 +128,11 @@ export function channelPassband(
 export function ifFilterSummary(filter: IfFilter, bandwidthHz: number): string {
   const notches = filter.notches?.length ?? 0;
   const edged = (filter.low_hz ?? null) !== null || (filter.high_hz ?? null) !== null;
-  if (!(filter.enabled ?? false) || (!edged && notches === 0)) {
+  if (!(filter.enabled ?? false)) {
     return "off";
+  }
+  if (!edged && notches === 0) {
+    return "on";
   }
   const edges = (["low_hz", "high_hz"] as const).map((edge) =>
     formatSignedHz(ifEdgeHz(filter, edge, bandwidthHz)),

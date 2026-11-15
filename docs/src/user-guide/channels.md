@@ -104,6 +104,7 @@ capture an FM receiver or swamp a decoder.
 - **Notches** remove narrow interferers such as carriers and birdies. Each sits at a radio
   frequency, so it stays on its interferer when you retune.
 
+Tick **IF filter** to apply them. The chip reads `on` until an edge moves or a notch is added.
 The spectrum shades the narrowed passband and marks each notch in red.
 
 ## Audio FX
