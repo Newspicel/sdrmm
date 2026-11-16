@@ -125,8 +125,8 @@ impl Equalizer {
         }
         for state in 0..STATES {
             let mut tail = Complex::<f32>::default();
-            for l in 1..TAPS {
-                tail += self.taps[l] * level(state >> (l - 1) & 1 == 1);
+            for (l, tap) in self.taps.iter().enumerate().skip(1) {
+                tail += tap * level(state >> (l - 1) & 1 == 1);
             }
             self.expected[state] = [tail + self.taps[0], tail - self.taps[0]];
         }
@@ -137,8 +137,8 @@ impl Equalizer {
         let mut count = 0;
         for j in training.at + TAPS - 1..training.at + training.len() {
             let mut model = Complex::<f32>::default();
-            for l in 0..TAPS {
-                model += self.taps[l] * training.symbol(j - training.at - l);
+            for (l, tap) in self.taps.iter().enumerate() {
+                model += tap * training.symbol(j - training.at - l);
             }
             sum += (self.symbols[j] - model).norm_sqr();
             count += 1;

@@ -8837,7 +8837,6 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
- "flate2",
  "libc",
  "notify",
  "proc-macro2",

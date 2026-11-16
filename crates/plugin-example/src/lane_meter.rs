@@ -95,18 +95,18 @@ impl LaneMeter {
 
     fn report(&self, count: usize, out: &mut ArrayOutputs) {
         let samples = self.samples.max(1) as f64;
-        for lane in 0..MAX_LANES {
-            let power = self.power[lane] / samples;
+        for (lane, &total) in self.power.iter().enumerate() {
+            let power = total / samples;
             if lane < count && power > 0.0 {
                 out.set(lane, 10.0 * power.log10());
             } else {
                 out.unset(lane);
             }
         }
-        for lane in 1..MAX_LANES {
+        for (lane, cross) in self.cross.iter().enumerate().skip(1) {
             let slot = MAX_LANES + lane - 1;
             if lane < count {
-                out.set(slot, self.cross[lane].arg().to_degrees());
+                out.set(slot, cross.arg().to_degrees());
             } else {
                 out.unset(slot);
             }

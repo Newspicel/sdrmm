@@ -84,15 +84,15 @@ pub(super) fn enhance(params: &mut Params) {
     });
     let (r2m0, r2m1) = (rm0 * rm0, rm1 * rm1);
 
-    for l in 1..=harmonics {
-        let magnitude = params.magnitude[l];
+    for (l, slot) in (1usize..).zip(&mut params.magnitude[1..=harmonics]) {
+        let magnitude = *slot;
         if magnitude == 0.0 || 8 * l <= harmonics {
             continue;
         }
         let tilt = (r2m0 + r2m1) - (2.0 * rm0 * rm1 * (w0 * l as f32).cos());
         let base = (0.96f32 as f64 * PI * f64::from(tilt)) / f64::from(w0 * rm0 * (r2m0 - r2m1));
         let weight = magnitude.sqrt() * (base as f32).powf(0.25);
-        params.magnitude[l] = if f64::from(weight) > 1.2 {
+        *slot = if f64::from(weight) > 1.2 {
             (1.2 * f64::from(magnitude)) as f32
         } else if weight < 0.5 {
             0.5 * magnitude

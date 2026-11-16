@@ -208,8 +208,8 @@ fn every_coefficient_a_block_can_hold_has_a_code() {
         assert!(table.size[usize::from(END_OF_BLOCK)] > 0);
     }
     for table in [&TABLES.luma.dc, &TABLES.chroma.dc] {
-        for size in 0..=11 {
-            assert!(table.size[size] > 0, "{size}");
+        for (size, &count) in table.size[..=11].iter().enumerate() {
+            assert!(count > 0, "{size}");
         }
     }
 }

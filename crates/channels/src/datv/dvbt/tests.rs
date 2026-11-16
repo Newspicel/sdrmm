@@ -9,8 +9,8 @@ fn carrier_grid_and_permutations_match_the_standard() {
         let map = mapping::Mapping::new(n);
         assert_eq!(map.tps.len(), 17 * n / 2048);
         assert_eq!(map.continual.len(), 44 * n / 2048 + 1);
-        for phase in 0..4 {
-            assert_eq!(map.data[phase].len(), 1512 * n / 2048);
+        for phase in &map.data {
+            assert_eq!(phase.len(), 1512 * n / 2048);
         }
         let mut permutation = map.permutation.clone();
         permutation.sort_unstable();

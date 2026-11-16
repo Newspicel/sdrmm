@@ -108,8 +108,8 @@ impl Equalizer {
             }
         }
         self.data_carriers.clear();
-        for k in 0..map.carriers {
-            if map.map[k] == Carrier::Data {
+        for (k, carrier) in map.map[..map.carriers].iter().enumerate() {
+            if *carrier == Carrier::Data {
                 self.data_carriers.push(k);
             }
         }
@@ -159,9 +159,9 @@ impl Equalizer {
         if power > 1e-12 {
             self.noise = (errors / power).clamp(0.0001, 2.0);
             let rotation = Complex::from_polar(1.0, correlation.arg());
-            for group in 0..=usize::from(miso) {
+            for observations in &mut self.observations[..=usize::from(miso)] {
                 for k in 0..map.carriers {
-                    self.observations[group][bin(map, k)] *= rotation;
+                    observations[bin(map, k)] *= rotation;
                 }
             }
         }
@@ -224,9 +224,10 @@ impl Equalizer {
             }
             let value = self.observations[group][bin];
             if let Some((start, previous)) = left {
-                for k in start..right {
-                    let fraction = (k - start) as f32 / (right - start) as f32;
-                    self.estimates[group][k] = previous + (value - previous) * fraction;
+                let span = (right - start) as f32;
+                for (offset, estimate) in self.estimates[group][start..right].iter_mut().enumerate()
+                {
+                    *estimate = previous + (value - previous) * (offset as f32 / span);
                 }
             } else {
                 self.estimates[group][..right].fill(value);

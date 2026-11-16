@@ -118,10 +118,10 @@ impl BlockDecoder {
         if type5.len() != block.type5 || scrambling.len() < block.type5 || type2 > MAX_TYPE2_BITS {
             return None;
         }
-        for i in 0..block.type5 {
+        for (i, slot) in self.deinterleaved[..block.type5].iter_mut().enumerate() {
             let k = interleaved_position(block.type5, block.interleave, i);
             let soft = type5[k];
-            self.deinterleaved[i] = if scrambling[k] { -soft } else { soft };
+            *slot = if scrambling[k] { -soft } else { soft };
         }
         let mother = &mut self.mother[..type2 * MOTHER_RATE];
         mother.fill(0);

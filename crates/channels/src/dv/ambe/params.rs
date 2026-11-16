@@ -107,9 +107,9 @@ pub(super) fn decode(quantized: &Quantized, current: &mut Params, previous: &mut
     let harmonics = usize::from(HARMONICS[quantized.pitch]);
     current.w0 = ((f0 * 2.0) as f64 * PI) as f32;
     current.harmonics = harmonics;
-    for l in 1..=harmonics {
+    for (l, voiced) in (1usize..).zip(&mut current.voiced[1..=harmonics]) {
         let band = (l as f32 * 16.0 * f0) as usize;
-        current.voiced[l] = quantized.voicing >> (3 - band / 2) & 1 == 1;
+        *voiced = quantized.voicing >> (3 - band / 2) & 1 == 1;
     }
     current.gamma = GAIN_STEPS[quantized.gain] + 0.5 * previous.gamma;
     let residuals = residuals(quantized, harmonics);

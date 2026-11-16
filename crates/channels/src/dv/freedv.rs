@@ -167,16 +167,11 @@ impl FreeDvChannel {
     }
 
     fn decode_voice(&mut self, out: &mut ChannelOutputs) {
-        let mut received = 0u32;
-        for index in 0..8 {
-            received = received << 1 | u32::from(self.paired_bits[index]);
-        }
-        for index in 11..15 {
-            received = received << 1 | u32::from(self.paired_bits[index]);
-        }
-        for index in CODEC_BITS..CODEC_BITS + 11 {
-            received = received << 1 | u32::from(self.paired_bits[index]);
-        }
+        let received = self.paired_bits[..8]
+            .iter()
+            .chain(&self.paired_bits[11..15])
+            .chain(&self.paired_bits[CODEC_BITS..CODEC_BITS + 11])
+            .fold(0u32, |word, &bit| word << 1 | u32::from(bit));
         let (corrected, _errors) = golay23_correct(received);
 
         let mut payload = [false; CODEC_BITS];

@@ -188,8 +188,8 @@ fn ppm(s: Samples, package: &Package<'_>, bits: &mut Bits, emit: &mut dyn FnMut(
         )
     };
     let count = package.len();
-    for n in 0..count {
-        let gap = i64::from(package.gaps[n]);
+    for (n, &gap) in package.gaps[..count].iter().enumerate() {
+        let gap = i64::from(gap);
         if zero.holds(gap) {
             bits.push(false);
         } else if one.holds(gap) {

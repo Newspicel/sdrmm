@@ -56,8 +56,8 @@ impl CssDemod {
         let step = Complex::from_polar(1.0, TAU * fraction / n as f64);
         let mut up = Complex::new(1.0f64, 0.0);
         let mut down = step.conj();
-        for m in 0..half {
-            self.window[m] *= narrow(up);
+        for bin in &mut self.window[..half] {
+            *bin *= narrow(up);
             up *= step;
         }
         for m in 1..half {

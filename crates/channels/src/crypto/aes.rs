@@ -53,11 +53,11 @@ impl Aes {
 
     pub(crate) fn encrypt(&self, block: &mut [u8; BLOCK]) {
         add_round_key(block, &self.round_keys[0]);
-        for round in 1..self.rounds {
+        for round_key in &self.round_keys[1..self.rounds] {
             sub_bytes(block, &SBOX);
             shift_rows(block);
             mix_columns(block);
-            add_round_key(block, &self.round_keys[round]);
+            add_round_key(block, round_key);
         }
         sub_bytes(block, &SBOX);
         shift_rows(block);
