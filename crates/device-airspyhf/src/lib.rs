@@ -21,6 +21,7 @@ mod hardware;
 const DRIVER_ID: DeviceBackend = DeviceBackend::Airspyhf;
 const NOSERIAL_KEY_PREFIX: &str = "noserial-";
 
+#[expect(clippy::needless_pass_by_value, reason = "used as a map_err fn")]
 fn map_err(err: driver::Error) -> DeviceError {
     let text = err.to_string();
     if err.is_disconnected() {

@@ -129,9 +129,7 @@ impl Link {
             bit_count: *bit_count,
             bits: bits.to_vec(),
         });
-        let mut speech = channel
-            .map(|channel| vec![field::CHANNEL_0 + channel])
-            .unwrap_or_default();
+        let mut speech = channel.map_or_default(|channel| vec![field::CHANNEL_0 + channel]);
         speech.extend([field::SPEECH_DATA, 160]);
         speech.extend((0..160).flat_map(|index| FakeChip::sample(bits, index).to_be_bytes()));
         self.answer(PacketKind::Speech, &speech);
@@ -140,8 +138,7 @@ impl Link {
 
 fn with_channel(channel: Option<u8>, fields: &[u8]) -> Vec<u8> {
     channel
-        .map(|channel| vec![field::CHANNEL_0 + channel, 0])
-        .unwrap_or_default()
+        .map_or_default(|channel| vec![field::CHANNEL_0 + channel, 0])
         .into_iter()
         .chain(fields.iter().copied())
         .collect()

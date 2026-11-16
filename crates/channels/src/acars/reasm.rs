@@ -148,7 +148,7 @@ mod tests {
             block_id: Some(block_id),
             ack: None,
             flight: Some("UA0001".into()),
-            msg_num: msg_num.map(|s| s.into()),
+            msg_num: msg_num.map(std::convert::Into::into),
             text: text.into(),
             more_to_come: more,
             reassembled: false,

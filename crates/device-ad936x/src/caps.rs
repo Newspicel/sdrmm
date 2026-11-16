@@ -185,9 +185,7 @@ impl Front {
                 .unwrap_or_default(),
             rx_ports: reader.ports(Direction::In, rx, RX_PORT_LOCK),
             rx_port_locked: reader.locked(RX_PORT_LOCK),
-            tx_ports: tx
-                .map(|tx| reader.ports(Direction::Out, tx, TX_PORT_LOCK))
-                .unwrap_or_default(),
+            tx_ports: tx.map_or_default(|tx| reader.ports(Direction::Out, tx, TX_PORT_LOCK)),
             trim: reader.trim(),
             tracking: reader.tracking(rx),
             decimation: decimation(client, context, layout),
@@ -250,8 +248,7 @@ impl Reader<'_> {
         if self.locked(lock) {
             return self
                 .value(direction, channel, RF_PORT_SELECT)
-                .map(|port| vec![port.trim().to_string()])
-                .unwrap_or_default();
+                .map_or_default(|port| vec![port.trim().to_string()]);
         }
         self.list(direction, channel, RF_PORT_SELECT)
             .unwrap_or_default()
@@ -471,8 +468,8 @@ fn extra_settings(front: &Front, layout: &Layout) -> Vec<ExtraSetting> {
         ));
     }
     extra.extend(front.chip.settings(agc(front).offered()));
-    if let Some(tones) = front.tones.as_ref().filter(|_| layout.tx_streams() > 0) {
-        extra.extend(tones.settings(front.rate.max));
+    if front.tones.is_some() && layout.tx_streams() > 0 {
+        extra.extend(Tones::settings(front.rate.max));
     }
     extra
 }

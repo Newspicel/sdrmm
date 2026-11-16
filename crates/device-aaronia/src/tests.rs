@@ -328,7 +328,7 @@ fn readouts_come_from_the_health_tree_while_streaming() {
 #[test]
 fn health_names_the_library_and_version_it_found() {
     let check = health(&RuntimeInfo {
-        version: Some((3 << 16) | 16745),
+        version: Some((3 << 16) | 0x4169),
         library: Some("/opt/aaronia-rtsa-suite/libAaroniaRTSAAPI.so".to_string()),
         error: None,
     });

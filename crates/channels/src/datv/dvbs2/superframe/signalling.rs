@@ -474,7 +474,7 @@ mod tests {
                 .enumerate()
                 .map(|(index, &bit)| {
                     let flip = index % 11 == 3;
-                    if bit != flip { -1.0 } else { 1.0 }
+                    if bit == flip { 1.0 } else { -1.0 }
                 })
                 .collect();
             let mut decoded = [false; 16];

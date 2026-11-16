@@ -172,16 +172,15 @@ impl Parts {
     }
 
     fn found(&mut self, name: String) -> &mut Found {
-        let index = match self.pairs.iter().position(|found| found.name == name) {
-            Some(index) => index,
-            None => {
-                self.pairs.push(Found {
-                    name,
-                    meta: None,
-                    data: None,
-                });
-                self.pairs.len() - 1
-            }
+        let index = if let Some(index) = self.pairs.iter().position(|found| found.name == name) {
+            index
+        } else {
+            self.pairs.push(Found {
+                name,
+                meta: None,
+                data: None,
+            });
+            self.pairs.len() - 1
         };
         &mut self.pairs[index]
     }
@@ -531,7 +530,7 @@ mod tests {
         ));
         assert!(matches!(
             read_archive(b"not a tar at all".as_slice(), spool.path()),
-            Err(SigmfError::Malformed(_)) | Err(SigmfError::Io(_))
+            Err(SigmfError::Malformed(_) | SigmfError::Io(_))
         ));
     }
 }

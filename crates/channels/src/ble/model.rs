@@ -281,6 +281,10 @@ pub struct BleAdvert {
     pub data: String,
 }
 
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if signature"
+)]
 fn is_zero(value: &u32) -> bool {
     *value == 0
 }

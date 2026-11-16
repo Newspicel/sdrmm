@@ -46,7 +46,7 @@ pub(crate) fn frame(packet: &Packet<'_>, tracker: &mut Tracker) -> Option<Remote
         phy: phy(wire_phy(packet.phy)),
         address: advert
             .sender
-            .map_or_else(|| "unknown".to_owned(), |sender| sender.text()),
+            .map_or_else(|| "unknown".to_owned(), pdu::Party::text),
         channel: packet.rf.map(channel_index),
         counter: Some(counter),
         ssid: None,
@@ -57,13 +57,13 @@ pub(crate) fn frame(packet: &Packet<'_>, tracker: &mut Tracker) -> Option<Remote
 
 pub(crate) struct Events<'a> {
     pub tracker: &'a mut Tracker,
-    pub events: &'a mut Vec<DecoderEvent>,
+    pub out: &'a mut Vec<DecoderEvent>,
 }
 
 impl Sink for Events<'_> {
     fn packet(&mut self, packet: Packet<'_>) {
         if let Some(frame) = frame(&packet, self.tracker) {
-            self.events.push(DecoderEvent::of(&frame));
+            self.out.push(DecoderEvent::of(&frame));
         }
     }
 }

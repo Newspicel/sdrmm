@@ -105,14 +105,13 @@ impl Upper {
         };
         let mut frame = stamp.frame(kind);
         frame.opcode = Some(pdu.name.to_owned());
-        match call {
-            Some(call) => describe(&mut frame, &call),
-            None => {
-                frame.destination = address.ssi();
-                frame.source = pdu.party;
-                frame.group_call = pdu.group;
-                frame.encrypted = pdu.encrypted;
-            }
+        if let Some(call) = call {
+            describe(&mut frame, &call);
+        } else {
+            frame.destination = address.ssi();
+            frame.source = pdu.party;
+            frame.group_call = pdu.group;
+            frame.encrypted = pdu.encrypted;
         }
         if let Some(payload) = pdu.payload {
             carry(&mut frame, payload);

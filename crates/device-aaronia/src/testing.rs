@@ -210,7 +210,7 @@ impl FakeApi {
 
 impl Rtsa for FakeApi {
     fn version(&self) -> u32 {
-        (3 << 16) | 16745
+        (3 << 16) | 0x4169
     }
 
     fn library_path(&self) -> &Path {

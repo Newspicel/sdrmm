@@ -9,7 +9,7 @@ use super::{Kind, Payload};
 use crate::{AUDIO_RATE, VideoPicture};
 
 unsafe extern "C" {
-    /// FFmpeg 9 types the argument as `enum AVCodecID` where earlier releases take an `int`, so
+    /// `FFmpeg` 9 types the argument as `enum AVCodecID` where earlier releases take an `int`, so
     /// the generated binding changes with the installed library. Both share one C ABI, and the
     /// transparent `AVCodecID` wrapper matches it on every target, whatever integer the enum is.
     fn av_parser_init(codec_id: ffi::AVCodecID) -> *mut ffi::AVCodecParserContext;
@@ -68,7 +68,7 @@ impl Decoder {
         Ok(Self::with(kind, Some(parser), opened))
     }
 
-    /// FFmpeg's own parametric stereo assumes 32 QMF slots, so the 30-slot frames of DAB+
+    /// `FFmpeg`'s own parametric stereo assumes 32 QMF slots, so the 30-slot frames of DAB+
     /// and DRM HE-AAC v2 come out robotic. FDK takes raw blocks plus their config.
     pub fn fdk(kind: Kind, config: &[u8]) -> Result<Self, String> {
         silence_library_logging();
@@ -120,8 +120,8 @@ impl Decoder {
                 ffi::av_parser_parse2(
                     parser.as_ptr(),
                     self.codec.as_mut_ptr(),
-                    &mut packet_data,
-                    &mut packet_size,
+                    &raw mut packet_data,
+                    &raw mut packet_size,
                     padded[used..].as_ptr(),
                     (bytes.len() - used) as i32,
                     if used == 0 {
@@ -167,8 +167,8 @@ impl Decoder {
                 ffi::av_parser_parse2(
                     parser.as_ptr(),
                     self.codec.as_mut_ptr(),
-                    &mut data,
-                    &mut length,
+                    &raw mut data,
+                    &raw mut length,
                     std::ptr::null(),
                     0,
                     ffi::AV_NOPTS_VALUE,

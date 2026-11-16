@@ -147,7 +147,7 @@ mod tests {
         let mut clock = SampleClock::new();
         let slow = 1.0 + 20e-6;
         for step in 0..600 {
-            let true_s = step as f64 * 0.1;
+            let true_s = f64::from(step) * 0.1;
             clock.observe(
                 Arrival {
                     end: (true_s * RATE / slow) as u64,

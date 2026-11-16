@@ -27,6 +27,5 @@ pub(crate) use error::Error;
 pub(crate) use fake::Fake;
 pub(crate) use radio::{DirectSampling, Dongle, Radio};
 pub(crate) use stream::{IN_FLIGHT_SAMPLES, TRANSFER_BYTES};
-#[cfg(test)]
 pub(crate) use tuner::GAINS;
 pub(crate) use usb::Transport;

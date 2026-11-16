@@ -39,7 +39,9 @@ pub fn demap(
                 axis64(point.im * scale, &mut slot[3..]);
             }
         }
-        slot.iter_mut().for_each(|llr| *llr *= weight);
+        for llr in slot {
+            *llr *= weight;
+        }
     }
 }
 

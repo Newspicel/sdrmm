@@ -180,7 +180,7 @@ fn flexible_four(value: u8) -> Option<Mcs> {
         0 => Some(spread(Signal::Dummy, 1, false)),
         1..=63 => match legacy(value >> 1, value & 1 == 1)? {
             Signal::Dummy => None,
-            signal => Some(spread(signal, 1, false)),
+            signal @ Signal::Data(_) => Some(spread(signal, 1, false)),
         },
         64..=71 => spread_entry(value - 64, 5, false),
         72..=79 => spread_entry(value - 72, 2, false),
@@ -212,7 +212,7 @@ fn flexible_later(value: u8) -> Option<Mcs> {
         188 => entry(6, 2),
         1..=113 => match legacy(code >> 2, code >> 1 & 1 == 1)? {
             Signal::Dummy => None,
-            signal => Some(spread(signal, 1, last)),
+            signal @ Signal::Data(_) => Some(spread(signal, 1, last)),
         },
         132..=248 => extended(code).map(|signal| spread(signal, 1, last)),
         _ => None,
@@ -370,8 +370,8 @@ mod tests {
             assert_eq!(coding.bundled(64_800), Some(frames), "format 2 code {code}");
         }
         let short = [
-            (32 | 4u8, 2),
-            (32 | 12, 3),
+            (0x20 | 0x04_u8, 2),
+            (0x20 | 0x0C, 3),
             (64, 1),
             (66, 1),
             (67, 2),

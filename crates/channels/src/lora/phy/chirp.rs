@@ -54,7 +54,7 @@ impl Dechirper {
     #[must_use]
     pub(crate) fn new(chips: usize) -> Self {
         let up = base_upchirp(chips);
-        let down = up.iter().map(|c| c.conj()).collect();
+        let down = up.iter().map(num_complex::Complex::conj).collect();
         let zero = Complex::new(0.0, 0.0);
         Self {
             up,

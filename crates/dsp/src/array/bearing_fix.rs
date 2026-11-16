@@ -155,7 +155,7 @@ fn shaped(lines: &[BearingLine], solved: &Solved) -> LineFix {
         1.0
     };
     let (cee, cnn, cen) = (solved.cee * scale, solved.cnn * scale, solved.cen * scale);
-    let half_trace = (cee + cnn) / 2.0;
+    let half_trace = f64::midpoint(cee, cnn);
     let root = ((cee - cnn) / 2.0).hypot(cen);
     let axis_from_east = (2.0 * cen).atan2(cee - cnn).to_degrees() / 2.0;
     LineFix {

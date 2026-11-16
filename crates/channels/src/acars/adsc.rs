@@ -3,8 +3,8 @@ use crate::acars::position::Position;
 use serde::Serialize;
 
 fn coordinate(v: u32) -> f64 {
-    let r = sign_extend(v, 21) as f64;
-    r * (180.0 - 90.0 / 2f64.powi(19)) / 0xF_FFFF as f64
+    let r = f64::from(sign_extend(v, 21));
+    r * (180.0 - 90.0 / 2f64.powi(19)) / f64::from(0xF_FFFF)
 }
 
 fn altitude_ft(v: u32) -> i32 {
@@ -12,11 +12,11 @@ fn altitude_ft(v: u32) -> i32 {
 }
 
 fn timestamp_s(v: u32) -> f64 {
-    v as f64 * 0.125
+    f64::from(v) * 0.125
 }
 
 fn speed(v: u32) -> f64 {
-    v as f64 / 2.0
+    f64::from(v) / 2.0
 }
 
 fn vert_speed_fpm(v: u32) -> i32 {
@@ -24,12 +24,12 @@ fn vert_speed_fpm(v: u32) -> i32 {
 }
 
 fn distance_nm(v: u32) -> f64 {
-    v as f64 / 8.0
+    f64::from(v) / 8.0
 }
 
 fn heading_deg(v: u32) -> f64 {
-    let r = sign_extend(v, 12) as f64;
-    let mut h = r * (180.0 - 90.0 / 2f64.powi(10)) / 0x7FF as f64;
+    let r = f64::from(sign_extend(v, 12));
+    let mut h = r * (180.0 - 90.0 / 2f64.powi(10)) / f64::from(0x7FF);
     if h < 0.0 {
         h += 360.0;
     }
@@ -37,8 +37,8 @@ fn heading_deg(v: u32) -> f64 {
 }
 
 fn wind_dir_deg(v: u32) -> f64 {
-    let r = sign_extend(v, 9) as f64;
-    let mut d = r * (180.0 - 90.0 / 2f64.powi(7)) / 0xFF as f64;
+    let r = f64::from(sign_extend(v, 9));
+    let mut d = r * (180.0 - 90.0 / 2f64.powi(7)) / f64::from(0xFF);
     if d < 0.0 {
         d += 360.0;
     }
@@ -46,8 +46,8 @@ fn wind_dir_deg(v: u32) -> f64 {
 }
 
 fn temperature_c(v: u32) -> f64 {
-    let r = sign_extend(v, 12) as f64;
-    r * (512.0 - 256.0 / 2f64.powi(10)) / 0x7FF as f64
+    let r = f64::from(sign_extend(v, 12));
+    r * (512.0 - 256.0 / 2f64.powi(10)) / f64::from(0x7FF)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -464,12 +464,11 @@ fn parse_downlink(mut buf: &[u8], msg: &mut AdscMessage) {
             }),
             _ => None,
         };
-        match parsed {
-            Some(t) => msg.tags.push(t),
-            None => {
-                msg.err = true;
-                return;
-            }
+        if let Some(t) = parsed {
+            msg.tags.push(t);
+        } else {
+            msg.err = true;
+            return;
         }
     }
 }
@@ -523,12 +522,11 @@ fn parse_uplink(mut buf: &[u8], msg: &mut AdscMessage) {
             }
             _ => None,
         };
-        match parsed {
-            Some(t) => msg.tags.push(t),
-            None => {
-                msg.err = true;
-                return;
-            }
+        if let Some(t) = parsed {
+            msg.tags.push(t);
+        } else {
+            msg.err = true;
+            return;
         }
     }
 }
@@ -552,7 +550,7 @@ fn parse_request_groups(buf: &mut &[u8]) -> Vec<RequestGroup> {
         let mut b = rest;
         let parsed: Option<RequestGroup> = match tag {
             10 => take(&mut b, 1).map(|x| RequestGroup::LateralDeviationThreshold {
-                nm: x[0] as f64 / 8.0,
+                nm: f64::from(x[0]) / 8.0,
             }),
             11 => take(&mut b, 1).and_then(|x| {
                 Some(RequestGroup::ReportingInterval {
@@ -566,7 +564,7 @@ fn parse_request_groups(buf: &mut &[u8]) -> Vec<RequestGroup> {
             16 => take(&mut b, 1).map(|x| RequestGroup::MeteoModulus { every_n: x[0] }),
             17 => take(&mut b, 1).map(|x| RequestGroup::AirframeIdModulus { every_n: x[0] }),
             18 => take(&mut b, 1).map(|x| RequestGroup::VerticalSpeedThreshold {
-                fpm: (x[0] as i8) as i32 * 64,
+                fpm: i32::from(x[0] as i8) * 64,
             }),
             19 => take(&mut b, 4).map(|x| RequestGroup::AltitudeRange {
                 ceiling_ft: altitude_ft(u32::from_be_bytes([0, 0, x[0], x[1]])),

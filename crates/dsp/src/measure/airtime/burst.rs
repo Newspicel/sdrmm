@@ -113,7 +113,9 @@ impl Track {
         }
         let base = self.reach_low;
         let spread = &mut self.energy[base..=self.reach_high];
-        spread.iter_mut().for_each(|bin| *bin = bin.max(0.0));
+        for bin in &mut *spread {
+            *bin = bin.max(0.0);
+        }
         let total: f64 = spread.iter().map(|&bin| f64::from(bin)).sum();
         let (low, high) = central(spread, total);
         let moment: f64 = spread
@@ -216,16 +218,15 @@ impl Bursts {
                 .position(|track| track.reaches(&segment, frame))
             {
                 Some(found) => found,
-                None => match self.tracks.iter().position(|track| !track.live) {
-                    Some(free) => {
+                None => {
+                    if let Some(free) = self.tracks.iter().position(|track| !track.live) {
                         self.tracks[free].open(frame, &segment);
                         free
-                    }
-                    None => {
+                    } else {
                         self.dropped += 1;
                         continue;
                     }
-                },
+                }
             };
             self.tracks[track].join(&segment, frame, power, floor);
         }

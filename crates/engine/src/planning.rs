@@ -64,7 +64,7 @@ pub(crate) fn hears(
     settings: &ChannelSettings,
 ) -> bool {
     hears_at(
-        center_of(tuning, stream, &capabilities.per_stream),
+        center_of(tuning, stream, capabilities.per_stream),
         sample_rate_of(tuning),
         settings,
     )
@@ -431,7 +431,7 @@ pub(crate) fn plan_center(
         if !settings.tunes_itself() {
             return None;
         }
-        let current_hz = center_of(settings, 0, &scope);
+        let current_hz = center_of(settings, 0, scope);
         let center_hz = best_center_hz(capabilities, settings, 0, channels, current_hz)?;
         return (center_hz != current_hz).then(|| DeviceSettings {
             center_hz: Some(center_hz),
@@ -448,7 +448,7 @@ pub(crate) fn plan_center(
             .filter(|channel| channel.stream == stream)
             .cloned()
             .collect();
-        let current_hz = center_of(settings, stream, &scope);
+        let current_hz = center_of(settings, stream, scope);
         let Some(center_hz) = best_center_hz(capabilities, settings, stream, &heard, current_hz)
         else {
             continue;

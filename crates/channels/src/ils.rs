@@ -51,7 +51,7 @@ fn params(settings: &ChannelSettings) -> Result<IlsParams, ChannelError> {
         .map_err(ChannelError::InvalidSettings)
 }
 
-fn check_params(params: &IlsParams) -> Result<(), ChannelError> {
+fn check_params(params: IlsParams) -> Result<(), ChannelError> {
     datalink::check_navaid_report_ms(params.report_ms)
 }
 
@@ -70,7 +70,7 @@ impl NativeChannel for IlsChannel {
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
-        check_params(&params)?;
+        check_params(params)?;
         Ok(Self::build(params))
     }
 }
@@ -78,7 +78,7 @@ impl NativeChannel for IlsChannel {
 impl ChannelRx for IlsChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
-        check_params(&params)?;
+        check_params(params)?;
         self.params = params;
         Ok(())
     }
@@ -348,7 +348,7 @@ mod tests {
         let events = run_events(&mut channel, &iq);
         let reading = events
             .iter()
-            .filter_map(|event| event.read::<IlsReading>())
+            .filter_map(sdrmm_wire::DecoderEvent::read::<IlsReading>)
             .next_back()
             .expect("ILS reading");
         assert!((reading.ddm - 0.16).abs() < 0.01, "{}", reading.ddm);

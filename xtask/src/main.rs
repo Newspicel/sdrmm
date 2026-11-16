@@ -332,10 +332,10 @@ impl InterruptHandler {
         let mut action = unsafe { std::mem::zeroed::<libc::sigaction>() };
         action.sa_sigaction = preserve_dev_supervisor as *const () as libc::sighandler_t;
         action.sa_flags = libc::SA_RESTART;
-        unsafe { libc::sigemptyset(&mut action.sa_mask) };
+        unsafe { libc::sigemptyset(&raw mut action.sa_mask) };
 
         let mut previous = unsafe { std::mem::zeroed::<libc::sigaction>() };
-        if unsafe { libc::sigaction(libc::SIGINT, &action, &mut previous) } != 0 {
+        if unsafe { libc::sigaction(libc::SIGINT, &raw const action, &raw mut previous) } != 0 {
             return Err(std::io::Error::last_os_error()).context("install Ctrl-C handler");
         }
         Ok(Self(previous))
@@ -345,7 +345,7 @@ impl InterruptHandler {
 #[cfg(unix)]
 impl Drop for InterruptHandler {
     fn drop(&mut self) {
-        unsafe { libc::sigaction(libc::SIGINT, &self.0, std::ptr::null_mut()) };
+        unsafe { libc::sigaction(libc::SIGINT, &raw const self.0, std::ptr::null_mut()) };
     }
 }
 
@@ -406,7 +406,7 @@ mod dev_tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "runs only as the child of interrupt_handler_keeps_supervisor_alive"]
     fn interrupt_handler_helper() {
         if std::env::var_os(HELPER_ENV).is_none() {
             return;
@@ -838,7 +838,7 @@ fn agree(what: &str, pins: &[(String, String)]) -> Result<()> {
     Ok(())
 }
 
-/// Tests, smoke runs and screenshots must not reach whatever SoapySDR a developer has
+/// Tests, smoke runs and screenshots must not reach whatever `SoapySDR` a developer has
 /// installed, so they are pointed at a library that cannot exist and find none.
 const NO_SOAPY_RUNTIME: (&str, &str) = ("SDRMM_SOAPY_LIBRARY", "/nonexistent/libSoapySDR");
 const NO_SOAPY_TARGET: &str = "target/no-soapy";
@@ -975,7 +975,7 @@ const TEST_TARGETS: [&str; 6] = [
 ];
 
 /// Runs every workspace crate under nextest, which schedules all test binaries into one pool
-/// rather than running them one at a time. The synthesized SigMF pairs come first because they
+/// rather than running them one at a time. The synthesized `SigMF` pairs come first because they
 /// are never committed, so the tests that read them off disk have nothing to read until the
 /// generator has run. The generator is built in the same cargo run as the tests: on its own,
 /// cargo would resolve its features apart from theirs and compile the workspace twice. Benches
@@ -996,9 +996,7 @@ fn test(root: &Path, step: Option<&TestStep>) -> Result<()> {
 }
 
 fn test_env(root: &Path) -> Result<Vec<(&'static str, String)>> {
-    let mut env = media_dir(root, None)?
-        .map(|dir| media_env(&dir))
-        .unwrap_or_default();
+    let mut env = media_dir(root, None)?.map_or_default(|dir| media_env(&dir));
     env.push((NO_SOAPY_RUNTIME.0, NO_SOAPY_RUNTIME.1.to_owned()));
     Ok(env)
 }
@@ -1129,8 +1127,8 @@ fn clang_runtime_dir() -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// Rust links its own AddressSanitizer runtime through `-Zsanitizer`, but has no flag for
-/// UndefinedBehaviorSanitizer, and `-nodefaultlibs` keeps clang from adding one at link time.
+/// Rust links its own `AddressSanitizer` runtime through `-Zsanitizer`, but has no flag for
+/// `UndefinedBehaviorSanitizer`, and `-nodefaultlibs` keeps clang from adding one at link time.
 fn ubsan_runtime(dir: &Path, target: &str) -> Result<PathBuf> {
     let arch = target.split('-').next().unwrap_or_default();
     let names = if cfg!(target_os = "macos") {

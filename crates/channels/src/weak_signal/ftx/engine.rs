@@ -691,7 +691,7 @@ impl Engine {
             .filter(|&symbol| {
                 protocol.sync_tone(symbol).is_some_and(|tone| {
                     let bins = &spectra[symbol][..protocol.tones];
-                    argmax_by(bins, |bin| bin.norm_sqr()) == usize::from(tone)
+                    argmax_by(bins, num_complex::Complex::norm_sqr) == usize::from(tone)
                 })
             })
             .count()
@@ -1162,7 +1162,10 @@ mod tests {
         let resolution = SAMPLE_RATE / audio.len() as f32;
         let low = ((centre_hz - 10.0) / resolution) as usize;
         let high = ((centre_hz + 60.0) / resolution) as usize;
-        output[low..high].iter().map(|bin| bin.norm_sqr()).sum()
+        output[low..high]
+            .iter()
+            .map(num_complex::Complex::norm_sqr)
+            .sum()
     }
 
     #[test]

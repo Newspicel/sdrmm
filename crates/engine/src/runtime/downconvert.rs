@@ -31,7 +31,7 @@ impl Downconverter {
         {
             Some(plan) => {
                 let band = plan.select(offset, band_rate);
-                let center = band.map(|band| plan.center(band)).unwrap_or(0.0);
+                let center = band.map_or(0.0, |band| plan.center(band));
                 let mut ddc =
                     Ddc::for_band(plan.output_rate(), output_rate, band_rate, offset - center)?;
                 let block_len = dsp_block_len(input_rate);
@@ -76,10 +76,7 @@ impl Downconverter {
         self.direct.set_offset(offset);
         if let Some(shared) = &mut self.shared {
             shared.band = shared.plan.select(offset, shared.band_rate);
-            let center = shared
-                .band
-                .map(|band| shared.plan.center(band))
-                .unwrap_or(0.0);
+            let center = shared.band.map_or(0.0, |band| shared.plan.center(band));
             shared.ddc.set_offset(offset - center);
         }
     }
@@ -148,7 +145,10 @@ mod tests {
                 let expected = input.len() as f64 * output_rate / 20_000_000.0;
                 assert!((output.len() as f64 - expected).abs() < 2.0);
                 let settled = &output[256..];
-                let power = settled.iter().map(|sample| sample.norm_sqr()).sum::<f32>()
+                let power = settled
+                    .iter()
+                    .map(num_complex::Complex::norm_sqr)
+                    .sum::<f32>()
                     / settled.len() as f32;
                 assert!(
                     (0.98..1.02).contains(&power),

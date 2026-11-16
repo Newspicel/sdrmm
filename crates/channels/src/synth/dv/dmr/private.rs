@@ -146,7 +146,7 @@ fn sockets(superframe: &[[u8; FRAME_BYTES]]) -> [[bool; 216]; 6] {
     let mut sockets = [[false; 216]; 6];
     for (index, frame) in superframe.iter().enumerate() {
         let at = index % 3 * FRAME_AIR_BITS;
-        sockets[index / 3][at..at + FRAME_AIR_BITS].copy_from_slice(&half_rate_air(frame));
+        sockets[index / 3][at..at + FRAME_AIR_BITS].copy_from_slice(&half_rate_air(*frame));
     }
     sockets
 }

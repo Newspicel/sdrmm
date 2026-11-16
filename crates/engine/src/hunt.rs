@@ -109,22 +109,19 @@ impl HuntState {
     ) -> Result<HuntStatus, EngineError> {
         let snapshot = {
             let mut guard = lock_side(&self.sweep);
-            let side = match &mut *guard {
-                Some(side) => {
-                    if let Some(settings) = settings {
-                        side.df.apply(&settings.sweep)?;
-                    }
-                    side
+            let side = if let Some(side) = &mut *guard {
+                if let Some(settings) = settings {
+                    side.df.apply(&settings.sweep)?;
                 }
-                None => {
-                    let (inbox, side) = settings
-                        .map(|settings| SweepSide::for_settings(settings, &self.pose_drops))
-                        .transpose()?
-                        .flatten()
-                        .ok_or_else(no_hunt_node)?;
-                    self.poses = Some(inbox);
-                    guard.insert(side)
-                }
+                side
+            } else {
+                let (inbox, side) = settings
+                    .map(|settings| SweepSide::for_settings(settings, &self.pose_drops))
+                    .transpose()?
+                    .flatten()
+                    .ok_or_else(no_hunt_node)?;
+                self.poses = Some(inbox);
+                guard.insert(side)
             };
             side.df.set_on(on);
             side.df.status().clone()
@@ -560,7 +557,7 @@ impl Hunt {
                 self.ds,
                 self.settings.channel,
                 self.decoder.freq_hz,
-                bearing,
+                &bearing,
             ));
         }
     }
@@ -578,7 +575,7 @@ impl Hunt {
     }
 }
 
-fn bearing_record(ds: u32, channel: u32, freq_hz: f64, bearing: DfBearing) -> DecodedRecord {
+fn bearing_record(ds: u32, channel: u32, freq_hz: f64, bearing: &DfBearing) -> DecodedRecord {
     DecodedRecord {
         origin: Some(EventOrigin {
             node: bearing.node.clone(),
@@ -588,7 +585,7 @@ fn bearing_record(ds: u32, channel: u32, freq_hz: f64, bearing: DfBearing) -> De
         channel,
         at: format!("{:.9}", jiff::Timestamp::now()),
         freq_hz,
-        event: DecoderEvent::of(&bearing),
+        event: DecoderEvent::of(bearing),
         sinks: Vec::new(),
         callsign: None,
         view: None,
@@ -646,12 +643,7 @@ impl Engine {
                 .mark(unix_ms() as f64 / 1_000.0, freq_hz)
                 .map_err(|refusal| EngineError::Processor(refusal.to_string()))?
         };
-        self.publish_decoded(bearing_record(
-            device_set,
-            channel,
-            freq_hz,
-            bearing.clone(),
-        ));
+        self.publish_decoded(bearing_record(device_set, channel, freq_hz, &bearing));
         Ok(bearing)
     }
 }

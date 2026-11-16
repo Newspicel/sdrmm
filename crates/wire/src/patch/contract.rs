@@ -368,6 +368,10 @@ pub struct PortSpec {
     pub note: Option<String>,
 }
 
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if takes a reference"
+)]
 fn is_once(repeat: &PortRepeat) -> bool {
     *repeat == PortRepeat::Once
 }

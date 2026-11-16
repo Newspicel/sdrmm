@@ -167,8 +167,8 @@ mod model_tests {
     use sdrmm_wire::DecoderEvent;
     use sdrmm_wire::present::count;
 
-    fn present<T: EventPayload>(kind: EventKind, json: serde_json::Value) -> Presentation {
-        serde_json::from_value::<T>(json).unwrap().present(&kind)
+    fn present<T: EventPayload>(kind: &EventKind, json: serde_json::Value) -> Presentation {
+        serde_json::from_value::<T>(json).unwrap().present(kind)
     }
 
     #[test]
@@ -195,7 +195,7 @@ mod model_tests {
     #[test]
     fn pocsag_pads_the_ric_and_names_the_function_bit() {
         let view = present::<PocsagMessage>(
-            EventKind::named("pocsag"),
+            &EventKind::named("pocsag"),
             serde_json::json!({
                 "address": 1234, "function": 3, "baud": 1200, "payload": "alpha",
                 "text": "CALL 42", "errors_corrected": 2,
@@ -231,7 +231,7 @@ mod model_tests {
     #[test]
     fn an_encrypted_message_names_its_cipher() {
         let view = present::<PocsagMessage>(
-            EventKind::named("pocsag"),
+            &EventKind::named("pocsag"),
             serde_json::json!({
                 "address": 1234, "function": 3, "baud": 1200, "payload": "alpha",
                 "text": "ALARM", "errors_corrected": 0, "encrypted": true,
@@ -247,7 +247,7 @@ mod model_tests {
     #[test]
     fn a_tone_only_page_has_no_text_or_repairs() {
         let view = present::<PocsagMessage>(
-            EventKind::named("pocsag"),
+            &EventKind::named("pocsag"),
             serde_json::json!({
                 "address": 7, "function": 0, "baud": 512, "payload": "tone",
                 "text": "", "errors_corrected": 0,

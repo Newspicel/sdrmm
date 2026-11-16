@@ -73,7 +73,7 @@ impl RecordedTrack {
         self.points.iter().all(|point| point.place.is_none())
     }
 
-    /// Geolocations that are not a valid GeoJSON point and so never reach a map.
+    /// Geolocations that are not a valid `GeoJSON` point and so never reach a map.
     #[must_use]
     pub fn unreadable(&self) -> usize {
         self.unreadable

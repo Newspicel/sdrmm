@@ -7,7 +7,7 @@ pub(super) const CHROMA_BANDWIDTH_HZ: f64 = 1_300_000.0;
 pub(super) const SECAM_DR_HZ: f64 = 4_406_250.0;
 pub(super) const SECAM_DB_HZ: f64 = 4_250_000.0;
 /// The middle of SECAM's two rest frequencies, where its FM chroma is mixed down.
-pub(super) const SECAM_CENTRE_HZ: f64 = 0.5 * (SECAM_DR_HZ + SECAM_DB_HZ);
+pub(super) const SECAM_CENTRE_HZ: f64 = f64::midpoint(SECAM_DR_HZ, SECAM_DB_HZ);
 
 /// Where a line's parts sit, in seconds from the sync leading edge, and how the levels relate.
 #[derive(Clone, Copy, Debug)]

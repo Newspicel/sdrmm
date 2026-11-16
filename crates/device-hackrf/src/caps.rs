@@ -239,8 +239,8 @@ mod tests {
         GainValue::new(kind, value_db)
     }
 
-    fn manual(hz: f64) -> Option<BandwidthSetting> {
-        Some(BandwidthSetting::Manual { hz })
+    fn manual(hz: f64) -> BandwidthSetting {
+        BandwidthSetting::Manual { hz }
     }
 
     #[test]
@@ -338,7 +338,7 @@ mod tests {
             center_hz: Some(433_920_000.0),
             sample_rate: Some(8_000_000.0),
             antenna: Some("RX".to_string()),
-            bandwidth: manual(5_000_000.0),
+            bandwidth: Some(manual(5_000_000.0)),
             bias_tee: Some(false),
             gains: vec![
                 gain(GainKind::Lna, 24.0),
@@ -680,7 +680,7 @@ mod tests {
         assert_eq!(settings.sample_rate, Some(2e6));
         assert_eq!(settings.antenna.as_deref(), Some("RX"));
         assert_eq!(settings.ppm, None);
-        assert_eq!(settings.bandwidth, manual(1.75e6));
+        assert_eq!(settings.bandwidth, Some(manual(1.75e6)));
         assert_eq!(
             settings.gains,
             vec![

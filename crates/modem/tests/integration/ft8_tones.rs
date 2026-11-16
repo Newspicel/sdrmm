@@ -50,14 +50,13 @@ fn frame(seed: u32) -> Vec<u8> {
         let sync = COSTAS_AT
             .iter()
             .find(|&&at| (at..at + COSTAS.len()).contains(&i));
-        *s = match sync {
-            Some(&at) => COSTAS[i - at],
-            None => {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                (state % TONES as u32) as u8
-            }
+        *s = if let Some(&at) = sync {
+            COSTAS[i - at]
+        } else {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            (state % TONES as u32) as u8
         };
     }
     symbols

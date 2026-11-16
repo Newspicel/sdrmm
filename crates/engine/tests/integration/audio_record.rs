@@ -135,7 +135,10 @@ async fn a_channel_recording_lands_as_a_playable_wav_of_its_audio() {
     let ch = nfm_channel(&engine, ds);
 
     let started = start(&engine, ds, ch).unwrap();
-    assert!(started.file.ends_with(".wav"));
+    assert_eq!(
+        std::path::Path::new(&started.file).extension(),
+        Some(std::ffi::OsStr::new("wav"))
+    );
     assert_eq!(started.channels, 1);
     started.started_at.parse::<jiff::Timestamp>().unwrap();
 
@@ -254,8 +257,7 @@ async fn a_recording_through_an_unknown_audio_fx_is_refused_and_leaves_no_file()
     assert!(engine.start_audio_recording(REC, &route, false).is_err());
     assert!(live_status(&engine, ds, ch).is_none());
     let left = std::fs::read_dir(engine.audio_recordings_dir().unwrap())
-        .map(|entries| entries.count())
-        .unwrap_or(0);
+        .map_or(0, std::iter::Iterator::count);
     assert_eq!(left, 0, "a refused recording left a file behind");
     engine.remove_device_set(ds).unwrap();
 }

@@ -81,10 +81,9 @@ pub(crate) fn record(
                 phase_deg: f64::from(solution.phase_deg[lane]),
                 gain_db: f64::from(solution.gain_db[lane]),
                 coherence: solution.coherence[lane],
-                equaliser: eq
-                    .get(lane)
-                    .map(|points| points.iter().map(|point| [point.re, point.im]).collect())
-                    .unwrap_or_default(),
+                equaliser: eq.get(lane).map_or_default(|points| {
+                    points.iter().map(|point| [point.re, point.im]).collect()
+                }),
             })
             .collect(),
     }
@@ -132,7 +131,7 @@ mod tests {
 
     fn solved(center_hz: f64, keeps_phase: bool, eq: bool) -> ArrayCalRecord {
         let lanes = keys("kraken:1000", 5);
-        let delays: Vec<f64> = (0..5).map(|lane| 100.0 * lane as f64 + 0.25).collect();
+        let delays: Vec<f64> = (0..5).map(|lane| 100.0 * f64::from(lane) + 0.25).collect();
         let points = if eq {
             vec![vec![Complex::new(1.0, 0.1); EQ_POINTS]; 5]
         } else {

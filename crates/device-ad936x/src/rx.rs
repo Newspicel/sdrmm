@@ -357,12 +357,11 @@ impl IiodStream {
         pending: &mut Option<Refill>,
         timeout: Duration,
     ) -> Result<Option<Block>, DeviceError> {
-        let refill = match pending {
-            Some(refill) => refill,
-            None => {
-                link.send(&self.command)?;
-                pending.insert(Refill::new(self.pool.take(self.refill)))
-            }
+        let refill = if let Some(refill) = pending {
+            refill
+        } else {
+            link.send(&self.command)?;
+            pending.insert(Refill::new(self.pool.take(self.refill)))
         };
         let deadline = Instant::now() + timeout;
         while !refill.finished(self.refill) {

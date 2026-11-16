@@ -55,11 +55,8 @@ pub fn through_echoes(wave: &[Complex<f32>]) -> Vec<Complex<f32>> {
         .collect()
 }
 
-fn carrier() -> Option<CarrierLoop> {
-    Some(CarrierLoop::new(
-        PhaseDetector::DecisionDirected,
-        CARRIER_BW,
-    ))
+fn carrier() -> CarrierLoop {
+    CarrierLoop::new(PhaseDetector::DecisionDirected, CARRIER_BW)
 }
 
 fn transmit(tx: &LinearParams, bits: &[bool]) -> Vec<Complex<f32>> {
@@ -79,7 +76,7 @@ pub fn burst_link(label: &str, params: LinearParams, equaliser: Option<Equaliser
         bits_per_trial: PAYLOAD_SYMBOLS * bits_per_symbol,
         modulate: Box::new(move |bits| transmit(&tx, bits)),
         demodulate: Box::new(move |wave| {
-            let mut demod = LinearBurstDemod::new(&params, &rx, POWER_SYMBOLS, carrier());
+            let mut demod = LinearBurstDemod::new(&params, &rx, POWER_SYMBOLS, Some(carrier()));
             if let Some(config) = equaliser {
                 match demod.with_equaliser(config) {
                     Ok(equalised) => demod = equalised,
@@ -103,7 +100,8 @@ pub fn tracked_link(label: &str, params: LinearParams, equaliser: Option<Equalis
         bits_per_trial: PAYLOAD_SYMBOLS * bits_per_symbol,
         modulate: Box::new(move |bits| transmit(&tx, bits)),
         demodulate: Box::new(move |wave| {
-            let mut demod = LinearDemod::new(&params, &rx, LinearTiming::CONTINUOUS, carrier());
+            let mut demod =
+                LinearDemod::new(&params, &rx, LinearTiming::CONTINUOUS, Some(carrier()));
             if let Some(config) = equaliser {
                 match demod.with_equaliser(config) {
                     Ok(equalised) => demod = equalised,

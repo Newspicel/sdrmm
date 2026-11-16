@@ -389,9 +389,9 @@ pub(crate) mod tests {
         }
     }
 
-    fn apply(delta: DeviceSettings) -> Result<Remote, DeviceError> {
+    fn apply(delta: &DeviceSettings) -> Result<Remote, DeviceError> {
         let profile = esp32();
-        profile.validate(&delta, &profile.capabilities(), profile.defaults())
+        profile.validate(delta, &profile.capabilities(), profile.defaults())
     }
 
     #[test]
@@ -423,7 +423,7 @@ pub(crate) mod tests {
 
     #[test]
     fn tuning_rounds_to_whole_megahertz() {
-        let next = apply(DeviceSettings {
+        let next = apply(&DeviceSettings {
             center_hz: Some(433_920_000.0),
             ..DeviceSettings::default()
         })
@@ -431,7 +431,7 @@ pub(crate) mod tests {
         assert_eq!(next.center_mhz, 434);
         assert_eq!(esp32().wire(&next).center_hz, Some(434e6));
         assert!(
-            apply(DeviceSettings {
+            apply(&DeviceSettings {
                 center_hz: Some(50e6),
                 ..DeviceSettings::default()
             })
@@ -442,7 +442,7 @@ pub(crate) mod tests {
     #[test]
     fn a_manual_gain_turns_the_agc_off() {
         let profile = esp32();
-        let next = apply(DeviceSettings {
+        let next = apply(&DeviceSettings {
             gains: vec![GainValue {
                 stage: GAIN_STAGE.into(),
                 value_db: 30.0,
@@ -459,7 +459,7 @@ pub(crate) mod tests {
         assert_eq!(wire.agc, Some(AgcSetting::switched(false)));
         assert_eq!(wire.gains[0].value_db, 30.0);
         assert!(
-            apply(DeviceSettings {
+            apply(&DeviceSettings {
                 gains: vec![GainValue {
                     stage: GAIN_STAGE.into(),
                     value_db: 73.0,
@@ -473,7 +473,7 @@ pub(crate) mod tests {
     #[test]
     fn only_offered_rates_bandwidths_and_extras_pass() {
         assert_eq!(
-            apply(DeviceSettings {
+            apply(&DeviceSettings {
                 sample_rate: Some(40e6),
                 bandwidth: Some(BandwidthSetting::Manual { hz: 20e6 }),
                 extra: vec![
@@ -513,7 +513,7 @@ pub(crate) mod tests {
                 ..DeviceSettings::default()
             },
         ] {
-            assert!(apply(delta.clone()).is_err(), "{delta:?}");
+            assert!(apply(&delta).is_err(), "{delta:?}");
         }
     }
 

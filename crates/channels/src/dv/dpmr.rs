@@ -714,9 +714,9 @@ mod tests {
         ];
         const SPEC_HEADER: [u8; HI_BITS / 8] =
             [0x5A, 0x3C, 0x96, 0xE1, 0x0F, 0xF0, 0x12, 0x34, 0xAB];
+        const SPEC_CRC_TAPS: [u8; 3] = [2, 1, 0];
         let information: [bool; HI_BITS] =
             std::array::from_fn(|i| SPEC_HEADER[i / 8] >> (7 - i % 8) & 1 == 1);
-        const SPEC_CRC_TAPS: [u8; 3] = [2, 1, 0];
         let mut remainder = 0u8;
         for &bit in &information {
             let feedback = bit != (remainder & 0x80 != 0);

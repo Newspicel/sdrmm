@@ -109,7 +109,11 @@ fn opening_reads_the_radios_own_limits_rather_than_assuming_them() {
         vec!["fast_attack", "slow_attack", "hybrid"]
     );
 
-    let names: Vec<&str> = caps.extra.iter().map(|setting| setting.name()).collect();
+    let names: Vec<&str> = caps
+        .extra
+        .iter()
+        .map(sdrmm_wire::ExtraSetting::name)
+        .collect();
     assert_eq!(
         names,
         vec![

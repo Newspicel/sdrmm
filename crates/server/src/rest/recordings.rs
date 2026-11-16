@@ -4,7 +4,13 @@ use sdrmm_recorder::{
     BYTES_PER_SAMPLE, CollectionReader, SigmfReader, claim_spool, collection_path, data_path,
 };
 
-use super::*;
+use super::{
+    ApiError, AppError, AppState, Body, Export, ExportKind, Field, IntoResponse, Json,
+    MAX_RECORDING_UPLOAD_BYTES, Multipart, Path, Query, RecordingAnnotation,
+    RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingRow, RecordingUpload,
+    RecordingsResponse, Response, SigmfError, State, StateScope, StatusCode, Stored, header,
+    lock_gate, reconcile_recordings, reveal_path,
+};
 
 pub(super) fn recording_row(stem: &FsPath, name: &str) -> Option<RecordingRow> {
     let reader = match SigmfReader::open(stem) {
@@ -73,8 +79,7 @@ fn modified_at(path: &FsPath) -> String {
         .and_then(|metadata| metadata.modified())
         .ok()
         .and_then(|at| jiff::Timestamp::try_from(at).ok())
-        .map(|at| at.to_string())
-        .unwrap_or_default()
+        .map_or_default(|at| at.to_string())
 }
 
 #[utoipa::path(

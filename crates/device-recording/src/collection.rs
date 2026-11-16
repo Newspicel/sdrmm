@@ -245,7 +245,7 @@ fn play(stem: &Path, mut sinks: Vec<RxSink>, pace: Pace, running: &AtomicBool) {
             }
             Ok(ReadChunk::Gap(missing)) => sinks.iter_mut().for_each(|sink| sink.dropped(missing)),
             Ok(ReadChunk::Noise { on }) => {
-                mark_all(&mut sinks, LaneMark::NoiseSource { on, in_flight: 0 })
+                mark_all(&mut sinks, LaneMark::NoiseSource { on, in_flight: 0 });
             }
             Ok(ReadChunk::Retuned(_)) => mark_all(&mut sinks, LaneMark::Retuned { in_flight: 0 }),
             Ok(ReadChunk::Offsets(now)) => realign_moved(&mut sinks, &mut offsets, now),

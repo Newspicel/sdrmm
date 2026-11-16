@@ -160,7 +160,7 @@ pub fn decode(data: &[u8]) -> Option<Value> {
     } else {
         tmaj
     };
-    let tmin = ((b0 as u16) << 8) | data[1] as u16;
+    let tmin = (u16::from(b0) << 8) | u16::from(data[1]);
     let body = &data[2..];
 
     let mut obj = Map::new();
@@ -199,7 +199,7 @@ pub fn decode(data: &[u8]) -> Option<Value> {
             }
         }
         0x0508 => {
-            if body.len() >= 7 && body[0] & 0xf == 0 && body[6] == 0x28 {
+            if body.len() >= 7 && body[0].trailing_zeros() >= 4 && body[6] == 0x28 {
                 let key = body[0] >> 4;
                 obj.insert(
                     "key_seq".into(),

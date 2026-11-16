@@ -117,7 +117,7 @@ impl NativeChannel for M17Channel {
         Ok(Self {
             demod: c4fm_demod(&c4fm_params(ctx.input_rate, BAUD, DEVIATION_HZ, RRC_ALPHA)),
             symbols: Vec::new(),
-            decoder: Decoder::new()?,
+            decoder: Decoder::new(),
         })
     }
 }
@@ -173,8 +173,8 @@ struct Decoder {
 }
 
 impl Decoder {
-    fn new() -> Result<Self, ChannelError> {
-        Ok(Self {
+    fn new() -> Self {
+        Self {
             window: SymbolWindow::new(PAYLOAD_SYMBOLS),
             viterbi: Viterbi5::new(),
             pending: None,
@@ -190,7 +190,7 @@ impl Decoder {
             stream_info: Vec::with_capacity(STREAM_BITS + 4),
             vocoder: Codec2Decoder::new(),
             rejected: 0,
-        })
+        }
     }
 
     fn rejected(&self) -> u32 {
@@ -314,7 +314,7 @@ impl Decoder {
         }
 
         self.stream_type = Some(u16::from_be_bytes([lsf[12], lsf[13]]));
-        frame_from_lsf(&lsf)
+        Some(frame_from_lsf(&lsf))
     }
 
     fn stream(&mut self, out: &mut ChannelOutputs) -> Option<DvFrame> {
@@ -400,15 +400,11 @@ impl Decoder {
         self.stream_type = Some(u16::from_be_bytes([lsf[12], lsf[13]]));
         let joined_late = !self.in_stream;
         self.in_stream = true;
-        if joined_late {
-            frame_from_lsf(&lsf)
-        } else {
-            None
-        }
+        joined_late.then(|| frame_from_lsf(&lsf))
     }
 }
 
-fn frame_from_lsf(lsf: &[u8; LSF_BYTES]) -> Option<DvFrame> {
+fn frame_from_lsf(lsf: &[u8; LSF_BYTES]) -> DvFrame {
     let mut frame = dv_frame(DvFrameKind::Header);
     frame.destination_call = callsign(u64::from_be_bytes([
         0, 0, lsf[0], lsf[1], lsf[2], lsf[3], lsf[4], lsf[5],
@@ -427,7 +423,7 @@ fn frame_from_lsf(lsf: &[u8; LSF_BYTES]) -> Option<DvFrame> {
         }
         .to_owned(),
     );
-    Some(frame)
+    frame
 }
 
 fn callsign(address: u64) -> Option<String> {
@@ -484,7 +480,7 @@ mod tests {
 
     #[test]
     fn one_wrong_symbol_in_the_preamble_is_no_sync() {
-        let mut decoder = Decoder::new().expect("m17 decoder");
+        let mut decoder = Decoder::new();
         let mut out = ChannelOutputs::default();
         let mut symbols = [3.0, -3.0].repeat(16);
         symbols.extend([3.0, 3.0, 3.0, -3.0, 3.0, -3.0, 3.0, -3.0]);
@@ -642,6 +638,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::naive_bytecount,
+        reason = "short const table, no bytecount crate"
+    )]
     fn the_puncture_pattern_matches_the_m17_specification_linearized_p1() {
         const SPEC_P1: [u8; 61] = [
             1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1,

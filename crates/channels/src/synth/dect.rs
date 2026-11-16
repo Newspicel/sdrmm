@@ -121,14 +121,13 @@ fn packet_bits(from_rfp: bool, a_field: u64, b_field: Option<&BField>) -> Vec<bo
     for index in 0..A_FIELD_BITS {
         bits.push((a_field >> (A_FIELD_BITS - 1 - index)) & 1 == 1);
     }
-    match b_field {
-        Some(field) => bits.extend((0..B_FIELD_BITS).map(|index| field.bit(index))),
-        None => {
-            let mut state = 0x5A5Au32;
-            for _ in 0..B_FIELD_BITS {
-                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-                bits.push(state >> 31 == 1);
-            }
+    if let Some(field) = b_field {
+        bits.extend((0..B_FIELD_BITS).map(|index| field.bit(index)));
+    } else {
+        let mut state = 0x5A5Au32;
+        for _ in 0..B_FIELD_BITS {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            bits.push(state >> 31 == 1);
         }
     }
     bits
@@ -169,7 +168,7 @@ fn place(canvas: &mut [Complex<f32>], at: usize, burst: &[Complex<f32>]) {
 #[must_use]
 pub fn dummy_bearer(station: &Station, frames: usize) -> Vec<Complex<f32>> {
     let mut canvas = vec![Complex::default(); frames * FRAME_SAMPLES as usize];
-    let lead = station.slot as u64 * SLOT_SAMPLES;
+    let lead = u64::from(station.slot) * SLOT_SAMPLES;
     for frame in 0..frames {
         let a_field = match frame % 3 {
             0 => nt(station.rfpi),
@@ -191,7 +190,7 @@ pub fn with_burst(
     a_field: u64,
 ) -> Vec<Complex<f32>> {
     let mut canvas = dummy_bearer(station, frames);
-    let lead = station.slot as u64 * SLOT_SAMPLES;
+    let lead = u64::from(station.slot) * SLOT_SAMPLES;
     let at = (at_frame as u64 * FRAME_SAMPLES + lead) as usize;
     place(&mut canvas, at, &modulate(from_rfp, a_field));
     canvas

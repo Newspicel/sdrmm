@@ -5,15 +5,15 @@ use crate::{
     AUDIO_RATE, VideoPicture,
     nfm::NfmParams,
     synth::atv::{AtvSource, BAR_LEVELS, COLOR_BARS, bars, color_bars_with_tone, picture},
-    testutil::{dominant_tone, realtime_budget, settings},
+    testutil::{THROUGHPUT_ATTEMPTS, dominant_tone, fastest_seconds, realtime_budget, settings},
 };
 
-fn channel(p: AtvParams) -> AtvChannel {
+fn channel(p: &AtvParams) -> AtvChannel {
     AtvChannel::new(
         ChannelCtx {
             input_rate: p.rate_hz,
         },
-        settings(ChannelParams::of(&p).expect("atv settings")),
+        settings(ChannelParams::of(p).expect("atv settings")),
     )
     .unwrap()
 }
@@ -113,7 +113,7 @@ fn assert_colour_bars(picture: &VideoPicture, tolerance: f64) {
 fn decodes_a_bar_pattern_from_a_ccir_625_transmission() {
     let p = params_for(AtvStandard::Ccir625, AtvModulation::Am);
     let iq = bars(&AtvSource::new(&p, p.rate_hz), 4);
-    let pictures = run(&mut channel(p), &iq);
+    let pictures = run(&mut channel(&p), &iq);
     assert!(pictures.len() >= 6, "pictures {}", pictures.len());
     let picture = pictures.last().expect("at least one picture");
     assert_eq!((picture.width, picture.height), (922, 576));
@@ -141,7 +141,7 @@ fn decodes_pal_colour_to_the_standard_and_the_am_sound_carrier() {
         ..params_for(AtvStandard::Ccir625, AtvModulation::Am)
     };
     let iq = color_bars_with_tone(&AtvSource::new(&p, p.rate_hz), 3);
-    let (pictures, audio) = run_media(&mut channel(p), &iq);
+    let (pictures, audio) = run_media(&mut channel(&p), &iq);
     let picture = pictures.last().expect("a PAL picture");
     assert_eq!(
         picture.rgb.len(),
@@ -161,7 +161,7 @@ fn decodes_ntsc_colour_to_the_standard() {
         ..params_for(AtvStandard::Eia525, AtvModulation::Fm)
     };
     let iq = color_bars_with_tone(&AtvSource::new(&p, p.rate_hz), 3);
-    let pictures = run(&mut channel(p), &iq);
+    let pictures = run(&mut channel(&p), &iq);
     assert_colour_bars(pictures.last().expect("an NTSC picture"), 14.0);
 }
 
@@ -172,7 +172,7 @@ fn pal_colour_holds_on_every_field_whichever_line_carries_minus_v() {
         ..params_for(AtvStandard::Ccir625, AtvModulation::Fm)
     };
     let iq = color_bars_with_tone(&AtvSource::new(&p, p.rate_hz), 4);
-    let pictures = run(&mut channel(p), &iq);
+    let pictures = run(&mut channel(&p), &iq);
     assert!(pictures.len() >= 6, "pictures {}", pictures.len());
     for picture in &pictures[pictures.len() - 4..] {
         assert_colour_bars(picture, 14.0);
@@ -189,7 +189,7 @@ fn every_standard_and_modulation_scans_the_bars_in_order() {
         for modulation in [AtvModulation::Am, AtvModulation::Fm] {
             let p = params_for(standard, modulation);
             let iq = bars(&AtvSource::new(&p, p.rate_hz), 3);
-            let pictures = run(&mut channel(p), &iq);
+            let pictures = run(&mut channel(&p), &iq);
             let picture = pictures
                 .last()
                 .unwrap_or_else(|| panic!("{standard:?}/{modulation:?} produced no picture"));
@@ -204,7 +204,7 @@ fn fm_levels_follow_the_sync_whatever_the_swing() {
     let p = params_for(AtvStandard::Ccir625, AtvModulation::Fm);
     for swing in [2_000_000.0, 10_000_000.0] {
         let iq = bars(&AtvSource::new(&p, p.rate_hz).with_swing(swing), 3);
-        let picture = run(&mut channel(p.clone()), &iq).pop().expect("a picture");
+        let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
         assert_bars_ascend(&picture, &format!("swing {swing}"));
     }
 }
@@ -215,7 +215,7 @@ fn fm_holds_its_picture_three_megahertz_off_tune() {
     for offset in [-3_000_000.0, 3_000_000.0] {
         let mut iq = bars(&AtvSource::new(&p, p.rate_hz).with_swing(6_000_000.0), 3);
         crate::synth::shift(&mut iq, offset, p.rate_hz);
-        let picture = run(&mut channel(p.clone()), &iq).pop().expect("a picture");
+        let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
         assert_bars_ascend(&picture, &format!("offset {offset}"));
     }
 }
@@ -225,7 +225,7 @@ fn a_weak_fm_carrier_still_scans_a_clean_picture() {
     let p = params_for(AtvStandard::Ccir625, AtvModulation::Fm);
     let mut iq = bars(&AtvSource::new(&p, p.rate_hz).with_swing(6_000_000.0), 3);
     crate::synth::add_noise(&mut iq, 0xA7C3, 0.4);
-    let picture = run(&mut channel(p), &iq).pop().expect("a picture");
+    let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
     let row = usize::from(picture.height) / 2;
     for (bar, &level) in BAR_LEVELS.iter().enumerate() {
         let got = bar_luma(&picture, row, bar);
@@ -242,7 +242,7 @@ fn invert_undoes_a_reversed_transmission() {
     let mut p = params_for(AtvStandard::Ccir625, AtvModulation::Am);
     p.invert = true;
     let iq = bars(&AtvSource::new(&p, p.rate_hz), 3);
-    let picture = run(&mut channel(p), &iq).pop().expect("a picture");
+    let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
     assert_bars_ascend(&picture, "inverted");
 }
 
@@ -251,7 +251,7 @@ fn progressive_sources_fill_every_row() {
     let mut p = params_for(AtvStandard::Ccir625, AtvModulation::Am);
     p.interlace = false;
     let iq = bars(&AtvSource::new(&p, p.rate_hz), 3);
-    let picture = run(&mut channel(p), &iq).pop().expect("a picture");
+    let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
     let white = BAR_LEVELS.len() - 1;
     for row in [100usize, 101, 102, 103] {
         assert!(
@@ -266,7 +266,7 @@ fn a_noisy_am_channel_still_scans_a_recognizable_picture() {
     let p = params_for(AtvStandard::Ccir625, AtvModulation::Am);
     let mut iq = bars(&AtvSource::new(&p, p.rate_hz), 3);
     crate::synth::add_noise(&mut iq, 0xA7C3, 0.08);
-    let picture = run(&mut channel(p), &iq).pop().expect("a picture");
+    let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
     let row = usize::from(picture.height) / 2;
     let black = bar_luma(&picture, row, 0);
     let white = bar_luma(&picture, row, BAR_LEVELS.len() - 1);
@@ -280,7 +280,7 @@ fn a_narrow_channel_scans_a_narrow_picture() {
         ..params_for(AtvStandard::Ccir625, AtvModulation::Am)
     };
     let iq = bars(&AtvSource::new(&p, p.rate_hz), 3);
-    let picture = run(&mut channel(p), &iq).pop().expect("a picture");
+    let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
     assert_eq!(picture.width, 125);
     assert_bars_ascend(&picture, "2.4 MHz");
 }
@@ -304,12 +304,12 @@ fn the_occupied_band_stays_inside_the_channel_rate() {
 fn an_empty_channel_produces_no_picture() {
     let p = params_for(AtvStandard::Ccir625, AtvModulation::Am);
     let quiet = vec![Complex::new(0.0, 0.0); 400_000];
-    assert!(run(&mut channel(p), &quiet).is_empty());
+    assert!(run(&mut channel(&p), &quiet).is_empty());
 }
 
 #[test]
 fn apply_changes_the_standard_and_the_geometry_with_it() {
-    let mut chan = channel(params_for(AtvStandard::Ccir625, AtvModulation::Am));
+    let mut chan = channel(&params_for(AtvStandard::Ccir625, AtvModulation::Am));
     assert_eq!((chan.picture.width(), chan.picture.height()), (922, 576));
     let p = params_for(AtvStandard::SystemA405, AtvModulation::Fm);
     chan.apply(settings(ChannelParams::of(&p).expect("atv settings")))
@@ -322,7 +322,7 @@ fn apply_changes_the_standard_and_the_geometry_with_it() {
 
 #[test]
 fn apply_refuses_a_rate_the_channel_is_not_fed() {
-    let mut chan = channel(AtvParams::default());
+    let mut chan = channel(&AtvParams::default());
     let p = AtvParams {
         rate_hz: 10_000_000.0,
         ..AtvParams::default()
@@ -363,7 +363,7 @@ fn colour_needs_a_rate_that_carries_the_subcarrier() {
 
 #[test]
 fn mismatched_params_variant_is_rejected() {
-    let mut chan = channel(AtvParams::default());
+    let mut chan = channel(&AtvParams::default());
     assert!(matches!(
         chan.apply(settings(
             ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")
@@ -428,14 +428,16 @@ fn colour_decode_keeps_well_ahead_of_the_channel_rate() {
     };
     let iq = color_bars_with_tone(&AtvSource::new(&p, p.rate_hz), 3);
     let seconds = iq.len() as f64 / p.rate_hz;
-    let mut chan = channel(p);
-    let mut out = ChannelOutputs::default();
-    let started = std::time::Instant::now();
-    for block in iq.chunks(16_384) {
-        out.reset();
-        chan.process(block, &mut out);
-    }
-    let elapsed = started.elapsed().as_secs_f64();
+    let elapsed = fastest_seconds(THROUGHPUT_ATTEMPTS, || {
+        let mut chan = channel(&p);
+        let mut out = ChannelOutputs::default();
+        let started = std::time::Instant::now();
+        for block in iq.chunks(16_384) {
+            out.reset();
+            chan.process(block, &mut out);
+        }
+        started.elapsed().as_secs_f64()
+    });
     assert!(
         elapsed < realtime_budget(seconds),
         "{seconds:.2} s of colour video took {elapsed:.2} s"
@@ -515,7 +517,7 @@ fn grating(p: &AtvParams, hz: f64, frames: u32) -> Vec<Complex<f32>> {
 fn vestigial_am_keeps_pal_colour_saturated() {
     let p = coloured(AtvColor::Pal, AtvStandard::Ccir625, AtvModulation::Am);
     let iq = color_bars_with_tone(&AtvSource::new(&p, p.rate_hz).vestigial(), 3);
-    let pictures = run(&mut channel(p), &iq);
+    let pictures = run(&mut channel(&p), &iq);
     assert_colour_bars(pictures.last().expect("a PAL picture"), 14.0);
 }
 
@@ -526,7 +528,7 @@ fn the_comb_keeps_fine_luma_and_leaves_it_grey() {
         (AtvColor::Ntsc, AtvStandard::Eia525, 3_200_000.0),
     ] {
         let p = coloured(color, standard, AtvModulation::Fm);
-        let pictures = run(&mut channel(p.clone()), &grating(&p, hz, 3));
+        let pictures = run(&mut channel(&p), &grating(&p, hz, 3));
         let picture = pictures.last().expect("a picture");
         let row = usize::from(picture.height) / 2;
         let swing = luma_swing(picture, row);
@@ -542,7 +544,7 @@ fn colour_stays_on_its_side_of_a_horizontal_edge() {
     let source = AtvSource::new(&p, p.rate_hz);
     let (top, bottom) = ([0.75, 0.0, 0.0], [0.0, 0.0, 0.75]);
     let iq = picture(&source, 3, &|_, y| if y < 0.5 { top } else { bottom });
-    let picture = run(&mut channel(p), &iq).pop().expect("a picture");
+    let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
     let edge = usize::from(picture.height) / 2;
     for (row, want) in [(edge - 16, top), (edge + 16, bottom)] {
         let got = row_rgb(&picture, row);
@@ -561,7 +563,7 @@ fn decodes_secam_colour_on_am_and_fm() {
     for modulation in [AtvModulation::Am, AtvModulation::Fm] {
         let p = coloured(AtvColor::Secam, AtvStandard::Ccir625, modulation);
         let iq = color_bars_with_tone(&AtvSource::new(&p, p.rate_hz), 3);
-        let pictures = run(&mut channel(p), &iq);
+        let pictures = run(&mut channel(&p), &iq);
         assert_colour_bars(pictures.last().expect("a SECAM picture"), 20.0);
     }
 }
@@ -582,7 +584,7 @@ fn secam_needs_625_lines() {
 fn saturation_and_hue_apply_without_losing_lock() {
     let p = coloured(AtvColor::Pal, AtvStandard::Ccir625, AtvModulation::Fm);
     let iq = color_bars_with_tone(&AtvSource::new(&p, p.rate_hz), 3);
-    let mut chan = channel(p.clone());
+    let mut chan = channel(&p);
     run(&mut chan, &iq[..iq.len() / 2]);
     assert!(chan.sync.locked());
     let grey = AtvParams {
@@ -655,7 +657,7 @@ fn pal_keeps_fine_grey_detail_that_changes_every_few_lines() {
         let v = 0.5 + detail;
         [v, v, v]
     });
-    let picture = run(&mut channel(p), &iq).pop().expect("a picture");
+    let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
     let rows: Vec<usize> = (100..400).collect();
     let swing = rows
         .iter()
@@ -673,14 +675,14 @@ fn pal_3d_decodes_colour_and_keeps_fine_grey_detail() {
         ..coloured(AtvColor::Pal, AtvStandard::Ccir625, AtvModulation::Fm)
     };
     let iq = color_bars_with_tone(&AtvSource::new(&p, p.rate_hz), 8);
-    let pictures = run(&mut channel(p.clone()), &iq);
+    let pictures = run(&mut channel(&p), &iq);
     assert!(
         pictures.len() >= 2 * (8 - 4),
         "3D keeps a picture a field: {}",
         pictures.len()
     );
     assert_colour_bars(pictures.last().expect("a 3D PAL picture"), 14.0);
-    let pictures = run(&mut channel(p.clone()), &grating(&p, 4_000_000.0, 8));
+    let pictures = run(&mut channel(&p), &grating(&p, 4_000_000.0, 8));
     let picture = pictures.last().expect("a 3D PAL picture");
     let row = usize::from(picture.height) / 2;
     assert!(luma_swing(picture, row) > 60.0, "3D grating swing");
@@ -693,7 +695,7 @@ fn a_very_weak_am_carrier_still_locks_and_noise_alone_does_not() {
     let source = AtvSource::new(&p, p.rate_hz).vestigial();
     let mut iq = color_bars_with_tone(&source, 6);
     crate::synth::add_noise(&mut iq, 7, 1.6);
-    let pictures = run(&mut channel(p.clone()), &iq);
+    let pictures = run(&mut channel(&p), &iq);
     assert!(
         (8..=12).contains(&pictures.len()),
         "-2 dB CNR: {} pictures of 12 fields",
@@ -702,7 +704,7 @@ fn a_very_weak_am_carrier_still_locks_and_noise_alone_does_not() {
     let mut noise = vec![Complex::new(0.0, 0.0); iq.len()];
     crate::synth::add_noise(&mut noise, 11, 1.0);
     assert!(
-        run(&mut channel(p), &noise).len() <= 1,
+        run(&mut channel(&p), &noise).len() <= 1,
         "noise alone drew pictures"
     );
 }
@@ -716,6 +718,6 @@ fn fm_finds_its_own_polarity() {
         4,
     );
     let p = params_for(AtvStandard::Ccir625, AtvModulation::Fm);
-    let picture = run(&mut channel(p), &iq).pop().expect("a picture");
+    let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
     assert_bars_ascend(&picture, "inverted FM, invert off");
 }

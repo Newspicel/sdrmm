@@ -239,7 +239,7 @@ impl PoseEngine {
             });
             match (heading, sample.accuracy_deg) {
                 (Some(heading), Some(accuracy)) => {
-                    self.compass_measure(t, heading, accuracy, &mut step)
+                    self.compass_measure(t, heading, accuracy, &mut step);
                 }
                 (None, _) => self.reject_compass(t, Topic::NoDeclination, &mut step),
                 (Some(_), None) => self.reject_compass(t, Topic::NoAccuracy, &mut step),

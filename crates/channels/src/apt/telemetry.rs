@@ -105,8 +105,8 @@ pub(crate) fn read(column_a: &[f32], column_b: &[f32]) -> Option<Reading> {
     if fit_a.correlation.min(fit_b.correlation) < MIN_RAMP_CORRELATION {
         return None;
     }
-    let offset = (fit_a.offset + fit_b.offset) / 2.0;
-    let slope = (fit_a.slope + fit_b.slope) / 2.0;
+    let offset = f64::midpoint(fit_a.offset, fit_b.offset);
+    let slope = f64::midpoint(fit_a.slope, fit_b.slope);
     Some(Reading {
         calibration: Calibration {
             black: offset as f32,

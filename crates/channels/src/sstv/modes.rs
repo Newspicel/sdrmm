@@ -284,10 +284,7 @@ pub(crate) fn timing(mode: SstvMode) -> &'static Timing {
 
 #[cfg(test)]
 pub(crate) fn longest_line_ms() -> f64 {
-    TIMINGS
-        .iter()
-        .map(|t| t.line_ms)
-        .fold(0.0f64, |acc, ms| acc.max(ms))
+    TIMINGS.iter().map(|t| t.line_ms).fold(0.0f64, f64::max)
 }
 
 #[cfg(any(test, feature = "synth"))]

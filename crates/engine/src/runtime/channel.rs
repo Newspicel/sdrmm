@@ -518,8 +518,8 @@ impl ChannelHost {
             packet.channels = self.audio_channels;
             packet.frequency = self.frequency_hz;
             packet.video_position = video_pos;
-            packet.recorder = self.audio_rec.clone();
-            packet.baseband_recorder = self.baseband_rec.clone();
+            packet.recorder.clone_from(&self.audio_rec);
+            packet.baseband_recorder.clone_from(&self.baseband_rec);
         });
         if !published {
             if let Some(tap) = self.baseband_rec.take() {
@@ -862,7 +862,11 @@ pub(crate) mod tests {
         for block in carrier.chunks(BLOCK) {
             host.process_and_flush(block, center_hz);
         }
-        let power: f32 = host.filtered.iter().map(|s| s.norm_sqr()).sum();
+        let power: f32 = host
+            .filtered
+            .iter()
+            .map(num_complex::Complex::norm_sqr)
+            .sum();
         (power / host.filtered.len() as f32).sqrt()
     }
 
@@ -950,7 +954,7 @@ pub(crate) mod tests {
         let reference = fresh_pcm.try_recv().expect("fresh PCM");
         match (after.payload, reference.payload) {
             (PcmPayload::Samples(after), PcmPayload::Samples(reference)) => {
-                assert_eq!(after, reference)
+                assert_eq!(after, reference);
             }
             _ => panic!("expected decoded PCM"),
         }
@@ -1156,7 +1160,7 @@ pub(crate) mod tests {
         let mut phase = 0.0f64;
         let wanted: Vec<Complex<f32>> = (0..96_000)
             .map(|k| {
-                phase += TAU * deviation * (TAU * 1_000.0 * k as f64 / RATE).cos() / RATE;
+                phase += TAU * deviation * (TAU * 1_000.0 * f64::from(k) / RATE).cos() / RATE;
                 Complex::from_polar(1.0, phase as f32)
             })
             .collect();

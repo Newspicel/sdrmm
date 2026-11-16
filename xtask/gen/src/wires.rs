@@ -108,7 +108,7 @@ const fn way(direction: PortDirection) -> &'static str {
 fn carries(port: &PortSpec) -> String {
     match &port.payload {
         Payload::Iq { origins } => listed(origins.iter().map(snake)),
-        Payload::Events { kinds } => kinds_of(kinds.clone()),
+        Payload::Events { kinds } => kinds_of(kinds),
         Payload::Control { verbs } => listed(verbs.iter().map(snake)),
         Payload::Baseband
         | Payload::Audio
@@ -120,8 +120,8 @@ fn carries(port: &PortSpec) -> String {
     }
 }
 
-fn kinds_of(kinds: KindSet) -> String {
-    if kinds == KindSet::all() {
+fn kinds_of(kinds: &KindSet) -> String {
+    if *kinds == KindSet::all() {
         return "any kind".to_owned();
     }
     if kinds.len() > LISTED_KINDS {

@@ -41,9 +41,10 @@ fn pinned(id: &str, backend: crate::DeviceBackend, key: &str) -> PatchNode {
 }
 
 fn body(kind: &str) -> NodeBody {
-    NodeKind::parse(kind)
-        .map(NodeBody::default_for)
-        .unwrap_or_else(|| panic!("no default body for {kind}"))
+    NodeKind::parse(kind).map_or_else(
+        || panic!("no default body for {kind}"),
+        NodeBody::default_for,
+    )
 }
 
 fn refusal(graph: &PatchGraph) -> Option<String> {
@@ -226,26 +227,21 @@ fn array_lanes_report_an_unwired_middle_port() {
         ],
     );
     let patch = compiled(&wired);
-    let lanes: Vec<(String, Vec<(String, String)>)> = patch
-        .node("arr")
-        .map(|arr| {
-            arr.inputs()
-                .filter(|port| port.spec.port_type == PortType::Iq)
-                .map(|port| {
-                    (
-                        port.spec.name.clone(),
-                        sources(&patch, "arr", &port.spec.name),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let lanes: Vec<(String, Vec<(String, String)>)> = patch.node("arr").map_or_default(|arr| {
+        arr.inputs()
+            .filter(|port| port.spec.port_type == PortType::Iq)
+            .map(|port| {
+                (
+                    port.spec.name.clone(),
+                    sources(&patch, "arr", &port.spec.name),
+                )
+            })
+            .collect()
+    });
     let fed = |name: &str, source: Option<&str>| {
         (
             name.to_owned(),
-            source
-                .map(|port| vec![("dev".to_owned(), port.to_owned())])
-                .unwrap_or_default(),
+            source.map_or_default(|port| vec![("dev".to_owned(), port.to_owned())]),
         )
     };
     assert_eq!(
@@ -273,15 +269,12 @@ fn per_lane_ports_grow_with_the_wired_lanes() {
                 })
                 .collect(),
         ));
-        patch
-            .node("arr")
-            .map(|arr| {
-                arr.inputs()
-                    .filter(|port| port.spec.port_type == PortType::Iq)
-                    .map(|port| port.spec.name.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
+        patch.node("arr").map_or_default(|arr| {
+            arr.inputs()
+                .filter(|port| port.spec.port_type == PortType::Iq)
+                .map(|port| port.spec.name.clone())
+                .collect()
+        })
     };
     assert_eq!(lanes(0), ["lane"]);
     assert_eq!(lanes(2), ["lane", "lane2", "lane3"]);
@@ -569,6 +562,8 @@ fn lane_outputs_follow_the_port_table() {
 
 #[test]
 fn processor_ports_follow_the_contract() {
+    use Multi::{Many, One};
+    use PortDirection::{In, Out};
     let ports = |kind: &str| -> Vec<(String, PortType, PortDirection, Multi)> {
         body(kind)
             .ports(None)
@@ -577,8 +572,6 @@ fn processor_ports_follow_the_contract() {
             .collect()
     };
     let row = |name: &str, ty, dir, multi| (name.to_owned(), ty, dir, multi);
-    use Multi::{Many, One};
-    use PortDirection::{In, Out};
     assert_eq!(
         ports("df"),
         [

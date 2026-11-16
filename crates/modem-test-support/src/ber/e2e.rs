@@ -174,14 +174,14 @@ mod tests {
         let (mut lo, mut hi) = (-10.0f64, 20.0f64);
         assert!(oracle(lo) >= ber && oracle(hi) <= ber);
         while hi - lo > 1e-9 {
-            let mid = 0.5 * (lo + hi);
+            let mid = f64::midpoint(lo, hi);
             if oracle(mid) >= ber {
                 lo = mid;
             } else {
                 hi = mid;
             }
         }
-        0.5 * (lo + hi)
+        f64::midpoint(lo, hi)
     }
 
     fn with_demod(link: Link, f: impl Fn(Vec<bool>) -> Vec<bool> + 'static) -> Link {

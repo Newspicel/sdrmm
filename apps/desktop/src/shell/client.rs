@@ -152,7 +152,7 @@ wrap_download_handler! {
             let Some(callback) = callback else {
                 return 0;
             };
-            let name = suggested_name.map(CefString::to_string).unwrap_or_default();
+            let name = suggested_name.map_or_default(CefString::to_string);
             let suggested = dirs::download_dir().unwrap_or_default().join(name);
             callback.cont(Some(&CefString::from(suggested.to_string_lossy().as_ref())), 1);
             1

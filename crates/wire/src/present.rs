@@ -368,7 +368,7 @@ pub fn unique_keys(mut fields: Vec<Field>) -> Vec<Field> {
     let mut taken = std::collections::HashSet::with_capacity(fields.len());
     for field in &mut fields {
         if !taken.insert(field.key.clone()) {
-            field.key = (2..)
+            field.key = (2..=taken.len() + 2)
                 .map(|n| format!("{}_{n}", field.key))
                 .find(|key| !taken.contains(key))
                 .unwrap_or_default();

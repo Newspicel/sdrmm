@@ -129,7 +129,7 @@ enum Denoiser {
 
 impl Denoiser {
     fn build(
-        settings: &DenoiseSettings,
+        settings: DenoiseSettings,
         nets: &dyn DenoiseNets,
     ) -> Result<Self, NeuralDenoiseError> {
         Ok(match settings.mode {
@@ -146,7 +146,7 @@ impl Denoiser {
         })
     }
 
-    fn matches(&self, settings: &DenoiseSettings) -> bool {
+    fn matches(&self, settings: DenoiseSettings) -> bool {
         match self {
             Self::Spectral(_) => settings.mode == DenoiseMode::Spectral,
             Self::Neural(_, model) => {
@@ -243,7 +243,7 @@ impl Plane {
             self.auto_notch = None;
         }
 
-        let denoised = self.configure_denoise(&settings.denoise, nets);
+        let denoised = self.configure_denoise(settings.denoise, nets);
 
         match settings.agc.time_constants_s() {
             Some((attack_s, release_s)) if agc_changed || self.agc.is_none() => {
@@ -276,7 +276,7 @@ impl Plane {
 
     fn configure_denoise(
         &mut self,
-        settings: &DenoiseSettings,
+        settings: DenoiseSettings,
         nets: &dyn DenoiseNets,
     ) -> Result<(), NeuralDenoiseError> {
         match &mut self.denoise {
@@ -395,10 +395,10 @@ mod tests {
 
     const RATE: f64 = AUDIO_RATE as f64;
 
-    fn chain(settings: AudioProcessing) -> AudioChain {
+    fn chain(settings: &AudioProcessing) -> AudioChain {
         AudioChain::new(
             1,
-            &settings,
+            settings,
             ClickProfile::Discriminator,
             Arc::new(FixtureNets),
         )
@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn a_default_chain_passes_audio_through_untouched() {
         let input = tone(1_000.0, 0.3, 24_000);
-        let output = run(&mut chain(AudioProcessing::default()), &input);
+        let output = run(&mut chain(&AudioProcessing::default()), &input);
         assert_eq!(output, input);
     }
 
@@ -468,7 +468,7 @@ mod tests {
             agc: AudioAgcMode::Medium,
         };
         let input = tone(1_000.0, 0.3, 48_000);
-        assert_eq!(run(&mut chain(settings), &input).len(), input.len());
+        assert_eq!(run(&mut chain(&settings), &input).len(), input.len());
     }
 
     #[test]
@@ -482,7 +482,7 @@ mod tests {
             ..AudioProcessing::default()
         };
         for (freq_hz, kept) in [(100.0, false), (1_000.0, true), (6_000.0, false)] {
-            let output = run(&mut chain(settings.clone()), &tone(freq_hz, 0.5, 48_000));
+            let output = run(&mut chain(&settings), &tone(freq_hz, 0.5, 48_000));
             let level = rms(&output[24_000..]);
             if kept {
                 assert!(level > 0.3, "{freq_hz} Hz was cut: {level}");
@@ -502,7 +502,7 @@ mod tests {
             ..AudioProcessing::default()
         };
         let input = mix(&tone(1_500.0, 0.4, 48_000), &tone(800.0, 0.4, 48_000));
-        let output = run(&mut chain(settings), &input);
+        let output = run(&mut chain(&settings), &input);
         let settled = &output[24_000..];
         assert!(tone_amplitude(settled, 1_500.0, RATE) < 0.02);
         assert!(tone_amplitude(settled, 800.0, RATE) > 0.35);
@@ -523,7 +523,7 @@ mod tests {
     #[test]
     fn the_peak_lifts_its_tone_over_the_rest() {
         let input = mix(&tone(700.0, 0.1, 48_000), &tone(1_500.0, 0.1, 48_000));
-        let output = run(&mut chain(peaked(700.0)), &input);
+        let output = run(&mut chain(&peaked(700.0)), &input);
         let settled = &output[24_000..];
         let lifted = tone_amplitude(settled, 700.0, RATE);
         let left = tone_amplitude(settled, 1_500.0, RATE);
@@ -533,7 +533,7 @@ mod tests {
 
     #[test]
     fn moving_the_peak_keeps_the_audio_running() {
-        let mut chain = chain(peaked(700.0));
+        let mut chain = chain(&peaked(700.0));
         let input = tone(720.0, 0.1, 9_600);
         let mut head = run(&mut chain, &input[..4_800]);
         chain
@@ -555,7 +555,7 @@ mod tests {
             ..AudioProcessing::default()
         };
         let input = tone(1_200.0, 0.5, 96_000);
-        let output = run(&mut chain(settings), &input);
+        let output = run(&mut chain(&settings), &input);
         assert!(tone_amplitude(&output[48_000..], 1_200.0, RATE) < 0.1);
     }
 
@@ -565,14 +565,14 @@ mod tests {
             agc: AudioAgcMode::Fast,
             ..AudioProcessing::default()
         };
-        let output = run(&mut chain(settings), &tone(1_000.0, 0.01, 96_000));
+        let output = run(&mut chain(&settings), &tone(1_000.0, 0.01, 96_000));
         let level = rms(&output[72_000..]);
         assert!((0.2..0.3).contains(&level), "levelled to {level}");
     }
 
     #[test]
     fn switching_the_denoiser_mode_swaps_the_denoiser_and_keeps_the_length() {
-        let mut chain = chain(AudioProcessing {
+        let mut chain = chain(&AudioProcessing {
             denoise: DenoiseSettings {
                 enabled: true,
                 ..DenoiseSettings::default()
@@ -612,7 +612,7 @@ mod tests {
         for n in (1_000..input.len()).step_by(700) {
             input[n] = 3.0;
         }
-        let output = run(&mut chain(settings), &input);
+        let output = run(&mut chain(&settings), &input);
         let settled = &output[8_000..];
         let peak = settled.iter().fold(0.0f32, |a, s| a.max(s.abs()));
         assert!(peak < 0.3, "a click survived at {peak}");
@@ -723,7 +723,7 @@ mod tests {
 
     #[test]
     fn an_unrelated_edit_keeps_the_agc_where_it_was() {
-        let mut chain = chain(AudioProcessing {
+        let mut chain = chain(&AudioProcessing {
             agc: AudioAgcMode::Fast,
             ..AudioProcessing::default()
         });
@@ -752,7 +752,7 @@ mod tests {
 
     #[test]
     fn turning_a_stage_off_takes_it_out_of_the_path() {
-        let mut chain = chain(AudioProcessing {
+        let mut chain = chain(&AudioProcessing {
             filter: AudioFilterSettings {
                 enabled: true,
                 low_hz: 300.0,

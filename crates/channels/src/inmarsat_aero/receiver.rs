@@ -71,18 +71,18 @@ impl CircuitReceiver {
         for index in 0..self.soft.len() {
             let (soft, _) = self.soft[index];
             for event in self.deframer.push(soft) {
-                if let Some(event) = self.translate(event) {
+                if let Some(event) = self.translate(&event) {
                     out.push(event);
                 }
             }
         }
     }
 
-    fn translate(&mut self, event: CChannelEvent) -> Option<CircuitEvent> {
+    fn translate(&mut self, event: &CChannelEvent) -> Option<CircuitEvent> {
         match event {
             CChannelEvent::SignalUnit(su) => Some(CircuitEvent::SignalUnit {
                 kind: su_type_name(su[0]),
-                details: json!({ "channel": "c-channel", "su": crate::datalink::hex(&su) }),
+                details: json!({ "channel": "c-channel", "su": crate::datalink::hex(su) }),
             }),
             CChannelEvent::Voice(_) => {
                 let gap = (VOICE_GAP_SECONDS * INPUT_RATE) as u64;

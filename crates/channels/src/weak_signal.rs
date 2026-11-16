@@ -570,7 +570,7 @@ fn search_filter(search: (f32, f32, usize)) -> Result<ChannelFilter, ChannelErro
     validate_passband(search)?;
     let (low, high) = search_band(search);
     let half_width = (high - low) / 2.0 / INPUT_RATE_HZ;
-    let center = (high + low) / 2.0 / INPUT_RATE_HZ;
+    let center = f64::midpoint(high, low) / INPUT_RATE_HZ;
     Ok(ChannelFilter::Sideband(FirC::from_lowpass(
         &design_lowpass(FILTER_TAPS, half_width),
         center,
@@ -839,7 +839,7 @@ mod tests {
         );
         let spot = events
             .iter()
-            .filter_map(|event| event.read::<WsprSpot>())
+            .filter_map(sdrmm_wire::DecoderEvent::read::<WsprSpot>)
             .find(|spot| spot.callsign == "K1ABC");
         let spot = spot.expect("WSPR fixture decode");
         assert_eq!(spot.grid.as_deref(), Some("FN42"));

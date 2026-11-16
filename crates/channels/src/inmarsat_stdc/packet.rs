@@ -445,16 +445,15 @@ impl PacketParser {
             let lcn = body[3];
             let sequence = body[4];
             let data = &body[5..body.len() - 2];
-            let index = match self.channels.iter().position(|c| c.lcn == lcn) {
-                Some(index) => index,
-                None => {
-                    self.channels.push(LcnAssembly {
-                        lcn,
-                        parts: Vec::new(),
-                        age: 0,
-                    });
-                    self.channels.len() - 1
-                }
+            let index = if let Some(index) = self.channels.iter().position(|c| c.lcn == lcn) {
+                index
+            } else {
+                self.channels.push(LcnAssembly {
+                    lcn,
+                    parts: Vec::new(),
+                    age: 0,
+                });
+                self.channels.len() - 1
             };
             let channel = &mut self.channels[index];
             channel.age = 0;
@@ -524,21 +523,20 @@ impl PacketParser {
     }
 
     fn push_egc(&mut self, part: EgcPart) -> Option<StdcPacket> {
-        let index = match self.egc.iter().position(|a| a.msg_seq == part.msg_seq) {
-            Some(index) => index,
-            None => {
-                self.egc.push(EgcAssembly {
-                    msg_seq: part.msg_seq,
-                    service: part.service,
-                    priority: part.priority,
-                    presentation: part.presentation,
-                    address: part.address.clone(),
-                    parts: Vec::new(),
-                    double_header: false,
-                    age: 0,
-                });
-                self.egc.len() - 1
-            }
+        let index = if let Some(index) = self.egc.iter().position(|a| a.msg_seq == part.msg_seq) {
+            index
+        } else {
+            self.egc.push(EgcAssembly {
+                msg_seq: part.msg_seq,
+                service: part.service,
+                priority: part.priority,
+                presentation: part.presentation,
+                address: part.address.clone(),
+                parts: Vec::new(),
+                double_header: false,
+                age: 0,
+            });
+            self.egc.len() - 1
         };
         let assembly = &mut self.egc[index];
         assembly.age = 0;

@@ -64,7 +64,7 @@ pub struct DaFrame {
 
 pub fn da_blocks<T: Copy>(data: &[T]) -> Vec<Vec<T>> {
     let mut blocks: Vec<Vec<T>> = Vec::with_capacity(10);
-    for chunk in data[..248].as_chunks::<124>().0.iter() {
+    for chunk in data[..248].as_chunks::<124>().0 {
         let (first, second) = de_interleave2(chunk);
         let all: Vec<T> = first.iter().chain(&second).copied().collect();
         let quarters: Vec<&[T; 31]> = all.as_chunks::<31>().0.iter().collect();

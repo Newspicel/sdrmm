@@ -33,7 +33,7 @@ fn f007th(bits: &mut Bits, found: &mut Found) -> Outcome {
                 }
                 let mut b = [0u8; 6];
                 bits.extract(row, at + 8, &mut b, 48);
-                outcome = outcome.max(f007th_message(&b, found));
+                outcome = outcome.max(f007th_message(b, found));
                 if outcome == Outcome::Decoded {
                     return outcome;
                 }
@@ -44,7 +44,7 @@ fn f007th(bits: &mut Bits, found: &mut Found) -> Outcome {
     outcome
 }
 
-fn f007th_message(b: &[u8; 6], found: &mut Found) -> Outcome {
+fn f007th_message(b: [u8; 6], found: &mut Found) -> Outcome {
     if lfsr_digest8(0x98, 0x3e, &b[..5]) ^ 0x64 != b[5] {
         return Outcome::Mic;
     }
@@ -60,7 +60,7 @@ fn f007th_message(b: &[u8; 6], found: &mut Found) -> Outcome {
             battery_ok: Some(b[2] & 0x80 == 0),
             temperature_c: Some(fahrenheit(temperature)),
             humidity_pct: Some(b[4]),
-            ..reading("Ambientweather-F007TH", b[1].to_string(), b, 48)
+            ..reading("Ambientweather-F007TH", b[1].to_string(), &b, 48)
         },
     )
 }

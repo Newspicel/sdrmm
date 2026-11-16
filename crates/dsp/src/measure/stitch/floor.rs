@@ -15,6 +15,10 @@ const POWER_FLOOR: f32 = 1e-30;
 
 /// One lane's per-bin level and noise floor, the floor following slowly so a burst barely
 /// lifts it, then median-smoothed across bins so a carrier does not stand in its own floor.
+#[expect(
+    clippy::struct_field_names,
+    reason = "floor_db is the noise floor in dB"
+)]
 pub(super) struct Floor {
     level: Vec<f32>,
     level_db: Vec<f32>,

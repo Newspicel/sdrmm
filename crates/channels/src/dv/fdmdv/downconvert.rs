@@ -82,6 +82,7 @@ pub(super) struct Downconverter {
 }
 
 impl Downconverter {
+    #[expect(clippy::large_stack_arrays, reason = "built once at construction")]
     pub(super) fn new() -> Self {
         let rotations = Planes::from_fn(|c| cis(carrier_radians(c)));
         let mut steps = rotations;
@@ -171,7 +172,12 @@ mod tests {
             }
             downconverter.filter(FrameLength::Nominal, &mut filtered);
         }
-        let power = |c: usize| filtered[c][..4].iter().map(|v| v.norm_sqr()).sum::<f32>();
+        let power = |c: usize| {
+            filtered[c][..4]
+                .iter()
+                .map(num_complex::Complex::norm_sqr)
+                .sum::<f32>()
+        };
         assert!(power(target) > 0.5);
         for other in (0..CARRIERS).filter(|&c| c != target) {
             assert!(power(other) < power(target) * 1e-3, "carrier {other}");

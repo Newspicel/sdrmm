@@ -301,12 +301,12 @@ impl Engine {
     pub fn update_array_pose(
         &self,
         node: &str,
-        fix: Option<PositionFix>,
+        fix: Option<&PositionFix>,
         received_ns: i64,
     ) -> Result<(), EngineError> {
         let mut inner = self.lock();
         let state = find_mut(&mut inner, node)?;
-        let sample = state.pose.sample(fix.as_ref(), received_ns);
+        let sample = state.pose.sample(fix, received_ns);
         let sent = state.send(Command::Pose { sample });
         if sent.is_err() {
             state.board.add_events_lost(1);

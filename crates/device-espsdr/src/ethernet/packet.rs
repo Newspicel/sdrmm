@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use sdrmm_device::{BlockGap, DeviceError};
 
 pub(crate) const PACKET_BYTES: usize = 1376;
@@ -90,22 +92,24 @@ impl Tracker {
             self.last = Some(header);
             return Placed::Next;
         };
-        let gap = if header.epoch == last.epoch {
-            let expected = last.sample + PACKET_SAMPLES;
-            if header.sample < expected {
-                return Placed::Stale;
+        let gap = match header.epoch.cmp(&last.epoch) {
+            Ordering::Equal => {
+                let expected = last.sample + PACKET_SAMPLES;
+                if header.sample < expected {
+                    return Placed::Stale;
+                }
+                BlockGap {
+                    exact: header.sample - expected,
+                    estimated: 0,
+                }
             }
-            BlockGap {
-                exact: header.sample - expected,
-                estimated: 0,
-            }
-        } else if header.epoch < last.epoch {
-            return Placed::Stale;
-        } else {
-            let quiet_us = header.time_us.saturating_sub(last.end_us());
-            BlockGap {
-                exact: 0,
-                estimated: quiet_us * u64::from(header.rate) / MICROS,
+            Ordering::Less => return Placed::Stale,
+            Ordering::Greater => {
+                let quiet_us = header.time_us.saturating_sub(last.end_us());
+                BlockGap {
+                    exact: 0,
+                    estimated: quiet_us * u64::from(header.rate) / MICROS,
+                }
             }
         };
         self.last = Some(header);

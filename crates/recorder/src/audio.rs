@@ -510,7 +510,7 @@ mod tests {
 
         let bytes = fs::read(&path).expect("read");
         assert_eq!(
-            u32_at(&bytes, 40) as u64,
+            u64::from(u32_at(&bytes, 40)),
             2 * HEADER_REFRESH_FRAMES * AUDIO_BYTES_PER_SAMPLE
         );
         let info = read_audio_info(&path).expect("info");

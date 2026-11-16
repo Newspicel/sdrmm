@@ -117,7 +117,7 @@ fn addressed_frame(
 }
 
 /// A group call enciphered with `key` (scrambler, DES-OFB or AES by its length) under `key_id`.
-/// DES and AES send a VCALL_IV ahead of every second superframe, the first one `iv`. `voice`
+/// DES and AES send a `VCALL_IV` ahead of every second superframe, the first one `iv`. `voice`
 /// holds the clear frames' transmitted bits, 16 per superframe.
 #[must_use]
 pub fn keyed_transmission(
@@ -185,7 +185,7 @@ fn encipher(air: &[bool; 72], stream: &[u8; STREAM_BYTES], position: usize) -> [
         let at = position * FRAME_BITS + bit;
         natural[bit / 8] ^= (stream[at / 8] >> (7 - at % 8) & 1) << (7 - bit % 8);
     }
-    half_rate_air(&natural)
+    half_rate_air(natural)
 }
 
 /// A traffic frame of four voice frames and the SACCH quarter of `layer3`.

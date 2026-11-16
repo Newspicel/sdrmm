@@ -5,7 +5,7 @@ use std::{
 
 use bank::{Lane, Pins};
 use caps::{GainMode, Plan};
-use dongle::{Catalog, Dongle, IN_FLIGHT_SAMPLES, Listing, Radio, Transport};
+use dongle::{Catalog, Dongle, GAINS, IN_FLIGHT_SAMPLES, Listing, Radio, Transport};
 use sdrmm_device::{
     Capture, CaptureConfig, CaptureRadio, DeviceDriver, DeviceError, RxSink, SdrDevice, lock,
     single_rx_sink,
@@ -256,9 +256,8 @@ fn switch_off(lane: &Lane, pins: &dyn Pins) -> Result<(), DeviceError> {
 
 impl RtlSdrDevice {
     fn from_dongle(mut dongle: Dongle, lane: Option<Lane>) -> Result<Self, DeviceError> {
-        let capabilities =
-            caps::capabilities_of(dongle.board(), lane.as_ref(), dongle.gain_table());
-        let gain_table = dongle.gain_table().to_vec();
+        let capabilities = caps::capabilities_of(dongle.board(), lane.as_ref(), GAINS);
+        let gain_table = GAINS.to_vec();
         tracing::info!(
             tuner = ?dongle.tuner_kind(),
             board = ?dongle.board(),

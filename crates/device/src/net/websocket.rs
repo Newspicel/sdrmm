@@ -392,7 +392,7 @@ mod tests {
         let mut frame = vec![if fin { 0x80 | opcode } else { opcode }];
         match payload.len() {
             len if len < 126 => frame.push(len as u8),
-            len if len <= usize::from(u16::MAX) => {
+            len if u16::try_from(len).is_ok() => {
                 frame.push(126);
                 frame.extend_from_slice(&(len as u16).to_be_bytes());
             }

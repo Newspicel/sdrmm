@@ -185,7 +185,7 @@ impl CellSum {
             best_snr_db: self.best_snr_db.unwrap_or_default(),
             measured_muf3000_mhz: self.muf,
             median_distance_km: median(self.distances),
-            last_seen: self.last.map(|(_, at)| at).unwrap_or_default(),
+            last_seen: self.last.map_or_default(|(_, at)| at),
         }
     }
 }
@@ -199,7 +199,7 @@ fn median(mut values: Vec<f64>) -> f64 {
     if values.len() % 2 == 1 {
         values[middle]
     } else {
-        (values[middle - 1] + values[middle]) / 2.0
+        f64::midpoint(values[middle - 1], values[middle])
     }
 }
 

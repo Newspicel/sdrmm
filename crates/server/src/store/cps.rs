@@ -288,8 +288,7 @@ impl Store {
             .into_iter()
             .map(|(mut info, body)| {
                 info.counts = serde_json::from_str::<Codeplug>(&body)
-                    .map(|codeplug| codeplug.counts())
-                    .unwrap_or_default();
+                    .map_or_default(|codeplug| codeplug.counts());
                 info
             })
             .collect())

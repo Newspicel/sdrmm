@@ -39,7 +39,7 @@ fn oracle_radio(radio: &Radio, channels: &[ChannelInfo]) -> usize {
                 .iter()
                 .filter(|channel| !radio.capabilities.per_stream.tuning || channel.stream == stream)
                 .collect();
-            let current = center_of(&radio.settings, stream, &radio.capabilities.per_stream);
+            let current = center_of(&radio.settings, stream, radio.capabilities.per_stream);
             let rate = sample_rate_of(&radio.settings);
             let mut centers = vec![current];
             if radio.tunes_freely

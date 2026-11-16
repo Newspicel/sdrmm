@@ -165,7 +165,7 @@ fn refused(reason: impl Into<String>) -> EngineError {
 
 fn radio_band(state: &DeviceSetState, stream: u32) -> Band {
     Band {
-        center_hz: center_of(&state.settings, stream, &state.capabilities.per_stream),
+        center_hz: center_of(&state.settings, stream, state.capabilities.per_stream),
         sample_rate: sample_rate_of(&state.settings),
     }
 }

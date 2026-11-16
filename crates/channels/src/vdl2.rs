@@ -146,12 +146,11 @@ fn message(frame: &Vdl2Frame) -> DataLinkMessage {
         frequency_error_hz: Some(frame.freq_skew_hz),
     };
     let raw = Some(frame.avlc.raw.as_slice());
-    match &frame.acars {
-        Some(block) => datalink::message(&Body::Acars(&block.core), quality, raw),
-        None => {
-            let (kind, details) = avlc_body(&frame.avlc, frame.atn.as_ref());
-            datalink::message(&Body::<()>::Vdl2 { kind, details }, quality, raw)
-        }
+    if let Some(block) = &frame.acars {
+        datalink::message(&Body::Acars(&block.core), quality, raw)
+    } else {
+        let (kind, details) = avlc_body(&frame.avlc, frame.atn.as_ref());
+        datalink::message(&Body::<()>::Vdl2 { kind, details }, quality, raw)
     }
 }
 

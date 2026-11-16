@@ -13,7 +13,7 @@ use sdrmm_test_support::{assert_no_alloc, measure_throughput};
 #[test]
 fn tuning_and_downconversion_reuse_storage_across_ragged_blocks_and_retunes() {
     let mut nco = sdrmm_dsp::Nco::new(187_501.25, 20_000_000.0);
-    let mut samples = [Complex::new(1.0, 0.5); 4099];
+    let mut samples = vec![Complex::new(1.0, 0.5); 4099];
     assert_no_alloc("nco", || {
         for chunk in samples.chunks_mut(17) {
             nco.mix(chunk);
@@ -57,7 +57,7 @@ fn spectrum_processing_reuses_scratch_and_meets_the_display_budget() {
         Some(2080)
     );
     let msps = measure_throughput(30, input.len() as u64, || {
-        analyzer.power_db(black_box(&input), black_box(&mut output))
+        analyzer.power_db(black_box(&input), black_box(&mut output));
     });
     assert!(
         msps > 1.0,
@@ -75,7 +75,7 @@ fn the_local_noise_floor_reuses_scratch_and_keeps_up_with_the_skimmer() {
     noise.estimate(&input, &mut floor);
     assert_no_alloc("noise floor", || noise.estimate(&input, &mut floor));
     let msps = measure_throughput(30, input.len() as u64, || {
-        noise.estimate(black_box(&input), black_box(&mut floor))
+        noise.estimate(black_box(&input), black_box(&mut floor));
     });
     assert!(
         msps > 1.0,
@@ -119,7 +119,7 @@ fn fractional_resampling_reuses_storage_and_exceeds_audio_realtime() {
     });
     assert!(output.iter().all(|sample| (sample.re - 0.5).abs() < 1e-5));
     let msps = measure_throughput(20, input.len() as u64, || {
-        resampler.process(black_box(&input), black_box(&mut output))
+        resampler.process(black_box(&input), black_box(&mut output));
     });
     assert!(
         msps > 0.48,

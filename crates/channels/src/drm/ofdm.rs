@@ -289,7 +289,7 @@ impl Demodulator {
             let fft_index = k.rem_euclid(useful as i32) as usize;
             let correction = Complex::from_polar(
                 scale,
-                (TAU * k as f64 * (guard - shift) as f64 / useful as f64) as f32,
+                (TAU * f64::from(k) * (guard - shift) as f64 / useful as f64) as f32,
             );
             *bin = self.window[fft_index] * correction;
         }

@@ -207,6 +207,10 @@ fn next(worker: &mut Worker, io: &mut WorkerIo) -> Option<Handled> {
     Some(handled)
 }
 
+#[expect(
+    clippy::unnecessary_box_returns,
+    reason = "sets travel boxed through the ring"
+)]
 fn spare_set(sets: &mut Consumer<Box<CorrectionSet>>, lanes: usize) -> Box<CorrectionSet> {
     sets.pop()
         .unwrap_or_else(|_| Box::new(CorrectionSet::identity(lanes)))
@@ -817,6 +821,10 @@ impl Worker {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "peak-to-floor is the metric's name"
+)]
 struct Peak {
     delay: f64,
     coherence: f32,

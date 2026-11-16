@@ -100,7 +100,7 @@ pub(super) fn first_peak(rho: &[f32], from: usize, to: usize) -> Option<usize> {
         extend_comb(rho, base + 1, &mut comb[..len + SYMBOL]);
         let strong = comb[SYMBOL - 1..len + SYMBOL - 1]
             .iter()
-            .fold(false, |any, &value| any | (value > threshold));
+            .any(|&value| value > threshold);
         if strong {
             let hit = (0..len).find(|&i| {
                 let value = comb[i + SYMBOL - 1];

@@ -39,9 +39,11 @@ fn find_deb(packages: &Path, version: &str) -> Result<PathBuf> {
         .flatten()
         .map(|entry| entry.path())
         .find(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with(&prefix) && name.ends_with(".deb"))
+            path.extension().is_some_and(|ext| ext == "deb")
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(&prefix))
         })
         .with_context(|| {
             format!(

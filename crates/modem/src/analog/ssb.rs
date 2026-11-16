@@ -77,7 +77,7 @@ impl SsbParams {
 
     pub(super) fn weaver(&self) -> (f64, f64) {
         (
-            0.5 * (self.bandwidth + self.low_cut),
+            f64::midpoint(self.bandwidth, self.low_cut),
             0.5 * (self.bandwidth - self.low_cut),
         )
     }

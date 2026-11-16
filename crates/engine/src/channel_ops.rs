@@ -224,7 +224,7 @@ impl Engine {
                 id,
                 stream,
                 node: node.map(str::to_owned),
-                settings: settings.clone(),
+                settings,
                 out_of_band: None,
                 rejected: 0,
                 skipped: 0,
@@ -338,12 +338,12 @@ impl Engine {
                 continue;
             }
             let stream = info.stream;
-            let prev = std::mem::replace(&mut info.settings, settings.clone());
+            let prev = std::mem::replace(&mut info.settings, settings);
+            let reset_state = prev.params.type_id() != info.settings.params.type_id();
             if let Some(mut host) = host {
                 if let Some(media) = state.media.get(&ch) {
                     host.position_changed(media.position.as_ref());
                 }
-                let reset_state = prev.params.type_id() != settings.params.type_id();
                 if reset_state {
                     orphaned_baseband = state.release_baseband_sinks(ch, stream);
                 }

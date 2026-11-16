@@ -23,7 +23,7 @@ pub(crate) fn decode(payload: &[u8], keys: &Keys) -> Option<MeshcorePacket> {
         route: frame.route,
         payload_type: frame.payload_type,
         version: 0,
-        transport_codes: frame.transport_codes.to_vec(),
+        transport_codes: frame.transport_codes.clone(),
         path: frame.path_labels(),
         content,
     })

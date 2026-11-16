@@ -57,7 +57,7 @@ fn run(chan: &mut LrptChannel, iq: &[Complex<f32>], lens: &[usize], received: &m
                 event
                     .read::<LrptImage>()
                     .unwrap_or_else(|| panic!("unexpected event {event:?}")),
-            )
+            );
         }
         at = end;
     }

@@ -355,25 +355,22 @@ impl CwSkimmerChannel {
                     .total_cmp(&(right.frequency_hz - frequency_hz).abs())
             })
             .filter(|entry| (entry.frequency_hz - frequency_hz).abs() <= MATCH_HZ);
-        let entry = match matched {
-            Some(entry) => {
-                entry.frequency_hz = entry.frequency_hz * 0.5 + frequency_hz * 0.5;
-                entry.snr_db = entry.snr_db.max(snr_db);
-                entry.hits = entry.hits.saturating_add(1);
-                entry
-            }
-            None => {
-                if self.pending.len() >= pending_limit(self.max_signals) {
-                    return;
-                }
-                self.pending.push(Pending {
-                    frequency_hz,
-                    snr_db,
-                    hits: 1,
-                    age: 0,
-                });
+        let entry = if let Some(entry) = matched {
+            entry.frequency_hz = entry.frequency_hz * 0.5 + frequency_hz * 0.5;
+            entry.snr_db = entry.snr_db.max(snr_db);
+            entry.hits = entry.hits.saturating_add(1);
+            entry
+        } else {
+            if self.pending.len() >= pending_limit(self.max_signals) {
                 return;
             }
+            self.pending.push(Pending {
+                frequency_hz,
+                snr_db,
+                hits: 1,
+                age: 0,
+            });
+            return;
         };
         if entry.hits < INIT_HITS {
             return;
@@ -491,10 +488,10 @@ mod tests {
     use super::*;
     use crate::{synth, testutil::settings};
 
-    fn channel(params: CwSkimmerParams) -> Result<CwSkimmerChannel, ChannelError> {
+    fn channel(params: &CwSkimmerParams) -> Result<CwSkimmerChannel, ChannelError> {
         CwSkimmerChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::of(&params).expect("cw_skimmer settings")),
+            settings(ChannelParams::of(params).expect("cw_skimmer settings")),
         )
     }
 
@@ -506,9 +503,9 @@ mod tests {
         };
         let (low, high) = occupied_band(&widest);
         assert!(high - low <= DESCRIPTOR.bandwidth_hz);
-        assert!(channel(widest).is_ok());
+        assert!(channel(&widest).is_ok());
         assert!(
-            channel(CwSkimmerParams {
+            channel(&CwSkimmerParams {
                 bandwidth_hz: DESCRIPTOR.bandwidth_hz + 1.0,
                 ..CwSkimmerParams::default()
             })
@@ -548,7 +545,7 @@ mod tests {
             55.0,
             7,
         );
-        let mut channel = channel(CwSkimmerParams {
+        let mut channel = channel(&CwSkimmerParams {
             bandwidth_hz: 16_000.0,
             ..CwSkimmerParams::default()
         })
@@ -583,7 +580,7 @@ mod tests {
             55.0,
             19,
         );
-        let mut channel = channel(CwSkimmerParams {
+        let mut channel = channel(&CwSkimmerParams {
             bandwidth_hz: 16_000.0,
             threshold_db: 6.0,
             ..CwSkimmerParams::default()
@@ -619,7 +616,7 @@ mod tests {
         Ddc::new(narrow, RATE, 0.0)
             .unwrap()
             .process(&iq, &mut upsampled);
-        let mut channel = channel(CwSkimmerParams::default()).unwrap();
+        let mut channel = channel(&CwSkimmerParams::default()).unwrap();
         let all = spots(&mut channel, &upsampled);
         let heard: String = all
             .iter()
@@ -646,7 +643,7 @@ mod tests {
             *destination += source;
         }
         let iq = loud(iq, 30.0, 5);
-        let mut channel = channel(CwSkimmerParams {
+        let mut channel = channel(&CwSkimmerParams {
             bandwidth_hz: 16_000.0,
             ..CwSkimmerParams::default()
         })
@@ -670,7 +667,7 @@ mod tests {
             5,
         );
         iq.extend(synth::silence(RATE as usize));
-        let mut channel = channel(CwSkimmerParams {
+        let mut channel = channel(&CwSkimmerParams {
             bandwidth_hz: 16_000.0,
             threshold_db: 3.0,
             max_signals: 1,
@@ -687,7 +684,7 @@ mod tests {
     #[test]
     fn an_empty_band_is_reported_empty_even_at_the_loosest_threshold() {
         let iq = loud(vec![Complex::new(0.0, 0.0); RATE as usize * 20], 0.0, 3);
-        let mut channel = channel(CwSkimmerParams {
+        let mut channel = channel(&CwSkimmerParams {
             threshold_db: 3.0,
             ..CwSkimmerParams::default()
         })
@@ -707,7 +704,7 @@ mod tests {
         ));
         iq.extend(synth::silence(RATE as usize * 2));
         let iq = loud(iq, 25.0, 11);
-        let mut channel = channel(CwSkimmerParams::default()).unwrap();
+        let mut channel = channel(&CwSkimmerParams::default()).unwrap();
         let heard: String = spots(&mut channel, &iq)
             .iter()
             .filter(|spot| (spot.offset_hz - 2_000.0).abs() <= 150.0)

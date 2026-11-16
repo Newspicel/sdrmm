@@ -673,9 +673,9 @@ async fn two_uploads_of_one_name_stay_two_recordings() {
 
 #[tokio::test]
 async fn an_upload_larger_than_a_json_body_is_still_taken_whole() {
+    const SAMPLES: usize = 800_000;
     let dir = tempfile::TempDir::new().expect("temp");
     let app = recording_router(dir.path());
-    const SAMPLES: usize = 800_000;
 
     let meta = upload_meta("ci16_le");
     let data = ci16_samples(SAMPLES);

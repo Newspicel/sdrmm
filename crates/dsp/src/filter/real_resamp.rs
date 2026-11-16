@@ -56,7 +56,7 @@ impl RealResampler {
     pub fn new(ratio: f64, pass: f64, stop: f64, attenuation_db: f64) -> Self {
         assert!(ratio.is_finite() && ratio > 0.0, "ratio must be positive");
         assert!(0.0 < pass && pass < stop, "pass must sit below stop");
-        let cutoff = (0.5 * (pass + stop)).min(MAX_CUTOFF);
+        let cutoff = f64::midpoint(pass, stop).min(MAX_CUTOFF);
         let taps = kaiser_taps(stop - pass, attenuation_db)
             .max(LANES)
             .next_multiple_of(LANES);

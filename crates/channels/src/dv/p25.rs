@@ -36,7 +36,7 @@ const STATUS_START: usize = 70;
 const STATUS_STRIDE: usize = 72;
 
 const NID_BITS: usize = 64;
-const NID_SYMBOLS: usize = (NID_BITS + 2) / 2;
+const NID_SYMBOLS: usize = usize::midpoint(NID_BITS, 2);
 const NID_ROUND_OUT_BIT: u64 = 1;
 const MAX_FRAME_BITS: usize = 1_728;
 const MAX_FRAME_SYMBOLS: usize = MAX_FRAME_BITS / 2;

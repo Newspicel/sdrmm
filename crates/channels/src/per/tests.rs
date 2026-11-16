@@ -20,7 +20,7 @@ fn channel(params: PerParams) -> PerChannel {
     PerChannel::new(ChannelCtx { input_rate: RATE }, tuned(params)).expect("builds")
 }
 
-fn run(channel: &mut PerChannel, params: &PerParams, iq: &[Complex<f32>]) -> Vec<PerReport> {
+fn run(channel: &mut PerChannel, params: PerParams, iq: &[Complex<f32>]) -> Vec<PerReport> {
     let mut filter = channel_filter(params);
     let mut filtered = Vec::new();
     let mut out = ChannelOutputs::default();
@@ -49,7 +49,7 @@ fn a_clean_stream_has_no_errors_at_every_rate() {
         };
         let mut channel = channel(params);
         let iq = frames(&params, 0..20, RATE);
-        let report = run(&mut channel, &params, &iq).pop().expect("a report");
+        let report = run(&mut channel, params, &iq).pop().expect("a report");
         assert_eq!(report.received, 20, "{baud:?} {report:?}");
         assert_eq!(report.per, 0.0, "{baud:?}");
         assert_eq!(report.ber, Some(0.0), "{baud:?}");
@@ -62,7 +62,7 @@ fn skipped_frames_are_missed_packets() {
     let params = PerParams::default();
     let mut channel = channel(params);
     let sent = (0..30).filter(|sequence| sequence % 10 != 5);
-    let report = run(&mut channel, &params, &frames(&params, sent, RATE))
+    let report = run(&mut channel, params, &frames(&params, sent, RATE))
         .pop()
         .expect("a report");
     assert_eq!(report.received, 27);
@@ -79,7 +79,7 @@ fn a_spectrally_inverted_stream_still_decodes() {
         .into_iter()
         .map(|s| s.conj())
         .collect();
-    let report = run(&mut channel, &params, &iq).pop().expect("a report");
+    let report = run(&mut channel, params, &iq).pop().expect("a report");
     assert_eq!(report.received, 10);
 }
 
@@ -92,7 +92,7 @@ fn noise_raises_the_bit_error_rate_and_surfaces_rejects() {
     let mut channel = channel(params);
     let mut iq = frames(&params, 0..200, RATE);
     add_noise(&mut iq, 9, 1.1);
-    let report = run(&mut channel, &params, &iq).pop().expect("a report");
+    let report = run(&mut channel, params, &iq).pop().expect("a report");
     assert!(report.bit_errors > 0, "{report:?}");
     assert!(report.per > 0.0, "{report:?}");
     assert!(report.received > 0, "{report:?}");
@@ -105,20 +105,20 @@ fn reports_only_follow_new_frames() {
     let mut channel = channel(params);
     let mut iq = frames(&params, 0..5, RATE);
     iq.extend(silence(3 * RATE as usize));
-    assert_eq!(run(&mut channel, &params, &iq).len(), 1);
+    assert_eq!(run(&mut channel, params, &iq).len(), 1);
 }
 
 #[test]
 fn a_new_setting_starts_a_new_count() {
     let params = PerParams::default();
     let mut channel = channel(params);
-    run(&mut channel, &params, &frames(&params, 0..5, RATE));
+    run(&mut channel, params, &frames(&params, 0..5, RATE));
     let longer = PerParams {
         payload_bytes: 48,
         ..params
     };
     channel.apply(tuned(longer)).expect("applies");
-    let report = run(&mut channel, &longer, &frames(&longer, 100..103, RATE))
+    let report = run(&mut channel, longer, &frames(&longer, 100..103, RATE))
         .pop()
         .expect("a report");
     assert_eq!(report.received, 3);

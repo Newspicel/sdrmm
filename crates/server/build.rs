@@ -94,6 +94,10 @@ fn sorted_files(dist: &Path) -> Vec<String> {
     files
 }
 
+#[expect(
+    clippy::unnecessary_debug_formatting,
+    reason = "Debug writes the path as an escaped Rust literal"
+)]
 fn write_row(source: &mut String, dist: &Path, out: &Path, relative: &str) {
     let raw = fs::read(dist.join(relative)).expect("read web asset");
     let packed = gzip(&raw);

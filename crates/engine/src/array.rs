@@ -531,12 +531,11 @@ fn joined_exit(
     board: &StatusBoard,
 ) -> Option<AggregatorExit> {
     aggregator.thread().unpark();
-    match aggregator.join() {
-        Ok(exit) => Some(exit),
-        Err(_) => {
-            board.stopped("the array aggregator panicked while handing its lanes back".to_owned());
-            None
-        }
+    if let Ok(exit) = aggregator.join() {
+        Some(exit)
+    } else {
+        board.stopped("the array aggregator panicked while handing its lanes back".to_owned());
+        None
     }
 }
 

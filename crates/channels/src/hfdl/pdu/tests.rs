@@ -42,18 +42,18 @@ fn put_fix(h: &mut [u8], lat_deg: f64, lon_deg: f64) {
     h[12] = ((lon >> 12) & 0xFF) as u8;
 }
 
-fn perf_with_fix(flight: &[u8; 6], lat_deg: f64, lon_deg: f64, utc_raw: u16) -> Vec<u8> {
+fn perf_with_fix(flight: [u8; 6], lat_deg: f64, lon_deg: f64, utc_raw: u16) -> Vec<u8> {
     let mut h = vec![0u8; 47];
     h[0] = 0xFF;
     h[1] = 0xD1;
-    h[2..8].copy_from_slice(flight);
+    h[2..8].copy_from_slice(&flight);
     put_fix(&mut h, lat_deg, lon_deg);
     h[13..15].copy_from_slice(&utc_raw.to_le_bytes());
     h
 }
 
 fn full_performance_record() -> Vec<u8> {
-    let mut h = perf_with_fix(b"UA0042", 40.0, -73.0, 10_800);
+    let mut h = perf_with_fix(*b"UA0042", 40.0, -73.0, 10_800);
     h[15] = 3;
     h[16] = 7;
     h[17] = 0x84;
@@ -354,7 +354,7 @@ fn cache_resolves_downlink_icao_after_logon_confirm() {
     let events = parse(&mut parser, &confirm, 300);
     assert_eq!(find(&events, "logon-confirm").details["icao"], "040087");
     assert_eq!(parser.resolve_icao(0x42), Some("040087"));
-    let perf = perf_with_fix(b"UAL042", 40.0, -73.0, 10_800);
+    let perf = perf_with_fix(*b"UAL042", 40.0, -73.0, 10_800);
     let events = parse(
         &mut parser,
         &mpdu_downlink(4, 0x42, &[lpdu_hfnpdu(&perf)]),
@@ -398,7 +398,7 @@ fn cache_ttl_expiry_drops_resolution() {
 
 #[test]
 fn position_suppressed_for_null_island_fix() {
-    let events = parse_hfnpdu_body(&perf_with_fix(b"AAL999", 0.0, 0.0, 0));
+    let events = parse_hfnpdu_body(&perf_with_fix(*b"AAL999", 0.0, 0.0, 0));
     let e = find(&events, "performance-data");
     assert!(e.details.get("position").is_none());
     assert_eq!(e.details["lat"], 0.0);
@@ -442,7 +442,7 @@ fn equivalence_corpus() -> Vec<Vec<u8>> {
         mpdu_downlink(
             4,
             0x42,
-            &[lpdu_hfnpdu(&perf_with_fix(b"UAL042", 40.0, -73.0, 10_800))],
+            &[lpdu_hfnpdu(&perf_with_fix(*b"UAL042", 40.0, -73.0, 10_800))],
         ),
         mpdu_downlink(4, 0xC7, &[lpdu_hfnpdu(&full_performance_record())]),
         mpdu_downlink(4, 0xC7, &[lpdu_hfnpdu(&frequency_record())]),

@@ -68,7 +68,11 @@ impl Default for Ad936xDriver {
 impl Ad936xDriver {
     #[must_use]
     pub fn new() -> Self {
-        Self::searching(discovery::WELL_KNOWN.iter().map(|host| host.to_string()))
+        Self::searching(
+            discovery::WELL_KNOWN
+                .iter()
+                .map(std::string::ToString::to_string),
+        )
     }
 
     #[must_use]
@@ -409,7 +413,7 @@ impl Ad936xDevice {
             return;
         };
         if self.front.rx_port_locked {
-            self.follow_port(port.clone());
+            self.follow_port(&port);
         }
         let range = self
             .client
@@ -432,10 +436,10 @@ impl Ad936xDevice {
         }
     }
 
-    fn follow_port(&mut self, port: String) {
+    fn follow_port(&mut self, port: &str) {
         let Some(picked) = self
             .client
-            .read_channel_attr(&self.layout.phy, Way::In, &port, RF_PORT_SELECT)
+            .read_channel_attr(&self.layout.phy, Way::In, port, RF_PORT_SELECT)
             .inspect_err(|e| tracing::debug!("{port} input: {e}"))
             .ok()
             .map(|picked| picked.trim().to_string())

@@ -27,15 +27,13 @@ const MAX_SAMPLE_RATE: f64 = 10_000_000.0;
 const MIN_FILTER_HZ: f64 = 1.0;
 
 fn pinned(value: Option<f64>) -> Vec<Range> {
-    value
-        .map(|value| {
-            vec![Range {
-                min: value,
-                max: value,
-                step: None,
-            }]
-        })
-        .unwrap_or_default()
+    value.map_or_default(|value| {
+        vec![Range {
+            min: value,
+            max: value,
+            step: None,
+        }]
+    })
 }
 
 fn window(min: f64, max: f64) -> Vec<Range> {
@@ -87,7 +85,7 @@ fn filter_range(snapshot: &Snapshot) -> Option<Range> {
         .map(|_| stepped(MIN_FILTER_HZ, widest))
 }
 
-/// A setting the receiver answered for, or nothing when this build of SDRconnect has no such
+/// A setting the receiver answered for, or nothing when this build of `SDRconnect` has no such
 /// thing to offer.
 fn answered(
     snapshot: &Snapshot,
@@ -237,7 +235,7 @@ pub(crate) struct Remote {
     network_mode: Option<NetworkMode>,
     profile: Option<String>,
     recording: Option<Recording>,
-    /// Whether the server was already streaming when SDRmm arrived, so stopping leaves the
+    /// Whether the server was already streaming when `SDRmm` arrived, so stopping leaves the
     /// operator's own session the way they left it.
     streaming: bool,
 }
@@ -296,7 +294,7 @@ impl Remote {
         batch
     }
 
-    /// Turns the IQ on, and switches off the streams SDRmm has nowhere to put.
+    /// Turns the IQ on, and switches off the streams `SDRmm` has nowhere to put.
     pub(crate) fn start(&self) -> Vec<Command> {
         let mut batch = self.replay();
         batch.push(Command::Emit(Event::AudioStreamEnable, flag(false)));

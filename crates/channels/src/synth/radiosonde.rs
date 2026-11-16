@@ -37,7 +37,7 @@ const RS41_PRESSURE_SCALE: f32 = 1_000.0;
 const RS41_COUNT_LOW: f64 = 100_000.0;
 const RS41_COUNT_HIGH: f64 = 200_000.0;
 const M10_SERIAL_RAW: [u8; 5] = [0x02, 0x00, 0x98, 0x7B, 0x20];
-const M20_SERIAL_RAW: u32 = (1234 << 10) | (1 << 7) | 14;
+const M20_SERIAL_RAW: u32 = (0x4D2 << 10) | (1 << 7) | 0xE;
 const M20_FIRMWARE: u8 = 0x06;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -99,8 +99,7 @@ impl Flight {
 
 fn iso(unix: i64) -> String {
     Timestamp::from_second(unix)
-        .map(|stamp| stamp.strftime("%Y-%m-%dT%H:%M:%SZ").to_string())
-        .unwrap_or_default()
+        .map_or_default(|stamp| stamp.strftime("%Y-%m-%dT%H:%M:%SZ").to_string())
 }
 
 #[must_use]
@@ -210,7 +209,7 @@ fn thermistor_ohm(coefficients: [f64; 4], celsius: f64) -> f64 {
     let target = 1.0 / (celsius + 273.15);
     let (mut low, mut high) = (0.0f64, 20.0f64);
     for _ in 0..100 {
-        let mid = 0.5 * (low + high);
+        let mid = f64::midpoint(low, high);
         let value = coefficients[0]
             + coefficients[1] * mid
             + coefficients[2] * mid * mid
@@ -221,7 +220,7 @@ fn thermistor_ohm(coefficients: [f64; 4], celsius: f64) -> f64 {
             low = mid;
         }
     }
-    (0.5 * (low + high)).exp()
+    f64::midpoint(low, high).exp()
 }
 
 fn push_f32(bytes: &mut [u8], at: usize, value: f32) {

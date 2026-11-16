@@ -14,6 +14,7 @@ use super::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Isa;
 
+#[expect(clippy::unused_self, reason = "same interface as the x86 Isa")]
 impl Isa {
     pub(crate) fn detect() -> Self {
         Self

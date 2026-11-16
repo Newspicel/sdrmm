@@ -9,7 +9,7 @@ pub(super) fn free_id(snapshot: &mut Value, wanted: &str) -> String {
     let taken: Vec<String> = graph_nodes(snapshot)
         .filter_map(|node| Some(node.get("id")?.as_str()?.to_owned()))
         .collect();
-    (1..)
+    (1..=taken.len() + 1)
         .map(|n| {
             if n == 1 {
                 wanted.to_owned()

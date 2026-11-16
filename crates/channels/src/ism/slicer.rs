@@ -7,6 +7,7 @@ const PCM_PREAMBLE_BITS: usize = 12;
 const PCM_MEASURED_BITS: u32 = 20;
 
 #[derive(Clone, Copy, Debug)]
+#[expect(clippy::struct_field_names, reason = "the suffix names the unit")]
 pub(super) struct Timing {
     pub(super) short_us: u32,
     pub(super) long_us: u32,
@@ -105,7 +106,7 @@ pub(super) fn slice(
 }
 
 fn pwm_windows(s: Samples) -> (Window, Window, Window) {
-    let mid = |a: i64, b: i64| (a + b) / 2 + 1;
+    let mid = |a: i64, b: i64| i64::midpoint(a, b) + 1;
     if s.tolerance > 0 {
         let sync = if s.sync > 0 {
             Window::around(s.sync, s.tolerance)
@@ -173,7 +174,7 @@ fn ppm(s: Samples, package: &Package<'_>, bits: &mut Bits, emit: &mut dyn FnMut(
             sync,
         )
     } else {
-        let split = (s.short + s.long) / 2 + 1;
+        let split = i64::midpoint(s.short, s.long) + 1;
         let top = if s.gap > 0 { s.gap } else { s.reset };
         (
             Window {

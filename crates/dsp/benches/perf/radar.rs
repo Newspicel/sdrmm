@@ -136,7 +136,7 @@ fn eca(c: &mut Criterion) {
         });
     });
     group.bench_function("eca_fm_cpi", |b| {
-        b.iter(|| black_box(plane.cpi(Some(&table))))
+        b.iter(|| black_box(plane.cpi(Some(&table))));
     });
     group.finish();
 }

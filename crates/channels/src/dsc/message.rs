@@ -274,12 +274,12 @@ impl DscMessage {
         let ecc_at = eos_at + 1;
         self.eos = extract_eos(symbols, eos_at);
         self.ecc = at(symbols, ecc_at).unwrap_or(ERASURE);
-        self.status = if ecc_valid(symbols, ecc_at) {
+        let status = if ecc_valid(symbols, ecc_at) {
             "OK"
         } else {
             "Error"
-        }
-        .to_owned();
+        };
+        status.clone_into(&mut self.status);
         self
     }
 
@@ -308,7 +308,7 @@ pub fn decode(symbols: &[i32]) -> DscMessage {
             if format != Format::Unknown {
                 message.from = extract_mmsi(symbols, 2);
             }
-            message.status = "Unsupported".to_owned();
+            "Unsupported".clone_into(&mut message.status);
             message
         }
     }

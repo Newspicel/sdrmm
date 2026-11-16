@@ -54,7 +54,7 @@ impl Multipath {
                 })
                 .collect(),
         };
-        let power: f64 = h.iter().map(|tap| tap.norm_sqr()).sum();
+        let power: f64 = h.iter().map(num_complex::Complex::norm_sqr).sum();
         let scale = 1.0 / power.sqrt();
         for tap in &mut h {
             *tap *= scale;

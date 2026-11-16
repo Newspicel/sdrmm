@@ -189,7 +189,7 @@ mod tests {
         let words = RATE / WORD_RATE_HZ;
         let mut track = Track::new();
         for k in 0..2_000 {
-            let word = ((k as f64 - offset as f64) / words).floor();
+            let word = ((f64::from(k) - offset as f64) / words).floor();
             let high = word >= 0.0 && (word as usize) < SYNC_WORDS && SYNC_A[word as usize];
             track.push(if high { 1.0 } else { 0.2 });
         }

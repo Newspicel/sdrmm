@@ -57,7 +57,7 @@ fn rewrite(
     let graph = &mut active.snapshot.graph;
     match graph.nodes.iter_mut().find(|held| held.id == node) {
         Some(held) => match &mut held.body {
-            NodeBody::Channel(channel) => channel.channel_type = channel_type.to_owned(),
+            NodeBody::Channel(channel) => channel_type.clone_into(&mut channel.channel_type),
             _ => return Err(takes_no_such_action(node)),
         },
         None => return Err(AppError::not_found(format!("No node {node}"))),

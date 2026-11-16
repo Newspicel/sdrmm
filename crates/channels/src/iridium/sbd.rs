@@ -122,7 +122,7 @@ impl SbdReassembler {
             .retain(|m| time - m.last_time < SBD_MULTI_EXPIRE_S);
 
         if msgno == 0 || (msgcnt <= 1 && msgno == 1) {
-            return Self::parse_acars(typ, &body, hdr);
+            return Some(Self::parse_acars(typ, &body, hdr));
         }
         if msgcnt > 1 && msgno == 1 {
             self.multi.push(MultiSbd {
@@ -148,13 +148,13 @@ impl SbdReassembler {
                 if msgno == self.multi[i].msgcnt {
                     let mut m = self.multi.remove(i);
                     m.hdr.insert("multi_packets".into(), json!(m.msgcnt));
-                    return Self::parse_acars(m.typ, &m.body, m.hdr);
+                    return Some(Self::parse_acars(m.typ, &m.body, m.hdr));
                 }
                 return None;
             }
             return None;
         }
-        Self::parse_acars(typ, &body, hdr)
+        Some(Self::parse_acars(typ, &body, hdr))
     }
 
     fn sbd_parts(data: &[u8], ul: bool) -> Option<SbdParts> {
@@ -183,8 +183,8 @@ impl SbdReassembler {
                 if it != 0 {
                     hdr.insert("time_unix".into(), json!(super::ira::iri_time_unix(it)));
                 }
-                msgcnt = h[15] as i16;
-                msgno = if h[15] == 0 { 0 } else { 1 };
+                msgcnt = i16::from(h[15]);
+                msgno = u8::from(h[15] != 0);
                 return Some((typ, hdr, msgno, msgcnt, rest[29..].to_vec()));
             }
             t if t >> 8 == 0x76 && (t & 0xff) == 0x08 => match rest.first() {
@@ -195,11 +195,11 @@ impl SbdReassembler {
                     );
                     hdr.insert("packets".into(), json!(rest[3]));
                     hdr.insert("backlog".into(), json!(rest[4]));
-                    msgcnt = rest[3] as i16;
+                    msgcnt = i16::from(rest[3]);
                     rest = &rest[7..];
                 }
                 Some(0x20) if rest.len() >= 5 => {
-                    msgcnt = rest[3] as i16;
+                    msgcnt = i16::from(rest[3]);
                     rest = &rest[5..];
                 }
                 _ => {}
@@ -224,7 +224,7 @@ impl SbdReassembler {
         typ: u16,
         payload: &[u8],
         mut hdr: serde_json::Map<String, serde_json::Value>,
-    ) -> Option<SbdMessage> {
+    ) -> SbdMessage {
         hdr.insert("type".into(), json!(format!("{typ:04x}")));
         if payload.first() != Some(&0x01) || payload.len() < 16 {
             hdr.insert(
@@ -253,11 +253,11 @@ impl SbdReassembler {
                     .collect();
                 hdr.insert("payload_text".into(), json!(text));
             }
-            return Some(SbdMessage {
+            return SbdMessage {
                 kind: "sbd",
                 details: serde_json::Value::Object(hdr),
                 acars: None,
-            });
+            };
         }
         let body = if payload.get(1) == Some(&0x03) && payload.len() > 9 {
             let mut b = vec![0x01];
@@ -268,11 +268,11 @@ impl SbdReassembler {
         };
         let acars = super::acars::parse(&body);
         hdr.insert("acars_ok".into(), json!(acars.as_ref().map(|a| a.crc_ok)));
-        Some(SbdMessage {
+        SbdMessage {
             kind: "sbd",
             details: serde_json::Value::Object(hdr),
             acars,
-        })
+        }
     }
 }
 

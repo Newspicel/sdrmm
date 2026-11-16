@@ -17,7 +17,7 @@ use crate::{
 pub(crate) fn bring_up_active(state: &AppState, id: i64) -> Result<PatchApplyReport, AppError> {
     let workspace = state.store.workspace(id)?;
     let saved = state.store.workspace_state(id)?;
-    bring_up(state, id, &workspace.snapshot, &saved)
+    Ok(bring_up(state, id, &workspace.snapshot, &saved))
 }
 
 pub(crate) fn bring_up(
@@ -25,7 +25,7 @@ pub(crate) fn bring_up(
     workspace: i64,
     snapshot: &WorkspaceSnapshot,
     saved: &WorkspaceState,
-) -> Result<PatchApplyReport, AppError> {
+) -> PatchApplyReport {
     let mut report = PatchApplyReport::default();
     let graph = app.runs.gated(&snapshot.graph);
     forget_closed_bindings(app, &app.engine.snapshot());
@@ -40,7 +40,7 @@ pub(crate) fn bring_up(
     crate::placement::settle_lanes(app, &graph, saved, &mut report);
     publish_refusals(app, &report);
     app.resolve_now();
-    Ok(report)
+    report
 }
 
 fn hooks(state: &AppState, resolved: &Resolved, saved: &WorkspaceState) -> Vec<(String, String)> {

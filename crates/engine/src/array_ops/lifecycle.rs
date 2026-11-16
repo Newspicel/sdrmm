@@ -298,8 +298,7 @@ impl Engine {
             .map(|lane| LaneKey {
                 device: lane
                     .and_then(|lane| inner.device_sets.get(&lane.device_set))
-                    .map(|device| device.info.id())
-                    .unwrap_or_default(),
+                    .map_or_default(|device| device.info.id()),
                 stream: lane.map_or(0, |lane| lane.stream),
             })
             .collect();

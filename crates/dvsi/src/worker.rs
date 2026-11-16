@@ -45,6 +45,10 @@ impl Linked {
         }
     }
 
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "ChipEnd::deliver takes the frame by value"
+    )]
     fn deliver(&mut self, speech: [i16; CHIP_FRAME_SAMPLES]) {
         if !self.end.deliver(speech) {
             self.undelivered += 1;

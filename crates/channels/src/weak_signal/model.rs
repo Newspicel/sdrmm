@@ -202,9 +202,7 @@ fn message_spot(text: &str, snr_db: f32) -> Option<Spot> {
     if grid == RR73 || !is_square(grid) {
         return None;
     }
-    let callsign = before
-        .map(|word| word.trim_start_matches('<').trim_end_matches('>'))
-        .unwrap_or_default();
+    let callsign = before.map_or_default(|word| word.trim_start_matches('<').trim_end_matches('>'));
     spot(grid, callsign.to_owned(), snr_db)
 }
 

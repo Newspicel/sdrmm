@@ -75,7 +75,7 @@ fn disarm() -> serde_json::Value {
     serde_json::json!({"action": "transmit", "with": {"do": "disarm"}})
 }
 
-fn send(message: serde_json::Value) -> serde_json::Value {
+fn send(message: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({"action": "send", "with": {"message": message}})
 }
 
@@ -106,7 +106,7 @@ async fn an_armed_transmitter_sends_the_message_its_encoder_is_handed() {
     on_the_bench(&app, &station("aprs")).await;
     assert_eq!(transmitting(&app).await, None, "nothing transmits unasked");
 
-    let hello = send(serde_json::json!({"source": "N0CALL-7", "text": ">hello"}));
+    let hello = send(&serde_json::json!({"source": "N0CALL-7", "text": ">hello"}));
     let (status, body) = act(&app, "mod", hello.clone()).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body.contains("Arm the transmitter"), "{body}");
@@ -124,7 +124,7 @@ async fn an_armed_transmitter_sends_the_message_its_encoder_is_handed() {
     assert!(sent.samples > 0);
     assert_eq!(sent.error, None);
 
-    let (status, body) = act(&app, "mod", send(serde_json::json!({"text": "x"}))).await;
+    let (status, body) = act(&app, "mod", send(&serde_json::json!({"text": "x"}))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body.contains("source"), "{body}");
 

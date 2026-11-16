@@ -19,13 +19,15 @@ impl ProblemBoard {
         let changed = {
             let mut held = self.lock();
             let key = (node.to_owned(), source);
-            let before = held.get(&key).cloned().unwrap_or_default();
+            let changed = held
+                .get(&key)
+                .map_or(!texts.is_empty(), |before| *before != texts);
             if texts.is_empty() {
                 held.remove(&key);
             } else {
-                held.insert(key, texts.clone());
+                held.insert(key, texts);
             }
-            before != texts
+            changed
         };
         if changed {
             self.announce(engine);

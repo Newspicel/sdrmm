@@ -154,7 +154,10 @@ fn loudest(iq: &[Complex<f32>], offset: usize, len: usize) -> Vec<usize> {
         .step_by(len)
         .take_while(|start| start + len <= iq.len())
         .map(|start| {
-            let energy = iq[start..start + len].iter().map(|s| s.norm_sqr()).sum();
+            let energy = iq[start..start + len]
+                .iter()
+                .map(num_complex::Complex::norm_sqr)
+                .sum();
             (energy, start)
         })
         .collect();
@@ -273,7 +276,7 @@ mod tests {
             .map(|n| {
                 let bit = (n / 25) % 3 == 0;
                 let shift = if bit { 40_000.0 } else { -40_000.0 };
-                Complex::from_polar(1.0, (2.0 * PI * shift * n as f64 / rate) as f32)
+                Complex::from_polar(1.0, (2.0 * PI * shift * f64::from(n) / rate) as f32)
             })
             .collect();
         assert!(chirp_of(&fsk, rate, 120_000.0).is_none());

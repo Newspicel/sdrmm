@@ -120,7 +120,7 @@ fn field(message: &serde_json::Value, name: &str) -> String {
         .to_string()
 }
 
-/// Plays SDRconnect on one connection. Whatever the client sent before the connection went away
+/// Plays `SDRconnect` on one connection. Whatever the client sent before the connection went away
 /// still counts as heard, so a stop raced by a failed IQ write is not lost.
 fn serve(peer: &WebSocketPeer, behaviour: Behaviour, nth: usize, observed: &Observed) {
     exchange(peer, behaviour, nth, observed);

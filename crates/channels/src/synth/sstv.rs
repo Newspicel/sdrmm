@@ -87,8 +87,6 @@ fn clamp8(value: f32) -> u8 {
 
 #[must_use]
 pub fn bars(mode: SstvMode) -> Frame {
-    let (width, height) = mode.size();
-    let mut frame = Frame::new(width, height);
     const PALETTE: [[u8; 3]; 8] = [
         [255, 255, 255],
         [255, 255, 0],
@@ -99,6 +97,8 @@ pub fn bars(mode: SstvMode) -> Frame {
         [0, 0, 255],
         [0, 0, 0],
     ];
+    let (width, height) = mode.size();
+    let mut frame = Frame::new(width, height);
     for y in 0..height {
         for x in 0..width {
             let bar = usize::from(x) * PALETTE.len() / usize::from(width);

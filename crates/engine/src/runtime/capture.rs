@@ -259,14 +259,14 @@ impl CaptureRuntime {
         dc_block: bool,
         on_fatal: impl FnOnce(DeviceError) + Send + 'static,
     ) -> Result<Self, DeviceError> {
-        Self::start_with_taps(device, settings, dc_block, Vec::new(), on_fatal)
+        Self::start_with_taps(device, settings, dc_block, &[], on_fatal)
     }
 
     pub fn start_with_taps(
         mut device: Box<dyn SdrDevice>,
         settings: &DeviceSettings,
         dc_block: bool,
-        taps: Vec<SpectrumTap>,
+        taps: &[SpectrumTap],
         on_fatal: impl FnOnce(DeviceError) + Send + 'static,
     ) -> Result<Self, DeviceError> {
         let max_age = max_age_for(device.as_ref());

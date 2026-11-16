@@ -67,15 +67,12 @@ fn link(phy: WifiPhy, label: &str) -> Link {
             };
             let mut first = First::default();
             receiver.process(wave, &mut first);
-            first
-                .payload
-                .map(|payload| {
-                    payload
-                        .iter()
-                        .flat_map(|&byte| (0..8).map(move |bit| byte >> bit & 1 == 1))
-                        .collect()
-                })
-                .unwrap_or_default()
+            first.payload.map_or_default(|payload| {
+                payload
+                    .iter()
+                    .flat_map(|&byte| (0..8).map(move |bit| byte >> bit & 1 == 1))
+                    .collect()
+            })
         }),
     }
 }

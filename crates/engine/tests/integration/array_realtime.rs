@@ -224,21 +224,21 @@ fn start_workload(bench: &Bench) -> Arc<Engine> {
     let ds = bench.open_at(KRAKEN, FULL_RATE);
     let engine = bench.engine.clone();
     engine.apply_array(kraken_array(ds)).unwrap();
-    engine.apply_processor(df("df")).unwrap();
+    engine.apply_processor(&df("df")).unwrap();
     let mut beam = processor(
         "beam",
         ProcessorParams::Beamformer(BeamformerParams::default()),
     );
     beam.lane_ports = vec!["beam".to_owned()];
-    engine.apply_processor(beam).unwrap();
+    engine.apply_processor(&beam).unwrap();
     engine
-        .apply_processor(processor(
+        .apply_processor(&processor(
             "spatial",
             ProcessorParams::SpatialSpectrum(SpatialSpectrumParams::default()),
         ))
         .unwrap();
     engine
-        .apply_processor(processor(
+        .apply_processor(&processor(
             "radar",
             ProcessorParams::PassiveRadar(PassiveRadarParams {
                 gpu: GpuUse::Off,

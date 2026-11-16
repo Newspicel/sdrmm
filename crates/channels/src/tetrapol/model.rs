@@ -122,7 +122,7 @@ pub struct TetrapolKey {
 impl TetrapolKey {
     #[must_use]
     pub fn clear(self) -> bool {
-        self.kind == 0 && self.index == 0 || self.kind == 15 && self.index == 0
+        (self.kind == 0 || self.kind == 15) && self.index == 0
     }
 }
 
@@ -226,8 +226,7 @@ impl TetrapolPayload {
 fn call_tail(call: &TetrapolGroupCall) -> String {
     let channel = call
         .channel
-        .map(|channel| format!(" on channel {channel}"))
-        .unwrap_or_default();
+        .map_or_default(|channel| format!(" on channel {channel}"));
     let key = if call.key.clear() { "" } else { ", encrypted" };
     format!("{channel}{key}")
 }

@@ -203,7 +203,7 @@ mod tests {
         let lane = &lanes[0][100..];
         let step = TAU * offset * 9.0;
         for pair in lane.windows(2) {
-            let turned = (pair[1] * pair[0].conj()).arg() as f64;
+            let turned = f64::from((pair[1] * pair[0].conj()).arg());
             assert!(
                 (turned - step).abs() < 1e-3,
                 "rotated {turned}, expected {step}"

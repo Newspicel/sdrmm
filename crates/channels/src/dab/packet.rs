@@ -122,11 +122,11 @@ impl PacketData {
             };
             let address = (u16::from(packet[0] & 3) << 8) | u16::from(packet[1]);
             if address == self.config.address {
-                if !crc_ok(packet) {
+                if crc_ok(packet) {
+                    self.packet(packet, events);
+                } else {
                     self.active = false;
                     events.push(Event::Error("DAB packet CRC failure"));
-                } else {
-                    self.packet(packet, events);
                 }
             }
             at += length;

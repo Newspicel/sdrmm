@@ -56,8 +56,7 @@ fn references(html: &str) -> Vec<String> {
 fn host(line_source: &str, marker: &str) -> String {
     let start = line_source
         .find(marker)
-        .map(|at| at + marker.len())
-        .unwrap_or_else(|| panic!("{marker} is missing"));
+        .map_or_else(|| panic!("{marker} is missing"), |at| at + marker.len());
     line_source[start..]
         .split(|char: char| !(char.is_ascii_alphanumeric() || char == '.' || char == '-'))
         .find(|piece| !piece.is_empty())

@@ -147,7 +147,7 @@ fn v2(bits: &Bits, found: &mut Found) -> Outcome {
 
 fn v3_preamble(b: &[u8]) -> bool {
     (b[0] & 0x0f == 0x0f && b[1] == 0xff && b[2] & 0xc0 == 0xc0)
-        || (b[0] & 0x0f == 0 && b[1] == 0 && b[2] & 0xc0 == 0)
+        || (b[0].trailing_zeros() >= 4 && b[1] == 0 && b[2] & 0xc0 == 0)
 }
 
 fn v3(bits: &Bits, found: &mut Found) -> Outcome {

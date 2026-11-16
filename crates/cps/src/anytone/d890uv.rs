@@ -578,15 +578,14 @@ fn decode_zones(image: &Image, catalog: &Catalog, codeplug: &mut Codeplug) {
             continue;
         }
         let channels = slot(image, ZONE_CHANNELS + index * BETWEEN_ZONES, BETWEEN_ZONES)
-            .map(|data| {
+            .map_or_default(|data| {
                 (0..CHANNELS_PER_ZONE)
                     .map(|member| get_u16_le(data, member as usize * 2))
                     .filter(|member| *member != NO_INDEX16)
                     .filter_map(|member| catalog.channels.name_at(u32::from(member)))
                     .map(str::to_owned)
                     .collect()
-            })
-            .unwrap_or_default();
+            });
         codeplug.zones.push(Zone {
             name: names.claim(&name, "Zone"),
             channels_a: channels,

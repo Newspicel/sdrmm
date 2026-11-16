@@ -78,7 +78,7 @@ impl Satellite {
                 high = b;
             }
         }
-        let peak = (low + high) / 2.0;
+        let peak = f64::midpoint(low, high);
         let at_peak = elevation(peak)?;
         Ok(if at_peak > best.1 {
             (peak, at_peak)
@@ -112,7 +112,7 @@ fn edge(
 ) -> Result<f64, OrbitError> {
     let rising = above(after)?;
     while after - before > FINE_S {
-        let middle = (before + after) / 2.0;
+        let middle = f64::midpoint(before, after);
         if above(middle)? == rising {
             after = middle;
         } else {

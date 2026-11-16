@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use super::*;
 use crate::store::{Store, parse_workspace_snapshot};
 
+#[expect(clippy::needless_pass_by_value, reason = "json! borrows its fields")]
 fn with_filter(kinds: Value) -> Value {
     let mut snapshot =
         serde_json::to_value(WorkspaceSnapshot::starter()).expect("the starter encodes");
@@ -136,6 +137,7 @@ fn an_import_reports_the_kinds_it_dropped() {
     );
 }
 
+#[expect(clippy::needless_pass_by_value, reason = "json! borrows its fields")]
 fn with_wires(nodes: Value, edges: Value) -> Value {
     json!({
         "version": sdrmm_wire::WORKSPACE_SNAPSHOT_VERSION,
@@ -143,6 +145,7 @@ fn with_wires(nodes: Value, edges: Value) -> Value {
     })
 }
 
+#[expect(clippy::needless_pass_by_value, reason = "json! borrows its fields")]
 fn at(id: &str, kind: &str, data: Value) -> Value {
     json!({ "id": id, "kind": kind, "position": { "x": 0.0, "y": 0.0 }, "data": data })
 }
@@ -296,8 +299,7 @@ fn watching() -> Value {
 fn edge_count(snapshot: &Value) -> usize {
     snapshot["graph"]["edges"]
         .as_array()
-        .map(Vec::len)
-        .unwrap_or_default()
+        .map_or_default(Vec::len)
 }
 
 #[test]
@@ -607,20 +609,19 @@ fn banked() -> Value {
 fn lane_keys(snapshot: &Value) -> Vec<Value> {
     snapshot["graph"]["nodes"]
         .as_array()
-        .map(|nodes| {
+        .map_or_default(|nodes| {
             nodes
                 .iter()
                 .filter(|node| node["kind"] == json!("device"))
                 .map(|node| node["data"]["device"].clone())
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 fn array_lanes(snapshot: &Value, array: &str) -> Vec<(String, String)> {
     snapshot["graph"]["edges"]
         .as_array()
-        .map(|edges| {
+        .map_or_default(|edges| {
             edges
                 .iter()
                 .filter(|edge| edge["to"]["node"] == json!(array))
@@ -632,7 +633,6 @@ fn array_lanes(snapshot: &Value, array: &str) -> Vec<(String, String)> {
                 })
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 fn kinds_added(notices: &[WorkspaceNoticeKind]) -> Vec<String> {
@@ -744,8 +744,7 @@ fn an_unwired_bank_gains_five_dongles_and_an_array_in_lane_order() {
     );
     let places: Vec<Value> = snapshot["graph"]["nodes"]
         .as_array()
-        .map(|nodes| nodes.iter().map(|node| node["position"].clone()).collect())
-        .unwrap_or_default();
+        .map_or_default(|nodes| nodes.iter().map(|node| node["position"].clone()).collect());
     assert_eq!(places.len(), 6);
     assert!(
         places

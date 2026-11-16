@@ -136,12 +136,12 @@ impl DvbtChannel {
         status.ensemble_label = program.and_then(|p| p.provider.clone());
         status.audio_frames_ok = self.media.audio_frames;
         status.audio_frames_bad = self.media.audio_errors;
-        status.audio_error = self.media.audio_error.clone();
+        status.audio_error.clone_from(&self.media.audio_error);
         status.video_frames_ok = self.media.video_frames;
         status.video_frames_bad = self.media.video_errors;
-        status.video_error = self.media.video_error.clone();
+        status.video_error.clone_from(&self.media.video_error);
         status.services = services;
-        publish_status(out, status, "program");
+        publish_status(out, &status, "program");
     }
 }
 
@@ -482,7 +482,11 @@ mod tests {
                 )
             })
             .collect();
-        let power = native.iter().map(|s| s.norm_sqr()).sum::<f32>() / native.len() as f32;
+        let power = native
+            .iter()
+            .map(num_complex::Complex::norm_sqr)
+            .sum::<f32>()
+            / native.len() as f32;
         let clean: Vec<_> = native.iter().chain(&native).copied().collect();
         let mut iq = clean.clone();
         for (i, sample) in iq.iter_mut().enumerate() {

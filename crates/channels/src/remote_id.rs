@@ -36,16 +36,16 @@ fn params(settings: &ChannelSettings) -> Result<RemoteIdParams, ChannelError> {
     crate::settings_of::<RemoteIdParams>(settings)
 }
 
-pub(crate) fn input_rate(params: &RemoteIdParams) -> f64 {
+pub(crate) fn input_rate(params: RemoteIdParams) -> f64 {
     params.link.input_rate_hz()
 }
 
-pub(crate) fn occupied_band(params: &RemoteIdParams) -> (f64, f64) {
+pub(crate) fn occupied_band(params: RemoteIdParams) -> (f64, f64) {
     let half = params.link.bandwidth_hz() / 2.0;
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &RemoteIdParams) -> ChannelFilter {
+pub(crate) fn channel_filter(params: RemoteIdParams) -> ChannelFilter {
     match bluetooth_link(params.link) {
         Some(link) => bluetooth::channel_filter(link),
         None => ChannelFilter::Passthrough,
@@ -105,7 +105,7 @@ impl NativeChannel for RemoteIdChannel {
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
-        check_rate(ctx, &DESCRIPTOR, input_rate(&params))?;
+        check_rate(ctx, &DESCRIPTOR, input_rate(params))?;
         Ok(Self {
             link: params.link,
             frequency_hz: settings.frequency_hz,
@@ -142,14 +142,14 @@ impl ChannelRx for RemoteIdChannel {
                 iq,
                 &mut ble::Events {
                     tracker: &mut self.tracker,
-                    events: &mut out.events,
+                    out: &mut out.events,
                 },
             ),
             Front::Wifi(receiver) => receiver.process(
                 iq,
                 &mut wifi::Events {
                     tracker: &mut self.tracker,
-                    events: &mut out.events,
+                    out: &mut out.events,
                     channel: channel_at(self.frequency_hz).map(|channel| channel.number),
                 },
             ),
@@ -164,9 +164,9 @@ impl ChannelRx for RemoteIdChannel {
 }
 
 pub(crate) fn remote_id_decoder() -> Native<RemoteIdParams> {
-    Native::new::<RemoteIdChannel>(occupied_band)
-        .filter(|p| Ok(channel_filter(p)))
-        .input_rate(input_rate)
+    Native::new::<RemoteIdChannel>(|p| occupied_band(*p))
+        .filter(|p| Ok(channel_filter(*p)))
+        .input_rate(|p| input_rate(*p))
         .home(2_426_000_000.0)
         .form(remote_id_form)
         .kinds(remote_id_kinds)

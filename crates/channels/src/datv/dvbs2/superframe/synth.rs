@@ -234,7 +234,7 @@ impl Transmitter {
         let Some(layout) = layout::bundles(format) else {
             return Vec::new();
         };
-        let stream = self.bundle_stream(format, layout, bundles);
+        let stream = Self::bundle_stream(format, layout, bundles);
         let mut out = Vec::with_capacity(LENGTH);
         self.start(format, &mut out);
         let mut cursor = 0;
@@ -258,7 +258,6 @@ impl Transmitter {
     }
 
     fn bundle_stream(
-        &self,
         format: u8,
         layout: Bundles,
         bundles: &[(u8, Vec<Complex<f32>>)],
@@ -279,13 +278,7 @@ impl Transmitter {
         stream
     }
 
-    fn render(
-        &self,
-        frame: &Plframe,
-        format: u8,
-        protection: Protection,
-        out: &mut Vec<Complex<f32>>,
-    ) {
+    fn render(frame: &Plframe, format: u8, protection: Protection, out: &mut Vec<Complex<f32>>) {
         let value = coding::flexible_value(format, frame.mcs).unwrap_or(0);
         signalling::plh(
             Plh {
@@ -453,7 +446,7 @@ impl Transmitter {
         let mut units = Vec::new();
         for (frame, placed) in frames.iter().zip(&placed) {
             let start = units.len();
-            self.render(frame, format, protection, &mut units);
+            Self::render(frame, format, protection, &mut units);
             units.truncate(start + placed.length * CU);
         }
         let mut out = Vec::new();

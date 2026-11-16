@@ -235,7 +235,7 @@ impl Detector {
             if self.masked[first..=last].iter().any(|&masked| masked) {
                 continue;
             }
-            let floor = self.floors[(start + end) / 2];
+            let floor = self.floors[usize::midpoint(start, end)];
             let peak = (first..=last)
                 .max_by(|&a, &b| self.smoothed[a].total_cmp(&self.smoothed[b]))
                 .unwrap_or(first);
@@ -433,7 +433,7 @@ impl Detector {
         let mean = if total > 0.0 {
             (start..=end).map(|i| weight(i) * i as f64).sum::<f64>() / total
         } else {
-            (start as f64 + end as f64) / 2.0
+            f64::midpoint(start as f64, end as f64)
         };
         (mean - center as f64) * bin_hz
     }

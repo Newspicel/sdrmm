@@ -99,10 +99,7 @@ impl ServerRecord {
             hosts: self.hosts.clone(),
             fingerprint_short: phone::key_check(&self.pin),
             phone_id: self.phone_id.clone(),
-            paired_at: self
-                .paired_at()
-                .map(|at| at.to_string())
-                .unwrap_or_default(),
+            paired_at: self.paired_at().map_or_default(|at| at.to_string()),
         }
     }
 

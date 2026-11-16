@@ -8,9 +8,7 @@ use crate::{
 };
 
 fn ports_for(kind: &str) -> Vec<PortSpec> {
-    NodeKind::parse(kind)
-        .map(NodeKind::ports)
-        .unwrap_or_default()
+    NodeKind::parse(kind).map_or_default(NodeKind::ports)
 }
 
 fn node(id: &str, body: NodeBody) -> PatchNode {
@@ -1233,8 +1231,7 @@ fn a_channel_tap_cannot_be_wired_where_a_wideband_stream_belongs() {
             .nodes
             .iter()
             .find(|entry| entry.kind.as_str() == kind)
-            .map(|entry| entry.ports.clone())
-            .unwrap_or_default()
+            .map_or_default(|entry| entry.ports.clone())
     };
     let takes = |kind: &str, port_type: PortType| {
         ports_of(kind)

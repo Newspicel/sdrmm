@@ -93,7 +93,7 @@ impl CpsHub {
     }
 
     pub(crate) fn identify(&self, model_id: &str, port: &str) -> Result<RadioIdent, CpsJobError> {
-        let radio = self.model(model_id)?;
+        let radio = Self::model(model_id)?;
         let _busy = self.hold_port()?;
         let link = self
             .backend
@@ -124,11 +124,7 @@ impl CpsHub {
             let jobs = self.lock();
             jobs.get(&id).cloned().ok_or(CpsJobError::NotFound(id))?
         };
-        let finished = entry
-            .job
-            .lock()
-            .ok()
-            .is_some_and(|job| job.state.is_final());
+        let finished = entry.job.lock().is_ok_and(|job| job.state.is_final());
         if finished {
             return Err(CpsJobError::Finished(id));
         }
@@ -136,7 +132,7 @@ impl CpsHub {
         self.job(id)
     }
 
-    fn model(&self, id: &str) -> Result<&'static dyn RadioModel, CpsJobError> {
+    fn model(id: &str) -> Result<&'static dyn RadioModel, CpsJobError> {
         model(id).ok_or_else(|| CpsJobError::Radio(CpsError::UnknownModel(id.to_owned())))
     }
 
@@ -154,7 +150,7 @@ impl CpsHub {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn register(&self, job: CpsJob) -> Arc<Entry> {
+    fn register(&self, job: &CpsJob) -> Arc<Entry> {
         let entry = Arc::new(Entry {
             job: Mutex::new(job.clone()),
             cancel: AtomicBool::new(false),
@@ -164,13 +160,7 @@ impl CpsHub {
         while jobs.len() > JOB_HISTORY {
             let Some(oldest) = jobs
                 .iter()
-                .filter(|(_, entry)| {
-                    entry
-                        .job
-                        .lock()
-                        .ok()
-                        .is_some_and(|job| job.state.is_final())
-                })
+                .filter(|(_, entry)| entry.job.lock().is_ok_and(|job| job.state.is_final()))
                 .map(|(id, _)| *id)
                 .next()
             else {
@@ -210,11 +200,11 @@ impl CpsHub {
         device_id: Option<i64>,
         user_id: Option<i64>,
     ) -> Result<CpsJob, CpsJobError> {
-        let radio = self.model(model_id)?;
+        let radio = Self::model(model_id)?;
         let mut job = self.new_job(CpsJobKind::Read, model_id, port);
         job.device_id = device_id;
         job.total_bytes = radio.transfer_bytes();
-        let entry = self.register(job.clone());
+        let entry = self.register(&job);
         let hub = self.clone();
         let store = store.clone();
         let name = name.to_owned();
@@ -258,8 +248,8 @@ impl CpsHub {
         session.finish()?;
 
         let mut codeplug = radio.decode(&image)?;
-        codeplug.meta.firmware = ident.firmware.clone();
-        codeplug.meta.bands = ident.bands.clone();
+        codeplug.meta.firmware.clone_from(&ident.firmware);
+        codeplug.meta.bands.clone_from(&ident.bands);
         let id = store.store_cps_codeplug(
             &CpsCodeplugRequest {
                 name: name.to_owned(),
@@ -291,7 +281,7 @@ impl CpsHub {
         if !confirm {
             return Err(CpsJobError::Unconfirmed);
         }
-        let radio = self.model(model_id)?;
+        let radio = Self::model(model_id)?;
         let stored = store.cps_codeplug(codeplug_id)?;
         let backup = restore_image
             .then(|| store.cps_codeplug_image(codeplug_id))
@@ -310,11 +300,11 @@ impl CpsHub {
         job.device_id = device_id;
         job.codeplug_id = Some(codeplug_id);
         job.total_bytes = radio.transfer_bytes();
-        let entry = self.register(job.clone());
+        let entry = self.register(&job);
         let hub = self.clone();
         let port = port.to_owned();
         std::thread::spawn(move || {
-            let outcome = hub.run_write(radio, &port, codeplug, backup, &entry);
+            let outcome = hub.run_write(radio, &port, &codeplug, backup, &entry);
             finish(&entry, outcome);
         });
         Ok(job)
@@ -324,7 +314,7 @@ impl CpsHub {
         &self,
         radio: &'static dyn RadioModel,
         port: &str,
-        codeplug: Codeplug,
+        codeplug: &Codeplug,
         backup: Option<Image>,
         entry: &Arc<Entry>,
     ) -> Result<(), CpsJobError> {
@@ -343,10 +333,10 @@ impl CpsHub {
         };
         let before = Transfer::read(radio, session.as_mut(), &control)?;
         let mut after = backup.unwrap_or_else(|| before.clone());
-        let report = radio.encode(&codeplug, &mut after)?;
+        let report = radio.encode(codeplug, &mut after)?;
         if let Ok(mut job) = entry.job.lock() {
             job.report = Some(report);
-            job.step = "writing".to_owned();
+            "writing".clone_into(&mut job.step);
             job.done_bytes = 0;
             job.total_bytes = changed_blocks(&before, &after, session.block_size().max(1))
                 .iter()
@@ -367,16 +357,16 @@ fn finish(entry: &Arc<Entry>, outcome: Result<(), CpsJobError>) {
     match outcome {
         Ok(()) => {
             job.state = CpsJobState::Done;
-            job.step = "done".to_owned();
+            "done".clone_into(&mut job.step);
             job.done_bytes = job.total_bytes;
         }
         Err(CpsJobError::Radio(error)) if error.is_cancelled() => {
             job.state = CpsJobState::Cancelled;
-            job.step = "cancelled".to_owned();
+            "cancelled".clone_into(&mut job.step);
         }
         Err(error) => {
             job.state = CpsJobState::Failed;
-            job.step = "failed".to_owned();
+            "failed".clone_into(&mut job.step);
             job.error = Some(error.to_string());
         }
     }

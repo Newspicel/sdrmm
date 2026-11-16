@@ -31,7 +31,7 @@ pub(crate) const PICTURES_PER_SINK: usize = 64;
 pub(crate) const UPDATE_EVERY: Duration = Duration::from_millis(500);
 pub(crate) const AGE_OUT_EVERY: Duration = Duration::from_secs(15);
 pub(crate) const PROPAGATION_EVERY: Duration = Duration::from_secs(2);
-pub(crate) const PROPAGATION_HISTORY: Duration = Duration::from_secs(6 * 60 * 60);
+pub(crate) const PROPAGATION_HISTORY: Duration = Duration::from_hours(6);
 const SINK_BACKLOG: usize = 16;
 pub(crate) const SINK_WAIT: Duration = Duration::from_secs(10);
 
@@ -502,12 +502,13 @@ impl SinkHub {
 }
 
 fn follow_settings(sink: &mut Sink, resolved: &Resolved, node: &str) -> bool {
-    let settings = match resolved.graph.node(node).map(|found| &found.body) {
-        Some(NodeBody::Propagation(settings)) => *settings,
-        _ => {
-            sink.propagation = None;
-            return false;
-        }
+    let settings = if let Some(NodeBody::Propagation(settings)) =
+        resolved.graph.node(node).map(|found| &found.body)
+    {
+        *settings
+    } else {
+        sink.propagation = None;
+        return false;
     };
     let fresh = sink.propagation.is_none();
     let model = sink.propagation.get_or_insert_with(Propagation::default);

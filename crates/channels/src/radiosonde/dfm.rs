@@ -118,7 +118,7 @@ struct Config {
 }
 
 impl Config {
-    fn push(&mut self, nibbles: &[u8; CONF_CODEWORDS]) {
+    fn push(&mut self, nibbles: [u8; CONF_CODEWORDS]) {
         let id = usize::from(nibbles[0]);
         let value = (bits_of(&nibbles[1..]) & 0xFF_FFFF) as u32;
         self.meas[id] = float24(value);
@@ -292,7 +292,7 @@ impl DfmFrames {
         let dat_len = 8 * DAT_CODEWORDS;
         if let Some((nibbles, corrected)) = self.section::<CONF_CODEWORDS>(&payload[..conf_end]) {
             self.cycle.corrected += corrected;
-            self.config.push(&nibbles);
+            self.config.push(nibbles);
         }
         let mut emitted = None;
         for start in [conf_end, conf_end + dat_len] {

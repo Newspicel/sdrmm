@@ -102,7 +102,7 @@ impl Cholesky {
         let y = &mut scratch[..n];
         y.copy_from_slice(&a[..n]);
         self.forward(y);
-        Ok(y.iter().map(|value| value.norm_sqr()).sum())
+        Ok(y.iter().map(num_complex::Complex::norm_sqr).sum())
     }
 
     pub fn inverse_into(

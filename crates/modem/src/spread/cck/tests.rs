@@ -193,7 +193,7 @@ fn llr_magnitudes_predict_their_own_error_rate() {
     let mut wave = transmit(&p, &preamble, &payload);
     let mut rng = Rng::new(0x11c6);
     let sigma = (0.08f64 / 2.0).sqrt();
-    for s in wave.iter_mut() {
+    for s in &mut wave {
         *s += Complex::new((rng.normal() * sigma) as f32, (rng.normal() * sigma) as f32);
     }
     let mut demod = CckDemod::new(p);

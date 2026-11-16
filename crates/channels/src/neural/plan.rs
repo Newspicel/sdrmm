@@ -141,7 +141,7 @@ pub(super) fn compile(graph: &Graph) -> Result<Net, NetError> {
 fn at_node(error: NetError, index: usize) -> NetError {
     match error {
         NetError::Unsupported(message) => NetError::Unsupported(format!("node {index}: {message}")),
-        other => other,
+        other @ NetError::Format(_) => other,
     }
 }
 

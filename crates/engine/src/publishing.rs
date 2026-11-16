@@ -279,7 +279,7 @@ mod tests {
         next.follow(&previous);
         let retirement = std::thread::spawn(move || drop(previous));
         assert_no_alloc("replacement publication", || {
-            assert!(next.submit(|value| *value = 2))
+            assert!(next.submit(|value| *value = 2));
         });
         assert!(received.recv_timeout(Duration::from_millis(20)).is_err());
         release.send(()).expect("resume old publisher");

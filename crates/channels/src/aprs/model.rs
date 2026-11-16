@@ -125,7 +125,7 @@ fn aprs_fields(p: &AprsPacket) -> Vec<Field> {
         ("message", "Message", text(p.mic_e_message.as_deref())),
         ("comment", "Comment", text(p.comment.as_deref())),
     ]);
-    shown.extend(p.weather.as_ref().map(weather_fields).unwrap_or_default());
+    shown.extend(p.weather.as_ref().map_or_default(weather_fields));
     shown.extend(fields(&[("packet", "Packet", text(Some(&p.tnc2)))]));
     shown
 }

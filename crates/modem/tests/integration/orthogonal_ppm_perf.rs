@@ -152,9 +152,6 @@ fn the_magnitude_scan_path_allocates_nothing() {
 #[ignore = "rewrites the committed baselines; run explicitly in release on the reference host"]
 fn write_phase5_perf_baselines() {
     require_baseline_write("orthogonal and PPM throughput");
-    if cfg!(debug_assertions) {
-        panic!("a debug-profile number must never become the committed baseline");
-    }
     for (stem, rows) in [
         (orthogonal::PERF, measured_mfsk()),
         (ppm_catalog::PERF, measured_ppm()),

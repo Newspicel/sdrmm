@@ -29,7 +29,7 @@ mod lanes;
 const KEEP_ALIVE: Duration = Duration::from_secs(5);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const CONTROL_WAIT: Duration = Duration::from_secs(10);
-const ROTATE_CHECK: Duration = Duration::from_secs(60 * 60);
+const ROTATE_CHECK: Duration = Duration::from_hours(1);
 const ROTATE_AFTER_DAYS: i64 = 7;
 const CLOSE_NORMAL: u32 = 0;
 const CLOSE_NO_CONTROL: u32 = 1;

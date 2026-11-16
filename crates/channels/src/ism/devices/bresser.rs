@@ -105,7 +105,8 @@ fn six_in_one(bits: &mut Bits, found: &mut Found) -> Outcome {
         temperature = -temp_raw * 0.1;
     }
     let humidity = (m[14] >> 4) * 10 + (m[14] & 0x0f);
-    let uv_ok = m[16] & 0x0f == 0 && !m[15] <= 0x99 && !m[16] & 0xf0 <= 0x90 && !climate_only;
+    let uv_ok =
+        m[16].trailing_zeros() >= 4 && !m[15] <= 0x99 && !m[16] & 0xf0 <= 0x90 && !climate_only;
     let uv = digits(&[!m[15] >> 4, !m[15] & 0x0f, !m[16] >> 4]) as f32 * 0.1;
     for byte in &mut m[7..10] {
         *byte = !*byte;

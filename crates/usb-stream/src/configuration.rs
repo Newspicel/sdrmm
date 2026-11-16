@@ -1,7 +1,7 @@
 use nusb::{Device, Error, ErrorKind, MaybeFuture};
 
 /// Puts `device` in `configuration`, and asks the operating system for nothing when the device is
-/// already there. Linux usbfs refuses SET_CONFIGURATION while any interface is claimed, so a
+/// already there. Linux usbfs refuses `SET_CONFIGURATION` while any interface is claimed, so a
 /// redundant request on a radio that a kernel module has bound comes back as EBUSY: the radio then
 /// reads as held by another program instead of being claimed away from that module a moment later.
 /// Windows supports no configuration switch at all, and reports one as unsupported.

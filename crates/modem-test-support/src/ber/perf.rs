@@ -76,6 +76,10 @@ pub fn missing_host_baseline(what: &str, record_command: &str) -> String {
 /// by name or it would quietly bless whatever the run just measured.
 pub const WRITE_BASELINES: &str = "SDRMM_WRITE_BASELINES";
 
+#[expect(
+    clippy::manual_assert,
+    reason = "assert! on a cfg! constant trips assertions_on_constants"
+)]
 pub fn require_baseline_write(what: &str) {
     assert_eq!(
         std::env::var(WRITE_BASELINES).as_deref(),

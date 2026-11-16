@@ -50,13 +50,12 @@ fn tuning(args: &NetCapture, gain_stage: Option<&str>, has_agc: bool) -> DeviceS
     let gains = args
         .gain
         .zip(gain_stage)
-        .map(|(value_db, stage)| {
+        .map_or_default(|(value_db, stage)| {
             vec![GainValue {
                 stage: stage.to_owned(),
                 value_db,
             }]
-        })
-        .unwrap_or_default();
+        });
     DeviceSettings {
         center_hz: Some(args.center),
         sample_rate: args.rate,

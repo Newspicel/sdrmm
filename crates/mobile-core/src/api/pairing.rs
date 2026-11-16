@@ -9,10 +9,18 @@ use crate::{
 
 #[uniffi::export]
 impl MobileCore {
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "uniffi exports take owned values"
+    )]
     pub fn parse_pair_link(&self, link: String) -> Result<PairOffer, CoreError> {
         flow::offer_from_link(&link)
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "uniffi exports take owned values"
+    )]
     pub fn offer_from_discovery(
         &self,
         server: DiscoveredServer,

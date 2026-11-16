@@ -106,7 +106,7 @@ impl<'a> Bench<'a> {
             heard: radio.hears(&after, &mine),
             kept: -(lost as i64),
             stays,
-            still: center_of(&after, lane.stream, &scope) == center_of(before, lane.stream, &scope),
+            still: center_of(&after, lane.stream, scope) == center_of(before, lane.stream, scope),
             reaches,
             load,
             order,

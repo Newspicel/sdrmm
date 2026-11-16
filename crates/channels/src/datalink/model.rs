@@ -53,7 +53,7 @@ impl EventPayload for DataLinkMessage {
             place: lat_lon(self.lat, self.lon)
                 .or_else(|| area.and_then(SeaArea::center))
                 .map(Place::at),
-            shapes: area.map(SeaArea::shapes).unwrap_or_default(),
+            shapes: area.map_or_default(SeaArea::shapes),
             fields: data_link_fields(self),
             verified: Some(self.crc_ok),
             ..Presentation::of(data_link_summary(self))

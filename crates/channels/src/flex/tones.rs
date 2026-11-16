@@ -31,7 +31,7 @@ impl Afc {
     }
 
     pub fn offset(&self) -> f64 {
-        (self.upper + self.lower) / 2.0
+        f64::midpoint(self.upper, self.lower)
     }
 
     pub fn centre(&mut self, sample: Complex<f32>, track: bool) -> Complex<f32> {

@@ -625,7 +625,7 @@ fn each_construction_reads_only_the_domain_it_was_built_for() {
     real.reset();
 
     let mut iq = CpmDemod::new(&four_level(1_944.0), &rx_rrc(), TIMING_BW_BURST);
-    iq.process(&[Complex::new(0.0, 0.0); 4_096], &mut soft);
+    iq.process(&vec![Complex::new(0.0, 0.0); 4_096], &mut soft);
     iq.reset();
 }
 
@@ -656,7 +656,7 @@ fn complex_process_steady_state_allocates_nothing() {
     demod.process(&iq, &mut soft);
     soft.clear();
     sdrmm_modem_test_support::ber::perf::assert_no_alloc("CpmDemod::process", || {
-        demod.process(&iq, &mut soft)
+        demod.process(&iq, &mut soft);
     });
     assert!(!soft.is_empty(), "the measured call recovered no symbols");
 }

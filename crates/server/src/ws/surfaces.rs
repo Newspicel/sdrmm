@@ -56,18 +56,14 @@ pub(super) struct SurfaceStream {
 }
 
 impl Session {
-    pub(super) async fn subscribe_surface(&mut self, node: String, fit: Option<SurfaceFit>) {
-        if let Err(reason) = self.start_surface(&node, fit).await {
+    pub(super) fn subscribe_surface(&mut self, node: String, fit: Option<SurfaceFit>) {
+        if let Err(reason) = self.start_surface(&node, fit) {
             let refused = ServerEvent::SurfaceRefused { node, reason };
-            let _ = self.out.send(text_event(&refused)).await;
+            let _ = self.out.send(text_event(&refused));
         }
     }
 
-    async fn start_surface(
-        &mut self,
-        node: &str,
-        fit: Option<SurfaceFit>,
-    ) -> Result<(), SurfaceRefusal> {
+    fn start_surface(&mut self, node: &str, fit: Option<SurfaceFit>) -> Result<(), SurfaceRefusal> {
         if fit.is_some_and(|fit| fit.cols == 0 || fit.rows == 0) {
             return Err(SurfaceRefusal::FitNotPositive);
         }
@@ -76,14 +72,14 @@ impl Session {
             .surfaces
             .subscribe(node)
             .ok_or(SurfaceRefusal::NoSurface)?;
-        self.unsubscribe_surface(node).await;
+        self.unsubscribe_surface(node);
         let stream_id = self.media_stream_id().ok_or(SurfaceRefusal::NoStreamIds)?;
         let started = ServerEvent::SurfaceStreamStarted {
             stream_id,
             node: node.to_owned(),
             kind,
         };
-        let _ = self.out.send(text_event(&started)).await;
+        let _ = self.out.send(text_event(&started));
         let stream = SurfaceStream {
             stream_id,
             kind,
@@ -101,10 +97,10 @@ impl Session {
         Ok(())
     }
 
-    pub(super) async fn unsubscribe_surface(&mut self, node: &str) {
+    pub(super) fn unsubscribe_surface(&mut self, node: &str) {
         if let Some((stream_id, kind)) = self.surfaces.remove(node) {
             let stopped = ServerEvent::StreamStopped { stream_id, kind };
-            let _ = self.out.send(text_event(&stopped)).await;
+            let _ = self.out.send(text_event(&stopped));
         }
     }
 }
@@ -142,7 +138,7 @@ async fn forward(stream: SurfaceStream, mut frames: broadcast::Receiver<SurfaceI
         match frames.recv().await {
             Ok((_, frame)) => {
                 let bytes = encode(&frame, stream.stream_id, stream.fit);
-                if out.send_frame(bytes).await.is_err() {
+                if out.send_frame(bytes).is_err() {
                     break;
                 }
             }
@@ -154,7 +150,7 @@ async fn forward(stream: SurfaceStream, mut frames: broadcast::Receiver<SurfaceI
                 let told = ServerEvent::Error {
                     message: format!("surface frames skipped: {total}"),
                 };
-                if out.send(text_event(&told)).await.is_err() {
+                if out.send(text_event(&told)).is_err() {
                     break;
                 }
             }
@@ -163,7 +159,7 @@ async fn forward(stream: SurfaceStream, mut frames: broadcast::Receiver<SurfaceI
                     stream_id: stream.stream_id,
                     kind: stream.kind,
                 };
-                let _ = out.send(text_event(&stopped)).await;
+                let _ = out.send(text_event(&stopped));
                 break;
             }
         }
@@ -396,7 +392,7 @@ fn pool_strongest(amplitude: &[u8], phase: &[u8], rows: Axis, cols: Axis) -> (Ve
     }
     strongest
         .into_iter()
-        .map(|pair| pair.unwrap_or_default())
+        .map(std::option::Option::unwrap_or_default)
         .unzip()
 }
 

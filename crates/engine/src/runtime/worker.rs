@@ -351,14 +351,11 @@ fn drain_commands(
                 slot.retire(Retired::Recording(tap.take(), recording_publisher.take()));
             }
             DspCommand::SetChannelRecordings { id, taps } => {
-                match channels.iter_mut().find(|(existing, _)| *existing == id) {
-                    Some((_, host)) => {
-                        slot.retire(Retired::AudioTaps(host.set_audio_recordings(taps)));
-                    }
-                    None => {
-                        tracing::debug!(id, "audio recording for a channel no longer hosted");
-                        slot.retire(Retired::AudioTaps(taps));
-                    }
+                if let Some((_, host)) = channels.iter_mut().find(|(existing, _)| *existing == id) {
+                    slot.retire(Retired::AudioTaps(host.set_audio_recordings(taps)));
+                } else {
+                    tracing::debug!(id, "audio recording for a channel no longer hosted");
+                    slot.retire(Retired::AudioTaps(taps));
                 }
             }
             DspCommand::StartBasebandRecording { id, tap: armed } => {
@@ -375,9 +372,10 @@ fn drain_commands(
                 }
             }
             DspCommand::StartBasebandExport { id, tap: armed } => {
-                match channels.iter_mut().find(|(existing, _)| *existing == id) {
-                    Some((_, host)) => host.set_baseband_export(Some(armed)),
-                    None => tracing::debug!(id, "baseband export for a channel no longer hosted"),
+                if let Some((_, host)) = channels.iter_mut().find(|(existing, _)| *existing == id) {
+                    host.set_baseband_export(Some(armed));
+                } else {
+                    tracing::debug!(id, "baseband export for a channel no longer hosted");
                 }
             }
             DspCommand::StopBasebandExport { id } => {
@@ -558,7 +556,9 @@ mod tests {
     #[test]
     fn the_stall_counter_keeps_the_worst_gap_not_the_last() {
         let stalled = AtomicU64::new(0);
-        let mut served = Instant::now() - Duration::from_millis(400);
+        let mut served = Instant::now()
+            .checked_sub(Duration::from_millis(400))
+            .unwrap();
         record_stall(&stalled, &mut served);
         let worst = stalled.load(Ordering::Relaxed);
         assert!(worst >= 400_000, "expected the 400 ms gap, got {worst} us");

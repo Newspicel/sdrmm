@@ -19,12 +19,11 @@ pub(super) fn band_or_copy(
     iq: &[Complex<f32>],
     out: &mut Vec<Complex<f32>>,
 ) {
-    match band {
-        Some(band) => band.process(iq, out),
-        None => {
-            out.clear();
-            out.extend_from_slice(iq);
-        }
+    if let Some(band) = band {
+        band.process(iq, out);
+    } else {
+        out.clear();
+        out.extend_from_slice(iq);
     }
 }
 
@@ -34,11 +33,10 @@ pub(super) fn audio_or_copy(
     detected: &[f32],
     out: &mut Vec<f32>,
 ) {
-    match audio {
-        Some(audio) => audio.process(detected, out),
-        None => {
-            out.clear();
-            out.extend_from_slice(detected);
-        }
+    if let Some(audio) = audio {
+        audio.process(detected, out);
+    } else {
+        out.clear();
+        out.extend_from_slice(detected);
     }
 }

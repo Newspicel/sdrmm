@@ -124,12 +124,12 @@ pub(crate) fn encode(opcode: Opcode, payload: &[u8]) -> Vec<u8> {
     frame.push(0x80 | opcode.bits());
     match payload.len() {
         len if len < 126 => frame.push(0x80 | len as u8),
-        len if len <= usize::from(u16::MAX) => {
-            frame.push(0x80 | 126);
+        len if u16::try_from(len).is_ok() => {
+            frame.push(0x80 | 0x7e);
             frame.extend_from_slice(&(len as u16).to_be_bytes());
         }
         len => {
-            frame.push(0x80 | 127);
+            frame.push(0x80 | 0x7f);
             frame.extend_from_slice(&(len as u64).to_be_bytes());
         }
     }

@@ -1,4 +1,7 @@
-use super::{Context, compute::*};
+use super::{
+    Context,
+    compute::{Kernel, compile, grid, initialized, module},
+};
 
 pub(crate) const MIN_SIZE: usize = 16;
 pub(crate) const MAX_SIZE: usize = 1 << 22;

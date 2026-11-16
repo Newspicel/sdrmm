@@ -841,7 +841,7 @@ fn am() -> Fixture {
     let iq = (0..(rate * 0.5) as usize)
         .map(|index| {
             let time = index as f64 / rate;
-            let envelope = 0.5 * (1.0 + 0.6 * (std::f64::consts::TAU * 1_000.0 * time).sin());
+            let envelope = f64::midpoint(1.0, 0.6 * (std::f64::consts::TAU * 1_000.0 * time).sin());
             Complex::new(envelope as f32, 0.0)
         })
         .collect();

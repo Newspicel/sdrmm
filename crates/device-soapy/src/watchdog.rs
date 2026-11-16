@@ -141,7 +141,7 @@ mod tests {
         let mut watchdog = Watchdog::new(start);
         let mut now = start;
         for _ in 0..100 {
-            now += SILENT_STREAM_TIMEOUT - READ;
+            now += SILENT_STREAM_TIMEOUT.checked_sub(READ).unwrap();
             assert_ne!(watchdog.timed_out(now), Watch::Silent);
             now += READ;
             watchdog.delivered(now);

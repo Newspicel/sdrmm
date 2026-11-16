@@ -183,7 +183,7 @@ fn a_plugin_processor_runs_on_the_lanes_and_reopens_on_reload() {
     let mut decoded = bench.engine.subscribe_decoded();
     bench
         .engine
-        .apply_processor(processor(
+        .apply_processor(&processor(
             NODE,
             ProcessorParams::Plugin(kind.params(serde_json::Value::Null)),
         ))

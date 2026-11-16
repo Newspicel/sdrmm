@@ -81,7 +81,11 @@ mod tests {
             .collect();
         out.clear();
         fir.process(&tone, &mut out);
-        let power = out[200..].iter().map(|value| value.norm_sqr()).sum::<f32>() / 312.0;
+        let power = out[200..]
+            .iter()
+            .map(num_complex::Complex::norm_sqr)
+            .sum::<f32>()
+            / 312.0;
         assert!(power < 1e-6);
     }
 

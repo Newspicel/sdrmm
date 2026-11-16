@@ -17,7 +17,7 @@ pub(super) fn encode_pairs(bits: &[u8], start: usize, out: &mut [u8]) {
 }
 
 pub(super) fn remainder_bits(bits: &[u8], generator: u32, out: &mut [u8]) {
-    let degree = 31 - generator.leading_zeros();
+    let degree = generator.ilog2();
     let mask = (1u32 << degree) - 1;
     let mut register = 0u32;
     for &bit in bits

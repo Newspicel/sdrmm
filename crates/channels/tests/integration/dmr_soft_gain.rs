@@ -137,21 +137,17 @@ fn measure_point(
         let coded = Bptc196::encode(&payload);
         let mut wave = modulate(&coded);
         channel.apply(&mut wave, &mut rng);
-        match received_soft(&wave) {
-            Some(soft) => {
-                let hard: [bool; Bptc196::CODED_BITS] = std::array::from_fn(|i| soft[i] > 0);
-                stats.raw_bit_errors +=
-                    hard.iter().zip(&coded).filter(|(a, b)| a != b).count() as u64;
-                stats.raw_bits += Bptc196::CODED_BITS as u64;
-                stats.hard.score(Bptc196::decode(&hard), &payload);
-                stats.soft.score(Bptc196::decode_soft(&soft), &payload);
-            }
-            None => {
-                stats.hard.frames += 1;
-                stats.hard.rejected += 1;
-                stats.soft.frames += 1;
-                stats.soft.rejected += 1;
-            }
+        if let Some(soft) = received_soft(&wave) {
+            let hard: [bool; Bptc196::CODED_BITS] = std::array::from_fn(|i| soft[i] > 0);
+            stats.raw_bit_errors += hard.iter().zip(&coded).filter(|(a, b)| a != b).count() as u64;
+            stats.raw_bits += Bptc196::CODED_BITS as u64;
+            stats.hard.score(Bptc196::decode(&hard), &payload);
+            stats.soft.score(Bptc196::decode_soft(&soft), &payload);
+        } else {
+            stats.hard.frames += 1;
+            stats.hard.rejected += 1;
+            stats.soft.frames += 1;
+            stats.soft.rejected += 1;
         }
     }
     stats

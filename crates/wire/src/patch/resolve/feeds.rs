@@ -86,7 +86,7 @@ pub(super) fn downstream(net: &Net<'_>, to: &PortRef, port_type: PortType) -> Ve
             net,
             (&to.node, &output),
             port_type,
-            KindSet::EMPTY,
+            &KindSet::EMPTY,
             &mut via,
             &mut reaches,
         );
@@ -198,7 +198,7 @@ fn reaches_from(net: &Net<'_>, node: &str, spec: &PortSpec) -> Vec<Reach> {
         net,
         (node, &spec.name),
         spec.port_type,
-        spec.payload.kinds(),
+        &spec.payload.kinds(),
         &mut Vec::new(),
         &mut reaches,
     );
@@ -209,7 +209,7 @@ fn forward(
     net: &Net<'_>,
     (node, port): (&str, &str),
     port_type: PortType,
-    kinds: KindSet,
+    kinds: &KindSet,
     via: &mut Vec<String>,
     reaches: &mut Vec<Reach>,
 ) {
@@ -245,14 +245,7 @@ fn forward(
         .kinds();
         via.push(target.to_owned());
         for output in pass_ports(net, target, port_type, PortDirection::Out) {
-            forward(
-                net,
-                (target, &output),
-                port_type,
-                narrowed.clone(),
-                via,
-                reaches,
-            );
+            forward(net, (target, &output), port_type, &narrowed, via, reaches);
         }
         via.pop();
     }

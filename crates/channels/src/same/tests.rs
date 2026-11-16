@@ -23,7 +23,7 @@ fn messages(iq: &[Complex<f32>]) -> (Vec<SameMessage>, u32) {
     let decoded = out
         .events
         .iter()
-        .filter_map(|event| event.read::<SameMessage>())
+        .filter_map(sdrmm_wire::DecoderEvent::read::<SameMessage>)
         .collect();
     (decoded, channel.rejected())
 }

@@ -54,7 +54,7 @@ pub fn locate(
     }
     let mut low = 0.0;
     for _ in 0..BISECTION_STEPS {
-        let middle = 0.5 * (low + high);
+        let middle = f64::midpoint(low, high);
         if path(middle) < path_sum {
             low = middle;
         } else {
@@ -63,7 +63,7 @@ pub fn locate(
     }
     Some(geodetic_from_enu(
         rx,
-        along(rx, heading, 0.5 * (low + high), target_alt_m),
+        along(rx, heading, f64::midpoint(low, high), target_alt_m),
     ))
 }
 
@@ -109,7 +109,7 @@ pub fn locate_with_sigma(
 }
 
 fn ellipse(point: Geodetic, east: f64, north: f64, cross: f64) -> Located {
-    let mean = 0.5 * (east + north);
+    let mean = f64::midpoint(east, north);
     let radius = (0.5 * (east - north)).hypot(cross);
     let from_east = 0.5 * (2.0 * cross).atan2(east - north);
     Located {

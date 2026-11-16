@@ -15,13 +15,13 @@ const REEXPORT_DYLIB: u32 = 0x8000_001f;
 const LOAD_UPWARD_DYLIB: u32 = 0x8000_0023;
 const RPATH: u32 = 0x8000_001c;
 
-pub fn is_macho(head: &[u8; 4]) -> bool {
+pub fn is_macho(head: [u8; 4]) -> bool {
     let fat = [FAT, FAT_64].map(u32::to_be_bytes);
     let thin = [IMAGE_32, IMAGE_64];
-    fat.contains(head)
+    fat.contains(&head)
         || thin
             .iter()
-            .any(|magic| *head == magic.to_le_bytes() || *head == magic.to_be_bytes())
+            .any(|magic| head == magic.to_le_bytes() || head == magic.to_be_bytes())
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn dedupes_the_slices_of_a_universal_binary() {
         let bytes = universal(&[image(&LOADS), image(&LOADS)]);
-        assert!(is_macho(&bytes[..4].try_into().unwrap()));
+        assert!(is_macho(bytes[..4].try_into().unwrap()));
         let read = read(&bytes).unwrap();
         assert_eq!(read.dependencies.len(), 2);
         assert_eq!(read.rpaths.len(), 2);
@@ -243,9 +243,9 @@ mod tests {
 
     #[test]
     fn only_mach_o_heads_count() {
-        assert!(is_macho(&IMAGE_64.to_le_bytes()));
-        assert!(!is_macho(b"MZ\x90\0"));
-        assert!(!is_macho(b"\x7fELF"));
+        assert!(is_macho(IMAGE_64.to_le_bytes()));
+        assert!(!is_macho(*b"MZ\x90\0"));
+        assert!(!is_macho(*b"\x7fELF"));
     }
 
     #[cfg(target_os = "macos")]

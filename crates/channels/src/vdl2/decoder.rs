@@ -141,17 +141,14 @@ pub(super) fn decode_network(
     if b.first() != Some(&0x81) {
         return atn::parse_network(b);
     }
-    match clnp.push(b, now) {
-        Some(full) => {
-            let mut v = atn::parse_network(&full)?;
-            cotp_reassemble(&full, &mut v, cotp, now);
-            Some(v)
-        }
-        None => {
-            let mut v = atn::parse_network(b)?;
-            v["reassembling"] = json!(true);
-            Some(v)
-        }
+    if let Some(full) = clnp.push(b, now) {
+        let mut v = atn::parse_network(&full)?;
+        cotp_reassemble(&full, &mut v, cotp, now);
+        Some(v)
+    } else {
+        let mut v = atn::parse_network(b)?;
+        v["reassembling"] = json!(true);
+        Some(v)
     }
 }
 

@@ -158,10 +158,6 @@ fn no_feeds() -> Vec<FeedSpec> {
     Vec::new()
 }
 
-fn passthrough<S>(_: &S) -> Result<ChannelFilter, ChannelError> {
-    Ok(ChannelFilter::Passthrough)
-}
-
 impl<S> Native<S>
 where
     S: Serialize + DeserializeOwned + Default + Send + Sync + 'static,
@@ -172,7 +168,7 @@ where
             base: C::descriptor,
             rx: boxed::<C>,
             band,
-            filter: passthrough::<S>,
+            filter: |_| Ok(ChannelFilter::Passthrough),
             input_rate: None,
             audio_channels: mono::<S>,
             form: no_form,

@@ -42,7 +42,7 @@ fn range_correlation(samples: &[Complex<f64>]) -> f64 {
 fn noise_estimate(stat: CfarStatistic, left: &[f64], right: &[f64], scratch: &mut [f64]) -> f64 {
     let mean = |cells: &[f64]| cells.iter().sum::<f64>() / cells.len() as f64;
     match stat {
-        CfarStatistic::Ca => 0.5 * (mean(left) + mean(right)),
+        CfarStatistic::Ca => f64::midpoint(mean(left), mean(right)),
         CfarStatistic::Go => mean(left).max(mean(right)),
         CfarStatistic::Os { rank } => {
             scratch[..left.len()].copy_from_slice(left);
@@ -314,7 +314,7 @@ fn os_pfa_on_range_oversampled_noise_is_within_2x() {
     let samples = oversampled_noise(1_000_000, 0x5eed_0f0a);
     let correlation = range_correlation(&samples);
     assert!((correlation - 1.5).abs() < 0.02, "rho = {correlation}");
-    let cells: Vec<f64> = samples.iter().map(|s| s.norm_sqr()).collect();
+    let cells: Vec<f64> = samples.iter().map(num_complex::Complex::norm_sqr).collect();
     let (guard, train, design) = (2, 16, 1e-3);
     let stat = CfarStatistic::Os { rank: 0.75 };
     let corrected = alpha(stat, 2 * train, design, 1, correlation).unwrap();

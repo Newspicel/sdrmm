@@ -317,7 +317,7 @@ impl Reducer {
             ServerEvent::StateChanged { scope } => self.state_changed(&scope, now_ms),
             ServerEvent::HuntUpdate { device_set, status } => self.hunt(device_set, *status),
             ServerEvent::ProcessorUpdate { node, reading, .. } => {
-                self.reading(&node, *reading, now_ms)
+                self.reading(&node, *reading, now_ms);
             }
             ServerEvent::ArrayUpdate { status } => {
                 let routed = match &mut self.open {
@@ -558,7 +558,7 @@ impl Reducer {
         ) = (&mut open.view, &entry.target)
         {
             hunt.running = *running;
-            hunt.refusal = entry.mission.blocker.clone();
+            hunt.refusal.clone_from(&entry.mission.blocker);
             if hunt.status.is_none() {
                 hunt.status.clone_from(status);
             }

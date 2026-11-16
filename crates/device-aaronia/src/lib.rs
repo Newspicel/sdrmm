@@ -174,7 +174,7 @@ impl DeviceDriver for AaroniaDriver {
             .find(|found| found.serial == info.key)
             .ok_or_else(|| DeviceError::NotFound(info.id()))?;
         Ok(Box::new(AaroniaDevice::open(
-            api,
+            &api,
             found.kind,
             &found.serial,
         )?))
@@ -194,8 +194,8 @@ pub struct AaroniaDevice {
 }
 
 impl AaroniaDevice {
-    fn open(api: Arc<dyn Rtsa>, kind: Kind, serial: &str) -> Result<Self, DeviceError> {
-        let tx = Self::transmitter_profile(&api, kind, serial)?;
+    fn open(api: &Arc<dyn Rtsa>, kind: Kind, serial: &str) -> Result<Self, DeviceError> {
+        let tx = Self::transmitter_profile(api, kind, serial)?;
         let link = Arc::new(Link::open(api.clone(), kind, serial, Mode::Receiver)?);
         let dev = link.handle_in(Mode::Receiver)?;
         let mut profile = Profile::read_rx(api.as_ref(), dev, kind)?;

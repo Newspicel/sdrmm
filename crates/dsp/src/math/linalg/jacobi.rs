@@ -198,7 +198,7 @@ impl HermitianEigen {
             }
             let norm = column
                 .iter()
-                .map(|value| value.norm_sqr())
+                .map(num_complex::Complex::norm_sqr)
                 .sum::<f32>()
                 .sqrt();
             if norm > 0.0 {
@@ -240,7 +240,7 @@ mod tests {
         matrix
             .as_slice()
             .iter()
-            .map(|value| value.norm_sqr())
+            .map(num_complex::Complex::norm_sqr)
             .sum::<f32>()
             .sqrt()
     }

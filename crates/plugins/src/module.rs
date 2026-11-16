@@ -173,8 +173,7 @@ fn guest_span(memory: &[u8], ptr: u32, len: u32) -> Option<&[u8]> {
 
 pub(crate) fn plugin_name(path: &Path) -> String {
     path.file_stem()
-        .map(|stem| stem.to_string_lossy().into_owned())
-        .unwrap_or_default()
+        .map_or_default(|stem| stem.to_string_lossy().into_owned())
 }
 
 fn check_abi(version: u32) -> Result<(), String> {
@@ -285,8 +284,10 @@ impl Guest {
             .call(&mut self.store, ())
             .map_err(|error| error.to_string())
             .and_then(|packed| self.read_packed(packed))
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-            .unwrap_or_else(|error| error)
+            .map_or_else(
+                |error| error,
+                |bytes| String::from_utf8_lossy(&bytes).into_owned(),
+            )
     }
 }
 

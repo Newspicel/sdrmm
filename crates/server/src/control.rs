@@ -318,11 +318,10 @@ pub(crate) fn targets(patch: &ResolvedPatch, from: &str) -> Vec<(String, Vec<Con
             let verbs = patch
                 .node(&reach.sink)
                 .and_then(|node| node.input(&reach.port))
-                .map(|port| match &port.spec.payload {
+                .map_or_default(|port| match &port.spec.payload {
                     Payload::Control { verbs } => verbs.clone(),
                     _ => Vec::new(),
-                })
-                .unwrap_or_default();
+                });
             (reach.sink.clone(), verbs)
         })
         .collect()

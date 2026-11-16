@@ -206,12 +206,11 @@ impl LaneBand {
         for (lane, &pick) in self.picks[..self.lanes].iter().enumerate() {
             let input = lanes[pick];
             let buffer = &mut self.buffers[lane];
-            match self.ddc.get_mut(lane) {
-                Some(ddc) => ddc.process(input, buffer),
-                None => {
-                    buffer.clear();
-                    buffer.extend_from_slice(input);
-                }
+            if let Some(ddc) = self.ddc.get_mut(lane) {
+                ddc.process(input, buffer);
+            } else {
+                buffer.clear();
+                buffer.extend_from_slice(input);
             }
             if correct {
                 let factor = self.factors[lane];

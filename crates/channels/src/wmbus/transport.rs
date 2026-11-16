@@ -48,18 +48,18 @@ impl Address {
         })
     }
 
-    fn wire(&self) -> [u8; 8] {
+    fn wire(self) -> [u8; 8] {
         let [m0, m1] = self.manufacturer;
         let [a, b, c, d] = self.id;
         [m0, m1, a, b, c, d, self.version, self.device_type]
     }
 
-    pub(super) fn id(&self) -> String {
+    pub(super) fn id(self) -> String {
         let [a, b, c, d] = self.id;
         format!("{d:02X}{c:02X}{b:02X}{a:02X}")
     }
 
-    pub(super) fn manufacturer(&self) -> String {
+    pub(super) fn manufacturer(self) -> String {
         let code = u16::from_le_bytes(self.manufacturer);
         [10, 5, 0]
             .iter()
@@ -67,7 +67,7 @@ impl Address {
             .collect()
     }
 
-    pub(super) fn station(&self) -> String {
+    pub(super) fn station(self) -> String {
         format!("{} {}", self.manufacturer(), self.id())
     }
 }
@@ -86,7 +86,7 @@ impl Keys {
         )
     }
 
-    fn find(&self, address: &Address) -> Option<&Aes> {
+    fn find(&self, address: Address) -> Option<&Aes> {
         let id = address.id();
         self.0
             .iter()
@@ -149,7 +149,7 @@ fn ell_long(body: &[u8], reading: &mut Reading, keys: &Keys) -> Option<Vec<u8>> 
     match u32::from_le_bytes(session) >> 29 {
         ELL_PLAIN => {}
         ELL_AES_CTR => {
-            let Some(aes) = keys.find(&reading.link) else {
+            let Some(aes) = keys.find(reading.link) else {
                 reading.security = WmbusSecurity::NoKey;
                 return None;
             };
@@ -206,7 +206,7 @@ fn decrypt_cbc(
     blocks: usize,
     data: &mut [u8],
 ) -> Option<()> {
-    let Some(aes) = keys.find(&reading.meter) else {
+    let Some(aes) = keys.find(reading.meter) else {
         reading.security = WmbusSecurity::NoKey;
         return None;
     };

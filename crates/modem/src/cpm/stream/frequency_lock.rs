@@ -116,7 +116,7 @@ impl FrequencyLock {
     }
 
     fn track_levels(&mut self, turn: f64) -> f64 {
-        let centre = 0.5 * (self.upper + self.lower);
+        let centre = f64::midpoint(self.upper, self.lower);
         let (near, far) = if turn >= centre {
             (&mut self.upper, &mut self.lower)
         } else {
@@ -124,6 +124,6 @@ impl FrequencyLock {
         };
         *near += self.level_alpha * (turn - *near);
         *far += self.level_alpha * LEVEL_LEAK * (turn - *far);
-        0.5 * (self.upper + self.lower)
+        f64::midpoint(self.upper, self.lower)
     }
 }

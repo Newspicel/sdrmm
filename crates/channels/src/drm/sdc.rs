@@ -213,14 +213,14 @@ impl Sdc {
             .extend((0..data_bytes + 2).map(|index| (bytes[index] << 4) | (bytes[index + 1] >> 4)));
         check[0] = bytes[0] >> 4;
         let stored = u32::from(check[data_bytes + 1]) << 8 | u32::from(check[data_bytes + 2]);
-        if crc(0x1021, 16, byte_bits(&check[..data_bytes + 1])) != stored {
+        if crc(0x1021, 16, byte_bits(&check[..=data_bytes])) != stored {
             return None;
         }
         let mut sdc = Self {
             afs: check[0],
             ..Self::default()
         };
-        let mut reader = BitReader::new(&check[1..data_bytes + 1]);
+        let mut reader = BitReader::new(&check[1..=data_bytes]);
         while reader.remaining() >= 16 {
             let length = reader.read(7)? as usize;
             let version = reader.read(1)?;

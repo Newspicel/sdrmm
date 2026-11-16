@@ -82,7 +82,7 @@ mod tests {
         (0..len)
             .flat_map(|n| {
                 let value = (TAU * freq_norm * n as f64).cos();
-                let code = (MID_SCALE as f64 + value * 2000.0).round() as u16;
+                let code = (f64::from(MID_SCALE) + value * 2000.0).round() as u16;
                 (code & CODE_MASK).to_le_bytes()
             })
             .collect()
@@ -97,8 +97,8 @@ mod tests {
 
     #[test]
     fn the_four_bits_above_a_code_are_not_part_of_it() {
-        assert_eq!(code_to_f32(0xf000 | 2048), code_to_f32(2048));
-        assert_eq!(code_to_f32(0xa000 | 3000), code_to_f32(3000));
+        assert_eq!(code_to_f32(0xf000 | 0x800), code_to_f32(0x800));
+        assert_eq!(code_to_f32(0xa000 | 0xbb8), code_to_f32(0xbb8));
     }
 
     #[test]
@@ -168,8 +168,7 @@ mod tests {
             .iter()
             .enumerate()
             .max_by(|a, b| a.1.norm_sqr().total_cmp(&b.1.norm_sqr()))
-            .map(|(bin, _)| bin)
-            .unwrap_or_default();
+            .map_or_default(|(bin, _)| bin);
         let offset_bins = 2 * above_quarter * spectrum.len() / input_len;
         assert_eq!(peak, spectrum.len() - offset_bins);
     }

@@ -156,7 +156,7 @@ pub(super) fn media_kind(kind: ElementaryKind) -> Option<MediaKind> {
         ElementaryKind::Mpeg2Video => Some(MediaKind::Mpeg2),
         ElementaryKind::H264Video => Some(MediaKind::H264),
         ElementaryKind::H265Video => Some(MediaKind::H265),
-        _ => None,
+        ElementaryKind::Other(_) => None,
     }
 }
 
@@ -401,7 +401,7 @@ impl DatvChannel {
         let program = self.demux.program();
         publish_status(
             out,
-            BroadcastStatus {
+            &BroadcastStatus {
                 system: self.system(),
                 audio_frames_ok: self.media.audio_frames,
                 audio_frames_bad: self.media.audio_errors,
@@ -769,6 +769,11 @@ mod tests {
     #[test]
     fn s2x_high_order_iq_reaches_programmes_at_a_bounded_cost() {
         use crate::datv::dvbs2::{frame::Modulation, ldpc::Rate};
+        /// Four times the signal's own duration, not once: these are the heaviest modcods
+        /// the standard defines, and a hosted runner's speed moves by nearly two to one
+        /// between runs. A tighter bound would report which machine picked up the job; this
+        /// one still catches a decoder that has halved in speed.
+        const HEAVIEST_MODCOD_BUDGET_SECONDS: f64 = 8.0;
         for (modulation, rate) in [
             (Modulation::Apsk8, Rate::R100_180),
             (Modulation::Apsk64, Rate::R128_180),
@@ -788,11 +793,6 @@ mod tests {
                 "{modulation:?}: {status:?}"
             );
             assert!(status.frames_ok > 0, "{modulation:?}: {status:?}");
-            /// Four times the signal's own duration, not once: these are the heaviest modcods
-            /// the standard defines, and a hosted runner's speed moves by nearly two to one
-            /// between runs. A tighter bound would report which machine picked up the job; this
-            /// one still catches a decoder that has halved in speed.
-            const HEAVIEST_MODCOD_BUDGET_SECONDS: f64 = 8.0;
             assert!(
                 elapsed < realtime_budget(HEAVIEST_MODCOD_BUDGET_SECONDS),
                 "{modulation:?}: {elapsed:.3}s for two seconds of IQ"
@@ -944,7 +944,11 @@ mod tests {
     ) -> (u32, u32) {
         let clean = synth::datv::dvbs2_mode(2, modulation, rate, false, pilots)
             .expect("a synthetic signal");
-        let power = clean.iter().map(|s| s.norm_sqr()).sum::<f32>() / clean.len() as f32;
+        let power = clean
+            .iter()
+            .map(num_complex::Complex::norm_sqr)
+            .sum::<f32>()
+            / clean.len() as f32;
         let deviation = (power * 4.0 / 10f32.powf(esn0_db / 10.0) / 2.0).sqrt();
         let mut state = 0x2468_ace1u32;
         let mut uniform = move || {
@@ -1019,7 +1023,11 @@ mod tests {
     #[test]
     fn first_generation_decodes_in_noise_with_a_carrier_offset() {
         let clean = synth::datv::dvbs(2);
-        let power = clean.iter().map(|s| s.norm_sqr()).sum::<f32>() / clean.len() as f32;
+        let power = clean
+            .iter()
+            .map(num_complex::Complex::norm_sqr)
+            .sum::<f32>()
+            / clean.len() as f32;
         let deviation = (power * 4.0 / 10f32.powf(0.5) / 2.0).sqrt();
         let mut state = 0x1357_9bdfu32;
         let mut uniform = move || {

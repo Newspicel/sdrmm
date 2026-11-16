@@ -101,14 +101,14 @@ fn range_m(point: Geodetic) -> f64 {
     )
 }
 
-fn aoa(azimuth_deg: f32) -> Option<RadarAoa> {
-    Some(RadarAoa {
+fn aoa(azimuth_deg: f32) -> RadarAoa {
+    RadarAoa {
         azimuth_deg,
         bearing_deg: None,
         sigma_deg: 2.0,
         quality: 0.9,
         mirror_deg: None,
-    })
+    }
 }
 
 fn track(id: u32, range_km: f32, doppler_hz: f32, azimuth_deg: f32) -> RadarTrack {
@@ -120,7 +120,7 @@ fn track(id: u32, range_km: f32, doppler_hz: f32, azimuth_deg: f32) -> RadarTrac
         range_sigma_m: 150.0,
         snr_db: 18.0,
         looks: 5,
-        aoa: aoa(azimuth_deg),
+        aoa: Some(aoa(azimuth_deg)),
         ..RadarTrack::default()
     }
 }
@@ -219,7 +219,7 @@ fn fixed_gps(id: &str, at: Geodetic) -> PatchNode {
     )
 }
 
-fn graph(wiring: Wiring) -> PatchGraph {
+fn graph(wiring: &Wiring) -> PatchGraph {
     let mut graph = PatchGraph {
         nodes: vec![
             node(
@@ -434,7 +434,10 @@ async fn radar_records(
             Ok(Err(RecvError::Lagged(_))) => {}
             Ok(Err(RecvError::Closed)) => panic!("decoded feed closed"),
             Err(_) if quiet => return found,
-            Err(_) => panic!("only {} of {wanted} radar records arrived", found.len()),
+            Err(elapsed) => panic!(
+                "only {} of {wanted} radar records arrived: {elapsed}",
+                found.len()
+            ),
         }
     }
 }
@@ -448,7 +451,7 @@ fn radar_event(record: &DecodedRecord) -> RadarTrackEvent {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_update_is_sent_every_cpi_even_when_empty() {
-    let bench = Bench::applied(graph(Wiring::default())).await;
+    let bench = Bench::applied(graph(&Wiring::default())).await;
     let mut events = bench.state.engine.subscribe_events();
 
     for seq in [9_001, 9_002] {
@@ -461,7 +464,7 @@ async fn an_update_is_sent_every_cpi_even_when_empty() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn lagged_updates_are_counted() {
-    let bench = Bench::applied(graph(Wiring::default())).await;
+    let bench = Bench::applied(graph(&Wiring::default())).await;
     let mut events = bench.state.engine.subscribe_events();
 
     assert!(array::handle(&bench.state, Err(RecvError::Lagged(5))).is_continue());
@@ -476,13 +479,13 @@ async fn lagged_updates_are_counted() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn true_bearing_adds_the_array_heading() {
-    let bench = Bench::applied(graph(Wiring::default())).await;
+    let bench = Bench::applied(graph(&Wiring::default())).await;
     bench.sited().await;
     let mut update = cpi(9_201, vec![track(3, 24.0, 20.0, 350.0)], Vec::new());
     update.detections.push(RadarDetection {
         range_km: 24.0,
         doppler_hz: 20.0,
-        aoa: aoa(350.0),
+        aoa: Some(aoa(350.0)),
         ..RadarDetection::default()
     });
 
@@ -516,7 +519,7 @@ async fn true_bearing_adds_the_array_heading() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn no_tx_wire_reports_no_transmitter_and_no_fixes() {
-    let bench = Bench::applied(graph(Wiring {
+    let bench = Bench::applied(graph(&Wiring {
         tx: false,
         ..Wiring::default()
     }))
@@ -537,7 +540,7 @@ async fn no_tx_wire_reports_no_transmitter_and_no_fixes() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_heading_less_array_keeps_relative_azimuths() {
-    let bench = Bench::applied(graph(Wiring {
+    let bench = Bench::applied(graph(&Wiring {
         orientation: ArrayOrientation::Heading {
             mount_offset_deg: 0.0,
         },
@@ -559,7 +562,7 @@ async fn a_heading_less_array_keeps_relative_azimuths() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn adsb_truth_pairs_and_lifts_the_fix_to_its_altitude() {
-    let bench = Bench::applied(graph(Wiring::default())).await;
+    let bench = Bench::applied(graph(&Wiring::default())).await;
     bench.sited().await;
     let now = Timestamp::now();
     for message in [
@@ -626,7 +629,7 @@ async fn adsb_truth_pairs_and_lifts_the_fix_to_its_altitude() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn track_events_fire_on_confirm_repeat_and_loss() {
-    let bench = Bench::applied(graph(Wiring::without_engine_reports())).await;
+    let bench = Bench::applied(graph(&Wiring::without_engine_reports())).await;
     bench.sited().await;
     let mut records = bench.state.engine.subscribe_decoded();
 
@@ -679,7 +682,7 @@ async fn track_events_fire_on_confirm_repeat_and_loss() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_track_event_reaches_a_sink_once_with_its_fix() {
-    let bench = Bench::applied(graph(Wiring::default())).await;
+    let bench = Bench::applied(graph(&Wiring::default())).await;
     bench.sited().await;
     let mut routed = bench.state.decoded.subscribe();
     let deadline = tokio::time::Instant::now() + WAIT;
@@ -735,7 +738,7 @@ async fn a_track_event_reaches_a_sink_once_with_its_fix() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unwired_radar_reports_no_array() {
-    let (bench, mut events) = Bench::watched(graph(Wiring {
+    let (bench, mut events) = Bench::watched(graph(&Wiring {
         array: false,
         ..Wiring::default()
     }));
@@ -771,7 +774,7 @@ async fn an_unwired_radar_reports_no_array() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_plan_refusal_is_a_problem() {
-    let (bench, mut events) = Bench::watched(graph(Wiring::without_engine_reports()));
+    let (bench, mut events) = Bench::watched(graph(&Wiring::without_engine_reports()));
     let report = bench.apply().await;
 
     let refused = report
@@ -794,7 +797,7 @@ async fn a_plan_refusal_is_a_problem() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn clear_tracks_resets_the_tracker() {
-    let bench = Bench::applied(graph(Wiring::default())).await;
+    let bench = Bench::applied(graph(&Wiring::default())).await;
     bench.sited().await;
     let tracked = bench.report(cpi(9_801, vec![track(12, 24.0, 20.0, 10.0)], Vec::new()));
     assert_eq!(tracked.tracks.len(), 1);
@@ -814,7 +817,7 @@ async fn clear_tracks_resets_the_tracker() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_radar_left_behind_is_forgotten() {
-    let bench = Bench::applied(graph(Wiring::default())).await;
+    let bench = Bench::applied(graph(&Wiring::default())).await;
     assert!(bench.state.reports.knows(RADAR));
     let other = bench
         .state
@@ -846,7 +849,7 @@ async fn a_radar_left_behind_is_forgotten() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_action_needs_a_processor_that_takes_it() {
-    let bench = Bench::applied(graph(Wiring::default())).await;
+    let bench = Bench::applied(graph(&Wiring::default())).await;
     let (status, body) = bench.call("GET", "/api/processors/ghost").await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     let (status, body) = bench.act("ghost", CLEAR).await;

@@ -15,9 +15,7 @@ const SETTLE: Duration = Duration::from_millis(500);
 const FFT_LEN: usize = 8192;
 
 fn seconds() -> u64 {
-    std::env::var("SDRMM_AIRSPYHF_TEST_SECONDS")
-        .map(|value| value.parse().expect("duration"))
-        .unwrap_or(5)
+    std::env::var("SDRMM_AIRSPYHF_TEST_SECONDS").map_or(5, |value| value.parse().expect("duration"))
 }
 
 fn only_airspyhf() -> DeviceDescriptor {

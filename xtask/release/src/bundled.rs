@@ -33,6 +33,10 @@ fn media_runtime(media: &Path, triple: &str) -> Result<Vec<PathBuf>> {
     Ok(found)
 }
 
+#[expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "runtime names match as the toolchain writes them"
+)]
 fn is_runtime_name(name: &str, triple: &str) -> bool {
     let major = |rest: &str| !rest.is_empty() && rest.bytes().all(|byte| byte.is_ascii_digit());
     if triple.contains("windows") {

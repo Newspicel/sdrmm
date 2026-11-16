@@ -41,7 +41,7 @@ impl Lms {
         let energy: f32 = self
             .window
             .iter()
-            .map(|v| v.norm_sqr())
+            .map(num_complex::Complex::norm_sqr)
             .sum::<f32>()
             .max(1e-9);
         let gain = mu / energy;

@@ -168,7 +168,7 @@ impl ChannelRx for BleChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
-        let mut events = Events {
+        let mut events = EventSink {
             repeats: &mut self.repeats,
             events: &mut out.events,
             unreadable: &mut self.unreadable,
@@ -181,13 +181,13 @@ impl ChannelRx for BleChannel {
     }
 }
 
-struct Events<'a> {
+struct EventSink<'a> {
     repeats: &'a mut Repeats,
     events: &'a mut Vec<DecoderEvent>,
     unreadable: &'a mut u32,
 }
 
-impl Sink for Events<'_> {
+impl Sink for EventSink<'_> {
     fn packet(&mut self, packet: Packet<'_>) {
         let channel = packet.rf.map(phy::channel_index);
         let Some(pdu) = pdu::parse(packet.pdu, channel) else {
@@ -246,8 +246,8 @@ pub(crate) fn advert(
         pdu: pdu.kind,
         phy: wire_phy(packet.phy),
         channel: packet.rf.map(phy::channel_index),
-        address: pdu.sender.map(|sender| sender.wire()),
-        target: pdu.target.map(|target| target.wire()),
+        address: pdu.sender.map(pdu::Party::wire),
+        target: pdu.target.map(pdu::Party::wire),
         level_dbfs: packet.level_dbfs,
         repeats,
         name: fields.name,

@@ -84,7 +84,9 @@ mod tests {
 
     #[test]
     fn a_late_step_does_not_sleep_and_keeps_the_schedule() {
-        let start = Instant::now() - Duration::from_millis(200);
+        let start = Instant::now()
+            .checked_sub(Duration::from_millis(200))
+            .unwrap();
         let mut clock = SampleClock::starting_at(start);
         let before = Instant::now();
         clock.step(100, RATE);

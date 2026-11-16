@@ -204,12 +204,7 @@ impl LoadedApi {
         body(&raw mut *handle)
     }
 
-    fn device_call(
-        &self,
-        call: ffi::DeviceFn,
-        dev: DevHandle,
-        action: &str,
-    ) -> Result<(), DeviceError> {
+    fn device_call(call: ffi::DeviceFn, dev: DevHandle, action: &str) -> Result<(), DeviceError> {
         let mut raw = dev.raw();
         check(unsafe { call(&raw mut raw) }, action)
     }
@@ -323,19 +318,19 @@ impl Rtsa for LoadedApi {
     }
 
     fn connect(&self, dev: DevHandle) -> Result<(), DeviceError> {
-        self.device_call(self.entries.connect, dev, "connecting to the SPECTRAN")
+        Self::device_call(self.entries.connect, dev, "connecting to the SPECTRAN")
     }
 
     fn disconnect(&self, dev: DevHandle) -> Result<(), DeviceError> {
-        self.device_call(self.entries.disconnect, dev, "disconnecting the SPECTRAN")
+        Self::device_call(self.entries.disconnect, dev, "disconnecting the SPECTRAN")
     }
 
     fn start(&self, dev: DevHandle) -> Result<(), DeviceError> {
-        self.device_call(self.entries.start, dev, "starting the SPECTRAN")
+        Self::device_call(self.entries.start, dev, "starting the SPECTRAN")
     }
 
     fn stop(&self, dev: DevHandle) -> Result<(), DeviceError> {
-        self.device_call(self.entries.stop, dev, "stopping the SPECTRAN")
+        Self::device_call(self.entries.stop, dev, "stopping the SPECTRAN")
     }
 
     fn running(&self, dev: DevHandle) -> bool {

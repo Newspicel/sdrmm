@@ -51,15 +51,15 @@ fn params(settings: &ChannelSettings) -> Result<IsmSurveyParams, ChannelError> {
     Ok(params)
 }
 
-pub(crate) fn input_rate(params: &IsmSurveyParams) -> f64 {
+pub(crate) fn input_rate(params: IsmSurveyParams) -> f64 {
     params.span.sample_rate_hz()
 }
 
-pub(crate) fn occupied_band(params: &IsmSurveyParams) -> (f64, f64) {
+pub(crate) fn occupied_band(params: IsmSurveyParams) -> (f64, f64) {
     airtime::occupied_band(params.span)
 }
 
-pub(crate) fn channel_filter(_: &IsmSurveyParams) -> ChannelFilter {
+pub(crate) fn channel_filter() -> ChannelFilter {
     airtime::channel_filter()
 }
 
@@ -71,7 +71,7 @@ struct Floors {
 }
 
 impl Floors {
-    fn new(params: &IsmSurveyParams) -> Self {
+    fn new(params: IsmSurveyParams) -> Self {
         let len = fft_len(params.span);
         let half = usable_half_hz(params.span);
         Self {
@@ -144,7 +144,7 @@ pub struct IsmSurveyChannel {
 impl IsmSurveyChannel {
     fn rebuild(&mut self) {
         self.frames.reset();
-        self.floors = Floors::new(&self.params);
+        self.floors = Floors::new(self.params);
         self.bursts.reset();
         self.tally = Tally::new(self.frequency_hz, self.params.span);
         self.frame = 0;
@@ -169,11 +169,11 @@ impl NativeChannel for IsmSurveyChannel {
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
-        check_rate(ctx, &DESCRIPTOR, input_rate(&params))?;
+        check_rate(ctx, &DESCRIPTOR, input_rate(params))?;
         let len = fft_len(params.span);
         Ok(Self {
             frames: PowerFrames::new(len),
-            floors: Floors::new(&params),
+            floors: Floors::new(params),
             bursts: Bursts::new(len, TRACKS, (LONGEST_S / frame_s()) as u64),
             tally: Tally::new(settings.frequency_hz, params.span),
             frequency_hz: settings.frequency_hz,
@@ -263,9 +263,9 @@ impl ChannelRx for IsmSurveyChannel {
 }
 
 pub(crate) fn ism_survey_decoder() -> Native<IsmSurveyParams> {
-    Native::new::<IsmSurveyChannel>(occupied_band)
-        .filter(|p| Ok(channel_filter(p)))
-        .input_rate(input_rate)
+    Native::new::<IsmSurveyChannel>(|p| occupied_band(*p))
+        .filter(|_| Ok(channel_filter()))
+        .input_rate(|p| input_rate(*p))
         .home(2_442_000_000.0)
         .form(ism_survey_form)
         .kinds(ism_survey_kinds)

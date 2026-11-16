@@ -201,8 +201,8 @@ impl Engine {
                 .iter()
                 .filter(|(_, array)| *array == node)
                 .map(|(stream, _)| {
-                    let before = lane_setup(previous, *stream, &scope);
-                    let after = lane_setup(&state.settings, *stream, &scope);
+                    let before = lane_setup(previous, *stream, scope);
+                    let after = lane_setup(&state.settings, *stream, scope);
                     (
                         *stream,
                         before.tuned != after.tuned,

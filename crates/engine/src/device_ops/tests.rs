@@ -314,12 +314,12 @@ fn per_stream_agc_is_a_front_end_change() {
     };
     assert_ne!(front_end(&with(true)), front_end(&with(false)));
     assert_ne!(
-        lane_setup(&with(true), 1, &LANE_AGC),
-        lane_setup(&with(false), 1, &LANE_AGC)
+        lane_setup(&with(true), 1, LANE_AGC),
+        lane_setup(&with(false), 1, LANE_AGC)
     );
     assert_eq!(
-        lane_setup(&with(true), 0, &LANE_AGC),
-        lane_setup(&with(false), 0, &LANE_AGC),
+        lane_setup(&with(true), 0, LANE_AGC),
+        lane_setup(&with(false), 0, LANE_AGC),
         "the other lane keeps its front end"
     );
     let retuned = DeviceSettings {

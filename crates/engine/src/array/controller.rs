@@ -874,6 +874,10 @@ impl Controller {
         }
     }
 
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "the event is popped and destructured"
+    )]
     fn event(&mut self, event: AggregatorEvent, now: Instant) {
         let current = self.run.map(|run| run.id);
         match event {
@@ -1153,24 +1157,21 @@ impl Controller {
             self.board.set_cal(run.cal_before);
         }
         self.attempts += 1;
-        match RETRY_DELAYS.get(self.attempts as usize - 1) {
-            Some(delay) => {
-                self.cooling = Some(now + *delay);
-                self.want = self.want.max(run.want.max(Want::Check));
-                if run.source.kind().is_some() && !self.board.phase_ready() {
-                    self.board.set_cal(CalPhase::Waiting);
-                }
+        if let Some(delay) = RETRY_DELAYS.get(self.attempts as usize - 1) {
+            self.cooling = Some(now + *delay);
+            self.want = self.want.max(run.want.max(Want::Check));
+            if run.source.kind().is_some() && !self.board.phase_ready() {
+                self.board.set_cal(CalPhase::Waiting);
             }
-            None => {
-                self.attempts = 0;
-                if run.source.kind().is_some() && !self.board.phase_ready() {
-                    self.board.set_cal(CalPhase::Failed);
-                }
-                if !self.locked() {
-                    self.board.set_sync(SyncState::Searching);
-                }
-                self.schedule_check(now);
+        } else {
+            self.attempts = 0;
+            if run.source.kind().is_some() && !self.board.phase_ready() {
+                self.board.set_cal(CalPhase::Failed);
             }
+            if !self.locked() {
+                self.board.set_sync(SyncState::Searching);
+            }
+            self.schedule_check(now);
         }
     }
 
@@ -1343,7 +1344,7 @@ impl Controller {
             Ok(()) if db > current => self.gain.last_up = Some(now),
             Ok(()) => {}
             Err(error) => {
-                tracing::warn!(node = %self.node, %error, db, "array auto gain step failed")
+                tracing::warn!(node = %self.node, %error, db, "array auto gain step failed");
             }
         }
     }

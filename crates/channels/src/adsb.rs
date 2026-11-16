@@ -901,11 +901,11 @@ mod tests {
     const LEVEL: f32 = 0.5;
     const GAP_US: f64 = 30.0;
 
-    fn adsb_params(p: AdsbParams) -> ChannelSettings {
-        settings(ChannelParams::of(&p).expect("settings"))
+    fn adsb_params(p: &AdsbParams) -> ChannelSettings {
+        settings(ChannelParams::of(p).expect("settings"))
     }
 
-    fn channel(p: AdsbParams) -> AdsbChannel {
+    fn channel(p: &AdsbParams) -> AdsbChannel {
         AdsbChannel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
@@ -938,7 +938,7 @@ mod tests {
         messages
     }
 
-    fn decode(p: AdsbParams, frames: &[Vec<u8>]) -> Vec<AdsbMessage> {
+    fn decode(p: &AdsbParams, frames: &[Vec<u8>]) -> Vec<AdsbMessage> {
         let iq = transmission(frames, GAP_US, LEVEL, INPUT_RATE_HZ);
         feed(&mut channel(p), &iq, &[4_096])
     }
@@ -978,7 +978,7 @@ mod tests {
     #[test]
     fn beast_metadata_uses_sample_time_and_measured_amplitude() {
         let messages = decode(
-            AdsbParams::default(),
+            &AdsbParams::default(),
             &[squitter(0x3C_6444, me_identification("DLH123"))],
         );
         assert_eq!(messages.len(), 1);
@@ -1012,7 +1012,7 @@ mod tests {
                     &transmission_at_phase(&frames, GAP_US, LEVEL, rate, phase),
                     rate,
                 );
-                let mut chan = channel(AdsbParams {
+                let mut chan = channel(&AdsbParams {
                     crc_fix: rate < 3_200_000.0,
                     ..AdsbParams::default()
                 });
@@ -1054,7 +1054,7 @@ mod tests {
                     add_noise(&mut iq, 0xADB0 + k + 97 * seed, 0.01);
                     let iq = resampled(&iq, rate);
                     let messages = feed(
-                        &mut channel(AdsbParams {
+                        &mut channel(&AdsbParams {
                             crc_fix: rate < 3_200_000.0,
                             ..AdsbParams::default()
                         }),
@@ -1129,7 +1129,7 @@ mod tests {
                         }
                     }
                     let messages = feed(
-                        &mut channel(AdsbParams {
+                        &mut channel(&AdsbParams {
                             crc_fix: false,
                             ..AdsbParams::default()
                         }),
@@ -1155,7 +1155,7 @@ mod tests {
             squitter(icao, me_velocity(450.0, 275.0, -1_024)),
         ];
         let iq = transmission(&frames, 500.0, 0.8, INPUT_RATE_HZ);
-        let messages = feed(&mut channel(AdsbParams::default()), &iq, &[4_096]);
+        let messages = feed(&mut channel(&AdsbParams::default()), &iq, &[4_096]);
         let raw: Vec<&str> = messages.iter().map(|m| m.raw.as_str()).collect();
         assert_eq!(
             raw,
@@ -1186,7 +1186,7 @@ mod tests {
             assert!(
                 AdsbChannel::new(
                     ChannelCtx { input_rate: rate },
-                    adsb_params(AdsbParams::default())
+                    adsb_params(&AdsbParams::default())
                 )
                 .is_err(),
                 "{rate} Hz must be refused"
@@ -1197,7 +1197,7 @@ mod tests {
     #[test]
     fn identification_round_trips_through_the_air() {
         let frame = squitter(0x3C_6444, me_identification("DLH123"));
-        let msg = only(decode(AdsbParams::default(), std::slice::from_ref(&frame)));
+        let msg = only(decode(&AdsbParams::default(), std::slice::from_ref(&frame)));
         assert_eq!(msg.df, 17);
         assert_eq!(msg.icao, "3C6444");
         assert_eq!(msg.type_code, Some(4));
@@ -1210,7 +1210,7 @@ mod tests {
     #[test]
     fn published_identification_frame_decodes() {
         let msg = only(decode(
-            AdsbParams::default(),
+            &AdsbParams::default(),
             &[published("8D4840D6202CC371C32CE0")],
         ));
         assert_eq!(msg.icao, "4840D6");
@@ -1222,7 +1222,7 @@ mod tests {
         let even = published("8D40621D58C382D690C8AC");
         let odd = published("8D40621D58C386435CC412");
 
-        let msgs = decode(AdsbParams::default(), &[odd.clone(), even.clone()]);
+        let msgs = decode(&AdsbParams::default(), &[odd.clone(), even.clone()]);
         assert_eq!(msgs.len(), 2);
         let [first, last] = &msgs[..] else {
             unreachable!()
@@ -1235,7 +1235,7 @@ mod tests {
         assert!((lat - 52.257_202).abs() < 1e-4, "lat {lat}");
         assert!((lon - 3.919_37).abs() < 1e-4, "lon {lon}");
 
-        let msgs = decode(AdsbParams::default(), &[even, odd]);
+        let msgs = decode(&AdsbParams::default(), &[even, odd]);
         let solved = msgs.last().unwrap();
         assert!((solved.lat.unwrap() - 52.265_78).abs() < 1e-4, "{solved:?}");
         assert!((solved.lon.unwrap() - 3.938_91).abs() < 1e-3, "{solved:?}");
@@ -1245,7 +1245,7 @@ mod tests {
     fn airborne_position_pair_solves_to_the_encoded_point() {
         let icao = 0x3C_6444;
         let msgs = decode(
-            AdsbParams::default(),
+            &AdsbParams::default(),
             &[
                 squitter(icao, me_airborne_position(36_000, LAT, LON, false)),
                 squitter(icao, me_airborne_position(36_000, LAT, LON, true)),
@@ -1264,7 +1264,7 @@ mod tests {
     fn a_single_frame_is_placed_against_a_reference_position() {
         for odd in [false, true] {
             let msg = only(decode(
-                AdsbParams {
+                &AdsbParams {
                     ref_lat: Some(LAT - 0.4),
                     ref_lon: Some(LON + 0.6),
                     ..AdsbParams::default()
@@ -1283,7 +1283,7 @@ mod tests {
     #[test]
     fn a_live_position_wire_replaces_and_restores_the_configured_reference() {
         let configured = (LAT + 0.1, LON - 0.1);
-        let mut channel = channel(AdsbParams {
+        let mut channel = channel(&AdsbParams {
             ref_lat: Some(configured.0),
             ref_lon: Some(configured.1),
             ..AdsbParams::default()
@@ -1321,7 +1321,7 @@ mod tests {
         let icao = 0xE8_0000;
         let (lat, lon) = (-33.868_2, -70.652_7);
         let msgs = decode(
-            AdsbParams::default(),
+            &AdsbParams::default(),
             &[
                 squitter(icao, me_airborne_position(12_000, lat, lon, false)),
                 squitter(icao, me_airborne_position(12_000, lat, lon, true)),
@@ -1335,13 +1335,13 @@ mod tests {
     #[test]
     fn surface_position_needs_a_reference_and_reports_on_ground() {
         let frame = squitter(0x3C_6444, me_surface_position(LAT, LON, false));
-        let without = only(decode(AdsbParams::default(), std::slice::from_ref(&frame)));
+        let without = only(decode(&AdsbParams::default(), std::slice::from_ref(&frame)));
         assert_eq!(without.on_ground, Some(true));
         assert_eq!(without.altitude_ft, None);
         assert_eq!(without.lat, None);
 
         let with = only(decode(
-            AdsbParams {
+            &AdsbParams {
                 ref_lat: Some(LAT + 0.1),
                 ref_lon: Some(LON - 0.1),
                 ..AdsbParams::default()
@@ -1361,7 +1361,7 @@ mod tests {
             (300.0, 359.5, -64),
         ] {
             let msg = only(decode(
-                AdsbParams::default(),
+                &AdsbParams::default(),
                 &[squitter(0x3C_6444, me_velocity(speed, track, climb))],
             ));
             assert_eq!(msg.type_code, Some(19));
@@ -1380,7 +1380,7 @@ mod tests {
             -1_000, 0, 725, 36_000, 50_175, 50_200, 51_000, 62_000, 80_000,
         ] {
             let msg = only(decode(
-                AdsbParams::default(),
+                &AdsbParams::default(),
                 &[squitter(
                     0x3C_6444,
                     me_airborne_position(altitude, LAT, LON, false),
@@ -1394,7 +1394,7 @@ mod tests {
     fn gnss_altitude_frames_use_the_same_ac12_encoding_as_barometric() {
         for alt_ft in [3_000, 38_000, 50_175] {
             let msg = only(decode(
-                AdsbParams::default(),
+                &AdsbParams::default(),
                 &[squitter(
                     0x3C_6444,
                     me_airborne_position_gnss(alt_ft, LAT, LON, false),
@@ -1409,7 +1409,7 @@ mod tests {
     fn absent_altitude_is_none_on_both_altitude_paths() {
         for tc in [11u64, 21] {
             let msg = only(decode(
-                AdsbParams::default(),
+                &AdsbParams::default(),
                 &[squitter(0x3C_6444, position_me_raw(tc, 0, LAT, LON, false))],
             ));
             assert_eq!(msg.altitude_ft, None, "tc {tc}");
@@ -1426,13 +1426,13 @@ mod tests {
         let mut damaged = clean.clone();
         flip(&mut damaged, 63);
 
-        let msg = only(decode(AdsbParams::default(), &[damaged.clone()]));
+        let msg = only(decode(&AdsbParams::default(), &[damaged.clone()]));
         assert_eq!(msg.callsign.as_deref(), Some("DLH123"));
         assert_eq!(msg.raw, hex_upper(&clean));
 
         assert!(
             decode(
-                AdsbParams {
+                &AdsbParams {
                     crc_fix: false,
                     ..AdsbParams::default()
                 },
@@ -1448,14 +1448,14 @@ mod tests {
         let mut damaged = squitter(0x3C_6444, me_identification("DLH123"));
         flip(&mut damaged, 40);
         flip(&mut damaged, 77);
-        assert!(decode(AdsbParams::default(), &[damaged]).is_empty());
+        assert!(decode(&AdsbParams::default(), &[damaged]).is_empty());
     }
 
     #[test]
     fn noise_alone_produces_no_frames() {
         let mut iq = vec![Complex::new(0.0f32, 0.0); 4_000_000];
         add_noise(&mut iq, 0x5EED_1234, 1.0);
-        assert!(feed(&mut channel(AdsbParams::default()), &iq, &[65_536]).is_empty());
+        assert!(feed(&mut channel(&AdsbParams::default()), &iq, &[65_536]).is_empty());
     }
 
     #[test]
@@ -1463,7 +1463,7 @@ mod tests {
         let frame = squitter(0x3C_6444, me_identification("DLH123"));
         let mut iq = transmission(&[frame], GAP_US, 0.01, INPUT_RATE_HZ);
         add_noise(&mut iq, 0x00C0_FFEE, 0.001);
-        let msg = only(feed(&mut channel(AdsbParams::default()), &iq, &[1_024]));
+        let msg = only(feed(&mut channel(&AdsbParams::default()), &iq, &[1_024]));
         assert_eq!(msg.callsign.as_deref(), Some("DLH123"));
     }
 
@@ -1478,10 +1478,10 @@ mod tests {
         ];
         let iq = transmission(&frames, GAP_US, LEVEL, INPUT_RATE_HZ);
 
-        let whole = feed(&mut channel(AdsbParams::default()), &iq, &[iq.len()]);
+        let whole = feed(&mut channel(&AdsbParams::default()), &iq, &[iq.len()]);
         assert_eq!(whole.len(), 4);
         let ragged = feed(
-            &mut channel(AdsbParams::default()),
+            &mut channel(&AdsbParams::default()),
             &iq,
             &[997, 1, 4_096, 65, 239, 7, 1_024],
         );
@@ -1497,7 +1497,7 @@ mod tests {
             INPUT_RATE_HZ,
         );
         let cut = (GAP_US * 2.0) as usize + 40;
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         let mut out = ChannelOutputs::default();
         chan.process(&iq[..cut], &mut out);
         assert!(out.events.is_empty());
@@ -1507,10 +1507,10 @@ mod tests {
 
     #[test]
     fn the_cpr_cache_is_bounded() {
-        let frames: Vec<Vec<u8>> = (0..TRACK_CACHE_LEN as u32 + 1)
+        let frames: Vec<Vec<u8>> = (0..=(TRACK_CACHE_LEN as u32))
             .map(|n| squitter(0x40_0000 + n, me_airborne_position(30_000, LAT, LON, false)))
             .collect();
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         let iq = transmission(&frames, GAP_US, LEVEL, INPUT_RATE_HZ);
         assert_eq!(feed(&mut chan, &iq, &[8_192]).len(), frames.len());
         assert!(chan.cpr.len() <= TRACK_CACHE_LEN, "{}", chan.cpr.len());
@@ -1520,7 +1520,7 @@ mod tests {
     #[test]
     fn a_hub_sized_fleet_keeps_every_roll_call_proof() {
         const FLEET: u32 = 200;
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         for n in 0..FLEET {
             chan.observe(0x40_0000 + n, 0, true);
         }
@@ -1537,7 +1537,7 @@ mod tests {
 
     #[test]
     fn a_stale_even_odd_pair_is_not_paired() {
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         let stale = chan.cpr_pair_max_age;
         let even = published("8D40621D58C382D690C8AC");
         let odd = published("8D40621D58C386435CC412");
@@ -1552,7 +1552,7 @@ mod tests {
         squitter(icao, me_identification("DLH123"))
     }
 
-    fn decode_replies(p: AdsbParams, frames: &[Vec<u8>]) -> Vec<AdsbMessage> {
+    fn decode_replies(p: &AdsbParams, frames: &[Vec<u8>]) -> Vec<AdsbMessage> {
         let iq = transmission(frames, 300.0, LEVEL, INPUT_RATE_HZ);
         feed(&mut channel(p), &iq, &[4_096])
     }
@@ -1561,7 +1561,7 @@ mod tests {
     fn an_all_call_reply_reports_the_aircraft_and_its_air_ground_state() {
         for (capability, on_ground) in [(4, Some(true)), (5, Some(false)), (6, None), (0, None)] {
             let msg = only(decode_replies(
-                AdsbParams::default(),
+                &AdsbParams::default(),
                 &[all_call_reply(0x3C_6444, capability, 0)],
             ));
             assert_eq!(msg.df, 11);
@@ -1575,14 +1575,14 @@ mod tests {
     fn an_all_call_reply_survives_its_interrogator_identifier() {
         for interrogator in [0, 1, 15, ALL_CALL_PI_MAX] {
             let msg = only(decode_replies(
-                AdsbParams::default(),
+                &AdsbParams::default(),
                 &[all_call_reply(0x40_621D, 5, interrogator)],
             ));
             assert_eq!(msg.icao, "40621D", "interrogator {interrogator}");
         }
         assert!(
             decode_replies(
-                AdsbParams::default(),
+                &AdsbParams::default(),
                 &[all_call_reply(0x40_621D, 5, ALL_CALL_PI_MAX + 1)]
             )
             .is_empty()
@@ -1595,11 +1595,11 @@ mod tests {
         let reply = altitude_reply(icao, 36_000, 0);
 
         assert!(
-            decode_replies(AdsbParams::default(), std::slice::from_ref(&reply)).is_empty(),
+            decode_replies(&AdsbParams::default(), std::slice::from_ref(&reply)).is_empty(),
             "an unvouched reply must not become an aircraft"
         );
 
-        let msgs = decode_replies(AdsbParams::default(), &[proof(icao), reply]);
+        let msgs = decode_replies(&AdsbParams::default(), &[proof(icao), reply]);
         assert_eq!(msgs.len(), 2, "{msgs:?}");
         assert_eq!(msgs[1].df, 4);
         assert_eq!(msgs[1].icao, "3C6444");
@@ -1608,7 +1608,7 @@ mod tests {
 
     #[test]
     fn proof_of_an_address_goes_stale() {
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         let window = chan.roll_call_max_age;
         chan.observe(0x3C_6444, 0, true);
         assert!(chan.vouched(0x3C_6444, window));
@@ -1620,7 +1620,7 @@ mod tests {
 
     #[test]
     fn noise_does_not_become_replies_from_an_aircraft_already_known() {
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         chan.observe(0x3C_6444, 0, true);
         let mut iq = vec![Complex::new(0.0f32, 0.0); 4_000_000];
         add_noise(&mut iq, 0x5EED_4321, 1.0);
@@ -1630,7 +1630,7 @@ mod tests {
     #[test]
     fn every_squawk_round_trips_through_an_identity_reply() {
         let icao = 0x3C_6444;
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         chan.observe(icao, 0, true);
         for code in 0..4_096u32 {
             let text = format!(
@@ -1653,7 +1653,7 @@ mod tests {
     #[test]
     fn a_surveillance_altitude_reply_decodes_on_both_sides_of_the_q_bit() {
         let icao = 0x3C_6444;
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         chan.observe(icao, 0, true);
         for alt_ft in [-1_000, 0, 725, 36_000, 50_175, 50_200, 62_000] {
             let frame = altitude_reply(icao, alt_ft, 0);
@@ -1670,7 +1670,7 @@ mod tests {
     #[test]
     fn flight_status_answers_air_ground_only_when_it_says_so() {
         let icao = 0x3C_6444;
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         chan.observe(icao, 0, true);
         for (fs, on_ground) in [
             (0, Some(false)),
@@ -1693,7 +1693,7 @@ mod tests {
     fn comm_b_replies_carry_the_surveillance_field_and_a_bds20_callsign() {
         let icao = 0x40_621D;
         let msgs = decode(
-            AdsbParams::default(),
+            &AdsbParams::default(),
             &[
                 proof(icao),
                 comm_b_altitude_reply(icao, 24_000, 0, mb_identification("KLM1023")),
@@ -1717,7 +1717,7 @@ mod tests {
     #[test]
     fn a_register_that_is_not_bds20_yields_no_callsign() {
         let icao = 0x3C_6444;
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         chan.observe(icao, 0, true);
 
         let mut other = mb_identification("KLM1023");
@@ -1764,7 +1764,7 @@ mod tests {
 
     #[test]
     fn mismatched_params_variant_is_rejected() {
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         let err = chan.apply(settings(
             ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
         ));
@@ -1784,7 +1784,7 @@ mod tests {
             ChannelCtx {
                 input_rate: 48_000.0,
             },
-            adsb_params(AdsbParams::default()),
+            adsb_params(&AdsbParams::default()),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -1817,7 +1817,7 @@ mod tests {
                 ChannelCtx {
                     input_rate: INPUT_RATE_HZ,
                 },
-                adsb_params(bad.clone()),
+                adsb_params(&bad),
             );
             assert!(
                 matches!(built, Err(ChannelError::InvalidSettings(_))),
@@ -1842,7 +1842,7 @@ mod tests {
 
     #[test]
     fn air_air_replies_from_a_known_aircraft_carry_altitude() {
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         chan.observe(0x3C_6444, 0, true);
         let mut frame = air_air_reply(0x3C_6444, 37_000, false);
         let (icao, proved) = chan.attribute(&mut frame, 0, 0).expect("vouched");
@@ -1854,7 +1854,7 @@ mod tests {
     #[test]
     fn soft_bits_repair_a_squitter_from_a_known_aircraft() {
         let clean = squitter(0x3C_6444, me_identification("DLH123"));
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         chan.observe(0x3C_6444, 0, true);
         let mut sliced = doubtful(&clean, &[40, 97]);
         let (df, len, icao) = chan.chase(&mut sliced, 0).expect("two weak bits repair");
@@ -1865,14 +1865,14 @@ mod tests {
     #[test]
     fn soft_bits_never_invent_an_unknown_aircraft() {
         let clean = squitter(0x3C_6444, me_identification("DLH123"));
-        let chan = channel(AdsbParams::default());
+        let chan = channel(&AdsbParams::default());
         assert!(chan.chase(&mut doubtful(&clean, &[40, 97]), 0).is_none());
     }
 
     #[test]
     fn address_parity_repairs_stay_within_two_bits() {
         let clean = altitude_reply(0x3C_6444, 37_000, 0);
-        let mut chan = channel(AdsbParams::default());
+        let mut chan = channel(&AdsbParams::default());
         chan.observe(0x3C_6444, 0, true);
         assert!(chan.chase(&mut doubtful(&clean, &[20, 41]), 0).is_some());
         assert!(
@@ -1902,7 +1902,7 @@ mod tests {
         let iq = off_air_recording();
 
         let messages = feed(
-            &mut channel(AdsbParams::default()),
+            &mut channel(&AdsbParams::default()),
             &iq,
             &[997, 65_536, 4_096, 1],
         );
@@ -1965,7 +1965,7 @@ mod tests {
         let iq = off_air_recording();
 
         let messages = feed(
-            &mut channel(AdsbParams {
+            &mut channel(&AdsbParams {
                 ref_lat: Some(50.453_789),
                 ref_lon: Some(6.731_607),
                 ..AdsbParams::default()

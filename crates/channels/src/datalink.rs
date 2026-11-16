@@ -136,6 +136,10 @@ pub fn hex(bytes: &[u8]) -> String {
 
 /// A decoded message around `details`, as the presentation tests read it.
 #[cfg(test)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "callers pass a json! literal"
+)]
 pub(crate) fn sample(details: Value) -> DataLinkMessage {
     serde_json::from_value(serde_json::json!({
         "message_type": "Position report", "station": " .D-AIBC ", "text": " FL370 ",

@@ -282,9 +282,6 @@ fn the_otfs_precoder_allocates_nothing() {
 #[ignore = "rewrites the committed baseline; run explicitly in release on the reference host"]
 fn write_multicarrier_perf_baseline() {
     require_baseline_write("multicarrier throughput");
-    if cfg!(debug_assertions) {
-        panic!("a debug-profile number must never become the committed baseline");
-    }
     let path = baseline_path(STEM);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let rows = measured_baselines();

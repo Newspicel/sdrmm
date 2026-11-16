@@ -166,6 +166,6 @@ mod tests {
         quantize_db(&db, -120.0, -20.0, &mut out);
         assert_eq!(out[0], 0);
         assert_eq!(out[2], 255);
-        assert!((out[1] as i32 - 128).abs() <= 1);
+        assert!((i32::from(out[1]) - 128).abs() <= 1);
     }
 }

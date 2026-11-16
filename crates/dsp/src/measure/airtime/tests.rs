@@ -111,7 +111,7 @@ fn run(
     let mut out = Vec::new();
     for frame in 0..total {
         bursts.frame(&block(bins, on, frame), &floor, 10.0, |burst| {
-            out.push(burst)
+            out.push(burst);
         });
     }
     bursts.flush(|burst| out.push(burst));

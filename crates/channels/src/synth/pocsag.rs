@@ -139,7 +139,7 @@ fn seal_text(bits: &mut Vec<bool>, text: &str, seal: &IdeaSeal) {
     let header = Header::sealing(seal.mask, seal.sent.minute);
     bits.extend(header.bits());
     let plain: Vec<u8> = text.chars().map(ascii7).chain(std::iter::once(0)).collect();
-    for byte in idea::seal(&seal.key, seal.org_code, seal.sent, &header, &plain) {
+    for byte in idea::seal(&seal.key, seal.org_code, seal.sent, header, &plain) {
         push_lsb_first(bits, byte, ALPHA_BITS);
     }
 }
@@ -269,7 +269,7 @@ mod tests {
             })
             .collect();
         assert_eq!(
-            idea::decrypt(&seal.key, seal.org_code, seal.sent, &header, &sealed).as_deref(),
+            idea::decrypt(&seal.key, seal.org_code, seal.sent, header, &sealed).as_deref(),
             Some(&b"ALARM 42"[..])
         );
     }

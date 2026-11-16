@@ -37,7 +37,7 @@ impl Member {
     }
 
     pub(super) fn center(&self) -> f64 {
-        center_of(&self.settings, self.lane.stream, &self.caps.per_stream)
+        center_of(&self.settings, self.lane.stream, self.caps.per_stream)
     }
 }
 

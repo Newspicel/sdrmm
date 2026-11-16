@@ -31,7 +31,7 @@ impl WasmDecoder {
 
 fn describe(module: &PluginModule, decoder: &DecoderManifest) -> ChannelDescriptor {
     let mut descriptor = decoder.descriptor.clone();
-    descriptor.settings = decoder.form.clone();
+    descriptor.settings.clone_from(&decoder.form);
     descriptor.identifiable = !descriptor.signatures.is_empty();
     if descriptor.emits.is_empty() {
         descriptor.emits = decoded_kinds(&module.manifest);
@@ -57,8 +57,7 @@ fn decoded_kinds(manifest: &PluginManifest) -> Vec<sdrmm_wire::EventKind> {
     let processed = manifest
         .processor
         .as_ref()
-        .map(|processor| processor.emits.as_slice())
-        .unwrap_or_default();
+        .map_or_default(|processor| processor.emits.as_slice());
     manifest
         .kinds
         .iter()

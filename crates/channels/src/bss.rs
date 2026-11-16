@@ -69,12 +69,12 @@ fn occupied_band(p: &BssParams) -> (f64, f64) {
     (-half, half)
 }
 
-fn channel_filter(p: &BssParams) -> Result<ChannelFilter, ChannelError> {
+fn channel_filter(p: &BssParams) -> ChannelFilter {
     let (_, half) = occupied_band(p);
-    Ok(ChannelFilter::Symmetric(Decimator::new(
+    ChannelFilter::Symmetric(Decimator::new(
         &design_lowpass(CHANNEL_TAPS, half / DESCRIPTOR.input_rate_hz),
         1,
-    )))
+    ))
 }
 
 fn body(frame: &[u8]) -> &[u8] {
@@ -176,7 +176,7 @@ fn bss_trial() -> sdrmm_wire::SignalTrial {
 
 pub(crate) fn bss_decoder() -> Native<BssParams> {
     Native::new::<BssChannel>(occupied_band)
-        .filter(channel_filter)
+        .filter(|p| Ok(channel_filter(p)))
         .signatures(bss_signatures)
         .trial(bss_trial)
         .form(bss_form)

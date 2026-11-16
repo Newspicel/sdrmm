@@ -110,8 +110,7 @@ impl Control {
         }
         self.worker
             .take()
-            .map(|worker| worker.join().expect("control thread"))
-            .unwrap_or(0)
+            .map_or(0, |worker| worker.join().expect("control thread"))
     }
 }
 

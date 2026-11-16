@@ -210,7 +210,7 @@ fn the_anchor_removes_a_rotation() {
     let rotation = 0.9f64;
     let gain = 0.35f64;
     let (sin, cos) = rotation.sin_cos();
-    for s in wave.iter_mut() {
+    for s in &mut wave {
         *s = Complex::new(
             (gain * (f64::from(s.re) * cos - f64::from(s.im) * sin)) as f32,
             (gain * (f64::from(s.re) * sin + f64::from(s.im) * cos)) as f32,

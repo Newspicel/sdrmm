@@ -61,17 +61,13 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     ..ChannelDescriptor::default()
 });
 
-pub(crate) fn occupied_band(p: &SstvParams) -> (f64, f64) {
+pub(crate) fn occupied_band(p: SstvParams) -> (f64, f64) {
     carrier::occupied_band(p.modulation)
 }
 
-pub(crate) fn channel_filter(p: &SstvParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(p: SstvParams) -> ChannelFilter {
     let (low, high) = occupied_band(p);
-    Ok(ChannelFilter::Sideband(band_filter(
-        low,
-        high,
-        INPUT_RATE_HZ,
-    )))
+    ChannelFilter::Sideband(band_filter(low, high, INPUT_RATE_HZ))
 }
 
 fn params(settings: &ChannelSettings) -> Result<SstvParams, ChannelError> {
@@ -716,8 +712,8 @@ fn sstv_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn sstv_decoder() -> Native<SstvParams> {
-    Native::new::<SstvChannel>(occupied_band)
-        .filter(channel_filter)
+    Native::new::<SstvChannel>(|p| occupied_band(*p))
+        .filter(|p| Ok(channel_filter(*p)))
         .signatures(sstv_signatures)
         .form(sstv_form)
         .kinds(sstv_kinds)
@@ -802,7 +798,7 @@ mod tests {
                     event
                         .read::<SstvPicture>()
                         .unwrap_or_else(|| panic!("unexpected event {event:?}")),
-                )
+                );
             }
             at = end;
         }
@@ -1152,9 +1148,7 @@ mod tests {
         let mut iq = transmission(mode, &sent, RATE);
         synth::add_noise(&mut iq, 0xabad_1dea, 0.25);
         let mut filtered = Vec::new();
-        channel_filter(&SstvParams::default())
-            .expect("filter")
-            .process(&iq, &mut filtered);
+        channel_filter(SstvParams::default()).process(&iq, &mut filtered);
         filtered.extend_from_slice(&tail(2_000.0));
 
         let mut chan = channel(SstvParams::default());
@@ -1274,7 +1268,7 @@ mod tests {
             modulation,
             ..SstvParams::default()
         };
-        let mut filter = channel_filter(&p).expect("filter builds");
+        let mut filter = channel_filter(p);
         let mut filtered = Vec::new();
         filter.process(iq, &mut filtered);
         run(&mut channel(p), &filtered, &BLOCKS)
@@ -1326,7 +1320,7 @@ mod tests {
     #[test]
     fn each_modulation_occupies_its_own_band() {
         for modulation in MODULATIONS {
-            let (low, high) = occupied_band(&SstvParams {
+            let (low, high) = occupied_band(SstvParams {
                 modulation,
                 ..SstvParams::default()
             });

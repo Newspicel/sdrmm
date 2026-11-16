@@ -136,20 +136,20 @@ impl Session {
         })
     }
 
-    async fn send_error(&self, message: impl Into<String>) {
+    fn send_error(&self, message: impl Into<String>) {
         let err = ServerEvent::Error {
             message: message.into(),
         };
-        let _ = self.out.send(text_event(&err)).await;
+        let _ = self.out.send(text_event(&err));
     }
 
     async fn dispatch(&mut self, text: &str) {
         let Ok(command) = serde_json::from_str::<ClientCommand>(text) else {
-            self.send_error("invalid command").await;
+            self.send_error("invalid command");
             return;
         };
         if self.identity.phone().is_some() && !phone_command(&command) {
-            self.send_error(NOT_FOR_PHONES).await;
+            self.send_error(NOT_FOR_PHONES);
             return;
         }
         match command {
@@ -166,20 +166,20 @@ impl Session {
                 }
             }
             ClientCommand::SubscribeSurface { node, fit } => {
-                self.subscribe_surface(node, fit).await;
+                self.subscribe_surface(node, fit);
             }
-            ClientCommand::UnsubscribeSurface { node } => self.unsubscribe_surface(&node).await,
+            ClientCommand::UnsubscribeSurface { node } => self.unsubscribe_surface(&node),
             ClientCommand::SubscribePort { node, port, params } => {
                 self.subscribe_port(node, port, params).await;
             }
             ClientCommand::UnsubscribePort { node, port } => {
-                self.unsubscribe_port(&node, &port).await;
+                self.unsubscribe_port(&node, &port);
             }
-            ClientCommand::SubscribeSink { node } => self.subscribe_sink(node).await,
+            ClientCommand::SubscribeSink { node } => self.subscribe_sink(node),
             ClientCommand::UnsubscribeSink { node } => self.unsubscribe_sink(&node),
             ClientCommand::PublishPose { fix, error } => self.publish_pose(fix, error).await,
-            ClientCommand::Present { author, name } => self.present(&author, &name).await,
-            ClientCommand::Point(pointer) => self.point(pointer).await,
+            ClientCommand::Present { author, name } => self.present(&author, &name),
+            ClientCommand::Point(pointer) => self.point(pointer),
             ClientCommand::Speak { node, pcm } => self.speak(node, &pcm).await,
         }
     }
@@ -187,7 +187,7 @@ impl Session {
     /// Takes one microphone frame and carries it to the transmitters that microphone keys.
     async fn speak(&mut self, node: String, pcm: &str) {
         let Some(pcm) = sdrmm_wire::microphone_pcm(pcm) else {
-            self.send_error("invalid microphone frame").await;
+            self.send_error("invalid microphone frame");
             return;
         };
         let state = self.state.clone();
@@ -200,7 +200,7 @@ impl Session {
 
     async fn publish_pose(&mut self, fix: Option<PositionFix>, error: Option<String>) {
         let Some(phone) = self.identity.phone().map(str::to_owned) else {
-            self.send_error(POSE_NEEDS_PHONE).await;
+            self.send_error(POSE_NEEDS_PHONE);
             return;
         };
         if !self.pose_budget.take() {
@@ -210,7 +210,7 @@ impl Session {
                 .is_none_or(|last| now.duration_since(last) >= LIMIT_ERROR_EVERY)
             {
                 self.last_limit_error = Some(now);
-                self.send_error(POSE_TOO_FAST).await;
+                self.send_error(POSE_TOO_FAST);
             }
             return;
         }
@@ -220,10 +220,10 @@ impl Session {
                 .await;
         match published {
             Ok(Ok(_)) => {}
-            Ok(Err(message)) => self.send_error(message).await,
+            Ok(Err(message)) => self.send_error(message),
             Err(error) => {
                 tracing::warn!(%error, "publishing a pose stopped");
-                self.send_error(POSE_FAILED).await;
+                self.send_error(POSE_FAILED);
             }
         }
     }
@@ -316,7 +316,7 @@ async fn serve_session(transport: Link, state: AppState, identity: Identity, fal
 
     let event_rx = engine.subscribe_events();
     let position_rx = state.gps.subscribe();
-    greet(&state, &out_tx, &identity).await;
+    greet(&state, &out_tx, &identity);
 
     let events = spawn_events(event_rx, out_tx.clone(), for_phone);
     let positions = spawn_positions(position_rx, out_tx.clone());
@@ -358,7 +358,7 @@ async fn serve_session(transport: Link, state: AppState, identity: Identity, fal
             code: WS_CLOSE_REVOKED,
             reason: "revoked".into(),
         }));
-        let _ = out_tx.send(close).await;
+        let _ = out_tx.send(close);
     }
     session.abort_streams();
     events.abort();
@@ -383,33 +383,33 @@ async fn serve_session(transport: Link, state: AppState, identity: Identity, fal
     engine.emit_scope(StateScope::Clients);
 }
 
-async fn greet(state: &AppState, out: &Outbox, identity: &Identity) {
+fn greet(state: &AppState, out: &Outbox, identity: &Identity) {
     let hello = ServerEvent::Hello {
         revision: state.engine.snapshot().revision,
         protocol: API_PROTOCOL,
         phone: identity.phone().map(str::to_owned),
     };
-    let _ = out.send(text_event(&hello)).await;
+    let _ = out.send(text_event(&hello));
     for position in state.gps.snapshot() {
-        let _ = out.send(text_event(&position)).await;
+        let _ = out.send(text_event(&position));
     }
     if identity.phone().is_some() {
         return;
     }
     for satellite in state.satellites.snapshot() {
-        let _ = out.send(text_event(&satellite)).await;
+        let _ = out.send(text_event(&satellite));
     }
     for rotator in state.rotators.snapshot() {
-        let _ = out.send(text_event(&rotator)).await;
+        let _ = out.send(text_event(&rotator));
     }
     for aim in state.aims.snapshot() {
-        let _ = out.send(text_event(&aim)).await;
+        let _ = out.send(text_event(&aim));
     }
     for scan in state.sky_scans.snapshot() {
-        let _ = out.send(text_event(&scan)).await;
+        let _ = out.send(text_event(&scan));
     }
     for schedule in state.schedules.snapshot() {
-        let _ = out.send(text_event(&schedule)).await;
+        let _ = out.send(text_event(&schedule));
     }
 }
 
@@ -470,7 +470,7 @@ fn spawn_events(
                     if for_phone && !phone_event(&ev) {
                         continue;
                     }
-                    if out_tx.send(text_event(&ev)).await.is_err() {
+                    if out_tx.send(text_event(&ev)).is_err() {
                         break;
                     }
                 }
@@ -479,7 +479,7 @@ fn spawn_events(
                     let resync = ServerEvent::StateChanged {
                         scope: StateScope::All,
                     };
-                    if out_tx.send(text_event(&resync)).await.is_err() {
+                    if out_tx.send(text_event(&resync)).is_err() {
                         break;
                     }
                 }
@@ -497,7 +497,7 @@ fn spawn_positions(
         loop {
             match position_rx.recv().await {
                 Ok(event) => {
-                    if out_tx.send(text_event(&event)).await.is_err() {
+                    if out_tx.send(text_event(&event)).is_err() {
                         break;
                     }
                 }
@@ -506,7 +506,7 @@ fn spawn_positions(
                     let error = ServerEvent::Error {
                         message: "GPS updates were lost; waiting for the next fix".to_owned(),
                     };
-                    if out_tx.send(text_event(&error)).await.is_err() {
+                    if out_tx.send(text_event(&error)).is_err() {
                         break;
                     }
                 }
@@ -576,20 +576,19 @@ fn spawn_audio(
                     }
                     .encode();
 
-                    if out_tx.send_frame(frame).await.is_err() {
+                    if out_tx.send_frame(frame).is_err() {
                         break;
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(count)) => {
                     out_tx.dropped(count);
-                    continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
                     let stopped = ServerEvent::StreamStopped {
                         stream_id,
                         kind: StreamKind::Audio,
                     };
-                    let _ = out_tx.send(text_event(&stopped)).await;
+                    let _ = out_tx.send(text_event(&stopped));
                     break;
                 }
             }
@@ -622,20 +621,19 @@ fn spawn_symbols(
                     }
                     .encode();
 
-                    if out_tx.send_frame(frame).await.is_err() {
+                    if out_tx.send_frame(frame).is_err() {
                         break;
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(count)) => {
                     out_tx.dropped(count);
-                    continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
                     let stopped = ServerEvent::StreamStopped {
                         stream_id,
                         kind: StreamKind::Symbols,
                     };
-                    let _ = out_tx.send(text_event(&stopped)).await;
+                    let _ = out_tx.send(text_event(&stopped));
                     break;
                 }
             }
@@ -688,20 +686,19 @@ fn spawn_iq(
                     }
                     .encode();
 
-                    if out_tx.send_frame(frame).await.is_err() {
+                    if out_tx.send_frame(frame).is_err() {
                         break;
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(count)) => {
                     out_tx.dropped(count);
-                    continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
                     let stopped = ServerEvent::StreamStopped {
                         stream_id,
                         kind: StreamKind::Iq,
                     };
-                    let _ = out_tx.send(text_event(&stopped)).await;
+                    let _ = out_tx.send(text_event(&stopped));
                     break;
                 }
             }
@@ -752,20 +749,19 @@ fn spawn_video(
                         out_tx.dropped(1);
                         continue;
                     };
-                    if out_tx.send_frame(frame).await.is_err() {
+                    if out_tx.send_frame(frame).is_err() {
                         break;
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(count)) => {
                     out_tx.dropped(count);
-                    continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
                     let stopped = ServerEvent::StreamStopped {
                         stream_id,
                         kind: StreamKind::Video,
                     };
-                    let _ = out_tx.send(text_event(&stopped)).await;
+                    let _ = out_tx.send(text_event(&stopped));
                     break;
                 }
             }
@@ -813,7 +809,7 @@ fn spawn_diagnostics(
                 websocket: out.health(),
                 link,
             };
-            if out.send(text_event(&event)).await.is_err() {
+            if out.send(text_event(&event)).is_err() {
                 break;
             }
         }

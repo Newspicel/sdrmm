@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn turning_rings_there_and_back_restores_them() {
         let mut rings: Box<Rings> = Box::new([[0.0; RING]; 8]);
-        for ring in rings.iter_mut() {
+        for ring in &mut rings {
             ring[40] = 1.0;
         }
         rotate(&mut rings, 5.0);

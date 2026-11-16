@@ -176,7 +176,9 @@ fn displace_time_references(iq: &mut [Complex<f32>], mode: Robustness) {
         let symbol = &mut iq[start..start + size + guard];
         let mut bins = symbol[guard..].to_vec();
         forward.process(&mut bins);
-        bins.iter_mut().for_each(|bin| *bin /= size as f32);
+        for bin in &mut bins {
+            *bin /= size as f32;
+        }
         for (pair, &(k, _)) in refs.windows(2).zip(&refs[1..]) {
             if mode.frequency_phase(0, k).is_none() {
                 let bin = &mut bins[k.rem_euclid(size as i32) as usize];

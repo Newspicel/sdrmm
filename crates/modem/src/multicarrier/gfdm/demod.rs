@@ -38,7 +38,7 @@ impl GfdmDemod {
         };
         let amplification = receive
             .chunks_exact(n)
-            .map(|row| row.iter().map(|v| v.norm_sqr()).sum::<f64>() as f32)
+            .map(|row| row.iter().map(num_complex::Complex::norm_sqr).sum::<f64>() as f32)
             .collect();
         Self {
             matrix: receive.into_iter().map(narrow).collect(),

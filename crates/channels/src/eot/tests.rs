@@ -218,7 +218,7 @@ struct Heard {
     battery_charge_pct: u8,
 }
 
-fn off_air(heard: Heard) -> EotStatus {
+fn off_air(heard: &Heard) -> EotStatus {
     EotStatus {
         message_type: 0,
         arming: EotArming::Normal,
@@ -261,7 +261,7 @@ fn decodes_three_rear_units_from_an_off_air_recording() {
         [
             (
                 39_572,
-                EotReport::Rear(off_air(Heard {
+                EotReport::Rear(off_air(&Heard {
                     pressure_psig: 89,
                     motion: false,
                     marker_light: true,
@@ -272,7 +272,7 @@ fn decodes_three_rear_units_from_an_off_air_recording() {
             ),
             (
                 10_690,
-                EotReport::Rear(off_air(Heard {
+                EotReport::Rear(off_air(&Heard {
                     pressure_psig: 66,
                     motion: false,
                     marker_light: false,
@@ -283,7 +283,7 @@ fn decodes_three_rear_units_from_an_off_air_recording() {
             ),
             (
                 19_472,
-                EotReport::Rear(off_air(Heard {
+                EotReport::Rear(off_air(&Heard {
                     pressure_psig: 89,
                     motion: true,
                     marker_light: false,

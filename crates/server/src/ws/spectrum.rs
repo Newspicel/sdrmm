@@ -71,12 +71,11 @@ impl SpectrumShare {
         if lines.receiver_count() > 0 {
             return false;
         }
-        self.forget(&mut running, reduction, lines);
+        Self::forget(&mut running, reduction, lines);
         true
     }
 
     fn forget(
-        &self,
         running: &mut HashMap<Reduction, broadcast::Sender<Arc<Line>>>,
         reduction: &Reduction,
         lines: &broadcast::Sender<Arc<Line>>,
@@ -183,7 +182,7 @@ async fn reduce(
                 })
                 .await;
                 let Ok(Ok(fresh)) = resubscribed else {
-                    share.forget(&mut share.running(), &reduction, &lines);
+                    SpectrumShare::forget(&mut share.running(), &reduction, &lines);
                     return;
                 };
                 snapshots = fresh;
@@ -227,7 +226,7 @@ pub(super) fn spawn_spectrum(
                         bins: &line.bins,
                     }
                     .encode();
-                    if out_tx.send_frame(frame).await.is_err() {
+                    if out_tx.send_frame(frame).is_err() {
                         break;
                     }
                 }
@@ -237,7 +236,7 @@ pub(super) fn spawn_spectrum(
                         stream_id,
                         kind: StreamKind::Spectrum,
                     };
-                    let _ = out_tx.send(text_event(&stopped)).await;
+                    let _ = out_tx.send(text_event(&stopped));
                     break;
                 }
             }

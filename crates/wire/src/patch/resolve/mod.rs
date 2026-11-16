@@ -297,10 +297,7 @@ pub(super) struct Net<'a> {
 
 impl<'a> Net<'a> {
     fn new(graph: &'a PatchGraph, ctx: &ResolveCtx<'_>) -> Self {
-        let devices = ctx
-            .live
-            .map(|live| bound_devices(graph, live))
-            .unwrap_or_default();
+        let devices = ctx.live.map_or_default(|live| bound_devices(graph, live));
         let caps = |node: &PatchNode| -> Option<&Capabilities> {
             let (_, set) = devices.iter().find(|(id, _)| *id == node.id)?;
             ctx.live?

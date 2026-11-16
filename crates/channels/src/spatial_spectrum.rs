@@ -278,7 +278,7 @@ impl SpatialSpectrumProcessor {
         let bins = self.bank.bins();
         let low = column_offset_hz(first, bins, self.columns, self.span_hz());
         let high = column_offset_hz(last, bins, self.columns, self.span_hz());
-        self.surface_center_hz() + (low + high) / 2.0
+        self.surface_center_hz() + f64::midpoint(low, high)
     }
 
     fn column_freq_hz(&self, column: usize) -> f64 {

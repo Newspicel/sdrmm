@@ -13,9 +13,9 @@ use crate::constellation::Constellation;
 pub(crate) fn draws<T: TryFrom<u64>>(count: usize, modulus: usize, seed: u64) -> Vec<T> {
     let mut rng = Rng::new(seed);
     (0..count)
-        .map(|_| match T::try_from(rng.next_u64() % modulus as u64) {
-            Ok(value) => value,
-            Err(_) => panic!("modulus {modulus} does not fit the draw type"),
+        .map(|_| {
+            T::try_from(rng.next_u64() % modulus as u64)
+                .unwrap_or_else(|_| panic!("modulus {modulus} does not fit the draw type"))
         })
         .collect()
 }

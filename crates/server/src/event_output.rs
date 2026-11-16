@@ -774,7 +774,7 @@ fn endpoint_url(base: &Url, segments: &[&str]) -> Result<Url, String> {
     url.set_query(None);
     url.set_fragment(None);
     url.path_segments_mut()
-        .map_err(|_| "homeserver cannot be used as a base URL".to_owned())?
+        .map_err(|()| "homeserver cannot be used as a base URL".to_owned())?
         .pop_if_empty()
         .extend(segments);
     Ok(url)

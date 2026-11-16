@@ -531,10 +531,10 @@ async fn a_recording_on_a_retuned_lane_stamps_that_lanes_centre() {
 
     engine.start_recording(ds, 1, None).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !engine.snapshot().device_sets[0]
+    while engine.snapshot().device_sets[0]
         .recording
         .as_ref()
-        .is_some_and(|recording| recording.samples > 0)
+        .is_none_or(|recording| recording.samples == 0)
     {
         assert!(Instant::now() < deadline, "recording never grew");
         tokio::time::sleep(Duration::from_millis(10)).await;

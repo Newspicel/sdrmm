@@ -27,6 +27,10 @@ impl<'a> Reader<'a> {
         self.take(1).map(|bit| bit == 1)
     }
 
+    #[expect(
+        clippy::option_option,
+        reason = "None is short input, Some(None) an absent field"
+    )]
     pub(crate) fn optional(&mut self, len: usize) -> Option<Option<u32>> {
         if self.flag()? {
             self.take(len).map(Some)

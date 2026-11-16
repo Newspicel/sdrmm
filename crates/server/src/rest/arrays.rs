@@ -1,6 +1,8 @@
 use sdrmm_wire::{ArrayRecordingRequest, ArrayRecordingStarted, ArrayStatus, ArrayTuneRequest};
 
-use super::*;
+use super::{
+    ApiError, AppError, AppState, ErrorCode, Json, OpenApiRouter, Path, State, StatusCode, routes,
+};
 use crate::array::{self, ArrayRefusal};
 
 pub(super) fn routes() -> OpenApiRouter<AppState> {
@@ -87,7 +89,7 @@ pub(super) async fn start_array_recording(
     Json(request): Json<ArrayRecordingRequest>,
 ) -> Result<Json<ArrayRecordingStarted>, AppError> {
     let started =
-        tokio::task::spawn_blocking(move || array::start_recording(&state, &node, request))
+        tokio::task::spawn_blocking(move || array::start_recording(&state, &node, &request))
             .await??;
     Ok(Json(started))
 }

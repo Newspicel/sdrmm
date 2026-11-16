@@ -54,7 +54,7 @@ impl DectBand {
     pub fn center_hz(self) -> f64 {
         let last = self.carriers() - 1;
         match (self.carrier_hz(0), self.carrier_hz(last)) {
-            (Some(first), Some(last)) => (first + last) / 2.0,
+            (Some(first), Some(last)) => f64::midpoint(first, last),
             _ => 0.0,
         }
     }
@@ -567,7 +567,7 @@ fn dect_fields(f: &DectFrame) -> Vec<Field> {
         DectSide::Pp => "handset",
     };
     let mut shown = fields(&[("side", "Side", text_of(side))]);
-    shown.extend(f.identity.as_ref().map(identity_fields).unwrap_or_default());
+    shown.extend(f.identity.as_ref().map_or_default(identity_fields));
     shown.extend(fields(&[
         ("carrier", "Carrier", count(f.carrier)),
         ("frequency", "Frequency", number(f.carrier_hz, Unit::Hz, 0)),

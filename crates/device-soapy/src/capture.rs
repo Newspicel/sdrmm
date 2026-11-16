@@ -1051,7 +1051,9 @@ mod tests {
     #[test]
     fn a_restart_estimates_the_samples_it_missed() {
         let (mut sinks, logs) = sinks(2);
-        let since = Instant::now() - Duration::from_millis(10);
+        let since = Instant::now()
+            .checked_sub(Duration::from_millis(10))
+            .unwrap();
         rearmed(&mut sinks, since, RATE);
         for log in &logs {
             let events = uncertain(log);

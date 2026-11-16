@@ -36,7 +36,8 @@ impl RunningListener {
         tls: Arc<rustls::ServerConfig>,
         pin: String,
     ) -> Result<Self, String> {
-        let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, port)).map_err(bind_failure)?;
+        let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, port))
+            .map_err(|error| bind_failure(&error))?;
         listener
             .set_nonblocking(true)
             .map_err(|error| error.to_string())?;
@@ -86,7 +87,7 @@ impl RunningListener {
     }
 }
 
-fn bind_failure(error: io::Error) -> String {
+fn bind_failure(error: &io::Error) -> String {
     if error.kind() == io::ErrorKind::AddrInUse {
         PHONE_PORT_IN_USE.to_owned()
     } else {

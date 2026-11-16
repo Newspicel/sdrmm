@@ -10,7 +10,7 @@ pub use self::{
 
 pub const MAX_TAPS: usize = 1_023;
 
-/// The tap count a band filter builds with: odd, within 3..=MAX_TAPS.
+/// The tap count a band filter builds with: odd, within `3..=MAX_TAPS`.
 fn odd_taps(taps: usize) -> usize {
     taps.clamp(MIN_TAPS, MAX_TAPS) | 1
 }

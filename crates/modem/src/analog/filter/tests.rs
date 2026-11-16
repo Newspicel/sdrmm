@@ -63,7 +63,7 @@ fn an_offset_band_passes_its_own_side_only() {
     .build();
     let level = |f: f64| {
         let x: Vec<Complex<f32>> = (0..4096)
-            .map(|n| Complex::from_polar(1.0, (2.0 * PI * f * n as f64) as f32))
+            .map(|n| Complex::from_polar(1.0, (2.0 * PI * f * f64::from(n)) as f32))
             .collect();
         let mut out = Vec::new();
         let mut band = BandFilter {

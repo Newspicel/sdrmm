@@ -227,6 +227,10 @@ impl Rig {
         request
     }
 
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "the event moves into the queue"
+    )]
     fn event(&mut self, event: AggregatorEvent) {
         assert!(self.events.push(event).is_ok());
     }

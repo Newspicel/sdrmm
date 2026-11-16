@@ -42,8 +42,7 @@ async fn call(
     let bearer = token.map(|token| format!("Bearer {token}"));
     let headers: Vec<(&str, &str)> = bearer
         .as_deref()
-        .map(|value| vec![("authorization", value)])
-        .unwrap_or_default();
+        .map_or_default(|value| vec![("authorization", value)]);
     let (status, _, bytes) = request_parts(app.clone(), method, uri, body, &headers).await;
     (status, bytes)
 }

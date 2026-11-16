@@ -86,7 +86,7 @@ pub fn parse(text: &str) -> Option<Airline5z> {
                 day = d.parse().ok();
             }
             if let Some(rwy) = header.get(3) {
-                arrival_runway = rwy.strip_prefix('R').map(|s| s.to_string());
+                arrival_runway = rwy.strip_prefix('R').map(std::string::ToString::to_string);
             }
         }
     }

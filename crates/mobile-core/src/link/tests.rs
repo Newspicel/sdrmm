@@ -584,18 +584,18 @@ async fn commands(
     out
 }
 
-fn pose(seq: u32) -> Option<PoseOut> {
-    Some(PoseOut {
+fn pose(seq: u32) -> PoseOut {
+    PoseOut {
         fix: None,
         error: Some(format!("no GPS fix {seq}")),
-    })
+    }
 }
 
 #[tokio::test(start_paused = true)]
 async fn offline_poses_are_not_queued_and_the_latest_is_sent_on_live() {
     let rig = Rig::new();
     for seq in 0..3 {
-        rig.pose.send_replace(pose(seq));
+        rig.pose.send_replace(Some(pose(seq)));
     }
     let (mut server, _stop, _run) = connect(&rig).await;
     let sent = commands(&mut server, Duration::from_millis(500)).await;
@@ -615,7 +615,7 @@ async fn pose_publish_rate_is_bounded() {
     let pose_tx = rig.pose.clone();
     tokio::spawn(async move {
         for seq in 0..1_000 {
-            pose_tx.send_replace(pose(seq));
+            pose_tx.send_replace(Some(pose(seq)));
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
     });

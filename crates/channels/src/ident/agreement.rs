@@ -100,20 +100,19 @@ impl Tracker {
 
     pub(crate) fn settle(&mut self, band: &Band, verdict: Verdict) -> Verdict {
         let here = (band.center_hz, band.bandwidth_hz);
-        let index = match self
+        let index = if let Some(index) = self
             .tracked
             .iter()
             .position(|t| !t.seen && same_signal(t.band, here))
         {
-            Some(index) => index,
-            None => {
-                self.tracked.push(Tracked {
-                    band: here,
-                    agreement: Agreement::new(),
-                    seen: false,
-                });
-                self.tracked.len() - 1
-            }
+            index
+        } else {
+            self.tracked.push(Tracked {
+                band: here,
+                agreement: Agreement::new(),
+                seen: false,
+            });
+            self.tracked.len() - 1
         };
         let tracked = &mut self.tracked[index];
         tracked.seen = true;

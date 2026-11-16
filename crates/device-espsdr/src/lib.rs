@@ -231,7 +231,7 @@ mod tests {
             usb(0x303A, 0x1001, "/dev/cu.usbmodem1101"),
             usb(0x0483, 0x5740, "/dev/cu.usbmodem400"),
         ];
-        let found: Vec<String> = sdrmm_serial::usable(ports)
+        let found: Vec<String> = sdrmm_serial::usable(&ports)
             .iter()
             .filter(|info| may_be_esp(info))
             .map(|info| device_info(&info.port_name).label)

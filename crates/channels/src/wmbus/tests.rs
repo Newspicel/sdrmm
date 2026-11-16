@@ -41,9 +41,9 @@ fn cf32(bytes: &[u8]) -> Vec<Complex<f32>> {
     iq
 }
 
-fn receiver(params: WmbusParams) -> WmbusChannel {
+fn receiver() -> WmbusChannel {
     let settings = ChannelSettings {
-        params: ChannelParams::new("wmbus", &params).expect("wmbus settings"),
+        params: ChannelParams::new("wmbus", &WmbusParams::default()).expect("wmbus settings"),
         ..crate::default_settings("wmbus").unwrap()
     };
     WmbusChannel::new(ChannelCtx { input_rate: RATE }, settings).unwrap()
@@ -61,7 +61,7 @@ fn feed(rx: &mut WmbusChannel, iq: &[Complex<f32>]) -> Vec<WmbusMessage> {
 }
 
 fn decode(iq: &[Complex<f32>]) -> Vec<WmbusMessage> {
-    let mut rx = receiver(WmbusParams::default());
+    let mut rx = receiver();
     let messages = feed(&mut rx, iq);
     assert_eq!(rx.rejected(), 0);
     messages
@@ -264,7 +264,7 @@ fn a_frame_failing_its_crc_is_counted_not_shown() {
     chips[flip] = !chips[flip];
     let mut iq = synth::fsk(&chips, 100_000.0, 50_000.0, RATE);
     iq.extend(synth::silence(TAIL));
-    let mut rx = receiver(WmbusParams::default());
+    let mut rx = receiver();
     assert!(feed(&mut rx, &iq).is_empty());
     assert_eq!(rx.rejected(), 1);
 }
@@ -272,7 +272,7 @@ fn a_frame_failing_its_crc_is_counted_not_shown() {
 #[test]
 fn a_key_added_later_opens_the_meter() {
     let iq = synthetic(WmbusMode::C, WmbusFormat::A, &bytes(KAMSTRUP_ELL));
-    let mut rx = receiver(WmbusParams::default());
+    let mut rx = receiver();
     let locked = feed(&mut rx, &iq);
     assert_eq!(locked[0].security, WmbusSecurity::NoKey);
     let keys = WmbusParams {
@@ -317,6 +317,6 @@ fn a_malformed_key_is_refused() {
 fn noise_alone_decodes_nothing() {
     let mut iq = synth::silence(400_000);
     synth::add_noise(&mut iq, 11, 0.5);
-    let mut rx = receiver(WmbusParams::default());
+    let mut rx = receiver();
     assert!(feed(&mut rx, &iq).is_empty());
 }

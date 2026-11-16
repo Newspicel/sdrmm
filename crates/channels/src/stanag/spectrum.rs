@@ -113,7 +113,7 @@ impl Spectrum {
         let low = low.unwrap_or(high);
         Occupancy {
             occupied,
-            center_hz: (low + high) / 2.0,
+            center_hz: f64::midpoint(low, high),
             bandwidth_hz: (high - low).max(BIN_HZ),
         }
     }

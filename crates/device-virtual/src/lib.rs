@@ -943,7 +943,7 @@ mod tests {
             })
             .collect();
         sdrmm_dsp::math::fft::Transform::forward(n).process(&mut buf);
-        buf.iter().map(|c| c.norm_sqr()).collect()
+        buf.iter().map(num_complex::Complex::norm_sqr).collect()
     }
 
     fn band_power(power: &[f64], sample_rate: f64, center_hz: f64, half_width_hz: f64) -> f64 {

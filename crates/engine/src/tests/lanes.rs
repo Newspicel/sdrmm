@@ -192,7 +192,7 @@ async fn sinks_count_overruns_from_their_own_start_across_a_lane_restart() {
         .arm_pre_roll(ds, "tm".to_owned(), 0, 1)
         .expect("armed");
     engine
-        .start_network_export(ds, "net".to_owned(), 0, udp_export(&receiver))
+        .start_network_export(ds, "net", 0, &udp_export(&receiver))
         .expect("exporting");
 
     engine.patch_device(ds, inputs(&[0])).expect("one lane");
@@ -270,7 +270,7 @@ async fn a_time_machine_and_a_network_export_carry_on_across_a_runtime_restart()
         .arm_pre_roll(ds, "tm".to_owned(), 0, 1)
         .expect("armed");
     engine
-        .start_network_export(ds, "net".to_owned(), 0, udp_export(&receiver))
+        .start_network_export(ds, "net", 0, &udp_export(&receiver))
         .expect("exporting");
     let mut sent = 0;
     until("the export never sent", || {

@@ -751,10 +751,10 @@ impl NodeBody {
                 }),
             ),
             Self::SpectrumMonitor(monitor) => {
-                carrying_events(declared, monitor_kinds(monitor, descriptors))
+                carrying_events(declared, &monitor_kinds(monitor, descriptors))
             }
             Self::Processor(node) => narrow_processor(declared, &node.processor_type),
-            Self::EventOutput(node) => carrying_events(declared, node.target.accepts())
+            Self::EventOutput(node) => carrying_events(declared, &node.target.accepts())
                 .into_iter()
                 .map(|port| match port.port_type {
                     P::Events if node.target.keeps_clips() => port.keeps(Keeps::Clips),
@@ -871,7 +871,7 @@ fn monitor_kinds(
         .collect()
 }
 
-fn carrying_events(declared: Vec<PortSpec>, kinds: KindSet) -> Vec<PortSpec> {
+fn carrying_events(declared: Vec<PortSpec>, kinds: &KindSet) -> Vec<PortSpec> {
     declared
         .into_iter()
         .map(|port| match port.payload {

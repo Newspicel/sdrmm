@@ -38,7 +38,7 @@ fn a_recording_is_held_for_the_dsp_while_a_radio_is_skipped_past() {
     let mut writer =
         sdrmm_recorder::SigmfWriter::create(&stem, 48_000.0, 100e6, "age policy").expect("open");
     writer
-        .write_block(&[Complex::new(0.0f32, 0.0); 48_000])
+        .write_block(&vec![Complex::new(0.0f32, 0.0); 48_000])
         .expect("write");
     writer.finalize().expect("finalize");
 
@@ -167,7 +167,7 @@ fn a_skipped_virtual_block_leaves_a_gap_not_shifted_samples() {
     assert_eq!(sink.next_index(), 250);
     let mut spans = Vec::new();
     while ring.consume(usize::MAX, |samples, index| {
-        spans.push((index, samples.len(), samples[0].re))
+        spans.push((index, samples.len(), samples[0].re));
     }) > 0
     {}
     assert_eq!(spans, [(0, 100, 1.0), (150, 100, 2.0)]);

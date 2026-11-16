@@ -82,7 +82,7 @@ pub(super) struct ToneDetector {
 }
 
 fn swing(freq: f32) -> f64 {
-    let mid = ((BLACK_HZ + WHITE_HZ) / 2.0) as f32;
+    let mid = f64::midpoint(BLACK_HZ, WHITE_HZ) as f32;
     let half = ((WHITE_HZ - BLACK_HZ) / 2.0) as f32;
     f64::from(((freq - mid) / half).clamp(-SWING_LIMIT, SWING_LIMIT))
 }
@@ -270,9 +270,7 @@ mod tests {
     fn noise_is_neither_a_tone_nor_a_carrier() {
         let noise = complex_noise(0x5eed_1234, 0.4, 120_000);
         let mut filtered = Vec::new();
-        super::super::channel_filter(&crate::wefax::WefaxParams::default())
-            .expect("filter")
-            .process(&noise, &mut filtered);
+        super::super::channel_filter().process(&noise, &mut filtered);
         let (signals, outage) = listen(&filtered);
         assert!(signals.is_empty(), "noise heard as {signals:?}");
         assert_eq!(outage, Some(0));

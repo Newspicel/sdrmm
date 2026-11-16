@@ -29,7 +29,7 @@ pub struct ReferenceCma {
 
 impl ReferenceCma {
     pub fn new(taps: usize, step: f32, sample_rate: f64) -> Result<Self, RadarDspError> {
-        if !(1..=MAX_CMA_TAPS).contains(&taps) || !(step > 0.0 && step.is_finite()) {
+        if !(1..=MAX_CMA_TAPS).contains(&taps) || step <= 0.0 || !step.is_finite() {
             return Err(RadarDspError::Setting);
         }
         let mut cma = Self {

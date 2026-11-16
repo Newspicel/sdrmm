@@ -276,8 +276,29 @@ resvg = { version = "0.49", default-features = false }
 png = { version = "0.18", default-features = false }
 
 [workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
 unwrap_used = "warn"
 expect_used = "warn"
+# DSP math casts on purpose and writes coefficients as the papers print them.
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+unreadable_literal = "allow"
+float_cmp = "allow"
+similar_names = "allow"
+many_single_char_names = "allow"
+inline_always = "allow"
+# An application, not a published library; tests read best as plain asserts.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+default_trait_access = "allow"
+struct_excessive_bools = "allow"
+assert_is_empty = "allow"
+match_same_arms = "allow"
+format_push_string = "allow"
+format_collect = "allow"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

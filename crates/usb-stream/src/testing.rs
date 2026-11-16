@@ -24,7 +24,9 @@ pub struct ScriptedBulkOut {
 
 impl ScriptedBulkOut {
     pub fn state(&self) -> std::sync::MutexGuard<'_, ScriptedState> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub fn fail_next(&self, count: usize, error: TransferError) {

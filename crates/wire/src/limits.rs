@@ -38,6 +38,10 @@ pub struct Bounds<T> {
     pub above: bool,
 }
 
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if takes a reference"
+)]
 const fn includes_min(above: &bool) -> bool {
     !*above
 }

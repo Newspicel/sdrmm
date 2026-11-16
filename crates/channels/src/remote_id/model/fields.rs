@@ -23,11 +23,10 @@ impl RemoteIdFrame {
                 self.ua_type().and_then(UaType::label).and_then(text_of),
             ),
         ]);
-        shown.extend(self.location().map(location_fields).unwrap_or_default());
+        shown.extend(self.location().map_or_default(location_fields));
         shown.extend(
             self.system()
-                .map(|system| self.pilot_fields(system))
-                .unwrap_or_default(),
+                .map_or_default(|system| self.pilot_fields(system)),
         );
         shown.extend(fields(&[
             ("operator", "Operator", text(self.operator_id())),

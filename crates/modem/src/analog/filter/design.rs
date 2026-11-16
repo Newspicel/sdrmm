@@ -76,7 +76,7 @@ pub fn design_vestigial(taps: usize, vestige: f64, upper: f64) -> Vec<Complex<f3
         let gain = if f < -vestige || f > upper {
             0.0
         } else if f <= vestige {
-            0.5 * (1.0 + (PI * f / (2.0 * vestige)).sin())
+            f64::midpoint(1.0, (PI * f / (2.0 * vestige)).sin())
         } else {
             1.0
         };

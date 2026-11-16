@@ -90,7 +90,7 @@ fn scrambler(seed: u16, stream: &mut [u8; STREAM_BYTES]) {
 
 pub(crate) type CipherKeys = Vec<(u8, CipherKey)>;
 
-/// The NXDN voice privacy of one call: the voice call message names the cipher and key, VCALL_IV
+/// The NXDN voice privacy of one call: the voice call message names the cipher and key, `VCALL_IV`
 /// the IV of the next two superframes, and each voice frame takes 49 keystream bits by its place.
 pub(super) struct Privacy {
     call: Option<(u8, u8)>,

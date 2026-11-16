@@ -150,7 +150,7 @@ fn lowpass_stage(input_rate: f64, factor: usize, band_rate: f64) -> StageFilter 
     let (pass, stop) = stage_edges(input_rate, factor, band_rate);
     StageFilter::Lowpass {
         taps: kaiser_taps(stop - pass, STOPBAND_DB).max(MIN_STAGE_TAPS),
-        cutoff: (pass + stop) / 2.0,
+        cutoff: f64::midpoint(pass, stop),
     }
 }
 

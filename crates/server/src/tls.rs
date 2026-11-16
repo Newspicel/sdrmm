@@ -20,7 +20,7 @@ const STAGED_EXTENSION: &str = "new";
 const VALID_DAYS: i64 = 397;
 const PINNED_DAYS: i64 = 12;
 const PINNED_NAME: &str = "localhost";
-const RENEW_AFTER: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+const RENEW_AFTER: Duration = Duration::from_hours(8760);
 const LOCAL_NAMES: [&str; 3] = ["localhost", "127.0.0.1", "::1"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -108,7 +108,7 @@ type Material = (Vec<CertificateDer<'static>>, PrivateKeyDer<'static>);
 
 fn read_chain(path: &Path) -> Result<Vec<CertificateDer<'static>>, TlsError> {
     let chain = CertificateDer::pem_file_iter(path)
-        .and_then(|certs| certs.collect::<Result<Vec<_>, _>>())
+        .and_then(std::iter::Iterator::collect::<Result<Vec<_>, _>>)
         .map_err(|source| TlsError::Certificate {
             path: path.to_path_buf(),
             source,

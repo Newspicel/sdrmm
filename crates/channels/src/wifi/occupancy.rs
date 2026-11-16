@@ -40,15 +40,15 @@ fn params(settings: &ChannelSettings) -> Result<WifiOccupancyParams, ChannelErro
     Ok(params)
 }
 
-pub(crate) fn input_rate(params: &WifiOccupancyParams) -> f64 {
+pub(crate) fn input_rate(params: WifiOccupancyParams) -> f64 {
     params.span.sample_rate_hz()
 }
 
-pub(crate) fn occupied_band(params: &WifiOccupancyParams) -> (f64, f64) {
+pub(crate) fn occupied_band(params: WifiOccupancyParams) -> (f64, f64) {
     airtime::occupied_band(params.span)
 }
 
-pub(crate) fn channel_filter(_: &WifiOccupancyParams) -> ChannelFilter {
+pub(crate) fn channel_filter() -> ChannelFilter {
     airtime::channel_filter()
 }
 
@@ -120,7 +120,7 @@ impl Lane {
     }
 }
 
-fn lanes(params: &WifiOccupancyParams, frequency_hz: f64) -> Vec<Lane> {
+fn lanes(params: WifiOccupancyParams, frequency_hz: f64) -> Vec<Lane> {
     let half = usable_half_hz(params.span);
     let len = fft_len(params.span);
     plan::twenty_mhz_within(frequency_hz - half, frequency_hz + half)
@@ -140,7 +140,7 @@ pub struct WifiOccupancyChannel {
 impl WifiOccupancyChannel {
     fn rebuild(&mut self) {
         self.frames.reset();
-        self.lanes = lanes(&self.params, self.frequency_hz);
+        self.lanes = lanes(self.params, self.frequency_hz);
         self.frame = 0;
         self.measured = 0;
     }
@@ -152,10 +152,10 @@ impl NativeChannel for WifiOccupancyChannel {
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
-        check_rate(ctx, &DESCRIPTOR, input_rate(&params))?;
+        check_rate(ctx, &DESCRIPTOR, input_rate(params))?;
         Ok(Self {
             frames: PowerFrames::new(fft_len(params.span)),
-            lanes: lanes(&params, settings.frequency_hz),
+            lanes: lanes(params, settings.frequency_hz),
             frequency_hz: settings.frequency_hz,
             params,
             frame: 0,
@@ -202,12 +202,14 @@ impl ChannelRx for WifiOccupancyChannel {
             *frame += 1;
             if !gated(power) {
                 *measured += 1;
-                lanes.iter_mut().for_each(|lane| lane.frame(power));
+                for lane in lanes.iter_mut() {
+                    lane.frame(power);
+                }
             }
             if *frame == WARMUP_FRAMES && lanes.iter().all(|lane| !lane.threshold.is_finite()) {
-                lanes
-                    .iter_mut()
-                    .for_each(|lane| lane.settle(params.margin_db));
+                for lane in lanes.iter_mut() {
+                    lane.settle(params.margin_db);
+                }
             }
             if *frame % REPORT_FRAMES == 0 {
                 out.events.push(DecoderEvent::of(&WifiOccupancyReport {
@@ -215,9 +217,9 @@ impl ChannelRx for WifiOccupancyChannel {
                     measured: (*measured as f64 / REPORT_FRAMES as f64) as f32,
                     channels: lanes.iter_mut().map(Lane::load).collect(),
                 }));
-                lanes
-                    .iter_mut()
-                    .for_each(|lane| lane.settle(params.margin_db));
+                for lane in lanes.iter_mut() {
+                    lane.settle(params.margin_db);
+                }
                 *measured = 0;
             }
         });

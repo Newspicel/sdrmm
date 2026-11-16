@@ -9,7 +9,7 @@ struct Session {
     events: RecvStream,
 }
 
-async fn listening(state: &AppState) -> sdrmm_wire::WebTransportInfo {
+fn listening(state: &AppState) -> sdrmm_wire::WebTransportInfo {
     crate::ws::webtransport::start(state, "127.0.0.1:0".parse().expect("address")).expect("starts");
     state.webtransport.current().expect("advertised")
 }
@@ -34,7 +34,7 @@ async fn dial_session(
 }
 
 async fn open(state: &AppState) -> Session {
-    let info = listening(state).await;
+    let info = listening(state);
     let connection = dial_session(&info, WEBTRANSPORT_PATH)
         .await
         .expect("session");
@@ -51,7 +51,7 @@ async fn open(state: &AppState) -> Session {
     }
 }
 
-async fn fresh_state() -> AppState {
+fn fresh_state() -> AppState {
     let store = Arc::new(crate::Store::open(None).expect("in-memory store"));
     let state = AppState::new(test_engine(), store);
     let (_, background) = crate::router_with_state(state.clone(), &crate::ServerOptions::default());
@@ -114,7 +114,7 @@ fn header(frame: &[u8]) -> (u8, u16) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_session_greets_on_its_control_stream() {
-    let state = fresh_state().await;
+    let state = fresh_state();
     let mut session = open(&state).await;
     assert_eq!(
         session.event().await,
@@ -128,7 +128,7 @@ async fn a_session_greets_on_its_control_stream() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn spectrum_frames_arrive_on_a_lane_of_their_own() {
-    let state = fresh_state().await;
+    let state = fresh_state();
     workspace_on(
         &state,
         graph(
@@ -156,7 +156,7 @@ async fn spectrum_frames_arrive_on_a_lane_of_their_own() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn audio_arrives_as_datagrams() {
-    let state = fresh_state().await;
+    let state = fresh_state();
     workspace_on(
         &state,
         graph(
@@ -188,7 +188,7 @@ async fn audio_arrives_as_datagrams() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_session_counts_as_a_client_until_it_leaves() {
-    let state = fresh_state().await;
+    let state = fresh_state();
     let mut session = open(&state).await;
     session.event().await;
     assert_eq!(state.clients.load(atomic::Ordering::Relaxed), 1);
@@ -205,16 +205,16 @@ async fn a_session_counts_as_a_client_until_it_leaves() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn only_the_session_path_is_taken() {
-    let state = fresh_state().await;
-    let info = listening(&state).await;
+    let state = fresh_state();
+    let info = listening(&state);
     assert!(dial_session(&info, "/api/ws").await.is_err());
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_token_is_asked_of_a_session_too() {
-    let mut state = fresh_state().await;
+    let mut state = fresh_state();
     state.auth = crate::auth::Auth::new(Some("s3cret"));
-    let info = listening(&state).await;
+    let info = listening(&state);
 
     assert!(dial_session(&info, WEBTRANSPORT_PATH).await.is_err());
     let wrong = format!("{WEBTRANSPORT_PATH}?token=nope");
@@ -225,8 +225,8 @@ async fn a_token_is_asked_of_a_session_too() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_pinned_certificate_is_what_a_browser_accepts_by_hash() {
-    let state = fresh_state().await;
-    let info = listening(&state).await;
+    let state = fresh_state();
+    let info = listening(&state);
     assert_eq!(info.certificate_sha256.len(), 64);
     let mut other = info.clone();
     other.certificate_sha256 = "00".repeat(32);
@@ -236,7 +236,7 @@ async fn the_pinned_certificate_is_what_a_browser_accepts_by_hash() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_session_reports_the_health_of_its_path() {
-    let state = fresh_state().await;
+    let state = fresh_state();
     let mut session = open(&state).await;
     session
         .send(&ClientCommand::SubscribeDiagnostics { enabled: true })

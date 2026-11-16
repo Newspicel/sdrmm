@@ -94,7 +94,7 @@ macro_rules! define_backends {
                 }
             }
 
-            /// The SoapySDR module this backend speaks to the same hardware as, so the Soapy
+            /// The `SoapySDR` module this backend speaks to the same hardware as, so the Soapy
             /// driver can hide what a native one already lists.
             #[must_use]
             pub const fn soapy_module(self) -> Option<&'static str> {

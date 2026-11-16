@@ -17,7 +17,7 @@ const SETTLE: Duration = Duration::from_millis(400);
 
 const POLL: Duration = Duration::from_millis(20);
 
-/// What SDRconnect answered about one tuner, read once while the device is being opened.
+/// What `SDRconnect` answered about one tuner, read once while the device is being opened.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Snapshot(BTreeMap<Property, String>);
 
@@ -42,7 +42,7 @@ impl Snapshot {
     }
 
     pub(crate) fn list(&self, property: Property) -> Vec<String> {
-        self.text(property).map(as_list).unwrap_or_default()
+        self.text(property).map_or_default(as_list)
     }
 
     pub(crate) fn put(&mut self, property: Property, value: impl Into<String>) {

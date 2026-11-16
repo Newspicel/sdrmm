@@ -1188,9 +1188,9 @@ fn swing_heading(t: f64) -> f64 {
 
 fn antenna_gain_db(offset_deg: f64) -> f64 {
     let half = 30f64.to_radians().cos();
-    let power = 0.5f64.ln() / ((1.0 + half) / 2.0).ln();
+    let power = 0.5f64.ln() / f64::midpoint(1.0, half).ln();
     let cosine = offset_deg.to_radians().cos();
-    (10.0 * power * ((1.0 + cosine) / 2.0).log10()).max(-15.0)
+    (10.0 * power * f64::midpoint(1.0, cosine).log10()).max(-15.0)
 }
 
 fn pose_facing(heading_deg: f64) -> sdrmm_wire::PositionFix {

@@ -77,7 +77,10 @@ pub(crate) fn sideband_filter(p: &SsbParams) -> Result<FirC, ChannelError> {
     let band = waveform(p)?.band();
     let half_width = (band.high - band.low) / 2.0;
     let prototype = design_lowpass(band.taps, half_width);
-    Ok(FirC::from_lowpass(&prototype, (band.high + band.low) / 2.0))
+    Ok(FirC::from_lowpass(
+        &prototype,
+        f64::midpoint(band.high, band.low),
+    ))
 }
 
 fn demodulator(p: &SsbParams) -> Result<SsbDemod, ChannelError> {

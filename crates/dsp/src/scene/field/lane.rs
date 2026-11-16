@@ -170,7 +170,6 @@ impl LaneRenderer {
     pub fn clutter_taps(&self) -> Vec<(usize, C64)> {
         self.clutter
             .as_ref()
-            .map(|clutter| clutter.taps.clone())
-            .unwrap_or_default()
+            .map_or_default(|clutter| clutter.taps.clone())
     }
 }

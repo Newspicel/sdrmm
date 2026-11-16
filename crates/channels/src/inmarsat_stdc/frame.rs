@@ -185,7 +185,7 @@ mod tests {
     fn antipodal(symbols: &[u8], invert: bool) -> Vec<f32> {
         symbols
             .iter()
-            .map(|&bit| if (bit == 1) != invert { 1.0 } else { -1.0 })
+            .map(|&bit| if (bit == 1) == invert { -1.0 } else { 1.0 })
             .collect()
     }
 

@@ -47,7 +47,7 @@ pub enum Receiver {
 #[must_use]
 pub fn link_sized(
     name: &str,
-    params: OfdmParams,
+    params: &OfdmParams,
     constellation: Constellation,
     receiver: Receiver,
     symbols: usize,
@@ -121,7 +121,7 @@ pub fn link_sized(
 fn wifi_link(name: &str, constellation: Constellation, receiver: Receiver) -> Link {
     link_sized(
         name,
-        OfdmParams::wifi_like(),
+        &OfdmParams::wifi_like(),
         constellation,
         receiver,
         SYMBOLS,
@@ -204,7 +204,7 @@ pub fn qam64_genie_link() -> Link {
 pub fn dmt_genie_link() -> Link {
     link_sized(
         "qpsk-dmt genie",
-        OfdmParams::dmt_like(),
+        &OfdmParams::dmt_like(),
         table("dmt qpsk", tables::qam_square(4)),
         Receiver::Genie,
         SYMBOLS,
@@ -224,7 +224,7 @@ pub fn qpsk_comb_link() -> Link {
 pub fn dmt_link() -> Link {
     link_sized(
         "qpsk-dmt",
-        OfdmParams::dmt_like(),
+        &OfdmParams::dmt_like(),
         table("dmt qpsk", tables::qam_square(4)),
         Receiver::Acquire(ChannelEstimator::LongTraining),
         SYMBOLS,

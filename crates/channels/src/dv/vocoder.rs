@@ -565,8 +565,8 @@ impl Codec2Decoder {
         self.output.append_i16(&self.pcm, out);
     }
 
-    pub(crate) fn decode_1300(&mut self, payload: &[u8; 7], out: &mut ChannelOutputs) {
-        self.codec_1300.decode(&mut self.pcm, payload);
+    pub(crate) fn decode_1300(&mut self, payload: [u8; 7], out: &mut ChannelOutputs) {
+        self.codec_1300.decode(&mut self.pcm, &payload);
         self.output.append_i16(&self.pcm, out);
     }
 }

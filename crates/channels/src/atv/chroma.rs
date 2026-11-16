@@ -484,7 +484,7 @@ mod tests {
         let comb = Comb::new(rate);
         let gain = |hz: f64| {
             let tone: Vec<f32> = (0..400)
-                .map(|k| (std::f64::consts::TAU * hz / rate * k as f64).sin() as f32)
+                .map(|k| (std::f64::consts::TAU * hz / rate * f64::from(k)).sin() as f32)
                 .collect();
             let mut out = Vec::new();
             band_pass(&comb.band, &tone, &mut out);

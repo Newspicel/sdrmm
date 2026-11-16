@@ -421,7 +421,7 @@ mod tests {
                 messages.push(
                     ev.read::<AcarsMessage>()
                         .unwrap_or_else(|| panic!("unexpected event {ev:?}")),
-                )
+                );
             }
             pos = end;
         }

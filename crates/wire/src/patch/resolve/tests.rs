@@ -579,8 +579,7 @@ fn repeated_ports_follow_the_radio_and_keep_saved_wires() {
     let names = |patch: &ResolvedPatch| -> Vec<String> {
         patch
             .node("dev")
-            .map(|node| node.outputs().map(|port| port.spec.name.clone()).collect())
-            .unwrap_or_default()
+            .map_or_default(|node| node.outputs().map(|port| port.spec.name.clone()).collect())
     };
     assert_eq!(names(&compiled(&graph)), ["iq", "iq2", "iq3"]);
     let mut wide = set(1, "band", Vec::new());
@@ -602,15 +601,12 @@ fn a_channel_shows_only_the_ports_its_descriptor_offers() {
         live: None,
     };
     let patch = compile(&graph, &ctx).expect("compiles");
-    let names: Vec<&str> = patch
-        .node("voice")
-        .map(|node| {
-            node.ports
-                .iter()
-                .map(|port| port.spec.name.as_str())
-                .collect()
-        })
-        .unwrap_or_default();
+    let names: Vec<&str> = patch.node("voice").map_or_default(|node| {
+        node.ports
+            .iter()
+            .map(|port| port.spec.name.as_str())
+            .collect()
+    });
     assert!(!names.contains(&"audio"));
     assert!(names.contains(&"events"));
 }

@@ -462,7 +462,7 @@ mod tests {
         let messages = out
             .events
             .iter()
-            .filter_map(|event| event.read::<ErmesMessage>())
+            .filter_map(sdrmm_wire::DecoderEvent::read::<ErmesMessage>)
             .collect::<Vec<_>>();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].local_address, 234_567);
@@ -545,7 +545,9 @@ mod tests {
             channel.bit(bit, &mut out);
         }
         assert!(
-            !out.events.iter().any(|event| event.is::<ErmesMessage>()),
+            !out.events
+                .iter()
+                .any(sdrmm_wire::DecoderEvent::is::<ErmesMessage>),
             "{:?}",
             out.events
         );

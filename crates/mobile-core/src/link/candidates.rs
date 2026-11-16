@@ -97,6 +97,10 @@ pub(crate) fn worst(failures: Vec<(String, DialError)>) -> DialError {
         .unwrap_or_else(|| DialError::Unreachable("no host".to_owned()))
 }
 
+#[expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "a host suffix, not a file extension"
+)]
 pub(crate) fn is_local(host: &str) -> bool {
     let name = host_name(host);
     if name.ends_with(".local") {

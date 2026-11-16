@@ -81,7 +81,7 @@ impl UfmcParams {
         let prototype = design_lowpass(self.filter_len, (half_width + transition).min(MAX_CUTOFF));
         let first = b * self.per_subband;
         let last = first + self.per_subband - 1;
-        let centre = 0.5 * (self.signed_bin(first) + self.signed_bin(last)) / self.fft as f64;
+        let centre = f64::midpoint(self.signed_bin(first), self.signed_bin(last)) / self.fft as f64;
         prototype
             .iter()
             .enumerate()

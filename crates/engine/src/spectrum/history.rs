@@ -215,7 +215,7 @@ mod tests {
             std::hint::black_box((samples, index));
         };
         assert_no_alloc("spectrum history", || {
-            history.push(&input, 0, 666_666, emit)
+            history.push(&input, 0, 666_666, emit);
         });
         let scalar = measure_throughput(2000, input.len() as u64, || {
             reference.push(std::hint::black_box(&input), 0, 666_666, emit);

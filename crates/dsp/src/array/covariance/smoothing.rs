@@ -44,7 +44,7 @@ pub fn smooth_diagonal(d: &[f32], subarrays: usize, fb: bool, out: &mut [f32]) -
     }
     if fb {
         for i in 0..len / 2 {
-            let mean = 0.5 * (out[i] + out[len - 1 - i]);
+            let mean = f32::midpoint(out[i], out[len - 1 - i]);
             out[i] = mean;
             out[len - 1 - i] = mean;
         }

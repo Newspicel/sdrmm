@@ -5,8 +5,8 @@ pub use model::*;
 mod phasing;
 mod picture;
 pub(crate) fn wefax_decoder() -> Native<WefaxParams> {
-    Native::new::<WefaxChannel>(occupied_band)
-        .filter(channel_filter)
+    Native::new::<WefaxChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
         .form(wefax_form)
         .kinds(wefax_kinds)
 }
@@ -73,18 +73,18 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     ..ChannelDescriptor::default()
 });
 
-pub(crate) fn occupied_band(_p: &WefaxParams) -> (f64, f64) {
+pub(crate) fn occupied_band() -> (f64, f64) {
     (1_100.0, 2_700.0)
 }
 
-pub(crate) fn channel_filter(p: &WefaxParams) -> Result<ChannelFilter, ChannelError> {
-    let (low, high) = occupied_band(p);
+pub(crate) fn channel_filter() -> ChannelFilter {
+    let (low, high) = occupied_band();
     let half = (high - low) / 2.0 / INPUT_RATE_HZ;
-    let center = (high + low) / 2.0 / INPUT_RATE_HZ;
-    Ok(ChannelFilter::Sideband(FirC::from_lowpass(
+    let center = f64::midpoint(high, low) / INPUT_RATE_HZ;
+    ChannelFilter::Sideband(FirC::from_lowpass(
         &design_lowpass(FILTER_TAPS, half),
         center,
-    )))
+    ))
 }
 
 fn params(settings: &ChannelSettings) -> Result<WefaxParams, ChannelError> {

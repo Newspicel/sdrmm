@@ -102,8 +102,7 @@ impl Follower {
             let others = self
                 .prospectors
                 .get(&node)
-                .map(Prospector::other_control_hz)
-                .unwrap_or_default();
+                .map_or_default(Prospector::other_control_hz);
             let Some(control) = self.controls.get_mut(&node) else {
                 continue;
             };

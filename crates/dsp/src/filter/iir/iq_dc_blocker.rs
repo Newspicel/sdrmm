@@ -57,10 +57,14 @@ impl IqDcBlocker {
             if stride.iter().all(|s| s.is_finite()) {
                 self.stride(stride);
             } else {
-                stride.iter_mut().for_each(|s| self.step(s));
+                for s in stride {
+                    self.step(s);
+                }
             }
         }
-        tail.iter_mut().for_each(|s| self.step(s));
+        for s in tail {
+            self.step(s);
+        }
     }
 
     fn stride(&mut self, stride: &mut [Complex<f32>; STRIDE]) {

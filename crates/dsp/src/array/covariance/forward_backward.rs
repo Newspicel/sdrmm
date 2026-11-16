@@ -46,7 +46,7 @@ mod tests {
         forward_backward(&mut r, &pairs).unwrap();
         let positions = geometry.positions();
         let spectrum: Vec<f32> = (0..3600)
-            .map(|k| music_at(&r, 1, positions, k as f64 * 0.1))
+            .map(|k| music_at(&r, 1, positions, f64::from(k) * 0.1))
             .collect();
         let best = spectrum
             .iter()

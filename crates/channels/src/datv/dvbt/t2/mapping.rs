@@ -284,7 +284,7 @@ impl Mapping {
             2 => 4.0 * 2.0_f32.sqrt() / 3.0,
             _ => 8.0 / 3.0,
         };
-        for group in &CONTINUAL_PILOT_GROUPS[..self.mode + 1] {
+        for group in &CONTINUAL_PILOT_GROUPS[..=self.mode] {
             for &index in group[pattern] {
                 let k = if self.mode == 5 {
                     index

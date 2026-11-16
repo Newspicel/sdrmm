@@ -73,10 +73,8 @@ fn bcd(bits: &mut [bool], fields: &[(usize, u16)], value: u16) {
     for &(index, weight) in fields {
         let place = if weight >= 100 {
             2
-        } else if weight >= 10 {
-            1
         } else {
-            0
+            usize::from(weight >= 10)
         };
         let binary_weight = weight / 10_u16.pow(place as u32);
         bits[index] = digits[place] & binary_weight != 0;

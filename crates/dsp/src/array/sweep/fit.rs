@@ -23,7 +23,7 @@ const MIN_NOISE_FRACTION: f64 = 1e-12;
 
 struct Fit {
     bearing_deg: f64,
-    fit: f64,
+    goodness: f64,
     sigma_deg: f64,
     bank_sigma_deg: f64,
     curvature: f64,
@@ -36,10 +36,10 @@ struct Fit {
 /// `beamwidth_deg` at half power, never deeper than the front-to-back ratio.
 pub(super) fn beam_template(config: &SweepConfig, template: &mut [f32; TEMPLATE_POINTS]) {
     let half = (config.beamwidth_deg / 2.0).to_radians().cos();
-    let power = 0.5f64.ln() / ((1.0 + half) / 2.0).ln();
+    let power = 0.5f64.ln() / f64::midpoint(1.0, half).ln();
     for (degree, value) in template.iter_mut().enumerate() {
         let cosine = (degree as f64).to_radians().cos();
-        let gain = power * ((1.0 + cosine) / 2.0).power_to_db();
+        let gain = power * f64::midpoint(1.0, cosine).power_to_db();
         *value = gain.max(-config.front_back_db) as f32;
     }
 }
@@ -78,8 +78,9 @@ impl SweepEstimator {
         self.fill_likelihood(&fit, out);
         out.bearing_deg = norm_deg(fit.bearing_deg);
         out.sigma_deg = fit.sigma_deg as f32;
-        out.confidence = (erf(CONFIDENCE_WINDOW_DEG / (fit.sigma_deg * SQRT_2)) * fit.fit) as f32;
-        out.fit = fit.fit as f32;
+        out.confidence =
+            (erf(CONFIDENCE_WINDOW_DEG / (fit.sigma_deg * SQRT_2)) * fit.goodness) as f32;
+        out.fit = fit.goodness as f32;
         out.contrast_db = contrast;
         out.span_deg = span as f32;
         out.rate_dps = rate as f32;
@@ -181,7 +182,7 @@ impl SweepEstimator {
         let sigma = (bank + mean_sigma * mean_sigma).sqrt();
         Ok(Fit {
             bearing_deg: bearing,
-            fit,
+            goodness: fit,
             sigma_deg: sigma.min(WIDEST_SIGMA_DEG),
             bank_sigma_deg: bank.sqrt().min(WIDEST_SIGMA_DEG),
             curvature,

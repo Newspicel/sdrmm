@@ -68,7 +68,9 @@ pub(super) fn run_xng(iq: &[Complex<f32>], chunk: usize) -> Vec<DataLinkMessage>
 }
 
 fn mirror(mut iq: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
-    iq.iter_mut().for_each(|sample| *sample = sample.conj());
+    for sample in &mut iq {
+        *sample = sample.conj();
+    }
     iq
 }
 

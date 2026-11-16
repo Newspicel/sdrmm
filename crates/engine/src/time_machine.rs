@@ -784,7 +784,7 @@ mod tests {
         let samples = ramp(0, 3);
         assert!(tap.push_on(&samples, 101e6));
         assert_no_alloc("history retune overflow", || {
-            assert!(!tap.push_on(&samples, 102e6))
+            assert!(!tap.push_on(&samples, 102e6));
         });
         marks.pop().expect("first retune");
         assert!(!tap.push_on(&samples, 103e6));

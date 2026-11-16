@@ -65,7 +65,7 @@ impl Reassembly {
         events: &mut Vec<DecoderEvent>,
     ) {
         let message = match self.take(message.address) {
-            Some(earlier) if piece.follows(earlier.piece) => joined(earlier.message, message),
+            Some(earlier) if piece.follows(earlier.piece) => joined(earlier.message, &message),
             earlier => {
                 if let Some(earlier) = earlier {
                     events.push(finished(earlier.message, false));
@@ -118,7 +118,7 @@ impl Reassembly {
     }
 }
 
-fn joined(mut earlier: FlexMessage, later: FlexMessage) -> FlexMessage {
+fn joined(mut earlier: FlexMessage, later: &FlexMessage) -> FlexMessage {
     earlier.text.push_str(&later.text);
     earlier.errors_corrected += later.errors_corrected;
     earlier.complete &= later.complete;
@@ -169,7 +169,7 @@ mod tests {
     fn pages(events: &[DecoderEvent]) -> Vec<(String, bool)> {
         events
             .iter()
-            .filter_map(|event| event.read::<FlexMessage>())
+            .filter_map(sdrmm_wire::DecoderEvent::read::<FlexMessage>)
             .map(|page| (page.text, page.complete))
             .collect()
     }

@@ -238,8 +238,7 @@ pub fn load_csv(path: &Path) -> io::Result<Curve> {
     }
     let label = path
         .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .map_or_default(|s| s.to_string_lossy().into_owned());
     Ok(Curve { label, points })
 }
 
@@ -380,14 +379,14 @@ fn invert_oracle(oracle: &impl Fn(f64) -> f64, ber: f64) -> Option<f64> {
         return None;
     }
     while hi - lo > 1e-9 {
-        let mid = 0.5 * (lo + hi);
+        let mid = f64::midpoint(lo, hi);
         if oracle(mid) >= ber {
             lo = mid;
         } else {
             hi = mid;
         }
     }
-    Some(0.5 * (lo + hi))
+    Some(f64::midpoint(lo, hi))
 }
 
 #[cfg(test)]

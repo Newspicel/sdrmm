@@ -10,9 +10,9 @@ pub use self::occupancy::WifiOccupancyChannel;
 pub(crate) use self::occupancy::{channel_filter, input_rate, occupied_band};
 
 pub(crate) fn wifi_occupancy_decoder() -> Native<WifiOccupancyParams> {
-    Native::new::<WifiOccupancyChannel>(occupied_band)
-        .filter(|p| Ok(channel_filter(p)))
-        .input_rate(input_rate)
+    Native::new::<WifiOccupancyChannel>(|p| occupied_band(*p))
+        .filter(|_| Ok(channel_filter()))
+        .input_rate(|p| input_rate(*p))
         .home(2_437_000_000.0)
         .form(wifi_occupancy_form)
         .kinds(wifi_occupancy_kinds)

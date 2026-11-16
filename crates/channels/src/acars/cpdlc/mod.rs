@@ -37,7 +37,7 @@ impl Bits<'_> {
         let mut v = 0u32;
         for _ in 0..n {
             let byte = *self.data.get(self.pos / 8)?;
-            v = (v << 1) | ((byte >> (7 - self.pos % 8)) & 1) as u32;
+            v = (v << 1) | u32::from((byte >> (7 - self.pos % 8)) & 1);
             self.pos += 1;
         }
         Some(v)
@@ -212,7 +212,7 @@ fn read_route_clearance(b: &mut Bits) -> Option<String> {
                     let pb = read_published(b)?;
                     let deg = read_degrees(b)?;
                     let dist = if b.read(1)? == 0 {
-                        format!("{:.1} NM", b.read(14)? as f64 / 10.0)
+                        format!("{:.1} NM", f64::from(b.read(14)?) / 10.0)
                     } else {
                         format!("{} KM", b.read(10)? + 1)
                     };
@@ -271,7 +271,8 @@ fn read_direction(b: &mut Bits) -> Option<String> {
         "SOUTH-EAST",
         "SOUTH-WEST",
     ];
-    DIRS.get(b.read(4)? as usize).map(|s| s.to_string())
+    DIRS.get(b.read(4)? as usize)
+        .map(std::string::ToString::to_string)
 }
 
 fn read_freetext(b: &mut Bits) -> Option<String> {
@@ -293,7 +294,7 @@ fn read_distance_offset(b: &mut Bits) -> Option<String> {
 
 fn read_distance(b: &mut Bits) -> Option<String> {
     Some(if b.read(1)? == 0 {
-        format!("{:.1} nm", b.read(14)? as f64 / 10.0)
+        format!("{:.1} nm", f64::from(b.read(14)?) / 10.0)
     } else {
         format!("{} km", b.read(10)? + 1)
     })
@@ -302,8 +303,14 @@ fn read_distance(b: &mut Bits) -> Option<String> {
 fn read_frequency(b: &mut Bits) -> Option<String> {
     match b.read(2)? {
         0 => Some(format!("{} kHz", 2850 + b.read(15)?)),
-        1 => Some(format!("{:.3} MHz", (117000 + b.read(15)?) as f64 / 1000.0)),
-        2 => Some(format!("{:.3} MHz", (225000 + b.read(18)?) as f64 / 1000.0)),
+        1 => Some(format!(
+            "{:.3} MHz",
+            f64::from(117000 + b.read(15)?) / 1000.0
+        )),
+        2 => Some(format!(
+            "{:.3} MHz",
+            f64::from(225000 + b.read(18)?) / 1000.0
+        )),
         3 => {
             const NUM: &[u8] = b" 0123456789";
             let mut s = String::with_capacity(12);
@@ -347,9 +354,9 @@ fn read_procedure_name(b: &mut Bits) -> Option<String> {
 
 fn read_altimeter(b: &mut Bits) -> Option<String> {
     Some(if b.read(1)? == 0 {
-        format!("{:.2} inHg", (2200 + b.read(10)?) as f64 / 100.0)
+        format!("{:.2} inHg", f64::from(2200 + b.read(10)?) / 100.0)
     } else {
-        format!("{:.1} hPa", (7500 + b.read(13)?) as f64 / 10.0)
+        format!("{:.1} hPa", f64::from(7500 + b.read(13)?) / 10.0)
     })
 }
 
@@ -390,7 +397,8 @@ fn read_error_information(b: &mut Bits) -> Option<String> {
         "reserved error message 5",
         "reserved error message 6",
     ];
-    ERRS.get(b.read(5)? as usize).map(|s| s.to_string())
+    ERRS.get(b.read(5)? as usize)
+        .map(std::string::ToString::to_string)
 }
 
 fn read_version_number(b: &mut Bits) -> Option<String> {
@@ -423,7 +431,6 @@ fn read_icao_facility_id(b: &mut Bits) -> Option<String> {
 }
 
 fn read_icao_unit_name(b: &mut Bits) -> Option<String> {
-    let id = read_icao_facility_id(b)?;
     const FUNCS: [&str; 8] = [
         "center",
         "approach",
@@ -434,6 +441,7 @@ fn read_icao_unit_name(b: &mut Bits) -> Option<String> {
         "departure",
         "control",
     ];
+    let id = read_icao_facility_id(b)?;
     let func = FUNCS.get(b.read(3)? as usize)?;
     Some(format!("{id} {func}"))
 }
@@ -531,7 +539,7 @@ fn render(template: &str, args: &[String]) -> String {
         let Some(end) = out[start..].find(']') else {
             break;
         };
-        out.replace_range(start..start + end + 1, a);
+        out.replace_range(start..=(start + end), a);
     }
     out
 }
@@ -644,12 +652,12 @@ mod tests {
                 bits.push(((v >> k) & 1) as u8);
             }
         };
-        push(more as u32, 1);
-        push(msg_ref.is_some() as u32, 1);
-        push(ts.is_some() as u32, 1);
-        push(msg_id as u32, 6);
+        push(u32::from(more), 1);
+        push(u32::from(msg_ref.is_some()), 1);
+        push(u32::from(ts.is_some()), 1);
+        push(u32::from(msg_id), 6);
         if let Some(r) = msg_ref {
-            push(r as u32, 6);
+            push(u32::from(r), 6);
         }
         if let Some((h, m, s)) = ts {
             push(h, 5);
@@ -734,7 +742,7 @@ mod tests {
         push(0, 3, &mut bits);
         push(4, 3, &mut bits);
         for c in b"TULSA" {
-            push(*c as u32, 7, &mut bits);
+            push(u32::from(*c), 7, &mut bits);
         }
         let mut body = vec![0u8; bits.len().div_ceil(8)];
         for (i, &v) in bits.iter().enumerate() {
@@ -835,8 +843,8 @@ mod composite_tests {
         b.push(11, 8);
         b.push(0, 3);
         b.push(3, 3);
-        for c in b"OAKEY"[..4].iter() {
-            b.push(*c as u32, 7);
+        for c in &b"OAKEY"[..4] {
+            b.push(u32::from(*c), 7);
         }
         b.push(4, 3);
         b.push(360 - 30, 10);
@@ -857,7 +865,7 @@ mod composite_tests {
         let msg = b"DUE WX";
         b.push((msg.len() - 1) as u32, 8);
         for c in msg {
-            b.push(*c as u32, 7);
+            b.push(u32::from(*c), 7);
         }
         let m = decode(&b.0, true).expect("decode");
         assert_eq!(m.element, "dM67FreeText");
@@ -883,7 +891,7 @@ mod route_tests {
         }
         fn ia5(&mut self, s: &str) {
             for c in s.bytes() {
-                self.push(c as u32, 7);
+                self.push(u32::from(c), 7);
             }
         }
     }

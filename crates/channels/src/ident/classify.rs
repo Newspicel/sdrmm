@@ -28,6 +28,7 @@ const OFDM_ENVELOPE: f32 = 0.2;
 const OFDM_ENVELOPE_MAX: f32 = 0.8;
 const OFDM_DUTY: f32 = 0.9;
 
+#[derive(Clone, Copy)]
 pub(crate) struct Verdict {
     pub(crate) modulation: Modulation,
     pub(crate) confidence: f32,
@@ -60,9 +61,8 @@ fn swept(waveform: &Waveform) -> bool {
 }
 
 fn shift_levels(band: &Band, waveform: &Waveform, modulated: f32) -> Option<u8> {
-    let levels = match waveform.frequency_levels {
-        levels @ (2 | 4 | 8) => levels,
-        _ => return None,
+    let levels @ (2 | 4 | 8) = waveform.frequency_levels else {
+        return None;
     };
     if swept(waveform) {
         return None;

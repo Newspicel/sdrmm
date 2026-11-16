@@ -279,8 +279,7 @@ async fn processors_bind_to_the_array_they_are_wired_from() {
 
     let processors = |array: &str| -> Vec<String> {
         status_of(&state, array)
-            .map(|status| status.processors.into_iter().map(|p| p.node).collect())
-            .unwrap_or_default()
+            .map_or_default(|status| status.processors.into_iter().map(|p| p.node).collect())
     };
     assert_eq!(processors(ARRAY), vec!["df1"]);
     assert_eq!(processors("second"), vec!["df2"]);

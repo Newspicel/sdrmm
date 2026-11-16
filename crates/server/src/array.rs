@@ -382,7 +382,7 @@ impl Bring<'_> {
             let Some(array) = source_of(patch, &node.id, ARRAY_PORT) else {
                 continue;
             };
-            if !arrays.get(&array).is_some_and(|array| array.spec.is_some()) {
+            if arrays.get(&array).is_none_or(|array| array.spec.is_none()) {
                 continue;
             }
             let lane_ports = wired_lane_ports(patch, node);
@@ -393,7 +393,7 @@ impl Bring<'_> {
                 lane_ports: lane_ports.clone(),
                 steer_from: source_of(patch, &node.id, STEER_PORT),
             };
-            if let Err(error) = self.state.engine.apply_processor(spec) {
+            if let Err(error) = self.state.engine.apply_processor(&spec) {
                 refusals.push((node.id.clone(), error.to_string()));
             }
             processors.insert(node.id.clone(), ProcessorBinding { array, lane_ports });
@@ -520,7 +520,7 @@ fn send_poses(state: &AppState) {
     let now = received_ns();
     for (array, position) in fed {
         let fix = position.as_deref().and_then(|gps| state.gps.fix(gps));
-        pose(state, &array, fix, now);
+        pose(state, &array, fix.as_ref(), now);
     }
 }
 
@@ -528,7 +528,7 @@ fn received_ns() -> i64 {
     i64::try_from(sdrmm_device::now_ns()).unwrap_or(i64::MAX)
 }
 
-fn pose(state: &AppState, array: &str, fix: Option<PositionFix>, received_ns: i64) {
+fn pose(state: &AppState, array: &str, fix: Option<&PositionFix>, received_ns: i64) {
     if let Err(error) = state.engine.update_array_pose(array, fix, received_ns) {
         tracing::debug!(%error, array, "array pose refused");
         if state.arrays.pose_lost_is_news(array, Instant::now()) {
@@ -568,7 +568,7 @@ pub(crate) fn start_pump(state: &AppState) {
 fn forward_pose(state: &AppState, position: &str, fix: Option<&PositionFix>) {
     let now = received_ns();
     for array in state.arrays.fed_by(position) {
-        pose(state, &array, fix.cloned(), now);
+        pose(state, &array, fix, now);
     }
 }
 
@@ -663,7 +663,7 @@ fn recording(state: &AppState, node: &str) -> Result<bool, AppError> {
 pub(crate) fn start_recording(
     state: &AppState,
     node: &str,
-    request: ArrayRecordingRequest,
+    request: &ArrayRecordingRequest,
 ) -> Result<ArrayRecordingStarted, AppError> {
     if recording(state, node)? {
         return Err(ArrayRefusal::Refused(ALREADY_RECORDING.to_owned()).into());

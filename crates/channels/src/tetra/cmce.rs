@@ -168,6 +168,10 @@ fn short_data(r: &mut Reader<'_>, cmce: &mut Cmce) -> Option<()> {
     Some(())
 }
 
+#[expect(
+    clippy::option_option,
+    reason = "None is short input, Some(None) an absent field"
+)]
 fn party(r: &mut Reader<'_>) -> Option<Option<u32>> {
     match r.take(2)? {
         0 => {

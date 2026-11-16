@@ -189,7 +189,7 @@ pub fn parse_x25(b: &[u8]) -> Option<X25Packet> {
     if gfi & 0b0011 != 0b0001 {
         return None;
     }
-    let lcn = ((b[0] as u16 & 0x0F) << 8) | b[1] as u16;
+    let lcn = ((u16::from(b[0]) & 0x0F) << 8) | u16::from(b[1]);
     let t = b[2];
     let mut pkt = X25Packet {
         lcn,
@@ -450,9 +450,8 @@ impl ClnpReassembler {
     }
 
     pub fn push(&mut self, b: &[u8], now: f64) -> Option<Vec<u8>> {
-        let seg = match clnp_segment(b) {
-            Some(s) => s,
-            None => return Some(b.to_vec()),
+        let Some(seg) = clnp_segment(b) else {
+            return Some(b.to_vec());
         };
         if seg.offset == 0 && !seg.more {
             return Some(b.to_vec());
@@ -1255,7 +1254,7 @@ pub fn cotp_dt_segment(b: &[u8]) -> Option<(u16, bool, u32, Vec<u8>)> {
         (w & 0x8000_0000 != 0, w & 0x7FFF_FFFF)
     } else {
         let w = *b.get(4)?;
-        (w & 0x80 != 0, (w & 0x7F) as u32)
+        (w & 0x80 != 0, u32::from(w & 0x7F))
     };
     let user = b.get(li + 1..)?.to_vec();
     Some((dst_ref, eot, seq, user))
@@ -1503,7 +1502,7 @@ fn parse_cotp(b: &[u8]) -> Option<Value> {
                     return None;
                 }
                 out["eot"] = json!(b[4] & 0x80 != 0);
-                out["tpdu_seq"] = json!((b[4] & 0x7F) as u32);
+                out["tpdu_seq"] = json!(u32::from(b[4] & 0x7F));
                 var_off = 5;
             }
         }
@@ -1520,7 +1519,7 @@ fn parse_cotp(b: &[u8]) -> Option<Value> {
                     return None;
                 }
                 out["credit"] = json!(credit_nibble.unwrap_or(0));
-                out["tpdu_seq"] = json!((b[4] & 0x7F) as u32);
+                out["tpdu_seq"] = json!(u32::from(b[4] & 0x7F));
                 var_off = 5;
             }
         }
@@ -1535,7 +1534,7 @@ fn parse_cotp(b: &[u8]) -> Option<Value> {
                 if b.len() < 5 {
                     return None;
                 }
-                out["tpdu_seq"] = json!((b[4] & 0x7F) as u32);
+                out["tpdu_seq"] = json!(u32::from(b[4] & 0x7F));
                 var_off = 5;
             }
         }
@@ -1552,7 +1551,7 @@ fn parse_cotp(b: &[u8]) -> Option<Value> {
                     return None;
                 }
                 out["credit"] = json!(credit_nibble.unwrap_or(0));
-                out["tpdu_seq"] = json!((b[4] & 0x7F) as u32);
+                out["tpdu_seq"] = json!(u32::from(b[4] & 0x7F));
                 var_off = 5;
             }
         }
@@ -1575,7 +1574,11 @@ fn parse_cotp(b: &[u8]) -> Option<Value> {
         out["user_data_len"] = json!(user.len());
         let partial = name == "DT"
             && (out.get("eot") == Some(&json!(false))
-                || out.get("tpdu_seq").and_then(|v| v.as_u64()).unwrap_or(0) != 0);
+                || out
+                    .get("tpdu_seq")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0)
+                    != 0);
         if partial {
             out["tsdu_segment"] = json!(true);
         } else if let Some(app) = parse_cotp_user_app(user) {
@@ -2110,7 +2113,7 @@ mod tests {
         if more {
             flags |= 0x40;
         }
-        let seg_len = hdr_len as u16 + data.len() as u16;
+        let seg_len = u16::from(hdr_len) + data.len() as u16;
         let mut b = vec![
             0x81,
             hdr_len,

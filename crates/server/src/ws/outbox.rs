@@ -229,13 +229,13 @@ impl Outbox {
         }
     }
 
-    pub(super) async fn send(&self, message: Message) -> Result<(), ()> {
+    pub(super) fn send(&self, message: Message) -> Result<(), ()> {
         self.enqueue(packet(message))
     }
 
-    pub(super) async fn send_frame(&self, frame: Result<Vec<u8>, FrameError>) -> Result<(), ()> {
+    pub(super) fn send_frame(&self, frame: Result<Vec<u8>, FrameError>) -> Result<(), ()> {
         match frame {
-            Ok(bytes) => self.send(Message::Binary(bytes.into())).await,
+            Ok(bytes) => self.send(Message::Binary(bytes.into())),
             Err(refused) => {
                 tracing::warn!(error = %refused, "a frame was refused at encode");
                 self.dropped(1);
@@ -354,18 +354,10 @@ mod tests {
     #[tokio::test]
     async fn control_precedes_audio_and_visuals_keep_only_the_latest_per_stream() {
         let (tx, mut rx) = channel();
-        tx.send(media(FrameKind::Spectrum, 1, 1))
-            .await
-            .expect("send");
-        tx.send(media(FrameKind::Spectrum, 1, 2))
-            .await
-            .expect("replace");
-        tx.send(media(FrameKind::AudioOpus, 2, 3))
-            .await
-            .expect("audio");
-        tx.send(Message::Text("control".into()))
-            .await
-            .expect("control");
+        tx.send(media(FrameKind::Spectrum, 1, 1)).expect("send");
+        tx.send(media(FrameKind::Spectrum, 1, 2)).expect("replace");
+        tx.send(media(FrameKind::AudioOpus, 2, 3)).expect("audio");
+        tx.send(Message::Text("control".into())).expect("control");
         assert_eq!(rx.recv().await, Some(Message::Text("control".into())));
         assert_eq!(rx.recv().await, Some(media(FrameKind::AudioOpus, 2, 3)));
         assert_eq!(rx.recv().await, Some(media(FrameKind::Spectrum, 1, 2)));
@@ -381,9 +373,7 @@ mod tests {
         }
         tx.send_pointer(2, Message::Text("b".into()))
             .expect("pointer");
-        tx.send(Message::Text("control".into()))
-            .await
-            .expect("control");
+        tx.send(Message::Text("control".into())).expect("control");
         assert_eq!(rx.recv().await, Some(Message::Text("control".into())));
         let last = format!("a{}", CONTROL_LIMIT * 4 - 1);
         assert_eq!(rx.recv().await, Some(Message::Text(last.into())));
@@ -402,16 +392,10 @@ mod tests {
     #[tokio::test]
     async fn a_stream_stops_behind_its_own_frames_and_ahead_of_everyone_else_s() {
         let (tx, mut rx) = channel();
-        tx.send(media(FrameKind::Spectrum, 7, 1))
-            .await
-            .expect("send");
-        tx.send(media(FrameKind::Spectrum, 8, 2))
-            .await
-            .expect("send");
-        tx.send(stream_stopped(7)).await.expect("send");
-        tx.send(Message::Text("control".into()))
-            .await
-            .expect("send");
+        tx.send(media(FrameKind::Spectrum, 7, 1)).expect("send");
+        tx.send(media(FrameKind::Spectrum, 8, 2)).expect("send");
+        tx.send(stream_stopped(7)).expect("send");
+        tx.send(Message::Text("control".into())).expect("send");
 
         assert_eq!(rx.recv().await, Some(Message::Text("control".into())));
         assert_eq!(rx.recv().await, Some(media(FrameKind::Spectrum, 7, 1)));

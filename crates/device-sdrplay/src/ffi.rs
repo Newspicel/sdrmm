@@ -237,6 +237,7 @@ pub struct RspDxTunerParamsT {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
+#[expect(clippy::struct_field_names, reason = "mirrors the SDRplay API struct")]
 pub struct RxChannelParamsT {
     pub tuner_params: TunerParamsT,
     pub ctrl_params: ControlParamsT,
@@ -263,6 +264,7 @@ pub struct SyncUpdateT {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
+#[expect(clippy::struct_field_names, reason = "mirrors the SDRplay API struct")]
 pub struct ResetFlagsT {
     pub reset_gain_update: u8,
     pub reset_rf_update: u8,

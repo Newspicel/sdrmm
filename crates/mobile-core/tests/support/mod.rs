@@ -277,7 +277,7 @@ impl AdminSocket {
         match found {
             Ok(Some(found)) => found,
             Ok(None) => panic!("the admin socket closed before {what}"),
-            Err(_) => panic!("no {what} on the admin socket within {PATIENCE:?}"),
+            Err(elapsed) => panic!("no {what} on the admin socket within {PATIENCE:?}: {elapsed}"),
         }
     }
 }

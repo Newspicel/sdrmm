@@ -226,7 +226,9 @@ fn resample(iq: &[Complex<f32>], length: usize) -> Vec<Complex<f32>> {
     resized[length - kept..].copy_from_slice(&spectrum[iq.len() - kept..]);
     planner.plan_fft_inverse(length).process(&mut resized);
     let scale = 1.0 / iq.len() as f32;
-    resized.iter_mut().for_each(|s| *s *= scale);
+    for s in &mut resized {
+        *s *= scale;
+    }
     resized
 }
 

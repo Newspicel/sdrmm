@@ -61,8 +61,7 @@ pub fn describe(session: &mut Session<'_>, port: &str) -> Result<NanoVnaDeviceRe
         .command("help")?
         .iter()
         .find_map(|line| line.strip_prefix("Commands:"))
-        .map(|list| list.split_whitespace().map(str::to_owned).collect())
-        .unwrap_or_default();
+        .map_or_default(|list| list.split_whitespace().map(str::to_owned).collect());
     Ok(NanoVnaDeviceReport {
         port: port.to_owned(),
         firmware,

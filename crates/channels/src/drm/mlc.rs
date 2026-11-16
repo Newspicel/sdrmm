@@ -184,18 +184,15 @@ pub fn encode(plan: &Plan, payload: &[bool]) -> Vec<Complex<f32>> {
         plan.split(&bits, level, &mut level_bits);
         encode_level(&plan.levels[level], &level_bits, &code, &mut coded);
         for (start, length) in MlcDecoder::parts(plan) {
-            match plan.qam.interleaver(level) {
-                Some(t) => {
-                    permutation(length, t, &mut order);
-                    for (index, &source) in order.iter().enumerate() {
-                        dimensions[start + index][level] = u8::from(coded[start + source]);
-                    }
+            if let Some(t) = plan.qam.interleaver(level) {
+                permutation(length, t, &mut order);
+                for (index, &source) in order.iter().enumerate() {
+                    dimensions[start + index][level] = u8::from(coded[start + source]);
                 }
-                None => {
-                    let span = start..start + length;
-                    for (dimension, &bit) in dimensions[span.clone()].iter_mut().zip(&coded[span]) {
-                        dimension[level] = u8::from(bit);
-                    }
+            } else {
+                let span = start..start + length;
+                for (dimension, &bit) in dimensions[span.clone()].iter_mut().zip(&coded[span]) {
+                    dimension[level] = u8::from(bit);
                 }
             }
         }

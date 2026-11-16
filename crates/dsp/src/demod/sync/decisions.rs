@@ -45,7 +45,7 @@ impl Decisions {
         Self {
             levels: levels.to_vec(),
             outer,
-            outer_edge: 0.5 * (outer + inner) / outer,
+            outer_edge: f32::midpoint(outer, inner) / outer,
             mean_square,
             amplitude: 0.0,
             previous: 0.0,

@@ -251,8 +251,7 @@ impl Recorders {
                     .map(|_| ()),
                 None => tick
                     .engine
-                    .start_recording(device_set, take.stream, take.node.as_deref())
-                    .map(|_| ()),
+                    .start_recording(device_set, take.stream, take.node.as_deref()),
             };
             if result.is_ok() {
                 tick.moved_iq = true;

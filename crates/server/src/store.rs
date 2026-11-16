@@ -862,18 +862,17 @@ impl Store {
 
     pub fn delete_decoder_log(&self, filter: &DecoderLogQuery) -> Result<u64, StoreError> {
         let predicate = self.decoder_log_predicate(filter)?;
-        match &filter.sink {
-            Some(sink) => self.unmark_decoder_log(sink, &predicate),
-            None => {
-                let deleted = self.lock().execute(
-                    &format!(
-                        "DELETE FROM decoder_log WHERE id IN (SELECT decoder_log.id FROM {}{})",
-                        predicate.from, predicate.clause
-                    ),
-                    params_from_iter(&predicate.params),
-                )?;
-                Ok(deleted as u64)
-            }
+        if let Some(sink) = &filter.sink {
+            self.unmark_decoder_log(sink, &predicate)
+        } else {
+            let deleted = self.lock().execute(
+                &format!(
+                    "DELETE FROM decoder_log WHERE id IN (SELECT decoder_log.id FROM {}{})",
+                    predicate.from, predicate.clause
+                ),
+                params_from_iter(&predicate.params),
+            )?;
+            Ok(deleted as u64)
         }
     }
 
@@ -1936,14 +1935,14 @@ fn migrate_call_buffers(snapshot: &mut serde_json::Value) {
                 .get("to")
                 .and_then(|end| end.get("node"))
                 .and_then(serde_json::Value::as_str);
-            !source.is_some_and(|id| legacy_ids.contains(id))
-                && !target.is_some_and(|id| legacy_ids.contains(id))
-                && !(source.is_some_and(|id| systems.contains(id))
-                    && edge
-                        .get("from")
-                        .and_then(|end| end.get("port"))
-                        .and_then(serde_json::Value::as_str)
-                        == Some("trunk_audio"))
+            let legacy = |end: Option<&str>| end.is_some_and(|id| legacy_ids.contains(id));
+            let trunk_audio = source.is_some_and(|id| systems.contains(id))
+                && edge
+                    .get("from")
+                    .and_then(|end| end.get("port"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some("trunk_audio");
+            !(legacy(source) || legacy(target) || trunk_audio)
         });
         for edge in edges {
             let target_is_system = edge

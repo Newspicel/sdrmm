@@ -284,7 +284,7 @@ struct Pipeline {
 
 fn start_radar(engine: &Arc<Engine>, params: PassiveRadarParams) {
     engine
-        .apply_processor(processor("radar", ProcessorParams::PassiveRadar(params)))
+        .apply_processor(&processor("radar", ProcessorParams::PassiveRadar(params)))
         .unwrap();
 }
 

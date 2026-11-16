@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn silence_yields_no_tracking_drift() {
         let mut det = MskDetector::new(RATE, CENTRE_HZ, BAUD);
-        det.process(&[0.0; 48_000], &mut Vec::new());
+        det.process(&vec![0.0; 48_000], &mut Vec::new());
         assert_eq!(det.offset_hz(), 0.0);
     }
 

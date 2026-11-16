@@ -60,19 +60,79 @@ mod survey;
 mod workspaces;
 
 pub(crate) use actions::{Tuner, act, controlled, tune_node};
-use audio_recordings::*;
-use cps::*;
-use decoderlog::*;
+use audio_recordings::{
+    __path_delete_audio_recording, __path_download_audio_recording, __path_list_audio_recordings,
+    __path_play_audio_recording, __path_reveal_audio_recording, delete_audio_recording,
+    download_audio_recording, list_audio_recordings, play_audio_recording, reveal_audio_recording,
+};
+use cps::{
+    __path_cancel_cps_job, __path_convert_cps_codeplug, __path_create_cps_codeplug,
+    __path_create_cps_device, __path_create_cps_user, __path_delete_cps_codeplug,
+    __path_delete_cps_device, __path_delete_cps_user, __path_get_cps_codeplug, __path_get_cps_job,
+    __path_get_cps_library, __path_identify_radio, __path_list_cps_jobs, __path_list_cps_ports,
+    __path_list_radio_models, __path_merge_cps_codeplug, __path_read_radio,
+    __path_update_cps_codeplug, __path_update_cps_device, __path_update_cps_user,
+    __path_write_radio, cancel_cps_job, convert_cps_codeplug, create_cps_codeplug,
+    create_cps_device, create_cps_user, delete_cps_codeplug, delete_cps_device, delete_cps_user,
+    get_cps_codeplug, get_cps_job, get_cps_library, identify_radio, list_cps_jobs, list_cps_ports,
+    list_radio_models, merge_cps_codeplug, read_radio, update_cps_codeplug, update_cps_device,
+    update_cps_user, write_radio,
+};
+use decoderlog::{
+    __path_clear_decoder_log, __path_export_decoder_log, __path_group_decoder_log,
+    __path_list_decoder_log, clear_decoder_log, export_decoder_log, group_decoder_log,
+    list_decoder_log,
+};
 pub(crate) use devices::patch_device_live;
-use devices::*;
-use info::*;
-use media::*;
+use devices::{
+    __path_delete_saved_radio, __path_get_channel_types, __path_get_devices,
+    __path_get_encoder_types, __path_get_nmea_devices, __path_get_serial_ports, __path_get_state,
+    __path_list_saved_radios, __path_save_radio, __path_write_serial, delete_saved_radio,
+    get_channel_types, get_devices, get_encoder_types, get_nmea_devices, get_serial_ports,
+    get_state, list_saved_radios, patch_channel_locked, save_radio, write_serial,
+};
+use info::{
+    __path_get_about, __path_get_auth, __path_get_band_plan, __path_get_clients,
+    __path_get_diagnostics, __path_get_doctor, __path_get_ionosonde, __path_get_license_text,
+    __path_get_occupancy, __path_get_patch_catalog, __path_get_status, __path_get_transport,
+    __path_list_band_regions, __path_list_tools, __path_locate_band_region, __path_run_tool,
+    get_about, get_auth, get_band_plan, get_clients, get_diagnostics, get_doctor, get_ionosonde,
+    get_license_text, get_occupancy, get_patch_catalog, get_status, get_transport,
+    list_band_regions, list_tools, locate_band_region, run_tool,
+};
+use media::{
+    __path_call_audio, __path_captured_image, __path_list_images, call_audio, captured_image,
+    list_images,
+};
 pub(crate) use media::{call_audio_path, captured_image_path};
 pub(crate) use nodes::{channel_settings, edit_channel, radio_of, set_channel, set_device};
-use presets::*;
-use recordings::*;
-use satellites::*;
-use workspaces::*;
+use presets::{
+    __path_apply_preset, __path_create_bookmark, __path_create_preset, __path_delete_bookmark,
+    __path_delete_preset, __path_list_bookmarks, __path_list_presets, apply_preset,
+    create_bookmark, create_preset, delete_bookmark, delete_preset, list_bookmarks, list_presets,
+};
+use recordings::{
+    __path_annotate_recording, __path_delete_recording, __path_download_recording,
+    __path_list_recordings, __path_reveal_recording, __path_reveal_recordings_dir,
+    __path_upload_recording, annotate_recording, byte_stream, collection_row, delete_recording,
+    download_recording, list_recordings, recording_row, reveal_recording, reveal_recordings_dir,
+    upload_recording,
+};
+use satellites::{
+    __path_satellite_transmitters, __path_search_satellites, satellite_transmitters,
+    search_satellites,
+};
+use workspaces::{
+    __path_activate_workspace, __path_apply_template, __path_apply_workspace,
+    __path_create_workspace, __path_delete_workspace, __path_dismiss_workspace_notice,
+    __path_export_workspace, __path_get_resolved, __path_get_workspace, __path_import_example,
+    __path_import_workspace, __path_list_examples, __path_list_templates, __path_list_workspaces,
+    __path_redo_workspace, __path_undo_workspace, __path_update_workspace, Merge,
+    activate_workspace, apply_template, apply_workspace, create_workspace, delete_workspace,
+    dismiss_workspace_notice, export_workspace, get_resolved, get_workspace, import_example,
+    import_workspace, list_examples, list_templates, list_workspaces, place_merged, redo_workspace,
+    undo_workspace, update_workspace,
+};
 pub(crate) use workspaces::{
     HistoryStep, active_workspace, check_channel_node, resolve_now, step_history, switch,
 };
@@ -211,6 +271,7 @@ impl Author {
 impl<S: Send + Sync> FromRequestParts<S> for Author {
     type Rejection = AppError;
 
+    #[expect(clippy::unused_async_trait_impl, reason = "axum extractors are async")]
     async fn from_request_parts(
         parts: &mut axum::http::request::Parts,
         _state: &S,

@@ -427,12 +427,10 @@ impl<F> CpmDemod<F> {
                         peak *= self.peak_hold_decay;
                     }
                 }
+            } else if magnitude > idle {
+                idle += PEAK_ATTACK * (magnitude - idle);
             } else {
-                if magnitude > idle {
-                    idle += PEAK_ATTACK * (magnitude - idle);
-                } else {
-                    idle *= self.peak_decay;
-                }
+                idle *= self.peak_decay;
             }
             let level = if carrier { &peak } else { &idle };
             let unit = *level / self.level_max;

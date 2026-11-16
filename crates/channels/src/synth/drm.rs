@@ -173,7 +173,7 @@ impl Program {
             .map(|unit| drm_frame_padded(unit, &self.config, 0).need("DRM AAC frame"))
             .collect::<Result<Vec<_>, _>>()?;
         let used: usize =
-            frames.iter().map(|frame| frame.len()).sum::<usize>() + (count - 1) * 12 / 8 + 1;
+            frames.iter().map(std::vec::Vec::len).sum::<usize>() + (count - 1) * 12 / 8 + 1;
         let last = frames.len() - 1;
         let spare = length.saturating_sub(used);
         frames[last] = drm_frame_padded(&raw[last], &self.config, frames[last].len() - 1 + spare)
@@ -322,8 +322,7 @@ impl Transmitter {
                     next: index * 7,
                     text: service
                         .text
-                        .map(|message| text::pieces(message, false))
-                        .unwrap_or_default(),
+                        .map_or_default(|message| text::pieces(message, false)),
                     text_at: 0,
                     pending: Vec::new(),
                 }

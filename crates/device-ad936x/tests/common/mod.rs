@@ -373,7 +373,7 @@ fn read_line(stream: &mut TcpStream) -> Option<String> {
     }
 }
 
-/// An AD936x context with `lanes` receive and transmit lanes, as iiod describes one.
+/// An `AD936x` context with `lanes` receive and transmit lanes, as iiod describes one.
 pub fn context_xml(lanes: usize) -> String {
     let mut xml = String::from(
         r#"<?xml version="1.0" encoding="utf-8"?>
@@ -445,7 +445,7 @@ fn buffer_device(id: &str, name: &str, way: &str, format: &str, channels: usize)
 }
 
 /// The values a radio answers a bounded attribute with, so the driver reads its limits off the
-/// wire rather than falling back to what any AD936x can do.
+/// wire rather than falling back to what any `AD936x` can do.
 pub fn attributes(lanes: usize) -> HashMap<String, String> {
     let mut attributes = HashMap::new();
     let mut put = |key: &str, value: &str| {

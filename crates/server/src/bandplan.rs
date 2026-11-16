@@ -183,7 +183,7 @@ fn annotate(entries: Vec<Entry>, annotations: &[Annotation]) -> Vec<Entry> {
             if let Some(annotation) = found {
                 if entry_width >= annotation.stop_hz - annotation.start_hz {
                     piece.friendly = Some(annotation.name.clone());
-                    piece.aliases = annotation.aliases.clone();
+                    piece.aliases.clone_from(&annotation.aliases);
                     piece.notes = piece.notes.or_else(|| annotation.notes.clone());
                 }
                 piece.suggested = piece.suggested.or_else(|| annotation.suggested.clone());
@@ -386,10 +386,10 @@ fn build(def: &RegionDef) -> BandPlan {
     let mut rank = 0u8;
     let info_of = |id: &str, rank: u8| -> Option<BandLayerInfo> {
         layer(id).map(|layer| BandLayerInfo {
-            id: layer.id.to_string(),
-            name: layer.name.to_string(),
-            authority: layer.authority.to_string(),
-            source: layer.source.to_string(),
+            id: layer.id.clone(),
+            name: layer.name.clone(),
+            authority: layer.authority.clone(),
+            source: layer.source.clone(),
             kind: layer.kind,
             rank,
             generator: layer.provenance.generator.clone(),
@@ -422,8 +422,8 @@ fn build(def: &RegionDef) -> BandPlan {
         }
         rank += 1;
         lanes.push(BandLane {
-            id: found.id.to_string(),
-            name: found.name.to_string(),
+            id: found.id.clone(),
+            name: found.name.clone(),
             overlay: true,
             blocks: resolve(&[found], &mut pool),
         });
@@ -667,8 +667,7 @@ mod tests {
         let named = |start: f64| {
             out.iter()
                 .find(|e| e.start_hz == start)
-                .map(|e| e.friendly.clone().unwrap_or_else(|| e.name.clone()))
-                .unwrap_or_default()
+                .map_or_default(|e| e.friendly.clone().unwrap_or_else(|| e.name.clone()))
         };
         assert_eq!(named(100.0), "MARITIME MOBILE");
         assert_eq!(named(110.0), "Marine VHF");
@@ -971,8 +970,7 @@ mod tests {
                 .blocks
                 .iter()
                 .find(|block| block.start_hz <= hz && block.stop_hz > hz)
-                .map(|block| plan.allocations[block.of as usize].name.clone())
-                .unwrap_or_default()
+                .map_or_default(|block| plan.allocations[block.of as usize].name.clone())
         };
         assert!(of("us", 915_000_000.0).contains("ISM"));
         assert!(!of("de", 915_000_000.0).contains("ISM"));

@@ -31,7 +31,6 @@ pub fn health(error: Option<String>) -> DoctorCheck {
         } else {
             CheckStatus::Warn
         },
-        detail: error.clone().unwrap_or_else(|| "loaded".to_string()),
         hint: error.is_some().then(|| {
             "The CR-8 needs its vendor library, which ships with the receiver and is not part of \
              this package. Put libdlcr where the loader can find it, or point \
@@ -39,6 +38,7 @@ pub fn health(error: Option<String>) -> DoctorCheck {
              invisible."
                 .to_string()
         }),
+        detail: error.unwrap_or_else(|| "loaded".to_string()),
     }
 }
 
@@ -710,10 +710,8 @@ mod tests {
 
         let mut buffers: Vec<Vec<ffi::Complex>> =
             (0..8).map(|_| vec![ffi::Complex::default(); 4]).collect();
-        let mut pointers: Vec<*mut ffi::Complex> = buffers
-            .iter_mut()
-            .map(|buffer| buffer.as_mut_ptr())
-            .collect();
+        let mut pointers: Vec<*mut ffi::Complex> =
+            buffers.iter_mut().map(std::vec::Vec::as_mut_ptr).collect();
         unsafe { deliver(pointers.as_mut_ptr(), 4, 0, ctx) };
         unsafe { deliver(pointers.as_mut_ptr(), 4, 100, ctx) };
 
@@ -740,7 +738,7 @@ mod tests {
         let mut data: Vec<Vec<ffi::Complex>> = (0..8)
             .map(|_| vec![ffi::Complex::default(); count])
             .collect();
-        let pointers = data.iter_mut().map(|buffer| buffer.as_mut_ptr()).collect();
+        let pointers = data.iter_mut().map(std::vec::Vec::as_mut_ptr).collect();
         Buffers {
             _data: data,
             pointers,

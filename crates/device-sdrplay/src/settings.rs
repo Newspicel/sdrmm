@@ -745,8 +745,8 @@ mod tests {
         }
     }
 
-    fn manual(hz: f64) -> Option<BandwidthSetting> {
-        Some(BandwidthSetting::Manual { hz })
+    fn manual(hz: f64) -> BandwidthSetting {
+        BandwidthSetting::Manual { hz }
     }
 
     #[test]
@@ -813,16 +813,16 @@ mod tests {
             &mut target,
             &DeviceSettings {
                 sample_rate: Some(2_000_000.0),
-                bandwidth: manual(600_000.0),
+                bandwidth: Some(manual(600_000.0)),
                 ..DeviceSettings::default()
             },
             &capabilities(Model::Rsp1a, None),
         )
         .expect("rate");
-        assert_eq!(applied.bandwidth, manual(600_000.0));
+        assert_eq!(applied.bandwidth, Some(manual(600_000.0)));
         assert_eq!(
             read(&target, false).bandwidth,
-            manual(600_000.0),
+            Some(manual(600_000.0)),
             "a width the operator picked reads back as that width"
         );
         assert_eq!(params.channel.tuner_params.bw_type, ffi::BW_0_600);
@@ -836,7 +836,7 @@ mod tests {
             &mut target,
             &DeviceSettings {
                 sample_rate: Some(2_000_000.0),
-                bandwidth: manual(300_000.0),
+                bandwidth: Some(manual(300_000.0)),
                 ..DeviceSettings::default()
             },
             &capabilities(Model::Rsp1a, None),
@@ -864,7 +864,7 @@ mod tests {
         let error = apply(
             &mut target,
             &DeviceSettings {
-                bandwidth: manual(1_000_000.0),
+                bandwidth: Some(manual(1_000_000.0)),
                 ..DeviceSettings::default()
             },
             &capabilities(Model::Rsp1a, None),
@@ -882,7 +882,7 @@ mod tests {
             apply(
                 &mut target,
                 &DeviceSettings {
-                    bandwidth: manual(8_000_000.0),
+                    bandwidth: Some(manual(8_000_000.0)),
                     ..DeviceSettings::default()
                 },
                 &capabilities(Model::RspDuo, Some(DuoMode::DualTuner)),

@@ -158,7 +158,7 @@ fn cpu_backend(
                 return Ok((Box::new(crew), CafBackendKind::Crew { threads }));
             }
             Err(error) => {
-                tracing::warn!(%error, "radar crew did not start, CAF runs on one thread")
+                tracing::warn!(%error, "radar crew did not start, CAF runs on one thread");
             }
         }
     }

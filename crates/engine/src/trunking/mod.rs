@@ -443,13 +443,12 @@ impl Follower {
         self.prospectors
             .retain(|node, _| nodes.contains(&node.as_str()));
         for system in &self.systems {
-            match self.prospectors.get_mut(&system.node) {
-                Some(prospector) => prospector.configure(&system.discovery, &system.channel_map),
-                None => {
-                    let mut prospector = Prospector::new(&system.discovery, &system.channel_map);
-                    prospector.adopt(&system.learned);
-                    self.prospectors.insert(system.node.clone(), prospector);
-                }
+            if let Some(prospector) = self.prospectors.get_mut(&system.node) {
+                prospector.configure(&system.discovery, &system.channel_map);
+            } else {
+                let mut prospector = Prospector::new(&system.discovery, &system.channel_map);
+                prospector.adopt(&system.learned);
+                self.prospectors.insert(system.node.clone(), prospector);
             }
         }
         for carrier in &live {

@@ -517,7 +517,9 @@ impl Container {
         let mut values = [Complex::new(0.0, 0.0); 64];
         values.copy_from_slice(&self.scratch[..64]);
         let constant = pl::pilot_symbol().conj();
-        values.iter_mut().for_each(|value| *value *= constant);
+        for value in &mut values {
+            *value *= constant;
+        }
         codes::hadamard(&mut values);
         for (vote, value) in self.trailer_votes.iter_mut().zip(&values) {
             *vote += value.norm_sqr();

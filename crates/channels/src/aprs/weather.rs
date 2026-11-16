@@ -129,6 +129,10 @@ fn tagged_value(field: &[u8], tag: u8, width: usize) -> Option<(Option<i32>, &[u
     Some((reading, after.get(width..).unwrap_or_default()))
 }
 
+#[expect(
+    clippy::option_option,
+    reason = "None is malformed, Some(None) is a blank field"
+)]
 fn value(field: &[u8]) -> Option<Option<i32>> {
     if field.iter().all(|&b| b == b'.' || b == b' ') {
         return Some(None);

@@ -194,14 +194,12 @@ fn sighted(record: &DecodedRecord) -> (Station, Option<BearingRay>) {
     let node = record
         .origin
         .as_ref()
-        .map(|origin| origin.node.clone())
-        .unwrap_or_default();
-    let (entity, ray) = match &record.view {
-        Some(view) => (view.entity.clone(), view.bearing),
-        None => {
-            let view = record.event.present();
-            (view.entity, view.bearing)
-        }
+        .map_or_default(|origin| origin.node.clone());
+    let (entity, ray) = if let Some(view) = &record.view {
+        (view.entity.clone(), view.bearing)
+    } else {
+        let view = record.event.present();
+        (view.entity, view.bearing)
     };
     ((node, entity.unwrap_or_default()), ray)
 }

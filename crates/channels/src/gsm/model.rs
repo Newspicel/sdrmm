@@ -449,7 +449,7 @@ impl GsmDedicated {
         let mut parts = Vec::new();
         match (&self.protocol, &self.message) {
             (Some(protocol), Some(message)) => {
-                parts.push(format!("{} {message}", protocol.label()))
+                parts.push(format!("{} {message}", protocol.label()));
             }
             _ => parts.push(format!("LAPDm {}", self.frame.label())),
         }

@@ -19,9 +19,7 @@ const SPECTRUM_SAMPLES: usize = FFT_LEN * 24;
 const SHIFT_HZ: u32 = 40_000;
 
 fn seconds() -> u64 {
-    std::env::var("SDRMM_FUNCUBE_TEST_SECONDS")
-        .map(|value| value.parse().expect("duration"))
-        .unwrap_or(5)
+    std::env::var("SDRMM_FUNCUBE_TEST_SECONDS").map_or(5, |value| value.parse().expect("duration"))
 }
 
 fn only_funcube() -> String {

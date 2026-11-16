@@ -282,7 +282,7 @@ impl Wav {
                 bail!("{} carries no data chunk", path.display());
             }
             let id = [chunk[0], chunk[1], chunk[2], chunk[3]];
-            let size = u32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]) as u64;
+            let size = u64::from(u32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]));
             pos += 8;
             if &id == b"fmt " {
                 let mut body = vec![0u8; size as usize];

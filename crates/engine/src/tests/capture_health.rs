@@ -114,9 +114,7 @@ struct Hardware {
 }
 
 fn number<T: std::str::FromStr>(name: &str, default: T) -> T {
-    std::env::var(name)
-        .map(|value| value.parse().ok().expect(name))
-        .unwrap_or(default)
+    std::env::var(name).map_or(default, |value| value.parse().ok().expect(name))
 }
 
 fn enabled(name: &str) -> bool {

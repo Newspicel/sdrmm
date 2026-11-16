@@ -231,6 +231,10 @@ pub struct TrunkSystemStatus {
     pub dropped: u64,
 }
 
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if takes a reference"
+)]
 const fn is_zero(value: &u64) -> bool {
     *value == 0
 }

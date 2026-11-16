@@ -716,8 +716,7 @@ mod tests {
         }
         let offered = Robustness::ALL
             .iter()
-            .flat_map(|mode| (0..6).map(|occupancy| mode.carriers(occupancy)))
-            .filter(Option::is_some)
+            .flat_map(|mode| (0..6).filter_map(|occupancy| mode.carriers(occupancy)))
             .count();
         assert_eq!(offered, SPEC.len());
         for mode in Robustness::ALL {

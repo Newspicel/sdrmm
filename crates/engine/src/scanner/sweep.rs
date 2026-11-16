@@ -91,7 +91,7 @@ pub(crate) fn enter(engine: &Engine, ds: u32, plan: &SweepPlan) -> Result<(), En
     match started {
         Ok(sweeping) => swap_runtime(engine, ds, sweeping, handover),
         Err((device, refused)) => {
-            restore_receiving(engine, ds, device, taps, handover)?;
+            restore_receiving(engine, ds, device, &taps, handover)?;
             Err(EngineError::Device(refused))
         }
     }
@@ -102,7 +102,7 @@ fn restore_receiving(
     engine: &Engine,
     ds: u32,
     mut device: Box<dyn SdrDevice>,
-    taps: Vec<SpectrumTap>,
+    taps: &[SpectrumTap],
     handover: Handover,
 ) -> Result<(), EngineError> {
     let settings = {
@@ -153,7 +153,7 @@ pub(crate) fn leave(engine: &Engine, ds: u32) -> Result<(), EngineError> {
     let device =
         device.ok_or_else(|| EngineError::Scan("the radio is already down".to_string()))?;
     let taps = lock_runtime(&runtime).taps();
-    restore_receiving(engine, ds, device, taps, handover)
+    restore_receiving(engine, ds, device, &taps, handover)
 }
 
 /// Installs `runtime` in place of the current one and hands it the IQ sinks prepared in

@@ -11,7 +11,7 @@ use crate::{
 pub(crate) fn act(
     state: &AppState,
     node: &str,
-    action: MissionAction,
+    action: &MissionAction,
     author: Option<&str>,
 ) -> Result<Mission, AppError> {
     let mission = current(state, node)?;
@@ -31,7 +31,7 @@ fn current(state: &AppState, node: &str) -> Result<Mission, AppError> {
 fn dispatch(
     state: &AppState,
     mission: &Mission,
-    action: MissionAction,
+    action: &MissionAction,
     author: Option<&str>,
 ) -> Result<(), AppError> {
     match &mission.body {
@@ -49,7 +49,7 @@ fn dispatch(
 fn hunt_action(
     state: &AppState,
     (node, hunt): (&str, &HuntMission),
-    action: MissionAction,
+    action: &MissionAction,
     author: Option<&str>,
 ) -> Result<(), AppError> {
     let target = hunt.target.as_ref().ok_or(MissionRefusal::NotRunning)?;
@@ -59,7 +59,7 @@ fn hunt_action(
                 author,
                 actor: Some(node),
             };
-            return rest::tune_node(state, &target.channel_node, positive(frequency_hz)?, tuner);
+            return rest::tune_node(state, &target.channel_node, positive(*frequency_hz)?, tuner);
         }
         MissionAction::StartHunt | MissionAction::StopSweep => HuntAction::Start,
         MissionAction::StopHunt => HuntAction::Stop,
@@ -85,17 +85,17 @@ fn tune(
 fn array_action(
     state: &AppState,
     array: Option<&str>,
-    action: MissionAction,
+    action: &MissionAction,
 ) -> Result<(), AppError> {
     let array = array.ok_or(MissionRefusal::NotRunning)?;
     match action {
-        MissionAction::Tune { frequency_hz } => tune(state, array, frequency_hz, None),
+        MissionAction::Tune { frequency_hz } => tune(state, array, *frequency_hz, None),
         MissionAction::Calibrate => array::calibrate(state, array),
         _ => Err(MissionRefusal::NotAControl.into()),
     }
 }
 
-fn survey_action(state: &AppState, node: &str, action: MissionAction) -> Result<(), AppError> {
+fn survey_action(state: &AppState, node: &str, action: &MissionAction) -> Result<(), AppError> {
     let survey = match action {
         MissionAction::StartSurvey => SurveyAction::Start,
         MissionAction::StopSurvey => SurveyAction::Stop,

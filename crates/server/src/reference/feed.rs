@@ -8,7 +8,7 @@ use std::{
 use reqwest::Client;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
-const RETRY_AFTER: Duration = Duration::from_secs(30 * 60);
+const RETRY_AFTER: Duration = Duration::from_mins(30);
 const USER_AGENT: &str = concat!("SDRmm/", env!("CARGO_PKG_VERSION"));
 
 pub(crate) type Parse<T> = fn(&[u8]) -> Result<T, String>;

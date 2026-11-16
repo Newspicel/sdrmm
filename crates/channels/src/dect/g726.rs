@@ -137,7 +137,7 @@ fn magnitude(code: u32) -> usize {
 }
 
 fn exponent(magnitude: u32) -> u32 {
-    u32::BITS - magnitude.leading_zeros()
+    magnitude.bit_width()
 }
 
 fn float(magnitude: u32, sign: u32) -> u32 {
@@ -255,7 +255,7 @@ fn trans(td: u32, yl: u32, dq: u32) -> bool {
     } else {
         (ylfrac + 32) << ylint
     };
-    let dqthr = (thr + (thr >> 1)) >> 1;
+    let dqthr = u32::midpoint(thr, thr >> 1);
     (dq & 32_767) > dqthr && td == 1
 }
 
@@ -395,6 +395,7 @@ fn xor(dqn: u32, dq: u32) -> u32 {
     ((dq >> 15) & 1) ^ (dqn >> 10)
 }
 
+#[expect(clippy::verbose_bit_mask, reason = "G.726 masks DQ to its magnitude")]
 fn upb(u: u32, b: u32, dq: u32) -> u32 {
     let ugb = match (dq & 32_767 == 0, u) {
         (true, _) => 0,

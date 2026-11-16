@@ -114,12 +114,12 @@ fn limits(fps: u16, bins: u16) -> (u16, usize) {
     )
 }
 
-async fn stopped(stream_id: u16, out_tx: &Outbox) {
+fn stopped(stream_id: u16, out_tx: &Outbox) {
     let event = ServerEvent::StreamStopped {
         stream_id,
         kind: StreamKind::Spectrum,
     };
-    let _ = out_tx.send(text_event(&event)).await;
+    let _ = out_tx.send(text_event(&event));
 }
 
 pub(super) fn spawn_iq_spectrum(
@@ -162,16 +162,15 @@ pub(super) fn spawn_iq_spectrum(
                         bins: quant,
                     }
                     .encode();
-                    if out_tx.send_frame(frame).await.is_err() {
+                    if out_tx.send_frame(frame).is_err() {
                         break;
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(count)) => {
                     out_tx.dropped(count);
-                    continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
-                    stopped(stream_id, &out_tx).await;
+                    stopped(stream_id, &out_tx);
                     break;
                 }
             }
@@ -235,16 +234,15 @@ pub(super) fn spawn_pcm_spectrum(
                         bins: quant,
                     }
                     .encode();
-                    if out_tx.send_frame(frame).await.is_err() {
+                    if out_tx.send_frame(frame).is_err() {
                         break;
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(count)) => {
                     out_tx.dropped(count);
-                    continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
-                    stopped(stream_id, &out_tx).await;
+                    stopped(stream_id, &out_tx);
                     break;
                 }
             }

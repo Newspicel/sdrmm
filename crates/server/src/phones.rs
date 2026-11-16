@@ -235,24 +235,22 @@ fn matches(token: &PhoneToken, stored: &[u8; 32]) -> bool {
 }
 
 fn gps_nodes(graph: Option<&PatchGraph>, phone: &str) -> Vec<String> {
-    graph
-        .map(|graph| {
-            graph
-                .nodes
-                .iter()
-                .filter(|node| {
-                    matches!(
-                        &node.body,
-                        NodeBody::Gps(gps) if matches!(
-                            &gps.source,
-                            Some(PositionSource::Phone { phone: bound }) if bound == phone
-                        )
+    graph.map_or_default(|graph| {
+        graph
+            .nodes
+            .iter()
+            .filter(|node| {
+                matches!(
+                    &node.body,
+                    NodeBody::Gps(gps) if matches!(
+                        &gps.source,
+                        Some(PositionSource::Phone { phone: bound }) if bound == phone
                     )
-                })
-                .map(|node| node.id.clone())
-                .collect()
-        })
-        .unwrap_or_default()
+                )
+            })
+            .map(|node| node.id.clone())
+            .collect()
+    })
 }
 
 pub(crate) fn spawn_flusher(state: &AppState) {

@@ -55,22 +55,17 @@ fn params(settings: &ChannelSettings) -> Result<AisParams, ChannelError> {
     crate::settings_of::<AisParams>(settings)
 }
 
-fn check_params(_p: &AisParams) -> Result<(), ChannelError> {
-    Ok(())
-}
-
-pub(crate) fn occupied_band(_p: &AisParams) -> (f64, f64) {
+pub(crate) fn occupied_band() -> (f64, f64) {
     let half = DESCRIPTOR.bandwidth_hz / 2.0;
     (-half, half)
 }
 
-pub(crate) fn channel_filter(p: &AisParams) -> Result<ChannelFilter, ChannelError> {
-    check_params(p)?;
-    let (_, half) = occupied_band(p);
-    Ok(ChannelFilter::Symmetric(Decimator::new(
+pub(crate) fn channel_filter() -> ChannelFilter {
+    let (_, half) = occupied_band();
+    ChannelFilter::Symmetric(Decimator::new(
         &design_lowpass(CHANNEL_TAPS, half / DESCRIPTOR.input_rate_hz),
         1,
-    )))
+    ))
 }
 
 impl NativeChannel for AisChannelRx {
@@ -80,7 +75,6 @@ impl NativeChannel for AisChannelRx {
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
-        check_params(&p)?;
         Ok(Self {
             letter: p.ais_channel.letter(),
             seq: 0,
@@ -93,7 +87,6 @@ impl NativeChannel for AisChannelRx {
 impl ChannelRx for AisChannelRx {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
-        check_params(&p)?;
         self.letter = p.ais_channel.letter();
         Ok(())
     }
@@ -271,8 +264,8 @@ fn ais_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn ais_decoder() -> Native<AisParams> {
-    Native::new::<AisChannelRx>(occupied_band)
-        .filter(channel_filter)
+    Native::new::<AisChannelRx>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
         .home(161_975_000.0)
         .signatures(ais_signatures)
         .trial(ais_trial)
@@ -360,7 +353,7 @@ mod tests {
                     event
                         .read::<AisMessage>()
                         .unwrap_or_else(|| panic!("unexpected event {event:?}")),
-                )
+                );
             }
             pos = end;
         }

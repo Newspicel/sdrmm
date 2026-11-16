@@ -312,8 +312,10 @@ async fn open_radio(app: &Router, device_id: &str) -> u32 {
         .device_sets
         .iter()
         .find(|set| set.device.id() == device_id)
-        .map(|set| set.id)
-        .unwrap_or_else(|| panic!("{device_id} did not open: {report:?}"))
+        .map_or_else(
+            || panic!("{device_id} did not open: {report:?}"),
+            |set| set.id,
+        )
 }
 
 async fn open_virtual_radio(app: &Router) -> u32 {
@@ -346,8 +348,10 @@ async fn open_channel(app: &Router, ds: u32, node: &str, settings: serde_json::V
                 .iter()
                 .find(|channel| channel.node.as_deref() == Some(node))
         })
-        .map(|channel| channel.id)
-        .unwrap_or_else(|| panic!("{node} did not open: {report:?}"))
+        .map_or_else(
+            || panic!("{node} did not open: {report:?}"),
+            |channel| channel.id,
+        )
 }
 
 async fn draw(app: &Router, id: &str, body: sdrmm_wire::NodeBody, wires: &[[&str; 4]]) {
@@ -384,8 +388,7 @@ async fn radio_at(app: &Router, ds: u32) -> String {
         .radios()
         .into_iter()
         .find(|(_, set)| *set == ds)
-        .map(|(node, _)| node)
-        .unwrap_or_else(|| panic!("no node runs device set {ds}"))
+        .map_or_else(|| panic!("no node runs device set {ds}"), |(node, _)| node)
 }
 
 async fn channel_at(app: &Router, ds: u32, ch: u32) -> String {
@@ -637,8 +640,7 @@ async fn recorded(app: &Router) -> sdrmm_wire::RecordingInfo {
 fn header_value(headers: &axum::http::HeaderMap, name: &str) -> String {
     headers
         .get(name)
-        .map(|value| value.to_str().expect("ascii header").to_string())
-        .unwrap_or_default()
+        .map_or_default(|value| value.to_str().expect("ascii header").to_string())
 }
 
 async fn list_audio_recordings(app: &Router) -> Vec<sdrmm_wire::AudioRecordingInfo> {

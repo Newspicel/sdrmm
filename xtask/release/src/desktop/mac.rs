@@ -33,7 +33,7 @@ pub fn helpers(helper: &Path, stage: &Path, product: &str) -> Result<Vec<PathBuf
 /// Copies the libraries into the stage with an ad-hoc signature. cargo-packager orders signing
 /// by path depth alone, so the main executable may be signed before a library beside it in
 /// `Frameworks`, and codesign refuses an unsigned one there. The packager re-signs each library
-/// with the real identity afterwards. Only x86_64 needs this: arm64 links in a signature.
+/// with the real identity afterwards. Only `x86_64` needs this: arm64 links in a signature.
 pub fn presigned(libraries: &[PathBuf], stage: &Path) -> Result<Vec<PathBuf>> {
     let dir = stage.join("libraries");
     std::fs::create_dir_all(&dir)?;

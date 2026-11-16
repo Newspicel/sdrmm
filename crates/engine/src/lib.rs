@@ -134,7 +134,7 @@ pub fn channel_types() -> Vec<sdrmm_wire::ChannelDescriptor> {
     sdrmm_channels::descriptors()
 }
 
-/// Every backend this build drives itself, so the SoapySDR driver can hide the radios a native
+/// Every backend this build drives itself, so the `SoapySDR` driver can hide the radios a native
 /// one already lists.
 #[must_use]
 pub fn native_backends() -> Vec<DeviceBackend> {
@@ -386,9 +386,9 @@ fn sample_rate_of(settings: &DeviceSettings) -> f64 {
     settings.sample_rate.unwrap_or(DEFAULT_SAMPLE_RATE)
 }
 
-fn center_of(settings: &DeviceSettings, stream: u32, scope: &StreamScope) -> f64 {
+fn center_of(settings: &DeviceSettings, stream: u32, scope: StreamScope) -> f64 {
     settings
-        .for_stream(stream, scope)
+        .for_stream(stream, &scope)
         .center_hz
         .unwrap_or(DEFAULT_CENTER_HZ)
 }
@@ -789,7 +789,7 @@ impl DeviceSetState {
 
     fn lane_center(&self, stream: u32) -> f64 {
         self.virtual_lanes.get(&stream).map_or_else(
-            || center_of(&self.settings, stream, &self.capabilities.per_stream),
+            || center_of(&self.settings, stream, self.capabilities.per_stream),
             |lane| lane.center_hz,
         )
     }
@@ -1077,18 +1077,17 @@ impl DeviceSetState {
         recording: &ChannelAudioRecording,
         taps: Option<audio_recording::AudioTaps>,
     ) -> bool {
-        match &recording.fx_control {
-            Some(control) => control.send(audio_fx::FxControl::Record(taps)).is_ok(),
-            None => {
-                self.send_dsp(
-                    recording.stream,
-                    DspCommand::SetChannelRecordings {
-                        id: recording.route.channel,
-                        taps,
-                    },
-                );
-                true
-            }
+        if let Some(control) = &recording.fx_control {
+            control.send(audio_fx::FxControl::Record(taps)).is_ok()
+        } else {
+            self.send_dsp(
+                recording.stream,
+                DspCommand::SetChannelRecordings {
+                    id: recording.route.channel,
+                    taps,
+                },
+            );
+            true
         }
     }
 
@@ -1540,7 +1539,7 @@ impl Engine {
                             &snapshot.db,
                             snapshot.center_hz,
                             snapshot.span_hz,
-                            snapshot.lo_guard(),
+                            snapshot.lo_guard().as_ref(),
                             now_ms,
                         );
                 }

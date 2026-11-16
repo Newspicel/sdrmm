@@ -236,7 +236,7 @@ fn decode_xng(iq: &[Complex<f32>]) -> Vec<DataLinkMessage> {
     let mut out = Vec::new();
     for chunk in iq.chunks(1024) {
         for frame in decoder.process(chunk) {
-            out.push(xng_adapter::structured(xng_mode_vdl2::to_message(
+            out.push(xng_adapter::structured(&xng_mode_vdl2::to_message(
                 &frame,
                 0,
                 decoder.level_dbfs(),

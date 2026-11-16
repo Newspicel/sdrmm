@@ -99,7 +99,7 @@ impl Tones {
         })
     }
 
-    pub(crate) fn settings(&self, max_rate: f64) -> Vec<ExtraSetting> {
+    pub(crate) fn settings(max_rate: f64) -> Vec<ExtraSetting> {
         let reach = Range {
             min: -(max_rate / 2.0).floor(),
             max: (max_rate / 2.0).floor(),
@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn the_settings_are_grouped_and_reach_half_the_fastest_rate() {
-        let settings = tones().settings(61_440_000.0);
+        let settings = Tones::settings(61_440_000.0);
         assert_eq!(settings.len(), 6);
         assert!(
             settings

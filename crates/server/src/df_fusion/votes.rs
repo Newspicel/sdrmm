@@ -148,6 +148,10 @@ impl VoteKey {
         moved || reweighed || rebiased || reshaped
     }
 
+    #[expect(
+        clippy::option_option,
+        reason = "None skips the repaint, Some holds the replaced paint"
+    )]
     pub(crate) fn refresh(&mut self, clock: f64, force: bool) -> Option<Option<Painted>> {
         let power = self.power_at(clock);
         let bias = self.bias_sigma_deg();
@@ -236,17 +240,16 @@ impl VoteMaps {
             .keys
             .iter()
             .position(|key| key.bin == bin && key.station == observation.station);
-        let (index, evicted) = match found {
-            Some(index) => (index, None),
-            None => {
-                let evicted = (self.keys.len() >= MAX_KEYS)
-                    .then(|| self.weakest(clock))
-                    .flatten()
-                    .map(|weakest| self.keys.swap_remove(weakest));
-                self.keys
-                    .push(VoteKey::new(&observation.station, bin, clock));
-                (self.keys.len() - 1, evicted)
-            }
+        let (index, evicted) = if let Some(index) = found {
+            (index, None)
+        } else {
+            let evicted = (self.keys.len() >= MAX_KEYS)
+                .then(|| self.weakest(clock))
+                .flatten()
+                .map(|weakest| self.keys.swap_remove(weakest));
+            self.keys
+                .push(VoteKey::new(&observation.station, bin, clock));
+            (self.keys.len() - 1, evicted)
         };
         self.keys[index].absorb(observation, at, weight, clock);
         Added { index, evicted }

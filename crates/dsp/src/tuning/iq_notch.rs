@@ -42,7 +42,7 @@ impl IqNotch {
         let radius = (1.0 - PI * self.width_hz / self.rate).clamp(0.0, MAX_POLE_RADIUS);
         self.zero = Complex::from_polar(1.0, TAU * offset_hz / self.rate);
         self.pole = self.zero * radius;
-        self.gain = (1.0 + radius) / 2.0;
+        self.gain = f64::midpoint(1.0, radius);
     }
 
     pub fn reset(&mut self) {

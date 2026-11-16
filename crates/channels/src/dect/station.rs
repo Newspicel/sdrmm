@@ -169,7 +169,7 @@ impl Tracker {
         };
         let paired = partner.map(|at| &self.tracks[at]);
         let encrypted =
-            self.tracks[index].encrypted() || paired.is_some_and(|track| track.encrypted());
+            self.tracks[index].encrypted() || paired.is_some_and(track::Track::encrypted);
         let frame = paired
             .zip(base_time)
             .and_then(|(track, at)| track.frame_number(at));

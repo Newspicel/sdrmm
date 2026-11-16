@@ -275,7 +275,7 @@ mod tests {
     fn ident_reply(model: &str, firmware: &str) -> Vec<u8> {
         let mut reply = vec![0u8; 16];
         reply[0] = b'I';
-        reply[1..1 + model.len()].copy_from_slice(model.as_bytes());
+        reply[1..=model.len()].copy_from_slice(model.as_bytes());
         reply[8] = 0x03;
         reply[9..9 + firmware.len()].copy_from_slice(firmware.as_bytes());
         reply[15] = ACK;

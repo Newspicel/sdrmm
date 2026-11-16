@@ -83,7 +83,7 @@ fn a_phase_processor_waits_for_calibration() {
     let bench = live_bench();
     let ds = bench.open(KRAKEN);
     bench.engine.apply_array(uncalibrated(ds)).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     let synced = wait_status(
         &bench.engine,
         "time sync on the live signal",
@@ -116,7 +116,7 @@ fn a_retuned_array_moves_its_radio_and_keeps_the_bearing() {
     let bench = live_bench();
     let ds = bench.open(KRAKEN);
     bench.engine.apply_array(kraken_array(ds)).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     let before = wait_calibrated(&bench.engine, LOCK_WAIT);
     bench
         .engine
@@ -149,10 +149,10 @@ fn a_time_only_processor_runs_before_phase_is_solved() {
     let bench = live_bench();
     let ds = bench.open(KRAKEN);
     bench.engine.apply_array(uncalibrated(ds)).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     bench
         .engine
-        .apply_processor(processor(
+        .apply_processor(&processor(
             "radar",
             ProcessorParams::PassiveRadar(PassiveRadarParams::default()),
         ))
@@ -188,7 +188,7 @@ fn a_spread_processor_is_gated_on_a_together_array() {
     bench.engine.apply_array(kraken_array(ds)).unwrap();
     bench
         .engine
-        .apply_processor(processor(
+        .apply_processor(&processor(
             "spread",
             ProcessorParams::Probe(ProbeParams {
                 time: true,
@@ -203,7 +203,7 @@ fn a_spread_processor_is_gated_on_a_together_array() {
     assert!(processor_status(&gated, "spread").gated_samples > 0);
     let refused = bench
         .engine
-        .apply_processor(processor(
+        .apply_processor(&processor(
             "stitch",
             ProcessorParams::Stitch(StitchParams::default()),
         ))
@@ -230,7 +230,7 @@ async fn a_channel_on_a_lane_port_hears_the_processor_output() {
     let bench = voice_bench();
     let ds = bench.open(KRAKEN);
     bench.engine.apply_array(kraken_array(ds)).unwrap();
-    bench.engine.apply_processor(beamformer("beam")).unwrap();
+    bench.engine.apply_processor(&beamformer("beam")).unwrap();
     let lane = wait_for("the beam lane", WAIT, || {
         bench.engine.snapshot().device_sets[0]
             .virtual_lanes
@@ -267,8 +267,8 @@ fn two_processors_on_one_array_get_two_virtual_lanes() {
     let bench = Bench::new();
     let ds = bench.open(KRAKEN);
     bench.engine.apply_array(kraken_array(ds)).unwrap();
-    bench.engine.apply_processor(beamformer("beam-a")).unwrap();
-    bench.engine.apply_processor(beamformer("beam-b")).unwrap();
+    bench.engine.apply_processor(&beamformer("beam-a")).unwrap();
+    bench.engine.apply_processor(&beamformer("beam-b")).unwrap();
     let set = bench.engine.snapshot().device_sets.remove(0);
     let mut owners: Vec<(String, String)> = set
         .virtual_lanes
@@ -313,7 +313,7 @@ fn df_at_offset_zero_ignores_rtl_dc() {
     }
     let ds = bench.open(KRAKEN);
     bench.engine.apply_array(kraken_array(ds)).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     wait_calibrated(&bench.engine, LOCK_WAIT);
     wait_status(&bench.engine, "the direction finder to run", WAIT, |now| {
         processor_status(now, "df").gated.is_none()
@@ -393,7 +393,10 @@ fn late_poses(
                 let jitter = Duration::from_millis((draw >> 33) % POSE_JITTER_MS);
                 let fix = pose(heading_at(world.true_time_s()), SystemTime::now());
                 queue.push((
-                    now + POSE_LATE - Duration::from_millis(POSE_JITTER_MS / 2) + jitter,
+                    (now + POSE_LATE)
+                        .checked_sub(Duration::from_millis(POSE_JITTER_MS / 2))
+                        .unwrap()
+                        + jitter,
                     fix,
                 ));
                 next += POSE_EVERY;
@@ -403,7 +406,7 @@ fn late_poses(
                     return true;
                 }
                 let received = i64::try_from(sdrmm_device::now_ns()).unwrap();
-                let _ = engine.update_array_pose(ARRAY, Some(fix.clone()), received);
+                let _ = engine.update_array_pose(ARRAY, Some(fix), received);
                 false
             });
             std::thread::sleep(Duration::from_millis(2));
@@ -420,7 +423,7 @@ fn a_rotating_array_with_late_poses_keeps_true_bearings() {
         mount_offset_deg: 0.0,
     };
     bench.engine.apply_array(spec).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     let running = Arc::new(AtomicBool::new(true));
     let spinner = spin(bench.world.clone(), running.clone());
     let poser = late_poses(bench.engine.clone(), bench.world.clone(), running.clone());

@@ -177,6 +177,7 @@ pub(crate) fn post(endpoint: &Endpoint, request: &Request) -> Result<Status, Dev
     Call::open(endpoint)?.send(request)
 }
 
+#[expect(clippy::needless_pass_by_value, reason = "used as a map_err fn")]
 fn io(error: std::io::Error) -> DeviceError {
     DeviceError::Io(error.to_string())
 }

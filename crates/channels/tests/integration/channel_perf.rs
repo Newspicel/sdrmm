@@ -176,6 +176,10 @@ fn baselines(rows: &[Row]) -> Vec<PerfBaseline> {
 
 #[test]
 #[ignore = "rewrites the committed baseline; run explicitly in release"]
+#[expect(
+    clippy::manual_assert,
+    reason = "assert! on cfg! trips assertions_on_constants"
+)]
 fn write_perf_baseline() {
     if cfg!(debug_assertions) {
         panic!("measure baselines in release");

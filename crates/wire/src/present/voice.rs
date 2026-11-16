@@ -201,8 +201,7 @@ fn slot_activity(f: &DvFrame) -> String {
         .map(|item| {
             let hash = item
                 .destination_hash
-                .map(|hash| format!(" (hash {})", hex(hash, 2)))
-                .unwrap_or_default();
+                .map_or_default(|hash| format!(" (hash {})", hex(hash, 2)));
             format!("TS{} {}{hash}", item.slot, item.activity)
         })
         .collect::<Vec<_>>()

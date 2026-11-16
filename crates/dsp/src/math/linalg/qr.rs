@@ -112,7 +112,7 @@ impl Qr {
         }
         let length = v[column..rows]
             .iter()
-            .map(|value| value.norm_sqr())
+            .map(num_complex::Complex::norm_sqr)
             .sum::<f32>()
             .sqrt();
         for value in &mut v[column..rows] {

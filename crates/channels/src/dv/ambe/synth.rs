@@ -90,7 +90,8 @@ pub(super) fn enhance(params: &mut Params) {
             continue;
         }
         let tilt = (r2m0 + r2m1) - (2.0 * rm0 * rm1 * (w0 * l as f32).cos());
-        let base = (0.96f32 as f64 * PI * f64::from(tilt)) / f64::from(w0 * rm0 * (r2m0 - r2m1));
+        let base =
+            (f64::from(0.96f32) * PI * f64::from(tilt)) / f64::from(w0 * rm0 * (r2m0 - r2m1));
         let weight = magnitude.sqrt() * (base as f32).powf(0.25);
         *slot = if f64::from(weight) > 1.2 {
             (1.2 * f64::from(magnitude)) as f32

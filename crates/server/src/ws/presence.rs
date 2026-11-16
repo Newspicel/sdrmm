@@ -38,9 +38,9 @@ impl PeerLink {
 }
 
 impl Session {
-    pub(super) async fn present(&mut self, author: &str, name: &str) {
+    pub(super) fn present(&mut self, author: &str, name: &str) {
         if !valid_author(author) {
-            self.send_error(BAD_AUTHOR).await;
+            self.send_error(BAD_AUTHOR);
             return;
         }
         let presence = self.state.presence.clone();
@@ -55,9 +55,9 @@ impl Session {
         presence.present(self.peer.id, author, name, &self.peer.fallback);
     }
 
-    pub(super) async fn point(&mut self, pointer: Pointer) {
+    pub(super) fn point(&mut self, pointer: Pointer) {
         if !pointer.fits() {
-            self.send_error(POINTER_TOO_BIG).await;
+            self.send_error(POINTER_TOO_BIG);
             return;
         }
         if !self.peer.budget.take() {
@@ -68,12 +68,12 @@ impl Session {
                 .is_none_or(|last| now.duration_since(last) >= LIMIT_ERROR_EVERY)
             {
                 self.peer.last_limit_error = Some(now);
-                self.send_error(POINTER_TOO_FAST).await;
+                self.send_error(POINTER_TOO_FAST);
             }
             return;
         }
         if !self.state.presence.point(self.peer.id, pointer) {
-            self.send_error(NOT_PRESENT).await;
+            self.send_error(NOT_PRESENT);
         }
     }
 }
@@ -92,7 +92,7 @@ fn spawn_presence(
                         you: me,
                         peers: peers.to_vec(),
                     };
-                    out.send(text_event(&listed)).await
+                    out.send(text_event(&listed))
                 }
                 Ok(PresenceEvent::Pointer { peer, pointer }) if peer != me => {
                     let moved = ServerEvent::PeerPointer {
@@ -107,7 +107,7 @@ fn spawn_presence(
                         you: me,
                         peers: presence.peers().to_vec(),
                     };
-                    out.send(text_event(&listed)).await
+                    out.send(text_event(&listed))
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
             };

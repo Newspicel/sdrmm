@@ -85,7 +85,7 @@ pub enum ArgType {
 }
 
 impl ArgType {
-    /// SoapySDR up to and including 0.8.1 ships an `ArgInfo` default constructor that leaves
+    /// `SoapySDR` up to and including 0.8.1 ships an `ArgInfo` default constructor that leaves
     /// `type` uninitialised, so a driver pushing a default-constructed `ArgInfo` hands over
     /// whatever was on its stack. Anything unrecognised reads as the string the later
     /// constructor settled on.

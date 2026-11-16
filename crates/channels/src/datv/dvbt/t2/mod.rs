@@ -83,7 +83,7 @@ pub struct Coding {
 impl Coding {
     pub fn validate(self) -> Result<Self, DecodeError> {
         use Constellation::Qam256;
-        use Rate::*;
+        use Rate::{R1_2, R1_3, R2_3, R2_5, R3_4, R3_5, R4_5, R5_6};
         let rate_ok = if self.lite {
             self.frame == Frame::Short
                 && matches!(self.rate, R1_3 | R2_5 | R1_2 | R3_5 | R2_3 | R3_4)

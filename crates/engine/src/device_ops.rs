@@ -74,8 +74,8 @@ pub(crate) struct LaneSetup {
     pub(crate) front_end: FrontEnd,
 }
 
-pub(crate) fn lane_setup(settings: &DeviceSettings, stream: u32, scope: &StreamScope) -> LaneSetup {
-    let lane = settings.for_stream(stream, scope);
+pub(crate) fn lane_setup(settings: &DeviceSettings, stream: u32, scope: StreamScope) -> LaneSetup {
+    let lane = settings.for_stream(stream, &scope);
     LaneSetup {
         tuned: (lane.center_hz, lane.tuning),
         front_end: front_end(&lane),
@@ -86,10 +86,10 @@ fn reached(
     settings: &DeviceSettings,
     delta: &DeviceSettings,
     stream: u32,
-    scope: &StreamScope,
+    scope: StreamScope,
 ) -> LaneSetup {
-    let mut lane = settings.for_stream(stream, scope);
-    lane.merge_from(&delta.for_stream(stream, scope));
+    let mut lane = settings.for_stream(stream, &scope);
+    lane.merge_from(&delta.for_stream(stream, &scope));
     lane_setup(&lane, stream, scope)
 }
 
@@ -157,7 +157,7 @@ impl Engine {
                     readouts,
                 }),
                 Err(error) => {
-                    tracing::warn!(ds = device_set, %error, "reading the radio's readouts failed")
+                    tracing::warn!(ds = device_set, %error, "reading the radio's readouts failed");
                 }
             }
         }
@@ -205,7 +205,7 @@ impl Engine {
         let mut baseband_faults: Vec<(u32, u32, String)> = Vec::new();
         let mut history_faults: Vec<(u32, String)> = Vec::new();
         let mut changed: Vec<u32> = Vec::new();
-        for (id, s) in inner.device_sets.iter_mut() {
+        for (id, s) in &mut inner.device_sets {
             let now = s.overruns_live();
             let delta = now.saturating_sub(s.overruns_seen);
             s.overruns_seen = now;
@@ -895,10 +895,10 @@ impl Engine {
         after.merge_from(&delta);
         let scope = state.capabilities.per_stream;
         let change = |stream: u32| {
-            let now = lane_setup(&state.settings, stream, &scope);
+            let now = lane_setup(&state.settings, stream, scope);
             let next = [
-                lane_setup(&after, stream, &scope),
-                reached(&state.settings, &delta, stream, &scope),
+                lane_setup(&after, stream, scope),
+                reached(&state.settings, &delta, stream, scope),
             ];
             LaneChange {
                 setup: next.iter().any(|lane| *lane != now),

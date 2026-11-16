@@ -182,7 +182,7 @@ pub fn strip_fill(blocks: &mut Vec<Vec<u8>>) {
 
 pub fn pair_blocks(data: &[u8]) -> Vec<Vec<u8>> {
     let mut blocks = Vec::with_capacity(data.len() / 32);
-    for chunk in data.as_chunks::<64>().0.iter() {
+    for chunk in data.as_chunks::<64>().0 {
         let (odd, even) = de_interleave2(chunk);
         blocks.push(odd);
         blocks.push(even);

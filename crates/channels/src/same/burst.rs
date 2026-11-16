@@ -161,6 +161,7 @@ impl Bursts {
     }
 }
 
+#[expect(clippy::naive_bytecount, reason = "a few short copies")]
 fn majority<'a>(texts: impl IntoIterator<Item = &'a str>) -> Option<String> {
     let texts = texts.into_iter().collect::<Vec<_>>();
     let len = texts.first()?.len();

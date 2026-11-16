@@ -203,7 +203,7 @@ fn a_radio_that_tunes_each_stream_apart_follows_the_decoders_on_each() {
     let settings = tuned(100e6);
     let settled = resolved(&settings, plan_center(&capabilities, &settings, &wired));
     for channel in &wired {
-        let center_hz = center_of(&settled, channel.stream, &capabilities.per_stream);
+        let center_hz = center_of(&settled, channel.stream, capabilities.per_stream);
         assert!(
             heard(center_hz, channel),
             "stream {} settled on {center_hz} Hz, away from its own decoder",

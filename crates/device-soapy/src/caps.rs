@@ -499,8 +499,7 @@ pub(crate) fn validate(
     let channels = capabilities
         .directional
         .as_ref()
-        .map(|directional| directional.rx.as_slice())
-        .unwrap_or(&[]);
+        .map_or(&[][..], |directional| directional.rx.as_slice());
     if channels.is_empty() {
         let fallback = ChannelCapabilities {
             channel: 0,

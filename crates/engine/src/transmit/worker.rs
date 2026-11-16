@@ -401,6 +401,10 @@ impl Worker {
         }
     }
 
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "stack scratch keeps the TX loop allocation free"
+    )]
     fn step(&mut self) -> Result<bool, String> {
         if self.duc.is_none() {
             self.held_audio.clear();

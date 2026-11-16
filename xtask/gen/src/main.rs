@@ -153,10 +153,10 @@ fn channel_defaults() -> std::collections::BTreeMap<String, sdrmm_wire::ChannelP
 
 fn fixtures(dir: &Path) -> Result<()> {
     const CENTER_HZ: f64 = 100_000_000.0;
+    const BAND_RATE: f64 = 2_400_000.0;
 
     std::fs::create_dir_all(dir).context("create fixtures dir")?;
 
-    const BAND_RATE: f64 = 2_400_000.0;
     let samples = sdrmm_device_virtual::render(BAND_RATE, BAND_RATE as usize);
     write_fixture(
         dir,

@@ -90,6 +90,10 @@ pub(super) fn parse(bytes: &[u8]) -> Vec<WmbusRecord> {
     records
 }
 
+#[expect(
+    clippy::option_option,
+    reason = "None is short input, Some(None) a record with no value"
+)]
 fn record(dif: u8, reader: &mut Reader<'_>) -> Option<Option<WmbusRecord>> {
     let function = match dif >> 4 & 0x03 {
         0 => WmbusFunction::Instantaneous,

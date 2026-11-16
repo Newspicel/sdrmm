@@ -400,7 +400,7 @@ mod tests {
             let events = run_events(&mut channel, &crate::synth::vor::transmission(radial, 2));
             let reading = events
                 .iter()
-                .filter_map(|event| event.read::<VorReading>())
+                .filter_map(sdrmm_wire::DecoderEvent::read::<VorReading>)
                 .next_back()
                 .expect("VOR reading");
             let error = (reading.radial_deg - radial + 180.0).rem_euclid(360.0) - 180.0;
@@ -426,7 +426,7 @@ mod tests {
         let events = run_events(&mut channel, &crate::synth::vor::transmission(200.0, 2));
         let reading = events
             .iter()
-            .filter_map(|event| event.read::<VorReading>())
+            .filter_map(sdrmm_wire::DecoderEvent::read::<VorReading>)
             .next_back()
             .expect("VOR reading");
         let view = sdrmm_wire::present::EventPayload::present(&reading, &EventKind::named("vor"));
@@ -452,7 +452,7 @@ mod tests {
             let events = run_events(&mut channel, &crate::synth::vor::transmission(radial, 2));
             let reading = events
                 .iter()
-                .filter_map(|event| event.read::<VorReading>())
+                .filter_map(sdrmm_wire::DecoderEvent::read::<VorReading>)
                 .next_back()
                 .expect("VOR reading");
             let error = (reading.radial_deg - radial + 180.0).rem_euclid(360.0) - 180.0;

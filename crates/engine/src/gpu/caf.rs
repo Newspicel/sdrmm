@@ -475,28 +475,25 @@ impl GpuCaf {
                 eca.kernel.dispatch(&mut pass);
             }
         }
-        let encoder = match self.eca.as_mut() {
-            Some(eca) => {
-                eca.readback.copy(&mut encoder, &eca.totals);
-                let submission = self.context.queue.submit([encoder.finish()]);
-                self.staging.rearm();
-                eca.energies(&self.shape, job)?;
-                eca.readback.wait(&self.context, submission)?;
-                eca.load()?;
-                let stats = eca
-                    .solver
-                    .solve(&eca.sums, &mut eca.table)
-                    .map_err(|error| format!("clutter solve: {error}"))?;
-                out.suppression_db = stats.suppression_db;
-                out.unsuppressed_groups = stats.unsuppressed_groups;
-                write_complex(&self.context, &eca.weights, eca.table.spectra())?;
-                self.encoder()
-            }
-            None => {
-                out.suppression_db = job.front_suppression_db;
-                out.unsuppressed_groups = 0;
-                encoder
-            }
+        let encoder = if let Some(eca) = self.eca.as_mut() {
+            eca.readback.copy(&mut encoder, &eca.totals);
+            let submission = self.context.queue.submit([encoder.finish()]);
+            self.staging.rearm();
+            eca.energies(&self.shape, job)?;
+            eca.readback.wait(&self.context, submission)?;
+            eca.load()?;
+            let stats = eca
+                .solver
+                .solve(&eca.sums, &mut eca.table)
+                .map_err(|error| format!("clutter solve: {error}"))?;
+            out.suppression_db = stats.suppression_db;
+            out.unsuppressed_groups = stats.unsuppressed_groups;
+            write_complex(&self.context, &eca.weights, eca.table.spectra())?;
+            self.encoder()
+        } else {
+            out.suppression_db = job.front_suppression_db;
+            out.unsuppressed_groups = 0;
+            encoder
         };
         self.finish(encoder, out)?;
         self.staging.rearm();

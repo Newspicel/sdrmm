@@ -96,9 +96,8 @@ async fn call(app: &Router, method: &str, uri: &str, headers: &[(&str, &str)]) -
 }
 
 async fn status(app: &Router, uri: &str, authorization: Option<&str>) -> StatusCode {
-    let headers: Vec<(&str, &str)> = authorization
-        .map(|value| vec![("authorization", value)])
-        .unwrap_or_default();
+    let headers: Vec<(&str, &str)> =
+        authorization.map_or_default(|value| vec![("authorization", value)]);
     call(app, "GET", uri, &headers).await.status
 }
 
@@ -278,9 +277,8 @@ async fn the_phone_listener_takes_phone_keys_only() {
     let paired = pair_one(&phones);
     let app = app(gate(ListenerRole::Phones, true, Some("s3cret"), &phones));
     for authorization in [None, Some("Bearer s3cret")] {
-        let headers: Vec<(&str, &str)> = authorization
-            .map(|value| vec![("authorization", value)])
-            .unwrap_or_default();
+        let headers: Vec<(&str, &str)> =
+            authorization.map_or_default(|value| vec![("authorization", value)]);
         let answer = call(&app, "GET", "/api/missions", &headers).await;
         assert_eq!(answer.status, StatusCode::UNAUTHORIZED);
         assert_eq!(answer.error().error, "Phone key required");

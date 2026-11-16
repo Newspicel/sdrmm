@@ -64,14 +64,14 @@ pub(crate) fn occupied_band() -> (f64, f64) {
 
 pub(crate) fn channel_filter() -> ChannelFilter {
     let half_width = (PASSBAND_HIGH_HZ - PASSBAND_LOW_HZ) / 2.0;
-    let center = (PASSBAND_HIGH_HZ + PASSBAND_LOW_HZ) / 2.0;
+    let center = f64::midpoint(PASSBAND_HIGH_HZ, PASSBAND_LOW_HZ);
     ChannelFilter::Sideband(FirC::from_lowpass(
         &design_lowpass(PASSBAND_TAPS, half_width / INPUT_RATE_HZ),
         center / INPUT_RATE_HZ,
     ))
 }
 
-fn window_len(params: &StanagParams) -> usize {
+fn window_len(params: StanagParams) -> usize {
     usize::from(params.window_s) * HOP
 }
 
@@ -221,7 +221,7 @@ impl NativeChannel for StanagChannel {
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
-        let window = window_len(&params);
+        let window = window_len(params);
         Ok(Self {
             params,
             frequency_hz: settings.frequency_hz,
@@ -247,7 +247,7 @@ impl ChannelRx for StanagChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params != self.params {
-            let window = window_len(&params);
+            let window = window_len(params);
             self.window = Vec::with_capacity(window);
             self.span = window;
             self.analysis = Analysis::new(window);

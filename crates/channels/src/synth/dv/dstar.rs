@@ -76,13 +76,13 @@ fn keyed_transmission(
     }
     slow.resize(SLOW_CYCLE, [0x66; 6]);
     for superframe in 0..superframes {
-        bits.extend(voice_frame(&sync_data(), superframe));
+        bits.extend(voice_frame(sync_data(), superframe));
         for frame in 1..21 {
             let index = superframe * 10 + (frame - 1) / 2;
             let source = slow[index % SLOW_CYCLE];
             let half = (frame - 1) % 2 * 3;
             let bytes = [source[half], source[half + 1], source[half + 2]];
-            bits.extend(voice_frame(&scramble(bytes), superframe * 21 + frame));
+            bits.extend(voice_frame(scramble(bytes), superframe * 21 + frame));
         }
     }
     gmsk(&bits, rate)
@@ -129,14 +129,14 @@ fn build_packet(header: u8, payload: &[u8]) -> [u8; 6] {
     packet
 }
 
-fn voice_frame(data: &[u8; 3], _seed: usize) -> Vec<bool> {
+fn voice_frame(data: [u8; 3], _seed: usize) -> Vec<bool> {
     let mut bits = Vec::with_capacity(FRAME_BITS);
     for &byte in &AMBE_NULL {
         for i in (0..8).rev() {
             bits.push(byte >> i & 1 == 1);
         }
     }
-    for &byte in data {
+    for byte in data {
         for i in 0..8 {
             bits.push(byte >> i & 1 == 1);
         }

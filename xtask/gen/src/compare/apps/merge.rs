@@ -22,8 +22,7 @@ pub fn case_id(receivers: usize) -> String {
 pub fn merge(old: Option<Suite>, machine: Machine, measured: &[Measurement]) -> Suite {
     let previous = old
         .filter(|suite| suite.machine.cpu == machine.cpu && suite.machine.os == machine.os)
-        .map(|suite| suite.groups)
-        .unwrap_or_default();
+        .map_or_default(|suite| suite.groups);
     let groups = RECEIVERS
         .iter()
         .flat_map(|&receivers| [(receivers, Kind::Cpu), (receivers, Kind::Memory)])

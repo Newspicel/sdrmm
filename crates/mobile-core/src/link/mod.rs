@@ -406,7 +406,7 @@ impl<D: Dialer> Supervisor<D> {
         match outcome {
             None => Next::Stop,
             Some(Ok((host, dialed))) => self.live(host, dialed).await,
-            Some(Err(failures)) => self.failed(worst(failures)),
+            Some(Err(failures)) => self.failed(&worst(failures)),
         }
     }
 
@@ -436,8 +436,8 @@ impl<D: Dialer> Supervisor<D> {
         match ended {
             Ended::Stop => Next::Stop,
             Ended::Pause => Next::Pause,
-            Ended::Revoked => self.failed(DialError::Revoked),
-            Ended::Dropped(error) => self.failed(error),
+            Ended::Revoked => self.failed(&DialError::Revoked),
+            Ended::Dropped(error) => self.failed(&error),
         }
     }
 
@@ -472,14 +472,14 @@ impl<D: Dialer> Supervisor<D> {
         }
     }
 
-    fn failed(&mut self, error: DialError) -> Next {
+    fn failed(&mut self, error: &DialError) -> Next {
         tracing::info!(?error, "link down");
         match error {
             DialError::Revoked => {
                 self.refuse(RefusalKind::Revoked, "Removed. Pair again");
                 Next::Park
             }
-            DialError::Protocol { server } if server < API_PROTOCOL => {
+            DialError::Protocol { server } if *server < API_PROTOCOL => {
                 self.refuse(RefusalKind::ServerTooOld, "Server update needed");
                 Next::Park
             }

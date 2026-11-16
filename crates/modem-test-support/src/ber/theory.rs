@@ -473,7 +473,7 @@ impl Dd {
     fn from_u64(v: u64) -> Dd {
         let hi = v as f64;
         #[allow(clippy::cast_possible_truncation)]
-        let lo = (v as i128 - hi as i128) as f64;
+        let lo = (i128::from(v) - hi as i128) as f64;
         Dd { hi, lo }
     }
 

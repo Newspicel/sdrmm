@@ -255,31 +255,30 @@ impl Session {
         params: StreamParams,
     ) {
         let key = (node.clone(), port.clone());
-        let retuned = match self.ports.subs.get_mut(&key) {
-            Some(sub) => std::mem::replace(&mut sub.params, params) != params,
-            None => {
-                if self.ports.subs.len() >= MAX_WATCHED {
-                    self.send_error(TOO_MANY).await;
-                    return;
-                }
-                self.ports.subs.insert(
-                    key.clone(),
-                    PortSub {
-                        params,
-                        streams: HashMap::new(),
-                        refused: None,
-                    },
-                );
-                false
+        let retuned = if let Some(sub) = self.ports.subs.get_mut(&key) {
+            std::mem::replace(&mut sub.params, params) != params
+        } else {
+            if self.ports.subs.len() >= MAX_WATCHED {
+                self.send_error(TOO_MANY);
+                return;
             }
+            self.ports.subs.insert(
+                key.clone(),
+                PortSub {
+                    params,
+                    streams: HashMap::new(),
+                    refused: None,
+                },
+            );
+            false
         };
         let held = self.live_ids(&key);
         if retuned {
-            self.drop_spectrum(&key).await;
+            self.drop_spectrum(&key);
         }
         self.sync_port(&node, &port).await;
         if self.live_ids(&key) == held {
-            self.announce(&key).await;
+            self.announce(&key);
         }
     }
 
@@ -287,21 +286,20 @@ impl Session {
         self.ports
             .subs
             .get(key)
-            .map(|sub| sub.streams.values().map(|live| live.id).collect())
-            .unwrap_or_default()
+            .map_or_default(|sub| sub.streams.values().map(|live| live.id).collect())
     }
 
-    async fn announce(&self, key: &(String, String)) {
+    fn announce(&self, key: &(String, String)) {
         let Some(sub) = self.ports.subs.get(key) else {
             return;
         };
         for (tapped, live) in &sub.streams {
             let started = stream_started(key, live.id, tapped.kind(), &live.from);
-            let _ = self.out.send(text_event(&started)).await;
+            let _ = self.out.send(text_event(&started));
         }
     }
 
-    async fn drop_spectrum(&mut self, key: &(String, String)) {
+    fn drop_spectrum(&mut self, key: &(String, String)) {
         let Some(sub) = self.ports.subs.get_mut(key) else {
             return;
         };
@@ -310,16 +308,16 @@ impl Session {
             .extract_if(|tapped, _| tapped.kind() == StreamKind::Spectrum)
             .collect();
         for (tapped, live) in stale {
-            self.stop_stream(&tapped, live).await;
+            self.stop_stream(&tapped, live);
         }
     }
 
-    pub(super) async fn unsubscribe_port(&mut self, node: &str, port: &str) {
+    pub(super) fn unsubscribe_port(&mut self, node: &str, port: &str) {
         let Some(sub) = self.ports.subs.remove(&(node.to_owned(), port.to_owned())) else {
             return;
         };
         for (tapped, live) in sub.streams {
-            self.stop_stream(&tapped, live).await;
+            self.stop_stream(&tapped, live);
         }
     }
 
@@ -354,7 +352,7 @@ impl Session {
             })
             .collect();
         for (tapped, live) in gone {
-            self.stop_stream(&tapped, live).await;
+            self.stop_stream(&tapped, live);
         }
         let mut refusal = wanted.err();
         for want in keep {
@@ -363,13 +361,13 @@ impl Session {
             }
         }
         let vanished = refusal.as_deref() == Some(NO_NODE);
-        self.refuse(&key, refusal).await;
+        self.refuse(&key, refusal);
         if vanished {
             self.ports.subs.remove(&key);
         }
     }
 
-    async fn refuse(&mut self, key: &(String, String), refusal: Option<String>) {
+    fn refuse(&mut self, key: &(String, String), refusal: Option<String>) {
         let Some(sub) = self.ports.subs.get_mut(key) else {
             return;
         };
@@ -383,7 +381,7 @@ impl Session {
                 port: key.1.clone(),
                 reason,
             };
-            let _ = self.out.send(text_event(&refused)).await;
+            let _ = self.out.send(text_event(&refused));
         }
     }
 
@@ -399,7 +397,7 @@ impl Session {
         let id = self.port_stream_id(kind).ok_or(NO_STREAM_IDS)?;
         let task = self.spawn_tapped(id, &want.tapped, params).await?;
         let started = stream_started(key, id, kind, &want.from);
-        let _ = self.out.send(text_event(&started)).await;
+        let _ = self.out.send(text_event(&started));
         if let Some(sub) = self.ports.subs.get_mut(key) {
             sub.streams.insert(
                 want.tapped,
@@ -415,7 +413,11 @@ impl Session {
         Ok(())
     }
 
-    async fn stop_stream(&self, tapped: &Tapped, live: Live) {
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "stopping ends the stream's ownership"
+    )]
+    fn stop_stream(&self, tapped: &Tapped, live: Live) {
         let ended = live.task.is_finished();
         live.task.abort();
         if ended {
@@ -425,7 +427,7 @@ impl Session {
             stream_id: live.id,
             kind: tapped.kind(),
         };
-        let _ = self.out.send(text_event(&stopped)).await;
+        let _ = self.out.send(text_event(&stopped));
     }
 
     fn port_stream_id(&mut self, kind: StreamKind) -> Option<u16> {

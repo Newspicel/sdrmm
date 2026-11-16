@@ -51,14 +51,14 @@ mod tests {
         let expected = 1.0 / (std::f64::consts::TAU * 50e-6);
         let (mut lo, mut hi) = (1_000.0f64, 10_000.0f64);
         for _ in 0..25 {
-            let mid = (lo + hi) / 2.0;
+            let mid = f64::midpoint(lo, hi);
             if deemphasis_gain(rate, tau_us, mid) > FRAC_1_SQRT_2 {
                 lo = mid;
             } else {
                 hi = mid;
             }
         }
-        let found = (lo + hi) / 2.0;
+        let found = f64::midpoint(lo, hi);
         let rel_err = (found - expected).abs() / expected;
         assert!(
             rel_err < 0.05,

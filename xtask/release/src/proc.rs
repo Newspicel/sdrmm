@@ -54,7 +54,10 @@ mod tests {
         let mut calls = 0;
         let outcome = retry(3, || {
             calls += 1;
-            if calls < 3 { bail!("crash") } else { Ok(()) }
+            if calls < 3 {
+                bail!("crash")
+            }
+            Ok(())
         });
         assert!(outcome.is_ok());
         assert_eq!(calls, 3);

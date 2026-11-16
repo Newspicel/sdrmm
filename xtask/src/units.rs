@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn a_rate_spelled_in_samples_per_second_the_si_way_passes() {
         assert!(offences(r#"format!("{rate} MS/s")"#).is_empty());
-        assert!(offences(r#"`${formatSampleRate(rate)}`"#).is_empty());
+        assert!(offences(r"`${formatSampleRate(rate)}`").is_empty());
         assert!(offences(r#"format!("{hz} kHz · {snr} dB · {rate} kbit/s")"#).is_empty());
     }
 
@@ -164,8 +164,8 @@ mod tests {
 
     #[test]
     fn a_unit_token_that_is_not_a_reading_is_left_alone() {
-        assert!(offences(r#"let msps = throughput();"#).is_empty());
-        assert!(offences(r#"const SPS: usize = 8;"#).is_empty());
+        assert!(offences(r"let msps = throughput();").is_empty());
+        assert!(offences(r"const SPS: usize = 8;").is_empty());
         assert!(offences(r#"match unit { "khz" => 1e3, "mhz" => 1e6 }"#).is_empty());
         assert!(offences(r#""samples per second""#).is_empty());
         assert!(offences(r#""bitrate_kbps""#).is_empty());

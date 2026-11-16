@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 
 const FEED_URL: &str = "https://prop.kc2g.com/api/stations.json";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
-const FRESH_FOR: Duration = Duration::from_secs(15 * 60);
+const FRESH_FOR: Duration = Duration::from_mins(15);
 const RETRY_AFTER: Duration = Duration::from_secs(60);
 const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 const FEED_LABEL: &str = "the ionosonde feed";

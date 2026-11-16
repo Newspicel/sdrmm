@@ -251,7 +251,7 @@ impl Tracker {
             );
             statuses.insert(wiring.node.clone(), status);
         }
-        *locked(&self.statuses) = statuses.clone();
+        locked(&self.statuses).clone_from(&statuses);
         self.placed.retain(|node| statuses.contains_key(node));
         for status in statuses.values() {
             if status.ground.is_none() && self.placed.remove(&status.node) {
@@ -357,18 +357,16 @@ fn drive(
     let on = runs(status, unix_now());
     let mut acks = control.deliver(engine, patch, node, &ControlCommand::Run { on });
     acks.extend(control.deliver(engine, patch, node, &ControlCommand::Point(sky)));
-    let doppler = match (wiring.settings.downlink_hz, steering.doppler) {
-        (Some(freq_hz), Some(doppler)) => {
+    let doppler =
+        if let (Some(freq_hz), Some(doppler)) = (wiring.settings.downlink_hz, steering.doppler) {
             acks.extend(control.deliver(engine, patch, node, &ControlCommand::Tune { freq_hz }));
             doppler
-        }
-        _ => {
+        } else {
             if control::takes(patch, node, ControlVerb::Tune) {
                 status.error = Some("set a downlink frequency".to_owned());
             }
             DopplerSteer::default()
-        }
-    };
+        };
     acks.extend(control.deliver(engine, patch, node, &ControlCommand::Doppler(doppler)));
     if !on && control::takes(patch, node, ControlVerb::Run) {
         acks.retain(|ack| ack.error.as_deref() != Some(control::NOT_RUNNING));

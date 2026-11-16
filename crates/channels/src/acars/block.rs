@@ -146,7 +146,7 @@ pub fn build(
     let mut chars: Vec<u8> = Vec::new();
     chars.push(mode as u8);
     chars.extend(format!("{tail:.>7}").bytes());
-    chars.push(ack.map(|c| c as u8).unwrap_or(NAK));
+    chars.push(ack.map_or(NAK, |c| c as u8));
     chars.extend(label.bytes());
     chars.push(block_id as u8);
     let has_text = !text.is_empty() || msg_num.is_some();

@@ -925,7 +925,7 @@ mod tests {
         let len = (INPUT_RATE_HZ * 2.2) as usize;
         let mut iq: Vec<Complex<f32>> = synth::tone_audio(1_000.0, 1.0, INPUT_RATE_HZ, len)
             .iter()
-            .map(|&a| Complex::new(0.5 * (1.0 + 0.8 * a), 0.0))
+            .map(|&a| Complex::new(f32::midpoint(1.0, 0.8 * a), 0.0))
             .collect();
         synth::add_noise(&mut iq, 0x5511, 0.004);
         let reports = run(params(), &iq);
@@ -996,7 +996,7 @@ mod tests {
         };
         let mut channel = IdentChannel::new(ctx, settings(long)).expect("ident channel");
         let mut out = ChannelOutputs::default();
-        channel.process(&noise[..MAX_WINDOW + 1], &mut out);
+        channel.process(&noise[..=MAX_WINDOW], &mut out);
         assert_eq!(channel.window.len(), MAX_WINDOW);
         assert!(out.events.is_empty());
     }

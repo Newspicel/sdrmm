@@ -11,6 +11,10 @@ use crate::{
 
 #[uniffi::export]
 impl MobileCore {
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "uniffi exports take owned values"
+    )]
     pub fn update_hosts(&self, server_id: String, hosts: Vec<String>) -> Result<(), CoreError> {
         if let Some(bad) = hosts.iter().find(|host| !phone::valid_pair_host(host)) {
             return Err(CoreError::InvalidLink {

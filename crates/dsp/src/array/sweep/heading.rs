@@ -72,7 +72,7 @@ impl HeadingRing {
         }
         let (mut low, mut high) = (0, last);
         while high - low > 1 {
-            let mid = (low + high) / 2;
+            let mid = usize::midpoint(low, high);
             if self.at(mid).0 <= t_s {
                 low = mid;
             } else {

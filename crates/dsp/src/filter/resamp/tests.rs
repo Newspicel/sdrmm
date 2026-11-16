@@ -57,6 +57,7 @@ fn ragged_resampling_matches_double_precision_convolution() {
     }
 }
 
+#[expect(clippy::maybe_infinite_iter, reason = "take_while ends each schedule")]
 fn schedule(clock: &Clock, first: usize, len: usize) -> Vec<(usize, usize, f64)> {
     match *clock {
         Clock::Exact {
@@ -70,7 +71,7 @@ fn schedule(clock: &Clock, first: usize, len: usize) -> Vec<(usize, usize, f64)>
             .take_while(|&(sample, ..)| sample < len)
             .collect(),
         Clock::Free { step, .. } => (0..)
-            .map(|index| first as f64 + index as f64 * step)
+            .map(|index| first as f64 + f64::from(index) * step)
             .take_while(|&time| (time as usize) < len)
             .map(|time| {
                 let phase = time.fract() * FREE_PHASES as f64;

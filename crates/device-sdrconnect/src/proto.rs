@@ -379,7 +379,7 @@ impl Demodulator {
     }
 }
 
-/// How much of the IQ a networked SDRconnect device sends on, chosen when the device is selected.
+/// How much of the IQ a networked `SDRconnect` device sends on, chosen when the device is selected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum NetworkMode {
     FullIq,
@@ -554,12 +554,12 @@ pub(crate) struct Notification {
     pub(crate) tuner: Tuner,
 }
 
-/// Reads one message from SDRconnect, tolerating a value sent as a bare number rather than a
+/// Reads one message from `SDRconnect`, tolerating a value sent as a bare number rather than a
 /// string and an envelope that carries fields this does not act on.
 pub(crate) fn decode(text: &str) -> Result<Notification, String> {
     let message: serde_json::Value =
         serde_json::from_str(text).map_err(|e| format!("not JSON: {e}"))?;
-    let field = |name: &str| message.get(name).map(scalar).unwrap_or_default();
+    let field = |name: &str| message.get(name).map_or_default(scalar);
     let event_type = field("event_type");
     let event = Event::parse(&event_type)
         .ok_or_else(|| format!("event_type {event_type:?} is not one the API defines"))?;
@@ -611,7 +611,7 @@ pub(crate) fn as_list(value: &str) -> Vec<String> {
         .collect()
 }
 
-/// Where one SDRconnect tuner lives: the host serving the API, and which of its tuners to take.
+/// Where one `SDRconnect` tuner lives: the host serving the API, and which of its tuners to take.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct Address {
     pub(crate) endpoint: Endpoint,

@@ -1,6 +1,9 @@
 use sdrmm_wire::{MissionAction, MissionActionResponse, MissionsResponse, SwitchWorkspaceRequest};
 
-use super::*;
+use super::{
+    ApiError, AppError, AppState, Author, ErrorCode, Json, OpenApiRouter, Path, State, StatusCode,
+    lock_gate, resolve_now, routes, switch,
+};
 use crate::missions::{MissionRefusal, act, missions};
 
 pub(super) fn routes() -> OpenApiRouter<AppState> {
@@ -57,7 +60,7 @@ pub(super) async fn run_mission_action(
     Json(action): Json<MissionAction>,
 ) -> Result<Json<MissionActionResponse>, AppError> {
     let mission =
-        tokio::task::spawn_blocking(move || act(&state, &node, action, author.as_deref()))
+        tokio::task::spawn_blocking(move || act(&state, &node, &action, author.as_deref()))
             .await??;
     Ok(Json(MissionActionResponse { mission }))
 }

@@ -121,7 +121,7 @@ impl Prefix {
     }
 
     #[must_use]
-    pub fn spectral(&self, codebook: u8) -> Option<u16> {
+    pub fn spectral(self, codebook: u8) -> Option<u16> {
         SPECTRAL
             .get(usize::from(base(codebook)).checked_sub(1)?)?
             .lookup
@@ -130,7 +130,7 @@ impl Prefix {
     }
 
     #[must_use]
-    pub fn scalefactor(&self) -> Option<u16> {
+    pub fn scalefactor(self) -> Option<u16> {
         SCALEFACTOR
             .lookup
             .get(&key(self.length, self.code))
@@ -138,7 +138,7 @@ impl Prefix {
     }
 
     #[must_use]
-    pub const fn exhausted(&self) -> bool {
+    pub const fn exhausted(self) -> bool {
         self.length >= 20
     }
 }

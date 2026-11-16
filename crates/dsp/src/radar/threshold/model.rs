@@ -133,14 +133,14 @@ fn order_span(cells: f64, order: f64, looks: f64) -> (f64, f64) {
 fn quantile(looks: f64, fraction: f64) -> f64 {
     let (mut low, mut high) = (0.0, Z_MAX);
     for _ in 0..BISECTION_STEPS {
-        let middle = 0.5 * (low + high);
+        let middle = f64::midpoint(low, high);
         if gamma_p(looks, looks * middle) < fraction {
             low = middle;
         } else {
             high = middle;
         }
     }
-    0.5 * (low + high)
+    f64::midpoint(low, high)
 }
 
 fn simpson_coefficient(index: usize) -> f64 {

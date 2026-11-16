@@ -72,14 +72,15 @@ fn mix(index: u64) -> u64 {
 
 fn decoys(seed: u128) -> Vec<u128> {
     (1..=DECOYS as u64)
-        .map(|index| match Standard::parse(seed) {
-            Some(message) => Standard {
-                roger: false,
-                extra: (mix(index) % u64::from(MAXGRID4)) as u32,
-                ..message
-            }
-            .bits(),
-            None => {
+        .map(|index| {
+            if let Some(message) = Standard::parse(seed) {
+                Standard {
+                    roger: false,
+                    extra: (mix(index) % u64::from(MAXGRID4)) as u32,
+                    ..message
+                }
+                .bits()
+            } else {
                 let noise = (u128::from(mix(2 * index)) << 64) | u128::from(mix(2 * index + 1));
                 (seed ^ noise) & PAYLOAD_MASK
             }
@@ -190,7 +191,7 @@ impl Engine {
         let decimation = protocol.decimation() as f32;
         let nominal = ((expectation.start_s * SAMPLE_RATE + lead) / decimation).round() as isize;
         let reach = (REACH_S * protocol.baseband_rate()) as isize;
-        let near = (expectation.frequency_hz as f64 - centre) as f32;
+        let near = (f64::from(expectation.frequency_hz) - centre) as f32;
         let (offset_hz, start) = self.sync_alignment(near, nominal, reach);
         self.rotate(offset_hz);
         let powers = self.data_powers(start);
@@ -257,7 +258,9 @@ impl Engine {
             }
             if total > 0.0 {
                 let scale = protocol.tones as f32 / total;
-                row.iter_mut().for_each(|power| *power *= scale);
+                for power in row.iter_mut() {
+                    *power *= scale;
+                }
             }
         }
         powers

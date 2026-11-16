@@ -222,7 +222,7 @@ impl Decoder<'_> {
         } else {
             0
         };
-        let scratch = &mut self.scratch;
+        let scratch = &mut *self.scratch;
         let header_coded = 2 * (HEADER_BITS + HEADER_MARGIN_BITS);
         scratch.bits.clear();
         scratch.viterbi.decode(
@@ -236,7 +236,7 @@ impl Decoder<'_> {
     }
 
     fn finish(&mut self, first: usize, coded: usize, length: usize, end: f64) -> Option<Outcome> {
-        let scratch = &mut self.scratch;
+        let scratch = &mut *self.scratch;
         let soft = scratch.soft.get(first..first + coded)?;
         scratch.bits.clear();
         scratch.viterbi.decode(soft, true, &mut scratch.bits);

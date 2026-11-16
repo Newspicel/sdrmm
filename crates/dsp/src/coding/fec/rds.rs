@@ -68,7 +68,7 @@ pub fn rds_correct_block(block: u32, offset: RdsOffset) -> Option<(u16, u32)> {
         return Some(((block >> RDS_CHECK_BITS) as u16, 0));
     }
     match RDS_BURST_TABLE.get(usize::from(syndrome)).copied() {
-        Some(0) | Some(RDS_AMBIGUOUS) | None => None,
+        Some(0 | RDS_AMBIGUOUS) | None => None,
         Some(vector) => Some((
             ((block ^ vector) >> RDS_CHECK_BITS) as u16,
             vector.count_ones(),

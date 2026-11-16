@@ -185,13 +185,13 @@ mod tests {
         }
     }
 
-    fn apply(settings: DeviceSettings) -> Result<(Tuning, Vec<Command>), DeviceError> {
+    fn apply(settings: &DeviceSettings) -> Result<(Tuning, Vec<Command>), DeviceError> {
         let station = station();
         validate(
             &station,
             &capabilities(&station),
             &Tuning::new(&station),
-            &settings,
+            settings,
         )
     }
 
@@ -202,12 +202,12 @@ mod tests {
         assert!(tuning.agc);
         let wire = tuning.wire(&station());
         assert_eq!(wire.sample_rate, Some(12_000.0));
-        assert!(apply(wire).expect("own settings are valid").1.is_empty());
+        assert!(apply(&wire).expect("own settings are valid").1.is_empty());
     }
 
     #[test]
     fn retuning_sends_only_the_tune() {
-        let (tuning, batch) = apply(DeviceSettings {
+        let (tuning, batch) = apply(&DeviceSettings {
             center_hz: Some(7_074_000.0),
             ..DeviceSettings::default()
         })
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn manual_gain_sends_only_the_gain() {
-        let (tuning, batch) = apply(DeviceSettings {
+        let (tuning, batch) = apply(&DeviceSettings {
             agc: Some(AgcSetting::switched(false)),
             gains: vec![GainValue::new(GainKind::Rf, 72.4)],
             ..DeviceSettings::default()
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn out_of_band_and_foreign_settings_are_refused() {
         let refused =
-            |settings: DeviceSettings| matches!(apply(settings), Err(DeviceError::Unsupported(_)));
+            |settings: DeviceSettings| matches!(apply(&settings), Err(DeviceError::Unsupported(_)));
         assert!(refused(DeviceSettings {
             center_hz: Some(31e6),
             ..DeviceSettings::default()

@@ -66,7 +66,7 @@ pub fn build(root: &Path) -> Result<Vec<Built>> {
     let lock = std::fs::read_to_string(root.join(SOURCES).join("rust/Cargo.lock"))
         .context("read the harness Cargo.lock")?;
     let futuredsp = lock_version(&lock, "futuredsp").context("futuredsp is not locked")?;
-    let compilers = Compilers::detect()?;
+    let compilers = Compilers::detect();
     Ok(vec![
         own(root, &rust)?,
         compilers.gnuradio(root)?,
@@ -119,21 +119,19 @@ struct Compilers {
 }
 
 impl Compilers {
-    fn detect() -> Result<Self> {
-        let prefix = report::output("brew", &["--prefix"])
-            .map(|prefix| {
-                vec![
-                    format!("-I{prefix}/include"),
-                    format!("-L{prefix}/lib"),
-                    format!("-Wl,-rpath,{prefix}/lib"),
-                ]
-            })
-            .unwrap_or_default();
-        Ok(Self {
+    fn detect() -> Self {
+        let prefix = report::output("brew", &["--prefix"]).map_or_default(|prefix| {
+            vec![
+                format!("-I{prefix}/include"),
+                format!("-L{prefix}/lib"),
+                format!("-Wl,-rpath,{prefix}/lib"),
+            ]
+        });
+        Self {
             c: std::env::var("CC").unwrap_or_else(|_| "cc".to_owned()),
             cxx: std::env::var("CXX").unwrap_or_else(|_| "c++".to_owned()),
             prefix,
-        })
+        }
     }
 
     fn c(&self, root: &Path, name: &'static str, stem: &str, libs: &[&str]) -> Result<Built> {

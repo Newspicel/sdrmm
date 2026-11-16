@@ -88,6 +88,12 @@ pub(crate) struct Finished {
     pub resume_chip: u64,
 }
 
+pub(crate) enum Advance {
+    Starved,
+    Decoding,
+    Done(Finished),
+}
+
 fn implicit_plan(settings: &Settings, low_data_rate: bool) -> Option<Plan> {
     let implicit = settings.implicit_header?;
     let header = Header {
@@ -170,27 +176,27 @@ impl Lock {
         settings: &Settings,
         tools: &mut Tools,
         ring: &Ring,
-    ) -> Option<Option<Finished>> {
+    ) -> Advance {
         let window = self.window(settings);
         if window.last_wide_index(Self::chips(settings)) >= ring.end() {
-            return None;
+            return Advance::Starved;
         }
         if (self.symbol + 1) * MAX_BITS > tools.llrs.len() {
-            return Some(Some(self.failed(settings)));
+            return Advance::Done(self.failed(settings));
         }
         self.demodulate(settings, tools, ring, window);
         self.symbol += 1;
         if self.symbol == HEADER_SYMBOLS && self.plan.is_none() {
             match self.read_header(settings, tools) {
                 Some(plan) => self.plan = Some(plan),
-                None => return Some(Some(self.failed(settings))),
+                None => return Advance::Done(self.failed(settings)),
             }
         }
         match self.plan {
             Some(plan) if self.symbol >= plan.total => {
-                Some(Some(self.finish(settings, tools, plan)))
+                Advance::Done(self.finish(settings, tools, plan))
             }
-            _ => Some(None),
+            _ => Advance::Decoding,
         }
     }
 
@@ -350,7 +356,7 @@ impl Lock {
                     settings.spreading_factor,
                 ));
                 let energies = &tools.tail[column * chips..(column + 1) * chips];
-                let reach = if reduced { 1 } else { 0 };
+                let reach = usize::from(reduced);
                 let energy = (bin + chips - reach..=bin + chips + reach)
                     .map(|k| energies[k % chips])
                     .fold(0.0, f32::max);

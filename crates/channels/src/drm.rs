@@ -85,7 +85,7 @@ pub(crate) fn channel_filter(p: &DrmParams) -> Result<ChannelFilter, ChannelErro
     let low = (low - FILTER_MARGIN_HZ).max(-INPUT_RATE_HZ * 0.45);
     let high = (high + FILTER_MARGIN_HZ).min(INPUT_RATE_HZ * 0.45);
     let half_width = (high - low) / 2.0 / INPUT_RATE_HZ;
-    let centre = (high + low) / 2.0 / INPUT_RATE_HZ;
+    let centre = f64::midpoint(high, low) / INPUT_RATE_HZ;
     Ok(ChannelFilter::Sideband(FirC::from_lowpass(
         &design_lowpass(FILTER_TAPS, half_width),
         centre,

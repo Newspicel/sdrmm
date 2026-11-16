@@ -601,7 +601,7 @@ pub fn scramble(
         for index in 0..piece.len() {
             let turn = scrambler.next();
             match piece {
-                Piece::Header => continue,
+                Piece::Header => {}
                 Piece::Payload(_) if carrier != Carrier::Qpsk => {
                     if turn & 1 == 1 {
                         frame[at + index] = -frame[at + index];

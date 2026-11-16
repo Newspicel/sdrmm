@@ -92,7 +92,7 @@ pub fn parse_ra(data: &[u8], fixed: u32) -> Option<IridiumFrame> {
 
 fn ra_pages(data: &[u8]) -> (Vec<Value>, bool) {
     let mut pages = Vec::new();
-    for page in data.as_chunks::<42>().0.iter() {
+    for page in data.as_chunks::<42>().0 {
         if page.iter().all(|&b| b == 1) {
             return (pages, true);
         }
@@ -137,7 +137,7 @@ pub fn parse_bc(bc_type: u32, data: &[u8], fixed: u32) -> IridiumFrame {
         .as_chunks::<42>()
         .0
         .iter()
-        .map(|b| b.as_slice())
+        .map(<[u8; 42]>::as_slice)
         .collect();
     let mut details = Map::new();
     details.insert("bc_type".into(), json!(bc_type));

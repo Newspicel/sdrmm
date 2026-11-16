@@ -20,12 +20,12 @@ fn ci16_le(bytes: &[u8]) -> Vec<Complex<f32>> {
         .collect()
 }
 
-const fn rate(bps: u16, interleave: StanagInterleave) -> Option<StanagRate> {
-    Some(StanagRate {
+const fn rate(bps: u16, interleave: StanagInterleave) -> StanagRate {
+    StanagRate {
         bps,
         interleave,
         voice: false,
-    })
+    }
 }
 
 struct Recording {
@@ -48,17 +48,17 @@ const RECORDINGS: &[Recording] = &[
     Recording {
         data: include_bytes!("../../../../../fixtures/stanag/stanag_110a_600s_9k6.sigmf-data"),
         modem: StanagModem::MilStd110a,
-        rate: rate(600, StanagInterleave::Short),
+        rate: Some(rate(600, StanagInterleave::Short)),
     },
     Recording {
         data: include_bytes!("../../../../../fixtures/stanag/stanag_110a_2400l_9k6.sigmf-data"),
         modem: StanagModem::MilStd110a,
-        rate: rate(2_400, StanagInterleave::Long),
+        rate: Some(rate(2_400, StanagInterleave::Long)),
     },
     Recording {
         data: include_bytes!("../../../../../fixtures/stanag/stanag_110a_150l_9k6.sigmf-data"),
         modem: StanagModem::MilStd110a,
-        rate: rate(150, StanagInterleave::Long),
+        rate: Some(rate(150, StanagInterleave::Long)),
     },
     Recording {
         data: include_bytes!("../../../../../fixtures/stanag/stanag_4539_9k6.sigmf-data"),
@@ -144,79 +144,79 @@ const LIBRARY: &[Sample] = &[
     (
         "MIL188-110A_75S",
         Some(StanagModem::MilStd110a),
-        rate(75, StanagInterleave::Short),
+        Some(rate(75, StanagInterleave::Short)),
         &[],
     ),
     (
         "MIL188-110A_75L",
         Some(StanagModem::MilStd110a),
-        rate(75, StanagInterleave::Long),
+        Some(rate(75, StanagInterleave::Long)),
         &[],
     ),
     (
         "150S",
         Some(StanagModem::MilStd110a),
-        rate(150, StanagInterleave::Short),
+        Some(rate(150, StanagInterleave::Short)),
         &[],
     ),
     (
         "150L",
         Some(StanagModem::MilStd110a),
-        rate(150, StanagInterleave::Long),
+        Some(rate(150, StanagInterleave::Long)),
         &[],
     ),
     (
         "MIL188-110A_300S",
         Some(StanagModem::MilStd110a),
-        rate(300, StanagInterleave::Short),
+        Some(rate(300, StanagInterleave::Short)),
         &[],
     ),
     (
         "MIL188-110A_300L",
         Some(StanagModem::MilStd110a),
-        rate(300, StanagInterleave::Long),
+        Some(rate(300, StanagInterleave::Long)),
         &[],
     ),
     (
         "MIL188-110A_600S",
         Some(StanagModem::MilStd110a),
-        rate(600, StanagInterleave::Short),
+        Some(rate(600, StanagInterleave::Short)),
         &[],
     ),
     (
         "MIL188-110A_600L",
         Some(StanagModem::MilStd110a),
-        rate(600, StanagInterleave::Long),
+        Some(rate(600, StanagInterleave::Long)),
         &[],
     ),
     (
         "MIL188-110A_1200S",
         Some(StanagModem::MilStd110a),
-        rate(1_200, StanagInterleave::Short),
+        Some(rate(1_200, StanagInterleave::Short)),
         &[],
     ),
     (
         "MIL188-110A_1200L",
         Some(StanagModem::MilStd110a),
-        rate(1_200, StanagInterleave::Long),
+        Some(rate(1_200, StanagInterleave::Long)),
         &[],
     ),
     (
         "MIL188-110A_2400S",
         Some(StanagModem::MilStd110a),
-        rate(2_400, StanagInterleave::Short),
+        Some(rate(2_400, StanagInterleave::Short)),
         &[],
     ),
     (
         "MIL188-110A_2400L",
         Some(StanagModem::MilStd110a),
-        rate(2_400, StanagInterleave::Long),
+        Some(rate(2_400, StanagInterleave::Long)),
         &[],
     ),
     (
         "MIL188-110A_4800_No_Interleave",
         Some(StanagModem::MilStd110a),
-        rate(4_800, StanagInterleave::Zero),
+        Some(rate(4_800, StanagInterleave::Zero)),
         &[],
     ),
     ("Mil-188-110a", Some(StanagModem::MilStd110a), None, &[]),

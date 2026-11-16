@@ -11,6 +11,7 @@ use crate::DeviceError;
 pub const RECV_SLICE: Duration = Duration::from_millis(20);
 const RECEIVE_BUFFERS: [usize; 4] = [8 << 20, 4 << 20, 2 << 20, 1 << 20];
 
+#[expect(clippy::needless_pass_by_value, reason = "used as a map_err fn")]
 fn io_error(e: io::Error) -> DeviceError {
     DeviceError::Io(e.to_string())
 }

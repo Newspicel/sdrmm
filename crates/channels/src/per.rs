@@ -55,12 +55,12 @@ fn params(settings: &ChannelSettings) -> Result<PerParams, ChannelError> {
     }
 }
 
-pub(crate) fn occupied_band(params: &PerParams) -> (f64, f64) {
+pub(crate) fn occupied_band(params: PerParams) -> (f64, f64) {
     let half = half_band_hz(params.baud);
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &PerParams) -> ChannelFilter {
+pub(crate) fn channel_filter(params: PerParams) -> ChannelFilter {
     ChannelFilter::Symmetric(Decimator::new(
         &design_lowpass(CHANNEL_TAPS, half_band_hz(params.baud) / RATE),
         1,
@@ -227,8 +227,8 @@ impl ChannelRx for PerChannel {
 }
 
 pub(crate) fn per_decoder() -> Native<PerParams> {
-    Native::new::<PerChannel>(occupied_band)
-        .filter(|p| Ok(channel_filter(p)))
+    Native::new::<PerChannel>(|p| occupied_band(*p))
+        .filter(|p| Ok(channel_filter(*p)))
         .form(per_form)
         .kinds(per_kinds)
 }

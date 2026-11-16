@@ -1,4 +1,4 @@
-//! The message cipher of Swissphone DE9xx pagers: IDEA with little-endian words, run as a
+//! The message cipher of Swissphone `DE9xx` pagers: IDEA with little-endian words, run as a
 //! keystream over the alpha characters. Transcribed from the DE920 firmware.
 use std::time::SystemTime;
 
@@ -231,7 +231,7 @@ impl Header {
         Some((header, &bits[HEADER_BITS..]))
     }
 
-    pub(crate) fn bits(&self) -> Vec<bool> {
+    pub(crate) fn bits(self) -> Vec<bool> {
         [self.first, self.second]
             .into_iter()
             .flat_map(|word| (0..WORD_BITS).rev().map(move |i| word >> i & 1 == 1))
@@ -260,17 +260,17 @@ impl Header {
     }
 
     /// The pager sum whose check bits this header carries, if any.
-    pub(crate) fn pager_sum(&self) -> Option<u8> {
+    pub(crate) fn pager_sum(self) -> Option<u8> {
         PAGER_SUMS.into_iter().find(|&sum| self.passes(sum))
     }
 
-    fn passes(&self, sum: u8) -> bool {
+    fn passes(self, sum: u8) -> bool {
         let [_, day_mask, hour_mask] = Self::fields(self.first);
         let [_, mid, low] = Self::fields(self.second);
         (mid ^ day_mask, low ^ hour_mask) == check_bytes(sum)
     }
 
-    pub(crate) fn minute_nibble(&self, sum: u8) -> u8 {
+    pub(crate) fn minute_nibble(self, sum: u8) -> u8 {
         (Self::fields(self.first)[0] ^ Self::fields(self.second)[0] ^ sum) & 0xF
     }
 
@@ -295,7 +295,7 @@ impl Header {
         clock
     }
 
-    pub(crate) fn seed(&self, sum: u8, org_code: u16, clock: Civil) -> [u8; 4] {
+    pub(crate) fn seed(self, sum: u8, org_code: u16, clock: Civil) -> [u8; 4] {
         let nibble = self.minute_nibble(sum);
         let [year_mask, day_mask, hour_mask] = Self::fields(self.first);
         let [org_low, org_high] = org_code.to_le_bytes();
@@ -315,7 +315,7 @@ pub(crate) fn decrypt(
     key: &[u8; KEY_BYTES],
     org_code: u16,
     clock: Civil,
-    header: &Header,
+    header: Header,
     sealed: &[u8],
 ) -> Option<Vec<u8>> {
     let sum = header.pager_sum()?;
@@ -334,7 +334,7 @@ pub(crate) fn seal(
     key: &[u8; KEY_BYTES],
     org_code: u16,
     clock: Civil,
-    header: &Header,
+    header: Header,
     text: &[u8],
 ) -> Vec<u8> {
     let mut stream = Keystream::new(key, header.seed(SEALING_SUM, org_code, clock));
@@ -434,7 +434,7 @@ mod tests {
         assert_eq!(header(3).minute_nibble(0x4B), 3);
         assert_eq!(
             header(3).seed(0x4B, 0x4af5, CLOCK),
-            [0xC0 ^ 0x12, 9 ^ 0x34, 13 ^ (0x50 | 0x4a), 0xA3 ^ 0xF5]
+            [0xC0 ^ 0x12, 0x09 ^ 0x34, 0x0D ^ (0x50 | 0x4a), 0xA3 ^ 0xF5]
         );
     }
 
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn local_time_reads_the_host_zone() {
-        let at = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000);
+        let at = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_hours(500000);
         let civil = Civil::local(at);
         assert_eq!(civil.year, 27);
         assert_eq!(civil.month, 1);
@@ -484,19 +484,19 @@ mod tests {
 
     #[test]
     fn decrypt_stops_at_the_first_nul() {
-        let sealed = seal(&key(), 0x4af5, CLOCK, &header(3), b"HELLO\0junk");
-        let text = decrypt(&key(), 0x4af5, CLOCK, &header(3), &sealed);
+        let sealed = seal(&key(), 0x4af5, CLOCK, header(3), b"HELLO\0junk");
+        let text = decrypt(&key(), 0x4af5, CLOCK, header(3), &sealed);
         assert_eq!(text.as_deref(), Some(&b"HELLO"[..]));
     }
 
     #[test]
     fn decrypt_rejects_a_header_that_fails_the_check() {
-        let sealed = seal(&key(), 0x4af5, CLOCK, &header(3), b"HELLO\0");
+        let sealed = seal(&key(), 0x4af5, CLOCK, header(3), b"HELLO\0");
         let damaged = Header {
             second: header(3).second ^ 1,
             ..header(3)
         };
-        assert_eq!(decrypt(&key(), 0x4af5, CLOCK, &damaged, &sealed), None);
+        assert_eq!(decrypt(&key(), 0x4af5, CLOCK, damaged, &sealed), None);
     }
 
     #[test]

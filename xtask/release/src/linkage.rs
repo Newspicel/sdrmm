@@ -146,14 +146,14 @@ fn leaf(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-fn images_under(path: &Path, accept: fn(&[u8; 4]) -> bool) -> Result<Vec<PathBuf>> {
+fn images_under(path: &Path, accept: fn([u8; 4]) -> bool) -> Result<Vec<PathBuf>> {
     let mut found = Vec::new();
     collect(path, accept, &mut found)?;
     found.sort();
     Ok(found)
 }
 
-fn collect(path: &Path, accept: fn(&[u8; 4]) -> bool, found: &mut Vec<PathBuf>) -> Result<()> {
+fn collect(path: &Path, accept: fn([u8; 4]) -> bool, found: &mut Vec<PathBuf>) -> Result<()> {
     if path.is_symlink() {
         return Ok(());
     }
@@ -163,7 +163,7 @@ fn collect(path: &Path, accept: fn(&[u8; 4]) -> bool, found: &mut Vec<PathBuf>) 
         }
         return Ok(());
     }
-    if head(path)?.is_some_and(|head| accept(&head)) {
+    if head(path)?.is_some_and(accept) {
         found.push(path.to_path_buf());
     }
     Ok(())

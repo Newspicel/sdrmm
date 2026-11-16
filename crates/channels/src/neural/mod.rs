@@ -132,8 +132,7 @@ impl Session {
         let mut second = step
             .outputs
             .get(1)
-            .map(|&id| std::mem::take(&mut self.buffers[id]))
-            .unwrap_or_default();
+            .map_or_default(|&id| std::mem::take(&mut self.buffers[id]));
         let read = |index: usize| match step.inputs[index] {
             Slot::Const(id) => net.consts[id].as_slice(),
             Slot::Buf(id) => self.buffers[id].as_slice(),
@@ -141,7 +140,7 @@ impl Session {
         match &step.kernel {
             Kernel::Unary(kind) => kernels::unary(net.vector, *kind, read(0), &mut first),
             Kernel::Binary(kind, walk) => {
-                kernels::binary(*kind, walk, read(0), read(1), &mut first)
+                kernels::binary(*kind, walk, read(0), read(1), &mut first);
             }
             Kernel::SumReduce(walk) => kernels::sum_reduce(walk, read(0), &mut first),
             Kernel::Copy(parts) => {

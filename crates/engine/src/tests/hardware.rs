@@ -11,7 +11,7 @@ use sdrmm_device::{DeviceDriver, DeviceError, RxSink};
 use sdrmm_wire::{DeviceInfo, DeviceSettings, GainValue};
 
 const CENTER_HZ: f64 = 100_000_000.0;
-/// Tried in order; the first that both drivers accept is what a comparison runs at. A HackRF
+/// Tried in order; the first that both drivers accept is what a comparison runs at. A `HackRF`
 /// takes any rate in 2..20 MHz through its own driver but only a discrete menu through Soapy.
 const RATE_CANDIDATES: [f64; 5] = [2_048_000.0, 2_400_000.0, 8_000_000.0, 10_000_000.0, 20e6];
 const GAIN_DB: f64 = 20.0;
@@ -167,7 +167,7 @@ fn measure(
         if gate.load(Ordering::Acquire) == 1 {
             sink_accumulator
                 .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(samples);
         }
     })])?;
@@ -184,7 +184,7 @@ fn measure(
     let accumulator = Arc::try_unwrap(accumulator)
         .map_err(|_| DeviceError::Io("the sink outlived the capture".to_string()))?
         .into_inner()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     Ok((accumulator.finish(elapsed), applied))
 }
 
@@ -209,7 +209,7 @@ fn soapy_peer(info: &DeviceInfo) -> Option<(sdrmm_device_soapy::SoapyDriver, Dev
 /// Soapy is asked for exactly what the native driver reported programming, so this compares two
 /// signal paths at one hardware setting rather than two opinions about which gain-table entry an
 /// off-table request should take. The gains are compared as a subset rather than for equality:
-/// SoapyHackRF presents the switched +14 dB RF amp as a third gain stage where the native driver
+/// `SoapyHackRF` presents the switched +14 dB RF amp as a third gain stage where the native driver
 /// presents the switch it actually is as the `amp` boolean, and every stage both drivers do model
 /// has to agree.
 #[test]

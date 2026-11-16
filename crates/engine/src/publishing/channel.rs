@@ -210,7 +210,7 @@ impl ChannelPublisher {
                             rebuild_rx = ready_rx.push(rx).is_err();
                         }
                         Err(error) => {
-                            tracing::error!(%error, "receiver recovery preparation failed")
+                            tracing::error!(%error, "receiver recovery preparation failed");
                         }
                     }
                 }

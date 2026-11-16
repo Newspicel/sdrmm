@@ -177,29 +177,26 @@ impl WorkspaceState {
             if trunk.channels.is_empty() {
                 continue;
             }
-            match self
+            if let Some(held) = self
                 .trunks
                 .iter_mut()
                 .find(|held| held.node == trunk.node && held.color_code == trunk.color_code)
             {
-                Some(held) => {
-                    for channel in trunk.channels {
-                        match held
-                            .channels
-                            .iter_mut()
-                            .find(|kept| kept.lcn == channel.lcn)
-                        {
-                            Some(kept) => *kept = channel,
-                            None => held.channels.push(channel),
-                        }
+                for channel in trunk.channels {
+                    match held
+                        .channels
+                        .iter_mut()
+                        .find(|kept| kept.lcn == channel.lcn)
+                    {
+                        Some(kept) => *kept = channel,
+                        None => held.channels.push(channel),
                     }
-                    held.channels.sort_unstable_by_key(|channel| channel.lcn);
                 }
-                None => {
-                    let mut fresh = trunk;
-                    fresh.channels.sort_unstable_by_key(|channel| channel.lcn);
-                    self.trunks.push(fresh);
-                }
+                held.channels.sort_unstable_by_key(|channel| channel.lcn);
+            } else {
+                let mut fresh = trunk;
+                fresh.channels.sort_unstable_by_key(|channel| channel.lcn);
+                self.trunks.push(fresh);
             }
         }
     }

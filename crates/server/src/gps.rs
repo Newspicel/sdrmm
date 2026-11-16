@@ -273,7 +273,7 @@ impl GpsHub {
             let handle = runtime.spawn(async move {
                 match task_source {
                     PositionSource::Gpsd { address } => {
-                        run_gpsd(hub, app, task_node, address).await
+                        run_gpsd(hub, app, task_node, address).await;
                     }
                     PositionSource::Nmea {
                         device,

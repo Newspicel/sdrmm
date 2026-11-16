@@ -174,6 +174,7 @@ impl Polarity {
 }
 
 impl Shape {
+    #[expect(clippy::large_stack_arrays, reason = "built once at construction")]
     fn new() -> Self {
         let pulse = phase_pulse();
         let upright = template_levels();

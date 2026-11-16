@@ -589,8 +589,8 @@ fn seed(store: &Store) {
         .expect("insert");
 }
 
-fn query(store: &Store, filter: DecoderLogQuery) -> (Vec<DecoderLogEntry>, u64) {
-    store.query_decoder_log(&filter).expect("query")
+fn query(store: &Store, filter: &DecoderLogQuery) -> (Vec<DecoderLogEntry>, u64) {
+    store.query_decoder_log(filter).expect("query")
 }
 
 #[test]
@@ -599,7 +599,7 @@ fn decoder_log_insert_and_query_newest_first() {
     assert_eq!(store.insert_decoder_events(&[]).expect("empty"), 0);
     seed(&store);
 
-    let (entries, total) = query(&store, DecoderLogQuery::default());
+    let (entries, total) = query(&store, &DecoderLogQuery::default());
     assert_eq!(total, 3);
     assert_eq!(entries.len(), 3);
     assert_eq!(entries[0].summary, "4CA2D4 · RYR9AB");
@@ -620,7 +620,7 @@ fn decoder_log_filters_compose() {
 
     let by_kind = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             kind: Some("aprs".to_string()),
             ..DecoderLogQuery::default()
         },
@@ -630,7 +630,7 @@ fn decoder_log_filters_compose() {
 
     let by_set = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             device_set: Some(1),
             ..DecoderLogQuery::default()
         },
@@ -640,7 +640,7 @@ fn decoder_log_filters_compose() {
 
     let since = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             since: Some("2026-08-09T12:00:01Z".to_string()),
             ..DecoderLogQuery::default()
         },
@@ -649,7 +649,7 @@ fn decoder_log_filters_compose() {
 
     let until = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             until: Some("2026-08-09T12:00:00Z".to_string()),
             ..DecoderLogQuery::default()
         },
@@ -659,7 +659,7 @@ fn decoder_log_filters_compose() {
 
     let offset = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             since: Some("2026-08-09T14:00:01+02:00".to_string()),
             ..DecoderLogQuery::default()
         },
@@ -668,7 +668,7 @@ fn decoder_log_filters_compose() {
 
     let by_station = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             q: Some("dl1abc".to_string()),
             ..DecoderLogQuery::default()
         },
@@ -676,7 +676,7 @@ fn decoder_log_filters_compose() {
     assert_eq!(by_station.1, 1);
     let by_summary = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             q: Some("ryr9".to_string()),
             ..DecoderLogQuery::default()
         },
@@ -685,7 +685,7 @@ fn decoder_log_filters_compose() {
 
     let literal = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             q: Some("%".to_string()),
             ..DecoderLogQuery::default()
         },
@@ -694,7 +694,7 @@ fn decoder_log_filters_compose() {
 
     let combined = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             kind: Some("adsb".to_string()),
             device_set: Some(0),
             since: Some("2026-08-09T12:00:01Z".to_string()),
@@ -707,7 +707,7 @@ fn decoder_log_filters_compose() {
 
     let contradictory = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             kind: Some("adsb".to_string()),
             device_set: Some(1),
             ..DecoderLogQuery::default()
@@ -724,7 +724,7 @@ fn a_kind_list_narrows_the_log_to_those_kinds() {
 
     let none = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             kinds: Some(String::new()),
             ..DecoderLogQuery::default()
         },
@@ -733,7 +733,7 @@ fn a_kind_list_narrows_the_log_to_those_kinds() {
 
     let one = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             kinds: Some("aprs".to_string()),
             ..DecoderLogQuery::default()
         },
@@ -743,7 +743,7 @@ fn a_kind_list_narrows_the_log_to_those_kinds() {
 
     let both = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             kinds: Some("aprs,adsb".to_string()),
             ..DecoderLogQuery::default()
         },
@@ -752,7 +752,7 @@ fn a_kind_list_narrows_the_log_to_those_kinds() {
 
     let absent = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             kinds: Some("call".to_string()),
             ..DecoderLogQuery::default()
         },
@@ -781,7 +781,7 @@ fn decoder_log_sources_filter_names_channels_not_device_sets() {
     let stations = |sources: &str| {
         query(
             &store,
-            DecoderLogQuery {
+            &DecoderLogQuery {
                 sources: Some(sources.to_owned()),
                 ..DecoderLogQuery::default()
             },
@@ -801,7 +801,7 @@ fn decoder_log_sources_filter_names_channels_not_device_sets() {
         ..DecoderLogQuery::default()
     };
     assert_eq!(store.delete_decoder_log(&empty).expect("clear"), 0);
-    assert_eq!(query(&store, DecoderLogQuery::default()).1, 3);
+    assert_eq!(query(&store, &DecoderLogQuery::default()).1, 3);
 
     let malformed = DecoderLogQuery {
         sources: Some("0:1,nonsense".to_owned()),
@@ -856,7 +856,7 @@ fn decoder_log_scope_prefers_the_node_over_the_reused_channel_id() {
     let stations = |nodes: &str, sources: &str| {
         query(
             &store,
-            DecoderLogQuery {
+            &DecoderLogQuery {
                 nodes: Some(nodes.to_owned()),
                 sources: Some(sources.to_owned()),
                 ..DecoderLogQuery::default()
@@ -874,7 +874,7 @@ fn decoder_log_scope_prefers_the_node_over_the_reused_channel_id() {
     assert_eq!(stations("", "0:1"), ["LEGACY"]);
     assert!(stations("", "").is_empty());
 
-    let entries = query(&store, DecoderLogQuery::default()).0;
+    let entries = query(&store, &DecoderLogQuery::default()).0;
     assert_eq!(entries[0].node, None, "the legacy row carries no node");
     assert_eq!(entries[2].node.as_deref(), Some("channel:old"));
 }
@@ -898,7 +898,7 @@ fn decoder_log_scope_fallback_stops_at_the_start_of_this_run() {
 
     let scoped = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             sources: Some("0:1".to_owned()),
             ..DecoderLogQuery::default()
         },
@@ -911,7 +911,7 @@ fn decoder_log_scope_fallback_stops_at_the_start_of_this_run() {
             .collect::<Vec<_>>(),
         ["THISRUN"]
     );
-    assert_eq!(query(&store, DecoderLogQuery::default()).1, 2);
+    assert_eq!(query(&store, &DecoderLogQuery::default()).1, 2);
 }
 
 #[test]
@@ -939,7 +939,7 @@ fn decoder_log_scope_does_not_cross_workspaces_sharing_a_node_id() {
     let stations = || {
         query(
             &store,
-            DecoderLogQuery {
+            &DecoderLogQuery {
                 nodes: Some("ch0".to_owned()),
                 ..DecoderLogQuery::default()
             },
@@ -961,7 +961,7 @@ fn decoder_log_limit_bounds_the_page_but_not_the_total() {
 
     let (entries, total) = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             limit: Some(1),
             ..DecoderLogQuery::default()
         },
@@ -972,7 +972,7 @@ fn decoder_log_limit_bounds_the_page_but_not_the_total() {
 
     let (entries, _) = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             limit: Some(u32::MAX),
             ..DecoderLogQuery::default()
         },
@@ -999,7 +999,7 @@ fn decoder_log_serves_the_largest_page_the_panel_offers() {
 
     let (entries, total) = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             limit: Some(PANEL_MAX),
             ..DecoderLogQuery::default()
         },
@@ -1034,7 +1034,7 @@ fn decoder_log_delete_applies_the_filter() {
         })
         .expect("delete");
     assert_eq!(deleted, 2);
-    let (entries, total) = query(&store, DecoderLogQuery::default());
+    let (entries, total) = query(&store, &DecoderLogQuery::default());
     assert_eq!(total, 1);
     assert_eq!(entries[0].kind, "aprs");
 
@@ -1044,7 +1044,7 @@ fn decoder_log_delete_applies_the_filter() {
             .expect("clear"),
         1
     );
-    assert_eq!(query(&store, DecoderLogQuery::default()).1, 0);
+    assert_eq!(query(&store, &DecoderLogQuery::default()).1, 0);
 }
 
 #[test]
@@ -1068,13 +1068,13 @@ fn decoder_log_prune_keeps_the_newest_rows() {
 
     assert_eq!(store.prune_decoder_log(10).expect("prune"), 0);
     assert_eq!(store.prune_decoder_log(4).expect("prune"), 6);
-    let (entries, total) = query(&store, DecoderLogQuery::default());
+    let (entries, total) = query(&store, &DecoderLogQuery::default());
     assert_eq!(total, 4);
     assert_eq!(entries[0].station.as_deref(), Some("000009"));
     assert_eq!(entries[3].station.as_deref(), Some("000006"));
 
     assert_eq!(store.prune_decoder_log(0).expect("prune"), 4);
-    assert_eq!(query(&store, DecoderLogQuery::default()).1, 0);
+    assert_eq!(query(&store, &DecoderLogQuery::default()).1, 0);
 }
 
 #[test]
@@ -1151,14 +1151,14 @@ fn a_sink_query_returns_what_reached_that_node_newest_first() {
         sink: Some(sink.to_owned()),
         ..DecoderLogQuery::default()
     };
-    let (entries, total) = query(&store, at("log"));
+    let (entries, total) = query(&store, &at("log"));
     assert_eq!(total, 2);
     let stations: Vec<_> = entries.iter().filter_map(|e| e.station.clone()).collect();
     assert_eq!(stations, ["AB1234", "3C6444"]);
-    assert_eq!(query(&store, at("export")).1, 2);
-    assert_eq!(query(&store, at("nowhere")).1, 0);
+    assert_eq!(query(&store, &at("export")).1, 2);
+    assert_eq!(query(&store, &at("nowhere")).1, 0);
     assert_eq!(
-        query(&store, DecoderLogQuery::default()).1,
+        query(&store, &DecoderLogQuery::default()).1,
         4,
         "a row that reached nothing is still logged"
     );
@@ -1189,7 +1189,7 @@ fn a_sink_query_composes_with_the_text_search_and_the_kind_list() {
 
     let found = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             sink: Some("log".to_owned()),
             q: Some("dlh".to_owned()),
             ..DecoderLogQuery::default()
@@ -1199,7 +1199,7 @@ fn a_sink_query_composes_with_the_text_search_and_the_kind_list() {
     assert_eq!(found.0[0].station.as_deref(), Some("3C6444"));
     let kinds = query(
         &store,
-        DecoderLogQuery {
+        &DecoderLogQuery {
             sink: Some("log".to_owned()),
             kinds: Some("aprs".to_owned()),
             ..DecoderLogQuery::default()
@@ -1233,7 +1233,7 @@ fn a_sink_query_stays_inside_the_active_workspace() {
     let at_log = || {
         query(
             &store,
-            DecoderLogQuery {
+            &DecoderLogQuery {
                 sink: Some("log".to_owned()),
                 ..DecoderLogQuery::default()
             },
@@ -1302,7 +1302,7 @@ fn clearing_one_sink_keeps_the_rows_other_sinks_hold() {
     let at = |sink: &str| {
         query(
             &store,
-            DecoderLogQuery {
+            &DecoderLogQuery {
                 sink: Some(sink.to_owned()),
                 ..DecoderLogQuery::default()
             },
@@ -1362,7 +1362,7 @@ fn adding_the_origin_columns_keeps_the_rows_already_logged() {
     }
 
     let store = Store::open(Some(file.path())).expect("reopen");
-    let (entries, total) = query(&store, DecoderLogQuery::default());
+    let (entries, total) = query(&store, &DecoderLogQuery::default());
     assert_eq!(total, 1, "the upgrade kept the row");
     assert_eq!(entries[0].node, None);
     assert_eq!(
@@ -1377,7 +1377,7 @@ fn adding_the_origin_columns_keeps_the_rows_already_logged() {
     let scoped = |nodes: &str, sources: &str| {
         query(
             &store,
-            DecoderLogQuery {
+            &DecoderLogQuery {
                 nodes: Some(nodes.to_owned()),
                 sources: Some(sources.to_owned()),
                 ..DecoderLogQuery::default()
@@ -1844,8 +1844,8 @@ fn dial(store: &Store, id: i64, node: &str, from: f64, to: f64) -> bool {
         .expect("record")
 }
 
-fn center_of(state: &Option<WorkspaceState>, node: &str) -> Option<f64> {
-    state.as_ref()?.device(node)?.settings.center_hz
+fn center_of(state: Option<&WorkspaceState>, node: &str) -> Option<f64> {
+    state?.device(node)?.settings.center_hz
 }
 
 #[test]
@@ -1857,7 +1857,7 @@ fn the_history_walks_back_out_of_a_dial_move() {
     assert!(store.workspace_for(id, ME).expect("read").history.can_undo);
 
     let back = store.undo_workspace(id, ME).expect("undo");
-    assert_eq!(center_of(&back.settings, "device"), Some(100e6));
+    assert_eq!(center_of(back.settings.as_ref(), "device"), Some(100e6));
     assert_eq!(
         store
             .workspace_state(id)
@@ -1869,7 +1869,7 @@ fn the_history_walks_back_out_of_a_dial_move() {
     );
 
     let forward = store.redo_workspace(id, ME).expect("redo");
-    assert_eq!(center_of(&forward.settings, "device"), Some(101e6));
+    assert_eq!(center_of(forward.settings.as_ref(), "device"), Some(101e6));
 }
 
 #[test]
@@ -1882,7 +1882,10 @@ fn an_arrangement_step_between_two_dial_moves_leaves_the_dial_alone() {
     assert!(dial(&store, id, "device", 101e6, 102e6));
 
     let to_layout = store.undo_workspace(id, ME).expect("undo");
-    assert_eq!(center_of(&to_layout.settings, "device"), Some(101e6));
+    assert_eq!(
+        center_of(to_layout.settings.as_ref(), "device"),
+        Some(101e6)
+    );
 
     let to_first_dial = store.undo_workspace(id, ME).expect("undo");
     assert_eq!(to_first_dial.detail.snapshot, WorkspaceSnapshot::starter());
@@ -1892,7 +1895,7 @@ fn an_arrangement_step_between_two_dial_moves_leaves_the_dial_alone() {
     );
 
     let to_start = store.undo_workspace(id, ME).expect("undo");
-    assert_eq!(center_of(&to_start.settings, "device"), Some(100e6));
+    assert_eq!(center_of(to_start.settings.as_ref(), "device"), Some(100e6));
 }
 
 #[test]
@@ -1910,14 +1913,22 @@ fn a_drag_of_one_dial_is_one_step_and_a_second_dial_is_another() {
 
     assert_eq!(
         center_of(
-            &store.undo_workspace(id, ME).expect("undo").settings,
+            store
+                .undo_workspace(id, ME)
+                .expect("undo")
+                .settings
+                .as_ref(),
             "device"
         ),
         Some(100.3e6)
     );
     assert_eq!(
         center_of(
-            &store.undo_workspace(id, ME).expect("undo").settings,
+            store
+                .undo_workspace(id, ME)
+                .expect("undo")
+                .settings
+                .as_ref(),
             "device"
         ),
         Some(100e6),
@@ -1934,7 +1945,10 @@ fn walking_back_past_the_first_dial_move_leaves_the_radios_alone() {
     assert!(dial(&store, id, "device", 100e6, 101e6));
 
     let off_the_dial = store.undo_workspace(id, ME).expect("undo");
-    assert_eq!(center_of(&off_the_dial.settings, "device"), Some(100e6));
+    assert_eq!(
+        center_of(off_the_dial.settings.as_ref(), "device"),
+        Some(100e6)
+    );
     for _ in 0..2 {
         assert!(
             store
@@ -2173,8 +2187,8 @@ fn a_dial_undo_keeps_another_radios_newer_setting() {
         .expect("bob turns another dial");
 
     let back = store.undo_workspace(id, Some("ann")).expect("undo");
-    assert_eq!(center_of(&back.settings, "device"), Some(100e6));
-    assert_eq!(center_of(&back.settings, "other"), Some(7e6));
+    assert_eq!(center_of(back.settings.as_ref(), "device"), Some(100e6));
+    assert_eq!(center_of(back.settings.as_ref(), "other"), Some(7e6));
 }
 
 #[test]
@@ -2430,7 +2444,7 @@ fn decoder_log_preserves_monitor_origin_in_queries_and_exports() {
     store
         .insert_decoder_events(&[bound(active(&store), "monitor", record.clone())])
         .unwrap();
-    let (entries, _) = query(&store, DecoderLogQuery::default());
+    let (entries, _) = query(&store, &DecoderLogQuery::default());
     assert_eq!(entries[0].origin, record.origin);
     let exported = store
         .export_decoder_log(&DecoderLogQuery::default())
@@ -2620,7 +2634,7 @@ fn a_stored_retired_decoder_event_leaves_the_log() {
     }
 
     let store = Store::open(Some(file.path())).expect("reopen");
-    let (entries, total) = query(&store, DecoderLogQuery::default());
+    let (entries, total) = query(&store, &DecoderLogQuery::default());
     assert_eq!(total, 3);
     assert!(entries.iter().all(|entry| entry.kind != "subghz"));
 }
@@ -2657,7 +2671,7 @@ fn a_stored_broadcast_status_leaves_the_log() {
     }
 
     let store = Store::open(Some(file.path())).expect("reopen");
-    let (entries, total) = query(&store, DecoderLogQuery::default());
+    let (entries, total) = query(&store, &DecoderLogQuery::default());
     assert_eq!(total, 3);
     assert!(entries.iter().all(|entry| entry.kind != "broadcast"));
 }
@@ -2682,7 +2696,7 @@ fn an_old_radar_detection_leaves_the_log() {
             .expect("the retiring migration");
         conn.execute_batch(retiring).expect("retire");
     }
-    let (entries, total) = query(&store, DecoderLogQuery::default());
+    let (entries, total) = query(&store, &DecoderLogQuery::default());
     assert_eq!(total, 3);
     assert!(entries.iter().all(|entry| entry.kind != "radar"));
 }

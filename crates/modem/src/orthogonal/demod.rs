@@ -307,7 +307,7 @@ mod tests {
         let symbols = draws(16, 8, 0x9e37_79b9);
         let wave = modulate(&p, TonePhase::Continuous, &symbols);
         let demod = MfskDemod::new(p);
-        let short = &wave[..10 * window + 1];
+        let short = &wave[..=(10 * window)];
         let mut out = Vec::new();
         assert_eq!(demod.demodulate(short, 0, 16, &mut out), 10);
         assert_eq!(out.len(), 10);

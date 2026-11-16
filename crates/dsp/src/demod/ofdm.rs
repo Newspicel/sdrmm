@@ -119,6 +119,10 @@ impl CyclicPrefixSearch {
         median(&mut self.scratch).unwrap_or_default()
     }
 
+    #[expect(
+        clippy::option_option,
+        reason = "outer None rejects the prefix, inner None means no guard"
+    )]
     fn guard(&mut self, iq: &[Complex<f32>], n: usize, useful: usize) -> Option<Option<usize>> {
         let window = (useful / GUARD_WINDOW_FRACTION).max(1);
         let span = n.checked_sub(useful + window)?;

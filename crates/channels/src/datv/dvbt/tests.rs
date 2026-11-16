@@ -145,8 +145,8 @@ fn independent_recorded_iq_recovers_exact_transport_payloads() {
         .iter()
         .map(|s| {
             num_complex::Complex::new(
-                i16::from_le_bytes([s[0], s[1]]) as f32 / 32768.0,
-                i16::from_le_bytes([s[2], s[3]]) as f32 / 32768.0,
+                f32::from(i16::from_le_bytes([s[0], s[1]])) / 32768.0,
+                f32::from(i16::from_le_bytes([s[2], s[3]])) / 32768.0,
             )
         })
         .collect();
@@ -176,6 +176,11 @@ fn independent_recorded_iq_recovers_exact_transport_payloads() {
 
 #[test]
 fn highest_order_terrestrial_demodulation_has_bounded_cost() {
+    /// Four times the signal's own duration, not once: 64-QAM at 7/8 over 8k carriers is the
+    /// heaviest mode the standard defines, and the same hosted runner decoded it in 0.405 s one
+    /// day and 0.732 s the next for a laptop's 0.239 s. A tighter bound would report which
+    /// machine picked up the job; this one still catches a decoder that has halved in speed.
+    const HEAVIEST_MODE_SLOWDOWN: f64 = 4.0;
     let params = tps::Parameters {
         fft: 8192,
         guard: 256,
@@ -194,11 +199,6 @@ fn highest_order_terrestrial_demodulation_has_bounded_cost() {
     let elapsed = start.elapsed().as_secs_f64();
     let duration = iq.len() as f64 / (64_000_000.0 / 7.0);
     assert!(receiver.locked());
-    /// Four times the signal's own duration, not once: 64-QAM at 7/8 over 8k carriers is the
-    /// heaviest mode the standard defines, and the same hosted runner decoded it in 0.405 s one
-    /// day and 0.732 s the next for a laptop's 0.239 s. A tighter bound would report which
-    /// machine picked up the job; this one still catches a decoder that has halved in speed.
-    const HEAVIEST_MODE_SLOWDOWN: f64 = 4.0;
     assert!(
         elapsed < realtime_budget(HEAVIEST_MODE_SLOWDOWN * duration),
         "{duration:.3}s of DVB-T took {elapsed:.3}s"
@@ -211,7 +211,11 @@ fn decoded_share(paths: &[(usize, f32, f32, f32)], snr_db: f32) -> f32 {
         ..synth::dvbt::defaults()
     };
     let clean = synth::dvbt::waveform(params, 68 * 4);
-    let power = clean.iter().map(|s| s.norm_sqr()).sum::<f32>() / clean.len() as f32;
+    let power = clean
+        .iter()
+        .map(num_complex::Complex::norm_sqr)
+        .sum::<f32>()
+        / clean.len() as f32;
     let rate = 64_000_000.0 / 7.0;
     let mut iq = clean.clone();
     for (i, sample) in iq.iter_mut().enumerate() {

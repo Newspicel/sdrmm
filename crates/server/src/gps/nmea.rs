@@ -18,6 +18,7 @@ pub(super) struct NmeaState {
     heading: Option<(f64, HeadingSource, Instant)>,
 }
 
+#[derive(Clone, Copy)]
 enum Heading {
     Set(f64),
     Cleared,

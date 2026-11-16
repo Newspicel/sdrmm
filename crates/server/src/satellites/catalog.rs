@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::reference::{Reference, Satellites, Snapshot, Transmitters, fetch};
 
-const FRESH_FOR: std::time::Duration = std::time::Duration::from_secs(2 * 3_600);
+const FRESH_FOR: std::time::Duration = std::time::Duration::from_hours(2);
 const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_CACHED: usize = 64;
 

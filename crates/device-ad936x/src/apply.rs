@@ -823,15 +823,15 @@ mod tests {
     const RX_STAGE: &str = "TUNER";
     const TX_STAGE: &str = "TX";
 
-    fn planned(delta: DeviceSettings) -> Vec<Write> {
+    fn planned(delta: &DeviceSettings) -> Vec<Write> {
         planned_on(&front(), delta)
     }
 
-    fn planned_on(front: &Front, delta: DeviceSettings) -> Vec<Write> {
+    fn planned_on(front: &Front, delta: &DeviceSettings) -> Vec<Write> {
         let layout = crate::layout::tests::two_by_two_layout();
         let capabilities = both_lanes(front, &layout);
         plan(
-            &delta,
+            delta,
             &capabilities,
             front,
             &layout,
@@ -841,12 +841,12 @@ mod tests {
         .1
     }
 
-    fn refused(delta: DeviceSettings) -> String {
+    fn refused(delta: &DeviceSettings) -> String {
         let layout = crate::layout::tests::two_by_two_layout();
         let front = front();
         let capabilities = both_lanes(&front, &layout);
         plan(
-            &delta,
+            delta,
             &capabilities,
             &front,
             &layout,
@@ -891,7 +891,7 @@ mod tests {
     fn a_rate_change_loads_a_decimating_fir_for_it() {
         let writes = planned_on(
             &with_fir(),
-            DeviceSettings {
+            &DeviceSettings {
                 sample_rate: Some(10_000_000.0),
                 ..DeviceSettings::default()
             },
@@ -914,7 +914,7 @@ mod tests {
     fn a_low_rate_turns_the_fir_on_before_it_is_reached() {
         let writes = planned_on(
             &with_fir(),
-            DeviceSettings {
+            &DeviceSettings {
                 sample_rate: Some(500_000.0),
                 ..DeviceSettings::default()
             },
@@ -940,7 +940,7 @@ mod tests {
                 },
                 ..with_fir()
             },
-            DeviceSettings {
+            &DeviceSettings {
                 sample_rate: Some(1_000_000.0),
                 ..DeviceSettings::default()
             },
@@ -956,7 +956,7 @@ mod tests {
 
     #[test]
     fn a_rate_below_the_transceivers_floor_runs_it_faster_and_decimates() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             sample_rate: Some(500_000.0),
             ..DeviceSettings::default()
         });
@@ -969,7 +969,7 @@ mod tests {
             ]
         );
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 sample_rate: Some(200_000.0),
                 ..DeviceSettings::default()
             })
@@ -979,7 +979,7 @@ mod tests {
 
     #[test]
     fn the_rate_is_written_before_the_filter_and_the_filter_before_the_dial() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             center_hz: Some(433_920_000.0),
             sample_rate: Some(2_400_000.0),
             bandwidth: Some(BandwidthSetting::Manual { hz: 2_000_000.0 }),
@@ -1007,7 +1007,7 @@ mod tests {
 
     #[test]
     fn a_width_the_transmitter_cannot_hold_is_clamped_for_it_alone() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             bandwidth: Some(BandwidthSetting::Manual { hz: 50_000_000.0 }),
             ..DeviceSettings::default()
         });
@@ -1022,7 +1022,7 @@ mod tests {
 
     #[test]
     fn each_gain_stage_reaches_the_channel_of_its_own_direction() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             gains: vec![
                 GainValue {
                     stage: RX_STAGE.to_string(),
@@ -1049,7 +1049,7 @@ mod tests {
 
     #[test]
     fn the_antenna_is_one_switch_set_through_the_first_receiver() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             antenna: Some("B_BALANCED".to_string()),
             ..DeviceSettings::default()
         });
@@ -1058,7 +1058,7 @@ mod tests {
             vec![channel(false, "voltage0", RF_PORT_SELECT, "B_BALANCED")]
         );
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 streams: vec![StreamSettings {
                     stream: 1,
                     antenna: Some("B_BALANCED".to_string()),
@@ -1112,7 +1112,7 @@ mod tests {
 
     #[test]
     fn a_lane_of_its_own_is_written_after_the_base_every_lane_shares() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             gains: vec![GainValue {
                 stage: RX_STAGE.to_string(),
                 value_db: 30.0,
@@ -1139,7 +1139,7 @@ mod tests {
 
     #[test]
     fn a_per_lane_setting_reaches_that_lane_and_no_other() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             streams: vec![sdrmm_wire::StreamSettings {
                 stream: 1,
                 gains: vec![GainValue {
@@ -1160,7 +1160,7 @@ mod tests {
 
     #[test]
     fn a_receive_gain_is_not_written_while_automatic_gain_holds_it() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             agc: Some(AgcSetting::in_mode(true, "slow_attack")),
             gains: vec![
                 GainValue {
@@ -1187,7 +1187,7 @@ mod tests {
 
     #[test]
     fn manual_gain_is_set_before_the_gain_it_unlocks() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             agc: Some(AgcSetting::off()),
             gains: vec![GainValue {
                 stage: RX_STAGE.to_string(),
@@ -1208,7 +1208,7 @@ mod tests {
 
     #[test]
     fn a_gain_mode_reaches_every_receive_lane_at_once() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             agc: Some(AgcSetting::in_mode(true, "slow_attack")),
             ..DeviceSettings::default()
         });
@@ -1224,21 +1224,21 @@ mod tests {
     #[test]
     fn automatic_gain_off_is_manual_and_on_without_a_mode_takes_the_first() {
         assert_eq!(
-            planned(DeviceSettings {
+            planned(&DeviceSettings {
                 agc: Some(AgcSetting::off()),
                 ..DeviceSettings::default()
             })[0],
             channel(false, "voltage0", GAIN_CONTROL_MODE, "manual")
         );
         assert_eq!(
-            planned(DeviceSettings {
+            planned(&DeviceSettings {
                 agc: Some(AgcSetting::switched(true)),
                 ..DeviceSettings::default()
             })[0],
             channel(false, "voltage0", GAIN_CONTROL_MODE, "fast_attack")
         );
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 agc: Some(AgcSetting::in_mode(true, "telepathy")),
                 ..DeviceSettings::default()
             })
@@ -1248,7 +1248,7 @@ mod tests {
 
     #[test]
     fn a_correction_switch_is_one_for_the_whole_part() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             extra: vec![ExtraValue {
                 name: QUADRATURE.to_string(),
                 value: json!(false),
@@ -1263,7 +1263,7 @@ mod tests {
 
     #[test]
     fn parts_per_million_become_the_crystal_correction_the_board_was_trimmed_from() {
-        let writes = planned(DeviceSettings {
+        let writes = planned(&DeviceSettings {
             ppm: Some(10.0),
             ..DeviceSettings::default()
         });
@@ -1279,49 +1279,49 @@ mod tests {
     #[test]
     fn a_setting_the_radio_cannot_hold_is_refused_by_name() {
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 center_hz: Some(20e9),
                 ..DeviceSettings::default()
             })
             .contains("tuning range")
         );
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 sample_rate: Some(200e6),
                 ..DeviceSettings::default()
             })
             .contains("converts")
         );
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 bandwidth: Some(BandwidthSetting::Manual { hz: 100e6 }),
                 ..DeviceSettings::default()
             })
             .contains("analog filter")
         );
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 bandwidth: Some(BandwidthSetting::Auto),
                 ..DeviceSettings::default()
             })
             .contains("own filter")
         );
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 antenna: Some("SMA".to_string()),
                 ..DeviceSettings::default()
             })
             .contains("A_BALANCED")
         );
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 ppm: Some(5_000.0),
                 ..DeviceSettings::default()
             })
             .contains("crystal can be pulled")
         );
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 gains: vec![GainValue {
                     stage: "LNA".to_string(),
                     value_db: 1.0,
@@ -1335,7 +1335,7 @@ mod tests {
     #[test]
     fn an_extra_of_the_wrong_shape_is_refused_rather_than_coerced() {
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 extra: vec![ExtraValue {
                     name: TX_PORT.to_string(),
                     value: json!("C"),
@@ -1345,7 +1345,7 @@ mod tests {
             .contains("A, B")
         );
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 extra: vec![ExtraValue {
                     name: QUADRATURE.to_string(),
                     value: json!("yes"),
@@ -1355,7 +1355,7 @@ mod tests {
             .contains("on or off")
         );
         assert!(
-            refused(DeviceSettings {
+            refused(&DeviceSettings {
                 extra: vec![ExtraValue {
                     name: "loopback".to_string(),
                     value: json!(true),

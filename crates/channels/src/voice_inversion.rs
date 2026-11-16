@@ -330,33 +330,30 @@ impl InversionDetector {
     }
 
     fn settle(&mut self, detected: Option<f64>, score: f32) {
-        match detected {
-            Some(hz) => {
-                self.misses = 0;
-                match self.pending {
-                    Some(pending) if (pending - hz).abs() <= LOCK_TOLERANCE_HZ => {
-                        self.agreements += 1;
-                        self.pending = Some(0.5 * (pending + hz));
-                    }
-                    _ => {
-                        self.pending = Some(hz);
-                        self.agreements = 1;
-                    }
+        if let Some(hz) = detected {
+            self.misses = 0;
+            match self.pending {
+                Some(pending) if (pending - hz).abs() <= LOCK_TOLERANCE_HZ => {
+                    self.agreements += 1;
+                    self.pending = Some(f64::midpoint(pending, hz));
                 }
-                if self.agreements >= LOCK_AGREEMENTS {
-                    self.inversion = Inversion {
-                        carrier_hz: self.pending.map(|hz| self.held(hz)),
-                        confidence: score,
-                    };
+                _ => {
+                    self.pending = Some(hz);
+                    self.agreements = 1;
                 }
             }
-            None => {
-                self.pending = None;
-                self.agreements = 0;
-                self.misses += 1;
-                if self.misses >= CLEAR_DECISIONS {
-                    self.inversion = Inversion::default();
-                }
+            if self.agreements >= LOCK_AGREEMENTS {
+                self.inversion = Inversion {
+                    carrier_hz: self.pending.map(|hz| self.held(hz)),
+                    confidence: score,
+                };
+            }
+        } else {
+            self.pending = None;
+            self.agreements = 0;
+            self.misses += 1;
+            if self.misses >= CLEAR_DECISIONS {
+                self.inversion = Inversion::default();
             }
         }
     }

@@ -164,7 +164,7 @@ mod tests {
         for share in [0.1, 0.5, 0.8, clean_fraction(DEFAULT_TAPS)] {
             let frequency = 0.25 + share * 0.25;
             let input: Vec<f32> = (0..32_768)
-                .map(|k| (TAU * frequency * k as f64).cos() as f32)
+                .map(|k| (TAU * frequency * f64::from(k)).cos() as f32)
                 .collect();
             let mut out = Vec::new();
             RealToIq::default().process(&input, &mut out);

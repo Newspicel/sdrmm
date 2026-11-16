@@ -88,7 +88,7 @@ impl Deframer {
     pub fn new() -> Self {
         let mut viterbi = ViterbiK7::new(conv_code());
         let mut decoded = Vec::with_capacity(WINDOW / 2 + 1);
-        viterbi.decode(&[0; WINDOW], &mut decoded);
+        viterbi.decode(&vec![0; WINDOW], &mut decoded);
         decoded.clear();
         Self {
             soft: Vec::with_capacity(SOFT_CAPACITY),

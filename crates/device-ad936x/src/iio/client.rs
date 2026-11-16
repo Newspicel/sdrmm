@@ -11,11 +11,11 @@ use crate::iio::{
     xml::Context,
 };
 
-/// How long a control exchange may take. Attribute writes reach the AD936x over SPI and a retune
+/// How long a control exchange may take. Attribute writes reach the `AD936x` over SPI and a retune
 /// recalibrates, so this is generous by the standards of the rest of the conversation.
 pub(crate) const CONTROL_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The largest context description this driver will take. An AD936x context is around 30 kB.
+/// The largest context description this driver will take. An `AD936x` context is around 30 kB.
 const MAX_XML: usize = 4 * 1024 * 1024;
 
 const MAX_ATTR: usize = 16 * 1024;

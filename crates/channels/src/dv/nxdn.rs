@@ -342,7 +342,7 @@ impl Decoder {
             self.rejected = self.rejected.saturating_add(1);
             return;
         }
-        self.emit(held.frame, out);
+        self.emit(&held.frame, out);
         if held.voice.is_empty() {
             return;
         }
@@ -377,7 +377,7 @@ impl Decoder {
             .find(|&fsw| self.window.sync_distance(fsw, FSW_BITS) <= SYNC_TOLERANCE)
     }
 
-    fn emit(&mut self, frame: DvFrame, out: &mut ChannelOutputs) {
+    fn emit(&mut self, frame: &DvFrame, out: &mut ChannelOutputs) {
         if frame.kind == DvFrameKind::Voice
             && self.last_kind == Some(DvFrameKind::Voice)
             && frame.source.is_none()
@@ -386,7 +386,7 @@ impl Decoder {
             return;
         }
         self.last_kind = Some(frame.kind);
-        out.events.push(DecoderEvent::of(&frame));
+        out.events.push(DecoderEvent::of(frame));
     }
 
     fn frame(&mut self) -> Option<(DvFrame, Option<usize>, Voice)> {
@@ -472,7 +472,7 @@ impl Decoder {
 
     fn apply_layer3(&mut self, frame: &mut DvFrame, layer3: &[bool]) {
         if let Some(segment) = alias_segment(layer3) {
-            frame.talker_alias = self.alias.push(segment);
+            frame.talker_alias = self.alias.push(&segment);
             return;
         }
         match bits_to_u32(layer3, 2, 6) {
@@ -634,7 +634,7 @@ struct AliasAssembler {
 }
 
 impl AliasAssembler {
-    fn push(&mut self, segment: AliasSegment) -> Option<String> {
+    fn push(&mut self, segment: &AliasSegment) -> Option<String> {
         if segment.total != self.total {
             *self = Self {
                 total: segment.total,

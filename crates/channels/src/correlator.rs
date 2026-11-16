@@ -211,12 +211,11 @@ impl CorrelatorProcessor {
     fn fringe_band(&mut self, baseline: usize) -> (BandVisibility, f64) {
         let band = self.correlator.band(baseline, self.fringe.clone());
         let delay = self.correlator.delay_samples(baseline, self.fringe.clone());
-        match (band, delay) {
-            (Ok(band), Ok(delay)) => (band, delay),
-            _ => {
-                self.faults.solver_failures += 1;
-                (BandVisibility::default(), 0.0)
-            }
+        if let (Ok(band), Ok(delay)) = (band, delay) {
+            (band, delay)
+        } else {
+            self.faults.solver_failures += 1;
+            (BandVisibility::default(), 0.0)
         }
     }
 

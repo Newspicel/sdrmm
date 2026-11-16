@@ -274,7 +274,7 @@ impl SymbolSync {
             return;
         };
         let raw = ((symbol - self.prev_symbol) * (self.mid - centre).conj()).re;
-        let err = f64::from(raw) / (f64::from(0.5 * (before + after)) * TAU);
+        let err = f64::from(raw) / (f64::from(f32::midpoint(before, after)) * TAU);
         if !err.is_finite() {
             self.step = self.free_run_sps;
             return;

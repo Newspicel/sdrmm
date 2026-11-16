@@ -88,7 +88,7 @@ fn an_array_recording_replays_to_the_same_calibration() {
     let first = wait_calibrated(&bench.engine, LOCK_WAIT);
     let stem = bench
         .engine
-        .start_array_recording(ARRAY, named("bench-array"))
+        .start_array_recording(ARRAY, &named("bench-array"))
         .unwrap();
     exact_gap(&bench, 3 * GAP);
     let resynced = wait_solve_after(&bench.engine, &first, WAIT);
@@ -110,7 +110,7 @@ fn a_recording_with_one_calibration_replays_without_a_search() {
     let first = wait_calibrated(&bench.engine, LOCK_WAIT);
     let stem = bench
         .engine
-        .start_array_recording(ARRAY, named("bench-once"))
+        .start_array_recording(ARRAY, &named("bench-once"))
         .unwrap();
     bench.engine.calibrate_array(ARRAY).unwrap();
     let original = wait_solve_after(&bench.engine, &first, WAIT);
@@ -129,14 +129,14 @@ fn a_finished_replay_settles_to_its_recorded_calibration() {
     let first = wait_calibrated(&bench.engine, LOCK_WAIT);
     let stem = bench
         .engine
-        .start_array_recording(ARRAY, named("bench-end"))
+        .start_array_recording(ARRAY, &named("bench-end"))
         .unwrap();
     bench.engine.calibrate_array(ARRAY).unwrap();
     wait_solve_after(&bench.engine, &first, WAIT);
     std::thread::sleep(TAIL);
     stop(&bench);
     replay(&bench, &stem);
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     let recorded = wait_calibrated(&bench.engine, LOCK_WAIT);
     wait_status(
         &bench.engine,
@@ -167,7 +167,7 @@ fn a_recording_started_before_the_lock_replays_to_the_same_phases() {
     bench.engine.apply_array(kraken_array(ds)).unwrap();
     let stem = bench
         .engine
-        .start_array_recording(ARRAY, named("bench-cold"))
+        .start_array_recording(ARRAY, &named("bench-cold"))
         .unwrap();
     let first = wait_calibrated(&bench.engine, LOCK_WAIT);
     bench.engine.calibrate_array(ARRAY).unwrap();
@@ -189,7 +189,7 @@ fn a_recording_gap_becomes_a_capture_with_a_global_index() {
     let before = wait_calibrated(&bench.engine, LOCK_WAIT);
     let stem = bench
         .engine
-        .start_array_recording(ARRAY, named("bench-gap"))
+        .start_array_recording(ARRAY, &named("bench-gap"))
         .unwrap();
     wait_status(&bench.engine, "samples on disk", WAIT, |now| {
         now.recording

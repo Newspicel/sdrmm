@@ -753,7 +753,7 @@ mod tests {
             timestamp: 0,
             center_hz,
             span_hz,
-            db: Arc::from(db.as_slice()),
+            db: Arc::from(db),
         }
     }
 

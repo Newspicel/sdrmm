@@ -63,7 +63,9 @@ struct PhaseChips {
 impl PhaseChips {
     fn mark(&self, streams: &[Stream], phase: usize, hits: &mut [Phases]) {
         let (Some(p), Some(g)) = (tiles(&self.pulses, streams), tiles(&self.gaps, streams)) else {
-            hits.iter_mut().for_each(|hit| *hit |= 1 << phase);
+            for hit in &mut *hits {
+                *hit |= 1 << phase;
+            }
             return;
         };
         let mut passed = [0; TILE];

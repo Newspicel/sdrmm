@@ -130,14 +130,14 @@ mod model_tests {
     use super::*;
     use crate::ermes::ErmesMessage;
 
-    fn present<T: EventPayload>(kind: EventKind, json: serde_json::Value) -> Presentation {
-        serde_json::from_value::<T>(json).unwrap().present(&kind)
+    fn present<T: EventPayload>(kind: &EventKind, json: serde_json::Value) -> Presentation {
+        serde_json::from_value::<T>(json).unwrap().present(kind)
     }
 
     #[test]
     fn flex_and_ermes_list_their_frame_facts() {
         let flex = present::<FlexMessage>(
-            EventKind::named("flex"),
+            &EventKind::named("flex"),
             serde_json::json!({
                 "address": 1234567, "payload": "alpha", "text": "HELLO", "baud": 1600,
                 "levels": 2, "cycle": 3, "frame": 17, "phase": "a", "errors_corrected": 0,
@@ -148,7 +148,7 @@ mod model_tests {
         assert_eq!(flex.field("Repaired"), None);
         assert_eq!(flex.field("Complete"), None);
         let partial = present::<FlexMessage>(
-            EventKind::named("flex"),
+            &EventKind::named("flex"),
             serde_json::json!({
                 "address": 1234567, "payload": "alpha", "text": "HEL", "baud": 1600,
                 "levels": 2, "cycle": 3, "frame": 17, "phase": "a", "errors_corrected": 0,
@@ -158,7 +158,7 @@ mod model_tests {
         assert_eq!(partial.field("Complete"), flag(Some(false)).as_ref());
         assert_eq!(partial.summary, "1234567: HEL …");
         let ermes = present::<ErmesMessage>(
-            EventKind::named("ermes"),
+            &EventKind::named("ermes"),
             serde_json::json!({
                 "local_address": 42, "message_number": 5, "payload": "numeric", "text": "123",
                 "urgent": true, "alert": 2, "errors_corrected": 1,

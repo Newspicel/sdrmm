@@ -377,7 +377,7 @@ fn every_kernel_decodes_a_noisy_word_bit_exactly() {
     assert!(outcomes[0].0.is_some_and(|count| count > 0));
     assert_eq!(outcomes[0].1, information);
     for outcome in &outcomes[1..] {
-        assert!(*outcome == outcomes[0]);
+        assert_eq!(*outcome, outcomes[0]);
     }
 }
 

@@ -109,7 +109,7 @@ fn settings_valid(body: &NodeBody) -> bool {
     }
 }
 
-pub(super) fn wire<'a>(net: &mut Net<'a>) -> Vec<(PatchEdge, PatchError)> {
+pub(super) fn wire(net: &mut Net<'_>) -> Vec<(PatchEdge, PatchError)> {
     let graph = net.graph;
     let mut refused = Vec::new();
     for (index, edge) in graph.edges.iter().enumerate() {

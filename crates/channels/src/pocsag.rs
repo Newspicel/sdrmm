@@ -373,7 +373,7 @@ impl Candidate {
             key,
             vault.org_code,
             vault.now(),
-            &header,
+            header,
             &alpha_bytes(sealed),
         )?;
         Some((PocsagPayload::Alpha, render_alpha(&opened), true))
@@ -664,7 +664,7 @@ mod tests {
     const ORG_CODE: u16 = 0x4af5;
 
     fn captured() -> SystemTime {
-        SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000)
+        SystemTime::UNIX_EPOCH + Duration::from_hours(500000)
     }
 
     fn sealed_page(text: &str) -> Page {
@@ -691,7 +691,7 @@ mod tests {
     }
 
     fn keyed_channel(key: &str) -> PocsagChannel {
-        let mut chan = channel_with(keyed_params(key));
+        let mut chan = channel_with(&keyed_params(key));
         chan.captured_at(captured());
         chan
     }
@@ -765,7 +765,7 @@ mod tests {
         sent.push(tone);
         let iq = burst(&sent, 1_200);
         assert_eq!(run(&mut channel(), &iq).len(), 3);
-        let mut chan = channel_with(PocsagParams {
+        let mut chan = channel_with(&PocsagParams {
             alpha_only: true,
             ..PocsagParams::default()
         });
@@ -800,16 +800,16 @@ mod tests {
         }
     }
 
-    fn channel_with(params: PocsagParams) -> PocsagChannel {
+    fn channel_with(params: &PocsagParams) -> PocsagChannel {
         PocsagChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::of(&params).expect("settings")),
+            settings(ChannelParams::of(params).expect("settings")),
         )
         .unwrap()
     }
 
     fn channel() -> PocsagChannel {
-        channel_with(PocsagParams::default())
+        channel_with(&PocsagParams::default())
     }
 
     fn pages() -> Vec<Page> {
@@ -863,7 +863,7 @@ mod tests {
                     event
                         .read::<PocsagMessage>()
                         .unwrap_or_else(|| panic!("unexpected event {event:?}")),
-                )
+                );
             }
             pos = end;
         }
@@ -889,7 +889,7 @@ mod tests {
     #[test]
     fn round_trips_two_pages_at_every_rate() {
         for baud in [512u16, 1_200, 2_400] {
-            let mut chan = channel_with(PocsagParams {
+            let mut chan = channel_with(&PocsagParams {
                 baud: match baud {
                     512 => PocsagBaud::B512,
                     1_200 => PocsagBaud::B1200,
@@ -1033,13 +1033,13 @@ mod tests {
             "an inverted transmission must not decode with the default polarity"
         );
 
-        let mut chan = channel_with(PocsagParams {
+        let mut chan = channel_with(&PocsagParams {
             invert: true,
             ..PocsagParams::default()
         });
         assert_expected_pages(&run(&mut chan, &inverted), 1_200);
 
-        let mut chan = channel_with(PocsagParams {
+        let mut chan = channel_with(&PocsagParams {
             invert: true,
             ..PocsagParams::default()
         });

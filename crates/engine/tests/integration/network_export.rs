@@ -40,9 +40,9 @@ fn a_stalled_tcp_reader_reports_failure_while_radio_audio_stays_continuous() {
     engine
         .start_network_export(
             ds,
-            "stalled".to_owned(),
+            "stalled",
             0,
-            NetworkExportSettings {
+            &NetworkExportSettings {
                 transport: NetworkTransport::Tcp,
                 format: NetworkSampleFormat::Cf32Le,
                 address: listener.local_addr().expect("address").to_string(),
@@ -124,7 +124,7 @@ fn virtual_device_exports_mtu_safe_ci16_udp() {
     };
 
     let started = engine
-        .start_network_export(ds, "udp".to_owned(), 0, settings.clone())
+        .start_network_export(ds, "udp", 0, &settings)
         .expect("start UDP export");
     assert_eq!(started.node, "udp");
     assert_eq!(started.settings, settings);
@@ -196,7 +196,7 @@ fn virtual_device_exports_an_unframed_cf32_tcp_stream() {
         let mut first = [0u8; 16];
         stream.read_exact(&mut first).expect("two complex samples");
         first_tx.send(first).expect("publish first samples");
-        let mut drain = [0u8; 64 * 1_024];
+        let mut drain = vec![0u8; 64 * 1_024];
         while matches!(stream.read(&mut drain), Ok(read) if read > 0) {}
     });
     let engine = engine();
@@ -206,9 +206,9 @@ fn virtual_device_exports_an_unframed_cf32_tcp_stream() {
     engine
         .start_network_export(
             ds,
-            "tcp".to_owned(),
+            "tcp",
             0,
-            NetworkExportSettings {
+            &NetworkExportSettings {
                 transport: NetworkTransport::Tcp,
                 format: NetworkSampleFormat::Cf32Le,
                 address: address.to_string(),
@@ -247,7 +247,7 @@ fn rtl_tcp_listens_without_clients_streams_and_releases_its_port() {
         format: NetworkSampleFormat::Cu8,
     };
     engine
-        .start_network_export(ds, "rtl".to_owned(), 0, settings.clone())
+        .start_network_export(ds, "rtl", 0, &settings)
         .unwrap();
     std::thread::sleep(Duration::from_millis(100));
     assert!(
@@ -269,7 +269,7 @@ fn rtl_tcp_listens_without_clients_streams_and_releases_its_port() {
     assert!(status.error.is_none(), "{:?}", status.error);
     drop(client);
     engine
-        .start_network_export(ds, "rtl".to_owned(), 0, settings)
+        .start_network_export(ds, "rtl", 0, &settings)
         .unwrap();
     engine.stop_network_export(ds, "rtl").unwrap();
     engine.remove_device_set(ds).unwrap();
@@ -289,7 +289,7 @@ fn rtl_433_consumes_the_live_export() {
         format: NetworkSampleFormat::Cu8,
     };
     let status = engine
-        .start_network_export(ds, "rtl".to_owned(), 0, settings)
+        .start_network_export(ds, "rtl", 0, &settings)
         .unwrap();
     let output = std::process::Command::new("rtl_433")
         .args([

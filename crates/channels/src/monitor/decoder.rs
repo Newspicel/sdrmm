@@ -139,12 +139,7 @@ impl Decoder {
             .retain(|event| valid(event, descriptor, self.frequency_hz, catalog));
         self.verified |= self.out.events.iter().any(|event| verifies(event, catalog));
         if self.record && !self.out.audio_pcm.is_empty() {
-            if self.out.audio_rate != 48_000 {
-                error = Some(format!(
-                    "unsupported decoder audio rate {}",
-                    self.out.audio_rate
-                ));
-            } else {
+            if self.out.audio_rate == 48_000 {
                 self.mono.clear();
                 self.mono.extend(
                     self.out
@@ -163,6 +158,11 @@ impl Decoder {
                         .take(room)
                         .map(|sample| (sample.clamp(-1.0, 1.0) * 32767.0) as i16),
                 );
+            } else {
+                error = Some(format!(
+                    "unsupported decoder audio rate {}",
+                    self.out.audio_rate
+                ));
             }
         }
         (std::mem::take(&mut self.out.events), error)

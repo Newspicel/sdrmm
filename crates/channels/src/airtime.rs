@@ -68,8 +68,7 @@ pub(crate) fn check_margin(margin_db: f32) -> Result<(), ChannelError> {
         Ok(())
     } else {
         Err(ChannelError::InvalidSettings(format!(
-            "margin must be {}..={} dB, got {margin_db}",
-            MIN_AIRTIME_MARGIN_DB, MAX_AIRTIME_MARGIN_DB
+            "margin must be {MIN_AIRTIME_MARGIN_DB}..={MAX_AIRTIME_MARGIN_DB} dB, got {margin_db}"
         )))
     }
 }

@@ -42,11 +42,11 @@ pub(super) struct SuperframeLockStateMachine {
     locked: bool,
 }
 
-fn header_self_consistent(header: &FrameHeader) -> bool {
+fn header_self_consistent(header: FrameHeader) -> bool {
     header.frame_counter1 == header.frame_counter2
 }
 
-fn is_in_sequence(previous: &FrameHeader, current: &FrameHeader) -> bool {
+fn is_in_sequence(previous: FrameHeader, current: FrameHeader) -> bool {
     if previous.format_id != current.format_id {
         return false;
     }
@@ -79,12 +79,11 @@ impl SuperframeLockStateMachine {
     }
 
     pub(super) fn update(&mut self, header: FrameHeader) -> LockStatus {
-        let consistent = header_self_consistent(&header);
+        let consistent = header_self_consistent(header);
         let in_sequence = consistent
             && self
                 .previous
-                .as_ref()
-                .is_some_and(|previous| is_in_sequence(previous, &header));
+                .is_some_and(|previous| is_in_sequence(previous, header));
         if in_sequence {
             self.match_count = self.match_count.saturating_add(1);
             self.miss_count = 0;

@@ -27,7 +27,7 @@ fn base64_decode(s: &[u8]) -> Option<Vec<u8>> {
     let mut acc = 0u32;
     let mut bits = 0u32;
     for &c in &s {
-        acc = (acc << 6) | val(c)? as u32;
+        acc = (acc << 6) | u32::from(val(c)?);
         bits += 6;
         if bits >= 8 {
             bits -= 8;
@@ -134,7 +134,7 @@ pub fn parse_iip_frame(payload_r: &[u8]) -> Value {
     let seq = payload_r[1];
     let ack = payload_r[2];
     let cs = payload_r[3];
-    let sum = hdr as u32 + seq as u32 + ack as u32 + cs as u32;
+    let sum = u32::from(hdr) + u32::from(seq) + u32::from(ack) + u32::from(cs);
     let cs_ok = sum > 0 && sum.is_multiple_of(255);
     let mut out = json!({
         "ip_type": iip_type_name(hdr),
@@ -147,7 +147,7 @@ pub fn parse_iip_frame(payload_r: &[u8]) -> Value {
     match hdr {
         0x04 if !data.is_empty() => {
             let len = (data[0] as usize).min(data.len() - 1);
-            let payload = &data[1..1 + len];
+            let payload = &data[1..=len];
             out["data_hex"] = json!(hex(payload));
             let text: String = payload
                 .iter()

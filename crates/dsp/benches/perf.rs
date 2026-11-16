@@ -104,7 +104,7 @@ fn tuning(c: &mut Criterion) {
         let mut downconverters: Vec<_> = (0..channels)
             .map(|index| {
                 let rate = if index % 4 == 1 { 240_000.0 } else { 48_000.0 };
-                let offset = 100_000.0 + index as f64 * 25_000.0;
+                let offset = 100_000.0 + f64::from(index) * 25_000.0;
                 let mut ddc = sdrmm_dsp::Ddc::new(20_000_000.0, rate, offset).expect("rates");
                 ddc.process(&input, &mut out);
                 ddc
@@ -179,9 +179,9 @@ fn shared_tuning_at_rate(c: &mut Criterion, input_rate: f64, block_len: usize, n
             let settings: Vec<_> = (0..count)
                 .map(|index| {
                     let offset = if spread && count > 1 {
-                        input_rate * (0.88 * index as f64 / (count - 1) as f64 - 0.44)
+                        input_rate * (0.88 * f64::from(index) / f64::from(count - 1) - 0.44)
                     } else {
-                        start + index as f64 * 25_000.0
+                        start + f64::from(index) * 25_000.0
                     };
                     let rate = if index % 4 == 1 { 240_000.0 } else { 48_000.0 };
                     let offset = protected_offset(plan, offset, rate);

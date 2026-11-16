@@ -38,11 +38,11 @@ impl Sinks {
 }
 
 impl Session {
-    pub(super) async fn subscribe_sink(&mut self, node: String) {
+    pub(super) fn subscribe_sink(&mut self, node: String) {
         self.sinks.stop(&node);
         self.sinks.reap();
         if self.sinks.watching.len() >= MAX_WATCHED {
-            self.send_error(TOO_MANY).await;
+            self.send_error(TOO_MANY);
             return;
         }
         let task = spawn(node.clone(), self.out.clone(), self.state.sinks.clone());
@@ -60,7 +60,7 @@ fn spawn(node: String, out: Outbox, hub: Arc<SinkHub>) -> JoinHandle<()> {
             let refused = ServerEvent::Error {
                 message: NOT_A_SINK.to_owned(),
             };
-            let _ = out.send(text_event(&refused)).await;
+            let _ = out.send(text_event(&refused));
             return;
         };
         forward(&node, snapshot, updates, &out, &hub).await;
@@ -74,7 +74,7 @@ async fn forward(
     out: &Outbox,
     hub: &SinkHub,
 ) {
-    if out.send(Message::Text(snapshot)).await.is_err() {
+    if out.send(Message::Text(snapshot)).is_err() {
         return;
     }
     loop {
@@ -86,7 +86,7 @@ async fn forward(
             },
             Err(RecvError::Closed) => return,
         };
-        if out.send(Message::Text(text)).await.is_err() {
+        if out.send(Message::Text(text)).is_err() {
             return;
         }
     }

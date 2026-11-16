@@ -75,13 +75,14 @@ fn wspr_sweep_against_mfsk_core() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(6);
-    let snrs: Vec<f32> = std::env::var("SNRS")
-        .map(|list| {
+    let snrs: Vec<f32> = std::env::var("SNRS").map_or_else(
+        |_| vec![-32.0, -31.0, -30.0, -29.0, -28.0, -27.0],
+        |list| {
             list.split(',')
                 .filter_map(|value| value.parse().ok())
                 .collect()
-        })
-        .unwrap_or_else(|_| vec![-32.0, -31.0, -30.0, -29.0, -28.0, -27.0]);
+        },
+    );
     for snr in snrs {
         let (mut ours, mut theirs, mut total) = (0, 0, 0);
         let (mut ours_time, mut theirs_time) = (0.0, 0.0);

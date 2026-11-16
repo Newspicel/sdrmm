@@ -370,9 +370,9 @@ mod tests {
         GainValue::new(GainKind::Tuner, value_db)
     }
 
-    fn apply(settings: DeviceSettings) -> Result<(Remote, Vec<(Command, u32)>), DeviceError> {
+    fn apply(settings: &DeviceSettings) -> Result<(Remote, Vec<(Command, u32)>), DeviceError> {
         let (caps, current, table) = r820t();
-        validate(&settings, &caps, current, table)
+        validate(settings, &caps, current, table)
     }
 
     #[test]
@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn a_gain_request_snaps_to_the_tuner_table_and_is_reported_snapped() {
-        let (next, batch) = apply(delta(DeviceSettings {
+        let (next, batch) = apply(&delta(DeviceSettings {
             gains: vec![tuner(24.0)],
             ..DeviceSettings::default()
         }))
@@ -487,7 +487,7 @@ mod tests {
         assert_eq!(batch, vec![(Command::GainMode, 1), (Command::Gain, 229)]);
         assert_eq!(next.wire().gains[0].value_db, 22.9);
 
-        let (tie, _) = apply(delta(DeviceSettings {
+        let (tie, _) = apply(&delta(DeviceSettings {
             gains: vec![tuner(36.8)],
             ..DeviceSettings::default()
         }))
@@ -497,7 +497,7 @@ mod tests {
 
     #[test]
     fn a_rate_and_gain_change_together_arrive_in_the_radios_order() {
-        let (_, batch) = apply(delta(DeviceSettings {
+        let (_, batch) = apply(&delta(DeviceSettings {
             sample_rate: Some(2_400_000.0),
             gains: vec![tuner(0.0)],
             center_hz: Some(433_920_000.0),
@@ -517,7 +517,7 @@ mod tests {
 
     #[test]
     fn leaving_agc_restores_the_last_manual_gain() {
-        let (manual, _) = apply(delta(DeviceSettings {
+        let (manual, _) = apply(&delta(DeviceSettings {
             gains: vec![tuner(16.6)],
             ..DeviceSettings::default()
         }))
@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn the_bias_tee_is_a_command_and_is_reported_back() {
-        let (on, batch) = apply(delta(DeviceSettings {
+        let (on, batch) = apply(&delta(DeviceSettings {
             bias_tee: Some(true),
             ..DeviceSettings::default()
         }))
@@ -637,7 +637,7 @@ mod tests {
                 "bad value",
             ),
         ] {
-            match apply(settings) {
+            match apply(&settings) {
                 Err(DeviceError::Unsupported(message)) => {
                     assert!(message.contains(needle), "{message} lacks {needle}");
                 }
@@ -648,7 +648,7 @@ mod tests {
 
     #[test]
     fn a_replay_carries_every_setting_in_order() {
-        let (next, _) = apply(delta(DeviceSettings {
+        let (next, _) = apply(&delta(DeviceSettings {
             center_hz: Some(433_920_000.0),
             sample_rate: Some(2_400_000.0),
             ppm: Some(-12.0),
@@ -673,7 +673,7 @@ mod tests {
 
     #[test]
     fn the_reported_settings_are_what_was_asked_for() {
-        let (next, _) = apply(delta(DeviceSettings {
+        let (next, _) = apply(&delta(DeviceSettings {
             center_hz: Some(433_920_000.0),
             ppm: Some(2.4),
             extra: vec![ExtraValue {

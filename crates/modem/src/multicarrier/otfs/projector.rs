@@ -47,7 +47,9 @@ mod tests {
     fn the_smoother_keeps_a_polynomial_and_rejects_a_fast_tone() {
         let (p, dof) = polynomial_projector(16, 3);
         assert!((dof - 4.0).abs() < 1e-12);
-        let cubic: Vec<f64> = (0..16).map(|n| (n as f64 / 15.0).powi(3) - 0.2).collect();
+        let cubic: Vec<f64> = (0..16)
+            .map(|n| (f64::from(n) / 15.0).powi(3) - 0.2)
+            .collect();
         for n in 0..16 {
             let v: f64 = (0..16).map(|m| p[n * 16 + m] * cubic[m]).sum();
             assert!((v - cubic[n]).abs() < 1e-9);

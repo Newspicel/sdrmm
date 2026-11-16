@@ -6,7 +6,7 @@ const KRAKEN_ELEMENTS: usize = 5;
 const SQUARE_ELEMENTS: usize = 4;
 const PAIR_ELEMENTS: usize = 2;
 
-/// A KrakenSDR circle, a four-element square on the same radius and a two-dongle line,
+/// A `KrakenSDR` circle, a four-element square on the same radius and a two-dongle line,
 /// watching one FM emitter and its echo.
 #[must_use]
 pub fn default_scene() -> Scene {

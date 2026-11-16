@@ -58,7 +58,11 @@ impl Biquad {
         assert!(rate > 0.0, "rate must be positive");
         let (cos_w0, _, alpha) = Self::geometry(rate, freq_hz, q);
         Self::from_unnormalized(
-            [(1.0 + cos_w0) / 2.0, -(1.0 + cos_w0), (1.0 + cos_w0) / 2.0],
+            [
+                f64::midpoint(1.0, cos_w0),
+                -(1.0 + cos_w0),
+                f64::midpoint(1.0, cos_w0),
+            ],
             [1.0 + alpha, -2.0 * cos_w0, 1.0 - alpha],
         )
     }

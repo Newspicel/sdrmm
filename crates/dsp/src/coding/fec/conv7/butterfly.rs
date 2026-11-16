@@ -10,7 +10,10 @@ pub(super) fn step<const N: usize>(
     signs: &Signs,
     values: [i32; N],
 ) -> u64 {
-    use std::arch::aarch64::*;
+    use std::arch::aarch64::{
+        vaddq_s32, vaddvq_u32, vandq_u32, vcgtq_s32, vdupq_n_s32, veorq_s32, vld1q_s32, vld1q_u32,
+        vld2q_s32, vmaxq_s32, vst1q_s32, vsubq_s32,
+    };
     unsafe {
         let received = values.map(|value| vdupq_n_s32(value));
         let weights = vld1q_u32([1, 2, 4, 8].as_ptr());

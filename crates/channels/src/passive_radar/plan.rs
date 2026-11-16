@@ -51,9 +51,7 @@ impl RadarCtx {
         let positions_m = if ctx.positions_m.len() == ctx.lanes {
             ctx.positions_m.to_vec()
         } else {
-            geometry_of(ctx.geometry, ctx.lanes)
-                .map(|geometry| positions_of(&geometry))
-                .unwrap_or_default()
+            geometry_of(ctx.geometry, ctx.lanes).map_or_default(|geometry| positions_of(&geometry))
         };
         Self {
             sample_rate: ctx.sample_rate,

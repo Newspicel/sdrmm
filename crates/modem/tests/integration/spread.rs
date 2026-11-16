@@ -571,7 +571,7 @@ fn hopping_rows(link: &Link, op_db: f64, seed: u64) -> Vec<LimitRow> {
     ]
 }
 
-fn assert_table_matches(stem: &str, rows: Vec<LimitRow>) {
+fn assert_table_matches(stem: &str, rows: &[LimitRow]) {
     let committed = limits::load_json(&baseline_path(stem)).unwrap();
     let mut faults = Vec::new();
     for row in &committed.rows {
@@ -612,7 +612,7 @@ fn dsss_limits_rows_match_committed_table() {
     let op = operating_point(DSSS_LIMITS);
     assert_table_matches(
         DSSS_LIMITS,
-        chip_domain_rows(
+        &chip_domain_rows(
             &barker11_link(),
             op,
             BARKER11_SEED ^ 0x11e5,
@@ -626,7 +626,7 @@ fn m31_limits_rows_match_committed_table() {
     let op = operating_point(M31_LIMITS);
     assert_table_matches(
         M31_LIMITS,
-        jammer_only_rows(&m31_link(), op, M31_SEED ^ 0x11e5),
+        &jammer_only_rows(&m31_link(), op, M31_SEED ^ 0x11e5),
     );
 }
 
@@ -635,7 +635,7 @@ fn cck_limits_rows_match_committed_table() {
     let op = operating_point(CCK_LIMITS);
     assert_table_matches(
         CCK_LIMITS,
-        chip_domain_rows(&cck11_link(), op, CCK11_SEED ^ 0x11e5, &CCK_PROFILE_GRID),
+        &chip_domain_rows(&cck11_link(), op, CCK11_SEED ^ 0x11e5, &CCK_PROFILE_GRID),
     );
 }
 
@@ -644,7 +644,7 @@ fn css_limits_rows_match_committed_table() {
     let op = operating_point(CSS_LIMITS);
     assert_table_matches(
         CSS_LIMITS,
-        css_rows(&css_link(7), op, CSS_SF7_SEED ^ 0x11e5),
+        &css_rows(&css_link(7), op, CSS_SF7_SEED ^ 0x11e5),
     );
 }
 
@@ -653,7 +653,7 @@ fn css_sf12_limits_rows_match_committed_table() {
     let op = operating_point(CSS_SF12_LIMITS);
     assert_table_matches(
         CSS_SF12_LIMITS,
-        css_clock_rows(&css_link(12), op, CSS_SF12_SEED ^ 0x11e5),
+        &css_clock_rows(&css_link(12), op, CSS_SF12_SEED ^ 0x11e5),
     );
 }
 
@@ -662,7 +662,7 @@ fn fhss_limits_rows_match_committed_table() {
     let op = operating_point(FHSS_LIMITS);
     assert_table_matches(
         FHSS_LIMITS,
-        hopping_rows(&fhss_link(), op, FHSS_SEED ^ 0x11e5),
+        &hopping_rows(&fhss_link(), op, FHSS_SEED ^ 0x11e5),
     );
 }
 

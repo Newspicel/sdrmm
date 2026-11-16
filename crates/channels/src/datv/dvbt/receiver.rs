@@ -195,11 +195,11 @@ impl Receiver {
             .map(|delay| ((delay * STEER_GAIN).round() as isize).clamp(-STEER_LIMIT, STEER_LIMIT));
         self.read_tps(index, offset, timing);
         if let Some(params) = self.parameters {
-            if self.symbol % 4 != phase {
+            if self.symbol % 4 == phase {
+                self.decode(index, phase, offset, params, packets);
+            } else {
                 self.fec.reset();
                 self.bad_symbols = self.bad_symbols.saturating_add(1);
-            } else {
-                self.decode(index, phase, offset, params, packets);
             }
         }
         self.symbol = (self.symbol + 1) % 68;
@@ -289,6 +289,10 @@ impl Receiver {
         }
     }
 
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "symbol reorder on the stack, no allocation"
+    )]
     fn decode(
         &mut self,
         index: usize,

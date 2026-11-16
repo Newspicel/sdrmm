@@ -896,7 +896,7 @@ mod tests {
         let messages = out
             .events
             .iter()
-            .filter_map(|event| event.read::<FlexMessage>())
+            .filter_map(sdrmm_wire::DecoderEvent::read::<FlexMessage>)
             .collect::<Vec<_>>();
         assert_eq!(messages.len(), 1, "{messages:?}");
         assert_eq!(messages[0].address, 2_029_574);
@@ -993,7 +993,7 @@ mod tests {
             let messages = out
                 .events
                 .iter()
-                .filter_map(|event| event.read::<FlexMessage>())
+                .filter_map(sdrmm_wire::DecoderEvent::read::<FlexMessage>)
                 .collect::<Vec<_>>();
             assert_eq!(messages.len(), 1, "{mode:?}");
             assert_eq!(messages[0].address, 123_456);

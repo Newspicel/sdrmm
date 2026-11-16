@@ -42,7 +42,7 @@ fn run(link: RemoteIdLink, frequency_hz: f64, iq: &[Complex<f32>]) -> (Vec<Remot
     let params = RemoteIdParams { link };
     let channel_params = ChannelParams::new("remote_id", &params).expect("remote_id settings");
     let ctx = ChannelCtx {
-        input_rate: input_rate(&params),
+        input_rate: input_rate(params),
     };
     let tuned = ChannelSettings {
         frequency_hz,
@@ -158,7 +158,7 @@ fn a_legacy_bluetooth_location_carries_the_remembered_id() {
 fn try_channel(link: RemoteIdLink, frequency_hz: f64) -> Result<RemoteIdChannel, ChannelError> {
     let params = RemoteIdParams { link };
     let ctx = ChannelCtx {
-        input_rate: input_rate(&params),
+        input_rate: input_rate(params),
     };
     RemoteIdChannel::new(
         ctx,

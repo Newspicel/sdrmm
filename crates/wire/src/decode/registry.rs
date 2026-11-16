@@ -644,9 +644,7 @@ impl EventCatalog {
 
     #[must_use]
     pub fn feed_kinds(&self, format: &str) -> KindSet {
-        self.feed(format)
-            .map(|feed| feed.kinds.clone())
-            .unwrap_or_default()
+        self.feed(format).map_or_default(|feed| feed.kinds.clone())
     }
 
     #[must_use]

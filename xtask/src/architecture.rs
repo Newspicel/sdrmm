@@ -174,7 +174,7 @@ mod tests {
 
     use super::*;
 
-    fn metadata(dependency: Value) -> Value {
+    fn metadata(dependency: &Value) -> Value {
         json!({"packages": [
             {"name": "sdrmm-dsp", "dependencies": [dependency]},
             {"name": "sdrmm-modem", "dependencies": []},
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn mobile_core_may_only_depend_on_wire() {
-        let mut data = metadata(json!({"name": "num-complex", "kind": null}));
+        let mut data = metadata(&json!({"name": "num-complex", "kind": null}));
         data["packages"][4]["dependencies"] = json!([
             {"name": "sdrmm-wire", "kind": null},
             {"name": "sdrmm-server", "kind": "dev"},
@@ -221,10 +221,10 @@ mod tests {
 
     #[test]
     fn core_cannot_depend_on_engine_but_test_dependencies_are_allowed() {
-        assert!(validate(&metadata(json!({"name": "sdrmm-engine", "kind": null}))).is_err());
+        assert!(validate(&metadata(&json!({"name": "sdrmm-engine", "kind": null}))).is_err());
         assert!(
             validate(&metadata(
-                json!({"name": "sdrmm-test-support", "kind": "dev"})
+                &json!({"name": "sdrmm-test-support", "kind": "dev"})
             ))
             .is_ok()
         );
@@ -234,7 +234,7 @@ mod tests {
     fn application_cannot_include_either_test_support_crate() {
         for name in ["sdrmm-test-support", "sdrmm-modem-test-support"] {
             assert!(validate_production_tree(&format!("sdrmm v0.0.0|\n{name} v0.0.0|")).is_err());
-            let mut data = metadata(json!({"name": "num-complex", "kind": null}));
+            let mut data = metadata(&json!({"name": "num-complex", "kind": null}));
             data["packages"][1]["dependencies"] = json!([{"name": name, "kind": null}]);
             assert!(validate(&data).is_err());
         }

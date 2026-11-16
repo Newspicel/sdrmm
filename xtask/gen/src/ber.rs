@@ -149,7 +149,7 @@ fn measure(root: &Path, entry: &Entry, dir: &Path, full: bool) -> Result<()> {
         print_points(&curve);
         write_curve(&curve, dir, &m.stem.replace('/', "_"))?;
         if let Err(fault) = judge(root, m, &curve) {
-            println!("FAIL: {}", fault);
+            println!("FAIL: {fault}");
             failures.push(fault);
         } else {
             println!("PASS: {}", m.stem);

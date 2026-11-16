@@ -339,7 +339,7 @@ impl EventPayload for DfBearing {
         Presentation {
             entity: trimmed(self.station_id.as_deref()),
             place: from.map(Place::at),
-            shapes: ray.map(|ray| self.rays(ray)).unwrap_or_default(),
+            shapes: ray.map_or_default(|ray| self.rays(ray)),
             bearing: ray,
             fields: self.fields(),
             ..Presentation::of(format!(

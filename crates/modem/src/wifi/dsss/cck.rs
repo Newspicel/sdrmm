@@ -152,7 +152,7 @@ impl Cck {
         let mut start = reader.chip_start();
         let end = start + symbols as f64 * SYMBOL_SAMPLES;
         let (mut tracker, mut point) = reader.carrier();
-        tracker.advance((0.5 * (SYMBOL as f64 + SYMBOL_SAMPLES)) as f32);
+        tracker.advance(f64::midpoint(SYMBOL as f64, SYMBOL_SAMPLES) as f32);
         let mut pending = [false; 8];
         let mut filled = 0;
         let mut labels = [false; MAX_LABEL_BITS];

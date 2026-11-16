@@ -10,7 +10,7 @@ fn heading(t: f64) -> f64 {
 
 fn level(t: f64) -> f32 {
     let offset = (heading(t - 0.1) - 123.0).to_radians();
-    (-60.0 + 100.0 * ((1.0 + offset.cos()) / 2.0).log10().max(-0.15)) as f32
+    (-60.0 + 100.0 * f64::midpoint(1.0, offset.cos()).log10().max(-0.15)) as f32
 }
 
 #[test]

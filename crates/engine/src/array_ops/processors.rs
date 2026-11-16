@@ -203,7 +203,7 @@ fn processor<'a>(
 }
 
 impl Engine {
-    pub fn apply_processor(&self, spec: ProcessorSpec) -> Result<(), EngineError> {
+    pub fn apply_processor(&self, spec: &ProcessorSpec) -> Result<(), EngineError> {
         let _edits = lock(&self.array_edits);
         let moved = self
             .lock()
@@ -213,9 +213,9 @@ impl Engine {
         if moved {
             self.drop_processor(&spec.node)?;
         }
-        let installed = self.install_processor(&spec, None, false);
+        let installed = self.install_processor(spec, None, false);
         if let Err(error) = &installed {
-            self.note_processor_refusal(&spec, error);
+            self.note_processor_refusal(spec, error);
         }
         self.emit(ServerEvent::StateChanged {
             scope: StateScope::Arrays,

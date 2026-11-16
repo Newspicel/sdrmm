@@ -51,7 +51,7 @@ mod tests {
         let x = tone(f, 512);
         let guard = edge_guard() as f64;
         for k in 0..200 {
-            let t = guard + k as f64 * (512.0 - 2.0 * guard) / 200.0;
+            let t = guard + f64::from(k) * (512.0 - 2.0 * guard) / 200.0;
             let got = interp(&x, t);
             let phase = 2.0 * std::f64::consts::PI * f * t;
             let want = Complex::new(phase.cos(), phase.sin());

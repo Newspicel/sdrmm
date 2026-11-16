@@ -612,7 +612,7 @@ fn a_late_fix_is_published_at_the_current_instant() {
     }
     let times: Vec<i64> = stamps
         .iter()
-        .filter_map(|(time, _)| time.map(|time| time.as_millisecond()))
+        .filter_map(|(time, _)| time.map(jiff::Timestamp::as_millisecond))
         .collect();
     assert_eq!(times.len(), stamps.len());
     assert!(times.windows(2).all(|pair| pair[0] <= pair[1]), "{times:?}");

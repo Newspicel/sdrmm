@@ -56,7 +56,7 @@ fn a_member_fault_shows_device_down_and_gates_processors() {
     );
     spec.lanes.extend(lanes(second, [0]));
     bench.engine.apply_array(spec).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     wait_calibrated(&bench.engine, LOCK_WAIT);
     wait_status(&bench.engine, "the direction finder to run", WAIT, |now| {
         processor_status(now, "df").gated.is_none()
@@ -76,7 +76,7 @@ fn a_rate_change_rebuilds_processors_and_resizes_taps() {
     let bench = Bench::new();
     let ds = bench.open(KRAKEN);
     bench.engine.apply_array(kraken_array(ds)).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     let before = wait_calibrated(&bench.engine, LOCK_WAIT);
     assert_eq!(before.sample_rate, RATE);
     let bearing = df_bearing(&bench);
@@ -163,10 +163,10 @@ fn a_failed_processor_build_leaves_the_array_running() {
     let bench = Bench::new();
     let ds = bench.open(KRAKEN);
     bench.engine.apply_array(kraken_array(ds)).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     let mut broken = df("df-broken");
     broken.lane_ports = vec!["nope".to_owned()];
-    let refused = bench.engine.apply_processor(broken).unwrap_err();
+    let refused = bench.engine.apply_processor(&broken).unwrap_err();
     assert_eq!(refused.to_string(), "No port nope");
     let solved = wait_calibrated(&bench.engine, LOCK_WAIT);
     let broken = processor_status(&solved, "df-broken");
@@ -202,7 +202,7 @@ mod probed {
         bench.engine.apply_array(kraken_array(ds)).unwrap();
         bench
             .engine
-            .apply_processor(processor(
+            .apply_processor(&processor(
                 "slow",
                 probe(ProbeParams {
                     block_drop_ms: 500,
@@ -240,7 +240,7 @@ mod probed {
         bench.engine.apply_array(kraken_array(ds)).unwrap();
         bench
             .engine
-            .apply_processor(processor("probe", probe(ProbeParams::default())))
+            .apply_processor(&processor("probe", probe(ProbeParams::default())))
             .unwrap();
         let before = wait_calibrated(&bench.engine, LOCK_WAIT);
         assert!(before.lanes.iter().all(|lane| lane.gaps == 0));
@@ -275,7 +275,7 @@ mod probed {
         bench.engine.apply_array(kraken_array(ds)).unwrap();
         bench
             .engine
-            .apply_processor(processor("probe", probe(ProbeParams::default())))
+            .apply_processor(&processor("probe", probe(ProbeParams::default())))
             .unwrap();
         wait_calibrated(&bench.engine, LOCK_WAIT);
         bench

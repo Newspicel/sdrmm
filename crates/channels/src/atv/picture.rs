@@ -249,7 +249,7 @@ impl Picture {
             .map(|h| h.zero_h.max(0.0) as u64)
     }
 
-    fn span(levels: &Levels, g: &Geometry) -> (f32, f32) {
+    fn span(levels: Levels, g: &Geometry) -> (f32, f32) {
         let sync = levels.sync();
         let black = levels.blank + g.setup * sync;
         let white = levels.blank + g.white * sync;
@@ -299,7 +299,7 @@ impl Picture {
     }
 
     /// Reads the burst and the line's noise; runs on every line with a line sync.
-    pub fn observe(&mut self, samples: &Samples, zero_h: f64, levels: &Levels) {
+    pub fn observe(&mut self, samples: &Samples, zero_h: f64, levels: Levels) {
         let (_, span) = Self::span(levels, &self.g);
         let g = self.g;
         let tip = samples.span(
@@ -337,7 +337,7 @@ impl Picture {
         field_line: Option<u32>,
         row: Option<usize>,
     ) {
-        let (_, span) = Self::span(levels, &self.g);
+        let (_, span) = Self::span(*levels, &self.g);
         let tint = match self.color {
             AtvColor::Monochrome => Tint::None,
             AtvColor::Secam => Tint::Secam(self.secam.as_ref().and_then(Secam::difference)),
@@ -466,7 +466,7 @@ impl Picture {
         }
         let s = self.stretch(held.zero_h);
         let len = (s.to - s.from) as usize;
-        let (black, span) = Self::span(&held.levels, &self.g);
+        let (black, span) = Self::span(held.levels, &self.g);
         let mut plain = std::mem::take(&mut self.plain);
         plain.clear();
         let drawn = match held.tint {
@@ -606,7 +606,7 @@ impl Picture {
         let first = s.first + u64::from(s.frac >= 0.5);
         let from = (zero_h + self.g.burst.0).max(0.0) as u64;
         let width = drawn.u.len();
-        let raw = samples.span(from, first + (width + secam.reach()) as u64);
+        let raw = samples.span(from, first + (width + Secam::REACH) as u64);
         let start = first.saturating_sub(from) as usize;
         let (out, other) = match difference {
             Difference::Red => (&mut drawn.v, &mut drawn.u),

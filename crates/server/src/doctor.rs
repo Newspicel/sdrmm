@@ -363,7 +363,7 @@ fn rate_check(
     for &(asked, got) in held {
         match got {
             Some(got) if ((got - asked) / asked).abs() <= RATE_TOLERANCE => {
-                lines.push(format!("{:>12.0} Hz  ok", asked));
+                lines.push(format!("{asked:>12.0} Hz  ok"));
             }
             Some(got) => {
                 bad += 1;

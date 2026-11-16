@@ -801,12 +801,8 @@ mod tests {
         }
     }
 
-    fn tone_channel(p: NfmParams) -> NfmChannel {
-        NfmChannel::new(
-            ctx(),
-            settings(ChannelParams::of(&p).expect("nfm settings")),
-        )
-        .unwrap()
+    fn tone_channel(p: &NfmParams) -> NfmChannel {
+        NfmChannel::new(ctx(), settings(ChannelParams::of(p).expect("nfm settings"))).unwrap()
     }
 
     fn signalling_iq(subaudible: &[f32]) -> Vec<Complex<f32>> {
@@ -841,7 +837,7 @@ mod tests {
     fn detect_names_the_ctcss_tone_under_the_voice() {
         for tone_hz in [67.0, 88.5, 162.2, 165.5, 254.1] {
             let iq = signalling_iq(&ctcss_audio(tone_hz, SUBAUDIBLE, RATE, TONE_LEN));
-            let mut chan = tone_channel(tone_params(NfmToneMode::Detect, None, None));
+            let mut chan = tone_channel(&tone_params(NfmToneMode::Detect, None, None));
             let (statuses, _) = run_tone(&mut chan, &iq);
             let last = statuses.last().expect("a tone must be reported");
             assert_eq!(last.ctcss_hz, Some(tone_hz), "{tone_hz} Hz: {statuses:?}");
@@ -854,7 +850,7 @@ mod tests {
     fn a_neighbouring_standard_tone_is_not_named_instead() {
         for (sent, neighbour) in [(69.3, 67.0), (162.2, 165.5), (206.5, 203.5)] {
             let iq = signalling_iq(&ctcss_audio(sent, SUBAUDIBLE, RATE, TONE_LEN));
-            let mut chan = tone_channel(tone_params(NfmToneMode::Detect, None, None));
+            let mut chan = tone_channel(&tone_params(NfmToneMode::Detect, None, None));
             let (statuses, _) = run_tone(&mut chan, &iq);
             let named = statuses.last().and_then(|s| s.ctcss_hz);
             assert_eq!(named, Some(sent), "{sent} Hz was named {named:?}");
@@ -866,7 +862,7 @@ mod tests {
     fn detect_reads_the_dcs_code_under_the_voice() {
         for code in [23u16, 114, 754, 172] {
             let iq = signalling_iq(&dcs_audio(code, SUBAUDIBLE, RATE, TONE_LEN));
-            let mut chan = tone_channel(tone_params(NfmToneMode::Detect, None, None));
+            let mut chan = tone_channel(&tone_params(NfmToneMode::Detect, None, None));
             let (statuses, _) = run_tone(&mut chan, &iq);
             let last = statuses.last().expect("a code must be reported");
             assert_eq!(last.dcs_code, Some(code), "{code:03}: {statuses:?}");
@@ -879,7 +875,7 @@ mod tests {
             .iter()
             .map(|s| -s)
             .collect();
-        let mut chan = tone_channel(tone_params(NfmToneMode::Detect, None, None));
+        let mut chan = tone_channel(&tone_params(NfmToneMode::Detect, None, None));
         let (statuses, _) = run_tone(&mut chan, &signalling_iq(&inverted));
         assert_eq!(statuses.last().and_then(|s| s.dcs_code), Some(47));
     }
@@ -890,7 +886,7 @@ mod tests {
             let word = dcs_audio(23, SUBAUDIBLE, RATE, TONE_LEN);
             let bias = (offset_hz / DEVIATION_HZ) as f32;
             let biased: Vec<f32> = word.iter().map(|s| s + bias).collect();
-            let mut chan = tone_channel(tone_params(NfmToneMode::Detect, None, None));
+            let mut chan = tone_channel(&tone_params(NfmToneMode::Detect, None, None));
             let (statuses, _) = run_tone(&mut chan, &signalling_iq(&biased));
             assert_eq!(
                 statuses.last().and_then(|s| s.dcs_code),
@@ -915,7 +911,7 @@ mod tests {
     fn the_footer_locks_while_the_wanted_tone_is_heard() {
         let iq = signalling_iq(&ctcss_audio(88.5, SUBAUDIBLE, RATE, TONE_LEN));
         for (want, locked) in [(88.5, true), (91.5, false)] {
-            let mut chan = tone_channel(tone_params(NfmToneMode::Ctcss, Some(want), None));
+            let mut chan = tone_channel(&tone_params(NfmToneMode::Ctcss, Some(want), None));
             let health = last_status(&mut chan, &iq).map(|status| status.health);
             assert_eq!(
                 health.and_then(|health| health.lock),
@@ -936,7 +932,7 @@ mod tests {
     fn ctcss_squelch_passes_only_its_own_tone() {
         for (sent, open) in [(88.5, true), (91.5, false)] {
             let iq = signalling_iq(&ctcss_audio(sent, SUBAUDIBLE, RATE, TONE_LEN));
-            let mut chan = tone_channel(tone_params(NfmToneMode::Ctcss, Some(88.5), None));
+            let mut chan = tone_channel(&tone_params(NfmToneMode::Ctcss, Some(88.5), None));
             let (statuses, audio) = run_tone(&mut chan, &iq);
             assert_eq!(statuses.last().map(|s| s.open), Some(open), "{sent} Hz");
             assert_eq!(audio.len(), iq.len(), "{sent} Hz");
@@ -953,7 +949,7 @@ mod tests {
     fn dcs_squelch_passes_only_its_own_code() {
         for (sent, open) in [(23u16, true), (114, false)] {
             let iq = signalling_iq(&dcs_audio(sent, SUBAUDIBLE, RATE, TONE_LEN));
-            let mut chan = tone_channel(tone_params(NfmToneMode::Dcs, None, Some(23)));
+            let mut chan = tone_channel(&tone_params(NfmToneMode::Dcs, None, Some(23)));
             let (statuses, audio) = run_tone(&mut chan, &iq);
             assert_eq!(statuses.last().map(|s| s.open), Some(open), "{sent:03}");
             let settled = rms(&audio[audio.len() / 2..]);
@@ -968,7 +964,7 @@ mod tests {
             tone_params(NfmToneMode::Ctcss, Some(88.5), None),
             NfmParams::default(),
         ] {
-            let mut chan = tone_channel(p.clone());
+            let mut chan = tone_channel(&p);
             let (_, audio) = run_tone(&mut chan, &iq);
             let settled = &audio[audio.len() / 2..];
             let (freq, ratio) = dominant_tone(settled, RATE);
@@ -989,7 +985,7 @@ mod tests {
     fn a_tone_that_stops_closes_the_gate_again() {
         let mut with_tone = ctcss_audio(88.5, SUBAUDIBLE, RATE, TONE_LEN);
         with_tone.extend(std::iter::repeat_n(0.0, TONE_LEN));
-        let mut chan = tone_channel(tone_params(NfmToneMode::Ctcss, Some(88.5), None));
+        let mut chan = tone_channel(&tone_params(NfmToneMode::Ctcss, Some(88.5), None));
         let (statuses, _) = run_tone(&mut chan, &signalling_iq(&with_tone));
         assert_eq!(
             statuses.first().map(|s| s.open),
@@ -1003,7 +999,7 @@ mod tests {
     #[test]
     fn only_changes_are_reported() {
         let iq = signalling_iq(&ctcss_audio(88.5, SUBAUDIBLE, RATE, TONE_LEN));
-        let mut chan = tone_channel(tone_params(NfmToneMode::Detect, None, None));
+        let mut chan = tone_channel(&tone_params(NfmToneMode::Detect, None, None));
         let (statuses, _) = run_tone(&mut chan, &iq);
         assert_eq!(statuses.len(), 1, "{statuses:?}");
     }
@@ -1011,10 +1007,10 @@ mod tests {
     #[test]
     fn a_carrier_with_no_signalling_says_nothing_and_opens_nothing() {
         let iq = signalling_iq(&vec![0.0; TONE_LEN]);
-        let mut detect = tone_channel(tone_params(NfmToneMode::Detect, None, None));
+        let mut detect = tone_channel(&tone_params(NfmToneMode::Detect, None, None));
         assert!(run_tone(&mut detect, &iq).0.is_empty());
 
-        let mut gated = tone_channel(tone_params(NfmToneMode::Ctcss, Some(88.5), None));
+        let mut gated = tone_channel(&tone_params(NfmToneMode::Ctcss, Some(88.5), None));
         let (statuses, audio) = run_tone(&mut gated, &iq);
         assert!(statuses.is_empty(), "{statuses:?}");
         assert_eq!(rms(&audio[audio.len() / 2..]), 0.0);
@@ -1022,7 +1018,7 @@ mod tests {
 
     #[test]
     fn noise_names_no_tone_and_opens_no_gate() {
-        let mut chan = tone_channel(tone_params(NfmToneMode::Detect, None, None));
+        let mut chan = tone_channel(&tone_params(NfmToneMode::Detect, None, None));
         let (statuses, _) = run_tone(&mut chan, &complex_noise(0x7013_5511, 0.5, TONE_LEN));
         for status in &statuses {
             assert_eq!(status.ctcss_hz, None, "{statuses:?}");
@@ -1033,7 +1029,7 @@ mod tests {
     #[test]
     fn retuning_forgets_the_tone() {
         let iq = signalling_iq(&ctcss_audio(88.5, SUBAUDIBLE, RATE, TONE_LEN));
-        let mut chan = tone_channel(tone_params(NfmToneMode::Detect, None, None));
+        let mut chan = tone_channel(&tone_params(NfmToneMode::Detect, None, None));
         assert_eq!(
             run_tone(&mut chan, &iq).0.last().unwrap().ctcss_hz,
             Some(88.5)
@@ -1053,9 +1049,9 @@ mod tests {
         assert!(!channel().needs_gated_input());
         for mode in [NfmToneMode::Detect, NfmToneMode::Ctcss] {
             let ctcss_hz = (mode == NfmToneMode::Ctcss).then_some(88.5);
-            assert!(tone_channel(tone_params(mode, ctcss_hz, None)).needs_gated_input());
+            assert!(tone_channel(&tone_params(mode, ctcss_hz, None)).needs_gated_input());
         }
-        let mut chan = tone_channel(tone_params(NfmToneMode::Detect, None, None));
+        let mut chan = tone_channel(&tone_params(NfmToneMode::Detect, None, None));
         chan.apply(settings(
             ChannelParams::of(&NfmParams::default()).expect("nfm settings"),
         ))
@@ -1143,7 +1139,10 @@ mod tests {
     #[test]
     fn inversion_puts_a_scrambled_voice_back_where_it_started() {
         let iq = scrambled_iq(&tone_audio(1_000.0, 0.7, RATE, 48_000), 3_300.0);
-        let mut chan = tone_channel(scrambler_params(NfmScramblerMode::Inversion, Some(3_300.0)));
+        let mut chan = tone_channel(&scrambler_params(
+            NfmScramblerMode::Inversion,
+            Some(3_300.0),
+        ));
         let (statuses, audio) = run_scrambler(&mut chan, &iq);
         let (freq, ratio) = dominant_tone(&audio[8_000..44_000], RATE);
         assert!((995.0..1_005.0).contains(&freq), "recovered {freq} Hz");
@@ -1155,7 +1154,7 @@ mod tests {
     fn auto_locks_onto_the_carrier_and_reports_it() {
         let speech = speech_audio(RATE, 6 * RATE as usize);
         let iq = scrambled_iq(&speech, 3_000.0);
-        let mut chan = tone_channel(scrambler_params(NfmScramblerMode::Auto, None));
+        let mut chan = tone_channel(&scrambler_params(NfmScramblerMode::Auto, None));
         let (statuses, _) = run_scrambler(&mut chan, &iq);
         let found = statuses
             .last()
@@ -1171,14 +1170,14 @@ mod tests {
     fn auto_leaves_a_clear_voice_alone() {
         let speech = speech_audio(RATE, 6 * RATE as usize);
         let iq = fm_modulate(&speech, DEVIATION_HZ, RATE);
-        let mut chan = tone_channel(scrambler_params(NfmScramblerMode::Auto, None));
+        let mut chan = tone_channel(&scrambler_params(NfmScramblerMode::Auto, None));
         let (statuses, _) = run_scrambler(&mut chan, &iq);
         assert!(statuses.is_empty(), "{statuses:?}");
     }
 
     #[test]
     fn auto_finds_no_carrier_in_noise() {
-        let mut chan = tone_channel(scrambler_params(NfmScramblerMode::Auto, None));
+        let mut chan = tone_channel(&scrambler_params(NfmScramblerMode::Auto, None));
         let noise = complex_noise(0x51a3_7b19, 0.5, 6 * RATE as usize);
         let (statuses, _) = run_scrambler(&mut chan, &noise);
         assert!(statuses.is_empty(), "{statuses:?}");
@@ -1239,8 +1238,8 @@ mod tests {
         20.0 * (rms(&audio[audio.len() / 2..]) / COMPANDER_REFERENCE_RMS).log10()
     }
 
-    fn heard_over_the_air(tx: NfmParams, rx: NfmParams, amplitude: f32) -> f32 {
-        let mut transmitter = modulator_for(&tx).unwrap();
+    fn heard_over_the_air(tx: &NfmParams, rx: &NfmParams, amplitude: f32) -> f32 {
+        let mut transmitter = modulator_for(tx).unwrap();
         transmitter
             .submit(TxPayload::Audio(tone_audio(
                 1_000.0, amplitude, RATE, 96_000,
@@ -1249,7 +1248,7 @@ mod tests {
         let iq = burst(&mut transmitter);
         let mut receiver = NfmChannel::new(
             ctx(),
-            settings(ChannelParams::of(&rx).expect("nfm settings")),
+            settings(ChannelParams::of(rx).expect("nfm settings")),
         )
         .unwrap();
         level_db(&run_ragged(&mut receiver, &iq))
@@ -1274,7 +1273,7 @@ mod tests {
             let sent =
                 20.0 * (amplitude / std::f32::consts::SQRT_2 / COMPANDER_REFERENCE_RMS).log10();
             let heard =
-                heard_over_the_air(compander_params(true), compander_params(true), amplitude);
+                heard_over_the_air(&compander_params(true), &compander_params(true), amplitude);
             assert!(
                 (heard - sent).abs() < 2.0,
                 "sent {sent:.2} dB, heard {heard:.2} dB"
@@ -1284,10 +1283,10 @@ mod tests {
 
     #[test]
     fn the_expander_gives_back_the_dynamic_range_the_compressor_took_away() {
-        let squeezed = heard_over_the_air(compander_params(true), compander_params(false), LOUD)
-            - heard_over_the_air(compander_params(true), compander_params(false), QUIET);
-        let restored = heard_over_the_air(compander_params(true), compander_params(true), LOUD)
-            - heard_over_the_air(compander_params(true), compander_params(true), QUIET);
+        let squeezed = heard_over_the_air(&compander_params(true), &compander_params(false), LOUD)
+            - heard_over_the_air(&compander_params(true), &compander_params(false), QUIET);
+        let restored = heard_over_the_air(&compander_params(true), &compander_params(true), LOUD)
+            - heard_over_the_air(&compander_params(true), &compander_params(true), QUIET);
         let sent = 20.0 * (LOUD / QUIET).log10();
         assert!(
             (squeezed - sent / 2.0).abs() < 2.0,

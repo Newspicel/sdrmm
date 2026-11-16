@@ -11,8 +11,8 @@ use crate::{
     layout::Layout,
 };
 
-/// The USB identity every AD936x board running the reference firmware carries, an AntSDR and
-/// a PlutoSDR alike.
+/// The USB identity every `AD936x` board running the reference firmware carries, an `AntSDR` and
+/// a `PlutoSDR` alike.
 /// It is only a fallback: a radio is recognised by its IIO interface wherever the operating
 /// system reports interface names, so a board with its own identity is still found.
 const VENDOR_ID: u16 = 0x0456;
@@ -164,7 +164,7 @@ pub(crate) fn attached(key: &str) -> Option<UsbRadio> {
 }
 
 /// The radios at these addresses, asked all at once so a search costs one wait rather than one
-/// per address. Only a host that describes itself as an AD936x counts: a port that merely
+/// per address. Only a host that describes itself as an `AD936x` counts: a port that merely
 /// accepts a connection is anybody's.
 pub(crate) fn sweep(candidates: Vec<Endpoint>) -> Vec<Found> {
     let (report, reports) = mpsc::channel();
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn every_well_known_address_is_a_usable_endpoint_on_the_iiod_port() {
-        let found = endpoints(WELL_KNOWN.iter().map(|host| host.to_string()));
+        let found = endpoints(WELL_KNOWN.iter().map(std::string::ToString::to_string));
         assert_eq!(found.len(), WELL_KNOWN.len());
         for endpoint in &found {
             assert!(

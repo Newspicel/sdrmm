@@ -21,7 +21,7 @@ pub fn bch_encode(poly: u32, data21: &[u8]) -> Vec<u8> {
 }
 
 pub fn interleave2(odd: &[u8], even: &[u8]) -> Vec<u8> {
-    let n = (odd.len() + even.len()) / 2;
+    let n = usize::midpoint(odd.len(), even.len());
     let mut symbols = vec![[0u8, 0]; n];
     for (start, block) in [(1usize, odd), (2, even)] {
         let slots = (0..=n - start).rev().step_by(2);
@@ -70,7 +70,7 @@ pub fn encode_da_payload(bits200: &[u8]) -> Vec<u8> {
         .map(|d| bch_encode_raw(ACCH_BCH_POLY, d, 11))
         .collect();
     let mut out = Vec::with_capacity(312);
-    for group in blocks[..8].as_chunks::<4>().0.iter() {
+    for group in blocks[..8].as_chunks::<4>().0 {
         let all: Vec<u8> = [&group[3], &group[1], &group[2], &group[0]]
             .into_iter()
             .flatten()
@@ -158,7 +158,7 @@ pub fn ira_bits(payload: &[u8]) -> Vec<u8> {
         .collect();
     let mut bits = ACCESS_DL.to_vec();
     bits.extend(interleave3(&blocks[0], &blocks[1], &blocks[2]));
-    for pair in blocks[3..].as_chunks::<2>().0.iter() {
+    for pair in blocks[3..].as_chunks::<2>().0 {
         bits.extend(interleave2(&pair[0], &pair[1]));
     }
     bits
@@ -171,7 +171,7 @@ pub fn ims_bits(blocks21: &[Vec<u8>]) -> Vec<u8> {
         .collect();
     let mut bits = ACCESS_DL.to_vec();
     bits.extend(HEADER_MESSAGING.iter().copied());
-    for pair in encoded.as_chunks::<2>().0.iter() {
+    for pair in encoded.as_chunks::<2>().0 {
         bits.extend(interleave2(&pair[0], &pair[1]));
     }
     bits
@@ -215,7 +215,7 @@ pub fn pager_blocks(ric: u32, text: &str) -> Vec<Vec<u8>> {
             block
         })
         .collect();
-    let bch_blocks = (blocks.len() + 2) / 2;
+    let bch_blocks = usize::midpoint(blocks.len(), 2);
     let mut header = vec![0u8];
     push_field(&mut header, 0, 4);
     push_field(&mut header, 3, 4);

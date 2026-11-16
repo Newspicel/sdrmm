@@ -135,11 +135,7 @@ impl EventPayload for RadiosondeFrame {
                     .heading(bearing(self.heading_deg))
                     .altitude(self.altitude_m.map(|metres| metres as f32))
             }),
-            shapes: self
-                .forecast
-                .as_ref()
-                .map(SondeForecast::shapes)
-                .unwrap_or_default(),
+            shapes: self.forecast.as_ref().map_or_default(SondeForecast::shapes),
             fields: self.fields(),
             ..Presentation::of(radiosonde_summary(self))
         }
@@ -197,12 +193,7 @@ impl RadiosondeFrame {
             ("battery", "Battery", number(self.battery_v, Unit::Volts, 2)),
             ("repaired", "Repaired", repaired(self.errors_corrected)),
         ]);
-        shown.extend(
-            self.forecast
-                .as_ref()
-                .map(SondeForecast::fields)
-                .unwrap_or_default(),
-        );
+        shown.extend(self.forecast.as_ref().map_or_default(SondeForecast::fields));
         shown
     }
 }

@@ -33,7 +33,7 @@ impl<'a> Per<'a> {
         }
         let v = self.bits[self.pos..self.pos + n]
             .iter()
-            .fold(0u64, |v, &b| (v << 1) | b as u64);
+            .fold(0u64, |v, &b| (v << 1) | u64::from(b));
         self.pos += n;
         Some(v)
     }
@@ -77,7 +77,7 @@ impl<'a> Per<'a> {
         }
         let n = self.length()?;
         let bytes = self.remaining_bytes(n * 8)?;
-        Some(bytes.iter().fold(0u64, |v, &b| (v << 8) | b as u64))
+        Some(bytes.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b)))
     }
 
     fn ia5(&mut self, min: i64, max: i64) -> Option<String> {
@@ -432,12 +432,12 @@ fn protected_message(p: &mut Per, downlink: bool) -> Option<Value> {
         let n = p.length()?;
         p.remaining_bytes(n * 8)?;
     }
-    let mut out = if !has_msg {
-        json!({ "empty": true })
-    } else {
+    let mut out = if has_msg {
         let nbits = p.length()?;
         let inner = p.remaining_bytes(nbits)?;
         atc_message(&inner, nbits, downlink)?
+    } else {
+        json!({ "empty": true })
     };
     if let Some(nbits) = p.length()
         && let Some(ic) = p.remaining_bytes(nbits)
@@ -523,25 +523,21 @@ fn walk_message_data(p: &mut Per, downlink: bool) -> Option<(Value, Option<Value
         let idx = p.uint(idx_bits)? as usize;
         let (name, arg_ty, phrase) = table.get(idx).copied()?;
         let mut el = json!({ "element": name, "phrase": phrase });
-        if arg_ty != "NULL" {
-            el["argument_type"] = json!(arg_ty);
-            match read_argument(p, arg_ty) {
-                Some(vals) => {
-                    el["text"] = json!(fill_phrase(phrase, &vals));
-                    el["arguments"] = json!(vals);
-                }
-                None => {
-                    if k + 1 < count {
-                        el["note"] =
-                            json!("remaining elements undecoded (argument type unsupported)");
-                    }
-                    bailed = true;
-                    elements.push(el);
-                    break;
-                }
-            }
-        } else {
+        if arg_ty == "NULL" {
             el["text"] = json!(phrase);
+        } else {
+            el["argument_type"] = json!(arg_ty);
+            if let Some(vals) = read_argument(p, arg_ty) {
+                el["text"] = json!(fill_phrase(phrase, &vals));
+                el["arguments"] = json!(vals);
+            } else {
+                if k + 1 < count {
+                    el["note"] = json!("remaining elements undecoded (argument type unsupported)");
+                }
+                bailed = true;
+                elements.push(el);
+                break;
+            }
         }
         elements.push(el);
     }
@@ -680,20 +676,17 @@ fn fill_phrase(phrase: &str, vals: &[String]) -> String {
     let mut rest = phrase;
     while let Some(i) = rest.find('[') {
         out.push_str(&rest[..i]);
-        match rest[i..].find(']') {
-            Some(j) => {
-                if let Some(v) = vals.get(vi) {
-                    out.push_str(v);
-                } else {
-                    out.push_str(&rest[i..i + j + 1]);
-                }
-                vi += 1;
-                rest = &rest[i + j + 1..];
+        if let Some(j) = rest[i..].find(']') {
+            if let Some(v) = vals.get(vi) {
+                out.push_str(v);
+            } else {
+                out.push_str(&rest[i..=(i + j)]);
             }
-            None => {
-                rest = &rest[i..];
-                break;
-            }
+            vi += 1;
+            rest = &rest[i + j + 1..];
+        } else {
+            rest = &rest[i..];
+            break;
         }
     }
     out.push_str(rest);
@@ -908,7 +901,7 @@ fn read_direction(p: &mut Per) -> Option<String> {
         "SOUTH-WEST",
     ];
     DIRS.get(p.constrained(0, 10)? as usize)
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 fn read_position(p: &mut Per) -> Option<String> {
@@ -1026,9 +1019,6 @@ fn read_free_text(p: &mut Per) -> Option<String> {
 }
 
 fn read_traffic_type(p: &mut Per) -> Option<String> {
-    if p.bit()? != 0 {
-        return Some("(extended)".to_string());
-    }
     const TT: [&str; 6] = [
         "NONE",
         "OPPOSITE DIRECTION",
@@ -1037,13 +1027,14 @@ fn read_traffic_type(p: &mut Per) -> Option<String> {
         "CROSSING",
         "DIVERGING",
     ];
-    TT.get(p.constrained(0, 5)? as usize).map(|s| s.to_string())
-}
-
-fn read_clearance_type(p: &mut Per) -> Option<String> {
     if p.bit()? != 0 {
         return Some("(extended)".to_string());
     }
+    TT.get(p.constrained(0, 5)? as usize)
+        .map(std::string::ToString::to_string)
+}
+
+fn read_clearance_type(p: &mut Per) -> Option<String> {
     const CT: [&str; 12] = [
         "NONE",
         "APPROACH",
@@ -1058,14 +1049,14 @@ fn read_clearance_type(p: &mut Per) -> Option<String> {
         "EN-ROUTE",
         "DOWNSTREAM",
     ];
-    CT.get(p.constrained(0, 11)? as usize)
-        .map(|s| s.to_string())
-}
-
-fn read_error_information(p: &mut Per) -> Option<String> {
     if p.bit()? != 0 {
         return Some("(extended)".to_string());
     }
+    CT.get(p.constrained(0, 11)? as usize)
+        .map(std::string::ToString::to_string)
+}
+
+fn read_error_information(p: &mut Per) -> Option<String> {
     const EI: [&str; 5] = [
         "UNRECOGNIZED MSG REFERENCE NUMBER",
         "LOGICAL ACKNOWLEDGMENT NOT ACCEPTED",
@@ -1073,7 +1064,11 @@ fn read_error_information(p: &mut Per) -> Option<String> {
         "INVALID MESSAGE ELEMENT COMBINATION",
         "INVALID MESSAGE ELEMENT",
     ];
-    EI.get(p.constrained(0, 4)? as usize).map(|s| s.to_string())
+    if p.bit()? != 0 {
+        return Some("(extended)".to_string());
+    }
+    EI.get(p.constrained(0, 4)? as usize)
+        .map(std::string::ToString::to_string)
 }
 
 fn read_tofrom(p: &mut Per) -> Option<String> {
@@ -1099,9 +1094,6 @@ fn read_unit_name(p: &mut Per) -> Option<String> {
 }
 
 fn read_facility_function(p: &mut Per) -> Option<String> {
-    if p.bit()? != 0 {
-        return Some("(extended)".to_string());
-    }
     const FF: [&str; 9] = [
         "CENTER",
         "APPROACH",
@@ -1113,7 +1105,11 @@ fn read_facility_function(p: &mut Per) -> Option<String> {
         "CONTROL",
         "RADIO",
     ];
-    FF.get(p.constrained(0, 8)? as usize).map(|s| s.to_string())
+    if p.bit()? != 0 {
+        return Some("(extended)".to_string());
+    }
+    FF.get(p.constrained(0, 8)? as usize)
+        .map(std::string::ToString::to_string)
 }
 
 fn read_rvr(p: &mut Per) -> Option<String> {
@@ -1133,9 +1129,6 @@ fn read_vertical_rate(p: &mut Per) -> Option<String> {
 }
 
 fn read_speed_type(p: &mut Per) -> Option<String> {
-    if p.bit()? != 0 {
-        return Some("(extended)".to_string());
-    }
     const ST: [&str; 9] = [
         "NONE",
         "INDICATED",
@@ -1147,7 +1140,11 @@ fn read_speed_type(p: &mut Per) -> Option<String> {
         "MINIMUM",
         "MAXIMUM",
     ];
-    ST.get(p.constrained(0, 8)? as usize).map(|s| s.to_string())
+    if p.bit()? != 0 {
+        return Some("(extended)".to_string());
+    }
+    ST.get(p.constrained(0, 8)? as usize)
+        .map(std::string::ToString::to_string)
 }
 
 fn read_speed_type_triple(p: &mut Per) -> Option<Vec<String>> {
@@ -1464,7 +1461,7 @@ mod tests {
         }
         fn ia5(&mut self, s: &str) {
             for c in s.bytes() {
-                self.push(c as u64, 7);
+                self.push(u64::from(c), 7);
             }
         }
         fn bytes(&self) -> Vec<u8> {
@@ -1565,20 +1562,20 @@ mod tests {
             Some(a) => {
                 b.push(1, 1);
                 for &x in a {
-                    b.push(x as u64, 8);
+                    b.push(u64::from(x), 8);
                 }
             }
             None => b.push(0, 1),
         }
         b.push((sel.len() - 10) as u64, 1);
         for &x in sel {
-            b.push(x as u64, 8);
+            b.push(u64::from(x), 8);
         }
     }
 
     fn push_long_tsap(b: &mut Bits, rdp: &[u8], ars: Option<&[u8]>, sel: &[u8]) {
         for &x in rdp {
-            b.push(x as u64, 8);
+            b.push(u64::from(x), 8);
         }
         push_short_tsap(b, ars, sel);
     }
@@ -1591,7 +1588,7 @@ mod tests {
         b.push(0, 6);
         b.push(4, 3);
         for c in b"UAL123" {
-            b.push(*c as u64, 7);
+            b.push(u64::from(*c), 7);
         }
         let sel: Vec<u8> = (0..10).collect();
         push_long_tsap(
@@ -1638,7 +1635,7 @@ mod tests {
         b.push(2, 3);
         b.push(4 - 4, 3);
         for c in b"KZAK" {
-            b.push(*c as u64, 7);
+            b.push(u64::from(*c), 7);
         }
         let sel: Vec<u8> = (20..31).collect();
         push_long_tsap(&mut b, &[0x10, 0x20, 0x30, 0x40, 0x50], None, &sel);
@@ -1922,7 +1919,7 @@ mod route_tests {
             }
             fn ia5(&mut self, s: &str) {
                 for c in s.bytes() {
-                    self.push(c as u64, 7);
+                    self.push(u64::from(c), 7);
                 }
             }
         }
@@ -2007,7 +2004,7 @@ mod arg_tests {
         }
         fn ia5(&mut self, s: &str) {
             for c in s.bytes() {
-                self.push(c as u64, 7);
+                self.push(u64::from(c), 7);
             }
         }
         fn bytes(&self) -> Vec<u8> {
@@ -2050,7 +2047,7 @@ mod arg_tests {
         let mut b = Bb::new();
         b.push(3, 2);
         for c in "123456789012".chars() {
-            b.push((c as u8 - b'0') as u64, 4);
+            b.push(u64::from(c as u8 - b'0'), 4);
         }
         assert_eq!(decode(&b, "Frequency"), vec!["SAT 123456789012"]);
     }
@@ -2079,7 +2076,7 @@ mod arg_tests {
     #[test]
     fn atis_code_single_char() {
         let mut b = Bb::new();
-        b.push(b'B' as u64, 7);
+        b.push(u64::from(b'B'), 7);
         assert_eq!(decode(&b, "ATISCode"), vec!["B"]);
     }
 

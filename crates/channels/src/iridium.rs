@@ -22,9 +22,9 @@ fn iridium_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn iridium_decoder() -> Native<IridiumParams> {
-    Native::new::<IridiumChannel>(occupied_band)
-        .filter(|p| Ok(channel_filter(p)))
-        .input_rate(input_rate)
+    Native::new::<IridiumChannel>(|p| occupied_band(*p))
+        .filter(|p| Ok(channel_filter(*p)))
+        .input_rate(|p| input_rate(*p))
         .home(1_621_500_000.0)
         .signatures(iridium_signatures)
         .form(iridium_form)
@@ -142,11 +142,11 @@ fn params(settings: &ChannelSettings) -> Result<IridiumParams, ChannelError> {
     crate::settings_of::<IridiumParams>(settings)
 }
 
-pub(crate) fn input_rate(params: &IridiumParams) -> f64 {
+pub(crate) fn input_rate(params: IridiumParams) -> f64 {
     params.span.sample_rate_hz().unwrap_or(CHANNEL_RATE)
 }
 
-pub(crate) fn occupied_band(params: &IridiumParams) -> (f64, f64) {
+pub(crate) fn occupied_band(params: IridiumParams) -> (f64, f64) {
     let half = params
         .span
         .sample_rate_hz()
@@ -154,7 +154,7 @@ pub(crate) fn occupied_band(params: &IridiumParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &IridiumParams) -> ChannelFilter {
+pub(crate) fn channel_filter(params: IridiumParams) -> ChannelFilter {
     match params.span {
         IridiumSpan::Channel => datalink::channel_filter(CHANNEL_RATE, HALF_BANDWIDTH),
         _ => ChannelFilter::Passthrough,
@@ -204,7 +204,7 @@ impl NativeChannel for IridiumChannel {
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
-        check_rate(ctx, &DESCRIPTOR, input_rate(&params))?;
+        check_rate(ctx, &DESCRIPTOR, input_rate(params))?;
         Ok(Self {
             span: params.span,
             decoder: Decoder::new(params.span)?,

@@ -304,12 +304,12 @@ fn trimmed(
         .filter(|pair| pair[0].1.signum() != pair[1].1.signum())
         .min_by(|a, b| {
             let distance =
-                |pair: &[(f64, f64)]| (pair[0].0 + pair[1].0) / 2.0 - job.velocity_factor;
+                |pair: &[(f64, f64)]| f64::midpoint(pair[0].0, pair[1].0) - job.velocity_factor;
             distance(a).abs().total_cmp(&distance(b).abs())
         })?;
     let (mut low, mut high) = (bracket[0], bracket[1]);
     for _ in 0..TRIM_BISECTIONS {
-        let middle = (low.0 + high.0) / 2.0;
+        let middle = f64::midpoint(low.0, high.0);
         let x = reactance(middle)?;
         if x.signum() == low.1.signum() {
             low = (middle, x);
@@ -317,7 +317,7 @@ fn trimmed(
             high = (middle, x);
         }
     }
-    Some(round((low.0 + high.0) / 2.0, 1e-4))
+    Some(round(f64::midpoint(low.0, high.0), 1e-4))
 }
 
 struct Pattern {

@@ -15,7 +15,7 @@ pub fn provenance() -> Provenance {
     }
 }
 
-pub fn structured(message: Message) -> DataLinkMessage {
+pub fn structured(message: &Message) -> DataLinkMessage {
     datalink::message(
         &message.body,
         Quality {

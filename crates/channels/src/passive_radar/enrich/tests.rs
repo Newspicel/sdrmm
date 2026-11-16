@@ -121,14 +121,14 @@ fn range_m(point: Geodetic) -> f64 {
     )
 }
 
-fn aoa(azimuth_deg: f32) -> Option<RadarAoa> {
-    Some(RadarAoa {
+fn aoa(azimuth_deg: f32) -> RadarAoa {
+    RadarAoa {
         azimuth_deg,
         bearing_deg: None,
         sigma_deg: 2.0,
         quality: 0.9,
         mirror_deg: None,
-    })
+    }
 }
 
 fn track(id: u32, range_km: f32, doppler_hz: f32, azimuth_deg: f32) -> RadarTrack {
@@ -140,7 +140,7 @@ fn track(id: u32, range_km: f32, doppler_hz: f32, azimuth_deg: f32) -> RadarTrac
         range_sigma_m: 150.0,
         snr_db: 18.0,
         looks: 5,
-        aoa: aoa(azimuth_deg),
+        aoa: Some(aoa(azimuth_deg)),
         ..RadarTrack::default()
     }
 }
@@ -440,7 +440,7 @@ fn true_bearing_adds_the_array_heading_and_fixes_the_track() {
     update.detections.push(RadarDetection {
         range_km: 24.0,
         doppler_hz: 20.0,
-        aoa: aoa(350.0),
+        aoa: Some(aoa(350.0)),
         ..RadarDetection::default()
     });
 

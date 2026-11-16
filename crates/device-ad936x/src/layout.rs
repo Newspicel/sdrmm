@@ -22,7 +22,7 @@ pub(crate) const AVAILABLE: &str = "_available";
 /// carry the sample buffers, and how many lanes each of those has.
 ///
 /// Everything here is read from the radio rather than assumed, so a 1R1T board and a 2R2T board
-/// are the same code path and a board with the other AD936x part reports its own limits.
+/// are the same code path and a board with the other `AD936x` part reports its own limits.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Layout {
     pub(crate) phy: String,

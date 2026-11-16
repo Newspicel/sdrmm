@@ -128,7 +128,7 @@ fn hann_sidelobes_stay_below_31_db() {
     DopplerTaper::Hann.fill(&mut window);
     for offset in [5.4f64, 11.25, -20.4] {
         let mut series: Vec<C32> = (0..64)
-            .map(|b| C32::from_polar(1.0, (TAU * offset * b as f64 / 64.0) as f32))
+            .map(|b| C32::from_polar(1.0, (TAU * offset * f64::from(b) / 64.0) as f32))
             .collect();
         kernel.doppler(&mut series, &window).unwrap();
         let (peak, top) = series

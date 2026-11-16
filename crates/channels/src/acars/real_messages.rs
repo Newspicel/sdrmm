@@ -381,11 +381,11 @@ fn h1_fpn_flight_plan_with_waypoints() {
 
 #[test]
 fn label_5z_txt_telex() {
+    use super::airline5z::Airline5z;
     let d = decode("5Z", "/TXT\r\nDID U GET THE TIMES", true);
     let Some(AcarsApp::Airline5z(a)) = d.app else {
         panic!("expected 5Z: {:?}", d.app);
     };
-    use super::airline5z::Airline5z;
     assert_eq!(
         a,
         Airline5z::Text {
@@ -396,11 +396,11 @@ fn label_5z_txt_telex() {
 
 #[test]
 fn label_5z_b3_departure_clearance() {
+    use super::airline5z::Airline5z;
     let d = decode("5Z", "/B3 DCAORD 14 R27C", true);
     let Some(AcarsApp::Airline5z(a)) = d.app else {
         panic!("expected 5Z: {:?}", d.app);
     };
-    use super::airline5z::Airline5z;
     let Airline5z::Typed {
         message_type,
         origin,

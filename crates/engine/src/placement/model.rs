@@ -77,7 +77,7 @@ fn options(
     total: usize,
     budget: &Budget,
 ) -> Option<Vec<Coverage>> {
-    let current = center_of(&radio.settings, stream, &radio.capabilities.per_stream);
+    let current = center_of(&radio.settings, stream, radio.capabilities.per_stream);
     let rate = sample_rate_of(&radio.settings);
     let follows = radio.has_stream(stream) && radio.follows(stream);
     let mut centers = vec![current];

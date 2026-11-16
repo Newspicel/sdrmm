@@ -217,7 +217,7 @@ impl ReedSolomon {
         if errors == 0 || errors > self.correctable() {
             return None;
         }
-        let locator = &locator[..errors + 1];
+        let locator = &locator[..=errors];
         let positions = self.chien(locator, codeword.len(), errors)?;
         let evaluator = self.evaluator(syndromes, locator);
         let mut derivative = [0u8; SIZE];

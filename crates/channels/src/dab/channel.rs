@@ -233,16 +233,13 @@ impl DabChannel {
         if self.pending.len() < from + span + sync::detect_span() {
             return false;
         }
-        match sync::detect(&mut self.aligner, &self.pending, from, span) {
-            Some(found) => {
-                self.adopt(found);
-                self.take_frame()
-            }
-            None => {
-                self.search = None;
-                self.discard(from + span);
-                false
-            }
+        if let Some(found) = sync::detect(&mut self.aligner, &self.pending, from, span) {
+            self.adopt(found);
+            self.take_frame()
+        } else {
+            self.search = None;
+            self.discard(from + span);
+            false
         }
     }
 
@@ -625,7 +622,7 @@ impl DabChannel {
         });
         publish_status(
             out,
-            BroadcastStatus {
+            &BroadcastStatus {
                 dynamic_label: self.media.dynamic_label.clone(),
                 data_groups_ok: self.media.data_groups,
                 data_groups_bad: self.media.data_errors,
@@ -1285,7 +1282,11 @@ mod tests {
     }
 
     fn with_noise(clean: &[Complex<f32>], snr_db: f32) -> Vec<Complex<f32>> {
-        let power = clean.iter().map(|s| s.norm_sqr()).sum::<f32>() / clean.len() as f32;
+        let power = clean
+            .iter()
+            .map(num_complex::Complex::norm_sqr)
+            .sum::<f32>()
+            / clean.len() as f32;
         let variance =
             power * INPUT_RATE_HZ as f32 / (BANDWIDTH_HZ as f32 * 10f32.powf(snr_db / 10.0));
         let deviation = (variance / 2.0).sqrt();

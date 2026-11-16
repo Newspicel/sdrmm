@@ -184,7 +184,7 @@ where
                 Some(_) => EncoderInput::Message,
                 None => EncoderInput::Audio,
             },
-            message: self.messages.map(|(form, _)| form()).unwrap_or_default(),
+            message: self.messages.map_or_default(|(form, _)| form()),
             settings: (self.form)(),
             defaults: serde_json::to_value(&defaults).unwrap_or_else(|_| Value::Object(Map::new())),
         }

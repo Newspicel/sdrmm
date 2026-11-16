@@ -1,4 +1,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "named after the R820T register fields"
+)]
 pub(crate) struct Mux {
     pub(crate) open_drain: u8,
     pub(crate) rf_mux: u8,

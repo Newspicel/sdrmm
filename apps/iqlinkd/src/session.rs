@@ -43,6 +43,10 @@ pub enum SessionError {
     Panicked,
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "the session owns and closes the socket"
+)]
 pub fn serve(control: TcpStream, paths: &Paths) -> Result<(), SessionError> {
     let peer = control.peer_addr()?;
     let mut reader = BufReader::new(control.try_clone()?);

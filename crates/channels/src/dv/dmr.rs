@@ -484,7 +484,7 @@ impl Decoder {
         let payload = PAYLOAD.map(|position| self.bits[position]);
         if let Some(mut frame) = self.short_lc.push(lcss, payload) {
             frame.errors_corrected = 0;
-            self.emit(frame, out);
+            self.emit(&frame, out);
         }
         Some(slot)
     }
@@ -527,7 +527,7 @@ impl Decoder {
             }
             _ => {}
         }
-        self.emit(frame, out);
+        self.emit(&frame, out);
     }
 
     fn schedule_follower(&mut self, index: usize) {
@@ -547,7 +547,7 @@ impl Decoder {
         if let Some(mut frame) = self.embedded_signalling(index, slot) {
             self.track_encryption(index, &frame);
             frame.cipher = self.slots[index].privacy.label();
-            self.emit(frame, out);
+            self.emit(&frame, out);
         }
         let burst = usize::from(VOICE_FOLLOWERS - self.followers[index]);
         self.voice_payload(index, slot, burst, out);
@@ -612,12 +612,12 @@ impl Decoder {
         }
     }
 
-    fn emit(&self, frame: DvFrame, out: &mut ChannelOutputs) {
+    fn emit(&self, frame: &DvFrame, out: &mut ChannelOutputs) {
         if frame
             .slot
             .is_none_or(|slot| self.params.slots.accepts(slot))
         {
-            out.events.push(DecoderEvent::of(&frame));
+            out.events.push(DecoderEvent::of(frame));
         }
     }
 
@@ -869,7 +869,7 @@ impl Decoder {
         let mut frame = dv_frame(DvFrameKind::Header);
         set_dmr_vendor(&mut frame, fid);
         match (fid, flco) {
-            (0, 0 | 3) | (0x10, 0) | (0x06, 0 | 3) => {
+            (0 | 0x06, 0 | 3) | (0x10, 0) => {
                 frame.group_call = Some(flco == 0);
                 frame.destination = Some(bits_to_u32(lc, 24, 24));
                 frame.source = Some(bits_to_u32(lc, 48, 24));

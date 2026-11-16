@@ -192,6 +192,7 @@ impl Buffer {
     }
 
     #[cfg(not(target_os = "linux"))]
+    #[expect(clippy::unused_self, reason = "mirrors the Linux build")]
     pub const fn mapped(&self) -> bool {
         false
     }

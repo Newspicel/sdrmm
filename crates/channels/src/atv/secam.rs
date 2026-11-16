@@ -86,9 +86,7 @@ impl Secam {
     }
 
     /// Samples the filter reads past each end of the stretch it demodulates.
-    pub fn reach(&self) -> usize {
-        TAPS / 2 + 2 * DECIMATION
-    }
+    pub const REACH: usize = TAPS / 2 + 2 * DECIMATION;
 
     /// Reads the back porch's rest frequency, offset from the centre, and its amplitude;
     /// `raw[0]` is sample `from`.

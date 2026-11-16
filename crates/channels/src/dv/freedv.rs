@@ -63,21 +63,21 @@ fn params(settings: &ChannelSettings) -> Result<FreeDvParams, ChannelError> {
         .map_err(ChannelError::InvalidSettings)
 }
 
-pub(crate) fn occupied_band(params: &FreeDvParams) -> (f64, f64) {
+pub(crate) fn occupied_band(params: FreeDvParams) -> (f64, f64) {
     match params.sideband {
         Sideband::Usb => (LOW_EDGE_HZ, HIGH_EDGE_HZ),
         Sideband::Lsb => (-HIGH_EDGE_HZ, -LOW_EDGE_HZ),
     }
 }
 
-pub(crate) fn channel_filter(params: &FreeDvParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(params: FreeDvParams) -> ChannelFilter {
     let (low, high) = occupied_band(params);
     let half_width = (high - low) / 2.0;
     let prototype = design_lowpass(FILTER_TAPS, half_width / INPUT_RATE_HZ);
-    Ok(ChannelFilter::Sideband(FirC::from_lowpass(
+    ChannelFilter::Sideband(FirC::from_lowpass(
         &prototype,
-        (high + low) / 2.0 / INPUT_RATE_HZ,
-    )))
+        f64::midpoint(high, low) / INPUT_RATE_HZ,
+    ))
 }
 
 impl NativeChannel for FreeDvChannel {
@@ -188,7 +188,7 @@ impl FreeDvChannel {
         for (index, &bit) in payload.iter().enumerate() {
             packed[index / 8] |= u8::from(bit) << (7 - index % 8);
         }
-        self.vocoder.decode_1300(&packed, out);
+        self.vocoder.decode_1300(packed, out);
     }
 }
 
@@ -218,8 +218,8 @@ fn freedv_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn freedv_decoder() -> Native<FreeDvParams> {
-    Native::new::<FreeDvChannel>(occupied_band)
-        .filter(channel_filter)
+    Native::new::<FreeDvChannel>(|p| occupied_band(*p))
+        .filter(|p| Ok(channel_filter(*p)))
         .signatures(freedv_signatures)
         .form(freedv_form)
         .kinds(freedv_kinds)
@@ -247,11 +247,11 @@ mod tests {
     #[test]
     fn free_dv_uses_the_selected_sideband() {
         assert_eq!(
-            occupied_band(&FreeDvParams::default()),
+            occupied_band(FreeDvParams::default()),
             (LOW_EDGE_HZ, HIGH_EDGE_HZ)
         );
         assert_eq!(
-            occupied_band(&FreeDvParams {
+            occupied_band(FreeDvParams {
                 sideband: Sideband::Lsb,
                 ..FreeDvParams::default()
             }),
@@ -302,7 +302,7 @@ mod tests {
             settings(ChannelParams::of(&params).expect("freedv settings")),
         )
         .expect("freedv channel");
-        let mut filter = channel_filter(&params).expect("freedv filter");
+        let mut filter = channel_filter(params);
         let mut filtered = Vec::new();
         let mut out = ChannelOutputs::default();
         for block in iq.chunks(997) {
@@ -358,7 +358,7 @@ mod tests {
                 settings(ChannelParams::of(&params).expect("freedv settings")),
             )
             .unwrap();
-            let mut filter = channel_filter(&params).unwrap();
+            let mut filter = channel_filter(params);
             let mut filtered = Vec::new();
             let mut out = ChannelOutputs::default();
             let mut frames = Vec::new();
@@ -400,7 +400,7 @@ mod tests {
             settings(ChannelParams::of(&params).expect("freedv settings")),
         )
         .unwrap();
-        let mut filter = channel_filter(&params).unwrap();
+        let mut filter = channel_filter(params);
         let mut filtered = Vec::new();
         let mut out = ChannelOutputs::default();
         for block in crate::testutil::complex_noise(97, 1.0, 400_000).chunks(997) {

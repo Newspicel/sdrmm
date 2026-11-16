@@ -8,7 +8,7 @@ use super::{
     demod::{self, Branch, CRYSTAL_HZ, DIRECT_MAX_HZ},
     eeprom,
     error::{Invalid, Result},
-    tuner::{self, ChipBus, GAINS, Tuner, TunerKind},
+    tuner::{self, ChipBus, Tuner, TunerKind},
     usb::{Transport, UsbControl},
 };
 
@@ -121,10 +121,6 @@ impl<T: Transport> Radio<T> {
 
     pub(crate) const fn tuner_kind(&self) -> TunerKind {
         self.tuner.kind()
-    }
-
-    pub(crate) const fn gain_table(&self) -> &'static [i32] {
-        GAINS
     }
 
     pub(crate) const fn center_hz(&self) -> Option<u32> {
@@ -240,15 +236,12 @@ impl<T: Transport> Radio<T> {
             return Err(Invalid::NoDirectSampling.into());
         }
         self.center_hz = None;
-        match mode.branch() {
-            Some(branch) => {
-                self.on_tuner(|tuner, bus| tuner.standby(bus))?;
-                demod::direct_path(&self.chip, branch)?;
-            }
-            None => {
-                self.on_tuner(|tuner, bus| tuner.init(bus))?;
-                self.leave_direct()?;
-            }
+        if let Some(branch) = mode.branch() {
+            self.on_tuner(|tuner, bus| tuner.standby(bus))?;
+            demod::direct_path(&self.chip, branch)?;
+        } else {
+            self.on_tuner(|tuner, bus| tuner.init(bus))?;
+            self.leave_direct()?;
         }
         self.direct = mode;
         Ok(())

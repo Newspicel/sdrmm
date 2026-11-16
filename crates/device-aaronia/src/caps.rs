@@ -189,17 +189,13 @@ impl Profile {
 
     #[must_use]
     pub fn antennas(&self) -> Vec<String> {
-        let inputs: Vec<String> = self
-            .channel
-            .as_ref()
-            .map(|item| {
-                item.enabled_options()
-                    .into_iter()
-                    .filter(|option| INPUTS.contains(option))
-                    .map(ToString::to_string)
-                    .collect()
-            })
-            .unwrap_or_default();
+        let inputs: Vec<String> = self.channel.as_ref().map_or_default(|item| {
+            item.enabled_options()
+                .into_iter()
+                .filter(|option| INPUTS.contains(option))
+                .map(ToString::to_string)
+                .collect()
+        });
         if inputs.is_empty() {
             vec![SINGLE_INPUT.to_string()]
         } else {

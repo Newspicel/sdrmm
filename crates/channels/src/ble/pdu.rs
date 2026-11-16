@@ -37,12 +37,12 @@ impl Party {
     }
 
     #[must_use]
-    pub(crate) fn text(&self) -> String {
-        address_text(&self.bytes)
+    pub(crate) fn text(self) -> String {
+        address_text(self.bytes)
     }
 
     #[must_use]
-    pub(crate) fn kind(&self) -> BleAddressKind {
+    pub(crate) fn kind(self) -> BleAddressKind {
         if !self.random {
             return BleAddressKind::Public;
         }
@@ -55,7 +55,7 @@ impl Party {
     }
 
     #[must_use]
-    pub(crate) fn wire(&self) -> BleAddress {
+    pub(crate) fn wire(self) -> BleAddress {
         BleAddress {
             address: self.text(),
             kind: self.kind(),
@@ -203,7 +203,7 @@ fn aux_pointer(bytes: &[u8]) -> Option<BleAuxPointer> {
 }
 
 #[must_use]
-pub(crate) fn address_text(address: &Address) -> String {
+pub(crate) fn address_text(address: Address) -> String {
     let mut text = String::with_capacity(17);
     for (index, byte) in address.iter().rev().enumerate() {
         if index > 0 {

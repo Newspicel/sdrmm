@@ -343,21 +343,18 @@ impl Aggregator {
         if self.priors != 0 {
             self.seed_offsets();
         }
-        let step = match self.aligner.next(&mut self.notes) {
-            Some(count) => {
-                self.block(count);
-                Step::Worked
+        let step = if let Some(count) = self.aligner.next(&mut self.notes) {
+            self.block(count);
+            Step::Worked
+        } else {
+            if self.aligner.has_lost_lane() {
+                self.hosts.hold(ProcessorGate::Sync, 0);
             }
-            None => {
-                if self.aligner.has_lost_lane() {
-                    self.hosts.hold(ProcessorGate::Sync, 0);
-                }
-                self.tell_end();
-                if self.drain_stage() {
-                    Step::Worked
-                } else {
-                    Step::Idle
-                }
+            self.tell_end();
+            if self.drain_stage() {
+                Step::Worked
+            } else {
+                Step::Idle
             }
         };
         self.hosts.poll(self.frame.center_hz);
@@ -441,6 +438,10 @@ impl Aggregator {
         self.board.add_events_lost(lost);
     }
 
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "the event moves into the queue"
+    )]
     fn event(&mut self, event: AggregatorEvent) {
         if self.io.events.push(event).is_err() {
             self.board.add_events_lost(1);
@@ -937,6 +938,10 @@ impl Aggregator {
         }
     }
 
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "the summary moves into the event"
+    )]
     fn solved(&mut self, solution: &Solution, summary: SolveSummary) {
         if let Some(offsets) = solution.offsets {
             let lanes = self.aligner.lanes();

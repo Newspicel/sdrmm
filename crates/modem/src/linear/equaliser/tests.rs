@@ -96,8 +96,8 @@ fn params(table: &Constellation) -> LinearParams {
     LinearParams::new(table.clone(), rrc(), SPS).unwrap()
 }
 
-fn carrier() -> Option<CarrierLoop> {
-    Some(CarrierLoop::new(PhaseDetector::DecisionDirected, 0.003))
+fn carrier() -> CarrierLoop {
+    CarrierLoop::new(PhaseDetector::DecisionDirected, 0.003)
 }
 
 fn burst(
@@ -106,7 +106,7 @@ fn burst(
     eq: Option<EqualiserConfig>,
 ) -> Vec<Complex<f32>> {
     let p = params(table);
-    let mut demod = LinearBurstDemod::new(&p, &rrc(), f64::INFINITY, carrier());
+    let mut demod = LinearBurstDemod::new(&p, &rrc(), f64::INFINITY, Some(carrier()));
     if let Some(config) = eq {
         demod = demod.with_equaliser(config).unwrap();
     }
@@ -121,7 +121,7 @@ fn streamed(
     eq: Option<EqualiserConfig>,
 ) -> Vec<Complex<f32>> {
     let p = params(table);
-    let mut demod = LinearDemod::new(&p, &rrc(), LinearTiming::CONTINUOUS, carrier());
+    let mut demod = LinearDemod::new(&p, &rrc(), LinearTiming::CONTINUOUS, Some(carrier()));
     if let Some(config) = eq {
         demod = demod.with_equaliser(config).unwrap();
     }
@@ -221,7 +221,7 @@ fn a_clock_offset_is_followed_while_streaming() {
     ClockError::new(150.0).apply(&mut wave, &mut Rng::new(2));
     add_noise(&mut wave, 22.0, 0x7070);
     let p = params(&table);
-    let mut demod = LinearDemod::new(&p, &rrc(), LinearTiming::CONTINUOUS, carrier())
+    let mut demod = LinearDemod::new(&p, &rrc(), LinearTiming::CONTINUOUS, Some(carrier()))
         .with_equaliser(EqualiserConfig::DEFAULT)
         .unwrap();
     let mut out = Vec::new();
@@ -277,7 +277,7 @@ fn a_blown_up_equaliser_resets_and_recovers() {
     let mut halves = Vec::new();
     timing.process_spaced(&wave, 2, &mut halves);
     let mut out = Vec::new();
-    eq.equalise_burst(&halves, carrier().as_ref(), &table, &mut out);
+    eq.equalise_burst(&halves, Some(&carrier()), &table, &mut out);
     assert!(eq.resets() >= 1);
     assert!(out.iter().all(|z| z.re.is_finite() && z.im.is_finite()));
     assert_eq!(symbol_errors(&out, &sent[..5_000], &table, 3_000), 0);
@@ -349,7 +349,7 @@ fn any_block_split_gives_the_same_symbols() {
     let wave = wave_through(&table, &sent, &echoes(), 25.0);
     let p = params(&table);
     let demod = || {
-        LinearDemod::new(&p, &rrc(), LinearTiming::CONTINUOUS, carrier())
+        LinearDemod::new(&p, &rrc(), LinearTiming::CONTINUOUS, Some(carrier()))
             .with_equaliser(EqualiserConfig::DEFAULT.with_feedback(2))
             .unwrap()
     };
@@ -369,7 +369,7 @@ fn steady_state_allocates_nothing() {
     let table = tables::qam_square(16).unwrap();
     let p = params(&table);
     let wave = LinearMod::transmission(&p, &draws(2_048, 16, 0xa6));
-    let mut demod = LinearDemod::new(&p, &rrc(), LinearTiming::CONTINUOUS, carrier())
+    let mut demod = LinearDemod::new(&p, &rrc(), LinearTiming::CONTINUOUS, Some(carrier()))
         .with_equaliser(EqualiserConfig::DEFAULT.with_feedback(3))
         .unwrap();
     let mut out = Vec::with_capacity(wave.len());

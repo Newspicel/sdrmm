@@ -206,7 +206,10 @@ pub(super) fn mix(nco: &mut Nco, samples: &mut [Complex<f32>]) {
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 fn rotate(anchor: Complex<f32>, step_re: &Quad, step_im: &Quad, source: &Block) -> Block {
-    use std::arch::aarch64::*;
+    use std::arch::aarch64::{
+        float32x4x2_t, vfmaq_f32, vfmaq_n_f32, vfmsq_f32, vfmsq_n_f32, vld1q_f32, vld2q_f32,
+        vmulq_f32, vmulq_n_f32, vst2q_f32,
+    };
     let mut target = [Complex::new(0.0, 0.0); LANES];
     unsafe {
         let step_re = vld1q_f32(step_re.as_ptr());

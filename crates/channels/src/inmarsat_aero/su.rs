@@ -289,7 +289,7 @@ fn smc_channels(su: &[u8]) -> Value {
         2 => ["rsmc2_tx", "rsmc3_tx", "rsmc4_tx"],
         _ => ["rsmc5_tx", "rsmc6_tx", "rsmc7_tx"],
     };
-    let first_return = if lsu <= 1 { 1 } else { 0 };
+    let first_return = usize::from(lsu <= 1);
     for frequency in &mut frequencies[first_return..] {
         *frequency += RETURN_OFFSET_MHZ;
     }
@@ -411,10 +411,10 @@ mod tests {
     #[test]
     fn c_assignment_parses_frequencies() {
         let mut su10 = with_addressing(0x32, [0xAB, 0xCD, 0xEF], 0x44);
-        su10[6] = 0x80 | (4000u16 >> 8) as u8;
-        su10[7] = (4000u16 & 0xFF) as u8;
-        su10[8] = (2000u16 >> 8) as u8;
-        su10[9] = (2000u16 & 0xFF) as u8;
+        let [receive_hi, receive_lo] = 4000u16.to_be_bytes();
+        su10[6] = 0x80 | receive_hi;
+        su10[7] = receive_lo;
+        su10[8..10].copy_from_slice(&2000u16.to_be_bytes());
         let value = parse_p_su(&su_with_crc(su10)).expect("parses");
         assert_eq!(value["service"], "flight-safety");
         assert_eq!(value["aes_id"], "ABCDEF");
@@ -452,10 +452,10 @@ mod tests {
     #[test]
     fn call_announcement_parses_channel_pair() {
         let mut su10 = with_addressing(0x21, [0xAB, 0xCD, 0xEF], 0x44);
-        su10[6] = 0x80 | (4000u16 >> 8) as u8;
-        su10[7] = (4000u16 & 0xFF) as u8;
-        su10[8] = (2000u16 >> 8) as u8;
-        su10[9] = (2000u16 & 0xFF) as u8;
+        let [receive_hi, receive_lo] = 4000u16.to_be_bytes();
+        su10[6] = 0x80 | receive_hi;
+        su10[7] = receive_lo;
+        su10[8..10].copy_from_slice(&2000u16.to_be_bytes());
         let value = parse_p_su(&su_with_crc(su10)).expect("parses");
         assert_eq!(value["su_type"], "call-announcement");
         assert_eq!(value["receive_mhz"], 4000.0 * 0.0025 + 1510.0);

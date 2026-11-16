@@ -94,7 +94,7 @@ fn qr_schur_and_roots_do_not_allocate() {
     let mut roots = Roots::new(MAX_POLY_DEGREE).unwrap();
     let mut found = vec![Complex::new(0.0f64, 0.0); MAX_POLY_DEGREE];
     let companion: Vec<_> = (0..16)
-        .map(|i| Complex::new((i % 5) as f64 - 2.0, (i % 3) as f64))
+        .map(|i| Complex::new(f64::from(i % 5) - 2.0, f64::from(i % 3)))
         .collect();
     let mut general = GeneralEigen::new(MAX_POLY_DEGREE).unwrap();
     let mut eigenvalues = [Complex::new(0.0f64, 0.0); 4];

@@ -23,7 +23,7 @@ pub(crate) fn noise_level(cells: u32, trials: usize, probability: f64) -> f32 {
     let target = probability / trials.max(1) as f64;
     let (mut low, mut high) = (0.0, LEVEL_CEILING);
     for _ in 0..BISECTIONS {
-        let middle = 0.5 * (low + high);
+        let middle = f64::midpoint(low, high);
         if gamma_q(f64::from(cells), middle) > target {
             low = middle;
         } else {
@@ -225,7 +225,7 @@ impl DownHistory {
         } else {
             k
         };
-        let unit = 0.5 * (mean + self.mean);
+        let unit = f32::midpoint(mean, self.mean);
         let sighting = Sighting {
             bins: peak as f64 + fraction_of(bins, peak),
             level: if unit > 0.0 { best.1 / unit } else { 0.0 },

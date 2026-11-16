@@ -15,7 +15,7 @@ use tokio::{
     time::{MissedTickBehavior, interval},
 };
 
-const RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+const RETENTION: Duration = Duration::from_hours(24);
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(60);
 const MAX_STORED_IMAGES: usize = 512;
 const MAX_STORED_BYTES: usize = 256 * 1024 * 1024;

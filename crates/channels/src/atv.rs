@@ -84,9 +84,10 @@ fn params(settings: &ChannelSettings) -> Result<AtvParams, ChannelError> {
 }
 
 fn check_params(p: &AtvParams) -> Result<(), ChannelError> {
-    if !(p.saturation_pct.is_finite() && (0.0..=MAX_SATURATION_PCT).contains(&p.saturation_pct))
-        || !(p.hue_deg.is_finite() && (-180.0..=180.0).contains(&p.hue_deg))
-    {
+    let saturation_ok =
+        p.saturation_pct.is_finite() && (0.0..=MAX_SATURATION_PCT).contains(&p.saturation_pct);
+    let hue_ok = p.hue_deg.is_finite() && (-180.0..=180.0).contains(&p.hue_deg);
+    if !(saturation_ok && hue_ok) {
         return Err(ChannelError::InvalidSettings(format!(
             "atv saturation must be in [0, {MAX_SATURATION_PCT}] % and hue in [-180, 180] degrees, got {} % and {} degrees",
             p.saturation_pct, p.hue_deg
@@ -250,7 +251,7 @@ impl AtvChannel {
                 continue;
             }
             self.picture
-                .observe(&self.samples, line.zero_h, &line.levels);
+                .observe(&self.samples, line.zero_h, line.levels);
             let row = self.row(field.line, field.parity);
             self.picture
                 .line(&self.samples, (line.zero_h, &line.levels), field.line, row);

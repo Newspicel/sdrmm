@@ -25,7 +25,7 @@ const HANDSET_TONE_HZ: f64 = 1_700.0;
 fn build(params: DectParams, frequency_hz: f64) -> DectChannel {
     DectChannel::new(
         ChannelCtx {
-            input_rate: input_rate(&params),
+            input_rate: input_rate(params),
         },
         ChannelSettings {
             frequency_hz,
@@ -185,7 +185,7 @@ fn wideband_noise_alone_rejects_nothing() {
         ..DectParams::default()
     };
     let mut chan = build(params, band.center_hz());
-    let noise = crate::testutil::complex_noise(0xBA5D, 0.3, input_rate(&params) as usize);
+    let noise = crate::testutil::complex_noise(0xBA5D, 0.3, input_rate(params) as usize);
     let (frames, _) = run(&mut chan, &noise);
     assert!(frames.is_empty(), "{frames:?}");
     assert_eq!(chan.rejected(), 0);

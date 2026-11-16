@@ -90,7 +90,7 @@ impl Assembler {
             }
             _ => {
                 self.hole = Some(self.count);
-                self.append(&[0; BLOCK_BYTES]);
+                self.append([0; BLOCK_BYTES]);
                 Step::default()
             }
         }
@@ -112,24 +112,24 @@ impl Assembler {
                 }
             }
             (OPEN_OR_PARITY, Stage::Closing) => {
-                self.append(&block.octets);
+                self.append(block.octets);
                 self.finish(true)
             }
             (OPEN_OR_PARITY, Stage::Middle) if self.hole == Some(self.count - 1) => {
-                self.append(&block.octets);
+                self.append(block.octets);
                 self.finish(true)
             }
             (OPEN_OR_PARITY, _) => {
                 let lost = self.abandon();
                 self.open(at);
-                self.append(&block.octets);
+                self.append(block.octets);
                 Step {
                     lost,
                     completed: None,
                 }
             }
             (BODY, Stage::Opened) if self.hole.is_none() => {
-                self.append(&block.octets);
+                self.append(block.octets);
                 let len = self.gather(self.count);
                 let start = self.start;
                 self.reset();
@@ -147,14 +147,14 @@ impl Assembler {
                         _ => Stage::Closing,
                     };
                 }
-                self.append(&block.octets);
+                self.append(block.octets);
                 Step::default()
             }
             (EDGE, Stage::Idle) if idle_hole.is_some_and(|hole| hole + 1 == at) => {
                 self.open(at - 1);
                 self.hole = Some(0);
-                self.append(&[0; BLOCK_BYTES]);
-                self.append(&block.octets);
+                self.append([0; BLOCK_BYTES]);
+                self.append(block.octets);
                 self.stage = Stage::Middle;
                 Step::default()
             }
@@ -172,9 +172,9 @@ impl Assembler {
         self.start = at;
     }
 
-    fn append(&mut self, octets: &[u8; BLOCK_BYTES]) {
+    fn append(&mut self, octets: [u8; BLOCK_BYTES]) {
         if let Some(slot) = self.blocks.get_mut(self.count) {
-            *slot = *octets;
+            *slot = octets;
             self.count += 1;
         }
     }
@@ -263,8 +263,7 @@ mod tests {
                 let step = assembler.push(block.as_ref(), at as u64);
                 let bytes = step
                     .completed
-                    .map(|done| assembler.bytes(done).to_vec())
-                    .unwrap_or_default();
+                    .map_or_default(|done| assembler.bytes(done).to_vec());
                 (step, bytes)
             })
             .collect()

@@ -156,7 +156,7 @@ mod tests {
         let points = 64;
         let equaliser: Vec<Complex<f32>> = (0..points)
             .map(|point| {
-                let nu = -0.5 + point as f64 / points as f64;
+                let nu = -0.5 + f64::from(point) / f64::from(points);
                 Complex::from_polar(ripple_db(nu).db_to_amplitude() as f32, 0.0)
             })
             .collect();

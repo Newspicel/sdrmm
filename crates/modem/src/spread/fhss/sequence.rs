@@ -75,7 +75,7 @@ impl HopSequence {
             return Err(FhssError::EmptyOrder);
         }
         let code = PnSequence::maximal_length(degree).map_err(FhssError::Sequence)?;
-        let bits = (usize::BITS - (channels - 1).leading_zeros()) as usize;
+        let bits = (channels - 1).bit_width() as usize;
         let chips = code.chips();
         let budget = chips.len().saturating_mul(hops);
         let mut at = 0usize;

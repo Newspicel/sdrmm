@@ -105,13 +105,12 @@ fn lift_target(
     let Some(value) = secret.inline().map(str::to_owned) else {
         return Ok(false);
     };
-    let id = match lifted.get(&value) {
-        Some(id) => id.clone(),
-        None => {
-            let id = insert(conn, &value)?;
-            lifted.insert(value, id.clone());
-            id
-        }
+    let id = if let Some(id) = lifted.get(&value) {
+        id.clone()
+    } else {
+        let id = insert(conn, &value)?;
+        lifted.insert(value, id.clone());
+        id
     };
     *secret = Secret::stored(id);
     Ok(true)

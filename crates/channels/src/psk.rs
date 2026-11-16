@@ -60,17 +60,17 @@ fn demodulator(baud: f64) -> Result<LinearDemod, ChannelError> {
     ))
 }
 
-pub(crate) fn occupied_band(p: &PskParams) -> (f64, f64) {
+pub(crate) fn occupied_band(p: PskParams) -> (f64, f64) {
     let half = p.baud.rate() * BANDWIDTH_FACTOR;
     (-half, half)
 }
 
-pub(crate) fn channel_filter(p: &PskParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(p: PskParams) -> ChannelFilter {
     let half = p.baud.rate() * BANDWIDTH_FACTOR;
-    Ok(ChannelFilter::Symmetric(Decimator::new(
+    ChannelFilter::Symmetric(Decimator::new(
         &design_lowpass(FILTER_TAPS, half / INPUT_RATE_HZ),
         1,
-    )))
+    ))
 }
 
 pub struct PskChannel {
@@ -403,8 +403,8 @@ fn psk_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn psk_decoder() -> Native<PskParams> {
-    Native::new::<PskChannel>(occupied_band)
-        .filter(channel_filter)
+    Native::new::<PskChannel>(|p| occupied_band(*p))
+        .filter(|p| Ok(channel_filter(*p)))
         .home(14_070_000.0)
         .signatures(psk_signatures)
         .form(psk_form)
@@ -515,7 +515,7 @@ mod tests {
     #[test]
     fn occupied_band_tracks_the_selected_baud() {
         for baud in [PskBaud::Psk31, PskBaud::Psk250] {
-            let (low, high) = occupied_band(&PskParams {
+            let (low, high) = occupied_band(PskParams {
                 baud,
                 invert: false,
             });

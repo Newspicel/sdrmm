@@ -58,7 +58,7 @@ impl CyclicCode {
     pub fn encode(&self, info: u32) -> u64 {
         let info = u64::from(info) & ((1 << self.k) - 1);
         let mut rem = info << self.parity;
-        let deg = 63 - self.generator.leading_zeros();
+        let deg = self.generator.ilog2();
         for shift in (self.parity..self.k + self.parity).rev() {
             if rem >> shift & 1 == 1 {
                 rem ^= self.generator << (shift - deg);

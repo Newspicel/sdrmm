@@ -50,7 +50,7 @@ mod tests {
         let mut phase = 0.0f64;
         let iq: Vec<Complex<f32>> = (0..n)
             .map(|k| {
-                phase += TAU * deviation * (TAU * f_mod * k as f64 / rate).cos() / rate;
+                phase += TAU * deviation * (TAU * f_mod * f64::from(k) / rate).cos() / rate;
                 Complex::from_polar(1.0, phase as f32)
             })
             .collect();

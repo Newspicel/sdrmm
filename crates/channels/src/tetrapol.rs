@@ -65,7 +65,7 @@ fn params(settings: &ChannelSettings) -> Result<TetrapolParams, ChannelError> {
         .map_err(ChannelError::InvalidSettings)
 }
 
-fn check_params(params: &TetrapolParams) -> Result<(), ChannelError> {
+fn check_params(params: TetrapolParams) -> Result<(), ChannelError> {
     match params.scrambling {
         Some(code) if code > MAX_TETRAPOL_SCRAMBLING => Err(ChannelError::InvalidSettings(
             format!("tetrapol scrambling must be in [0, {MAX_TETRAPOL_SCRAMBLING}], got {code}"),
@@ -123,7 +123,7 @@ impl NativeChannel for TetrapolChannel {
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let params = params(&settings)?;
-        check_params(&params)?;
+        check_params(params)?;
         let sps = ctx.input_rate / BAUD;
         let cpm = cpm_params(sps);
         Ok(Self {
@@ -147,7 +147,7 @@ impl NativeChannel for TetrapolChannel {
 impl ChannelRx for TetrapolChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
-        check_params(&params)?;
+        check_params(params)?;
         if params.band != self.band {
             self.band = params.band;
             self.scrambling.reset();

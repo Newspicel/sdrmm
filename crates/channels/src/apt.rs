@@ -46,17 +46,17 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     ..ChannelDescriptor::default()
 });
 
-pub(crate) fn occupied_band(_p: &AptParams) -> (f64, f64) {
+pub(crate) fn occupied_band() -> (f64, f64) {
     let half = DESCRIPTOR.bandwidth_hz / 2.0;
     (-half, half)
 }
 
-pub(crate) fn channel_filter(p: &AptParams) -> Result<ChannelFilter, ChannelError> {
-    let (_, half) = occupied_band(p);
-    Ok(ChannelFilter::Symmetric(Decimator::new(
+pub(crate) fn channel_filter() -> ChannelFilter {
+    let (_, half) = occupied_band();
+    ChannelFilter::Symmetric(Decimator::new(
         &design_lowpass(FILTER_TAPS, half / INPUT_RATE_HZ),
         1,
-    )))
+    ))
 }
 
 fn params(settings: &ChannelSettings) -> Result<AptParams, ChannelError> {
@@ -248,8 +248,8 @@ impl ChannelRx for AptChannel {
 }
 
 pub(crate) fn apt_decoder() -> Native<AptParams> {
-    Native::new::<AptChannel>(occupied_band)
-        .filter(channel_filter)
+    Native::new::<AptChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
         .home(137_100_000.0)
         .form(apt_form)
         .kinds(apt_kinds)

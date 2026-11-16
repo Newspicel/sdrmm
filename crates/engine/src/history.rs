@@ -240,7 +240,7 @@ impl Engine {
                 .device_sets
                 .get(&ds)
                 .ok_or(EngineError::DeviceSetNotFound(ds))?;
-            let history = self.history_of(state, node)?;
+            let history = Self::history_of(state, node)?;
             if history.capture.is_some() {
                 return Err(EngineError::Recording(
                     "the time machine is already laying down a capture".to_owned(),
@@ -305,7 +305,7 @@ impl Engine {
                 .device_sets
                 .get(&ds)
                 .ok_or(EngineError::DeviceSetNotFound(ds))?;
-            let history = self.history_of(state, node)?;
+            let history = Self::history_of(state, node)?;
             if history.capture.is_none() {
                 return Err(EngineError::Recording(
                     "the time machine is not laying down a capture".to_owned(),
@@ -381,7 +381,6 @@ impl Engine {
     }
 
     fn history_of<'a>(
-        &self,
         state: &'a DeviceSetState,
         node: &str,
     ) -> Result<&'a TimeMachineState, EngineError> {

@@ -47,15 +47,14 @@ pub fn manchester_decode(convention: ManchesterConvention, levels: &[bool]) -> P
     let mut bits = Vec::with_capacity(levels.len() / 2);
     let mut violations = 0;
     for pair in levels.as_chunks::<2>().0 {
-        match manchester_decode_pair(convention, pair[0], pair[1]) {
-            Some(bit) => bits.push(bit),
-            None => {
-                violations += 1;
-                bits.push(match convention {
-                    ManchesterConvention::Ieee8023 => !pair[0],
-                    ManchesterConvention::GeThomas => pair[0],
-                });
-            }
+        if let Some(bit) = manchester_decode_pair(convention, pair[0], pair[1]) {
+            bits.push(bit);
+        } else {
+            violations += 1;
+            bits.push(match convention {
+                ManchesterConvention::Ieee8023 => !pair[0],
+                ManchesterConvention::GeThomas => pair[0],
+            });
         }
     }
     let slipped = manchester_violations(levels.get(1..).unwrap_or_default());

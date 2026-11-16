@@ -288,9 +288,7 @@ mod tests {
         sent.extend_from_slice(&payload);
         for lead_samples in [0usize, 3, 8, 11, 16, 27] {
             let mut wave = vec![Complex::new(0.0, 0.0); lead_samples];
-            modulated(2, 8.0, &sent)
-                .into_iter()
-                .for_each(|s| wave.push(s));
+            wave.extend(modulated(2, 8.0, &sent));
             let receiver = demod(2, 8.0, sent.len() + 4, SlotDetector::MatchedFilter);
             let offset = receiver.estimate_offset(&wave, 0, 16);
             assert_eq!(offset, lead_samples % 8, "lead {lead_samples}");

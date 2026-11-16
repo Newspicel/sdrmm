@@ -203,7 +203,7 @@ fn run(mut args: Args) -> anyhow::Result<()> {
         Some(recordings_dir),
     );
     let reopen = std::sync::Arc::downgrade(&engine);
-    let _plugins = sdrmm_plugins::PluginWatcher::start(plugins_dir, move |replaced| {
+    let _plugins = sdrmm_plugins::PluginWatcher::start(&plugins_dir, move |replaced| {
         if let Some(engine) = reopen.upgrade() {
             engine.plugins_reloaded(replaced);
         }
@@ -220,11 +220,14 @@ fn run(mut args: Args) -> anyhow::Result<()> {
             shell: None,
         },
     };
-    serve_until_stopped(config, engine)
+    serve_until_stopped(config, &engine)
 }
 
 #[tokio::main]
-async fn serve_until_stopped(config: Config, engine: std::sync::Arc<Engine>) -> anyhow::Result<()> {
+async fn serve_until_stopped(
+    config: Config,
+    engine: &std::sync::Arc<Engine>,
+) -> anyhow::Result<()> {
     let handle = serve(config, engine.clone())
         .await
         .context("failed to start server")?;

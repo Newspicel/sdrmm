@@ -35,7 +35,7 @@ pub(crate) fn basic_keystream(key: u16) -> [u8; FRAME_BYTES] {
 
 /// Motorola masks silence like speech, so a masked silence frame carries the key three times
 /// over. The two copies that agree with the first are 32 bits of proof no speech frame forges.
-fn basic_key_from_silence(cipher: &[u8; FRAME_BYTES]) -> Option<u16> {
+fn basic_key_from_silence(cipher: [u8; FRAME_BYTES]) -> Option<u16> {
     let mask: [u8; FRAME_BYTES] = std::array::from_fn(|i| cipher[i] ^ SILENCE[i]);
     let high = u16::from_be_bytes([mask[0], mask[1]]);
     let middle = u16::from_be_bytes([mask[2], mask[3]]);
@@ -168,7 +168,7 @@ impl Keystream {
     }
 }
 
-fn xor(bytes: &mut [u8; FRAME_BYTES], stream: &[u8; FRAME_BYTES]) {
+fn xor(bytes: &mut [u8; FRAME_BYTES], stream: [u8; FRAME_BYTES]) {
     for (byte, mask) in bytes.iter_mut().zip(stream) {
         *byte ^= mask;
     }
@@ -309,12 +309,12 @@ impl Privacy {
             Cipher::Basic(key) => {
                 if !lost
                     && decoded.error_total() == 0
-                    && let Some(found) = basic_key_from_silence(&bytes)
+                    && let Some(found) = basic_key_from_silence(bytes)
                 {
                     *key = Some(found);
                 }
                 if let Some(key) = key {
-                    xor(&mut bytes, &basic_keystream(*key));
+                    xor(&mut bytes, basic_keystream(*key));
                 }
                 key.is_some()
             }
@@ -326,7 +326,7 @@ impl Privacy {
                     keystream.next_superframe();
                 }
                 if bytes != SILENCE {
-                    xor(&mut bytes, &keystream.frame(position));
+                    xor(&mut bytes, keystream.frame(position));
                 }
                 decoded.error_total() <= MAX_KEYED_REPAIRS
             }
@@ -362,7 +362,7 @@ mod tests {
 
     fn masked(bytes: [u8; FRAME_BYTES], stream: [u8; FRAME_BYTES]) -> Frame {
         let mut bytes = bytes;
-        xor(&mut bytes, &stream);
+        xor(&mut bytes, stream);
         clean(bytes)
     }
 
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn a_clear_silence_frame_is_not_mistaken_for_a_key() {
-        assert_eq!(basic_key_from_silence(&SILENCE), None);
+        assert_eq!(basic_key_from_silence(SILENCE), None);
     }
 
     #[test]

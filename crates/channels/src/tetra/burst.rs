@@ -182,22 +182,19 @@ impl Synchronizer {
                 best = Some((score, at, kind));
             }
         }
-        match best {
-            Some((_, at, kind)) => {
-                self.misses = 0;
-                self.fill_window(at);
-                self.next = Some(at + BURST_BITS);
-                SyncEvent::Burst(kind)
+        if let Some((_, at, kind)) = best {
+            self.misses = 0;
+            self.fill_window(at);
+            self.next = Some(at + BURST_BITS);
+            SyncEvent::Burst(kind)
+        } else {
+            self.misses += 1;
+            self.next = Some(start + BURST_BITS);
+            if self.misses > MAX_MISSES {
+                self.next = None;
+                return SyncEvent::Lost;
             }
-            None => {
-                self.misses += 1;
-                self.next = Some(start + BURST_BITS);
-                if self.misses > MAX_MISSES {
-                    self.next = None;
-                    return SyncEvent::Lost;
-                }
-                SyncEvent::Missed
-            }
+            SyncEvent::Missed
         }
     }
 

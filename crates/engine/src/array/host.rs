@@ -717,7 +717,7 @@ impl ProcessorHost {
             let shape = plan.shape.clone();
             let node = plan.node.clone();
             let ctx = shape.ctx(&node, frame);
-            Outputs::new(&mut plan, descriptor, &ctx).map_err(publisher_error)?
+            Outputs::new(&mut plan, descriptor, &ctx).map_err(|error| publisher_error(&error))?
         };
         let runner = BatchRunner::start(
             BatchStart {
@@ -746,7 +746,8 @@ impl ProcessorHost {
             let node = plan.node.clone();
             let ctx = shape.ctx(&node, frame);
             Some(Box::new(
-                Outputs::new(&mut plan, descriptor, &ctx).map_err(publisher_error)?,
+                Outputs::new(&mut plan, descriptor, &ctx)
+                    .map_err(|error| publisher_error(&error))?,
             ))
         } else {
             None
@@ -1075,7 +1076,7 @@ impl ProcessorHost {
     }
 }
 
-fn publisher_error(error: io::Error) -> EngineError {
+fn publisher_error(error: &io::Error) -> EngineError {
     EngineError::Processor(format!("start array publisher: {error}"))
 }
 

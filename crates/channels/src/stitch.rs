@@ -52,7 +52,7 @@ const fn settings(params: &ProcessorParams) -> Option<&StitchParams> {
     }
 }
 
-fn options(params: &StitchParams) -> StitchOptions {
+fn options(params: StitchParams) -> StitchOptions {
     StitchOptions {
         equalise: params.noise_equalise,
         flatten: params.flatten,
@@ -198,7 +198,7 @@ impl ArrayProcessor for StitchProcessor {
         }
         let mut stitcher =
             Stitcher::new(ctx.lanes, ctx.sample_rate).map_err(|error| refused(&error))?;
-        stitcher.set_options(options(stitch));
+        stitcher.set_options(options(*stitch));
         let mut processor = Self {
             lanes: ctx.lanes,
             rate: ctx.sample_rate,
@@ -217,7 +217,7 @@ impl ArrayProcessor for StitchProcessor {
 
     fn apply(&mut self, params: &ProcessorParams) -> Result<(), ChannelError> {
         let stitch = settings(params).ok_or(ChannelError::Refused("Wrong settings"))?;
-        self.stitcher.set_options(options(stitch));
+        self.stitcher.set_options(options(*stitch));
         Ok(())
     }
 

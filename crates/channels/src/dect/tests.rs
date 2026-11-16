@@ -38,7 +38,7 @@ fn channel(params: DectParams) -> DectChannel {
 fn frames(events: &[DecoderEvent]) -> Vec<crate::dect::DectFrame> {
     events
         .iter()
-        .filter_map(|event| event.read::<crate::dect::DectFrame>())
+        .filter_map(sdrmm_wire::DecoderEvent::read::<crate::dect::DectFrame>)
         .collect()
 }
 

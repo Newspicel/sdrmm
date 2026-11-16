@@ -286,8 +286,8 @@ impl SurveillanceSet {
             .filter(move |element| *element != reference && mask & (1 << element) != 0)
     }
 
-    fn problem(&self, reference: u32) -> Option<&'static str> {
-        let Self::Mask { mask } = *self else {
+    fn problem(self, reference: u32) -> Option<&'static str> {
+        let Self::Mask { mask } = self else {
             return None;
         };
         let usable = mask & ((1 << Self::ELEMENT_BITS) - 1);
@@ -860,7 +860,7 @@ pub fn bistatic_ring(receiver: LatLon, illuminator: LatLon, range_km: f32) -> Op
     let axis = bearing_deg(receiver, illuminator);
     Some(Shape::Ellipse {
         center: destination(receiver, axis, baseline_m / 2.0),
-        major_m: ((baseline_m + range_m) / 2.0) as f32,
+        major_m: f64::midpoint(baseline_m, range_m) as f32,
         minor_m: ((range_m * (range_m + 2.0 * baseline_m)).sqrt() / 2.0) as f32,
         bearing_deg: axis as f32,
     })

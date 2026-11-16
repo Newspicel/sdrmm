@@ -113,7 +113,7 @@ impl Detector {
         if !self.active {
             return self.env > self.noise * START_RATIO;
         }
-        let threshold = ((self.noise + self.high) * 0.5).max(self.noise * FLOOR_RATIO);
+        let threshold = f32::midpoint(self.noise, self.high).max(self.noise * FLOOR_RATIO);
         if self.level {
             self.env > threshold / HYSTERESIS
         } else {

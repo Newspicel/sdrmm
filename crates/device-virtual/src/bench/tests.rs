@@ -79,11 +79,7 @@ fn bench_spec(key: &str, first_element: usize, lanes: Vec<LaneImpairments>) -> B
     }
 }
 
-fn setup<'a>(
-    position: [f64; 3],
-    center_hz: f64,
-    impairments: &'a LaneImpairments,
-) -> LaneSetup<'a> {
+fn setup(position: [f64; 3], center_hz: f64, impairments: &LaneImpairments) -> LaneSetup<'_> {
     LaneSetup {
         position,
         center_hz,
@@ -692,7 +688,9 @@ fn the_noise_source_reaches_every_lane_through_its_response() {
         .iter()
         .map(|lanes| lanes.iter().map(|rx| collect(rx, needed)).collect())
         .collect();
-    devices.iter_mut().for_each(|device| device.rx_stop());
+    for device in &mut devices {
+        device.rx_stop();
+    }
 
     let mut switched = Vec::new();
     for (lane, seen) in lanes[0].iter().enumerate() {
@@ -1064,7 +1062,7 @@ fn the_default_shapes_carry_their_tiers_and_noise_sources() {
         .capabilities()
         .extra
         .iter()
-        .map(|e| e.name())
+        .map(sdrmm_wire::ExtraSetting::name)
         .collect();
     assert_eq!(names, [BEARING_SETTING, RADIUS_SETTING]);
     let dongle = open(&driver, "dongle1");
@@ -1072,7 +1070,7 @@ fn the_default_shapes_carry_their_tiers_and_noise_sources() {
         .capabilities()
         .extra
         .iter()
-        .map(|e| e.name())
+        .map(sdrmm_wire::ExtraSetting::name)
         .collect();
     assert_eq!(names, [BEARING_SETTING]);
 

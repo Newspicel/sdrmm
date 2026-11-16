@@ -1,4 +1,4 @@
-//! DVSI AMBE-3000R and AMBE-3003 vocoder chips on a USB serial port: ThumbDV, DV3000U,
+//! DVSI AMBE-3000R and AMBE-3003 vocoder chips on a USB serial port: `ThumbDV`, DV3000U,
 //! USB-3000, USB-3003. Each port gets one worker thread that leases the chip's channels to
 //! decoders while they have a call.
 

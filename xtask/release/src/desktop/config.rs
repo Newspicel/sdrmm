@@ -11,7 +11,7 @@ const LONG_DESCRIPTION: &str = "Modular, client-server software-defined radio re
 const HOMEPAGE: &str = "https://sdrmm.com";
 const AUTHOR: &str = "Julian Haag";
 /// Chromium's shared libraries, which `libcef` brings beside itself in `/usr/lib/sdrmm-app`
-/// and the AppImage must not copy a second time into `usr/lib`.
+/// and the `AppImage` must not copy a second time into `usr/lib`.
 const CHROMIUM_LIBRARIES: &[&str] = &["libcef.so", "libvk_swiftshader.so", "libvulkan.so.1"];
 /// What Chromium links on Debian and Ubuntu; the `t64` names are Ubuntu 24.04's.
 const DEB_DEPENDS: &[&str] = &[

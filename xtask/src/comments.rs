@@ -85,6 +85,7 @@ fn block_end(bytes: &[u8], from: usize) -> usize {
         .map_or(bytes.len(), |offset| from + 2 + offset + 2)
 }
 
+#[expect(clippy::naive_bytecount, reason = "avoids the bytecount dependency")]
 fn count_newlines(bytes: &[u8]) -> usize {
     bytes.iter().filter(|byte| **byte == b'\n').count()
 }

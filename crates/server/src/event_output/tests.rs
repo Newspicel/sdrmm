@@ -114,19 +114,19 @@ fn clip_message(node: &str, bytes: Bytes) -> OutputMessage {
     decoded_message(node, &record, 1, view, Some(audio))
 }
 
-fn call_text(call: VoiceCall) -> OutputMessage {
+fn call_text(call: &VoiceCall) -> OutputMessage {
     message(
         "chat",
         &DecodedRecord {
-            event: DecoderEvent::of(&call),
+            event: DecoderEvent::of(call),
             ..call_record()
         },
     )
 }
 
-fn stem_of(call: VoiceCall) -> String {
+fn stem_of(call: &VoiceCall) -> String {
     let record = DecodedRecord {
-        event: DecoderEvent::of(&call),
+        event: DecoderEvent::of(call),
         ..call_record()
     };
     clip_stem(&record, &view_of(&record))
@@ -238,7 +238,7 @@ async fn capture(State(captures): State<Captures>, request: Request) -> AxumResp
 
 #[test]
 fn a_call_message_leads_with_its_mode_and_holds_the_call_facts() {
-    let body = call_text(call()).body;
+    let body = call_text(&call()).body;
     let lines: Vec<&str> = body.lines().collect();
     assert_eq!(lines[0], "DMR call");
     for fact in ["talkgroup 91", "from 1001", "TS2", "1.2 s"] {
@@ -249,7 +249,7 @@ fn a_call_message_leads_with_its_mode_and_holds_the_call_facts() {
 
 #[test]
 fn an_emergency_encrypted_call_names_both_flags() {
-    let body = call_text(VoiceCall {
+    let body = call_text(&VoiceCall {
         emergency: true,
         encrypted: true,
         ..call()
@@ -263,7 +263,7 @@ fn an_emergency_encrypted_call_names_both_flags() {
 
 #[test]
 fn the_html_caption_escapes_the_audio_error() {
-    let message = call_text(VoiceCall {
+    let message = call_text(&VoiceCall {
         audio_error: Some("lost <2> blocks & counting".to_owned()),
         ..call()
     });
@@ -454,10 +454,10 @@ fn recordings_take_the_clip_the_event_brings() {
 
 #[test]
 fn a_call_is_named_by_time_mode_frequency_and_talkgroup() {
-    assert_eq!(stem_of(analog_call()), "20261001T223100Z_AM_144.100MHz");
-    assert_eq!(stem_of(call()), "20260815T100000Z_DMR_451.125MHz_TG91");
+    assert_eq!(stem_of(&analog_call()), "20261001T223100Z_AM_144.100MHz");
+    assert_eq!(stem_of(&call()), "20260815T100000Z_DMR_451.125MHz_TG91");
     assert_eq!(
-        stem_of(VoiceCall {
+        stem_of(&VoiceCall {
             group_call: Some(false),
             ..call()
         }),

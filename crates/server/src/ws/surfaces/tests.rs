@@ -106,8 +106,8 @@ fn refused(node: &str, reason: SurfaceRefusal) -> (String, SurfaceRefusal) {
     (node.to_owned(), reason)
 }
 
-fn fit(cols: u16, rows: u16) -> Option<SurfaceFit> {
-    Some(SurfaceFit { cols, rows })
+fn fit(cols: u16, rows: u16) -> SurfaceFit {
+    SurfaceFit { cols, rows }
 }
 
 fn ramp(len: usize) -> Vec<u8> {
@@ -271,7 +271,7 @@ async fn radar_surface_is_max_pooled_to_the_fit() {
     let (mut client, state) = serve().await;
     state.surfaces.open("radar", StreamKind::RangeDoppler);
 
-    subscribe(&mut client, "radar", fit(4, 2)).await;
+    subscribe(&mut client, "radar", Some(fit(4, 2))).await;
     let (stream_id, node, kind) = started(&mut client).await;
     assert_eq!((node.as_str(), kind), ("radar", StreamKind::RangeDoppler));
     assert!(stream_id >= MEDIA_ID_BASE);
@@ -311,18 +311,18 @@ async fn a_zero_fit_is_refused() {
     let (mut client, state) = serve().await;
     state.surfaces.open("radar", StreamKind::RangeDoppler);
 
-    subscribe(&mut client, "radar", fit(0, 128)).await;
+    subscribe(&mut client, "radar", Some(fit(0, 128))).await;
     assert_eq!(
         refusal(&mut client).await,
         refused("radar", SurfaceRefusal::FitNotPositive)
     );
-    subscribe(&mut client, "radar", fit(256, 0)).await;
+    subscribe(&mut client, "radar", Some(fit(256, 0))).await;
     assert_eq!(
         refusal(&mut client).await,
         refused("radar", SurfaceRefusal::FitNotPositive)
     );
 
-    subscribe(&mut client, "radar", fit(256, 128)).await;
+    subscribe(&mut client, "radar", Some(fit(256, 128))).await;
     assert_eq!(started(&mut client).await.1, "radar");
 }
 
@@ -354,7 +354,7 @@ async fn a_socket_out_of_stream_ids_refuses_the_surface_by_name() {
     );
     session.ports.occupy(MEDIA_ID_BASE..=u16::MAX);
 
-    session.subscribe_surface("radar".to_owned(), None).await;
+    session.subscribe_surface("radar".to_owned(), None);
     let message = timeout(WAIT, output.recv())
         .await
         .expect("an answer")
@@ -440,9 +440,9 @@ async fn spatial_and_visibility_frames_encode() {
     state.surfaces.open("spatial", StreamKind::SpatialSpectrum);
     state.surfaces.open("corr", StreamKind::Visibility);
 
-    subscribe(&mut client, "spatial", fit(5, 5)).await;
+    subscribe(&mut client, "spatial", Some(fit(5, 5))).await;
     let (spatial_id, _, spatial_kind) = started(&mut client).await;
-    subscribe(&mut client, "corr", fit(4, 1)).await;
+    subscribe(&mut client, "corr", Some(fit(4, 1))).await;
     let (corr_id, _, corr_kind) = started(&mut client).await;
     assert_eq!(
         (spatial_kind, corr_kind),

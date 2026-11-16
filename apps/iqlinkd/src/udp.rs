@@ -39,6 +39,7 @@ impl Sender {
     }
 
     #[cfg(not(target_os = "linux"))]
+    #[expect(clippy::unused_self, reason = "mirrors the Linux build")]
     pub const fn offloads(&self) -> bool {
         false
     }

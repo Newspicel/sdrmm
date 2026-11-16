@@ -128,8 +128,7 @@ pub fn summary(app: &AcarsApp) -> Option<String> {
             "FPN {}{}->{}",
             fp.flight_number
                 .as_deref()
-                .map(|f| format!("{f} "))
-                .unwrap_or_default(),
+                .map_or_default(|f| format!("{f} ")),
             fp.origin.as_deref().unwrap_or("?"),
             fp.destination.as_deref().unwrap_or("?"),
         )),
@@ -140,8 +139,7 @@ pub fn summary(app: &AcarsApp) -> Option<String> {
             message
                 .pointer("/message/sysid")
                 .or_else(|| message.get("version"))
-                .map(|v| v.to_string().trim_matches('"').to_owned())
-                .unwrap_or_default()
+                .map_or_default(|v| v.to_string().trim_matches('"').to_owned())
         )),
     }
 }
@@ -165,10 +163,7 @@ fn miam_summary(frame: &miam::MiamFrame) -> String {
             "MIAM v{} {}{}{}",
             p.version,
             p.pdu_type,
-            p.app_id
-                .as_deref()
-                .map(|a| format!(" app={a}"))
-                .unwrap_or_default(),
+            p.app_id.as_deref().map_or_default(|a| format!(" app={a}")),
             if p.compressed {
                 format!(" ({} bytes inflated)", p.data_len)
             } else {

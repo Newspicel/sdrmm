@@ -116,7 +116,7 @@ pub struct Library {
     pub entries: Entries,
     path: PathBuf,
     version: String,
-    _library: libloading::Library,
+    _loaded: libloading::Library,
 }
 
 unsafe impl Send for Library {}
@@ -141,7 +141,7 @@ impl Library {
             entries,
             path: path.to_path_buf(),
             version,
-            _library: library,
+            _loaded: library,
         })
     }
 
@@ -156,7 +156,7 @@ impl Library {
 
 /// Loads the core into the process-wide symbol namespace.
 ///
-/// SoapySDR's plugin modules are linked against the core and resolve its symbols from the flat
+/// `SoapySDR`'s plugin modules are linked against the core and resolve its symbols from the flat
 /// namespace at load time, so a core opened `RTLD_LOCAL` leaves every module unloadable with
 /// "symbol not found in flat namespace". Windows resolves imports by module name and needs no
 /// equivalent.
@@ -261,7 +261,7 @@ const fn bare_name() -> &'static str {
 }
 
 /// Prefixes a package manager installs into that the dynamic loader does not search by default:
-/// on macOS it falls back to `/usr/local/lib` and `/usr/lib` only, so a Homebrew SoapySDR on
+/// on macOS it falls back to `/usr/local/lib` and `/usr/lib` only, so a Homebrew `SoapySDR` on
 /// Apple silicon is invisible to a bare `dlopen` of the library's name.
 fn install_prefixes() -> Vec<&'static str> {
     #[cfg(target_os = "macos")]

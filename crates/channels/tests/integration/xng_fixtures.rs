@@ -87,7 +87,7 @@ fn tuned(type_id: &str, frequency_hz: f64) -> ChannelSettings {
 fn unique_adsb(events: &[DecoderEvent]) -> usize {
     events
         .iter()
-        .filter_map(|e| e.read::<sdrmm_channels::AdsbMessage>())
+        .filter_map(sdrmm_wire::DecoderEvent::read::<sdrmm_channels::AdsbMessage>)
         .map(|m| m.raw)
         .collect::<std::collections::BTreeSet<_>>()
         .len()

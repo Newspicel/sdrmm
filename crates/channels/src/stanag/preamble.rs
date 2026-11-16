@@ -95,7 +95,8 @@ impl PreambleSearch {
         if x.len() <= span || x.len() > self.matched[0].len() {
             return Preamble::Missing;
         }
-        let rms = (x.iter().map(|s| s.norm_sqr()).sum::<f32>() / x.len() as f32).sqrt();
+        let rms =
+            (x.iter().map(num_complex::Complex::norm_sqr).sum::<f32>() / x.len() as f32).sqrt();
         if rms <= f32::MIN_POSITIVE {
             return Preamble::Missing;
         }

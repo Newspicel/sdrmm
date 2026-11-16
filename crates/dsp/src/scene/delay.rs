@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn a_half_sample_shift_is_symmetric_and_sums_to_unity() {
         let design = KaiserSinc::new(16.0, KAISER_BETA);
-        let mut taps: Vec<f64> = (0..32).map(|k| design.tap(k as f64 - 15.5)).collect();
+        let mut taps: Vec<f64> = (0..32).map(|k| design.tap(f64::from(k) - 15.5)).collect();
         for (left, right) in taps.iter().zip(taps.iter().rev()) {
             assert!((left - right).abs() < 1e-12);
         }

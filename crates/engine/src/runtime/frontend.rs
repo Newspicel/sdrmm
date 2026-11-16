@@ -87,8 +87,7 @@ mod tests {
             .iter()
             .enumerate()
             .max_by(|a, b| a.1.total_cmp(b.1))
-            .map(|(i, _)| i)
-            .unwrap_or(0);
+            .map_or(0, |(i, _)| i);
         (peak as f64 - BINS as f64 / 2.0) * FRONTEND_RATE / BINS as f64
     }
 

@@ -39,6 +39,7 @@ use windows as platform;
 const DRIVER_ID: DeviceBackend = DeviceBackend::Funcube;
 const LABEL: &str = "FUNcube Dongle Pro+";
 
+#[expect(clippy::needless_pass_by_value, reason = "used as a map_err fn")]
 fn map_err(err: Error) -> DeviceError {
     let text = err.to_string();
     if err.is_disconnected() {

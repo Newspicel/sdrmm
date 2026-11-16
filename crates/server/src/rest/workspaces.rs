@@ -1,4 +1,11 @@
-use super::*;
+use super::{
+    ApiError, AppError, AppState, ApplyTemplateRequest, Author, ChannelSettings,
+    CreateWorkspaceRequest, CreatedRowId, DeviceInfo, DeviceSettings, ExamplesResponse,
+    IntoResponse, Json, NodeBody, PatchApplyReport, PatchGraph, Path, Response, ServerEvent, State,
+    StateScope, StateSnapshot, StatusCode, SteppedWorkspace, Store, StoreError, TemplateInfo,
+    TemplatesResponse, UpdateWorkspaceRequest, WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot,
+    WorkspacesResponse, header, lock_gate, radio_of, rejection, workspace,
+};
 use crate::apply::{bring_up, bring_up_active};
 use sdrmm_wire::ResolvedState;
 
@@ -804,7 +811,7 @@ pub(crate) async fn step_history(
             if !before.snapshot.graph.same_topology(&detail.snapshot.graph) {
                 let saved = state.store.workspace_state(id)?;
                 workspace::reconcile(&state, &detail.snapshot.graph, &saved);
-                let report = bring_up(&state, id, &detail.snapshot, &saved)?;
+                let report = bring_up(&state, id, &detail.snapshot, &saved);
                 for refusal in &report.refused {
                     tracing::warn!(
                         workspace = id,

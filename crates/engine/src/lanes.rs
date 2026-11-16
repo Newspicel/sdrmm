@@ -31,7 +31,7 @@ impl Engine {
             device,
             &settings,
             blocking,
-            taps,
+            &taps,
             fault_handler(self, ds),
         )?;
         swap_runtime(self, ds, receiving, handover)?;

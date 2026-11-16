@@ -136,6 +136,7 @@ impl HelperLoop {
     }
 
     #[cfg(not(test))]
+    #[expect(clippy::unused_self, reason = "mirrors the test build's check")]
     const fn poisoned(&self, _mode: u8) {}
 
     fn work(&mut self, task: Task) -> Done {

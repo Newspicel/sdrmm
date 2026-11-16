@@ -192,6 +192,10 @@ impl Dvbs2Encoder {
 
 pub struct Dvbs2Decoder {
     transport: super::transport::Transport,
+    #[expect(
+        clippy::option_option,
+        reason = "None is unselected, Some(None) is a single stream"
+    )]
     transport_isi: Option<Option<u8>>,
     container: Option<Container>,
     contained: Vec<Complex<f32>>,
@@ -418,7 +422,7 @@ impl Dvbs2Decoder {
                     self.metrics.iterations += decoded.iterations as u32;
                     self.metrics.corrected_bits += decoded.corrected as u32;
                     self.good = self.good.saturating_add(1);
-                    self.deliver(decoded.data, out);
+                    self.deliver(&decoded.data, out);
                 }
                 None => self.fail(),
             }
@@ -516,13 +520,14 @@ impl Dvbs2Decoder {
                     modcod.slots(signalling.short),
                     signalling.pilots && self.content == Content::Plain,
                 ),
-                (None, None) => match super::s2x::reserved_symbols(signalling.code()) {
-                    Some(length) => length,
-                    None => {
+                (None, None) => {
+                    if let Some(length) = super::s2x::reserved_symbols(signalling.code()) {
+                        length
+                    } else {
                         self.searched += 1;
                         continue;
                     }
-                },
+                }
             };
             if at + span > self.pending.len() {
                 return false;
@@ -706,7 +711,7 @@ impl Dvbs2Decoder {
             Some(data) => {
                 self.metrics.frames_ok += 1;
                 self.good = self.good.saturating_add(1);
-                self.deliver(data, out);
+                self.deliver(&data, out);
             }
             None => self.fail(),
         }
@@ -718,7 +723,7 @@ impl Dvbs2Decoder {
         self.good = 0;
     }
 
-    fn deliver(&mut self, data: super::bb::BaseBandData, out: &mut Dvbs2Output) {
+    fn deliver(&mut self, data: &super::bb::BaseBandData, out: &mut Dvbs2Output) {
         self.stream = Some(data.header.kind);
         self.isi = (!data.header.single).then_some(data.header.isi);
         if !data.header.single {
@@ -741,7 +746,7 @@ impl Dvbs2Decoder {
                 return;
             }
             self.transport_isi = Some(isi);
-            self.metrics.transport_errors += self.transport.push(&data, &mut out.packets);
+            self.metrics.transport_errors += self.transport.push(data, &mut out.packets);
         }
     }
 
@@ -791,25 +796,12 @@ impl Dvbs2Decoder {
         };
         self.residual = if signalling.pilots {
             Some(coarse + anchored_drift(&self.anchors))
+        } else if let Some(order) = power_order(modcod.modulation) {
+            let reference = codec.constellation.point(0).powi(order);
+            Some(coarse + track_power(&mut self.payload, order, reference, &mut self.block_phases))
         } else {
-            match power_order(modcod.modulation) {
-                Some(order) => {
-                    let reference = codec.constellation.point(0).powi(order);
-                    Some(
-                        coarse
-                            + track_power(
-                                &mut self.payload,
-                                order,
-                                reference,
-                                &mut self.block_phases,
-                            ),
-                    )
-                }
-                None => {
-                    track_decisions(&mut self.payload, &codec.constellation);
-                    None
-                }
-            }
+            track_decisions(&mut self.payload, &codec.constellation);
+            None
         };
         self.llrs.clear();
         demodulate(&self.payload, &codec.constellation, NOISE, &mut self.llrs);
@@ -838,7 +830,7 @@ impl Dvbs2Decoder {
         if let Some(residual) = self.residual {
             self.frequency += RESIDUAL_GAIN * residual;
         }
-        self.deliver(data, out);
+        self.deliver(&data, out);
     }
 }
 

@@ -15,7 +15,7 @@ const IMPORTS: usize = 1;
 const DELAY_IMPORTS: usize = 13;
 const SECTION_HEADER: usize = 40;
 
-pub fn is_pe(head: &[u8; 4]) -> bool {
+pub fn is_pe(head: [u8; 4]) -> bool {
     head.starts_with(b"MZ")
 }
 

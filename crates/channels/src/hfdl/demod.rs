@@ -49,6 +49,7 @@ pub struct Burst {
     pub snr_db: Option<f32>,
 }
 
+#[derive(Clone, Copy)]
 enum State {
     Hunt,
     Collect {
@@ -131,7 +132,7 @@ impl HfdlDemod {
             let s = self.sample(pos + j as f64 * self.sps)?;
             let d = s * prev.conj();
             prev = s;
-            let sign = if A[j] != A[j - 1] { -1.0 } else { 1.0 };
+            let sign = if A[j] == A[j - 1] { 1.0 } else { -1.0 };
             corr += d * sign;
             norm += d.norm_sqr().sqrt();
         }
@@ -192,6 +193,10 @@ impl HfdlDemod {
         best.map(|(_, position, theta)| (position, theta))
     }
 
+    #[expect(
+        clippy::option_option,
+        reason = "None is out of samples, Some(None) is no fit"
+    )]
     fn a1_line_fit(&self, candidate: f64, theta0: f32) -> Option<Option<(f32, f32)>> {
         let mut residual = [0.0f32; SEQUENCE_LEN];
         let mut weight = [0.0f32; SEQUENCE_LEN];
@@ -308,24 +313,21 @@ impl HfdlDemod {
         measure: bool,
     ) -> Option<Complex<f32>> {
         let y = walk.eq.exec();
-        let phase_error = match train {
-            Some(bit) => {
-                let d = Complex::new(if bit == 1 { -1.0 } else { 1.0 }, 0.0);
-                walk.eq.step(d, y, EQ_MU);
-                walk.segment_error += (y - d).norm_sqr() / TRAINING_LEN as f32;
-                if measure {
-                    walk.signal_power += f64::from(d.norm_sqr());
-                    walk.error_power += f64::from((y - d).norm_sqr());
-                }
-                fast_arg(y * d.conj())
+        let phase_error = if let Some(bit) = train {
+            let d = Complex::new(if bit == 1 { -1.0 } else { 1.0 }, 0.0);
+            walk.eq.step(d, y, EQ_MU);
+            walk.segment_error += (y - d).norm_sqr() / TRAINING_LEN as f32;
+            if measure {
+                walk.signal_power += f64::from(d.norm_sqr());
+                walk.error_power += f64::from((y - d).norm_sqr());
             }
-            None => {
-                let angle = fast_arg(y);
-                let nearest = (angle / step).round() * step;
-                walk.eq
-                    .step(Complex::from_polar(1.0, nearest), y, DECISION_MU);
-                angle - nearest
-            }
+            fast_arg(y * d.conj())
+        } else {
+            let angle = fast_arg(y);
+            let nearest = (angle / step).round() * step;
+            walk.eq
+                .step(Complex::from_polar(1.0, nearest), y, DECISION_MU);
+            angle - nearest
         };
         walk.loop_freq += LOOP_FREQ_GAIN * phase_error;
         walk.loop_phase += walk.loop_freq + LOOP_PHASE_GAIN * phase_error;
@@ -381,14 +383,14 @@ impl HfdlDemod {
         })
     }
 
-    fn decode_soft(&self, soft: Vec<f32>, setting: &Setting) -> (Vec<u8>, u32) {
-        let deleaved = fec::deinterleave(&soft, setting);
+    fn decode_soft(&self, soft: &[f32], setting: &Setting) -> (Vec<u8>, u32) {
+        let deleaved = fec::deinterleave(soft, setting);
         let viterbi_in: Vec<f32> = if setting.rate_quarter {
             deleaved
                 .as_chunks::<2>()
                 .0
                 .iter()
-                .map(|&[first, second]| (first + second) / 2.0)
+                .map(|&[first, second]| f32::midpoint(first, second))
                 .collect()
         } else {
             deleaved
@@ -414,7 +416,7 @@ impl HfdlDemod {
     fn finish(&self, a1_pos: f64, theta0: f32, setting: Setting) -> Option<Burst> {
         let carrier = self.acquire(a1_pos, theta0, &setting)?;
         let equalized = self.equalize(&carrier, &setting)?;
-        let (payload, fec_corrected) = self.decode_soft(equalized.soft, &setting);
+        let (payload, fec_corrected) = self.decode_soft(&equalized.soft, &setting);
         let rotation = carrier.theta + equalized.loop_freq;
         let freq_skew_hz = (f64::from(rotation) * SYMBOL_RATE / std::f64::consts::TAU) as f32;
         let snr_db = (equalized.signal_power > 0.0 && equalized.error_power > 0.0)

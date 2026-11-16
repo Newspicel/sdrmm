@@ -105,7 +105,7 @@ impl Quantized {
 pub(super) fn decode(quantized: &Quantized, current: &mut Params, previous: &mut Params) {
     let f0 = fundamental(quantized.pitch);
     let harmonics = usize::from(HARMONICS[quantized.pitch]);
-    current.w0 = ((f0 * 2.0) as f64 * PI) as f32;
+    current.w0 = (f64::from(f0 * 2.0) * PI) as f32;
     current.harmonics = harmonics;
     for (l, voiced) in (1usize..).zip(&mut current.voiced[1..=harmonics]) {
         let band = (l as f32 * 16.0 * f0) as usize;
@@ -131,7 +131,14 @@ fn residuals(quantized: &Quantized, harmonics: usize) -> Bands<f32> {
     for (block, (&length, &index)) in lengths.iter().zip(&quantized.higher_order).enumerate() {
         let [low, high] = [gains[2 * block], gains[2 * block + 1]];
         let [h0, h1, h2, h3] = HIGHER_ORDER[block][index];
-        let coefficients = [0.5 * (low + high), scale * (low - high), h0, h1, h2, h3];
+        let coefficients = [
+            f32::midpoint(low, high),
+            scale * (low - high),
+            h0,
+            h1,
+            h2,
+            h3,
+        ];
         let length = usize::from(length);
         let used = &coefficients[..length.min(coefficients.len())];
         for j in 0..length {

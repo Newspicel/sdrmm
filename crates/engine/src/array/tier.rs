@@ -18,7 +18,7 @@ enum Clock<'a> {
     Device(u32),
 }
 
-fn clock<'a>(lane: &LaneRef, caps: &'a Capabilities) -> Clock<'a> {
+fn clock(lane: LaneRef, caps: &Capabilities) -> Clock<'_> {
     caps.bank
         .as_ref()
         .map_or(Clock::Device(lane.device_set), |bank| {
@@ -32,7 +32,10 @@ pub(crate) fn decide(
     drift_failed: bool,
 ) -> TierDecision {
     let devices: BTreeSet<u32> = lanes.iter().map(|(lane, _)| lane.device_set).collect();
-    let clocks: BTreeSet<Clock<'_>> = lanes.iter().map(|(lane, caps)| clock(lane, caps)).collect();
+    let clocks: BTreeSet<Clock<'_>> = lanes
+        .iter()
+        .map(|(lane, caps)| clock(*lane, caps))
+        .collect();
     let keeps_phase = !lanes.is_empty() && lanes.iter().all(|(_, caps)| caps.retune_keeps_phase);
     let replayed = !lanes.is_empty()
         && lanes
@@ -48,7 +51,7 @@ pub(crate) fn decide(
             .filter_map(|held| {
                 let mut members = lanes
                     .iter()
-                    .filter(|(lane, caps)| clock(lane, caps) == *held);
+                    .filter(|(lane, caps)| clock(*lane, caps) == *held);
                 let (_, caps) = members.next()?;
                 members.next().map(|_| caps.coherence)
             })

@@ -115,7 +115,7 @@ async fn a_recording_node_plays_its_library_stem_into_a_decoder() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<PocsagMessage>(),
+        sdrmm_wire::DecoderEvent::is::<PocsagMessage>,
     )
     .await;
     let page = record.event.read::<PocsagMessage>().expect("a POCSAG page");
@@ -166,7 +166,7 @@ async fn a_signal_generator_node_opens_once_per_node_and_decodes() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<PocsagMessage>(),
+        sdrmm_wire::DecoderEvent::is::<PocsagMessage>,
     )
     .await;
     assert!(record.event.is::<PocsagMessage>());
@@ -276,7 +276,7 @@ async fn a_signal_that_needs_another_rate_takes_the_whole_chain_with_it() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<AdsbMessage>(),
+        sdrmm_wire::DecoderEvent::is::<AdsbMessage>,
     )
     .await;
     assert!(

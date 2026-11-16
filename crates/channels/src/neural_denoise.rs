@@ -93,7 +93,7 @@ impl DenoiseNets for FixtureNets {
     fn net(&self, model: DenoiseModel) -> Result<Arc<Net>, NeuralDenoiseError> {
         match model {
             DenoiseModel::Dpdfnet2 => Ok(fixture_net()?),
-            other => Err(NeuralDenoiseError(format!(
+            other @ DenoiseModel::Dpdfnet8 => Err(NeuralDenoiseError(format!(
                 "{} is not downloaded",
                 other.name()
             ))),

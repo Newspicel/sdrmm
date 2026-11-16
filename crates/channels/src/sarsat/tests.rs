@@ -81,7 +81,9 @@ fn decodes_the_published_short_message_as_a_self_test() {
 #[test]
 fn an_inverted_spectrum_still_decodes() {
     let mut iq = synth::sarsat::transmission(&synth::sarsat::epirb_location(fix()), false, RATE);
-    iq.iter_mut().for_each(|sample| *sample = sample.conj());
+    for sample in &mut iq {
+        *sample = sample.conj();
+    }
     synth::shift(&mut iq, 1_000.0, RATE);
     let (got, _) = run(&iq);
     assert_eq!(got.len(), 1, "{got:?}");

@@ -266,7 +266,7 @@ fn openapi_route(api: &utoipa::openapi::OpenApi) -> axum::routing::MethodRouter<
 
 fn configure(state: &mut AppState, options: &ServerOptions) {
     state.auth = auth::Auth::new(options.token.as_deref());
-    state.shell = options.shell.clone();
+    state.shell.clone_from(&options.shell);
     state.dev_cors = options.dev_cors;
     if let Some(token) = &options.token {
         diagnostics::hide_secret(token);
@@ -324,7 +324,7 @@ fn start_runtime(state: &AppState) -> Background {
     placement::spawn_settling(state);
     resolved::follow(state, "positions", |state| state.gps.reconcile(state));
     resolved::follow(state, "satellites", |state| {
-        state.satellites.reconcile(state)
+        state.satellites.reconcile(state);
     });
     resolved::follow(state, "rotators", |state| state.rotators.reconcile(state));
     resolved::follow(state, "transmitters", transmit::reconcile);
@@ -582,19 +582,16 @@ pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<Serve
         }
     }
     tracing::info!(%local_addr, scheme, "SDRmm server listening");
-    let task = match served {
-        Some(served) => {
-            let server = axum_server::from_tcp_rustls(
-                listener,
-                axum_server::tls_rustls::RustlsConfig::from_config(served.config),
-            )?
-            .map(tls::redirect::RedirectPlain::before);
-            tokio::spawn(async move { server.serve(app.into_make_service()).await })
-        }
-        None => {
-            let listener = tokio::net::TcpListener::from_std(listener)?;
-            tokio::spawn(async move { axum::serve(listener, app).await })
-        }
+    let task = if let Some(served) = served {
+        let server = axum_server::from_tcp_rustls(
+            listener,
+            axum_server::tls_rustls::RustlsConfig::from_config(served.config),
+        )?
+        .map(tls::redirect::RedirectPlain::before);
+        tokio::spawn(async move { server.serve(app.into_make_service()).await })
+    } else {
+        let listener = tokio::net::TcpListener::from_std(listener)?;
+        tokio::spawn(async move { axum::serve(listener, app).await })
     };
     let gate = phones::gate::GateGuard::new(state.gate.clone());
     state.gate.restore(&state).await;
@@ -622,17 +619,20 @@ fn refuse_phone_token(options: &ServerOptions) -> std::io::Result<()> {
 }
 
 fn log_start(config: &Config, engine: &Engine) {
-    match &config.db_path {
-        Some(path) => tracing::info!(db = %path.display(), "opening database"),
-        None => tracing::info!("using in-memory database (nothing will persist)"),
+    if let Some(path) = &config.db_path {
+        tracing::info!(db = %path.display(), "opening database");
+    } else {
+        tracing::info!("using in-memory database (nothing will persist)");
     }
-    match engine.recordings_dir() {
-        Some(dir) => tracing::info!(dir = %dir.display(), "recordings directory"),
-        None => tracing::info!("recording disabled (engine has no recordings directory)"),
+    if let Some(dir) = engine.recordings_dir() {
+        tracing::info!(dir = %dir.display(), "recordings directory");
+    } else {
+        tracing::info!("recording disabled (engine has no recordings directory)");
     }
-    match &config.options.token {
-        Some(_) => tracing::info!("shared-token auth enabled"),
-        None => tracing::info!("no token: LAN-trusted, unauthenticated"),
+    if config.options.token.is_some() {
+        tracing::info!("shared-token auth enabled");
+    } else {
+        tracing::info!("no token: LAN-trusted, unauthenticated");
     }
 }
 
@@ -668,8 +668,7 @@ fn main_listener(
             stable_key: own_key && served.is_some(),
             names: served
                 .filter(|_| named)
-                .map(|served| served.names.clone())
-                .unwrap_or_default(),
+                .map_or_default(|served| served.names.clone()),
         },
         own_key: served
             .filter(|_| own_key)

@@ -1,4 +1,9 @@
-use super::*;
+use super::{
+    ApiError, AppError, AppState, ChannelSettings, ChannelTypesResponse, CreatedRowId,
+    DeviceSettings, DevicesResponse, EncoderTypesResponse, Json, Path, SaveRadioRequest,
+    SavedRadio, SerialDevicesResponse, State, StateScope, StateSnapshot, StatusCode,
+    WriteSerialRequest, WrittenSerial, calibration, lock_gate, workspace,
+};
 
 #[utoipa::path(
     get, path = "/api/state",
@@ -90,7 +95,7 @@ pub(crate) fn patch_device_live(
         calibration::remember_live(&state.engine, &state.store, ds);
     }
     if let Some(edit) = edit {
-        workspace::finish_edit(state, edit);
+        workspace::finish_edit(state, &edit);
     }
     crate::placement::settle_active(state);
     Ok(())
@@ -106,7 +111,7 @@ pub(super) fn patch_channel_locked(
     let edit = workspace::begin_edit(state, ds, Some(ch), author);
     state.engine.patch_channel(ds, ch, settings)?;
     if let Some(edit) = edit {
-        workspace::finish_edit(state, edit);
+        workspace::finish_edit(state, &edit);
     }
     crate::placement::settle_active(state);
     Ok(())

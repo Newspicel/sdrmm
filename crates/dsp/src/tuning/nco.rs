@@ -28,7 +28,7 @@ impl fmt::Debug for Nco {
             .field("step", &self.step)
             .field("valid", &self.valid)
             .field("lane", &self.lane)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

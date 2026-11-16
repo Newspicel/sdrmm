@@ -20,8 +20,8 @@ impl Survey {
     pub(crate) fn new(freq_hz: f64, recording: bool, total: u64) -> Self {
         Self {
             freq_hz,
-            recording,
             total,
+            recording,
             ..Self::default()
         }
     }

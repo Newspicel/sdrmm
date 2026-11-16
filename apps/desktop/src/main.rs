@@ -20,6 +20,10 @@ mod exit;
 mod newer_db;
 mod paths;
 mod reveal;
+#[expect(
+    clippy::transmute_ptr_to_ptr,
+    reason = "the cef wrap macros transmute their callbacks"
+)]
 mod shell;
 mod update;
 
@@ -46,7 +50,7 @@ fn run() -> Result<Exit> {
     if let Err(error @ sdrmm_server::StoreError::NewerSchema { .. }) =
         sdrmm_server::Store::open(Some(&db))
     {
-        return Ok(newer_db::ask(db, &error));
+        return Ok(newer_db::ask(&db, &error));
     }
     let runtime = tokio::runtime::Runtime::new()?;
     let engine = Engine::new(Some(data_dir.join("recordings")));
@@ -65,7 +69,7 @@ fn run() -> Result<Exit> {
 
 fn watch_plugins(data_dir: &Path, engine: &Arc<Engine>) -> Option<Mutex<PluginWatcher>> {
     let reopen = Arc::downgrade(engine);
-    match PluginWatcher::start(data_dir.join("plugins"), move |replaced| {
+    match PluginWatcher::start(&data_dir.join("plugins"), move |replaced| {
         if let Some(engine) = reopen.upgrade() {
             engine.plugins_reloaded(replaced);
         }

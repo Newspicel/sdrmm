@@ -42,7 +42,7 @@ pub fn decode(bits: &[u8; HEADER_BITS]) -> Option<u32> {
         parity(&bits20)[..] == b[20..]
     };
     let tl_of = |b: &[u8; HEADER_BITS]| -> u32 {
-        (0..17).fold(0u32, |acc, i| acc | ((b[3 + i] as u32) << i))
+        (0..17).fold(0u32, |acc, i| acc | (u32::from(b[3 + i]) << i))
     };
     if check(bits) {
         return Some(tl_of(bits));

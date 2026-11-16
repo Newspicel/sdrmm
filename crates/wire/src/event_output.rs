@@ -253,8 +253,7 @@ fn first_feed_format() -> String {
     crate::decode::catalog()
         .feeds()
         .first()
-        .map(|feed| feed.format.clone())
-        .unwrap_or_default()
+        .map_or_default(|feed| feed.format.clone())
 }
 
 impl Default for EventOutputTarget {

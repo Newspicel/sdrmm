@@ -13,8 +13,8 @@ use sdrmm_modem::cpm::CpmMod;
 use crate::dv::vocoder::AMBE_3600_INTERLEAVE;
 
 /// The 72 transmitted bits of a natural-order AMBE+2 frame, as DMR and NXDN carry them.
-pub(crate) fn half_rate_air(natural: &[u8; 7]) -> [bool; 72] {
-    let code = encode_code_vectors(&unpack_natural(natural));
+pub(crate) fn half_rate_air(natural: [u8; 7]) -> [bool; 72] {
+    let code = encode_code_vectors(&unpack_natural(&natural));
     let mut air = [false; 72];
     for (dibit, places) in air
         .as_chunks_mut::<2>()

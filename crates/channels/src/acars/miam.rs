@@ -133,7 +133,7 @@ impl FileReassembler {
                 let e = self.pending.get_mut(&(tail.to_owned(), file_id))?;
                 e.parts.insert(segment_id, payload);
                 e.time = now;
-                let total: usize = e.parts.values().map(|p| p.len()).sum();
+                let total: usize = e.parts.values().map(std::string::String::len).sum();
                 if total < e.expected {
                     return None;
                 }
@@ -180,7 +180,7 @@ fn base85_decode(s: &str) -> Option<Vec<u8>> {
             if !(0x21..0x21 + 85).contains(&d) {
                 return None;
             }
-            v = v * 85 + (d - 0x21) as u64;
+            v = v * 85 + u64::from(d - 0x21);
         }
         out.extend_from_slice(&u32::try_from(v).ok()?.to_be_bytes());
         i += 5;

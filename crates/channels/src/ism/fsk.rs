@@ -30,7 +30,7 @@ struct Levels {
 
 impl Levels {
     fn mid(&self) -> f32 {
-        (self.low + self.high) * 0.5
+        f32::midpoint(self.low, self.high)
     }
 
     fn separation(&self) -> f32 {

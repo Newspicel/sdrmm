@@ -205,7 +205,7 @@ pub(crate) mod encode {
 
     #[must_use]
     pub(crate) fn nibbles(payload: &[u8], header: Option<Header>, crc: bool) -> Vec<u8> {
-        let mut out: Vec<u8> = header.map(|h| h.nibbles().to_vec()).unwrap_or_default();
+        let mut out: Vec<u8> = header.map_or_default(|h| h.nibbles().to_vec());
         for (i, &byte) in payload.iter().enumerate() {
             let white = byte ^ WHITENING[i % WHITENING.len()];
             out.push(white & 0x0f);

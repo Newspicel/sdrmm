@@ -414,6 +414,10 @@ impl SdrMcp {
 }
 
 #[tool_handler(router = self.tool_router)]
+#[expect(
+    clippy::unused_async_trait_impl,
+    reason = "tool_handler generates the async fns"
+)]
 impl ServerHandler for SdrMcp {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())

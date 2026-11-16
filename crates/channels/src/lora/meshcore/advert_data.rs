@@ -44,7 +44,7 @@ fn parse_app_data(app_data: &[u8]) -> Option<AppData> {
     if flags & HAS_LOCATION != 0 {
         let (lat, after_lat) = rest.split_first_chunk::<4>()?;
         let (lon, after_lon) = after_lat.split_first_chunk::<4>()?;
-        location = Some((coordinate(lat), coordinate(lon)));
+        location = Some((coordinate(*lat), coordinate(*lon)));
         rest = after_lon;
     }
     for feature in [HAS_FEATURE_1, HAS_FEATURE_2] {
@@ -59,8 +59,8 @@ fn parse_app_data(app_data: &[u8]) -> Option<AppData> {
     })
 }
 
-fn coordinate(bytes: &[u8; 4]) -> f64 {
-    f64::from(i32::from_le_bytes(*bytes)) / COORDINATE_SCALE
+fn coordinate(bytes: [u8; 4]) -> f64 {
+    f64::from(i32::from_le_bytes(bytes)) / COORDINATE_SCALE
 }
 
 fn name(bytes: &[u8]) -> Option<String> {

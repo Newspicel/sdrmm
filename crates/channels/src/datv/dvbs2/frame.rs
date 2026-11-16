@@ -130,14 +130,14 @@ impl ModCod {
     }
 
     #[must_use]
-    pub const fn length(self, short: bool) -> usize {
+    pub const fn length(short: bool) -> usize {
         if short { SHORT } else { NORMAL }
     }
 
     #[must_use]
     pub fn symbols(self, short: bool) -> usize {
         let width = self.modulation.bits();
-        self.length(short).div_ceil(width).div_ceil(90) * 90
+        Self::length(short).div_ceil(width).div_ceil(90) * 90
     }
 
     #[must_use]

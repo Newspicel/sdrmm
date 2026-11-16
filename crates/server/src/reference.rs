@@ -16,7 +16,7 @@ use feed::Source;
 pub(crate) use feed::{Feed, Snapshot, fetch};
 use prefixes::Prefixes;
 
-const CHECK_EVERY: Duration = Duration::from_secs(10 * 60);
+const CHECK_EVERY: Duration = Duration::from_mins(10);
 const HOUR: u64 = 3_600;
 const PREFIX_URL: &str = "https://www.country-files.com/cty/cty.dat";
 
@@ -193,8 +193,8 @@ fn merged(
 mod tests {
     use super::*;
 
-    fn group(catalogs: &[&str], age_s: u64) -> Result<Arc<Snapshot<Satellites>>, String> {
-        Ok(Arc::new(Snapshot {
+    fn group(catalogs: &[&str], age_s: u64) -> Arc<Snapshot<Satellites>> {
+        Arc::new(Snapshot {
             value: catalogs
                 .iter()
                 .map(|catalog| CatalogSatellite {
@@ -204,12 +204,13 @@ mod tests {
                 })
                 .collect(),
             fetched: SystemTime::UNIX_EPOCH + Duration::from_secs(1_000 - age_s),
-        }))
+        })
     }
 
     #[test]
     fn both_groups_are_searched_once_each_and_dated_by_the_older() {
-        let both = merged([group(&["1", "2"], 10), group(&["2", "3"], 50)]).expect("merged");
+        let both =
+            merged([Ok(group(&["1", "2"], 10)), Ok(group(&["2", "3"], 50))]).expect("merged");
         let catalogs: Vec<&str> = both.value.iter().map(|s| s.catalog.as_str()).collect();
         assert_eq!(catalogs, ["1", "2", "3"]);
         assert_eq!(
@@ -220,7 +221,7 @@ mod tests {
 
     #[test]
     fn one_missing_group_still_answers_but_two_do_not() {
-        let one = merged([Err("down".to_owned()), group(&["3"], 0)]).expect("one");
+        let one = merged([Err("down".to_owned()), Ok(group(&["3"], 0))]).expect("one");
         assert_eq!(one.value.len(), 1);
         let none = merged([Err("a".to_owned()), Err("b".to_owned())]).err();
         assert_eq!(none.as_deref(), Some("a; b"));

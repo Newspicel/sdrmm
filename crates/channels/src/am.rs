@@ -200,17 +200,17 @@ mod tests {
 
     const RATE: f64 = 48_000.0;
 
-    fn channel(p: AmParams) -> AmChannel {
+    fn channel(p: &AmParams) -> AmChannel {
         AmChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::of(&p).expect("am settings")),
+            settings(ChannelParams::of(p).expect("am settings")),
         )
         .unwrap()
     }
 
     #[test]
     fn demodulates_1_khz_tone_over_ragged_blocks() {
-        let mut chan = channel(AmParams {
+        let mut chan = channel(&AmParams {
             bandwidth_hz: 10_000.0,
             ..AmParams::default()
         });
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn apply_reconfigures_bandwidth() {
-        let mut chan = channel(AmParams {
+        let mut chan = channel(&AmParams {
             bandwidth_hz: 10_000.0,
             ..AmParams::default()
         });
@@ -267,7 +267,7 @@ mod tests {
         let iq = faded_carrier_iq(150.0, 96_000);
         let demod = |sync| {
             let audio = run_ragged(
-                &mut channel(AmParams {
+                &mut channel(&AmParams {
                     sync,
                     ..AmParams::default()
                 }),
@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn mismatched_params_variant_is_rejected() {
-        let mut chan = channel(AmParams::default());
+        let mut chan = channel(&AmParams::default());
         let err = chan.apply(settings(
             ChannelParams::new("wfm", &WfmParams::default()).expect("wfm settings"),
         ));

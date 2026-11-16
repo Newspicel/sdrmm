@@ -17,6 +17,10 @@ impl MobileCore {
         Ok(listing.records.iter().map(ServerRecord::saved).collect())
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "uniffi exports take owned values"
+    )]
     pub fn forget_server(&self, id: String) -> Result<(), CoreError> {
         if let Some(live) = self.inner.take_link(&id) {
             live.retire();

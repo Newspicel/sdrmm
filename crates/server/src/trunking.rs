@@ -48,7 +48,7 @@ pub(crate) async fn watch_patch(
                     Err(_) => return,
                 },
                 event = tokio::time::timeout(REFRESH, events.recv()) => match event {
-                    Ok(Ok(event)) if !touches_binding(&event) => continue,
+                    Ok(Ok(event)) if !touches_binding(&event) => {}
                     Ok(Err(RecvError::Closed)) => return,
                     Ok(_) | Err(_) => break,
                 },
@@ -109,8 +109,7 @@ pub(crate) fn learned_for(
         .and_then(|system| system.color_code);
     saved
         .trunk(node, color_code)
-        .map(|trunk| trunk.channels.clone())
-        .unwrap_or_default()
+        .map_or_default(|trunk| trunk.channels.clone())
 }
 
 fn own_radio(

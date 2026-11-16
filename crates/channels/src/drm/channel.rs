@@ -222,7 +222,7 @@ impl DrmChannel {
         self.pacer.take(out, from);
     }
 
-    fn services(&self, locked: &Locked) -> Vec<BroadcastService> {
+    fn services(locked: &Locked) -> Vec<BroadcastService> {
         let receiver = &locked.receiver;
         let frame_seconds = if locked.demod.mode.plus() { 0.1 } else { 0.4 };
         let chosen = receiver
@@ -284,7 +284,7 @@ impl DrmChannel {
                 ..BroadcastStatus::default()
             },
         };
-        publish_status(out, status, "service");
+        publish_status(out, &status, "service");
     }
 
     fn locked_status(&self, locked: &Locked) -> BroadcastStatus {
@@ -310,7 +310,7 @@ impl DrmChannel {
                 None => format!("Mode {} · {bandwidth} kHz", mode.label()),
             }
         });
-        let services = self.services(locked);
+        let services = Self::services(locked);
         let bitrate = selection.and_then(|selection| {
             services
                 .iter()
@@ -355,7 +355,7 @@ impl DrmChannel {
 
 fn overall_rate(qam: Qam, plus: bool, protection: u8) -> Option<&'static str> {
     Some(match (qam, plus, protection) {
-        (Qam::Q64, false, 0) | (Qam::Q16, false, 0) | (Qam::Q16, true, 2) => "0.5",
+        (Qam::Q64 | Qam::Q16, false, 0) | (Qam::Q16, true, 2) => "0.5",
         (Qam::Q64, false, 1) => "0.6",
         (Qam::Q64, false, 2) => "0.71",
         (Qam::Q64, false, 3) => "0.78",

@@ -222,7 +222,7 @@ impl LogGrid {
         (point.0 - centre.0).abs() > inner || (point.1 - centre.1).abs() > inner
     }
 
-    pub(crate) fn on_border(&self, index: usize) -> bool {
+    pub(crate) const fn on_border(index: usize) -> bool {
         let (row, col) = (index / CELLS, index % CELLS);
         let last = CELLS - 1 - SHIFT_STEP;
         row < SHIFT_STEP || col < SHIFT_STEP || row > last || col > last

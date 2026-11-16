@@ -265,7 +265,7 @@ impl EventPayload for WifiOccupancyReport {
 }
 
 fn share(fraction: f32) -> Option<FieldValue> {
-    let digits = if fraction < 0.1 { 1 } else { 0 };
+    let digits = u8::from(fraction < 0.1);
     number(Some(fraction * 100.0), Unit::Percent, digits)
 }
 
@@ -316,7 +316,7 @@ fn kind_field(load: &IsmKindLoad) -> Option<Field> {
         .map(f64::to_string)
         .collect::<Vec<_>>()
         .join(", ");
-    let digits = if load.airtime < 0.1 { 1 } else { 0 };
+    let digits = usize::from(load.airtime < 0.1);
     text_of(format!(
         "{} bursts · {:.*}% · {:.0} µs · {centres} MHz",
         load.bursts,

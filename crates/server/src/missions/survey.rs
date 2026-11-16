@@ -34,7 +34,7 @@ pub(super) fn survey(scene: &Scene<'_>, node: &str, settings: &SignalMapNode) ->
     if cells > 0 {
         controls.push(MissionControl::ClearSurvey);
     }
-    let stream = radio.map(|radio| radio.stream).unwrap_or_default();
+    let stream = radio.map_or_default(|radio| radio.stream);
     Built {
         body: MissionBody::Survey(SurveyMission {
             device_set: radio.map(|radio| radio.device_set),

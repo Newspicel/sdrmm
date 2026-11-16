@@ -68,7 +68,7 @@ impl Search {
     }
 
     fn next_point(&mut self, tol: f64) -> Option<f64> {
-        let middle = 0.5 * (self.a + self.b);
+        let middle = f64::midpoint(self.a, self.b);
         let tol1 = SQRT_EPSILON * self.x.abs() + tol / 3.0;
         let tol2 = 2.0 * tol1;
         if (self.x - middle).abs() <= tol2 - 0.5 * (self.b - self.a) {

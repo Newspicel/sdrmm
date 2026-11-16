@@ -201,7 +201,7 @@ pub(crate) fn begin_edit(
     })
 }
 
-pub(crate) fn finish_edit(state: &AppState, edit: SettingsEdit) {
+pub(crate) fn finish_edit(state: &AppState, edit: &SettingsEdit) {
     let after = match live_state(state, edit.workspace, &edit.graph) {
         Ok(after) => after,
         Err(err) => {
@@ -517,8 +517,7 @@ fn put_device(
 ) -> Result<Restored, String> {
     let remembered = saved
         .device(node)
-        .map(|device| device.settings.clone())
-        .unwrap_or_default()
+        .map_or_default(|device| device.settings.clone())
         .calibrated(&calibration::of(engine, store, device_set));
     if remembered == DeviceSettings::default() {
         return Ok(Restored::Whole);

@@ -29,6 +29,10 @@ impl PoseOut {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "each field holds the last published value"
+)]
 pub(crate) struct PublishPolicy {
     last_ms: Option<i64>,
     last_heading: Option<f64>,

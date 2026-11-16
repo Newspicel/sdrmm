@@ -14,7 +14,7 @@ use objc2_foundation::{NSObjectProtocol, NSString};
 
 use crate::exit::Exit;
 
-/// The attributes a screen reader (VoiceOver) or a UI automation client sets on the app to ask
+/// The attributes a screen reader (`VoiceOver`) or a UI automation client sets on the app to ask
 /// for its accessibility tree.
 const ACCESSIBILITY_REQUESTS: [&str; 2] = ["AXEnhancedUserInterface", "AXManualAccessibility"];
 
@@ -54,9 +54,10 @@ define_class!(
                 let on: Bool = value.map_or(Bool::NO, |value| unsafe { msg_send![value, boolValue] });
                 super::window::set_accessibility(on.as_bool());
             }
-            let _: () = unsafe {
-                msg_send![super(self), accessibilitySetValue: value, forAttribute: attribute]
-            };
+            unsafe {
+                let (): () =
+                    msg_send![super(self), accessibilitySetValue: value, forAttribute: attribute];
+            }
         }
     }
 

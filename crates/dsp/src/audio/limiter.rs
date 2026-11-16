@@ -175,7 +175,7 @@ mod tests {
         let mut lim = Limiter::new(RATE, 0.8, 2e-3, 0.05);
         let mut x: Vec<f32> = (0..48_000)
             .map(|n| {
-                let t = n as f64 / RATE;
+                let t = f64::from(n) / RATE;
                 (3.0 * (TAU * 700.0 * t).sin() * (TAU * 3.0 * t).sin()) as f32
             })
             .collect();

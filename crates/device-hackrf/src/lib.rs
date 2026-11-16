@@ -24,6 +24,7 @@ const RX_YIELD_TIMEOUT: Duration = Duration::from_secs(2);
 const SWEEP_MAX_RANGES: usize = 10;
 const NOSERIAL_KEY_PREFIX: &str = "noserial-";
 
+#[expect(clippy::needless_pass_by_value, reason = "used as a map_err fn")]
 fn map_err(err: driver::Error) -> DeviceError {
     let text = err.to_string();
     if err.is_disconnected() {
@@ -119,7 +120,7 @@ impl DeviceDriver for HackRfDriver {
 }
 
 impl HackRfDriver {
-    /// Opening "the first HackRF" would be the wrong radio as soon as two are attached, and on
+    /// Opening "the first `HackRF`" would be the wrong radio as soon as two are attached, and on
     /// this device that means driving the wrong transmitter.
     pub fn open_device(&self, info: &DeviceInfo) -> Result<HackRfDevice, DeviceError> {
         let device = match (key_serial(&info.key), key_location(&info.key)) {

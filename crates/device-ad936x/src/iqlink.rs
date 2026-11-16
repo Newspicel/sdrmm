@@ -90,6 +90,7 @@ struct Shape {
     lanes: u64,
 }
 
+#[expect(clippy::needless_pass_by_value, reason = "used as a map_err fn")]
 fn io_error(e: io::Error) -> DeviceError {
     DeviceError::Io(e.to_string())
 }

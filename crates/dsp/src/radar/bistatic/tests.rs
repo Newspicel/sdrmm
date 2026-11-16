@@ -79,23 +79,20 @@ fn ellipse_and_bearing_meet_at_the_target() {
             };
             let range = bistatic_range_m(tx_ecef, rx_ecef, ecef(target));
             let bearing = bearing_deg(MUNICH, target);
-            match locate(MUNICH, tx, range, bearing, alt_m) {
-                Some(found) => {
-                    found_count += 1;
-                    assert!(
-                        distance(found, target) < 1.0,
-                        "{dlat}, {dlon}, {alt_m}: {} m off",
-                        distance(found, target)
-                    );
-                }
-                None => {
-                    let overhead = ecef(at(MUNICH, 0.0, 0.0, alt_m));
-                    let overhead_range = bistatic_range_m(tx_ecef, rx_ecef, overhead);
-                    assert!(
-                        overhead_range >= range,
-                        "{dlat}, {dlon}, {alt_m}: no fix although the ray is unambiguous"
-                    );
-                }
+            if let Some(found) = locate(MUNICH, tx, range, bearing, alt_m) {
+                found_count += 1;
+                assert!(
+                    distance(found, target) < 1.0,
+                    "{dlat}, {dlon}, {alt_m}: {} m off",
+                    distance(found, target)
+                );
+            } else {
+                let overhead = ecef(at(MUNICH, 0.0, 0.0, alt_m));
+                let overhead_range = bistatic_range_m(tx_ecef, rx_ecef, overhead);
+                assert!(
+                    overhead_range >= range,
+                    "{dlat}, {dlon}, {alt_m}: no fix although the ray is unambiguous"
+                );
             }
         }
     }

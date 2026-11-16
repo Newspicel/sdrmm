@@ -147,11 +147,7 @@ impl DfDrive {
     }
 
     fn overlay(&self, now_ms: i64) -> DfOverlay {
-        let stations = self
-            .fusion
-            .as_ref()
-            .map(fusion::stations)
-            .unwrap_or_default();
+        let stations = self.fusion.as_ref().map_or_default(fusion::stations);
         let mut rays: Vec<Ray> = self
             .fusion
             .iter()
@@ -160,7 +156,7 @@ impl DfDrive {
                 let seen = station
                     .last_seen
                     .parse::<jiff::Timestamp>()
-                    .map_or(now_ms, |at| at.as_millisecond());
+                    .map_or(now_ms, jiff::Timestamp::as_millisecond);
                 ray(
                     LatLon {
                         lat: station.lat,
@@ -184,11 +180,7 @@ impl DfDrive {
         DfOverlay {
             rays,
             stations,
-            ellipse: self
-                .fusion
-                .as_ref()
-                .map(fusion::ellipse)
-                .unwrap_or_default(),
+            ellipse: self.fusion.as_ref().map_or_default(fusion::ellipse),
             heat: self.heat.clone(),
         }
     }

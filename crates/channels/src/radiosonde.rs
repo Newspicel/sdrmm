@@ -12,8 +12,8 @@ pub(crate) mod m20;
 pub(crate) mod meteomodem;
 pub(crate) mod rs41;
 pub(crate) fn radiosonde_decoder() -> Native<RadiosondeParams> {
-    Native::new::<RadiosondeChannel>(occupied_band)
-        .filter(channel_filter)
+    Native::new::<RadiosondeChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
         .form(radiosonde_form)
         .kinds(radiosonde_kinds)
 }
@@ -84,17 +84,17 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     ..ChannelDescriptor::default()
 });
 
-pub(crate) fn occupied_band(_p: &RadiosondeParams) -> (f64, f64) {
+pub(crate) fn occupied_band() -> (f64, f64) {
     let half = DESCRIPTOR.bandwidth_hz / 2.0;
     (-half, half)
 }
 
-pub(crate) fn channel_filter(p: &RadiosondeParams) -> Result<ChannelFilter, ChannelError> {
-    let (_, half) = occupied_band(p);
-    Ok(ChannelFilter::Symmetric(Decimator::new(
+pub(crate) fn channel_filter() -> ChannelFilter {
+    let (_, half) = occupied_band();
+    ChannelFilter::Symmetric(Decimator::new(
         &design_lowpass(FILTER_TAPS, half / INPUT_RATE_HZ),
         1,
-    )))
+    ))
 }
 
 fn params(settings: &ChannelSettings) -> Result<RadiosondeParams, ChannelError> {

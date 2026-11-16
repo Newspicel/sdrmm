@@ -56,9 +56,9 @@ impl Afsk {
     }
 
     pub(super) fn frames(&mut self, discriminated: &mut [f32], heard: &mut impl FnMut(&[u8])) {
-        discriminated
-            .iter_mut()
-            .for_each(|v| *v = v.clamp(-CLIP, CLIP));
+        for v in &mut *discriminated {
+            *v = v.clamp(-CLIP, CLIP);
+        }
         self.audio.process(discriminated, &mut self.decimated);
         self.band.process(&self.decimated, &mut self.filtered);
         for &s in &self.filtered {

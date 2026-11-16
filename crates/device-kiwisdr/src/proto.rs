@@ -112,15 +112,12 @@ fn unescape(text: &str) -> String {
             .then(|| bytes.get(at + 1..at + 3))
             .flatten()
             .and_then(|hex| u8::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok());
-        match escaped {
-            Some(byte) => {
-                out.push(byte);
-                at += 3;
-            }
-            None => {
-                out.push(bytes[at]);
-                at += 1;
-            }
+        if let Some(byte) = escaped {
+            out.push(byte);
+            at += 3;
+        } else {
+            out.push(bytes[at]);
+            at += 1;
         }
     }
     String::from_utf8_lossy(&out).into_owned()

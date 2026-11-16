@@ -47,9 +47,9 @@ pub fn import_pair(
         }
     };
 
-    meta.global.datatype = DATATYPE_CF32_LE.to_owned();
+    DATATYPE_CF32_LE.clone_into(&mut meta.global.datatype);
     if meta.global.version.is_empty() {
-        meta.global.version = SIGMF_VERSION.to_owned();
+        SIGMF_VERSION.clone_into(&mut meta.global.version);
     }
     if meta.global.name.is_none() {
         meta.global.name = Some(name.clone());

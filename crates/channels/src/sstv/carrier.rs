@@ -18,7 +18,7 @@ pub(crate) fn occupied_band(modulation: SstvModulation) -> (f64, f64) {
 
 pub(crate) fn band_filter(low_hz: f64, high_hz: f64, rate: f64) -> FirC {
     let half = (high_hz - low_hz) / 2.0 / rate;
-    let center = (high_hz + low_hz) / 2.0 / rate;
+    let center = f64::midpoint(high_hz, low_hz) / rate;
     FirC::from_lowpass(&design_lowpass(TAPS, half), center)
 }
 

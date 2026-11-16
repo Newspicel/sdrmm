@@ -16,7 +16,7 @@ const MAX_SSID: usize = 2;
 pub(crate) struct Prefixes {
     pub(crate) version: String,
     entities: Vec<Entity>,
-    prefixes: HashMap<String, Zone>,
+    by_prefix: HashMap<String, Zone>,
     calls: HashMap<String, Zone>,
 }
 
@@ -39,7 +39,7 @@ impl Prefixes {
         let mut table = Self {
             version: String::new(),
             entities: Vec::new(),
-            prefixes: HashMap::new(),
+            by_prefix: HashMap::new(),
             calls: HashMap::new(),
         };
         for record in text.split(';').map(str::trim).filter(|r| !r.is_empty()) {
@@ -80,7 +80,10 @@ impl Prefixes {
     fn by_prefix(&self, part: &str) -> Option<Zone> {
         (1..=part.len())
             .rev()
-            .find_map(|len| part.get(..len).and_then(|prefix| self.prefixes.get(prefix)))
+            .find_map(|len| {
+                part.get(..len)
+                    .and_then(|prefix| self.by_prefix.get(prefix))
+            })
             .copied()
     }
 
@@ -122,7 +125,7 @@ impl Prefixes {
             let table = if exact {
                 &mut self.calls
             } else {
-                &mut self.prefixes
+                &mut self.by_prefix
             };
             table.insert(name, zone);
         }

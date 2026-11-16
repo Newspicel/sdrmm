@@ -13,9 +13,7 @@ pub fn circle(radius_m: f64, count: usize) -> Vec<[f64; 3]> {
 }
 
 pub fn line(spacing_m: f64, count: usize) -> Vec<[f64; 3]> {
-    Geometry::ula(spacing_m, count, LINE_AXIS_DEG)
-        .map(|geometry| points(&geometry))
-        .unwrap_or_default()
+    Geometry::ula(spacing_m, count, LINE_AXIS_DEG).map_or_default(|geometry| points(&geometry))
 }
 
 fn points(geometry: &Geometry) -> Vec<[f64; 3]> {

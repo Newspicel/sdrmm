@@ -96,12 +96,11 @@ impl Search {
             *power = bin.norm_sqr();
         }
         let found = self.primed.then(|| self.strongest_new_bin()).flatten();
-        match found {
-            Some(bin) => Some(self.frequency(bin)),
-            None => {
-                self.learn();
-                None
-            }
+        if let Some(bin) = found {
+            Some(self.frequency(bin))
+        } else {
+            self.learn();
+            None
         }
     }
 

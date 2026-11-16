@@ -76,7 +76,7 @@ impl SdrConnectStream {
         }
     }
 
-    /// Reports a stream the capture asked SDRconnect to switch off and is being sent anyway, so
+    /// Reports a stream the capture asked `SDRconnect` to switch off and is being sent anyway, so
     /// the link quietly carrying what nothing here reads is visible rather than invisible.
     fn spare(&self, kind: PayloadKind, bytes: usize) -> Next<Block> {
         if self.noted.first(kind) {

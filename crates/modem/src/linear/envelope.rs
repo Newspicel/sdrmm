@@ -294,7 +294,7 @@ mod tests {
         for (i, &a) in amplitudes.iter().enumerate() {
             assert_eq!(slice_amplitude(&table, a), tables::gray(i as u32));
         }
-        let mid = 0.5 * (amplitudes[0] + amplitudes[1]);
+        let mid = f32::midpoint(amplitudes[0], amplitudes[1]);
         assert_eq!(slice_amplitude(&table, mid - 0.01), tables::gray(0));
         assert_eq!(slice_amplitude(&table, mid + 0.01), tables::gray(1));
         assert_eq!(slice_amplitude(&table, 99.0), tables::gray(3));

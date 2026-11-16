@@ -54,6 +54,7 @@ fn reads_as(message: &str, hints: &[&str]) -> bool {
     hints.iter().any(|hint| message.contains(hint))
 }
 
+#[expect(clippy::needless_pass_by_value, reason = "used as a map_err fn")]
 fn map_err(error: soapy::Error) -> DeviceError {
     let message = error.to_string();
     match error.code {
@@ -276,7 +277,7 @@ fn query_channel(
         iq_balance: optional("IQ balance", device.has_iq_balance(direction, channel)),
         full_duplex: optional("full duplex", device.full_duplex(direction, channel)),
         stream_formats: formats.iter().map(ToString::to_string).collect(),
-        native_stream_format: native.map(|(format, _)| format.to_string()),
+        native_stream_format: native.map(|(format, _)| format.clone()),
         stream_args: caps::argument_infos(&optional(
             "stream arguments",
             device.stream_args_info(direction, channel),
@@ -624,7 +625,7 @@ fn tune_transmitters(
 }
 
 /// Every channel gets a rate written, even one that already reports a rate: some drivers
-/// (SoapyLMS7) report the hardware clock but refuse to stream until `setSampleRate` ran.
+/// (`SoapyLMS7`) report the hardware clock but refuse to stream until `setSampleRate` ran.
 fn seed_channel_rates(
     channels: &[ChannelCapabilities],
     read: impl Fn(usize) -> Result<f64, soapy::Error>,

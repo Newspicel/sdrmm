@@ -49,12 +49,12 @@ fn params(settings: &ChannelSettings) -> Result<IsmParams, ChannelError> {
     crate::settings_of::<IsmParams>(settings)
 }
 
-pub(crate) fn occupied_band(_: &IsmParams) -> (f64, f64) {
+pub(crate) fn occupied_band() -> (f64, f64) {
     let half = ISM_BANDWIDTH_HZ / 2.0;
     (-half, half)
 }
 
-pub(crate) fn channel_filter(_: &IsmParams) -> ChannelFilter {
+pub(crate) fn channel_filter() -> ChannelFilter {
     datalink::channel_filter(RATE, ISM_BANDWIDTH_HZ / 2.0)
 }
 
@@ -251,8 +251,8 @@ fn ism_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn ism_decoder() -> Native<IsmParams> {
-    Native::new::<IsmChannel>(occupied_band)
-        .filter(|p| Ok(channel_filter(p)))
+    Native::new::<IsmChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
         .home(433_920_000.0)
         .signatures(ism_signatures)
         .trial(ism_trial)

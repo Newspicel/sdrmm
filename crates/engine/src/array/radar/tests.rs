@@ -212,8 +212,7 @@ impl Collector {
     fn tracks(&self) -> Vec<u32> {
         self.updates
             .last()
-            .map(|update| update.tracks.iter().map(|track| track.id).collect())
-            .unwrap_or_default()
+            .map_or_default(|update| update.tracks.iter().map(|track| track.id).collect())
     }
 
     fn lost(&self) -> Vec<u32> {

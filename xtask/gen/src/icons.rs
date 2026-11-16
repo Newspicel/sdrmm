@@ -125,18 +125,18 @@ fn rgb_png(pixmap: &tiny_skia::Pixmap) -> Result<Vec<u8>> {
     header.extend_from_slice(&pixmap.height().to_be_bytes());
     header.extend_from_slice(&[8, 2, 0, 0, 0]);
     let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
-    png_chunk(&mut out, b"IHDR", &header)?;
-    png_chunk(&mut out, b"IDAT", &compressed)?;
-    png_chunk(&mut out, b"IEND", &[])?;
+    png_chunk(&mut out, *b"IHDR", &header)?;
+    png_chunk(&mut out, *b"IDAT", &compressed)?;
+    png_chunk(&mut out, *b"IEND", &[])?;
     Ok(out)
 }
 
-fn png_chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) -> Result<()> {
+fn png_chunk(out: &mut Vec<u8>, kind: [u8; 4], data: &[u8]) -> Result<()> {
     out.extend_from_slice(&u32::try_from(data.len())?.to_be_bytes());
     let mut crc = flate2::Crc::new();
-    crc.update(kind);
+    crc.update(&kind);
     crc.update(data);
-    out.extend_from_slice(kind);
+    out.extend_from_slice(&kind);
     out.extend_from_slice(data);
     out.extend_from_slice(&crc.sum().to_be_bytes());
     Ok(())
@@ -148,6 +148,8 @@ fn render(tree: &usvg::Tree, size: u32, fill: f32) -> Result<Vec<u8>> {
 
 fn ico(tree: &usvg::Tree, sizes: &[u32]) -> Result<Vec<u8>> {
     const PNG_FROM: u32 = 256;
+    const HEADER: usize = 6;
+    const ENTRY: usize = 16;
     let images = sizes
         .iter()
         .map(|&size| {
@@ -164,8 +166,6 @@ fn ico(tree: &usvg::Tree, sizes: &[u32]) -> Result<Vec<u8>> {
     out.extend_from_slice(&1u16.to_le_bytes());
     out.extend_from_slice(&u16::try_from(images.len())?.to_le_bytes());
 
-    const HEADER: usize = 6;
-    const ENTRY: usize = 16;
     let mut offset = HEADER + ENTRY * images.len();
     for (&size, image) in sizes.iter().zip(&images) {
         let dim = u8::try_from(size % 256).context("ico entry larger than 256px")?;

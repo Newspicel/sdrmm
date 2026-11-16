@@ -202,6 +202,10 @@ impl Geometry {
         self.positions().iter().all(|p| (p.z - mean_z).abs() <= tol)
     }
 
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "positions move into the geometry"
+    )]
     fn checked(
         shape: Shape,
         count: usize,

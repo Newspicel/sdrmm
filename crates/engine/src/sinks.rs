@@ -316,9 +316,9 @@ impl Engine {
                 {
                     let export = NetworkExportState {
                         clients_seen: 0,
-                        node: node.clone(),
+                        node,
                         stream: plan.stream,
-                        settings: settings.clone(),
+                        settings,
                         sample_rate: plan.sample_rate.round() as u64,
                         center_hz: plan.center_hz.round() as i64,
                         shared,

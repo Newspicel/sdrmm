@@ -308,7 +308,7 @@ impl Tracker {
             .map(|binding| CallKey::of(binding, None))
             .collect();
         let framed = bound.iter().any(|binding| binding.gate == CallGate::Frames);
-        for key in squelched {
+        for key in &squelched {
             self.squelched_pcm(key, block);
         }
         if framed {
@@ -336,10 +336,10 @@ impl Tracker {
         }
     }
 
-    fn squelched_pcm(&mut self, key: CallKey, block: &PcmBlock) {
+    fn squelched_pcm(&mut self, key: &CallKey, block: &PcmBlock) {
         match &block.payload {
             PcmPayload::Samples(samples) => {
-                if !self.active.contains_key(&key) {
+                if !self.active.contains_key(key) {
                     let Some((mode, freq_hz)) = self.tuning(key.device_set, key.channel) else {
                         return;
                     };
@@ -347,7 +347,7 @@ impl Tracker {
                         ActiveCall::new(mode, freq_hz, None, jiff::Timestamp::now(), &self.taps);
                     self.active.insert(key.clone(), call);
                 }
-                let Some(call) = self.active.get_mut(&key) else {
+                let Some(call) = self.active.get_mut(key) else {
                     return;
                 };
                 call.audio
@@ -355,17 +355,17 @@ impl Tracker {
                 call.audio.push_samples(block.channels, samples);
                 call.heard();
                 if call.audio.full() {
-                    self.roll_over(&key);
+                    self.roll_over(key);
                 }
             }
             PcmPayload::Silence(frames) => {
-                let Some(call) = self.active.get_mut(&key) else {
+                let Some(call) = self.active.get_mut(key) else {
                     return;
                 };
                 call.last_activity = Instant::now();
                 call.quiet_frames += frames;
                 if call.quiet_frames >= SQUELCH_HOLD_FRAMES {
-                    self.finish(&key);
+                    self.finish(key);
                 }
             }
         }

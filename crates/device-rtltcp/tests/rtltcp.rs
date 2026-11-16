@@ -21,9 +21,9 @@ const RECONNECTED: usize = 1;
 
 const REPLAY_IN_AGC: usize = 6;
 
-fn greeting(magic: &[u8; 4], tuner: u32, gain_steps: u32) -> [u8; 12] {
+fn greeting(magic: [u8; 4], tuner: u32, gain_steps: u32) -> [u8; 12] {
     let mut bytes = [0u8; 12];
-    bytes[..4].copy_from_slice(magic);
+    bytes[..4].copy_from_slice(&magic);
     bytes[4..8].copy_from_slice(&tuner.to_be_bytes());
     bytes[8..].copy_from_slice(&gain_steps.to_be_bytes());
     bytes
@@ -49,7 +49,7 @@ fn rtl_tcp_session(
 ) -> impl Fn(TcpStream, usize) + Send + Sync + 'static {
     move |mut stream: TcpStream, nth| {
         if stream
-            .write_all(&greeting(&magic, tuner, gain_steps))
+            .write_all(&greeting(magic, tuner, gain_steps))
             .is_err()
         {
             return;

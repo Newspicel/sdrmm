@@ -44,7 +44,7 @@ impl TimingTrack {
         let advance = 1.0 - self.rate;
         let step = sps as f64 / advance;
         let origin = (self.offset_samples - self.rate * self.at_sample) / advance;
-        if !(step.is_finite() && step > 0.0) || !origin.is_finite() {
+        if !step.is_finite() || step <= 0.0 || !origin.is_finite() {
             return;
         }
         let first = ((1.0 - origin) / step).ceil();

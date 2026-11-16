@@ -258,14 +258,14 @@ impl DabRemod {
         let first = self.decided.max(start);
         let mer = self.remodulate(start, first);
         let end = start + self.body();
-        if !(mer.is_finite() && mer >= MIN_MER_DB) {
+        if mer.is_finite() && mer >= MIN_MER_DB {
+            self.locked = true;
+        } else {
             for index in self.decided.max(null_start)..end {
                 self.rebuilt[slot(index)] = self.raw[slot(index)];
             }
             self.fallback_frames += 1;
             self.locked = false;
-        } else {
-            self.locked = true;
         }
         self.quality_db = mer;
         self.decided = self.decided.max(end);

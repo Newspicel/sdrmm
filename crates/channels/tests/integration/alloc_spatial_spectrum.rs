@@ -170,7 +170,7 @@ mod spatial_spectrum {
             processor.retune(&retuned.ctx()).unwrap();
             processor.reset(ResetCause::Retuned);
             processor.retune(&array.ctx()).unwrap();
-            for _ in 0..(1 + 100 / BLOCKS) {
+            for _ in 0..=(100 / BLOCKS) {
                 for lanes in &views {
                     host.step(processor.as_mut(), lanes, &array.centers);
                     host.step(narrow.as_mut(), lanes, &array.centers);

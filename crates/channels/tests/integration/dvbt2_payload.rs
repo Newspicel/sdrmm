@@ -168,7 +168,7 @@ fn rf_acquisition_survives_noise_echoes_frequency_error_and_reacquisition() {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
-            (state as f64 / u32::MAX as f64 - 0.5) as f32 * 0.04
+            (f64::from(state) / f64::from(u32::MAX) - 0.5) as f32 * 0.04
         };
         let iq: Vec<_> = original
             .iter()

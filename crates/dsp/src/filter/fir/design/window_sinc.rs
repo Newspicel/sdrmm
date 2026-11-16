@@ -30,7 +30,7 @@ pub fn design_bandpass(taps: usize, low: f64, high: f64) -> Vec<f32> {
         "band edges must satisfy 0 < low < high < 0.5"
     );
     let prototype = design_lowpass(taps, (high - low) / 2.0);
-    let (band_center, center) = ((low + high) / 2.0, (taps - 1) as f64 / 2.0);
+    let (band_center, center) = (f64::midpoint(low, high), (taps - 1) as f64 / 2.0);
     prototype
         .iter()
         .enumerate()
@@ -98,7 +98,7 @@ mod tests {
     fn passband_ripple_under_half_db() {
         let h = design_lowpass(129, 0.1);
         for i in 0..=150 {
-            let f = 0.075 * i as f64 / 150.0;
+            let f = 0.075 * f64::from(i) / 150.0;
             let db = response_db(&h, f);
             assert!(db.abs() < 0.5, "ripple {db} dB at f={f}");
         }
@@ -108,7 +108,7 @@ mod tests {
     fn stopband_below_minus_50_db_beyond_1_5x_cutoff() {
         let h = design_lowpass(129, 0.1);
         for i in 0..=350 {
-            let f = 0.15 + (0.5 - 0.15) * i as f64 / 350.0;
+            let f = 0.15 + (0.5 - 0.15) * f64::from(i) / 350.0;
             let db = response_db(&h, f);
             assert!(db < -50.0, "stopband leak {db} dB at f={f}");
         }

@@ -185,7 +185,7 @@ mod tests {
             track.push(0.2 + 0.6 * (k % 7) as f32 / 6.0);
         }
         for line in 0..4 {
-            picture.store_line(&track, line as f64 * 4_000.0, 4_000.0, true);
+            picture.store_line(&track, f64::from(line) * 4_000.0, 4_000.0, true);
         }
         let calibration = picture.calibration();
         assert!(calibration.level(quantize(0.2)) < 8);

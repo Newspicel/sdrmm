@@ -16,7 +16,7 @@ pub fn matched_weights(
         return Err(LinalgError::Order(r.order()));
     }
     eigen.solve(r, values)?;
-    let index = if orthogonal { 0 } else { 1 };
+    let index = usize::from(!orthogonal);
     let mut weights = WeightSet::from_textbook(values.vector(index));
     if !weights.is_finite() {
         return Err(LinalgError::NonFinite);

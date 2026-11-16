@@ -540,7 +540,9 @@ pub fn modulate(bits: &[bool]) -> Vec<Complex<f32>> {
         }
     }
     let gain = AMPLITUDE * (SPS as f32).sqrt();
-    out.iter_mut().for_each(|s| *s *= gain);
+    for s in &mut out {
+        *s *= gain;
+    }
     out
 }
 

@@ -124,8 +124,7 @@ impl Follower {
         let found = self
             .prospectors
             .get(&carrier.system_node)
-            .map(Prospector::repeaters)
-            .unwrap_or_default();
+            .map_or_default(Prospector::repeaters);
         for freq_hz in entries.chain(found) {
             if !freqs.contains(&freq_hz) {
                 freqs.push(freq_hz);
@@ -338,7 +337,7 @@ impl Follower {
             .get(&key)
             .filter(|problem| problem.freq_hz == grant.freq_hz);
         let attempts = existing.map_or(1, |problem| problem.attempts.saturating_add(1));
-        let fresh = existing.is_none() || existing.is_some_and(|problem| problem.reason != reason);
+        let fresh = existing.is_none_or(|problem| problem.reason != reason);
         let since = existing.map_or_else(
             || format!("{:.9}", jiff::Timestamp::now()),
             |problem| problem.since.clone(),

@@ -68,7 +68,7 @@ fn variable_list_of_four_needs_no_end_marker() {
 
 #[test]
 fn variable_list_stops_at_end_marker() {
-    let mut logical = vec![0xe0 | 12, 0xa0];
+    let mut logical = vec![0xe0 | 0x0c, 0xa0];
     logical.resize(2 + 48, 0);
     let layout = variable(&transmitted(&logical), true).unwrap();
     assert_eq!(ranges(&layout), [(Some(12), 2..50)]);

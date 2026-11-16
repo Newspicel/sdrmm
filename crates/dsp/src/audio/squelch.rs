@@ -77,6 +77,7 @@ impl Squelch {
 
     /// [`Self::with_guard_band`] for a wide signal at `wide_rate` that is clean only within this
     /// squelch's own flat band, as a converter guarding a narrower band delivers it.
+    #[must_use]
     pub fn with_guard_band_at(
         mut self,
         wide_rate: f64,

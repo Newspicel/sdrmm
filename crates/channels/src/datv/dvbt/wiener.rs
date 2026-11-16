@@ -52,7 +52,7 @@ impl FrequencyFilter {
             if class > design.spacing * (TAPS - 1) {
                 break;
             }
-            *weights = unbiased(design, class, solve(gram, rhs(design, class)));
+            *weights = unbiased(design, class, solve(&gram, &rhs(design, class)));
         }
         self.design = Some(design);
     }
@@ -187,7 +187,7 @@ fn unbiased(design: Design, class: usize, weights: [Complex<f32>; TAPS]) -> [Com
     })
 }
 
-fn solve(gram: [[Complex<f64>; TAPS]; TAPS], rhs: [Complex<f64>; TAPS]) -> [Complex<f32>; TAPS] {
+fn solve(gram: &[[Complex<f64>; TAPS]; TAPS], rhs: &[Complex<f64>; TAPS]) -> [Complex<f32>; TAPS] {
     let mut a: [[Complex<f64>; TAPS + 1]; TAPS] = std::array::from_fn(|row| {
         std::array::from_fn(|col| if col < TAPS { gram[row][col] } else { rhs[row] })
     });

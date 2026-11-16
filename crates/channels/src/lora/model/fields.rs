@@ -203,8 +203,7 @@ fn meshtastic_fields(packet: &MeshtasticPacket) -> Vec<Field> {
         packet
             .content
             .as_ref()
-            .map(meshtastic_content_fields)
-            .unwrap_or_default(),
+            .map_or_default(meshtastic_content_fields),
     );
     shown
 }

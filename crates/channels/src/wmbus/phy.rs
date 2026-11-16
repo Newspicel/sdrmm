@@ -200,7 +200,7 @@ impl Lane {
             let error = wrap(self.period * 0.5 + fraction - self.countdown, self.period);
             let gain = match self.stage {
                 Stage::Hunt => HUNT_GAIN,
-                _ => TRACK_GAIN,
+                Stage::Collect(_) => TRACK_GAIN,
             };
             self.countdown += gain * error;
         }
@@ -253,7 +253,7 @@ impl Lane {
             }
         }
         let (high, low) = (high / highs as f32, low / lows as f32);
-        self.dc = (high + low) * 0.5;
+        self.dc = f32::midpoint(high, low);
         self.swing = ((high - low) * 0.5).max(MIN_SWING);
         self.count = 0;
         self.repaired = 0;

@@ -23,7 +23,7 @@ impl Wideband {
         let taps = initialized(&context, &sdrmm_dsp::design_lowpass(69, 0.1));
         let twiddles: Vec<_> = (0..25)
             .map(|index| {
-                let angle = std::f64::consts::TAU * index as f64 / 25.0;
+                let angle = std::f64::consts::TAU * f64::from(index) / 25.0;
                 [angle.cos() as f32, angle.sin() as f32]
             })
             .collect();

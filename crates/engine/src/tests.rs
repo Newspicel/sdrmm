@@ -1176,8 +1176,7 @@ fn peak_hz(snap: &runtime::SpectrumSnapshot) -> f64 {
         .iter()
         .enumerate()
         .max_by(|a, b| a.1.total_cmp(b.1))
-        .map(|(i, _)| i)
-        .unwrap_or(0);
+        .map_or(0, |(i, _)| i);
     snap.center_hz + (peak as f64 - n as f64 / 2.0) * f64::from(snap.span_hz) / n as f64
 }
 

@@ -99,7 +99,7 @@ mod tests {
         for s in &iq {
             assert!((s.norm() - 1.0).abs() < 1e-3, "magnitude {}", s.norm());
         }
-        let turn = (iq[100] * iq[99].conj()).arg() as f64 * 8_000.0 / std::f64::consts::TAU;
+        let turn = f64::from((iq[100] * iq[99].conj()).arg()) * 8_000.0 / std::f64::consts::TAU;
         assert!((turn - 85.0).abs() < 1.0, "idle tone {turn} Hz");
     }
 }

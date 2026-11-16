@@ -128,12 +128,16 @@ impl Graph {
                 Some(Weights::F32(data)) => {
                     out.byte(1);
                     out.len(data.len());
-                    data.iter().for_each(|&x| out.0.extend(x.to_le_bytes()));
+                    for &x in data {
+                        out.0.extend(x.to_le_bytes());
+                    }
                 }
                 Some(Weights::F16(data)) => {
                     out.byte(2);
                     out.len(data.len());
-                    data.iter().for_each(|&x| out.0.extend(x.to_le_bytes()));
+                    for &x in data {
+                        out.0.extend(x.to_le_bytes());
+                    }
                 }
             }
         }
@@ -281,7 +285,9 @@ impl Writer {
 
     fn list(&mut self, values: &[usize]) {
         self.len(values.len());
-        values.iter().for_each(|&value| self.len(value));
+        for &value in values {
+            self.len(value);
+        }
     }
 
     fn labels(&mut self, labels: &[u8]) {

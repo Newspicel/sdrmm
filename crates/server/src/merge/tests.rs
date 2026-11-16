@@ -2,6 +2,7 @@ use serde_json::json;
 
 use super::*;
 
+#[expect(clippy::needless_pass_by_value, reason = "json! borrows its fields")]
 fn graph(nodes: Value, edges: Value) -> Value {
     json!({ "graph": { "nodes": nodes, "edges": edges } })
 }

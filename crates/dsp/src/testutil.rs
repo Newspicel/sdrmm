@@ -65,7 +65,7 @@ impl XorShift32 {
     }
 
     pub(crate) fn next_f32(&mut self) -> f32 {
-        (self.next_u32() as f64 / f64::from(u32::MAX) * 2.0 - 1.0) as f32
+        (f64::from(self.next_u32()) / f64::from(u32::MAX) * 2.0 - 1.0) as f32
     }
 }
 

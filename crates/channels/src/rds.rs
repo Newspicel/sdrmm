@@ -253,7 +253,7 @@ fn anti_alias(mpx_rate: f64, baseband_rate: f64, factor: usize) -> Vec<f32> {
     let taps = (BLACKMAN_TRANSITION * mpx_rate / (alias_hz - DATA_EDGE_HZ)).ceil() as usize;
     design_lowpass(
         taps.max(factor).max(3) | 1,
-        0.5 * (DATA_EDGE_HZ + alias_hz) / mpx_rate,
+        f64::midpoint(DATA_EDGE_HZ, alias_hz) / mpx_rate,
     )
 }
 

@@ -192,7 +192,7 @@ mod tests {
         let mut blocker = Nco::new((offset + plan.output_rate()) as f32, rate as f32);
         let input: Vec<_> = (0..2_000_000)
             .map(|index| {
-                let phase = 2.5 * (TAU * 1000.0 * index as f64 / rate).sin();
+                let phase = 2.5 * (TAU * 1000.0 * f64::from(index) / rate).sin();
                 carrier.next_sample() * Complex::from_polar(1.0, phase as f32)
                     + blocker.next_sample() * 100.0
             })

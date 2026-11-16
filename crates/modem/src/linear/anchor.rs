@@ -220,8 +220,8 @@ mod tests {
             .iter()
             .map(|s| f64::from(s.norm_sqr()))
             .sum::<f64>()
-            / n as f64)
-            .sqrt();
+            / f64::from(n))
+        .sqrt();
         assert!(
             (blind_scale - 1.1f64.sqrt()).abs() < 0.02,
             "blind scale {blind_scale}"

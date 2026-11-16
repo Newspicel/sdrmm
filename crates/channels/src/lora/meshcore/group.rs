@@ -29,7 +29,7 @@ impl<'a> Sealed<'a> {
 
     fn open<'k>(&self, keys: &'k Keys) -> Option<(&'k Channel, Vec<u8>)> {
         keys.matching(self.channel_hash).find_map(|channel| {
-            let plaintext = open_with(&channel.secret, self.mac, self.ciphertext)?;
+            let plaintext = open_with(&channel.secret, *self.mac, self.ciphertext)?;
             Some((channel, plaintext))
         })
     }
@@ -56,8 +56,8 @@ pub(super) fn cipher(secret: &[u8]) -> Option<Aes> {
     Aes::new(secret.get(..AES_KEY_LEN)?)
 }
 
-fn open_with(secret: &[u8], expected_mac: &[u8; MAC_LEN], ciphertext: &[u8]) -> Option<Vec<u8>> {
-    if mac(secret, ciphertext) != *expected_mac {
+fn open_with(secret: &[u8], expected_mac: [u8; MAC_LEN], ciphertext: &[u8]) -> Option<Vec<u8>> {
+    if mac(secret, ciphertext) != expected_mac {
         return None;
     }
     let aes = cipher(secret)?;

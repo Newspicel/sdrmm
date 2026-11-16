@@ -60,14 +60,14 @@ pub fn alpha(
     }
     let (mut low, mut high) = (MIN_ALPHA.ln(), MAX_ALPHA.ln());
     for _ in 0..BISECTION_STEPS {
-        let middle = 0.5 * (low + high);
+        let middle = f64::midpoint(low, high);
         if model.pfa(middle.exp()) > pfa {
             low = middle;
         } else {
             high = middle;
         }
     }
-    Ok((0.5 * (low + high)).exp())
+    Ok(f64::midpoint(low, high).exp())
 }
 
 #[cfg(test)]

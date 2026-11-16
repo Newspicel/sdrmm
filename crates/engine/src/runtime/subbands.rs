@@ -29,17 +29,15 @@ impl Subbands {
     pub(super) fn new(input_rate: f64) -> Self {
         let plan = SubbandPlan::new(input_rate);
         let block_len = dsp_block_len(input_rate);
-        let bands = plan
-            .map(|plan| {
-                (0..SUBBANDS)
-                    .map(|band| Band {
-                        decimator: plan.decimator(band, block_len),
-                        output: Vec::with_capacity(block_len),
-                        next: None,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let bands = plan.map_or_default(|plan| {
+            (0..SUBBANDS)
+                .map(|band| Band {
+                    decimator: plan.decimator(band, block_len),
+                    output: Vec::with_capacity(block_len),
+                    next: None,
+                })
+                .collect()
+        });
         Self {
             input_rate,
             bands,
@@ -199,7 +197,7 @@ mod tests {
                 .take(24)
             {
                 assert_no_alloc("subband filter path switch", || {
-                    bank.process(&input[..size], index)
+                    bank.process(&input[..size], index);
                 });
                 assert_eq!(bank.use_bank, dense);
                 for (band, reference) in references.iter_mut().enumerate() {
@@ -242,7 +240,7 @@ mod tests {
             fresh.counts.fill(1);
             fresh.process(&input, 100_003 + DSP_BLOCK as u64);
             assert_no_alloc("wide bank radio retune", || {
-                used.process(&input, 100_003 + DSP_BLOCK as u64)
+                used.process(&input, 100_003 + DSP_BLOCK as u64);
             });
             for band in 0..SUBBANDS {
                 assert_eq!(used.samples(band), fresh.samples(band));

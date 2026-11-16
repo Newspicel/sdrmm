@@ -1,9 +1,9 @@
 use super::{ffi, types::required_string};
 
-/// An ordered list of `key=value` pairs, in the spelling SoapySDR's own markup uses.
+/// An ordered list of `key=value` pairs, in the spelling `SoapySDR`'s own markup uses.
 ///
 /// Held in Rust rather than as a borrowed `SoapySDRKwargs`, so that arguments can be parsed,
-/// compared and carried between processes on a machine where no SoapySDR runtime is installed.
+/// compared and carried between processes on a machine where no `SoapySDR` runtime is installed.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Args {
     pairs: Vec<(String, String)>,

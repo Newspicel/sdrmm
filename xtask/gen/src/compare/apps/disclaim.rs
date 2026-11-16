@@ -80,10 +80,10 @@ mod macos {
         let mut pid = 0;
         let code = unsafe {
             libc::posix_spawn(
-                &mut pid,
+                &raw mut pid,
                 path.as_ptr(),
-                &actions.0,
-                &attr.0,
+                &raw const actions.0,
+                &raw const attr.0,
                 argv.as_ptr().cast(),
                 envp.as_ptr().cast(),
             )
@@ -119,7 +119,7 @@ mod macos {
 
         fn reap(&mut self, options: libc::c_int) -> Result<()> {
             let mut status = 0;
-            let found = unsafe { libc::waitpid(self.pid, &mut status, options) };
+            let found = unsafe { libc::waitpid(self.pid, &raw mut status, options) };
             ensure!(
                 found >= 0,
                 "waitpid {}: {}",
@@ -186,7 +186,7 @@ mod macos {
             checked(
                 unsafe {
                     libc::posix_spawn_file_actions_addopen(
-                        &mut self.0,
+                        &raw mut self.0,
                         0,
                         null.as_ptr(),
                         libc::O_RDONLY,
@@ -197,7 +197,7 @@ mod macos {
             )?;
             for fd in [1, 2] {
                 checked(
-                    unsafe { libc::posix_spawn_file_actions_adddup2(&mut self.0, log, fd) },
+                    unsafe { libc::posix_spawn_file_actions_adddup2(&raw mut self.0, log, fd) },
                     "redirect output",
                 )?;
             }
@@ -207,7 +207,7 @@ mod macos {
 
     impl Drop for Actions {
         fn drop(&mut self) {
-            unsafe { libc::posix_spawn_file_actions_destroy(&mut self.0) };
+            unsafe { libc::posix_spawn_file_actions_destroy(&raw mut self.0) };
         }
     }
 
@@ -228,15 +228,15 @@ mod macos {
             unsafe { libc::sigfillset(defaults.as_mut_ptr()) };
             let flags = libc::POSIX_SPAWN_SETSIGDEF | libc::POSIX_SPAWN_CLOEXEC_DEFAULT;
             checked(
-                unsafe { libc::posix_spawnattr_setsigdefault(&mut self.0, defaults.as_ptr()) },
+                unsafe { libc::posix_spawnattr_setsigdefault(&raw mut self.0, defaults.as_ptr()) },
                 "posix_spawnattr_setsigdefault",
             )?;
             checked(
-                unsafe { libc::posix_spawnattr_setflags(&mut self.0, flags as libc::c_short) },
+                unsafe { libc::posix_spawnattr_setflags(&raw mut self.0, flags as libc::c_short) },
                 "posix_spawnattr_setflags",
             )?;
             checked(
-                unsafe { responsibility_spawnattrs_setdisclaim(&mut self.0, 1) },
+                unsafe { responsibility_spawnattrs_setdisclaim(&raw mut self.0, 1) },
                 "responsibility_spawnattrs_setdisclaim",
             )
         }
@@ -244,7 +244,7 @@ mod macos {
 
     impl Drop for Attr {
         fn drop(&mut self) {
-            unsafe { libc::posix_spawnattr_destroy(&mut self.0) };
+            unsafe { libc::posix_spawnattr_destroy(&raw mut self.0) };
         }
     }
 

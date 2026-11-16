@@ -321,7 +321,7 @@ mod tests {
         let drift = 80e-6;
         let mut tracker = Tracker::default();
         for index in 0..6 {
-            let at = 1_000.0 + index as f64 * frame * (1.0 + drift);
+            let at = 1_000.0 + f64::from(index) * frame * (1.0 + drift);
             tracker.locked(mode, 0.0, at + 9.0, at);
         }
         assert!((tracker.drift - drift).abs() < 1e-7, "{}", tracker.drift);

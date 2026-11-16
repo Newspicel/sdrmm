@@ -39,7 +39,10 @@ fn gain(hz: f64) -> f64 {
     } else if hz >= STOP_HZ {
         0.0
     } else {
-        0.5 * (1.0 + (std::f64::consts::PI * (hz - PASS_HZ) / (STOP_HZ - PASS_HZ)).cos())
+        f64::midpoint(
+            1.0,
+            (std::f64::consts::PI * (hz - PASS_HZ) / (STOP_HZ - PASS_HZ)).cos(),
+        )
     }
 }
 

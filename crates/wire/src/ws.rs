@@ -131,6 +131,10 @@ const fn default_bins() -> u16 {
     1024
 }
 
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if takes a reference"
+)]
 const fn is_first(index: &u32) -> bool {
     *index == 0
 }

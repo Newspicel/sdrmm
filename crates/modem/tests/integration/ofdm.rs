@@ -291,7 +291,7 @@ fn loopback_at_margin(mut link: Link, curve_name: &str, margin_db: f64, seed: u6
 fn short_link(name: &str, receiver: Receiver, m: u32) -> Link {
     link_sized(
         name,
-        OfdmParams::wifi_like(),
+        &OfdmParams::wifi_like(),
         tables::qam_square(m).unwrap(),
         receiver,
         8,
@@ -345,7 +345,7 @@ fn dmt_loops_back_clean_at_6db_margin() {
     loopback_at_margin(
         link_sized(
             "qpsk-dmt",
-            OfdmParams::dmt_like(),
+            &OfdmParams::dmt_like(),
             tables::qam_square(4).unwrap(),
             Receiver::Acquire(ChannelEstimator::LongTraining),
             8,

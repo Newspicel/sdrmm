@@ -11,7 +11,7 @@ use super::{
     types::{ArgInfo, Direction, Error, ErrorCode, Range, arg_info, required_string},
 };
 
-/// SoapySDR requires every device method implementation to be thread safe, which is what makes
+/// `SoapySDR` requires every device method implementation to be thread safe, which is what makes
 /// the `Send` and `Sync` implementations below sound.
 struct Inner {
     handle: ffi::Device,
@@ -579,7 +579,7 @@ pub(crate) fn cstring(text: &str) -> Result<CString, Error> {
     CString::new(text).map_err(|_| Error::unsupported(format!("{text:?} contains a null byte")))
 }
 
-/// Tuning arguments held alive for the duration of one call: SoapySDR reads the key and value
+/// Tuning arguments held alive for the duration of one call: `SoapySDR` reads the key and value
 /// pointers out of the struct, so the strings they point at must outlive it.
 struct Tuning {
     raw: ffi::Kwargs,

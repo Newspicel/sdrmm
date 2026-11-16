@@ -340,7 +340,7 @@ fn coarse_moves_lagging_lanes_onto_the_reference() {
         panic!("a coarse detail");
     };
     assert_eq!(detail.id, 4);
-    assert_eq!(detail.delays[1], (5 + 700 * 64) as f64);
+    assert_eq!(detail.delays[1], f64::from(5 + 700 * 64));
     assert_eq!(detail.drift_ppm, None);
 }
 

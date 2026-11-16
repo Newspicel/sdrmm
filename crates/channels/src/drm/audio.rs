@@ -442,8 +442,8 @@ mod tests {
         (result, frames)
     }
 
-    fn body(frame: &[u8]) -> Outcome {
-        Ok(frame[..frame.len() - 2].to_vec())
+    fn body(frame: &[u8]) -> Vec<u8> {
+        frame[..frame.len() - 2].to_vec()
     }
 
     #[test]
@@ -461,14 +461,17 @@ mod tests {
         stream.extend_from_slice(&[7, 7]);
         let mut assembler = XheAssembler::default();
         let first = xhe_superframe(&stream[..30], &[first_border, second_border]);
-        assert_eq!(collect(&mut assembler, &first), (Ok(()), vec![body(&one)]));
+        assert_eq!(
+            collect(&mut assembler, &first),
+            (Ok(()), vec![Ok(body(&one))])
+        );
         let second = xhe_superframe(
             &stream[30..],
             &[(third - 30) as u16, (stream.len() - 2 - 30) as u16],
         );
         assert_eq!(
             collect(&mut assembler, &second),
-            (Ok(()), vec![body(&two), body(&three)])
+            (Ok(()), vec![Ok(body(&two)), Ok(body(&three))])
         );
     }
 
@@ -489,7 +492,7 @@ mod tests {
         );
         assert_eq!(
             collect(&mut assembler, &xhe_superframe(&second, &[0xFFE, third])),
-            (Ok(()), vec![body(&one), body(&two)])
+            (Ok(()), vec![Ok(body(&one)), Ok(body(&two))])
         );
     }
 
@@ -517,11 +520,11 @@ mod tests {
             (
                 Ok(()),
                 vec![
-                    body(&frames[0]),
+                    Ok(body(&frames[0])),
                     Err("xHE-AAC frame CRC failure"),
                     Err("xHE-AAC frame follows a lost frame"),
-                    body(&frames[3]),
-                    body(&frames[4]),
+                    Ok(body(&frames[3])),
+                    Ok(body(&frames[4])),
                 ]
             )
         );
@@ -538,7 +541,7 @@ mod tests {
         let mut assembler = XheAssembler::default();
         assert_eq!(
             collect(&mut assembler, &superframe),
-            (Ok(()), vec![body(&one)])
+            (Ok(()), vec![Ok(body(&one))])
         );
     }
 

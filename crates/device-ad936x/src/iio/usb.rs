@@ -59,7 +59,7 @@ impl std::fmt::Debug for UsbBus {
         f.debug_struct("UsbBus")
             .field("interface", &self.number)
             .field("couples", &self.couples.len())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -403,7 +403,7 @@ fn iio_interface(info: &nusb::DeviceInfo, device: &nusb::Device) -> Result<u8, D
 pub(crate) fn named_interface(info: &nusb::DeviceInfo) -> Option<u8> {
     info.interfaces()
         .find(|interface| interface.interface_string() == Some(INTERFACE_NAME))
-        .map(|interface| interface.interface_number())
+        .map(nusb::InterfaceInfo::interface_number)
 }
 
 fn described_interface(device: &nusb::Device) -> Option<u8> {

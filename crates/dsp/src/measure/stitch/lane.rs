@@ -119,7 +119,7 @@ pub(super) fn lane_mask(bin: i64) -> f32 {
     } else if f >= flat + RAMP {
         0.0
     } else {
-        (0.5 * (1.0 + (PI * (f - flat) / RAMP).cos())) as f32
+        f64::midpoint(1.0, (PI * (f - flat) / RAMP).cos()) as f32
     }
 }
 

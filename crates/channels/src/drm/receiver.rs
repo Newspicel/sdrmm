@@ -251,21 +251,18 @@ impl Receiver {
     pub fn frame(&mut self, media: &mut BroadcastMedia) -> Option<u8> {
         let decoded = self.decode_fac();
         let mut occupancy = None;
-        let index = match decoded {
-            Some(fac) => {
-                self.fac_ok = self.fac_ok.saturating_add(1);
-                self.fac_misses = 0;
-                let index = fac.frame();
-                if self.adopt(fac) {
-                    occupancy = Some(fac.occupancy);
-                }
-                Some(index)
+        let index = if let Some(fac) = decoded {
+            self.fac_ok = self.fac_ok.saturating_add(1);
+            self.fac_misses = 0;
+            let index = fac.frame();
+            if self.adopt(fac) {
+                occupancy = Some(fac.occupancy);
             }
-            None => {
-                self.fac_bad = self.fac_bad.saturating_add(1);
-                self.fac_misses = self.fac_misses.saturating_add(1);
-                self.frame.map(|frame| (frame + 1) % self.mode.frames())
-            }
+            Some(index)
+        } else {
+            self.fac_bad = self.fac_bad.saturating_add(1);
+            self.fac_misses = self.fac_misses.saturating_add(1);
+            self.frame.map(|frame| (frame + 1) % self.mode.frames())
         };
         self.frame = index;
         let Some(index) = index else {
@@ -313,15 +310,12 @@ impl Receiver {
             .decoder
             .decode(plan, &self.values, &self.gains, &mut self.bits)
             .and_then(|()| Sdc::parse(&self.bits, data_bytes));
-        match parsed {
-            Some(update) => {
-                self.sdc_ok = self.sdc_ok.saturating_add(1);
-                self.sdc.merge(update);
-            }
-            None => {
-                self.sdc_bad = self.sdc_bad.saturating_add(1);
-                self.data_error = Some("SDC CRC failure");
-            }
+        if let Some(update) = parsed {
+            self.sdc_ok = self.sdc_ok.saturating_add(1);
+            self.sdc.merge(update);
+        } else {
+            self.sdc_bad = self.sdc_bad.saturating_add(1);
+            self.data_error = Some("SDC CRC failure");
         }
     }
 

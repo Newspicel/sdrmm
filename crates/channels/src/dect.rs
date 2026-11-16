@@ -93,14 +93,14 @@ fn params(settings: &ChannelSettings) -> Result<DectParams, ChannelError> {
         .map_err(ChannelError::InvalidSettings)
 }
 
-pub(crate) fn input_rate(params: &DectParams) -> f64 {
+pub(crate) fn input_rate(params: DectParams) -> f64 {
     match params.span {
         DectSpan::Carrier => INPUT_RATE_HZ,
         DectSpan::Band => wideband::input_rate(params.band),
     }
 }
 
-pub(crate) fn occupied_band(params: &DectParams) -> (f64, f64) {
+pub(crate) fn occupied_band(params: DectParams) -> (f64, f64) {
     let half = match params.span {
         DectSpan::Carrier => OCCUPIED_BANDWIDTH_HZ / 2.0,
         DectSpan::Band => wideband::half_span(params.band),
@@ -108,7 +108,7 @@ pub(crate) fn occupied_band(params: &DectParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &DectParams) -> ChannelFilter {
+pub(crate) fn channel_filter(params: DectParams) -> ChannelFilter {
     match params.span {
         DectSpan::Carrier => ChannelFilter::Symmetric(Decimator::new(
             &design_lowpass(CHANNEL_TAPS, OCCUPIED_BANDWIDTH_HZ / 2.0 / INPUT_RATE_HZ),
@@ -124,7 +124,7 @@ impl NativeChannel for DectChannel {
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
-        let rate = input_rate(&params);
+        let rate = input_rate(params);
         check_rate(ctx, &DESCRIPTOR, rate)?;
         Ok(Self {
             front: Front::new(params, settings.frequency_hz)?,
@@ -144,7 +144,7 @@ impl ChannelRx for DectChannel {
             || params.band != self.params.band
             || settings.frequency_hz != self.frequency_hz;
         if rebuilt {
-            if input_rate(&params) != input_rate(&self.params) {
+            if input_rate(params) != input_rate(self.params) {
                 return Err(ChannelError::InvalidSettings(
                     "DECT span changes the input rate; rebuild the channel".to_owned(),
                 ));
@@ -203,9 +203,9 @@ fn dect_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn dect_decoder() -> Native<DectParams> {
-    Native::new::<DectChannel>(occupied_band)
-        .filter(|p| Ok(channel_filter(p)))
-        .input_rate(input_rate)
+    Native::new::<DectChannel>(|p| occupied_band(*p))
+        .filter(|p| Ok(channel_filter(*p)))
+        .input_rate(|p| input_rate(*p))
         .home(1_897_344_000.0)
         .signatures(dect_signatures)
         .form(dect_form)

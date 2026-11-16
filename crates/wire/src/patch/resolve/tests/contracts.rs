@@ -311,8 +311,7 @@ fn kept(patch: &ResolvedPatch, node: &str, port: &str) -> Vec<Keeps> {
     patch
         .node(node)
         .and_then(|found| found.output(port))
-        .map(|output| output.kept.clone())
-        .unwrap_or_default()
+        .map_or_default(|output| output.kept.clone())
 }
 
 fn only(kinds: &[EventKind]) -> NodeBody {

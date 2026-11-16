@@ -70,6 +70,10 @@ impl Model {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "lane is the lane number on the bank"
+)]
 pub(crate) struct Lane {
     pub(crate) model: Model,
     pub(crate) id: String,

@@ -288,7 +288,7 @@ impl Protection {
             .iter()
             .map(|&(count, index)| count * BLOCK / CYCLE * kept(index))
             .sum::<usize>()
-            + PI_TAIL.iter().filter(|&&keep| keep == 1).count();
+            + ones(&PI_TAIL);
         Some(Self {
             segments,
             frame_bits,
@@ -376,7 +376,15 @@ impl Protection {
 }
 
 fn kept(index: usize) -> usize {
-    PI[index - 1].iter().filter(|&&keep| keep == 1).count()
+    ones(&PI[index - 1])
+}
+
+#[expect(
+    clippy::naive_bytecount,
+    reason = "short const table, no bytecount crate"
+)]
+fn ones(pattern: &[u8]) -> usize {
+    pattern.iter().filter(|&&keep| keep == 1).count()
 }
 
 #[must_use]

@@ -60,11 +60,11 @@ mod tests {
         }
     }
 
-    fn sent(north_m: f64, kind: GuidanceKind, t_ms: i64) -> Option<Sent> {
-        Some(Sent {
+    fn sent(north_m: f64, kind: GuidanceKind, t_ms: i64) -> Sent {
+        Sent {
             target: point(north_m, kind),
             t_ms,
-        })
+        }
     }
 
     fn moved(decision: Decision) -> f64 {
@@ -84,7 +84,7 @@ mod tests {
             }
         );
         let far = decide(
-            sent(0.0, GuidanceKind::Estimate, 0),
+            Some(sent(0.0, GuidanceKind::Estimate, 0)),
             point(400.0, GuidanceKind::Estimate),
             31_000,
         );
@@ -97,7 +97,7 @@ mod tests {
         ));
         assert!((moved(far) - 400.0).abs() < 0.5);
         let flip = decide(
-            sent(0.0, GuidanceKind::Probe, 0),
+            Some(sent(0.0, GuidanceKind::Probe, 0)),
             point(10.0, GuidanceKind::Estimate),
             1_000,
         );
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn retarget_ignores_under_250_m() {
-        let previous = sent(0.0, GuidanceKind::Estimate, 0);
+        let previous = Some(sent(0.0, GuidanceKind::Estimate, 0));
         assert_eq!(
             decide(previous, point(240.0, GuidanceKind::Estimate), 600_000),
             Decision::Keep
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn retarget_waits_30_s_except_on_kind_flip() {
-        let previous = sent(0.0, GuidanceKind::Estimate, 100_000);
+        let previous = Some(sent(0.0, GuidanceKind::Estimate, 100_000));
         let far = point(2_000.0, GuidanceKind::Estimate);
         assert_eq!(decide(previous, far, 129_999), Decision::Keep);
         assert!(matches!(

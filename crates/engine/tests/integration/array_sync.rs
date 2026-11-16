@@ -150,7 +150,7 @@ fn a_silent_slip_is_caught_by_the_next_check() {
     let bench = Bench::new();
     let ds = bench.open(KRAKEN);
     bench.engine.apply_array(checked(ds)).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     let before = wait_calibrated(&bench.engine, LOCK_WAIT);
     assert!(before.next_check_in_s.is_some());
     bench.impair(KRAKEN, 2, |lane| {
@@ -228,7 +228,7 @@ fn radios_on_different_clocks_report_drift_and_stop_phase_processors() {
         gain: ArrayGain::default(),
     });
     bench.engine.apply_array(spec).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     let mut seen = Vec::new();
     let drifted = wait_status(&bench.engine, "the clock drift", LOCK_WAIT, |now| {
         if let Some(failure) = &now.failure
@@ -363,7 +363,7 @@ fn processors_never_see_noise_source_samples() {
     bench.engine.apply_array(kraken_array(ds)).unwrap();
     bench
         .engine
-        .apply_processor(processor(
+        .apply_processor(&processor(
             "probe",
             ProcessorParams::Probe(ProbeParams {
                 time: true,
@@ -434,7 +434,7 @@ fn a_retune_blanks_and_recalibrates() {
     let bench = Bench::new();
     let ds = bench.open(KRAKEN);
     bench.engine.apply_array(kraken_array(ds)).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     let before = wait_calibrated(&bench.engine, LOCK_WAIT);
     bench
         .engine
@@ -554,7 +554,7 @@ fn a_warm_record_skips_the_gain_solve_but_not_the_phase_solve() {
     let mut warmed = kraken_array(ds);
     warmed.warm = Some(record.clone());
     bench.engine.apply_array(warmed).unwrap();
-    bench.engine.apply_processor(df("df")).unwrap();
+    bench.engine.apply_processor(&df("df")).unwrap();
     assert!(record.solution.iter().any(|lane| lane.gain_db.abs() > 0.1));
     wait_status(&bench.engine, "the warm start", WAIT, |now| {
         let gains_held = record

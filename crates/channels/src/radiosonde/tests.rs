@@ -72,7 +72,7 @@ fn run(
                 event
                     .read::<RadiosondeFrame>()
                     .unwrap_or_else(|| panic!("unexpected event {event:?}")),
-            )
+            );
         }
         at = end;
     }
@@ -273,7 +273,7 @@ fn dfm_damaged_codewords_are_counted_and_corrected() {
 
 #[test]
 fn dfm_float24_scales_by_its_exponent() {
-    assert_eq!(dfm::float24(0x2D_6D80), 0xD_6D80 as f64 / 4.0);
+    assert_eq!(dfm::float24(0x2D_6D80), f64::from(0xD_6D80) / 4.0);
 }
 
 #[test]

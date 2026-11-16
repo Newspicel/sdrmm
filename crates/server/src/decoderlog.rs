@@ -22,7 +22,7 @@ const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(2);
 
 const PRUNE_INTERVAL: Duration = Duration::from_secs(60);
 
-const RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+const RETENTION: Duration = Duration::from_hours(24);
 
 const RETRY_MAX: usize = 4 * BATCH_MAX;
 
@@ -392,7 +392,7 @@ mod tests {
             .expect("insert");
         assert_eq!(total(&store), 2);
 
-        expire(&store, &weak, Duration::from_secs(24 * 60 * 60)).await;
+        expire(&store, &weak, Duration::from_hours(24)).await;
 
         assert_eq!(total(&store), 1, "only the stale row goes");
         let (entries, _) = store

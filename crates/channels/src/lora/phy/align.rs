@@ -176,7 +176,7 @@ impl Sfd {
         let down = mean(&self.down);
         Grid {
             sfd: grid.sfd - (up - down) / 2.0,
-            cfo_bins: grid.cfo_bins + (up + down) / 2.0,
+            cfo_bins: grid.cfo_bins + f64::midpoint(up, down),
         }
     }
 

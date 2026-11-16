@@ -46,7 +46,7 @@ impl AirspyHfConverter {
     }
 }
 
-fn decode(quad: &[u8; BYTES_PER_SAMPLE], scale: f32) -> Sample {
+fn decode(quad: [u8; BYTES_PER_SAMPLE], scale: f32) -> Sample {
     let im = i16::from_le_bytes([quad[0], quad[1]]);
     let re = i16::from_le_bytes([quad[2], quad[3]]);
     Sample::new(f32::from(re) * scale, f32::from(im) * scale)
@@ -64,12 +64,12 @@ impl SampleConverter for AirspyHfConverter {
             rest = &rest[take..];
             if let Ok(quad) = <[u8; BYTES_PER_SAMPLE]>::try_from(self.carry.as_slice()) {
                 self.carry.clear();
-                self.out.push(decode(&quad, scale));
+                self.out.push(decode(quad, scale));
             }
         }
         let (quads, remainder) = rest.as_chunks::<BYTES_PER_SAMPLE>();
         self.out
-            .extend(quads.iter().map(|quad| decode(quad, scale)));
+            .extend(quads.iter().map(|&quad| decode(quad, scale)));
         self.carry.extend_from_slice(remainder);
         &self.out
     }

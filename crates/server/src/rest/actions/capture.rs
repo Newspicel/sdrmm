@@ -45,7 +45,7 @@ fn start_export(
 ) -> Result<NetworkExportStatus, AppError> {
     let engine = &state.engine;
     if let Some((set, stream)) = fed_lane(resolved, node) {
-        return Ok(engine.start_network_export(set, node.to_owned(), stream, settings)?);
+        return Ok(engine.start_network_export(set, node, stream, &settings)?);
     }
     let channel = resolved
         .patch

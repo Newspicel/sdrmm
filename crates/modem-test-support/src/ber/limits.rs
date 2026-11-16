@@ -234,7 +234,7 @@ pub fn measure_ber(
     max_trial_bits: u64,
 ) -> f64 {
     let curve = sweep_ber(link, spec, &[ebn0_db], seed, min_errors, max_trial_bits);
-    curve.points.first().map_or(1.0, |p| p.rate())
+    curve.points.first().map_or(1.0, super::CurvePoint::rate)
 }
 
 const MAX_SEARCH_ITERS: u32 = 64;
@@ -258,7 +258,7 @@ pub fn search_axis_limit(
         if hi - lo <= tolerance {
             break;
         }
-        let mid = 0.5 * (lo + hi);
+        let mid = f64::midpoint(lo, hi);
         if passes(mid) {
             lo = mid;
         } else {
@@ -606,8 +606,14 @@ mod tests {
     fn search_handles_degenerate_predicates() {
         let unbounded = search_axis_limit(Criterion::FailureBer, 8.0, 1e-3, |_| 0.0);
         assert!((unbounded - 8.0).abs() < 1e-15);
-        assert!(search_axis_limit(Criterion::FailureBer, 8.0, 1e-3, |_| 1.0) == 0.0);
-        assert!(search_axis_limit(Criterion::FailureBer, 8.0, 1e-3, |_| f64::NAN) == 0.0);
+        assert_eq!(
+            search_axis_limit(Criterion::FailureBer, 8.0, 1e-3, |_| 1.0),
+            0.0
+        );
+        assert_eq!(
+            search_axis_limit(Criterion::FailureBer, 8.0, 1e-3, |_| f64::NAN),
+            0.0
+        );
         let step = |v: f64| if v <= 0.37 { 0.0 } else { 1.0 };
         let found = search_axis_limit(Criterion::FailureBer, 1.0, 1e-6, step);
         assert!(found <= 0.37 && 0.37 - found < 1e-6, "found {found}");

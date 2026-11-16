@@ -16,9 +16,9 @@ fn only_port() -> DeviceInfo {
     found.into_iter().next().expect("one ESP-SDR")
 }
 
-fn bursts(settings: DeviceSettings) -> Vec<Vec<sdrmm_device::Sample>> {
+fn bursts(settings: &DeviceSettings) -> Vec<Vec<sdrmm_device::Sample>> {
     let mut device = EspSdrDriver::new().open(&only_port()).expect("opens");
-    device.apply(&settings).expect("valid");
+    device.apply(settings).expect("valid");
     let (tx, rx) = mpsc::channel();
     device
         .rx_start(vec![RxSink::new(move |samples, _| {
@@ -33,14 +33,19 @@ fn bursts(settings: DeviceSettings) -> Vec<Vec<sdrmm_device::Sample>> {
 }
 
 fn rms(samples: &[sdrmm_device::Sample]) -> f32 {
-    (samples.iter().map(|s| s.norm_sqr()).sum::<f32>() / samples.len() as f32).sqrt()
+    (samples
+        .iter()
+        .map(sdrmm_device::Sample::norm_sqr)
+        .sum::<f32>()
+        / samples.len() as f32)
+        .sqrt()
 }
 
 #[test]
 #[ignore = "requires one ESP-SDR"]
 fn bursts_carry_live_noise_at_every_rate_and_depth() {
     for (rate, bits) in [(80e6, "8"), (40e6, "10"), (16e6, "8")] {
-        let got = bursts(DeviceSettings {
+        let got = bursts(&DeviceSettings {
             sample_rate: Some(rate),
             center_hz: Some(2437e6),
             extra: vec![ExtraValue {

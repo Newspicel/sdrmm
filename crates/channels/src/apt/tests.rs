@@ -58,7 +58,7 @@ fn run(chan: &mut AptChannel, iq: &[Complex<f32>], lens: &[usize]) -> Received {
                 event
                     .read::<AptImage>()
                     .unwrap_or_else(|| panic!("unexpected event {event:?}")),
-            )
+            );
         }
         at = end;
     }
@@ -148,9 +148,7 @@ fn doppler_and_noise_still_decode() {
     doppler(&mut iq, 3_000.0, 1_000.0, RATE);
     synth::add_noise(&mut iq, 0x5eed_1234, 0.3);
     let mut filtered = Vec::new();
-    channel_filter(&AptParams::default())
-        .expect("filter")
-        .process(&iq, &mut filtered);
+    channel_filter().process(&iq, &mut filtered);
     filtered.extend_from_slice(&tail(10.0));
     let (image, event) = decode_one(&filtered);
     assert!(image.complete);

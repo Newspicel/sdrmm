@@ -2,7 +2,7 @@ use sdrmm_device::DeviceError;
 
 pub(crate) const DEFAULT_PORT: u16 = 5555;
 
-pub(crate) const PROTOCOL_VERSION: u32 = (2 << 24) | 1700;
+pub(crate) const PROTOCOL_VERSION: u32 = (2 << 24) | 0x6a4;
 fn major(version: u32) -> u32 {
     version >> 24
 }

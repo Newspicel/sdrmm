@@ -6,7 +6,7 @@ fn xyz(bytes: &[u8], skip: u32) -> Option<(f64, f64, i32, i32, i32, i32)> {
     }
     let mut val: u64 = 0;
     for &b in &bytes[..5] {
-        val = (val << 8) | b as u64;
+        val = (val << 8) | u64::from(b);
     }
     let sb = 4 - skip;
     let ext = |f: u64| -> i32 {
@@ -19,7 +19,7 @@ fn xyz(bytes: &[u8], skip: u32) -> Option<(f64, f64, i32, i32, i32, i32)> {
     if x == 0 && y == 0 && z == 0 {
         return None;
     }
-    let (xf, yf, zf) = (x as f64, y as f64, z as f64);
+    let (xf, yf, zf) = (f64::from(x), f64::from(y), f64::from(z));
     let lat = zf.atan2((xf * xf + yf * yf).sqrt()).to_degrees();
     let lon = yf.atan2(xf).to_degrees();
     let radius_km = (xf * xf + yf * yf + zf * zf).sqrt() * 4.0;
@@ -37,7 +37,7 @@ pub fn extract(data: &[u8], ul: bool) -> Option<Value> {
     if data.len() < 5 {
         return None;
     }
-    let msg_type = ((data[0] as u16) << 8) | data[1] as u16;
+    let msg_type = (u16::from(data[0]) << 8) | u16::from(data[1]);
     let (src, skip): (&[u8], u32) = match msg_type {
         0x0605 if data.len() >= 42 && data[36] == 0x1b => (&data[37..], 0),
         0x7605 if data.len() >= 8 && data[2] == 0x00 && (data[3] & 0xf0) == 0x40 => (&data[3..], 4),
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn xyz_negative_components() {
-        let neg = ((-300i32) & 0xfff) as u64;
+        let neg = u64::from((-300i32).cast_unsigned() & 0xfff);
         let val: u64 = (neg << 28) | (1200u64 << 16) | (700u64 << 4);
         let bytes = [
             (val >> 32) as u8,

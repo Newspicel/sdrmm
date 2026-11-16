@@ -87,6 +87,7 @@ pub(super) fn mark(frame: &mut DvFrame) {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[expect(clippy::struct_field_names, reason = "the unit belongs in each name")]
 struct Band {
     base_hz: u64,
     spacing_hz: u64,
@@ -159,7 +160,7 @@ mod tests {
         (0..width).rev().map(|bit| value >> bit & 1 != 0).collect()
     }
 
-    /// An IDEN_UP for 851.00625 MHz in 6.25 kHz steps, mobiles 45 MHz below.
+    /// An `IDEN_UP` for 851.00625 MHz in 6.25 kHz steps, mobiles 45 MHz below.
     fn iden_up(iden: u64) -> [bool; 96] {
         let mut payload = bits(u64::from(IDEN_UP), 8);
         payload.extend(bits(0, 8));
@@ -178,7 +179,7 @@ mod tests {
         let mut plan = BandPlan::default();
         plan.learn(&iden_up(1));
         let mut grant = DvFrame {
-            channel: Some(1 << 12 | 10),
+            channel: Some(1 << 12 | 0xA),
             destination: Some(0x1201),
             ..DvFrame::new("P25", DvFrameKind::Control)
         };
@@ -190,7 +191,7 @@ mod tests {
         assert_eq!(
             crate::dv::announced_channels(&grant),
             vec![crate::TrunkPlacement {
-                logical_channel: 1 << 12 | 10,
+                logical_channel: 1 << 12 | 0xA,
                 freq_hz: 851_068_750,
             }]
         );
@@ -201,7 +202,7 @@ mod tests {
         let mut plan = BandPlan::default();
         plan.learn(&iden_up(1));
         let mut grant = DvFrame {
-            channel: Some(2 << 12 | 10),
+            channel: Some(2 << 12 | 0xA),
             destination: Some(0x1201),
             ..DvFrame::new("P25", DvFrameKind::Control)
         };

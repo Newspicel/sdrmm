@@ -173,6 +173,10 @@ impl Decoder {
     }
 }
 
+#[expect(
+    clippy::large_stack_arrays,
+    reason = "PCM frame lives on the stack, no allocation"
+)]
 fn run(mut decoder: Decoder, mut input: Consumer<Encoded>, mut output: Producer<Decoded>) {
     let mut epoch = 0;
     loop {
@@ -513,6 +517,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "PCM frame lives on the stack, no allocation"
+    )]
     fn layer_two_decoding_stays_ahead_of_realtime() {
         let mut decoder = Decoder::new().expect("decoder");
         let mut bytes = [0; FRAME_BYTES];

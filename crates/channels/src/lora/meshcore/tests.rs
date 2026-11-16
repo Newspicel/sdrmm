@@ -423,9 +423,9 @@ fn malformed_packets_are_rejected() {
 
 #[test]
 fn path_at_limit_is_accepted() {
-    let bytes = [&[0x0d, 0x80 | 21][..], &[0x11; 63], &[1, 2, 3, 4]].concat();
+    let bytes = [&[0x0d, 0x80 | 0x15][..], &[0x11; 63], &[1, 2, 3, 4]].concat();
     assert_eq!(decode(&bytes, &Keys::default()).unwrap().path.len(), 21);
-    let bytes = [&[0x0d, 0x80 | 22][..], &[0x11; 66], &[1, 2, 3, 4]].concat();
+    let bytes = [&[0x0d, 0x80 | 0x16][..], &[0x11; 66], &[1, 2, 3, 4]].concat();
     assert_eq!(decode(&bytes, &Keys::default()), None);
 }
 

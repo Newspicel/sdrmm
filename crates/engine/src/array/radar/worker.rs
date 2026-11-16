@@ -181,8 +181,8 @@ struct InBlock {
 }
 
 impl InBlock {
-    fn new(lanes: usize, capacity: usize) -> Box<Self> {
-        Box::new(Self {
+    fn new(lanes: usize, capacity: usize) -> Self {
+        Self {
             samples: vec![C32::default(); lanes * capacity],
             capacity,
             lanes,
@@ -192,7 +192,7 @@ impl InBlock {
             gap_before: false,
             phase_ready: false,
             generation: 0,
-        })
+        }
     }
 
     fn lane(&self, lane: usize) -> &[C32] {
@@ -283,6 +283,7 @@ impl InLoop {
     }
 
     #[cfg(not(test))]
+    #[expect(clippy::unused_self, reason = "mirrors the test build's check")]
     const fn held(&self) -> bool {
         false
     }
@@ -625,7 +626,7 @@ impl Rings {
         let blocks = RingBuffer::new(count);
         let mut free_blocks = RingBuffer::new(count);
         for _ in 0..count {
-            let filled = free_blocks.0.push(InBlock::new(lanes, capacity));
+            let filled = free_blocks.0.push(Box::new(InBlock::new(lanes, capacity)));
             debug_assert!(filled.is_ok());
         }
         let jobs = RingBuffer::new(JOBS);
@@ -893,9 +894,10 @@ impl DedicatedRunner for RadarWorker {
         match prepared {
             Prepared::Same => None,
             Prepared::Live(live) => {
-                match live.downcast::<LiveParams>() {
-                    Ok(live) => self.outbox.tune(live),
-                    Err(_) => tracing::error!("radar tune skipped: the settings are not a radar's"),
+                if let Ok(live) = live.downcast::<LiveParams>() {
+                    self.outbox.tune(live);
+                } else {
+                    tracing::error!("radar tune skipped: the settings are not a radar's");
                 }
                 None
             }
@@ -908,7 +910,7 @@ impl DedicatedRunner for RadarWorker {
                     None => {
                         tracing::error!(
                             "radar rebuild skipped: the new runner is not a radar worker"
-                        )
+                        );
                     }
                 }
                 Some(next)

@@ -57,7 +57,10 @@ impl Beamformer {
             .map(|direction| direction.azimuth_deg as f32);
         reading.steer_age_ms = self.resolved.age_ms.filter(|_| steering);
         reading.cancelled_db = match (self.settings.mode, path) {
-            (BeamMode::Canceller, Path::Tdl) => self.tdl.as_ref().map(|tdl| tdl.suppression_db()),
+            (BeamMode::Canceller, Path::Tdl) => self
+                .tdl
+                .as_ref()
+                .map(sdrmm_dsp::array::beamform::TdlCanceller::suppression_db),
             (BeamMode::Canceller, _) => self.metrics.cancelled_db,
             _ => None,
         };
@@ -115,7 +118,10 @@ impl Beamformer {
     }
 
     fn adaptive_resets(&self) -> u32 {
-        let tdl = self.tdl.as_ref().map_or(0, |tdl| tdl.resets());
+        let tdl = self
+            .tdl
+            .as_ref()
+            .map_or(0, sdrmm_dsp::array::beamform::TdlCanceller::resets);
         self.gsc
             .resets()
             .saturating_add(self.cma.resets())

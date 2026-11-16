@@ -188,7 +188,10 @@ mod tests {
         let lut = &*LUT;
         assert!(lut.iter().all(|value| value.im == 0.0));
         let energy = |range: std::ops::Range<usize>| {
-            lut[range].iter().map(|value| value.norm_sqr()).sum::<f32>()
+            lut[range]
+                .iter()
+                .map(num_complex::Complex::norm_sqr)
+                .sum::<f32>()
         };
         for symbol in 0..LUT_SYMBOLS {
             assert!(energy(symbol * SYMBOL_SAMPLES..(symbol + 1) * SYMBOL_SAMPLES) > 1.0);

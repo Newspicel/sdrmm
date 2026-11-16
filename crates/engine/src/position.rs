@@ -26,7 +26,7 @@ impl Engine {
             .media
             .get_mut(&ch)
             .ok_or(EngineError::ChannelNotFound(ch, ds))?;
-        media.position = fix.clone();
+        media.position.clone_from(&fix);
         state.send_dsp(stream, DspCommand::PositionChanged { id: ch, fix });
         Ok(())
     }

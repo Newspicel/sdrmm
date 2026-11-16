@@ -68,7 +68,7 @@ struct Demod {
 
 impl Demod {
     fn new() -> Self {
-        let centre = (MARK_HZ + SPACE_HZ) / 2.0;
+        let centre = f64::midpoint(MARK_HZ, SPACE_HZ);
         Self {
             fm: FmDemod::new(RATE, DEVIATION_HZ),
             audio: RealDecimator::new(

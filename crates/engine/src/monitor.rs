@@ -285,7 +285,7 @@ mod tests {
             .map(|i| {
                 Complex::from_polar(
                     0.5,
-                    (std::f64::consts::TAU * 10_000.0 * i as f64 / 48_000.0)
+                    (std::f64::consts::TAU * 10_000.0 * f64::from(i) / 48_000.0)
                         .rem_euclid(std::f64::consts::TAU) as f32,
                 )
             })
@@ -327,7 +327,7 @@ mod tests {
             .map(|i| {
                 Complex::from_polar(
                     0.5,
-                    (std::f64::consts::TAU * 10_000.0 * i as f64 / 48_000.0)
+                    (std::f64::consts::TAU * 10_000.0 * f64::from(i) / 48_000.0)
                         .rem_euclid(std::f64::consts::TAU) as f32,
                 )
             })

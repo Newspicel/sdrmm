@@ -132,14 +132,13 @@ impl Protocol {
         let mut tones = [0u8; MAX_SYMBOLS];
         let mut bits = codeword.chunks_exact(self.bits_per_symbol);
         for (symbol, tone) in tones.iter_mut().take(self.symbols).enumerate() {
-            *tone = match self.sync_tone(symbol) {
-                Some(sync) => sync,
-                None => {
-                    let value = bits.next().map_or(0, |chunk| {
-                        chunk.iter().fold(0, |acc, &bit| (acc << 1) | bit)
-                    });
-                    self.gray[usize::from(value)]
-                }
+            *tone = if let Some(sync) = self.sync_tone(symbol) {
+                sync
+            } else {
+                let value = bits.next().map_or(0, |chunk| {
+                    chunk.iter().fold(0, |acc, &bit| (acc << 1) | bit)
+                });
+                self.gray[usize::from(value)]
             };
         }
         tones

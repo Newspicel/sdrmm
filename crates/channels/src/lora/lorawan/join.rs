@@ -64,7 +64,7 @@ fn open_accept(mhdr: u8, encrypted: &[u8], key: &Aes) -> Option<LorawanFrame> {
     frame.rx1_dr_offset = Some((settings >> 4) & 0x07);
     frame.rx2_data_rate = Some(settings & 0x0f);
     frame.rx_delay_s = Some((fields.get(11)? & 0x0f).max(1));
-    frame.cf_list_hz = fields.get(12..).map(cf_list).unwrap_or_default();
+    frame.cf_list_hz = fields.get(12..).map_or_default(cf_list);
     Some(frame)
 }
 

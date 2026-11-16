@@ -21,7 +21,7 @@ pub struct Staged {
     pub main: String,
     /// Windows and Linux: everything that sits beside `libcef`, installed as resources.
     pub runtime: Option<PathBuf>,
-    /// macOS: Chromium, its helper apps and the FFmpeg libraries, in `Contents/Frameworks`.
+    /// macOS: Chromium, its helper apps and the `FFmpeg` libraries, in `Contents/Frameworks`.
     pub frameworks: Vec<PathBuf>,
     /// macOS: files for `Contents/Resources`.
     pub resources: Vec<PathBuf>,

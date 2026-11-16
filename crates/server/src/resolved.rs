@@ -186,7 +186,7 @@ struct Wake {
 }
 
 impl Wake {
-    fn note(&mut self, event: Result<ServerEvent, TryRecvError>) -> bool {
+    fn note(&mut self, event: &Result<ServerEvent, TryRecvError>) -> bool {
         match event {
             Ok(ServerEvent::StateChanged {
                 scope: StateScope::All | StateScope::Workspaces | StateScope::Workspace(_),
@@ -221,7 +221,7 @@ pub(crate) async fn run(state: AppState) {
             Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
         };
         let mut wake = Wake::default();
-        wake.note(first);
+        wake.note(&first);
         drain(&mut events, &mut wake);
         if wake.reload || wake.rebind {
             refresh(&state, wake).await;
@@ -230,7 +230,7 @@ pub(crate) async fn run(state: AppState) {
 }
 
 fn drain(events: &mut Receiver<ServerEvent>, wake: &mut Wake) {
-    while wake.note(events.try_recv()) {}
+    while wake.note(&events.try_recv()) {}
 }
 
 async fn refresh(state: &AppState, wake: Wake) {

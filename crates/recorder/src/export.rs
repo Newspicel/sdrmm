@@ -253,7 +253,7 @@ mod tests {
         for kind in [ExportKind::SigmfArchive, ExportKind::Wav] {
             assert!(matches!(
                 Export::open(&stem, kind),
-                Err(SigmfError::Io(_)) | Err(SigmfError::Meta(_))
+                Err(SigmfError::Io(_) | SigmfError::Meta(_))
             ));
         }
     }

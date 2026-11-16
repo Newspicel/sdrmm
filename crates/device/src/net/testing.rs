@@ -72,12 +72,11 @@ impl FakeServer {
             None
         };
         std::thread::spawn(move || {
-            let listener = match waiting {
-                Some(listener) => listener,
-                None => {
-                    std::thread::sleep(away);
-                    TcpListener::bind(addr).expect("rebind loopback")
-                }
+            let listener = if let Some(listener) = waiting {
+                listener
+            } else {
+                std::thread::sleep(away);
+                TcpListener::bind(addr).expect("rebind loopback")
             };
             let handle = Arc::new(handle);
             for stream in listener.incoming().flatten() {
@@ -90,7 +89,7 @@ impl FakeServer {
     }
 
     /// Starts one that serves a single client at a time, taking `teardown` to let go of a client
-    /// before it accepts the next, the way rtl_tcp and other one-client servers do.
+    /// before it accepts the next, the way `rtl_tcp` and other one-client servers do.
     ///
     /// # Panics
     /// If the loopback interface cannot be bound.
@@ -225,7 +224,7 @@ impl WebSocketPeer {
         let mut frame = vec![if fin { 0x80 | opcode } else { opcode }];
         match payload.len() {
             len if len < 126 => frame.push(len as u8),
-            len if len <= usize::from(u16::MAX) => {
+            len if u16::try_from(len).is_ok() => {
                 frame.push(126);
                 frame.extend_from_slice(&(len as u16).to_be_bytes());
             }

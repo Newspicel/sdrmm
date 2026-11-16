@@ -35,7 +35,7 @@ fn wedge(line: u16) -> usize {
     (usize::from(line) + usize::from(FRAME_PHASE)) % FRAME_LINES / WEDGE_LINES + 1
 }
 
-fn telemetry_level(line: u16, channel: AvhrrChannel, extra: &[u8; 6]) -> u8 {
+fn telemetry_level(line: u16, channel: AvhrrChannel, extra: [u8; 6]) -> u8 {
     match wedge(line) {
         CHANNEL_WEDGE => wedge_level(usize::from(channel.wedge())),
         index if index > ZERO_WEDGE => extra[index - ZERO_WEDGE - 1],
@@ -54,7 +54,7 @@ fn fill_side(
     side: Side,
     line: u16,
     channel: AvhrrChannel,
-    extra: &[u8; 6],
+    extra: [u8; 6],
 ) {
     let base = side.offset();
     let (sync, space, image): (&[bool; SYNC_WORDS], u8, Pattern) = match side {
@@ -79,8 +79,8 @@ fn fill_side(
 #[must_use]
 pub fn line_words(line: u16, channel_a: AvhrrChannel, channel_b: AvhrrChannel) -> [u8; LINE_WORDS] {
     let mut words = [0u8; LINE_WORDS];
-    fill_side(&mut words, Side::A, line, channel_a, &SIDE_A_TELEMETRY);
-    fill_side(&mut words, Side::B, line, channel_b, &SIDE_B_TELEMETRY);
+    fill_side(&mut words, Side::A, line, channel_a, SIDE_A_TELEMETRY);
+    fill_side(&mut words, Side::B, line, channel_b, SIDE_B_TELEMETRY);
     words
 }
 

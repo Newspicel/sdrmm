@@ -343,7 +343,7 @@ impl Trial {
         if energy == 0 {
             return 0.0;
         }
-        (metric as f64 / energy as f64) as f32
+        (f64::from(metric) / energy as f64) as f32
     }
 }
 
@@ -563,26 +563,23 @@ impl DvbsDecoder {
 
     fn drain(&mut self, produced: usize, packets: &mut Vec<[u8; PACKET]>) {
         if matches!(self.stage, Stage::Align) {
-            match sync_offset(&self.bits) {
-                Some((offset, inverted)) => {
-                    if let Some(lock) = &mut self.lock {
-                        lock.inverted = inverted;
-                    }
-                    self.bits.drain(..offset);
-                    self.aligning = 0;
-                    self.stage = Stage::Run;
+            if let Some((offset, inverted)) = sync_offset(&self.bits) {
+                if let Some(lock) = &mut self.lock {
+                    lock.inverted = inverted;
                 }
-                None => {
-                    self.aligning += produced;
-                    if self.bits.len() > ALIGN_WINDOW {
-                        let excess = self.bits.len() - ALIGN_WINDOW;
-                        self.bits.drain(..excess);
-                    }
-                    if self.aligning > ALIGN_BUDGET {
-                        self.reset();
-                    }
-                    return;
+                self.bits.drain(..offset);
+                self.aligning = 0;
+                self.stage = Stage::Run;
+            } else {
+                self.aligning += produced;
+                if self.bits.len() > ALIGN_WINDOW {
+                    let excess = self.bits.len() - ALIGN_WINDOW;
+                    self.bits.drain(..excess);
                 }
+                if self.aligning > ALIGN_BUDGET {
+                    self.reset();
+                }
+                return;
             }
         }
         let mask = if self.lock.is_some_and(|lock| lock.inverted) {
@@ -608,21 +605,18 @@ impl DvbsDecoder {
 
     fn finish_codeword(&mut self, packets: &mut Vec<[u8; PACKET]>) {
         let mut codeword = self.codeword;
-        match self.reed_solomon.decode(&mut codeword) {
-            Some(corrected) => {
-                self.metrics.packets_ok += 1;
-                self.metrics.corrected_symbols += corrected;
-                self.losses = 0;
-                let mut packet = [0u8; PACKET];
-                packet.copy_from_slice(&codeword[..PACKET]);
-                if self.derandomizer.apply(&mut packet) {
-                    packets.push(packet);
-                }
+        if let Some(corrected) = self.reed_solomon.decode(&mut codeword) {
+            self.metrics.packets_ok += 1;
+            self.metrics.corrected_symbols += corrected;
+            self.losses = 0;
+            let mut packet = [0u8; PACKET];
+            packet.copy_from_slice(&codeword[..PACKET]);
+            if self.derandomizer.apply(&mut packet) {
+                packets.push(packet);
             }
-            None => {
-                self.metrics.packets_bad += 1;
-                self.losses += 1;
-            }
+        } else {
+            self.metrics.packets_bad += 1;
+            self.losses += 1;
         }
     }
 }
@@ -864,7 +858,11 @@ mod tests {
             let turned: Vec<Complex<f32>> = symbols
                 .iter()
                 .map(|&symbol| {
-                    symbol * Complex::from_polar(1.0, rotation as f32 * std::f32::consts::FRAC_PI_2)
+                    symbol
+                        * Complex::from_polar(
+                            1.0,
+                            f32::from(rotation) * std::f32::consts::FRAC_PI_2,
+                        )
                 })
                 .collect();
             let mut decoder = DvbsDecoder::new(DatvCodeRate::ThreeQuarters, 250_000.0);

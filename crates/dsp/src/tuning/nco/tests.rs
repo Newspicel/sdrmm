@@ -23,7 +23,7 @@ fn long_runs_match_double_precision_phase_without_amplitude_drift() {
         let mut worst = 0.0f32;
         for index in 0..2_000_000 {
             let actual = nco.next_sample();
-            let expected = reference(index as f64 * turns);
+            let expected = reference(f64::from(index) * turns);
             worst = worst.max((actual - expected).norm());
         }
         assert!(worst < 4e-7, "frequency {frequency}: error {worst}");
@@ -68,9 +68,9 @@ fn retuning_preserves_phase_and_reset_restarts_at_unity() {
 #[test]
 fn ragged_mixing_matches_one_shot() {
     let mut nco = Nco::new(731.0, 48_000.0);
-    let mut samples = [Complex::new(1.0, 0.5); 4_099];
+    let mut samples = vec![Complex::new(1.0, 0.5); 4_099];
     let mut reference = nco.clone();
-    let mut expected = samples;
+    let mut expected = samples.clone();
     reference.mix(&mut expected);
     for chunk in samples.chunks_mut(17) {
         nco.mix(chunk);
@@ -274,7 +274,7 @@ fn a_double_precision_tuning_starts_at_the_requested_phase() {
     nco.set_phase(start * turns);
     let mut worst = 0.0f32;
     for index in 0..10_000 {
-        let expected = reference((start + index as f64) * turns);
+        let expected = reference((start + f64::from(index)) * turns);
         worst = worst.max((nco.next_sample() - expected).norm());
     }
     assert!(worst < 4e-7, "error {worst}");

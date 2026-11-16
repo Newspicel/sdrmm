@@ -293,7 +293,7 @@ fn every_lane_waits_for_the_fullest_sink() {
     let dir = TempDir::new().unwrap();
     let piece = (RATE * BLOCK_SECS) as usize;
     record(&dir.path().join("held"), |writer| {
-        write(writer, 0, piece * 3)
+        write(writer, 0, piece * 3);
     });
     let mut device = open(dir.path(), "held");
     let rooms: Vec<Arc<SinkRoom>> = (0..LANES)

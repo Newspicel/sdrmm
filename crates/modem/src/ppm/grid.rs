@@ -181,7 +181,7 @@ mod tests {
     fn a_pulse_off_the_sample_grid_needs_the_matching_phase_table() {
         let (from, to): (f64, f64) = (3.0 * 1.024 + 0.5, 4.0 * 1.024 + 0.5);
         let window: Vec<f32> = (0..12)
-            .map(|k| (to.min(k as f64 + 1.0) - from.max(k as f64)).max(0.0) as f32)
+            .map(|k| (to.min(f64::from(k) + 1.0) - from.max(f64::from(k))).max(0.0) as f32)
             .collect();
         let peak = |phase: f64| {
             let grid = SlotGrid::new(1.024, 8, phase);

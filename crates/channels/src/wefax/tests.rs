@@ -69,7 +69,7 @@ fn run(chan: &mut WefaxChannel, iq: &[Complex<f32>], lens: &[usize]) -> Received
                 event
                     .read::<WefaxPicture>()
                     .unwrap_or_else(|| panic!("unexpected event {event:?}")),
-            )
+            );
         }
         at = end;
     }
@@ -299,9 +299,7 @@ fn decodes_through_additive_noise() {
     let mut iq = short(ioc, &sent);
     synth::add_noise(&mut iq, 0xabad_1dea, 0.25);
     let mut filtered = Vec::new();
-    channel_filter(&fast())
-        .expect("filter")
-        .process(&iq, &mut filtered);
+    channel_filter().process(&iq, &mut filtered);
     let image = single(run(&mut channel(fast()), &filtered, &BLOCKS));
     assert!(image.complete);
     assert_eq!(image.lines, LINES);
@@ -314,9 +312,7 @@ fn pure_noise_decodes_to_nothing() {
     for seed in [0x1234_5678, 0xdead_beef, 0x0f0f_0f0f] {
         let noise = complex_noise(seed, 0.4, 600_000);
         let mut filtered = Vec::new();
-        channel_filter(&fast())
-            .expect("filter")
-            .process(&noise, &mut filtered);
+        channel_filter().process(&noise, &mut filtered);
         for iq in [&noise, &filtered] {
             let mut chan = channel(fast());
             let received = run(&mut chan, iq, &BLOCKS);

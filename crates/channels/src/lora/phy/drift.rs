@@ -198,7 +198,7 @@ impl DriftFit {
         };
         Some(Fit {
             clock: Clock {
-                cfo_bins: (up + down) / 2.0,
+                cfo_bins: f64::midpoint(up, down),
                 late_chips: (down - up) / 2.0,
                 drift,
             },

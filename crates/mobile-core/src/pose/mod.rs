@@ -35,6 +35,7 @@ pub(crate) const DEFAULT_SETTINGS: PoseSettings = PoseSettings {
     share_pose: false,
 };
 
+#[derive(Clone, Copy)]
 pub(crate) enum PoseInput {
     Location(LocationSample),
     Heading(HeadingSample),

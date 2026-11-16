@@ -118,7 +118,7 @@ fn searching_follower(
     follower
 }
 
-fn record(carrier: (u32, u32), frame: DvFrame) -> DecodedRecord {
+fn record(carrier: (u32, u32), frame: &DvFrame) -> DecodedRecord {
     DecodedRecord {
         origin: None,
         sinks: Vec::new(),
@@ -127,7 +127,7 @@ fn record(carrier: (u32, u32), frame: DvFrame) -> DecodedRecord {
         channel: carrier.1,
         at: "2026-08-14T10:00:00Z".to_owned(),
         freq_hz: 451_000_000.0,
-        event: DecoderEvent::of(&frame),
+        event: DecoderEvent::of(frame),
         view: None,
     }
 }
@@ -203,8 +203,8 @@ fn a_grant_on_a_defined_channel_opens_a_slot_filtered_receiver() {
     let mut follower = follower(&engine, "tier_three", carrier);
     let traffic = center_hz as u64 + 125_000;
 
-    follower.observe(&record(carrier, definition(traffic)));
-    follower.observe(&record(carrier, grant(2)));
+    follower.observe(&record(carrier, &definition(traffic)));
+    follower.observe(&record(carrier, &grant(2)));
 
     let set = engine.snapshot().device_sets.remove(0);
     assert_eq!(set.channels.len(), 2, "the follower was not created");
@@ -244,8 +244,8 @@ fn a_followed_call_is_deciphered_with_the_systems_keys() {
     follower.reconcile();
     let traffic = center_hz as u64 + 125_000;
 
-    follower.observe(&record(carrier, definition(traffic)));
-    follower.observe(&record(carrier, grant(2)));
+    follower.observe(&record(carrier, &definition(traffic)));
+    follower.observe(&record(carrier, &grant(2)));
 
     let set = engine.snapshot().device_sets.remove(0);
     let params = set.channels[1]
@@ -269,8 +269,8 @@ fn a_key_the_decoder_refuses_is_reported_as_a_problem() {
     follower.reconcile();
     let traffic = center_hz as u64 + 125_000;
 
-    follower.observe(&record(carrier, definition(traffic)));
-    follower.observe(&record(carrier, grant(2)));
+    follower.observe(&record(carrier, &definition(traffic)));
+    follower.observe(&record(carrier, &grant(2)));
 
     assert_eq!(engine.snapshot().device_sets[0].channels.len(), 1);
     assert_eq!(status(&follower).problems.len(), 1);
@@ -283,7 +283,7 @@ fn a_grant_for_an_undefined_channel_opens_nothing() {
     let carrier = (device_set, channel);
     let mut follower = follower(&engine, "tier_three", carrier);
 
-    follower.observe(&record(carrier, grant(1)));
+    follower.observe(&record(carrier, &grant(1)));
 
     assert_eq!(engine.snapshot().device_sets[0].channels.len(), 1);
     assert!(follower.followers.is_empty());
@@ -297,10 +297,10 @@ fn a_site_that_checksums_its_own_way_is_still_followed() {
     let mut follower = follower(&engine, "tier_three", carrier);
     let traffic = center_hz as u64 + 125_000;
 
-    follower.observe(&record(carrier, definition(traffic)));
+    follower.observe(&record(carrier, &definition(traffic)));
     let mut unverified = grant(1);
     unverified.crc_verified = Some(false);
-    follower.observe(&record(carrier, unverified));
+    follower.observe(&record(carrier, &unverified));
 
     let status = status(&follower);
     assert_eq!(status.followers.len(), 1, "the grant was thrown away");
@@ -320,7 +320,7 @@ fn auto_follows_capacity_plus_once_its_signalling_identifies_it() {
 
     follower.observe(&record(
         carrier,
-        DvFrame {
+        &DvFrame {
             trunk_protocol: Some("capacity_plus".to_owned()),
             crc_verified: Some(true),
             ..DvFrame::new("DMR", DvFrameKind::Control)
@@ -355,7 +355,7 @@ fn capacity_plus_keeps_both_slots_of_every_repeater_the_plan_names() {
 
     follower.observe(&record(
         carrier,
-        DvFrame {
+        &DvFrame {
             trunk_protocol: Some("capacity_plus".to_owned()),
             crc_verified: Some(true),
             ..DvFrame::new("DMR", DvFrameKind::Control)
@@ -399,7 +399,7 @@ fn auto_follows_hytera_xpt_once_its_signalling_identifies_it() {
 
     follower.observe(&record(
         carrier,
-        DvFrame {
+        &DvFrame {
             trunk_protocol: Some("hytera_xpt".to_owned()),
             crc_verified: Some(true),
             ..DvFrame::new("DMR", DvFrameKind::Control)
@@ -439,9 +439,9 @@ fn a_grant_outside_the_sampled_band_is_reported_once_and_backed_off() {
     let mut follower = follower(&engine, "tier_three", carrier);
     let far = center_hz as u64 + 10_000_000;
 
-    follower.observe(&record(carrier, definition(far)));
-    follower.observe(&record(carrier, grant(1)));
-    follower.observe(&record(carrier, grant(1)));
+    follower.observe(&record(carrier, &definition(far)));
+    follower.observe(&record(carrier, &grant(1)));
+    follower.observe(&record(carrier, &grant(1)));
 
     assert_eq!(engine.snapshot().device_sets[0].channels.len(), 1);
     let status = status(&follower);
@@ -457,8 +457,8 @@ fn dropping_the_system_closes_the_receivers_it_opened() {
     let (device_set, channel, center_hz) = control_channel(&engine);
     let carrier = (device_set, channel);
     let mut follower = follower(&engine, "tier_three", carrier);
-    follower.observe(&record(carrier, definition(center_hz as u64 + 125_000)));
-    follower.observe(&record(carrier, grant(1)));
+    follower.observe(&record(carrier, &definition(center_hz as u64 + 125_000)));
+    follower.observe(&record(carrier, &grant(1)));
     assert_eq!(engine.snapshot().device_sets[0].channels.len(), 2);
 
     follower.systems.clear();
@@ -696,7 +696,7 @@ fn a_data_call_is_followed_like_any_other() {
 
     follower.observe(&record(
         carrier,
-        DvFrame {
+        &DvFrame {
             trunk_protocol: Some("tier_three".to_owned()),
             crc_verified: Some(true),
             channel: Some(LOGICAL_CHANNEL),
@@ -732,7 +732,7 @@ fn a_capacity_max_channel_update_follows_every_busy_timeslot() {
 
     follower.observe(&record(
         carrier,
-        DvFrame {
+        &DvFrame {
             trunk_protocol: Some("tier_three".to_owned()),
             crc_verified: Some(true),
             channel: Some(LOGICAL_CHANNEL),
@@ -783,7 +783,7 @@ fn a_channel_update_for_an_unknown_channel_starts_the_search() {
 
     follower.observe(&record(
         carrier,
-        DvFrame {
+        &DvFrame {
             trunk_protocol: Some("tier_three".to_owned()),
             crc_verified: Some(true),
             channel: Some(LOGICAL_CHANNEL),
@@ -820,7 +820,7 @@ fn a_search_with_no_band_named_reports_the_reach_it_settled_on() {
         Vec::new(),
     );
 
-    follower.observe(&record(carrier, identified_grant(1)));
+    follower.observe(&record(carrier, &identified_grant(1)));
     follower.reconcile();
 
     let status = status(&follower);
@@ -845,7 +845,7 @@ fn a_grant_for_an_unknown_channel_opens_search_receivers() {
     );
     assert!(follower.probes.is_empty(), "searched before it was asked");
 
-    follower.observe(&record(carrier, identified_grant(1)));
+    follower.observe(&record(carrier, &identified_grant(1)));
     follower.reconcile();
 
     let status = status(&follower);
@@ -899,14 +899,14 @@ fn traffic_that_answers_a_grant_teaches_the_system_where_the_channel_lives() {
         search_over(center_hz),
         Vec::new(),
     );
-    follower.observe(&record(carrier, identified_grant(1)));
+    follower.observe(&record(carrier, &identified_grant(1)));
     follower.reconcile();
     let probe = status(&follower).probes[1];
 
     for _ in 0..2 {
         follower.observe(&record(
             (probe.device_set, probe.channel),
-            traffic(91, 4001, 1),
+            &traffic(91, 4001, 1),
         ));
     }
 
@@ -940,17 +940,17 @@ fn a_learned_channel_is_followed_without_searching_again() {
         search_over(center_hz),
         Vec::new(),
     );
-    follower.observe(&record(carrier, identified_grant(1)));
+    follower.observe(&record(carrier, &identified_grant(1)));
     follower.reconcile();
     let probe = status(&follower).probes[1];
     for _ in 0..2 {
         follower.observe(&record(
             (probe.device_set, probe.channel),
-            traffic(91, 4001, 1),
+            &traffic(91, 4001, 1),
         ));
     }
 
-    follower.observe(&record(carrier, identified_grant(2)));
+    follower.observe(&record(carrier, &identified_grant(2)));
     follower.reconcile();
 
     let status = status(&follower);
@@ -981,7 +981,7 @@ fn a_manual_channel_map_is_followed_without_any_search() {
         }],
     );
 
-    follower.observe(&record(carrier, identified_grant(1)));
+    follower.observe(&record(carrier, &identified_grant(1)));
     follower.reconcile();
 
     let status = status(&follower);
@@ -1004,8 +1004,8 @@ fn an_announced_channel_never_starts_a_search() {
         Vec::new(),
     );
 
-    follower.observe(&record(carrier, definition(center_hz as u64 + 12_500)));
-    follower.observe(&record(carrier, identified_grant(1)));
+    follower.observe(&record(carrier, &definition(center_hz as u64 + 12_500)));
+    follower.observe(&record(carrier, &identified_grant(1)));
     follower.reconcile();
 
     let status = status(&follower);
@@ -1027,7 +1027,7 @@ fn dropping_the_system_closes_the_search_receivers_it_opened() {
         search_over(center_hz),
         Vec::new(),
     );
-    follower.observe(&record(carrier, identified_grant(1)));
+    follower.observe(&record(carrier, &identified_grant(1)));
     follower.reconcile();
     assert_eq!(engine.snapshot().device_sets[0].channels.len(), 5);
 
@@ -1054,14 +1054,14 @@ fn a_search_receiver_that_finds_a_control_channel_is_not_mistaken_for_traffic() 
         search_over(center_hz),
         Vec::new(),
     );
-    follower.observe(&record(carrier, identified_grant(1)));
+    follower.observe(&record(carrier, &identified_grant(1)));
     follower.reconcile();
     let probe = status(&follower).probes[0];
 
     for _ in 0..2 {
         let mut announced = identified_grant(1);
         announced.control_channel = Some(true);
-        follower.observe(&record((probe.device_set, probe.channel), announced));
+        follower.observe(&record((probe.device_set, probe.channel), &announced));
     }
     follower.reconcile();
 
@@ -1100,7 +1100,7 @@ fn define(follower: &mut Follower, carrier: (u32, u32), logical_channel: u16, rx
     if let Some(definition) = &mut frame.channel_definition {
         definition.channel = logical_channel;
     }
-    follower.observe(&record(carrier, frame));
+    follower.observe(&record(carrier, &frame));
 }
 
 /// Fills every receiver the system may hold with a call on its own channel and slot.
@@ -1112,7 +1112,7 @@ fn fill(follower: &mut Follower, carrier: (u32, u32), center_hz: f64) {
             let destination = 100 + u32::from(logical_channel) * 2 + u32::from(slot);
             follower.observe(&record(
                 carrier,
-                grant_to(logical_channel, slot, destination),
+                &grant_to(logical_channel, slot, destination),
             ));
         }
     }
@@ -1142,8 +1142,8 @@ fn a_locked_out_talkgroup_is_never_followed() {
         },
     );
 
-    follower.observe(&record(carrier, definition(center_hz as u64 + 125_000)));
-    follower.observe(&record(carrier, grant(1)));
+    follower.observe(&record(carrier, &definition(center_hz as u64 + 125_000)));
+    follower.observe(&record(carrier, &grant(1)));
 
     assert!(follower.followers.is_empty());
 }
@@ -1163,9 +1163,9 @@ fn listed_only_follows_just_the_priority_talkgroups() {
         },
     );
 
-    follower.observe(&record(carrier, definition(center_hz as u64 + 125_000)));
-    follower.observe(&record(carrier, grant_to(LOGICAL_CHANNEL, 1, 91)));
-    follower.observe(&record(carrier, grant_to(LOGICAL_CHANNEL, 2, 92)));
+    follower.observe(&record(carrier, &definition(center_hz as u64 + 125_000)));
+    follower.observe(&record(carrier, &grant_to(LOGICAL_CHANNEL, 1, 91)));
+    follower.observe(&record(carrier, &grant_to(LOGICAL_CHANNEL, 2, 92)));
 
     let status = status(&follower);
     assert_eq!(status.followers.len(), 1);
@@ -1179,9 +1179,9 @@ fn a_follower_names_the_call_its_channel_was_granted_to() {
     let carrier = (device_set, channel);
     let mut follower = follower(&engine, "tier_three", carrier);
 
-    follower.observe(&record(carrier, definition(center_hz as u64 + 125_000)));
-    follower.observe(&record(carrier, identified_grant(1)));
-    follower.observe(&record(carrier, grant_to(LOGICAL_CHANNEL, 1, 93)));
+    follower.observe(&record(carrier, &definition(center_hz as u64 + 125_000)));
+    follower.observe(&record(carrier, &identified_grant(1)));
+    follower.observe(&record(carrier, &grant_to(LOGICAL_CHANNEL, 1, 93)));
 
     let status = status(&follower);
     assert_eq!(status.followers.len(), 1);
@@ -1199,7 +1199,7 @@ fn a_full_system_hands_an_idle_receiver_to_a_new_call() {
     age_every_grant(&mut follower);
 
     define(&mut follower, carrier, 40, center_hz as u64 + 125_000);
-    follower.observe(&record(carrier, grant_to(40, 1, 7)));
+    follower.observe(&record(carrier, &grant_to(40, 1, 7)));
 
     let status = status(&follower);
     assert_eq!(status.followers.len(), MAX_FOLLOWERS_PER_SYSTEM);
@@ -1229,8 +1229,8 @@ fn a_priority_call_takes_a_busy_receiver_from_an_ordinary_one() {
     define(&mut follower, carrier, 40, center_hz as u64 + 125_000);
     define(&mut follower, carrier, 41, center_hz as u64 + 137_500);
 
-    follower.observe(&record(carrier, grant_to(41, 1, 8)));
-    follower.observe(&record(carrier, grant_to(40, 1, 7)));
+    follower.observe(&record(carrier, &grant_to(41, 1, 8)));
+    follower.observe(&record(carrier, &grant_to(40, 1, 7)));
 
     let status = status(&follower);
     assert_eq!(status.followers.len(), MAX_FOLLOWERS_PER_SYSTEM);
@@ -1262,7 +1262,7 @@ fn a_control_burst_names_the_site() {
 
     follower.observe(&record(
         carrier,
-        DvFrame {
+        &DvFrame {
             system_id: Some(0x1234),
             network_id: Some(12),
             site_id: Some(3),
@@ -1285,7 +1285,7 @@ fn a_protocol_the_decoder_never_declared_is_not_taken_for_the_system() {
 
     follower.observe(&record(
         carrier,
-        DvFrame {
+        &DvFrame {
             trunk_protocol: Some("phase_two".to_owned()),
             ..DvFrame::new("DMR", DvFrameKind::Control)
         },
@@ -1335,11 +1335,11 @@ fn a_protocol_with_one_call_per_carrier_follows_its_grant_without_a_timeslot() {
     follower.systems[0].decoder = "p25".to_owned();
     follower.reconcile();
     let traffic = center_hz as u64 + 125_000;
-    let logical_channel = 1 << 12 | 10;
+    let logical_channel = (1 << 12) | 0xA;
 
     follower.observe(&record(
         carrier,
-        DvFrame {
+        &DvFrame {
             trunk_protocol: Some("p25".to_owned()),
             channel: Some(logical_channel),
             destination: Some(0x1201),
@@ -1379,7 +1379,7 @@ fn a_site_code_wider_than_a_dmr_colour_code_keys_the_site() {
 
     follower.observe(&record(
         carrier,
-        DvFrame {
+        &DvFrame {
             trunk_protocol: Some("p25".to_owned()),
             color_code: Some(0x4D2),
             ..DvFrame::new("P25", DvFrameKind::Control)
@@ -1404,8 +1404,8 @@ fn open_call(engine: &Arc<Engine>) -> (Follower, (u32, u32)) {
     let (device_set, channel, center_hz) = control_channel(engine);
     let carrier = (device_set, channel);
     let mut follower = follower(engine, "tier_three", carrier);
-    follower.observe(&record(carrier, definition(center_hz as u64 + 125_000)));
-    follower.observe(&record(carrier, grant_to(LOGICAL_CHANNEL, 1, 93)));
+    follower.observe(&record(carrier, &definition(center_hz as u64 + 125_000)));
+    follower.observe(&record(carrier, &grant_to(LOGICAL_CHANNEL, 1, 93)));
     assert_eq!(follower.followers.len(), 1);
     (follower, carrier)
 }
@@ -1443,7 +1443,7 @@ fn bursts_on_a_traffic_channel_keep_it_open() {
 
     follower.observe(&record(
         traffic,
-        DvFrame {
+        &DvFrame {
             kind: DvFrameKind::Voice,
             ..DvFrame::default()
         },

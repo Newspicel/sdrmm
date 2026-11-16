@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn the_complex_correlator_tells_a_tone_from_its_mirror() {
         let tone: Vec<Complex<f32>> = (0..4_800)
-            .map(|n| Complex::from_polar(1.0, (TAU * 3_000.0 * n as f64 / RATE) as f32))
+            .map(|n| Complex::from_polar(1.0, (TAU * 3_000.0 * f64::from(n) / RATE) as f32))
             .collect();
         let mut upper = ToneCorrelator::complex(RATE, 3_000.0, 160);
         let mut lower = ToneCorrelator::complex(RATE, -3_000.0, 160);

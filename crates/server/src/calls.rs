@@ -22,7 +22,7 @@ pub(crate) use bindings::CallBinding;
 
 use tracker::Tracker;
 
-const RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+const RETENTION: Duration = Duration::from_hours(24);
 
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(1);
 

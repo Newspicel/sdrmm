@@ -165,7 +165,7 @@ impl SidChannel {
     }
 }
 
-fn report(params: &SidParams, window: &mut Window, lanes: &mut [Lane]) -> SidReport {
+fn report(params: SidParams, window: &mut Window, lanes: &mut [Lane]) -> SidReport {
     let floor = window.floor();
     let stations = lanes
         .iter_mut()
@@ -258,7 +258,7 @@ impl ChannelRx for SidChannel {
             window.add(power);
             if window.frames >= due {
                 out.events
-                    .push(DecoderEvent::of(&report(params, window, lanes)));
+                    .push(DecoderEvent::of(&report(*params, window, lanes)));
                 window.reset();
             }
         });

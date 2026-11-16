@@ -52,7 +52,11 @@ impl WindowDemod {
     fn demod_window(&mut self, mut chan: Vec<Complex<f32>>, onset: f64) -> Vec<DemodBurst> {
         let quiet = (onset as usize).saturating_sub(QUIET_GUARD).min(chan.len());
         let noise = if quiet > 0 {
-            chan[..quiet].iter().map(|s| s.norm_sqr()).sum::<f32>() / quiet as f32
+            chan[..quiet]
+                .iter()
+                .map(num_complex::Complex::norm_sqr)
+                .sum::<f32>()
+                / quiet as f32
         } else {
             1.0
         };

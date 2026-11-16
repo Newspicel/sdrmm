@@ -183,7 +183,8 @@ fn alecto(bits: &mut Bits, found: &mut Found) -> Outcome {
             },
         );
     }
-    let steady = (2..6).all(|row| first(row) == first(row + 1)) && bits.row(3)[4] & 0x0f == 0;
+    let steady =
+        (2..6).all(|row| first(row) == first(row + 1)) && bits.row(3)[4].trailing_zeros() >= 4;
     if kind == 3 || !steady {
         return Outcome::Skip;
     }

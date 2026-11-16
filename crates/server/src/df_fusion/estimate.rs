@@ -88,7 +88,7 @@ fn locate(
     let cee = (moments.ee / moments.total - mean_east * mean_east).max(0.0) + cell_variance + see;
     let cnn = (moments.nn / moments.total - mean_north * mean_north).max(0.0) + cell_variance + snn;
     let cen = moments.en / moments.total - mean_east * mean_north + sen;
-    let half_trace = (cee + cnn) / 2.0;
+    let half_trace = f64::midpoint(cee, cnn);
     let root = ((cee - cnn) / 2.0).hypot(cen);
     let major = 2.0 * (half_trace + root).max(0.0).sqrt();
     let minor = 2.0 * (half_trace - root).max(0.0).sqrt();
@@ -117,7 +117,7 @@ pub(crate) fn global(grid: &LogGrid, context: Context) -> Option<Located> {
         return None;
     }
     let (peak, top) = grid.max();
-    if !top.is_finite() || grid.on_border(peak) {
+    if !top.is_finite() || LogGrid::on_border(peak) {
         return None;
     }
     let origin = grid.index_centre(peak);

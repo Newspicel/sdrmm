@@ -1,7 +1,4 @@
-use std::{
-    io,
-    path::{Path, PathBuf},
-};
+use std::{io, path::Path};
 
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use sdrmm_server::StoreError;
@@ -19,7 +16,7 @@ enum Choice {
     Quit,
 }
 
-pub fn ask(db: PathBuf, error: &StoreError) -> Exit {
+pub fn ask(db: &Path, error: &StoreError) -> Exit {
     let answer = MessageDialog::new()
         .set_title("Database is newer")
         .set_description(format!("{error}\n\n{}", db.display()))
@@ -32,7 +29,7 @@ pub fn ask(db: PathBuf, error: &StoreError) -> Exit {
         .show();
     match choice(&answer) {
         Choice::Update => update::update_now(),
-        Choice::Delete => match delete(&db) {
+        Choice::Delete => match delete(db) {
             Ok(()) => Exit::Relaunch,
             Err(e) => {
                 tracing::error!("could not delete {}: {e}", db.display());

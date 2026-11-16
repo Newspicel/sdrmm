@@ -84,7 +84,10 @@ fn scalar(gathered: &mut [i16], extrinsic: &mut [i16], messages: &mut [i16]) -> 
 
 #[cfg(target_arch = "aarch64")]
 fn vector(gathered: &mut [i16], extrinsic: &mut [i16], messages: &mut [i16]) -> u32 {
-    use std::arch::aarch64::*;
+    use std::arch::aarch64::{
+        vaddvq_s16, vbslq_s16, vceqq_s16, vdupq_n_s16, veorq_s16, vld1q_s16, vmaxq_s16, vminq_s16,
+        vqabsq_s16, vqsubq_s16, vshrq_n_s16, vst1q_s16, vsubq_s16,
+    };
     let rows = messages.len();
     let gathered = gathered.as_mut_ptr();
     let extrinsic = extrinsic.as_mut_ptr();

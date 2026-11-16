@@ -54,8 +54,7 @@ fn probe_value(field: &SettingField) -> Value {
         Control::Number(spec) => whole(spec.max.or(spec.min).unwrap_or(1.0)),
         Control::Choice { options } => options
             .last()
-            .map(|option| option.value.clone())
-            .unwrap_or(Value::Null),
+            .map_or(Value::Null, |option| option.value.clone()),
         Control::Toggle => json!(true),
         Control::Text { .. } | Control::SerialPort { .. } => json!("probe"),
         Control::Lanes {

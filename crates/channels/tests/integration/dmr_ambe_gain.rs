@@ -103,7 +103,7 @@ struct Tally {
 }
 
 impl Tally {
-    fn score(&mut self, decoded: &[u16; 4], uncorrectable: bool, sent: &[u16; 4]) {
+    fn score(&mut self, decoded: [u16; 4], uncorrectable: bool, sent: [u16; 4]) {
         self.frames += 1;
         self.uncorrectable += u64::from(uncorrectable);
         let wrong: u32 = (0..2)
@@ -180,11 +180,11 @@ fn measure_point(
             let hard = decode_code_vectors(hard);
             stats
                 .hard
-                .score(&hard.info, hard.errors[0] == u8::MAX, sent);
+                .score(hard.info, hard.errors[0] == u8::MAX, *sent);
             let soft = decode_frame_soft(&received.soft[frame]);
             stats
                 .soft
-                .score(&soft.info, soft.errors[0] == u8::MAX, sent);
+                .score(soft.info, soft.errors[0] == u8::MAX, *sent);
         }
     }
     stats

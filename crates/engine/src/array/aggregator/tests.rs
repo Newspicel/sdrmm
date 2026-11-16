@@ -1003,6 +1003,10 @@ mod probe {
 }
 
 impl Rig {
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "the field only keeps the ports alive"
+    )]
     fn replug(&mut self) {
         let lanes = self.writers.len();
         let mut slots = Vec::with_capacity(lanes);
@@ -1124,7 +1128,7 @@ fn a_lane_output_keeps_the_array_index_when_correction_starts() {
     assert!(rig.aggregator.correcting);
     let mut last = (0, Vec::new());
     while ring.consume(usize::MAX, |samples, index| {
-        last = (index, samples.to_vec())
+        last = (index, samples.to_vec());
     }) > 0
     {}
     let (index, samples) = last;

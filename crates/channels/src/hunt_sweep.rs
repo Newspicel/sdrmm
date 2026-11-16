@@ -407,9 +407,9 @@ mod tests {
 
     fn pattern(offset_deg: f64) -> f64 {
         let half = 30f64.to_radians().cos();
-        let power = 0.5f64.ln() / ((1.0 + half) / 2.0).ln();
+        let power = 0.5f64.ln() / f64::midpoint(1.0, half).ln();
         let cosine = offset_deg.to_radians().cos();
-        (10.0 * power * ((1.0 + cosine) / 2.0).log10()).max(-15.0)
+        (10.0 * power * f64::midpoint(1.0, cosine).log10()).max(-15.0)
     }
 
     fn fix(t_s: f64, heading_deg: Option<f64>) -> PositionFix {

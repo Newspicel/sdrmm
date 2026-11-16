@@ -62,7 +62,7 @@ pub fn run_against_media_with(
     } else {
         1
     };
-    let media = media.map(media_env).unwrap_or_default();
+    let media = media.map_or_default(media_env);
     let mut env: Vec<(&str, &str)> = media.iter().map(|(k, v)| (*k, v.as_str())).collect();
     env.extend_from_slice(extra);
     retry(attempts, || run_with_env("cargo", args, cwd, &env))

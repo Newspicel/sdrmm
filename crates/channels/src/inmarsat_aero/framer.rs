@@ -95,16 +95,16 @@ impl FrameSink {
 
     pub(super) fn offer(&mut self, source: usize, time: u64, frame: DecodedFrame) {
         let Some(merge) = self.merge else {
-            self.flush(frame);
+            self.flush(&frame);
             return;
         };
         if let Some(pending) = self.pending.take() {
             if pending.source != source && pending.time.abs_diff(time) < merge.window {
                 let preferred = source > pending.source;
-                self.flush(pending.frame.merge(frame, preferred));
+                self.flush(&pending.frame.merge(frame, preferred));
                 return;
             }
-            self.flush(pending.frame);
+            self.flush(&pending.frame);
         }
         self.pending = Some(Pending {
             source,
@@ -120,11 +120,11 @@ impl FrameSink {
         if now.saturating_sub(pending.time) >= merge.settle
             && let Some(pending) = self.pending.take()
         {
-            self.flush(pending.frame);
+            self.flush(&pending.frame);
         }
     }
 
-    fn flush(&mut self, frame: DecodedFrame) {
+    fn flush(&mut self, frame: &DecodedFrame) {
         self.last_header = Some(frame.header);
         self.last_fec_corrected = Some(frame.fec_corrected);
         self.lock.update(frame.header);

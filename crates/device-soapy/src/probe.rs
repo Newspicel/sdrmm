@@ -112,7 +112,7 @@ static HELPER: AtomicBool = AtomicBool::new(false);
 /// Answers a probe request and exits when this process was spawned as one, and otherwise marks
 /// the running executable as a probe helper so later enumerations run in a child process.
 ///
-/// Call it before parsing arguments: vendor SoapySDR modules open USB devices while enumerating
+/// Call it before parsing arguments: vendor `SoapySDR` modules open USB devices while enumerating
 /// and a faulty one aborts or segfaults the process it runs in.
 pub fn enable_isolated_probes() {
     HELPER.store(true, Ordering::Relaxed);

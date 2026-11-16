@@ -555,6 +555,10 @@ impl Windows {
         self.reference
     }
 
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "the event moves into its slot"
+    )]
     fn push_event(&mut self, event: AggregatorEvent) {
         match self.events.get_mut(self.event_count) {
             Some(slot) => {

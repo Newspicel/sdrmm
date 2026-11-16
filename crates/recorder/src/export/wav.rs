@@ -75,14 +75,14 @@ fn header(meta: &SigmfMeta, sample_rate: u32, data_len: u64) -> Vec<u8> {
     out.extend_from_slice(b"WAVE");
 
     if rf64 {
-        chunk(&mut out, b"ds64", DS64_SIZE);
+        chunk(&mut out, *b"ds64", DS64_SIZE);
         out.extend_from_slice(&riff_size.to_le_bytes());
         out.extend_from_slice(&data_len.to_le_bytes());
         out.extend_from_slice(&frames.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
     }
 
-    chunk(&mut out, b"fmt ", FMT_SIZE);
+    chunk(&mut out, *b"fmt ", FMT_SIZE);
     out.extend_from_slice(&FORMAT_IEEE_FLOAT.to_le_bytes());
     out.extend_from_slice(&CHANNELS.to_le_bytes());
     out.extend_from_slice(&sample_rate.to_le_bytes());
@@ -95,18 +95,18 @@ fn header(meta: &SigmfMeta, sample_rate: u32, data_len: u64) -> Vec<u8> {
     out.extend_from_slice(&BITS_PER_SAMPLE.to_le_bytes());
     out.extend_from_slice(&0u16.to_le_bytes());
 
-    chunk(&mut out, b"fact", FACT_SIZE);
+    chunk(&mut out, *b"fact", FACT_SIZE);
     out.extend_from_slice(&clamp32(frames).to_le_bytes());
 
-    chunk(&mut out, b"auxi", AUXI_SIZE);
+    chunk(&mut out, *b"auxi", AUXI_SIZE);
     out.extend_from_slice(&auxi(meta, sample_rate, frames));
 
-    chunk(&mut out, b"data", clamp32(data_len));
+    chunk(&mut out, *b"data", clamp32(data_len));
     out
 }
 
-fn chunk(out: &mut Vec<u8>, id: &[u8; 4], size: u32) {
-    out.extend_from_slice(id);
+fn chunk(out: &mut Vec<u8>, id: [u8; 4], size: u32) {
+    out.extend_from_slice(&id);
     out.extend_from_slice(&size.to_le_bytes());
 }
 
@@ -208,7 +208,7 @@ mod tests {
         let bytes = drain(&mut export);
 
         assert_eq!(&bytes[..4], b"RIFF");
-        assert_eq!(u32_at(&bytes, 4) as u64, bytes.len() as u64 - 8);
+        assert_eq!(u64::from(u32_at(&bytes, 4)), bytes.len() as u64 - 8);
         assert_eq!(&bytes[8..12], b"WAVE");
 
         let found = chunks(&bytes);

@@ -382,11 +382,11 @@ impl Engine {
     pub fn start_network_export(
         &self,
         ds: u32,
-        node: String,
+        node: &str,
         stream: u32,
-        settings: NetworkExportSettings,
+        settings: &NetworkExportSettings,
     ) -> Result<NetworkExportStatus, EngineError> {
-        check_export_request(&node, &settings)?;
+        check_export_request(node, settings)?;
         loop {
             let rate = {
                 let inner = self.lock();
@@ -415,7 +415,7 @@ impl Engine {
                 refeed,
                 shared,
                 writer,
-            } = network_export::start(&settings)?;
+            } = network_export::start(settings)?;
             let commit = {
                 let mut inner = self.lock();
                 match inner.device_sets.get_mut(&ds) {
@@ -433,7 +433,7 @@ impl Engine {
                             .unwrap_or(DEFAULT_CENTER_HZ);
                         let export = NetworkExportState {
                             clients_seen: 0,
-                            node: node.clone(),
+                            node: node.to_owned(),
                             stream,
                             settings: settings.clone(),
                             sample_rate: rate.round() as u64,

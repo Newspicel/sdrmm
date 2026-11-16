@@ -375,15 +375,12 @@ impl<B: BulkIn> Pump<B> {
                 continue;
             };
             self.shared.received.fetch_add(1, Ordering::Relaxed);
-            let step = match completion.status {
-                Ok(()) => {
-                    let len = completion.actual_len.min(completion.buffer.len());
-                    self.deliver(&completion.buffer[..len], tx)
-                }
-                Err(_) => {
-                    cancelled = cancelled.saturating_add(self.transfer_size as u64);
-                    Step::Progress
-                }
+            let step = if let Ok(()) = completion.status {
+                let len = completion.actual_len.min(completion.buffer.len());
+                self.deliver(&completion.buffer[..len], tx)
+            } else {
+                cancelled = cancelled.saturating_add(self.transfer_size as u64);
+                Step::Progress
             };
             self.parked.push(completion.buffer);
             if step == Step::Ended {
@@ -447,7 +444,9 @@ mod tests {
 
     impl FakeBulkIn {
         fn state(&self) -> MutexGuard<'_, FakeState> {
-            self.state.lock().unwrap_or_else(|e| e.into_inner())
+            self.state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
         }
 
         fn push_data(&self, bytes: impl Into<Vec<u8>>) {

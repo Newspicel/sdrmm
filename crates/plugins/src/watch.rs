@@ -277,11 +277,11 @@ impl PluginWatcher {
     /// Loads `dir` now and again whenever a file in it changes, handing `reloaded` the type ids
     /// of every decoder and processor a changed file rebuilt, for what runs them to reopen.
     pub fn start(
-        dir: PathBuf,
+        dir: &Path,
         reloaded: impl Fn(&[String]) + Send + 'static,
     ) -> Result<Self, PluginError> {
-        std::fs::create_dir_all(&dir).map_err(|error| PluginError::Dir(error.to_string()))?;
-        let mut plugins = PluginDir::new(dir.clone());
+        std::fs::create_dir_all(dir).map_err(|error| PluginError::Dir(error.to_string()))?;
+        let mut plugins = PluginDir::new(dir.to_path_buf());
         plugins.reload();
         let (tx, rx) = mpsc::channel();
         let mut watcher = notify::recommended_watcher(move |event| {
@@ -289,7 +289,7 @@ impl PluginWatcher {
         })
         .map_err(|error| PluginError::Dir(error.to_string()))?;
         watcher
-            .watch(&dir, RecursiveMode::NonRecursive)
+            .watch(dir, RecursiveMode::NonRecursive)
             .map_err(|error| PluginError::Dir(error.to_string()))?;
         thread::Builder::new()
             .name("plugin-watch".to_owned())

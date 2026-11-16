@@ -110,14 +110,13 @@ impl NetworkExportTap {
         if samples.is_empty() {
             return true;
         }
-        match self.samples.push_entire_slice(samples) {
-            Ok(()) => true,
-            Err(_) => {
-                self.shared
-                    .feed_fault
-                    .store(FeedFault::Overflow as u8, Ordering::Release);
-                false
-            }
+        if let Ok(()) = self.samples.push_entire_slice(samples) {
+            true
+        } else {
+            self.shared
+                .feed_fault
+                .store(FeedFault::Overflow as u8, Ordering::Release);
+            false
         }
     }
 }
@@ -345,7 +344,7 @@ fn write_tcp(
                 shared.bytes.fetch_add(sent as u64, Ordering::Relaxed);
                 shared.packets.fetch_add(1, Ordering::Relaxed);
             }
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
             Err(error) => return Err(error),
         }
     }

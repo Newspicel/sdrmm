@@ -61,7 +61,7 @@ use crate::encoder::Modulator;
 #[must_use]
 pub fn burst(tx: &mut dyn Modulator) -> Vec<Complex<f32>> {
     let mut iq = Vec::new();
-    let mut block = [Complex::new(0.0, 0.0); 4_096];
+    let mut block = vec![Complex::new(0.0, 0.0); 4_096];
     loop {
         let n = tx.generate(&mut block);
         iq.extend_from_slice(&block[..n]);

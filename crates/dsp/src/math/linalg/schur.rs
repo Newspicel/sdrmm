@@ -87,7 +87,11 @@ impl Schur<'_> {
             for (row, slot) in v.iter_mut().enumerate().skip(k + 2) {
                 *slot = self.h[row * m + k];
             }
-            let length = v.iter().map(|value| value.norm_sqr()).sum::<f64>().sqrt();
+            let length = v
+                .iter()
+                .map(num_complex::Complex::norm_sqr)
+                .sum::<f64>()
+                .sqrt();
             for value in v.iter_mut() {
                 *value /= length;
             }

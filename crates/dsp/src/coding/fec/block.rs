@@ -89,7 +89,7 @@ impl ParityCode {
         if syndrome == 0 {
             return Some(0);
         }
-        if syndrome.count_ones() == 1 {
+        if syndrome.is_power_of_two() {
             let j = syndrome.trailing_zeros() as usize;
             word[self.k + j] = !word[self.k + j];
             return Some(1);

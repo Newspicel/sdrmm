@@ -923,7 +923,7 @@ impl sdrmm_device::SdrDevice for FaultingDevice {
         let die = self.die.clone();
         let stop = self.stop.clone();
         self.worker = Some(std::thread::spawn(move || {
-            let block = [num_complex::Complex::new(0.1f32, 0.0); 4_096];
+            let block = vec![num_complex::Complex::new(0.1f32, 0.0); 4_096];
             while !stop.load(std::sync::atomic::Ordering::SeqCst) {
                 if die.load(std::sync::atomic::Ordering::SeqCst) {
                     sink.fail(sdrmm_device::DeviceError::Io("mock died".to_string()));
@@ -1343,7 +1343,7 @@ async fn audio_forwarder_discards_packets_older_than_the_live_budget() {
     let observed = out.clone();
     let task = spawn_audio(MEDIA_ID_BASE, rx, out);
     tx.send(AudioPacket {
-        created_at: Instant::now() - Duration::from_secs(1),
+        created_at: Instant::now().checked_sub(Duration::from_secs(1)).unwrap(),
         seq: 0,
         timestamp: 0,
         channels: 1,
@@ -1370,9 +1370,7 @@ async fn audio_forwarder_discards_packets_older_than_the_live_budget() {
 #[tokio::test(start_paused = true)]
 async fn a_briefly_stalled_socket_writer_keeps_the_connection() {
     let (out, output) = outbox::channel();
-    out.send(Message::Text("first".into()))
-        .await
-        .expect("queued");
+    out.send(Message::Text("first".into())).expect("queued");
     let (delivered, mut received) = tokio::sync::mpsc::unbounded_channel();
     let sink = Box::pin(futures::sink::unfold(
         delivered,
@@ -1387,7 +1385,6 @@ async fn a_briefly_stalled_socket_writer_keeps_the_connection() {
     });
     assert_eq!(received.recv().await, Some(Message::Text("first".into())));
     out.send(Message::Text("second".into()))
-        .await
         .expect("a two second stall must not close the connection");
     assert_eq!(received.recv().await, Some(Message::Text("second".into())));
     drop(out);
@@ -1397,16 +1394,14 @@ async fn a_briefly_stalled_socket_writer_keeps_the_connection() {
 #[tokio::test(start_paused = true)]
 async fn a_stalled_socket_writer_expires_and_closes_its_output_queue() {
     let (out, output) = outbox::channel();
-    out.send(Message::Text("queued".into()))
-        .await
-        .expect("queued");
+    out.send(Message::Text("queued".into())).expect("queued");
     let sink = Box::pin(futures::sink::unfold((), |(), _: Message| {
         futures::future::pending::<Result<(), ()>>()
     }));
     timeout(outbox::WRITE_TIMEOUT * 4, write_output(sink, output))
         .await
         .expect("writer must stop");
-    assert!(out.send(Message::Text("after close".into())).await.is_err());
+    assert!(out.send(Message::Text("after close".into())).is_err());
 }
 
 #[test]

@@ -105,9 +105,9 @@ pub(crate) fn ordered(mut batch: Vec<(Command, u32)>) -> Vec<(Command, u32)> {
 mod tests {
     use super::*;
 
-    fn greeting(magic: &[u8; 4], tuner: u32, gains: u32) -> [u8; GREETING_LEN] {
+    fn greeting(magic: [u8; 4], tuner: u32, gains: u32) -> [u8; GREETING_LEN] {
         let mut bytes = [0u8; GREETING_LEN];
-        bytes[..4].copy_from_slice(magic);
+        bytes[..4].copy_from_slice(&magic);
         bytes[4..8].copy_from_slice(&tuner.to_be_bytes());
         bytes[8..].copy_from_slice(&gains.to_be_bytes());
         bytes
@@ -115,21 +115,21 @@ mod tests {
 
     #[test]
     fn the_greeting_carries_the_tuner_and_its_step_count() {
-        let parsed = Greeting::parse(&greeting(b"RTL0", 5, 29)).expect("a real greeting");
+        let parsed = Greeting::parse(&greeting(*b"RTL0", 5, 29)).expect("a real greeting");
         assert_eq!(parsed.tuner, Tuner::R820T);
         assert_eq!(parsed.gain_steps, 29);
     }
 
     #[test]
     fn a_greeting_without_the_magic_is_refused_by_name() {
-        let error = Greeting::parse(&greeting(b"HTTP", 5, 29)).expect_err("not rtl_tcp");
+        let error = Greeting::parse(&greeting(*b"HTTP", 5, 29)).expect_err("not rtl_tcp");
         assert!(error.to_string().contains("RTL0"), "{error}");
     }
 
     #[test]
     fn an_unrecognised_tuner_code_is_unknown_rather_than_a_failure() {
         for code in [0, 7, 99] {
-            let parsed = Greeting::parse(&greeting(b"RTL0", code, 0)).expect("still a greeting");
+            let parsed = Greeting::parse(&greeting(*b"RTL0", code, 0)).expect("still a greeting");
             assert_eq!(parsed.tuner, Tuner::Unknown);
         }
     }

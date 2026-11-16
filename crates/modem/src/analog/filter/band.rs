@@ -33,7 +33,7 @@ impl BandFilter {
         let high = self.high.clamp((low + GUARD).min(EDGE), EDGE);
         let taps = odd_taps(self.taps);
         let half_width = 0.5 * (high - low);
-        let centre = 0.5 * (high + low);
+        let centre = f64::midpoint(high, low);
         let prototype = design_lowpass(taps, half_width.min(EDGE));
         if centre.abs() < CENTRED {
             Band::Real(Decimator::new(&prototype, 1))

@@ -149,7 +149,7 @@ fn post_filter(rate: f64) -> RealDecimator {
     RealDecimator::new(&pulse::rect(rate / BAUD, Norm::Area), 1)
 }
 
-fn polarity(p: &NavtexParams) -> f32 {
+fn polarity(p: NavtexParams) -> f32 {
     if p.invert { -1.0 } else { 1.0 }
 }
 
@@ -163,7 +163,7 @@ impl NativeChannel for NavtexChannel {
         Ok(Self {
             demod: FmDemod::new(ctx.input_rate, SHIFT_HZ / 2.0),
             post: post_filter(ctx.input_rate),
-            polarity: polarity(&p),
+            polarity: polarity(p),
             sync: BitSync::new(ctx.input_rate, BAUD),
             decoder: Decoder::new(),
             demod_buf: Vec::new(),
@@ -174,7 +174,7 @@ impl NativeChannel for NavtexChannel {
 
 impl ChannelRx for NavtexChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
-        let wanted = polarity(&params(&settings)?);
+        let wanted = polarity(params(&settings)?);
         if wanted != self.polarity {
             self.polarity = wanted;
             self.reset();
@@ -317,24 +317,21 @@ impl Decoder {
             valid(combined).then_some((combined, true))
         };
 
-        match decided {
-            Some((code, repaired)) => {
-                if repaired {
-                    self.errors_corrected = self.errors_corrected.saturating_add(1);
-                }
-                self.error_run = self.error_run.saturating_sub(1);
-                self.emit_char(code, out);
+        if let Some((code, repaired)) = decided {
+            if repaired {
+                self.errors_corrected = self.errors_corrected.saturating_add(1);
             }
-            None => {
-                self.characters_lost = self.characters_lost.saturating_add(1);
-                self.error_run += 2;
-                if self.error_run > MAX_ERROR_RUN {
-                    self.emit_message(false, out);
-                    self.state = State::Phasing {
-                        since_hit: usize::MAX,
-                    };
-                    self.ita2.unshift();
-                }
+            self.error_run = self.error_run.saturating_sub(1);
+            self.emit_char(code, out);
+        } else {
+            self.characters_lost = self.characters_lost.saturating_add(1);
+            self.error_run += 2;
+            if self.error_run > MAX_ERROR_RUN {
+                self.emit_message(false, out);
+                self.state = State::Phasing {
+                    since_hit: usize::MAX,
+                };
+                self.ita2.unshift();
             }
         }
     }
@@ -526,7 +523,7 @@ mod tests {
                 messages.push(
                     ev.read::<NavtexMessage>()
                         .unwrap_or_else(|| panic!("unexpected event {ev:?}")),
-                )
+                );
             }
             pos = end;
         }

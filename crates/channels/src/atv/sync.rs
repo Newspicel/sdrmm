@@ -58,13 +58,13 @@ pub(super) struct Levels {
 }
 
 impl Levels {
-    pub fn sync(&self) -> f32 {
+    pub fn sync(self) -> f32 {
         self.blank - self.tip
     }
 
     /// The sum of `span` on the tip-to-blanking scale, each sample clamped so a click
     /// cannot outweigh the rest; in lanes so it vectorizes.
-    fn area(&self, span: &[f32]) -> f32 {
+    fn area(self, span: &[f32]) -> f32 {
         let (tip, inv) = (self.tip, self.sync().recip());
         let level = |v: f32| ((v - tip) * inv).clamp(-0.5, 1.5);
         let (blocks, tail) = span.as_chunks::<AREA_LANES>();
@@ -408,7 +408,7 @@ impl LineSync {
         let agree = apart <= FOLD_AGREE * g.sync;
         let both = |k: i64| {
             let i = k.rem_euclid(len as i64) as usize;
-            0.5 * (at(0, i) + at(1, i))
+            f32::midpoint(at(0, i), at(1, i))
         };
         let span =
             |range: &std::ops::Range<f64>| range.start.round() as i64..range.end.round() as i64;
@@ -549,7 +549,7 @@ impl LineSync {
                         SYNC_WIDTH_RANGE.0 * self.g.sync,
                         SYNC_WIDTH_RANGE.1 * self.g.sync,
                     );
-                    0.5 * (lead + trail)
+                    f64::midpoint(lead, trail)
                 } else {
                     trail
                 };

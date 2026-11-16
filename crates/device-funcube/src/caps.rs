@@ -136,6 +136,10 @@ pub(crate) struct Writes {
     pub(crate) if_gain_db: Option<u8>,
     pub(crate) if_filter: Option<IfFilter>,
     pub(crate) bias_tee: Option<bool>,
+    #[expect(
+        clippy::option_option,
+        reason = "None keeps the filter, Some(None) sets auto"
+    )]
     pub(crate) rf_filter: Option<Option<RfFilter>>,
 }
 
@@ -243,8 +247,8 @@ mod tests {
 
     use super::*;
 
-    fn plan_of(delta: DeviceSettings) -> Result<Writes, DeviceError> {
-        plan(&delta, &capabilities())
+    fn plan_of(delta: &DeviceSettings) -> Result<Writes, DeviceError> {
+        plan(delta, &capabilities())
     }
 
     fn extra(value: serde_json::Value) -> DeviceSettings {
@@ -274,7 +278,7 @@ mod tests {
                 center_hz: Some(hz),
                 ..DeviceSettings::default()
             };
-            assert_eq!(plan_of(delta).is_ok(), ok, "{hz} Hz");
+            assert_eq!(plan_of(&delta).is_ok(), ok, "{hz} Hz");
         }
     }
 
@@ -286,12 +290,12 @@ mod tests {
             sample_rate: Some(96_000.0),
             ..DeviceSettings::default()
         };
-        assert!(plan_of(other).is_err());
+        assert!(plan_of(&other).is_err());
         let native = DeviceSettings {
             sample_rate: Some(192_000.0),
             ..DeviceSettings::default()
         };
-        assert_eq!(plan_of(native).expect("native"), Writes::default());
+        assert_eq!(plan_of(&native).expect("native"), Writes::default());
     }
 
     #[test]
@@ -310,7 +314,7 @@ mod tests {
 
     #[test]
     fn gains_become_firmware_writes() {
-        let writes = plan_of(DeviceSettings {
+        let writes = plan_of(&DeviceSettings {
             gains: vec![
                 gain(LNA, 0.0),
                 gain(MIXER, ON),
@@ -336,7 +340,7 @@ mod tests {
                 gains: vec![value.clone()],
                 ..DeviceSettings::default()
             };
-            assert!(plan_of(delta).is_err(), "{value:?}");
+            assert!(plan_of(&delta).is_err(), "{value:?}");
         }
     }
 
@@ -346,7 +350,7 @@ mod tests {
         assert_eq!(caps.bandwidths.len(), 8);
         assert!(!caps.bandwidth_auto);
         let pick = |bandwidth| {
-            plan_of(DeviceSettings {
+            plan_of(&DeviceSettings {
                 bandwidth: Some(bandwidth),
                 ..DeviceSettings::default()
             })
@@ -364,15 +368,15 @@ mod tests {
     #[test]
     fn the_rf_filter_is_auto_or_one_of_the_firmware_bands() {
         assert_eq!(
-            plan_of(extra(AUTO.into())).expect("auto").rf_filter,
+            plan_of(&extra(AUTO.into())).expect("auto").rf_filter,
             Some(None)
         );
         assert_eq!(
-            plan_of(extra("145".into())).expect("145").rf_filter,
+            plan_of(&extra("145".into())).expect("145").rf_filter,
             Some(Some(RfFilter::Mhz145))
         );
-        assert!(plan_of(extra("9000".into())).is_err());
-        assert!(plan_of(extra(true.into())).is_err());
+        assert!(plan_of(&extra("9000".into())).is_err());
+        assert!(plan_of(&extra(true.into())).is_err());
         let other = DeviceSettings {
             extra: vec![ExtraValue {
                 name: "agc".to_string(),
@@ -380,7 +384,7 @@ mod tests {
             }],
             ..DeviceSettings::default()
         };
-        assert!(plan_of(other).is_err());
+        assert!(plan_of(&other).is_err());
     }
 
     #[test]
@@ -402,14 +406,14 @@ mod tests {
             agc: Some(agc),
             ..DeviceSettings::default()
         };
-        assert!(plan_of(with(AgcSetting::off())).is_ok());
-        assert!(plan_of(with(AgcSetting::switched(true))).is_err());
+        assert!(plan_of(&with(AgcSetting::off())).is_ok());
+        assert!(plan_of(&with(AgcSetting::switched(true))).is_err());
     }
 
     #[test]
     fn ppm_and_antenna_are_bounded() {
         let ppm = |value| {
-            plan_of(DeviceSettings {
+            plan_of(&DeviceSettings {
                 ppm: Some(value),
                 ..DeviceSettings::default()
             })
@@ -421,7 +425,7 @@ mod tests {
             antenna: Some("TX".to_string()),
             ..DeviceSettings::default()
         };
-        assert!(plan_of(antenna).is_err());
+        assert!(plan_of(&antenna).is_err());
     }
 
     #[test]
@@ -459,7 +463,7 @@ mod tests {
             bias_tee: true,
             ..Config::default()
         };
-        let writes = plan_of(settings(&config)).expect("round trip");
+        let writes = plan_of(&settings(&config)).expect("round trip");
         assert_eq!(writes.center_hz, Some(433_920_000));
         assert_eq!(writes.lna, Some(true));
         assert_eq!(writes.mixer, Some(false));

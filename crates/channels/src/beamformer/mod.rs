@@ -320,6 +320,7 @@ struct Beamformer {
 }
 
 impl Beamformer {
+    #[expect(clippy::large_types_passed_by_value, reason = "stored in self")]
     fn build(
         ctx: &ArrayCtx<'_>,
         settings: Settings,
@@ -470,6 +471,7 @@ impl Beamformer {
         self.since_update = 0;
     }
 
+    #[expect(clippy::large_types_passed_by_value, reason = "stored in self")]
     fn apply(&mut self, settings: Settings) -> Result<(), ChannelError> {
         if self.settings.rebuild_needed(&settings) {
             return Err(ChannelError::Refused("Needs a rebuild"));

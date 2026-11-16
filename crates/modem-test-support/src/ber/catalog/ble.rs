@@ -69,10 +69,7 @@ fn link(phy: BlePhy, label: &str) -> Link {
             };
             let mut first = First::default();
             lane.process(wave, &mut first);
-            first
-                .payload
-                .map(|payload| bits_of(&payload))
-                .unwrap_or_default()
+            first.payload.map_or_default(|payload| bits_of(&payload))
         }),
     }
 }

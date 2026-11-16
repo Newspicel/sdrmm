@@ -51,7 +51,7 @@ fn generated(node_id: &str, data: &Value) -> Value {
 mod tests {
     use super::*;
 
-    fn snapshot(nodes: Vec<Value>) -> Value {
+    fn snapshot(nodes: &[Value]) -> Value {
         json!({ "graph": { "nodes": nodes } })
     }
 
@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn a_recording_node_becomes_a_device_pinned_to_its_stem() {
-        let mut value = snapshot(vec![json!({
+        let mut value = snapshot(&[json!({
             "id": "rec",
             "kind": RETIRED_RECORDING,
             "data": { "recording": "2026-09-16T10-00-00" },
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn a_recording_node_that_named_no_file_becomes_an_empty_device() {
-        let mut value = snapshot(vec![json!({
+        let mut value = snapshot(&[json!({
             "id": "rec",
             "kind": RETIRED_RECORDING,
             "data": {},
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn a_generator_node_becomes_a_device_pinned_to_its_own_key() {
-        let mut value = snapshot(vec![json!({
+        let mut value = snapshot(&[json!({
             "id": "signal_gen:9f2c",
             "kind": RETIRED_GENERATOR,
             "data": { "running": false },
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn a_running_generator_comes_back_running() {
-        let mut value = snapshot(vec![json!({
+        let mut value = snapshot(&[json!({
             "id": "gen",
             "kind": RETIRED_GENERATOR,
             "data": {},
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn a_device_node_is_left_alone() {
-        let mut value = snapshot(vec![json!({
+        let mut value = snapshot(&[json!({
             "id": "dev",
             "kind": NodeKind::Device.as_str(),
             "data": { "device": { "backend": "rtlsdr", "key": "0" } },

@@ -35,7 +35,7 @@ fn a_kind_is_a_plain_string_on_the_wire() {
     assert_eq!(EventKind::new("probe_text"), kind);
     assert_eq!(kind.to_string(), "probe_text");
     assert_eq!(format!("{kind:?}"), "EventKind(probe_text)");
-    assert!(kind == "probe_text");
+    assert_eq!(kind, "probe_text");
     let ghost: EventKind = serde_json::from_value(json!("ghost")).expect("any name parses");
     assert_eq!(ghost.as_str(), "ghost");
 }

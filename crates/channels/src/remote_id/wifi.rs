@@ -158,7 +158,7 @@ fn wire_phy(phy: WifiPhy) -> RemoteIdPhy {
 
 pub(crate) struct Events<'a> {
     pub tracker: &'a mut Tracker,
-    pub events: &'a mut Vec<DecoderEvent>,
+    pub out: &'a mut Vec<DecoderEvent>,
     pub channel: Option<u8>,
 }
 
@@ -175,7 +175,7 @@ impl phy::Sink for Events<'_> {
             level_dbfs: frame.level_dbfs,
         };
         if let Some(event) = self::frame(&mpdu, self.tracker) {
-            self.events.push(DecoderEvent::of(&event));
+            self.out.push(DecoderEvent::of(&event));
         }
     }
 }

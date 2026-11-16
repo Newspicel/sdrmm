@@ -205,7 +205,7 @@ impl SuperframeAssembler {
         superframe.extend_from_slice(&self.window);
         let repair = self.repair(&mut superframe);
         let result = (repair.decoded_lanes > 0 && header_ok(&superframe))
-            .then(|| self.split(&superframe, repair.corrected))
+            .then(|| Self::split(&superframe, repair.corrected))
             .flatten();
         self.repaired = superframe;
         result
@@ -235,7 +235,7 @@ impl SuperframeAssembler {
         repair
     }
 
-    fn split(&self, superframe: &[u8], corrected: u32) -> Option<AccessUnits> {
+    fn split(superframe: &[u8], corrected: u32) -> Option<AccessUnits> {
         let format = AudioFormat::from_header(*superframe.get(2)?);
         let starts = unit_offsets(superframe, format)?;
         let mut units = Vec::with_capacity(format.access_units());

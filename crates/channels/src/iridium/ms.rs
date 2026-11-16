@@ -108,7 +108,7 @@ pub fn parse(blocks: &[Vec<u8>]) -> Option<MsFrame> {
     let ric = rest[..22]
         .iter()
         .rev()
-        .fold(0u32, |v, &b| (v << 1) | b as u32);
+        .fold(0u32, |v, &b| (v << 1) | u32::from(b));
     let format = bits_to_u32(&rest[22..27]) as u8;
     let seq = bits_to_u32(&rest[27..33]) as u8;
     if bits_to_u32(&rest[33..37]) != 0 {
@@ -142,7 +142,10 @@ fn msg_checksum(blocks: &[&Vec<u8>]) -> bool {
     }
     let mut cs_bits: Vec<u8> = blocks[0][21 - 3..].to_vec();
     cs_bits.extend_from_slice(&blocks[1][1..8]);
-    let csum_val = cs_bits.iter().rev().fold(0u32, |v, &b| (v << 1) | b as u32);
+    let csum_val = cs_bits
+        .iter()
+        .rev()
+        .fold(0u32, |v, &b| (v << 1) | u32::from(b));
     let mut csum = 0u32;
     for (idx, b) in blocks.iter().enumerate() {
         if idx != 1 {
@@ -181,7 +184,7 @@ fn ascii_content(data: &[u8], body_blocks: &[&Vec<u8>]) -> Option<MsContent> {
     }
     let chars = &rest[8..];
     let mut text = String::new();
-    for ch in chars.as_chunks::<7>().0.iter() {
+    for ch in chars.as_chunks::<7>().0 {
         let c = bits_to_u32(ch);
         if c == 3 {
             break;
@@ -248,7 +251,7 @@ impl PagerReassembler {
         let idx = (*ctr as usize).min(entry.0.len() - 1);
         entry.0[idx] = Some(text.clone());
         entry.1 = time;
-        if entry.0.iter().all(|p| p.is_some()) {
+        if entry.0.iter().all(std::option::Option::is_some) {
             let full: String = entry.0.iter().map(|p| p.as_deref().unwrap_or("")).collect();
             self.pending.remove(&body.ric);
             return Some(full);
@@ -281,7 +284,7 @@ mod tests {
         rest.push(0);
         push_int(&mut rest, 0, 7);
         for c in text.bytes() {
-            push_int(&mut rest, c as u32, 7);
+            push_int(&mut rest, u32::from(c), 7);
         }
         push_int(&mut rest, 3, 7);
 

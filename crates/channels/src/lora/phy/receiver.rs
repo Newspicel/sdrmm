@@ -7,7 +7,7 @@ use super::{
     chirp::{Dechirper, Slope, wrap},
     detect::{Accumulator, DETECT_WINDOWS, DownHistory, Levels, STEADY_WINDOWS, Sighting},
     filter::Extractor,
-    payload::{Lock, MAX_COLUMNS, max_symbols},
+    payload::{Advance, Lock, MAX_COLUMNS, max_symbols},
     ring::Front,
     soft::{Demapper, MAX_BITS},
 };
@@ -290,15 +290,15 @@ impl Receiver {
         frames: &mut Vec<Frame>,
     ) -> Step {
         match lock.advance(&self.settings, &mut self.tools, front.wide()) {
-            None => {
+            Advance::Starved => {
                 self.stage = Stage::Payload { lock, rewind };
                 Step::Blocked
             }
-            Some(None) => {
+            Advance::Decoding => {
                 self.stage = Stage::Payload { lock, rewind };
                 Step::Advanced
             }
-            Some(Some(finished)) => {
+            Advance::Done(finished) => {
                 let integrity = finished.frame.integrity;
                 self.cursor = if !lock.confident() && integrity == LoraIntegrity::HeaderFailed {
                     rewind

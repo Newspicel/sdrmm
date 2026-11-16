@@ -42,7 +42,7 @@ fn parse_address(octets: &[u8]) -> AvlcAddress {
     };
     let mut addr: u32 = 0;
     for k in (1..=24).rev() {
-        addr = (addr << 1) | da[k] as u32;
+        addr = (addr << 1) | u32::from(da[k]);
     }
     AvlcAddress {
         kind,
@@ -249,12 +249,12 @@ fn decode_vdl2_freq(buf: &[u8]) -> Option<(f64, u8)> {
         return None;
     }
     let modulations = buf[0] >> 4;
-    let raw = (u16::from_be_bytes([buf[0], buf[1]]) & 0x0FFF) as u32;
+    let raw = u32::from(u16::from_be_bytes([buf[0], buf[1]]) & 0x0FFF);
     let mut freq_khz = (raw + 10_000) * 10;
     if !freq_khz.is_multiple_of(25) {
         freq_khz += 25 - freq_khz % 25;
     }
-    Some((freq_khz as f64 / 1000.0, modulations))
+    Some((f64::from(freq_khz) / 1000.0, modulations))
 }
 
 pub fn parse_xid(info: &[u8]) -> Option<Vec<XidParam>> {
@@ -332,7 +332,7 @@ pub fn parse_xid(info: &[u8]) -> Option<Vec<XidParam>> {
                 {
                     let mut v: u32 = 0;
                     for &b in value {
-                        v = (v << 8) | b as u32;
+                        v = (v << 8) | u32::from(b);
                     }
                     Some(v)
                 }

@@ -106,8 +106,7 @@ fn production_sources() -> Vec<(String, String)> {
         .map(|path| {
             let name = path
                 .strip_prefix(&root)
-                .map(|relative| relative.to_string_lossy().replace('\\', "/"))
-                .unwrap_or_default();
+                .map_or_default(|relative| relative.to_string_lossy().replace('\\', "/"));
             let code = std::fs::read_to_string(&path).unwrap_or_default();
             (name, production(&code).to_owned())
         })

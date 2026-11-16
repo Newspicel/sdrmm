@@ -321,7 +321,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let mut context = StreamContext::new(
             vec![RxSink::new(move |samples, _| {
-                tx.send(samples.to_vec()).unwrap()
+                tx.send(samples.to_vec()).unwrap();
             })],
             state(),
         );
@@ -345,7 +345,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let mut context = StreamContext::new(
             vec![RxSink::new(move |samples, _| {
-                tx.send(samples.to_vec()).unwrap()
+                tx.send(samples.to_vec()).unwrap();
             })],
             state(),
         );
@@ -530,7 +530,7 @@ mod tests {
             &Callback {
                 xi: std::ptr::null(),
                 xq: std::ptr::null(),
-                params: &hollow,
+                params: &raw const hollow,
                 count: 100,
                 reset: 0,
             },

@@ -81,7 +81,7 @@ fn three_copies_that_differ_in_one_byte_settle_by_majority() {
     let mut bursts = Bursts::default();
     let bent = |at: usize, to: char| {
         let mut text = HEADER.to_owned();
-        text.replace_range(at..at + 1, &to.to_string());
+        text.replace_range(at..=at, &to.to_string());
         text
     };
     bursts.received(0, bent(5, 'X'));

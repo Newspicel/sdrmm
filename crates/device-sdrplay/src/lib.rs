@@ -349,9 +349,9 @@ impl SdrplayDevice {
     }
 
     fn monitor(
-        api: Arc<dyn Sdrplay>,
+        api: &dyn Sdrplay,
         handle: DevHandle,
-        state: Arc<StreamState>,
+        state: &StreamState,
         context: *mut StreamContext,
         running: &AtomicBool,
     ) {
@@ -376,7 +376,7 @@ impl SdrplayDevice {
                 break;
             }
         }
-        let Some(mut context) = Self::reclaimed(api.as_ref(), handle, context) else {
+        let Some(mut context) = Self::reclaimed(api, handle, context) else {
             return;
         };
         if let Some(reason) = reason {
@@ -470,7 +470,7 @@ impl SdrDevice for SdrplayDevice {
         let pointer = SendPtr(context);
         if let Err(error) = self.worker.start("sdrmm-sdrplay-rx", move |running| {
             let pointer = pointer;
-            Self::monitor(api, handle, state, pointer.0, running);
+            Self::monitor(api.as_ref(), handle, &state, pointer.0, running);
         }) {
             drop(Self::reclaimed(self.api.as_ref(), self.handle, context));
             return Err(error);

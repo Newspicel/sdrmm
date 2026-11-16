@@ -114,7 +114,7 @@ fn bearing(station: &str, from: LatLon, bearing_deg: f32) -> DfBearing {
     }
 }
 
-fn record(origin: &str, bearing: DfBearing) -> DecodedRecord {
+fn record(origin: &str, bearing: &DfBearing) -> DecodedRecord {
     DecodedRecord {
         origin: Some(EventOrigin {
             node: origin.to_owned(),
@@ -124,7 +124,7 @@ fn record(origin: &str, bearing: DfBearing) -> DecodedRecord {
         channel: NO_CHANNEL,
         at: jiff::Timestamp::now().to_string(),
         freq_hz: 433.92e6,
-        event: DecoderEvent::of(&bearing),
+        event: DecoderEvent::of(bearing),
         sinks: Vec::new(),
         callsign: None,
         view: None,
@@ -179,7 +179,7 @@ async fn a_df_bearing_reaches_the_triangulation_it_is_wired_to() {
         || {
             state
                 .engine
-                .publish_decoded(record("df", bearing("roof", HOME, 60.0)));
+                .publish_decoded(record("df", &bearing("roof", HOME, 60.0)));
         },
     )
     .await;
@@ -211,13 +211,13 @@ async fn a_bearing_from_an_unwired_node_is_ignored() {
         || {
             state
                 .engine
-                .publish_decoded(record("df", bearing("roof", HOME, 60.0)));
+                .publish_decoded(record("df", &bearing("roof", HOME, 60.0)));
         },
     )
     .await;
     state
         .engine
-        .publish_decoded(record("stray", bearing("stray", HOME, 200.0)));
+        .publish_decoded(record("stray", &bearing("stray", HOME, 200.0)));
     let after = warmed.samples;
     let next = fused(
         &mut events,
@@ -226,7 +226,7 @@ async fn a_bearing_from_an_unwired_node_is_ignored() {
         || {
             state
                 .engine
-                .publish_decoded(record("df", bearing("roof", HOME, 61.0)));
+                .publish_decoded(record("df", &bearing("roof", HOME, 61.0)));
         },
     )
     .await;
@@ -244,7 +244,7 @@ async fn a_hunt_bearing_reaches_triangulation_through_an_event_filter() {
         || {
             let mut walked = bearing("walker", HOME, 90.0);
             walked.source = BearingSource::Sweep;
-            state.engine.publish_decoded(record("hunt", walked));
+            state.engine.publish_decoded(record("hunt", &walked));
         },
     )
     .await;
@@ -267,7 +267,7 @@ async fn the_triangulation_position_input_drives_the_nav_target() {
         || {
             state
                 .engine
-                .publish_decoded(record("df", bearing("roof", HOME, 60.0)));
+                .publish_decoded(record("df", &bearing("roof", HOME, 60.0)));
         },
     )
     .await;

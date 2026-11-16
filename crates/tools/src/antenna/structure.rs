@@ -154,8 +154,10 @@ impl Structure {
     }
 
     pub fn length_of(&self, pulse: &Pulse) -> f64 {
-        (self.segments[pulse.from_segment].length() + self.segments[pulse.to_segment].length())
-            / 2.0
+        f64::midpoint(
+            self.segments[pulse.from_segment].length(),
+            self.segments[pulse.to_segment].length(),
+        )
     }
 
     pub fn half_ends(&self, half: Half) -> (Vec3, Vec3) {

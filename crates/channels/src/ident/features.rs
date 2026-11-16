@@ -401,7 +401,7 @@ impl Meter {
     fn levels(&mut self, rate: f64) -> Levels {
         let bare = |spread: f64| Levels {
             spread_hz: spread,
-            count: if spread > 0.0 { 1 } else { 0 },
+            count: u8::from(spread > 0.0),
             deviation_hz: spread,
             valley: 1.0,
         };

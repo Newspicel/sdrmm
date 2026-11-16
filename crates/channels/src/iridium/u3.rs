@@ -43,7 +43,7 @@ pub fn parse_u3(payload_bits: &[u8]) -> Value {
         let group = |bits: &[u8], n: usize| -> Vec<u64> {
             bits.chunks(n)
                 .filter(|c| c.len() == n)
-                .map(|c| c.iter().fold(0u64, |a, &b| (a << 1) | b as u64))
+                .map(|c| c.iter().fold(0u64, |a, &b| (a << 1) | u64::from(b)))
                 .collect()
         };
         match subformat {

@@ -8,8 +8,7 @@ pub(super) fn row(output_node: &str, facts: &EventFacts) -> String {
     let data = facts
         .record
         .pointer("/event/data")
-        .map(serde_json::Value::to_string)
-        .unwrap_or_default();
+        .map_or_default(serde_json::Value::to_string);
     let fields = [
         field(&facts.at),
         field(&facts.kind),

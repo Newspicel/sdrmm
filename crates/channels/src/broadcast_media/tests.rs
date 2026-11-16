@@ -518,7 +518,7 @@ fn a_published_status_is_an_event_and_offers_its_services() {
     };
     let mut out = ChannelOutputs::default();
 
-    publish_status(&mut out, status.clone(), "service_id");
+    publish_status(&mut out, &status, "service_id");
 
     assert_eq!(latest_status(&out), Some(status));
     let face = out.status.expect("a channel status");
@@ -555,7 +555,7 @@ fn the_health_footer_shows_snr_and_offset_only_while_locked() {
         ..BroadcastStatus::default()
     };
     let mut out = ChannelOutputs::default();
-    publish_status(&mut out, locked.clone(), "service_id");
+    publish_status(&mut out, &locked, "service_id");
     let face = out.status.take().expect("a channel status");
     assert_eq!(
         face.health,
@@ -576,7 +576,7 @@ fn the_health_footer_shows_snr_and_offset_only_while_locked() {
 
     publish_status(
         &mut out,
-        BroadcastStatus {
+        &BroadcastStatus {
             locked: false,
             ..locked
         },
@@ -652,7 +652,7 @@ fn a_face_shows_how_the_stream_decodes_not_what_it_decoded() {
     };
     let mut out = ChannelOutputs::default();
 
-    publish_status(&mut out, status.clone(), "service_id");
+    publish_status(&mut out, &status, "service_id");
     let face = out.status.take().expect("a channel status");
     assert_eq!(
         readout_keys(&face),
@@ -661,7 +661,7 @@ fn a_face_shows_how_the_stream_decodes_not_what_it_decoded() {
 
     publish_status(
         &mut out,
-        BroadcastStatus {
+        &BroadcastStatus {
             frames_bad: 2,
             ..status
         },
@@ -682,7 +682,7 @@ fn a_face_shows_how_the_stream_decodes_not_what_it_decoded() {
 #[test]
 fn no_services_found_offers_no_auto_either() {
     let mut out = ChannelOutputs::default();
-    publish_status(&mut out, BroadcastStatus::default(), "service_id");
+    publish_status(&mut out, &BroadcastStatus::default(), "service_id");
     let face = out.status.expect("a channel status");
     assert!(face.choices[0].options.is_empty());
 }

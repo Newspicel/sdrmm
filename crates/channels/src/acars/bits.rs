@@ -17,7 +17,7 @@ impl<'a> BitReader<'a> {
         for _ in 0..n {
             let byte = self.data[self.pos / 8];
             let bit = (byte >> (7 - self.pos % 8)) & 1;
-            v = (v << 1) | bit as u32;
+            v = (v << 1) | u32::from(bit);
             self.pos += 1;
         }
         Some(v)

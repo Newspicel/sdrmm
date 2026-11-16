@@ -84,7 +84,7 @@ pub(crate) fn hash22(call: &str) -> Option<u32> {
     let mut n = 0u64;
     for index in 0..11 {
         let byte = bytes.get(index).copied().unwrap_or(b' ');
-        n = 38 * n + index_of(A38, byte)? as u64;
+        n = 38 * n + u64::from(index_of(A38, byte)?);
     }
     Some((HASH_PRIME.wrapping_mul(n) >> (64 - 22)) as u32)
 }

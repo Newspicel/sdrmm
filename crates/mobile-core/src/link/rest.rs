@@ -265,8 +265,7 @@ fn classify(error: &reqwest::Error) -> RestError {
 
 fn status_error(status: u16, body: &[u8]) -> RestError {
     let message = serde_json::from_slice::<ApiError>(body)
-        .map(|error| error.error)
-        .unwrap_or_else(|_| NO_ERROR_BODY.to_owned());
+        .map_or_else(|_| NO_ERROR_BODY.to_owned(), |error| error.error);
     RestError::Status { status, message }
 }
 

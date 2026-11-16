@@ -308,7 +308,7 @@ async fn pocsag_page_survives_the_ddc_and_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<PocsagMessage>(),
+        sdrmm_wire::DecoderEvent::is::<PocsagMessage>,
     )
     .await;
 
@@ -344,7 +344,7 @@ async fn flex_page_survives_the_ddc_and_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<FlexMessage>(),
+        sdrmm_wire::DecoderEvent::is::<FlexMessage>,
     )
     .await;
     let message = record.event.read::<FlexMessage>().expect("filtered above");
@@ -378,7 +378,7 @@ async fn ermes_page_survives_the_ddc_and_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<ErmesMessage>(),
+        sdrmm_wire::DecoderEvent::is::<ErmesMessage>,
     )
     .await;
     let message = record.event.read::<ErmesMessage>().expect("filtered above");
@@ -425,7 +425,7 @@ async fn eot_telemetry_survives_the_ddc_and_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<EotMessage>(),
+        sdrmm_wire::DecoderEvent::is::<EotMessage>,
     )
     .await;
     let message = record.event.read::<EotMessage>().expect("filtered above");
@@ -458,7 +458,7 @@ async fn a_406_beacon_survives_the_ddc_and_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<SarsatMessage>(),
+        sdrmm_wire::DecoderEvent::is::<SarsatMessage>,
     )
     .await;
     let beacon = record
@@ -524,7 +524,7 @@ async fn a_same_alert_survives_the_ddc_and_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<SameMessage>(),
+        sdrmm_wire::DecoderEvent::is::<SameMessage>,
     )
     .await;
     let message = record.event.read::<SameMessage>().expect("filtered above");
@@ -574,7 +574,7 @@ async fn aprs_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<AprsPacket>(),
+        sdrmm_wire::DecoderEvent::is::<AprsPacket>,
     )
     .await;
 
@@ -622,7 +622,7 @@ async fn ais_position_survives_the_ddc_and_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<AisMessage>(),
+        sdrmm_wire::DecoderEvent::is::<AisMessage>,
     )
     .await;
 
@@ -773,7 +773,7 @@ async fn selcall_survives_the_ddc_and_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<SelcallSequence>(),
+        sdrmm_wire::DecoderEvent::is::<SelcallSequence>,
     )
     .await;
     let call = record
@@ -894,7 +894,7 @@ async fn a_recorded_stanag_4285_signal_is_named_through_the_engine() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<StanagReport>(),
+        sdrmm_wire::DecoderEvent::is::<StanagReport>,
     )
     .await;
     let report = record.event.read::<StanagReport>().expect("filtered above");
@@ -1000,7 +1000,7 @@ async fn vor_radial_survives_virtual_device_playback() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<VorReading>(),
+        sdrmm_wire::DecoderEvent::is::<VorReading>,
     )
     .await;
     let reading = record.event.read::<VorReading>().expect("filtered above");
@@ -1011,11 +1011,10 @@ async fn vor_radial_survives_virtual_device_playback() {
 
 #[tokio::test]
 async fn a_mode_s_identity_reply_survives_the_ddc_and_reaches_the_decoded_stream() {
+    const RATE: f64 = 4_800_000.0;
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
     let icao = 0x40_621D;
-
-    const RATE: f64 = 4_800_000.0;
 
     let frames = vec![
         synth::adsb::all_call_reply(icao, 5, 0),
@@ -1370,7 +1369,7 @@ async fn acars_block_survives_the_ddc_and_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<AcarsMessage>(),
+        sdrmm_wire::DecoderEvent::is::<AcarsMessage>,
     )
     .await;
 
@@ -1686,9 +1685,9 @@ async fn drm30_lock_is_reported() {
 
 #[tokio::test]
 async fn adsb_decodes_at_an_rtl_sdr_rate_the_ddc_could_not_have_resampled() {
+    const RTL_RATE: f64 = 2_048_000.0;
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
-    const RTL_RATE: f64 = 2_048_000.0;
 
     let icao = 0x3C_6444;
     let frames = vec![
@@ -1726,9 +1725,9 @@ async fn adsb_decodes_at_an_rtl_sdr_rate_the_ddc_could_not_have_resampled() {
 
 #[tokio::test]
 async fn adsb_decodes_from_a_wideband_radio_through_the_resampler() {
+    const RATE: f64 = 10_000_000.0;
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
-    const RATE: f64 = 10_000_000.0;
     let offset_hz = 1_000_000.0;
     let icao = 0x3C_6444;
     let frames = vec![synth::adsb::squitter(
@@ -1762,9 +1761,9 @@ async fn adsb_decodes_from_a_wideband_radio_through_the_resampler() {
 
 #[tokio::test]
 async fn rds_station_survives_the_ddc_and_reaches_the_decoded_stream() {
+    const RATE: f64 = 960_000.0;
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
-    const RATE: f64 = 960_000.0;
     let offset_hz = 200_000.0;
 
     let station = synth::rds::Station {
@@ -1826,9 +1825,9 @@ async fn next_rds(rx: &mut tokio::sync::broadcast::Receiver<DecodedRecord>) -> R
 
 #[tokio::test]
 async fn retuning_resets_the_decoder_through_the_engine_path() {
+    const RATE: f64 = 960_000.0;
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
-    const RATE: f64 = 960_000.0;
     let offset_hz = 200_000.0;
 
     let station = synth::rds::Station {
@@ -2336,7 +2335,7 @@ async fn dab_pad_slideshow_crosses_the_virtual_receiver_and_decoded_event_stream
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<BroadcastData>(),
+        sdrmm_wire::DecoderEvent::is::<BroadcastData>,
     )
     .await;
     let data = record
@@ -2436,9 +2435,9 @@ async fn an_rs41_radiosonde_survives_the_ddc_and_reports_its_position() {
 
 #[tokio::test]
 async fn a_noaa_apt_pass_reaches_the_decoded_stream() {
+    const APT_RATE: f64 = 60_000.0;
     let dir = TempDir::new().unwrap();
     let engine = accelerated_engine_for(dir.path());
-    const APT_RATE: f64 = 60_000.0;
     let offset_hz = 50_000.0;
     let native = synth::apt::transmission(160, AvhrrChannel::Ch2, AvhrrChannel::Ch4, APT_RATE);
     let mut iq = synth::resample(&native, APT_RATE, NARROW_DEVICE_RATE);
@@ -2455,7 +2454,7 @@ async fn a_noaa_apt_pass_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<AptImage>(),
+        sdrmm_wire::DecoderEvent::is::<AptImage>,
     )
     .await;
     let image = record.event.read::<AptImage>().expect("filtered above");
@@ -2466,9 +2465,9 @@ async fn a_noaa_apt_pass_reaches_the_decoded_stream() {
 
 #[tokio::test]
 async fn a_wefax_chart_reaches_the_decoded_stream() {
+    const WEFAX_RATE: f64 = 12_000.0;
     let dir = TempDir::new().unwrap();
     let engine = accelerated_engine_for(dir.path());
-    const WEFAX_RATE: f64 = 12_000.0;
     let offset_hz = 5_000.0;
     let chart = synth::wefax::bars(WefaxIoc::Ioc576, 60);
     let native = synth::wefax::transmission(WefaxIoc::Ioc576, WefaxLpm::Lpm240, &chart, WEFAX_RATE);
@@ -2492,7 +2491,7 @@ async fn a_wefax_chart_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<WefaxPicture>(),
+        sdrmm_wire::DecoderEvent::is::<WefaxPicture>,
     )
     .await;
     let picture = record.event.read::<WefaxPicture>().expect("filtered above");
@@ -2503,10 +2502,10 @@ async fn a_wefax_chart_reaches_the_decoded_stream() {
 
 #[tokio::test]
 async fn a_meteor_lrpt_pass_reaches_the_decoded_stream() {
-    let dir = TempDir::new().unwrap();
-    let engine = accelerated_engine_for(dir.path());
     const LRPT_RATE: f64 = 288_000.0;
     const LRPT_DEVICE_RATE: f64 = 576_000.0;
+    let dir = TempDir::new().unwrap();
+    let engine = accelerated_engine_for(dir.path());
     let offset_hz = 100_000.0;
     let native = synth::lrpt::transmission(LrptMode::Oqpsk72, 4, LRPT_RATE);
     let mut iq = synth::resample(&native, LRPT_RATE, LRPT_DEVICE_RATE);
@@ -2523,7 +2522,7 @@ async fn a_meteor_lrpt_pass_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<LrptImage>(),
+        sdrmm_wire::DecoderEvent::is::<LrptImage>,
     )
     .await;
     let image = record.event.read::<LrptImage>().expect("filtered above");
@@ -2582,7 +2581,7 @@ async fn a_long_range_remote_id_pack_survives_the_ddc() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<RemoteIdFrame>(),
+        sdrmm_wire::DecoderEvent::is::<RemoteIdFrame>,
     )
     .await;
     let frame = record
@@ -2628,7 +2627,7 @@ async fn a_remote_id_wifi_beacon_reaches_the_decoded_stream() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<RemoteIdFrame>(),
+        sdrmm_wire::DecoderEvent::is::<RemoteIdFrame>,
     )
     .await;
     let frame = record
@@ -2702,7 +2701,7 @@ async fn the_2_4_ghz_survey_reports_each_second() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<IsmSurveyReport>(),
+        sdrmm_wire::DecoderEvent::is::<IsmSurveyReport>,
     )
     .await;
     let report = record
@@ -2745,7 +2744,7 @@ async fn a_wmbus_meter_beside_the_centre_survives_the_ddc() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<WmbusMessage>(),
+        sdrmm_wire::DecoderEvent::is::<WmbusMessage>,
     )
     .await;
     let message = record.event.read::<WmbusMessage>().expect("filtered above");
@@ -2849,7 +2848,7 @@ async fn vlf_stations_reach_the_sid_monitor() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.is::<SidReport>(),
+        sdrmm_wire::DecoderEvent::is::<SidReport>,
     )
     .await;
     let report = record.event.read::<SidReport>().expect("filtered above");

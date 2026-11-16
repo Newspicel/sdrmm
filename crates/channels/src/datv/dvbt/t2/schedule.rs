@@ -148,10 +148,7 @@ impl Scheduler {
         if changed || discontinuity {
             self.reset();
         }
-        if position != 0
-            && (self.selected.is_none()
-                || self.selected.is_some_and(|old| old.blocks != plp.blocks))
-        {
+        if position != 0 && self.selected.is_none_or(|old| old.blocks != plp.blocks) {
             return Err(DecodeError::Discontinuity);
         }
         if position == 0 {

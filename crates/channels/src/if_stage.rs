@@ -67,12 +67,11 @@ impl IfStage {
     }
 
     pub fn process(&mut self, input: &[Complex<f32>]) -> &[Complex<f32>] {
-        match &mut self.edges {
-            Some(edges) => edges.process(input, &mut self.shaped),
-            None => {
-                self.shaped.clear();
-                self.shaped.extend_from_slice(input);
-            }
+        if let Some(edges) = &mut self.edges {
+            edges.process(input, &mut self.shaped);
+        } else {
+            self.shaped.clear();
+            self.shaped.extend_from_slice(input);
         }
         for notch in self.notches.iter_mut().filter(|notch| notch.heard) {
             notch.filter.process(&mut self.shaped);
@@ -119,7 +118,10 @@ fn edges(filter: &IfFilter, rate: f64) -> Result<Option<FirC>, ChannelError> {
     }
     let taps = kaiser_taps(EDGE_TRANSITION, EDGE_ATTENUATION_DB);
     let prototype = design_lowpass_kaiser(taps, half, EDGE_ATTENUATION_DB);
-    Ok(Some(FirC::from_lowpass(&prototype, (high + low) / 2.0)))
+    Ok(Some(FirC::from_lowpass(
+        &prototype,
+        f64::midpoint(high, low),
+    )))
 }
 
 #[cfg(test)]
@@ -152,11 +154,16 @@ mod tests {
             out.extend_from_slice(stage.process(block));
         }
         let settled = &out[12_000..];
-        (settled.iter().map(|s| s.norm_sqr()).sum::<f32>() / settled.len() as f32).sqrt()
+        (settled
+            .iter()
+            .map(num_complex::Complex::norm_sqr)
+            .sum::<f32>()
+            / settled.len() as f32)
+            .sqrt()
     }
 
-    fn stage(filter: IfFilter) -> IfStage {
-        IfStage::build(&filter, RATE, TUNED_HZ, BLOCK)
+    fn stage(filter: &IfFilter) -> IfStage {
+        IfStage::build(filter, RATE, TUNED_HZ, BLOCK)
             .unwrap()
             .expect("an active filter")
     }
@@ -184,7 +191,7 @@ mod tests {
 
     #[test]
     fn edges_cut_one_side_and_keep_the_other() {
-        let mut stage = stage(IfFilter {
+        let mut stage = stage(&IfFilter {
             low_hz: Some(-90_000.0),
             high_hz: Some(30_000.0),
             ..enabled()
@@ -201,7 +208,7 @@ mod tests {
 
     #[test]
     fn a_single_edge_leaves_the_other_side_at_the_decoder() {
-        let mut stage = stage(IfFilter {
+        let mut stage = stage(&IfFilter {
             high_hz: Some(30_000.0),
             ..enabled()
         });
@@ -221,7 +228,7 @@ mod tests {
     #[test]
     fn a_notch_stays_on_its_radio_frequency_across_a_retune() {
         let interferer_hz = TUNED_HZ + 30_000.0;
-        let mut stage = stage(IfFilter {
+        let mut stage = stage(&IfFilter {
             notches: vec![IfNotch {
                 frequency_hz: interferer_hz,
                 width_hz: 1_000.0,
@@ -237,7 +244,7 @@ mod tests {
     #[test]
     fn a_notch_outside_the_baseband_rests_until_it_comes_back() {
         let far_hz = TUNED_HZ + 500_000.0;
-        let mut stage = stage(IfFilter {
+        let mut stage = stage(&IfFilter {
             notches: vec![IfNotch {
                 frequency_hz: far_hz,
                 width_hz: 1_000.0,

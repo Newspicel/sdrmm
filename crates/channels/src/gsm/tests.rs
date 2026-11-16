@@ -47,7 +47,7 @@ fn channel(params: GsmParams) -> GsmChannel {
 fn frames(events: &[DecoderEvent]) -> Vec<GsmFrame> {
     events
         .iter()
-        .filter_map(|event| event.read::<GsmFrame>())
+        .filter_map(sdrmm_wire::DecoderEvent::read::<GsmFrame>)
         .collect()
 }
 
@@ -99,7 +99,9 @@ fn identities(frames: &[GsmFrame]) -> Vec<String> {
     frames
         .iter()
         .filter_map(|frame| match &frame.message {
-            GsmMessage::Paging { identities } => Some(identities.iter().map(|id| id.label())),
+            GsmMessage::Paging { identities } => {
+                Some(identities.iter().map(super::model::GsmIdentity::label))
+            }
             _ => None,
         })
         .flatten()

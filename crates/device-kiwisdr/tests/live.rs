@@ -32,7 +32,7 @@ fn listen(device: &mut Box<dyn SdrDevice>) -> Result<(Vec<Sample>, f64), DeviceE
     let heard = Arc::new(Mutex::new(Vec::new()));
     let into = heard.clone();
     device.rx_start(vec![RxSink::new(move |samples, _| {
-        lock(&into).extend_from_slice(samples)
+        lock(&into).extend_from_slice(samples);
     })])?;
     let started = Instant::now();
     std::thread::sleep(LISTEN);

@@ -176,7 +176,7 @@ mod tests {
                 "delay {delay}: measured {}",
                 estimate.delay_samples
             );
-            assert!(estimate.coherence > 0.8, "{:?}", estimate);
+            assert!(estimate.coherence > 0.8, "{estimate:?}");
         }
     }
 

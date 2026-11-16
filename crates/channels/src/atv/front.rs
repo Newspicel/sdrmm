@@ -84,16 +84,15 @@ impl Discriminator {
 
     pub fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<f32>) {
         self.look(iq);
-        match self.chosen.and_then(|k| self.filters.get_mut(k)) {
-            Some((_, filter)) => filter.process(iq, &mut self.filtered),
-            None => {
-                self.filtered.clear();
-                self.filtered.extend_from_slice(&self.delay);
-                self.filtered.extend_from_slice(iq);
-                let keep = self.filtered.len() - self.delay.len();
-                self.delay.copy_from_slice(&self.filtered[keep..]);
-                self.filtered.truncate(keep);
-            }
+        if let Some((_, filter)) = self.chosen.and_then(|k| self.filters.get_mut(k)) {
+            filter.process(iq, &mut self.filtered);
+        } else {
+            self.filtered.clear();
+            self.filtered.extend_from_slice(&self.delay);
+            self.filtered.extend_from_slice(iq);
+            let keep = self.filtered.len() - self.delay.len();
+            self.delay.copy_from_slice(&self.filtered[keep..]);
+            self.filtered.truncate(keep);
         }
         phase_diff_into(&self.filtered, &mut self.prev, 1.0, out);
     }

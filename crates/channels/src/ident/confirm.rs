@@ -106,7 +106,7 @@ impl Confirmer {
                 if self.live.len() >= MAX_LIVE {
                     break;
                 }
-                let live = match start(descriptor, settings, rate, band) {
+                let live = match start(descriptor, &settings, rate, band) {
                     Ok(live) => live,
                     Err(error) => {
                         self.refuse(&type_id, candidate, &error);
@@ -190,7 +190,7 @@ impl Confirmer {
 
     fn refuse(&mut self, type_id: &str, candidate: &mut ProtocolMatch, error: &ChannelError) {
         let why = format!("the {} decoder will not start: {error}", candidate.name);
-        candidate.why = why.clone();
+        candidate.why.clone_from(&why);
         self.refused.push(Refused {
             type_id: type_id.to_owned(),
             why,
@@ -260,7 +260,7 @@ fn variants(descriptor: &ChannelDescriptor, frequency_hz: f64) -> Vec<ChannelSet
 
 fn start(
     descriptor: &ChannelDescriptor,
-    settings: ChannelSettings,
+    settings: &ChannelSettings,
     rate: f64,
     band: &Band,
 ) -> Result<Live, ChannelError> {
@@ -269,7 +269,7 @@ fn start(
         ChannelCtx {
             input_rate: descriptor.input_rate_hz,
         },
-        &settings,
+        settings,
     )?;
     Ok(Live {
         type_id: descriptor.type_id.clone(),

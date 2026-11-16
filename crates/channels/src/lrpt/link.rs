@@ -174,7 +174,7 @@ impl VcduHeader {
         }
     }
 
-    pub fn write(&self, vcdu: &mut [u8]) {
+    pub fn write(self, vcdu: &mut [u8]) {
         vcdu[0] = 0x40 | SPACECRAFT_ID >> 2;
         vcdu[1] = (SPACECRAFT_ID & 0x03) << 6 | self.vcid & 0x3F;
         vcdu[2] = (self.counter >> 16) as u8;

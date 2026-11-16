@@ -350,10 +350,10 @@ mod tests {
     const RATE: f64 = 8_000.0;
     const BLOCKS: [usize; 7] = [997, 1, 4_096, 65, 2_048, 7, 1_024];
 
-    fn channel(p: RttyParams) -> RttyChannel {
+    fn channel(p: &RttyParams) -> RttyChannel {
         RttyChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::of(&p).expect("rtty settings")),
+            settings(ChannelParams::of(p).expect("rtty settings")),
         )
         .unwrap()
     }
@@ -385,7 +385,7 @@ mod tests {
         texts
     }
 
-    fn decode(p: RttyParams, iq: &[Complex<f32>]) -> String {
+    fn decode(p: &RttyParams, iq: &[Complex<f32>]) -> String {
         decode_blocks(&mut channel(p), iq, &BLOCKS).concat()
     }
 
@@ -401,18 +401,14 @@ mod tests {
         assert_eq!(p.baud, 45.45);
         assert_eq!(p.shift_hz, 170.0);
         assert_eq!(p.stop_bits, RttyStopBits::OneAndHalf);
-        let texts = decode_blocks(
-            &mut channel(p.clone()),
-            &burst("CQ CQ DE DL1ABC K", &p),
-            &BLOCKS,
-        );
+        let texts = decode_blocks(&mut channel(&p), &burst("CQ CQ DE DL1ABC K", &p), &BLOCKS);
         assert_eq!(texts, vec!["CQ CQ DE DL1ABC K".to_owned()]);
     }
 
     #[test]
     fn decodes_figures_through_the_shift_codes() {
         let p = RttyParams::default();
-        assert_eq!(decode(p.clone(), &burst("599 001", &p)), "599 001");
+        assert_eq!(decode(&p, &burst("599 001", &p)), "599 001");
     }
 
     #[test]
@@ -428,7 +424,7 @@ mod tests {
                 stop_bits,
                 ..RttyParams::default()
             };
-            let got = decode(p.clone(), &burst("RYRY DE SDR 123", &p));
+            let got = decode(&p, &burst("RYRY DE SDR 123", &p));
             assert_eq!(got, "RYRY DE SDR 123", "{baud} baud / {shift_hz} Hz");
         }
     }
@@ -436,7 +432,7 @@ mod tests {
     #[test]
     fn crlf_collapses_to_one_line_break_and_ends_the_event() {
         let p = RttyParams::default();
-        let texts = decode_blocks(&mut channel(p.clone()), &burst("AB\r\r\nCD", &p), &BLOCKS);
+        let texts = decode_blocks(&mut channel(&p), &burst("AB\r\r\nCD", &p), &BLOCKS);
         assert_eq!(texts, vec!["AB\n".to_owned(), "CD".to_owned()]);
     }
 
@@ -450,8 +446,8 @@ mod tests {
             invert: true,
             ..p.clone()
         };
-        assert_eq!(decode(flagged, &inverted), "TEST DE RTTY");
-        assert_ne!(decode(p, &inverted), "TEST DE RTTY");
+        assert_eq!(decode(&flagged, &inverted), "TEST DE RTTY");
+        assert_ne!(decode(&p, &inverted), "TEST DE RTTY");
     }
 
     #[test]
@@ -466,12 +462,12 @@ mod tests {
         );
         iq.extend_from_slice(&tail(p.baud));
 
-        assert_eq!(decode(p.clone(), &iq), "17 ABC");
+        assert_eq!(decode(&p, &iq), "17 ABC");
         let stay = RttyParams {
             unshift_on_space: false,
             ..p
         };
-        assert_eq!(decode(stay, &iq), "17 -?:");
+        assert_eq!(decode(&stay, &iq), "17 -?:");
     }
 
     #[test]
@@ -479,9 +475,9 @@ mod tests {
         let p = RttyParams::default();
         for seed in [0x1234_5678, 0xdead_beef, 0x0f0f_0f0f] {
             let noise = complex_noise(seed, 0.05, 120_000);
-            assert_eq!(decode(p.clone(), &noise), "", "seed {seed:#x} raw");
+            assert_eq!(decode(&p, &noise), "", "seed {seed:#x} raw");
             let noise = selected(&p, &noise);
-            assert_eq!(decode(p.clone(), &noise), "", "seed {seed:#x} filtered");
+            assert_eq!(decode(&p, &noise), "", "seed {seed:#x} filtered");
         }
     }
 
@@ -491,7 +487,7 @@ mod tests {
         let mut iq = complex_noise(0x5eed_1234, 0.02, 20_000);
         iq.extend_from_slice(&burst("DE DL1ABC", &p));
         iq.extend_from_slice(&complex_noise(0xfeed_face, 0.02, 20_000));
-        assert_eq!(decode(p, &iq), "DE DL1ABC");
+        assert_eq!(decode(&p, &iq), "DE DL1ABC");
     }
 
     fn selected(p: &RttyParams, iq: &[Complex<f32>]) -> Vec<Complex<f32>> {
@@ -505,16 +501,16 @@ mod tests {
         let p = RttyParams::default();
         let mut iq = burst("CQ DE DL1ABC", &p);
         synth::add_noise(&mut iq, 0xabad_1dea, 0.5);
-        assert_eq!(decode(p.clone(), &selected(&p, &iq)), "CQ DE DL1ABC");
+        assert_eq!(decode(&p, &selected(&p, &iq)), "CQ DE DL1ABC");
     }
 
     #[test]
     fn ragged_block_splits_decode_identically() {
         let p = RttyParams::default();
         let iq = burst("THE QUICK BROWN FOX 1234567890", &p);
-        let whole = decode_blocks(&mut channel(p.clone()), &iq, &[iq.len()]);
-        let ragged = decode_blocks(&mut channel(p.clone()), &iq, &BLOCKS);
-        let single = decode_blocks(&mut channel(p), &iq, &[1]);
+        let whole = decode_blocks(&mut channel(&p), &iq, &[iq.len()]);
+        let ragged = decode_blocks(&mut channel(&p), &iq, &BLOCKS);
+        let single = decode_blocks(&mut channel(&p), &iq, &[1]);
         assert_eq!(whole, vec!["THE QUICK BROWN FOX 1234567890".to_owned()]);
         assert_eq!(ragged, whole);
         assert_eq!(single, whole);
@@ -522,7 +518,7 @@ mod tests {
 
     #[test]
     fn apply_switches_baud_and_shift_in_place() {
-        let mut chan = channel(RttyParams::default());
+        let mut chan = channel(&RttyParams::default());
         let p = RttyParams {
             baud: 75.0,
             shift_hz: 850.0,
@@ -576,7 +572,7 @@ mod tests {
 
     #[test]
     fn mismatched_params_variant_is_rejected() {
-        let mut chan = channel(RttyParams::default());
+        let mut chan = channel(&RttyParams::default());
         let err = chan.apply(settings(
             ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
         ));

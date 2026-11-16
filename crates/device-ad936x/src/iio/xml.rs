@@ -40,7 +40,7 @@ pub(crate) struct Scan {
 }
 
 /// How one scan element sits in a buffer: `le:S12/16>>0` is a 12-bit signed value in a
-/// little-endian 16-bit slot, which is what the AD936x receive path delivers.
+/// little-endian 16-bit slot, which is what the `AD936x` receive path delivers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Format {
     pub(crate) little_endian: bool,

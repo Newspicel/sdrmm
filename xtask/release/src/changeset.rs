@@ -329,6 +329,10 @@ fn report_dropped(dropped: &[Dropped], from: &str, to: &str) {
     }
 }
 
+#[expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "changesets are written as lowercase .md"
+)]
 fn is_changeset(path: &str) -> bool {
     path.ends_with(".md") && path.rsplit('/').next() != Some(GUIDE)
 }

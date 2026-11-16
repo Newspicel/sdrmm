@@ -160,7 +160,7 @@ mod tests {
         let mut publisher = RecordingPublisher::new(rate).unwrap();
         let mut accepted = 0;
         assert_no_alloc("exhausted recording queues", || {
-            for index in count..2 * count + 1 {
+            for index in count..=(2 * count) {
                 accepted += usize::from(publisher.publish(
                     &tap,
                     &samples,

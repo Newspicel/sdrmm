@@ -30,7 +30,7 @@ pub(super) fn time_machines_become_recorders(snapshot: &mut Value) -> Vec<Worksp
 mod tests {
     use super::*;
 
-    fn snapshot(data: Value) -> Value {
+    fn snapshot(data: &Value) -> Value {
         json!({
             "graph": { "nodes": [{ "id": "tm", "kind": RETIRED_TIME_MACHINE, "data": data }] }
         })
@@ -42,7 +42,7 @@ mod tests {
 
     #[test]
     fn an_armed_time_machine_keeps_its_window_as_a_pre_roll() {
-        let mut value = snapshot(json!({ "history_seconds": 30, "armed": true }));
+        let mut value = snapshot(&json!({ "history_seconds": 30, "armed": true }));
         assert!(time_machines_become_recorders(&mut value).is_empty());
         assert_eq!(stored(&value)["kind"], NodeKind::Recorder.as_str());
         assert_eq!(stored(&value)["data"]["pre_roll_s"], 30);
@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn a_time_machine_that_was_not_holding_becomes_a_plain_recorder() {
-        let mut value = snapshot(json!({ "history_seconds": 30, "armed": false }));
+        let mut value = snapshot(&json!({ "history_seconds": 30, "armed": false }));
         time_machines_become_recorders(&mut value);
         assert_eq!(stored(&value)["data"]["pre_roll_s"], 0);
     }

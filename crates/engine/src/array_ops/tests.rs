@@ -617,7 +617,7 @@ fn processor_action_reaches_the_runner() {
         params: probe_params(0),
         ..probe_spec("probe-action")
     };
-    engine.apply_processor(spec).expect("the probe starts");
+    engine.apply_processor(&spec).expect("the probe starts");
     let mut log = take_probe_log("probe-action").expect("the probe logs its blocks");
     wait_for("a block", || log.pop());
     engine
@@ -631,7 +631,7 @@ fn processor_action_reaches_the_runner() {
         Err(EngineError::ProcessorNotFound(node)) if node == "ghost"
     ));
     engine
-        .apply_processor(probe_spec("df-action"))
+        .apply_processor(&probe_spec("df-action"))
         .expect("a df starts");
     assert!(matches!(
         engine.processor_action("df-action", ProcessorAction::ClearTracks),
@@ -662,7 +662,7 @@ fn a_refused_pose_is_an_error_and_counted() {
     entered.recv_timeout(WAIT).expect("the aggregator is held");
     let refused = (0..=COMMAND_SLOTS as i64).find_map(|at| {
         engine
-            .update_array_pose(ARRAY, Some(fix(at, 90.0, None)), host_ns(at))
+            .update_array_pose(ARRAY, Some(&fix(at, 90.0, None)), host_ns(at))
             .err()
     });
     assert!(
@@ -677,7 +677,7 @@ fn a_refused_pose_is_an_error_and_counted() {
     release.send(()).expect("the aggregator lets go");
     wait_for("room for poses", || {
         engine
-            .update_array_pose(ARRAY, Some(fix(100, 90.0, None)), host_ns(100))
+            .update_array_pose(ARRAY, Some(&fix(100, 90.0, None)), host_ns(100))
             .ok()
     });
     engine
@@ -699,9 +699,7 @@ fn an_applied_array_holds_its_lanes_and_serves_lane_outputs() {
         lane_ports: vec!["out".to_owned()],
         ..probe_spec("probe-lanes")
     };
-    engine
-        .apply_processor(spec.clone())
-        .expect("the probe starts");
+    engine.apply_processor(&spec).expect("the probe starts");
     let set = engine.snapshot().device_sets.remove(0);
     assert_eq!(set.held.len(), 5);
     assert!(set.held.iter().all(|lane| lane.array == ARRAY));
@@ -725,7 +723,7 @@ fn an_applied_array_holds_its_lanes_and_serves_lane_outputs() {
         "the snapshot carries the array"
     );
     engine
-        .apply_processor(ProcessorSpec {
+        .apply_processor(&ProcessorSpec {
             params: probe_params(0),
             lane_ports: Vec::new(),
             ..spec
@@ -831,7 +829,7 @@ fn a_rate_change_keeps_the_array_and_rebuilds_its_processors() {
         lane_ports: vec!["out".to_owned()],
         ..probe_spec("probe-rate")
     };
-    engine.apply_processor(spec).expect("the probe starts");
+    engine.apply_processor(&spec).expect("the probe starts");
     let first = take_probe_log("probe-rate").expect("the probe logs");
     drop(first);
     engine
@@ -873,7 +871,7 @@ fn replugging_the_anchor_keeps_the_array_and_its_lane_outputs() {
         lane_ports: vec!["out".to_owned()],
         ..probe_spec("probe-replug")
     };
-    engine.apply_processor(spec).expect("the probe starts");
+    engine.apply_processor(&spec).expect("the probe starts");
     let mut log = take_probe_log("probe-replug").expect("the probe logs");
     let lane = engine.snapshot().device_sets[0].virtual_lanes[0].clone();
     let channel = engine
@@ -914,7 +912,7 @@ fn a_rewired_lane_swaps_in_place() {
     spec.lanes = lanes(ds, 0..4);
     engine.apply_array(spec.clone()).expect("the array starts");
     engine
-        .apply_processor(ProcessorSpec {
+        .apply_processor(&ProcessorSpec {
             params: probe_params(0),
             ..probe_spec("probe-slot")
         })
@@ -964,11 +962,11 @@ fn an_array_recording_lands_as_a_collection() {
         name: Some(name.to_owned()),
     };
     assert!(matches!(
-        engine.start_array_recording(ARRAY, named("a/b")),
+        engine.start_array_recording(ARRAY, &named("a/b")),
         Err(EngineError::Recording(text)) if text == "Bad name"
     ));
     let stem = engine
-        .start_array_recording(ARRAY, named("bank"))
+        .start_array_recording(ARRAY, &named("bank"))
         .expect("the array records");
     assert_eq!(stem, "bank");
     let recording = engine.array_statuses()[0]
@@ -977,7 +975,7 @@ fn an_array_recording_lands_as_a_collection() {
         .expect("the status shows the recording");
     assert_eq!(recording.stem, "bank");
     assert!(matches!(
-        engine.start_array_recording(ARRAY, named("bank")),
+        engine.start_array_recording(ARRAY, &named("bank")),
         Err(EngineError::Recording(_))
     ));
     engine
@@ -989,7 +987,7 @@ fn an_array_recording_lands_as_a_collection() {
         Err(EngineError::Recording(_))
     ));
     let again = engine
-        .start_array_recording(ARRAY, named("bank"))
+        .start_array_recording(ARRAY, &named("bank"))
         .expect("a second take records");
     assert_eq!(again, "bank-2", "a taken name gets a suffix");
     engine
@@ -1021,7 +1019,7 @@ fn removing_an_array_never_blocks_the_engine() {
         ..sdrmm_wire::processor::ProbeParams::default()
     });
     engine
-        .apply_processor(ProcessorSpec {
+        .apply_processor(&ProcessorSpec {
             params: slow,
             ..probe_spec("probe-slow")
         })
@@ -1061,12 +1059,12 @@ fn a_failed_processor_build_leaves_the_array_running() {
         .apply_array(kraken_spec(ds))
         .expect("the array starts");
     engine
-        .apply_processor(ProcessorSpec {
+        .apply_processor(&ProcessorSpec {
             params: probe_params(0),
             ..probe_spec("probe-ok")
         })
         .expect("the probe starts");
-    let refused = engine.apply_processor(ProcessorSpec {
+    let refused = engine.apply_processor(&ProcessorSpec {
         params: probe_params(1),
         lane_ports: vec!["nope".to_owned()],
         ..probe_spec("probe-bad")
@@ -1129,7 +1127,7 @@ fn a_tuning_mode_change_spreads_the_lanes_and_rebuilds_the_processors() {
     });
     engine.apply_array(spec.clone()).expect("the array starts");
     engine
-        .apply_processor(ProcessorSpec {
+        .apply_processor(&ProcessorSpec {
             params: probe_params(0),
             ..probe_spec("probe-mode")
         })
@@ -1242,7 +1240,7 @@ fn a_processor_whose_retune_failed_is_rebuilt() {
         .apply_array(kraken_spec(ds))
         .expect("the array starts");
     engine
-        .apply_processor(ProcessorSpec {
+        .apply_processor(&ProcessorSpec {
             node: "df-rebuild".to_owned(),
             array: ARRAY.to_owned(),
             params: ProcessorParams::Df(DfParams::default()),
@@ -1282,7 +1280,7 @@ fn a_probe_whose_retune_failed_comes_back_as_a_new_build() {
         .apply_array(kraken_spec(ds))
         .expect("the array starts");
     engine
-        .apply_processor(ProcessorSpec {
+        .apply_processor(&ProcessorSpec {
             params: probe_params(0),
             ..probe_spec("probe-rebuild")
         })
@@ -1454,7 +1452,7 @@ fn a_processor_the_array_had_no_room_to_drop_stays_until_it_can() {
         .apply_array(kraken_spec(ds))
         .expect("the array starts");
     engine
-        .apply_processor(ProcessorSpec {
+        .apply_processor(&ProcessorSpec {
             node: "df-busy".to_owned(),
             array: ARRAY.to_owned(),
             params: ProcessorParams::Df(DfParams::default()),
@@ -1473,7 +1471,7 @@ fn a_processor_the_array_had_no_room_to_drop_stays_until_it_can() {
     entered.recv_timeout(WAIT).expect("the aggregator is held");
     let full = (0..=COMMAND_SLOTS as i64).any(|at| {
         engine
-            .update_array_pose(ARRAY, Some(fix(at, 90.0, None)), host_ns(at))
+            .update_array_pose(ARRAY, Some(&fix(at, 90.0, None)), host_ns(at))
             .is_err()
     });
     assert!(full, "the command queue fills");

@@ -217,7 +217,7 @@ fn disagreements(coded: &[f32], bits: &[u8], start: usize) -> u32 {
 }
 
 fn divisible(bits: &[u8], generator: u32) -> bool {
-    let degree = 31 - generator.leading_zeros();
+    let degree = generator.ilog2();
     let mask = (1u32 << degree) - 1;
     let mut register = 0u32;
     for &bit in bits {

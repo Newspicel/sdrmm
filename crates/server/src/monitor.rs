@@ -22,7 +22,7 @@ struct Binding {
 
 struct Active {
     binding: Binding,
-    _handle: MonitorHandle,
+    handle: MonitorHandle,
 }
 
 pub(crate) struct Watch {
@@ -123,7 +123,7 @@ fn reconcile(
     active: &mut HashMap<String, Active>,
 ) {
     let desired = desired(engine, resolved);
-    active.retain(|_, running| running._handle.is_active() && desired.contains(&running.binding));
+    active.retain(|_, running| running.handle.is_active() && desired.contains(&running.binding));
     for node in resolved.graph.nodes.iter().filter(|node| {
         matches!(node.body, NodeBody::SpectrumMonitor(_))
             && !desired.iter().any(|binding| binding.node == node.id)
@@ -138,13 +138,7 @@ fn reconcile(
         match start(engine, calls, &binding) {
             Ok(handle) => {
                 problems.set(engine, ProblemSource::Monitor, &node, Vec::new());
-                active.insert(
-                    node,
-                    Active {
-                        binding,
-                        _handle: handle,
-                    },
-                );
+                active.insert(node, Active { binding, handle });
             }
             Err(error) => {
                 tracing::warn!(%error, node, "spectrum monitor could not start");

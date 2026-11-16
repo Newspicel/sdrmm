@@ -268,21 +268,18 @@ impl CafBackend for CpuCaf {
             return Err(CafError::Shape);
         }
         spectra_stage(&mut self.kernel, job, &mut self.shard)?;
-        match &mut self.eca {
-            Some(eca) => {
-                let stats = solve_stage(
-                    &mut eca.solver,
-                    &[&self.shard],
-                    &mut eca.sums,
-                    &mut eca.table,
-                )?;
-                out.suppression_db = stats.suppression_db;
-                out.unsuppressed_groups = stats.unsuppressed_groups;
-            }
-            None => {
-                out.suppression_db = job.front_suppression_db;
-                out.unsuppressed_groups = 0;
-            }
+        if let Some(eca) = &mut self.eca {
+            let stats = solve_stage(
+                &mut eca.solver,
+                &[&self.shard],
+                &mut eca.sums,
+                &mut eca.table,
+            )?;
+            out.suppression_db = stats.suppression_db;
+            out.unsuppressed_groups = stats.unsuppressed_groups;
+        } else {
+            out.suppression_db = job.front_suppression_db;
+            out.unsuppressed_groups = 0;
         }
         let table = self.eca.as_ref().map(|eca| &eca.table);
         residual_stage(&mut self.kernel, table, &mut self.shard)?;

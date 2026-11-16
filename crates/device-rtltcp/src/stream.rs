@@ -75,7 +75,7 @@ mod tests {
         let codes: Vec<u8> = (0..=255u8).collect();
         let samples = converter().convert(&codes).to_vec();
         for (pair, sample) in codes.as_chunks::<2>().0.iter().zip(samples) {
-            let [i, q] = pair.map(|code| ((code as f32 - DC_OFFSET) / FULL_SCALE).to_bits());
+            let [i, q] = pair.map(|code| ((f32::from(code) - DC_OFFSET) / FULL_SCALE).to_bits());
             assert_eq!((sample.re.to_bits(), sample.im.to_bits()), (i, q));
         }
     }

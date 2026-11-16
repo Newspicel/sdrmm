@@ -111,8 +111,7 @@ impl Listing {
                     reference,
                 ),
             workspaces: response
-                .map(|response| response.workspaces.iter().map(reference).collect())
-                .unwrap_or_default(),
+                .map_or_default(|response| response.workspaces.iter().map(reference).collect()),
             missions: self
                 .entries
                 .iter()

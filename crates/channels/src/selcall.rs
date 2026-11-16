@@ -417,10 +417,10 @@ mod tests {
     const PUBLISHED_REPEAT_SYMBOL: char = 'E';
 
     fn published_hz(plan: &[(char, f64)], symbol: char) -> f64 {
-        plan.iter()
-            .find(|&&(name, _)| name == symbol)
-            .map(|&(_, hz)| hz)
-            .unwrap_or_else(|| panic!("the published plan has no tone for {symbol}"))
+        plan.iter().find(|&&(name, _)| name == symbol).map_or_else(
+            || panic!("the published plan has no tone for {symbol}"),
+            |&(_, hz)| hz,
+        )
     }
 
     fn audio_at_published_tones(plan: &[(char, f64)], code: &str, tone_ms: u32) -> Vec<f32> {

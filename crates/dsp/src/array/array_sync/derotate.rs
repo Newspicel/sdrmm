@@ -28,7 +28,7 @@ mod tests {
     #[test]
     fn derotation_removes_a_known_offset() {
         let source: Vec<Complex<f32>> = (0..1000)
-            .map(|n| Complex::from_polar(1.0, (TAU * 0.01 * (n + 50) as f64) as f32))
+            .map(|n| Complex::from_polar(1.0, (TAU * 0.01 * f64::from(n + 50)) as f32))
             .collect();
         let mut out = vec![Complex::default(); source.len()];
         derotate(&source, 50, 0.01, &mut out);

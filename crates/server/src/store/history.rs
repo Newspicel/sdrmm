@@ -12,6 +12,7 @@ const EDIT: &str = "edit";
 const BASE: &str = "base";
 const SPENT: &str = "spent";
 
+#[derive(Clone, Copy)]
 pub(super) struct RecordedSettings<'a> {
     pub(super) node: &'a str,
     pub(super) before: &'a str,

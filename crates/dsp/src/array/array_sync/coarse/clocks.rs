@@ -23,15 +23,12 @@ impl CoarseSearch {
             &lane[..self.span()],
             reach,
         );
-        let cycles = match rough {
-            Some(rough) => {
-                let index = self.incoherent_peak(reference, lane, rough);
-                rough + self.residual(reference, lane, index, rough)
-            }
-            None => {
-                let index = self.envelope_peak(reference, lane);
-                self.product_offset(reference, lane, index, MAX_CFO_HZ / rate_hz)
-            }
+        let cycles = if let Some(rough) = rough {
+            let index = self.incoherent_peak(reference, lane, rough);
+            rough + self.residual(reference, lane, index, rough)
+        } else {
+            let index = self.envelope_peak(reference, lane);
+            self.product_offset(reference, lane, index, MAX_CFO_HZ / rate_hz)
         };
         let found = self.coherent(reference, lane, cycles)?;
         Ok(CoarseLag {

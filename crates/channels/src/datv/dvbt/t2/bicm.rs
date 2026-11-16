@@ -125,7 +125,7 @@ impl Decoder {
                 let next = cells[there];
                 (
                     Complex::new(p.re, next.im) * rotation,
-                    0.5 * (gain(here) + gain(there)),
+                    f32::midpoint(gain(here), gain(there)),
                 )
             } else {
                 (p, gain(here))

@@ -331,7 +331,7 @@ impl SigmfWriter {
         &mut captures[at]
     }
 
-    /// Opens a capture after `missing` samples the file never received. Per SigMF the jump shows
+    /// Opens a capture after `missing` samples the file never received. Per `SigMF` the jump shows
     /// in `core:global_index`, and `core:datetime` says when the stream picked up again.
     pub fn skip(&mut self, missing: u64, at: &str) {
         self.skipped += missing;

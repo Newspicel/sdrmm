@@ -14,7 +14,7 @@ use sdrmm_device::{
 use sdrmm_device_spyserver::SpyServerDriver;
 use sdrmm_wire::{DeviceSettings, GainKind, GainUnit, GainValue};
 
-const PROTOCOL_VERSION: u32 = (2 << 24) | 1700;
+const PROTOCOL_VERSION: u32 = (2 << 24) | 0x6a4;
 const MSG_DEVICE_INFO: u16 = 0;
 const MSG_CLIENT_SYNC: u16 = 1;
 const MSG_INT16_IQ: u16 = 101;

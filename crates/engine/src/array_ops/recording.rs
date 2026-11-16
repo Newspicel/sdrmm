@@ -81,8 +81,7 @@ impl Engine {
             .map(|(slot, lane)| {
                 let device = lane
                     .and_then(|lane| inner.device_sets.get(&lane.device_set))
-                    .map(|device| device.info.id())
-                    .unwrap_or_default();
+                    .map_or_default(|device| device.info.id());
                 LaneMeta {
                     lane: LaneKey {
                         device,
@@ -117,7 +116,7 @@ impl Engine {
     pub fn start_array_recording(
         &self,
         node: &str,
-        request: ArrayRecordingRequest,
+        request: &ArrayRecordingRequest,
     ) -> Result<String, EngineError> {
         let _edits = lock(&self.array_edits);
         let dir = self.recordings_dir.clone().ok_or_else(|| {
@@ -125,7 +124,7 @@ impl Engine {
         })?;
         let plan = self.recording_plan(node)?;
         let started_at = jiff::Timestamp::now();
-        let base = base_name(node, &request, started_at)?;
+        let base = base_name(node, request, started_at)?;
         std::fs::create_dir_all(&dir).map_err(|error| {
             EngineError::RecordingIo(format!("create {}: {error}", dir.display()))
         })?;

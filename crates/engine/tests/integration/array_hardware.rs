@@ -175,7 +175,7 @@ mod probe {
     impl Probe {
         pub fn start(engine: &Engine) -> Self {
             engine
-                .apply_processor(processor(
+                .apply_processor(&processor(
                     "probe",
                     ProcessorParams::Probe(ProbeParams {
                         time: true,
@@ -244,6 +244,11 @@ mod probe {
 
     pub struct Probe;
 
+    #[expect(
+        clippy::unused_self,
+        clippy::unnecessary_wraps,
+        reason = "mirrors the probe build's API"
+    )]
     impl Probe {
         pub const fn start(_engine: &Engine) -> Self {
             Self
@@ -270,7 +275,7 @@ fn kraken_array_locks_and_holds() {
     engine
         .apply_array(kraken.array(UHF_HZ, GAIN_DB, noise_cal(CHECK_S)))
         .unwrap();
-    engine.apply_processor(df("df")).unwrap();
+    engine.apply_processor(&df("df")).unwrap();
     let mut probe = probe::Probe::start(engine);
     let locked = wait_status(engine, "Locked and Solved", LOCK_LIMIT, calibrated);
     let lock_time = started.elapsed();
@@ -373,7 +378,7 @@ fn kraken_sync_after_burst_and_retune() {
     engine
         .apply_array(kraken.array(100e6, 20.0, noise_cal(0)))
         .unwrap();
-    engine.apply_processor(df("df")).unwrap();
+    engine.apply_processor(&df("df")).unwrap();
     wait_status(engine, "the first solve", LOCK_LIMIT, calibrated);
     let changes = [
         Change::Tune(UHF_HZ),
@@ -602,7 +607,7 @@ fn kraken_df_known_bearing() {
         ))
         .unwrap();
     engine
-        .apply_processor(ProcessorSpec {
+        .apply_processor(&ProcessorSpec {
             params: ProcessorParams::Df(DfParams {
                 offset_hz: DF_OFFSET_HZ,
                 bandwidth_hz: tx.bandwidth_hz,

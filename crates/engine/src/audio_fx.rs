@@ -212,9 +212,8 @@ impl Stage {
     }
 
     fn prepare(&mut self, channels: u8, profile: ClickProfile) -> Result<bool, NeuralDenoiseError> {
-        let changed = match self.settings.has_changed() {
-            Ok(changed) => changed,
-            Err(_) => return Ok(false),
+        let Ok(changed) = self.settings.has_changed() else {
+            return Ok(false);
         };
         let generation = self.models.generation();
         let changed = changed || generation != self.generation;
@@ -343,13 +342,13 @@ mod tests {
         (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt()
     }
 
-    fn source(tx: &broadcast::Sender<PcmBlock>) -> Result<FxSource, EngineError> {
-        Ok(FxSource {
+    fn source(tx: &broadcast::Sender<PcmBlock>) -> FxSource {
+        FxSource {
             pcm: tx.subscribe(),
             channels: 1,
             profile: ClickProfile::Discriminator,
             capacity: 64,
-        })
+        }
     }
 
     fn route(fx: &[&str]) -> AudioRoute {
@@ -403,7 +402,7 @@ mod tests {
             },
         );
         let mut rx = hub
-            .subscribe_pcm(&route(&["a", "b"]), || source(&tx))
+            .subscribe_pcm(&route(&["a", "b"]), || Ok(source(&tx)))
             .expect("the route opens");
         let low = tone(200.0, 0.3, 4_800);
         for n in 0..20 {
@@ -421,7 +420,7 @@ mod tests {
     fn a_route_through_an_unknown_node_is_refused() {
         let (tx, _keep) = broadcast::channel::<PcmBlock>(8);
         let mut hub = AudioFxHub::new(Arc::default());
-        let refused = hub.subscribe_pcm(&route(&["ghost"]), || source(&tx));
+        let refused = hub.subscribe_pcm(&route(&["ghost"]), || Ok(source(&tx)));
         assert!(matches!(refused, Err(EngineError::Audio(_))));
     }
 
@@ -431,7 +430,7 @@ mod tests {
         let mut hub = AudioFxHub::new(Arc::default());
         hub.set("a", AudioProcessing::default());
         let mut rx = hub
-            .subscribe_pcm(&route(&["a"]), || source(&tx))
+            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
             .expect("the route opens");
         let low = tone(200.0, 0.3, 4_800);
         feed(&tx, &low, 0);
@@ -450,7 +449,7 @@ mod tests {
         let mut hub = AudioFxHub::new(Arc::default());
         hub.set("a", highpass());
         let mut rx = hub
-            .subscribe_pcm(&route(&["a"]), || source(&tx))
+            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
             .expect("the route opens");
         tx.send(PcmBlock {
             start_frame: 777,
@@ -469,7 +468,7 @@ mod tests {
         let mut hub = AudioFxHub::new(Arc::default());
         hub.set("a", AudioProcessing::default());
         let mut rx = hub
-            .subscribe_pcm(&route(&["a"]), || source(&tx))
+            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
             .expect("the route opens");
         hub.retain(&HashSet::new());
         feed(&tx, &[0.1; 480], 0);
@@ -482,7 +481,7 @@ mod tests {
         let mut hub = AudioFxHub::new(Arc::default());
         hub.set("a", AudioProcessing::default());
         let rx = hub
-            .subscribe_pcm(&route(&["a"]), || source(&tx))
+            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
             .expect("the route opens");
         drop(rx);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);

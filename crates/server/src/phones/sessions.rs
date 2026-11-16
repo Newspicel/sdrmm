@@ -42,6 +42,7 @@ impl Sessions {
         )
     }
 
+    #[expect(clippy::needless_pass_by_value, reason = "leaving spends the guard")]
     pub(super) fn leave(&self, guard: SessionGuard) -> bool {
         let mut live = self.live();
         let Some(sockets) = live.get_mut(&guard.phone) else {

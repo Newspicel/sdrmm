@@ -432,7 +432,7 @@ fn a_carrier_that_starts_modulating_is_reidentified_automatically() {
 #[test]
 fn more_than_thirty_two_signals_reports_capacity_loss() {
     let mut iq = noise(0.1, 53);
-    for offset in (0..34).map(|i| -450_000.0 + i as f64 * 25_000.0) {
+    for offset in (0..34).map(|i| -450_000.0 + f64::from(i) * 25_000.0) {
         for (i, sample) in iq.iter_mut().enumerate() {
             *sample += Complex::from_polar(
                 0.02,

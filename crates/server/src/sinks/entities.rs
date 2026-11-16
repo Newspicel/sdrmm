@@ -77,7 +77,7 @@ fn merged(entity: &mut Entity, record: &DecodedRecord, view: &Presentation) {
         entity.event = record.event.clone();
         entity.view = view.clone();
     }
-    entity.view.clip = view.clip.clone();
+    entity.view.clip.clone_from(&view.clip);
 }
 
 impl Entities {

@@ -9,8 +9,8 @@ pub(crate) mod jpeg;
 pub(crate) mod link;
 mod packet;
 pub(crate) fn lrpt_decoder() -> Native<LrptParams> {
-    Native::new::<LrptChannel>(occupied_band)
-        .filter(channel_filter)
+    Native::new::<LrptChannel>(|_| occupied_band())
+        .filter(|_| Ok(channel_filter()))
         .home(137_900_000.0)
         .form(lrpt_form)
         .kinds(lrpt_kinds)
@@ -66,17 +66,17 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     ..ChannelDescriptor::default()
 });
 
-pub(crate) fn occupied_band(_p: &LrptParams) -> (f64, f64) {
+pub(crate) fn occupied_band() -> (f64, f64) {
     let half = DESCRIPTOR.bandwidth_hz / 2.0;
     (-half, half)
 }
 
-pub(crate) fn channel_filter(p: &LrptParams) -> Result<ChannelFilter, ChannelError> {
-    let (_, half) = occupied_band(p);
-    Ok(ChannelFilter::Symmetric(Decimator::new(
+pub(crate) fn channel_filter() -> ChannelFilter {
+    let (_, half) = occupied_band();
+    ChannelFilter::Symmetric(Decimator::new(
         &design_lowpass(FILTER_TAPS, half / INPUT_RATE_HZ),
         1,
-    )))
+    ))
 }
 
 fn params(settings: &ChannelSettings) -> Result<LrptParams, ChannelError> {

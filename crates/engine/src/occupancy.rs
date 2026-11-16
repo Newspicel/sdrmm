@@ -40,7 +40,7 @@ impl Occupancy {
         db: &[f32],
         center_hz: f64,
         span_hz: f32,
-        lo_guard: Option<RangeInclusive<usize>>,
+        lo_guard: Option<&RangeInclusive<usize>>,
         now_ms: i64,
     ) {
         let n = db.len();
@@ -58,7 +58,7 @@ impl Occupancy {
 
         let mut current: Option<(u64, bool)> = None;
         for (i, &level) in db.iter().enumerate() {
-            if !level.is_finite() || lo_guard.as_ref().is_some_and(|g| g.contains(&i)) {
+            if !level.is_finite() || lo_guard.is_some_and(|g| g.contains(&i)) {
                 continue;
             }
             let hz = first_hz + (i as f64 + 0.5) * bin_hz;
@@ -143,7 +143,7 @@ impl Occupancy {
         });
         OccupancyReport {
             bucket_hz: BUCKET_HZ,
-            since: self.started_ms.map(stamp).unwrap_or_default(),
+            since: self.started_ms.map_or_default(stamp),
             buckets,
         }
     }
@@ -178,9 +178,7 @@ fn hour_of_day(now_ms: i64) -> usize {
 }
 
 fn stamp(now_ms: i64) -> String {
-    jiff::Timestamp::from_millisecond(now_ms)
-        .map(|t| t.to_string())
-        .unwrap_or_default()
+    jiff::Timestamp::from_millisecond(now_ms).map_or_default(|t| t.to_string())
 }
 
 #[cfg(test)]
@@ -217,7 +215,7 @@ mod tests {
     fn the_front_ends_own_spike_is_not_filed_as_a_busy_frequency() {
         let mut occupancy = Occupancy::new();
         for _ in 0..10 {
-            occupancy.observe(&frame(128, Some(64)), 100e6, 1.6e6, Some(62..=66), 0);
+            occupancy.observe(&frame(128, Some(64)), 100e6, 1.6e6, Some(&(62..=66)), 0);
         }
         let report = occupancy.report(1);
         assert!(
